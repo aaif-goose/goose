@@ -2056,6 +2056,7 @@ export const zLocalInferenceModelsListResponse_unstable = z.object({
  * Download a model for local inference.
  */
 export const zLocalInferenceModelDownloadRequest_unstable = z.object({
+    format: z.string().nullish(),
     spec: z.string(),
     backendId: z.string().nullish(),
     variantId: z.string().nullish()
@@ -2117,6 +2118,8 @@ export const zLocalInferenceModelSettingsReadRequest_unstable = z.object({
 });
 
 export const zLocalInferenceModelSettingsReadResponse_unstable = z.object({
+    availableBackends: z.array(z.string()).default([]),
+    defaultBackend: z.string().default(''),
     settings: zLocalInferenceModelSettingsDto
 });
 

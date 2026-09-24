@@ -3766,6 +3766,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivre"
+version = "0.3.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a892ec3953f4ca893e8d2086ed03d4b58e19c77ffb864a574b332d7d40c175f3"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "bytemuck",
+ "bytemuck_derive",
+ "hashbrown 0.17.1",
+ "regex-syntax",
+ "strum 0.28.0",
+]
+
+[[package]]
 name = "diatomic-waker"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4223,6 +4238,173 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "eredu"
+version = "0.5.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-architectures",
+ "eredu-backend-mlx",
+ "eredu-core",
+ "eredu-gguf",
+ "eredu-runtime",
+ "eredu-text",
+ "jsonschema 0.52.1",
+ "llguidance",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "tokenizers 0.23.2",
+]
+
+[[package]]
+name = "eredu-architectures"
+version = "0.5.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-checkpoint",
+ "eredu-core",
+ "eredu-gguf",
+ "eredu-media",
+ "eredu-nn",
+ "eredu-runtime",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-backend-mlx"
+version = "0.5.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-architectures",
+ "eredu-backend-mlx-macros",
+ "eredu-checkpoint",
+ "eredu-core",
+ "eredu-gguf",
+ "eredu-nn",
+ "eredu-runtime",
+ "half",
+ "ref-cast",
+ "safemlx",
+ "safetensors 0.8.0",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "smallvec",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-backend-mlx-macros"
+version = "0.1.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
+name = "eredu-checkpoint"
+version = "0.2.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-gguf",
+ "safetensors 0.8.0",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-core"
+version = "0.5.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-checkpoint",
+ "eredu-gguf",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-gguf"
+version = "0.1.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "half",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-media"
+version = "0.4.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-core",
+ "image 0.25.10",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-nn"
+version = "0.2.1"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-checkpoint",
+ "eredu-nn-macros",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-nn-macros"
+version = "0.1.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
+name = "eredu-runtime"
+version = "0.5.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "eredu-checkpoint",
+ "eredu-core",
+ "eredu-nn",
+ "safetensors 0.8.0",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "eredu-text"
+version = "0.1.1"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "eredu-gguf",
+ "minijinja",
+ "minijinja-contrib",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "tokenizers 0.23.2",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4243,9 +4425,6 @@ name = "esaxx-rs"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d817e038c30374a4bcb22f94d0a8a0e216958d4c3dcde369b1439fec4bdda6e6"
-dependencies = [
- "cc",
-]
 
 [[package]]
 name = "etcetera"
@@ -5214,7 +5393,7 @@ dependencies = [
  "indexmap 2.14.2",
  "indoc",
  "insta",
- "jsonschema",
+ "jsonschema 0.55.1",
  "jsonwebtoken",
  "keyring",
  "libc",
@@ -5428,12 +5607,18 @@ dependencies = [
  "chrono",
  "encoding_rs",
  "env-lock",
+ "eredu",
+ "eredu-architectures",
+ "eredu-backend-mlx",
+ "eredu-core",
+ "eredu-text",
  "etcetera",
  "futures",
  "goose-download-manager",
  "goose-provider-types",
  "goose-sdk-types",
  "hf-hub",
+ "image 0.25.10",
  "include_dir",
  "llama-cpp-2",
  "llama-cpp-sys-2",
@@ -5441,9 +5626,6 @@ dependencies = [
  "pulldown-cmark",
  "regex",
  "rmcp 3.3.0",
- "safemlx",
- "safemlx-lm",
- "safemlx-lm-utils",
  "serde",
  "serde_json",
  "tokio",
@@ -6336,12 +6518,23 @@ dependencies = [
  "byteorder-lite",
  "color_quant",
  "gif 0.14.2",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png 0.18.1",
  "tiff 0.11.3",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -6917,6 +7110,34 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
+version = "0.52.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93e842fa72fd1e50ca4676a527641c13f5ee0d423ac699bfe1cd2afa3a4fdbac"
+dependencies = [
+ "ahash",
+ "bytecount",
+ "data-encoding",
+ "email_address",
+ "fancy-regex 0.19.2",
+ "fraction",
+ "getrandom 0.3.4",
+ "itoa",
+ "jsonschema-regex 0.52.1",
+ "jsonschema-value 0.52.1",
+ "num-cmp",
+ "num-traits",
+ "percent-encoding",
+ "referencing 0.52.1",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "unicode-general-category",
+ "uuid-simd",
+]
+
+[[package]]
+name = "jsonschema"
 version = "0.55.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b68339c3d874e48151d74ffe256d93a58cffa240983cb0967d3cbaea083a44fe"
@@ -6929,12 +7150,12 @@ dependencies = [
  "fraction",
  "getrandom 0.3.4",
  "itoa",
- "jsonschema-regex",
- "jsonschema-value",
+ "jsonschema-regex 0.55.1",
+ "jsonschema-value 0.55.1",
  "num-cmp",
  "num-traits",
  "percent-encoding",
- "referencing",
+ "referencing 0.55.1",
  "regex",
  "serde",
  "serde_json",
@@ -6945,11 +7166,35 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
+version = "0.52.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5d90ea83fa606c96f0b4737ecedf1fa6b624272022edc42039565f8d8af0b78"
+dependencies = [
+ "regex-syntax",
+]
+
+[[package]]
+name = "jsonschema-regex"
 version = "0.55.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6307b5b51216ec9b941b52244c74043fa0b1d6b657b56199f57cb1416d3641c5"
 dependencies = [
  "regex-syntax",
+]
+
+[[package]]
+name = "jsonschema-value"
+version = "0.52.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da4ab4cbe58181a117d8c3582844ce20b07184319b51ba6d756596c1c451aebc"
+dependencies = [
+ "ahash",
+ "bytecount",
+ "fraction",
+ "num-cmp",
+ "num-traits",
+ "serde_json",
+ "zmij",
 ]
 
 [[package]]
@@ -7208,6 +7453,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "llguidance"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "207e72ede15e79f1e7a7f0e2683387da031c1931f6de650020afb80c571efb67"
+dependencies = [
+ "anyhow",
+ "derivre",
+ "indexmap 2.14.2",
+ "regex-syntax",
+ "serde",
+ "serde_json",
+ "toktrie",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7291,15 +7551,6 @@ name = "mac-addr"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
-
-[[package]]
-name = "mach-sys"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48460c2e82a3a0de197152fdf8d2c2d5e43adc501501553e439bf2156e6f87c7"
-dependencies = [
- "fastrand",
-]
 
 [[package]]
 name = "macro_rules_attribute"
@@ -7425,8 +7676,10 @@ version = "2.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86886cf6dbf4e614b19c9a1eec9775f021869d7eadde0fc73921a81b90c9b4c9"
 dependencies = [
+ "indexmap 2.14.2",
  "memo-map",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -10022,6 +10275,23 @@ dependencies = [
 
 [[package]]
 name = "referencing"
+version = "0.52.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38a014525040cdc9893361b7419bcf1f43b7ba7055eabaf6d91d6b75caa8b3f"
+dependencies = [
+ "ahash",
+ "fluent-uri",
+ "getrandom 0.3.4",
+ "hashbrown 0.17.1",
+ "itoa",
+ "micromap",
+ "parking_lot",
+ "percent-encoding",
+ "serde_json",
+]
+
+[[package]]
+name = "referencing"
 version = "0.55.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a196a5b4a8a12f46b6353174df865a05d41a6055aff212ec30877492788618b6"
@@ -10591,94 +10861,42 @@ checksum = "3944826ff8fa8093089aba3acb4ef44b9446a99a16f3bf4e74af3f77d340ab7d"
 
 [[package]]
 name = "safemlx"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba126836f374feaa7d6842fe4666fa249b364622ba3c1806b493ce0d5461998f"
+version = "0.3.1"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
 dependencies = [
  "bytemuck",
- "dyn-clone",
  "half",
- "itertools 0.15.0",
  "libc",
- "mach-sys",
  "num-complex",
  "num-traits",
  "num_enum",
  "parking_lot",
  "paste",
  "safemlx-internal-macros",
- "safemlx-macros",
  "safemlx-sys",
  "safetensors 0.8.0",
  "smallvec",
  "strum 0.28.0",
  "thiserror 2.0.20",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "safemlx-internal-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6169d5cd6a9b565bc3b0db7d91a9bbfe19999839b23c92e991fd823835d8edbd"
+version = "0.2.0"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
 dependencies = [
- "darling 0.23.0",
  "itertools 0.15.0",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "safemlx-lm"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10021db1789b1707952ae7e952c81eafd5b7b2a81e34eb47719f2a182671d4db"
-dependencies = [
- "anyhow",
- "clap",
- "idna_adapter",
- "minijinja",
- "safemlx",
- "safemlx-lm-utils",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokenizers 0.23.2",
-]
-
-[[package]]
-name = "safemlx-lm-utils"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af6547ba76673530921074ad4e7608240526f30335048b7bac077dee5d392a5"
-dependencies = [
- "minijinja",
- "minijinja-contrib",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokenizers 0.23.2",
-]
-
-[[package]]
-name = "safemlx-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6deae4f49d22783e05805575e4b676e203fcc4e4e6ad57fbb5001abdb405e257"
-dependencies = [
- "darling 0.23.0",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
+ "syn 3.0.5",
 ]
 
 [[package]]
 name = "safemlx-sys"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5240fd4c15ee5c0ff377757f8643e2a555378b4fbd5d0ab1a810efc06f8fcd6c"
+version = "0.2.3"
+source = "git+https://github.com/jbg/eredu?rev=3d6fd6dac6436d0e396d47ccba0804d9cd90833e#3d6fd6dac6436d0e396d47ccba0804d9cd90833e"
 dependencies = [
- "cc",
  "cmake",
 ]
 
@@ -13093,6 +13311,7 @@ dependencies = [
  "dary_heap",
  "derive_builder",
  "esaxx-rs",
+ "fancy-regex 0.17.0",
  "getrandom 0.3.4",
  "itertools 0.14.0",
  "log",
@@ -13353,6 +13572,19 @@ checksum = "d01145a2c788d6aae4cd653afec1e8332534d7d783d01897cefcafe4428de992"
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "toktrie"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16197572e4d4061591596b3629f587a1d7ac5858948c2097310cbb188da100b5"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "bytemuck_derive",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

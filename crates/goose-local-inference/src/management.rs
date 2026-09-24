@@ -132,6 +132,15 @@ pub async fn download_model(
 ) -> Result<LocalInferenceModelDownloadResponse> {
     let selection = explicit_model_selection(&req)?;
     let model_id = local_model_id_from_request(&req, selection.as_ref()).await?;
+    if matches!(req.backend_id.as_deref(), Some("eredu" | "mlx"))
+        && selection
+            .as_ref()
+            .is_some_and(|selection| selection.backend_id == "llamacpp")
+    {
+        let mut settings = crate::config_resolver::model_settings(&model_id)?;
+        settings.backend_id = Some("eredu".into());
+        crate::config_resolver::write_model_settings(&model_id, &settings)?;
+    }
     let download_id = format!("{}-model", model_id);
     let download_reserved = get_download_manager().reserve_download(DownloadProgress {
         model_id: download_id.clone(),
@@ -229,10 +238,36 @@ pub async fn evict_model(model_id: &str) -> Result<()> {
         .map_err(|error| anyhow!(error.to_string()))
 }
 
+fn settings_model_path(model_id: &str) -> Result<std::path::PathBuf> {
+    if let Some(explicit) = crate::explicit_model_path(model_id)? {
+        return Ok(explicit.model_path);
+    }
+    Ok(if hf_models::parse_model_spec(model_id).is_ok() {
+        "model.gguf"
+    } else {
+        "safetensors"
+    }
+    .into())
+}
+
 pub fn get_model_settings(model_id: &str) -> Result<LocalInferenceModelSettingsReadResponse> {
-    let settings = crate::config_resolver::model_settings(model_id)?;
+    let mut settings = crate::config_resolver::model_settings(model_id)?;
+    if settings.backend_id.as_deref() == Some("mlx") {
+        settings.backend_id = Some("eredu".into());
+    }
+    let path = settings_model_path(model_id)?;
+    let default_backend = crate::selected_backend(&path, None)?.to_string();
+    let mut available_backends = Vec::new();
+    if crate::has_extension(&path, "gguf") {
+        available_backends.push("llamacpp".to_string());
+    }
+    if crate::eredu::unavailable_reason().is_none() {
+        available_backends.push("eredu".to_string());
+    }
     Ok(LocalInferenceModelSettingsReadResponse {
         settings: model_settings_to_dto(&settings),
+        default_backend,
+        available_backends,
     })
 }
 
@@ -240,7 +275,20 @@ pub fn update_model_settings(
     model_id: &str,
     settings: LocalInferenceModelSettingsDto,
 ) -> Result<LocalInferenceModelSettingsUpdateResponse> {
-    let settings = model_settings_from_dto(settings);
+    let mut settings = model_settings_from_dto(settings);
+    let path = settings_model_path(model_id)?;
+    let backend = crate::selected_backend(&path, settings.backend_id.as_deref())?;
+    if settings.backend_id.is_some() {
+        settings.backend_id = Some(backend.into());
+    }
+    if backend == "eredu" {
+        if let Some(reason) = crate::eredu::unavailable_reason() {
+            anyhow::bail!(reason);
+        }
+        if matches!(settings.chat_template, ChatTemplate::Builtin { .. }) {
+            anyhow::bail!("Eredu requires an embedded or custom Jinja chat template; built-in names are specific to llama.cpp");
+        }
+    }
     crate::config_resolver::write_model_settings(model_id, &settings)?;
     Ok(LocalInferenceModelSettingsUpdateResponse {
         settings: model_settings_to_dto(&settings),
@@ -274,7 +322,16 @@ fn local_model_to_dto(
     loaded_model_ids: &HashSet<String>,
 ) -> LocalInferenceModelDto {
     let mut settings = crate::config_resolver::model_settings(&model.id).unwrap_or_default();
-    settings.backend_id = Some(model.backend_id.clone());
+    settings.backend_id = Some(
+        crate::selected_backend(&model.model_path, settings.backend_id.as_deref())
+            .map(str::to_string)
+            .unwrap_or_else(|_| {
+                settings
+                    .backend_id
+                    .clone()
+                    .unwrap_or_else(|| model.backend_id.clone())
+            }),
+    );
     settings.vision_capable = model.mmproj_path.is_some();
     settings.mmproj_size_bytes = model.mmproj_size_bytes;
     LocalInferenceModelDto {
@@ -303,10 +360,10 @@ fn local_model_to_dto(
 fn active_download_to_dto(model_id: String, progress: &DownloadProgress) -> LocalInferenceModelDto {
     let (repo_id, quantization, backend_id) = match hf_models::parse_model_spec(&model_id) {
         Ok((repo_id, quantization)) => (repo_id, quantization, "llamacpp".to_string()),
-        Err(_) => (model_id.clone(), "default".to_string(), "mlx".to_string()),
+        Err(_) => (model_id.clone(), "default".to_string(), "eredu".to_string()),
     };
     let mut settings = crate::config_resolver::model_settings(&model_id).unwrap_or_default();
-    settings.backend_id = Some(backend_id);
+    settings.backend_id = settings.backend_id.or(Some(backend_id));
     LocalInferenceModelDto {
         id: model_id,
         repo_id,
@@ -529,13 +586,33 @@ fn chat_template_from_dto(template: LocalInferenceChatTemplate) -> ChatTemplate 
 fn explicit_model_selection(
     req: &LocalInferenceModelDownloadRequest,
 ) -> Result<Option<LocalModelSelection>> {
-    if let Some(backend_id) = req.backend_id.as_deref() {
+    let format_backend = match req.format.as_deref() {
+        Some("gguf") => Some("llamacpp"),
+        Some("safetensors" | "mlx-safetensors") => Some("eredu"),
+        Some(format) => anyhow::bail!("Unknown local checkpoint format '{format}'"),
+        None => None,
+    };
+    if let Some(backend_id) = req.backend_id.as_deref().or(format_backend) {
+        if backend_id == "llamacpp" && format_backend == Some("eredu") {
+            anyhow::bail!("llama.cpp requires a GGUF checkpoint");
+        }
         let (repo_id, parsed_variant_id) = hf_models::parse_model_spec(&req.spec)
             .map(|(repo_id, quantization)| (repo_id, Some(quantization)))
             .unwrap_or_else(|_| (req.spec.clone(), None));
+        if format_backend == Some("eredu") && parsed_variant_id.is_some() {
+            anyhow::bail!(
+                "A GGUF quantization in the model spec conflicts with the SafeTensors format"
+            );
+        }
+        let is_gguf = format_backend == Some("llamacpp") || parsed_variant_id.is_some();
         let variant_id = req.variant_id.clone().or(parsed_variant_id);
         match backend_id {
-            "mlx" => Ok(Some(LocalModelSelection {
+            "eredu" | "mlx" if is_gguf => Ok(Some(LocalModelSelection {
+                repo_id,
+                backend_id: "llamacpp".into(),
+                variant_id: variant_id.map(|id| hf_models::canonicalize_quantization(&id)),
+            })),
+            "mlx" | "eredu" => Ok(Some(LocalModelSelection {
                 repo_id,
                 backend_id: backend_id.to_string(),
                 variant_id,
@@ -559,7 +636,7 @@ async fn local_model_id_from_request(
 ) -> Result<String> {
     if let Some(selection) = selection {
         return match selection.backend_id.as_str() {
-            "mlx" => Ok(selection.repo_id.clone()),
+            "mlx" | "eredu" => Ok(selection.repo_id.clone()),
             "llamacpp" => {
                 let quantization = selection.variant_id.as_deref().ok_or_else(|| {
                     anyhow!(
@@ -589,7 +666,7 @@ async fn local_model_id_from_request(
         .any(|variant| variant.backend_id == "llamacpp");
     let mlx_variants: Vec<_> = variants
         .iter()
-        .filter(|variant| variant.backend_id == "mlx")
+        .filter(|variant| variant.backend_id == "eredu")
         .collect();
     if mlx_variants.len() == 1 && !has_llamacpp {
         Ok(req.spec.clone())
@@ -670,6 +747,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn eredu_gguf_download_keeps_the_gguf_artifact_identity() {
+        let req = LocalInferenceModelDownloadRequest {
+            spec: "owner/model".into(),
+            format: Some("gguf".into()),
+            backend_id: Some("eredu".into()),
+            variant_id: Some("q4_k_m".into()),
+        };
+        let selection = explicit_model_selection(&req).unwrap().unwrap();
+        assert_eq!(selection.backend_id, "llamacpp");
+        assert_eq!(selection.variant_id.as_deref(), Some("Q4_K_M"));
+        assert_eq!(selection.repo_id, "owner/model");
+    }
+
+    #[test]
     fn settings_round_trip_preserves_defaults() {
         let settings = ModelSettings::default();
         let dto = model_settings_to_dto(&settings);
@@ -686,6 +777,7 @@ mod tests {
     #[tokio::test]
     async fn explicit_llamacpp_selection_derives_quantized_model_id() {
         let req = LocalInferenceModelDownloadRequest {
+            format: None,
             spec: "test/repo".to_string(),
             backend_id: Some("llamacpp".to_string()),
             variant_id: Some("q4_k_m".to_string()),

@@ -8,14 +8,14 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::eredu::snapshot_files_are_complete as mlx_snapshot_files_are_complete;
 use crate::huggingface_auth;
-use crate::mlx::snapshot_files_are_complete as mlx_snapshot_files_are_complete;
 
 const HF_DOWNLOAD_BASE: &str = "https://huggingface.co";
 const LLAMACPP_BACKEND_ID: &str = "llamacpp";
-const MLX_BACKEND_ID: &str = "mlx";
+const MLX_BACKEND_ID: &str = "eredu";
 const GGUF_FORMAT: &str = "gguf";
-const MLX_FORMAT: &str = "mlx-safetensors";
+const MLX_FORMAT: &str = "safetensors";
 const MLX_VARIANT_ID: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1152,7 +1152,7 @@ mod tests {
             size_bytes: 8,
             filename: None,
             download_url: None,
-            description: "MLX".to_string(),
+            description: "SafeTensors".to_string(),
             quality_rank: 91,
             sharded: true,
             supported: true,
@@ -1223,12 +1223,19 @@ mod tests {
     }
 
     #[test]
+    fn safetensors_repo_accepts_sentencepiece_tokenizers() {
+        let config = Some(serde_json::json!({ "model_type": "llama" }));
+        for filename in ["tokenizer.model", "spiece.model"] {
+            assert!(is_mlx_compatible_repo(&config, &mlx_siblings(&[filename])));
+        }
+    }
+
+    #[test]
     fn mlx_compatible_repo_rejects_incomplete_tokenizer_files() {
         let config = Some(serde_json::json!({ "model_type": "llama" }));
 
         for tokenizer_files in [
             vec!["tokenizer_config.json"],
-            vec!["tokenizer.model"],
             vec!["tokenizer.tiktoken"],
             vec!["vocab.json"],
             vec!["merges.txt"],
@@ -2206,7 +2213,10 @@ fn has_mlx_tokenizer(siblings: &[RepoSibling]) -> bool {
 }
 
 fn is_standalone_mlx_tokenizer_file(filename: &str) -> bool {
-    filename == "tokenizer.json"
+    matches!(
+        filename,
+        "tokenizer.json" | "tokenizer.model" | "spiece.model"
+    )
 }
 
 fn mlx_model_type(config: &Option<serde_json::Value>) -> Option<&str> {
@@ -2221,11 +2231,8 @@ fn is_mlx_runtime_supported(config: &Option<serde_json::Value>) -> bool {
 }
 
 fn mlx_unsupported_reason(config: &Option<serde_json::Value>) -> Option<String> {
-    if !cfg!(target_os = "macos") {
-        return Some("MLX requires macOS".to_string());
-    }
-    if !cfg!(feature = "mlx") {
-        return Some("MLX support was not compiled in".to_string());
+    if let Some(reason) = crate::eredu::unavailable_reason() {
+        return Some(reason.to_string());
     }
 
     mlx_config_support(config)
@@ -2236,22 +2243,22 @@ fn mlx_config_support(config: &Option<serde_json::Value>) -> Option<String> {
     mlx_config_support_for_value(config)
 }
 
-#[cfg(all(feature = "mlx", target_os = "macos"))]
+#[cfg(all(feature = "mlx", target_os = "macos", target_arch = "aarch64"))]
 fn mlx_config_support_for_value(config: &serde_json::Value) -> Option<String> {
-    safemlx_lm::check_model_config(config)
-        .unsupported_reason()
-        .map(str::to_string)
+    eredu_architectures::configuration::resolve_model_config(config)
+        .err()
+        .map(|error| error.to_string())
 }
 
-#[cfg(not(all(feature = "mlx", target_os = "macos")))]
+#[cfg(not(all(feature = "mlx", target_os = "macos", target_arch = "aarch64")))]
 fn mlx_config_support_for_value(_config: &serde_json::Value) -> Option<String> {
     None
 }
 
 fn mlx_variant_description(config: &Option<serde_json::Value>) -> String {
     match mlx_unsupported_reason(config) {
-        None => "MLX safetensors snapshot".to_string(),
-        Some(reason) => format!("MLX safetensors snapshot ({reason})"),
+        None => "SafeTensors snapshot (eredu)".to_string(),
+        Some(reason) => format!("SafeTensors snapshot (eredu) ({reason})"),
     }
 }
 
@@ -2338,6 +2345,7 @@ fn should_download_for_mlx(filename: &str) -> bool {
         || filename == "generation_config.json"
         || filename == "configuration.json"
         || filename == "chat_template.jinja"
+        || filename == "processor_config.json"
         || filename == "preprocessor_config.json"
         || filename == "video_preprocessor_config.json"
         || filename == "special_tokens_map.json"
@@ -2364,9 +2372,9 @@ fn mlx_variant_id(repo_id: &str, config: &Option<serde_json::Value>) -> String {
 
 fn mlx_variant_label(variant_id: &str) -> String {
     if variant_id == MLX_VARIANT_ID {
-        "MLX".to_string()
+        "SafeTensors".to_string()
     } else {
-        format!("MLX {}", variant_id.to_uppercase())
+        format!("SafeTensors {}", variant_id.to_uppercase())
     }
 }
 
@@ -2376,7 +2384,9 @@ pub async fn resolve_local_model_selection(
     variant_id: Option<&str>,
 ) -> Result<ResolvedLocalModel> {
     match backend_id {
-        MLX_BACKEND_ID => resolve_mlx_model(repo_id, variant_id.unwrap_or(MLX_VARIANT_ID)).await,
+        MLX_BACKEND_ID | "mlx" => {
+            resolve_mlx_model(repo_id, variant_id.unwrap_or(MLX_VARIANT_ID)).await
+        }
         LLAMACPP_BACKEND_ID => {
             let quantization = variant_id.ok_or_else(|| {
                 anyhow::anyhow!("llama.cpp model '{}' is missing a quantization", repo_id)
@@ -2516,11 +2526,15 @@ async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLo
         .iter()
         .find(|variant| variant.variant_id == variant_id)
     else {
-        bail!("No MLX variant '{}' found in {}", variant_id, repo_id);
+        bail!(
+            "No SafeTensors variant '{}' found in {}",
+            variant_id,
+            repo_id
+        );
     };
     if !variant.supported {
         bail!(
-            "MLX variant '{}' in {} is not supported: {}",
+            "SafeTensors variant '{}' in {} is not supported: {}",
             variant_id,
             repo_id,
             variant
@@ -2569,8 +2583,9 @@ async fn resolve_mlx_model(repo_id: &str, variant_id: &str) -> Result<ResolvedLo
         progress.finish_file(file_size);
     }
     progress.complete();
-    let snapshot_path = snapshot_path
-        .ok_or_else(|| anyhow::anyhow!("MLX model {} has no downloadable files", repo_id))?;
+    let snapshot_path = snapshot_path.ok_or_else(|| {
+        anyhow::anyhow!("SafeTensors model {} has no downloadable files", repo_id)
+    })?;
     let total_size = if total_size > 0 {
         total_size
     } else {

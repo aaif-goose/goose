@@ -18,6 +18,7 @@ activities:
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
+  - Validate local eredu inference, tool round trips, and interruption recovery
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, local-inference, advanced"
 
   - key: test_depth
     input_type: string
@@ -55,6 +56,36 @@ parameters:
 instructions: |
   You are testing yourself - a running goose instance validating its own capabilities through meta-testing.
   This is true first-person integration testing where you use your own tools to test your own functionality.
+
+  ## Local inference migration checks
+  When test_phases includes local-inference, or includes all and this session uses
+  the local provider, validate the currently selected cached model without downloading
+  new weights. Record the model ID, format, selected backend, and agent-loop mode.
+  Use a tool to write a small file, read it back in a later turn, and confirm that
+  tool arguments and results survive the round trip. Request a response long enough
+  to observe streaming, interrupt it, and verify a subsequent request still works.
+  Check that reasoning is separated from the visible answer and that completed
+  native or emulated tool calls execute only once. Record unavailable hardware,
+  models, or interruption controls as skipped checks, not successful checks.
+  Repeat this phase with a supported SafeTensors model using the automatic eredu
+  default and a cached GGUF explicitly set to eredu, then restore the GGUF to its
+  automatic llama.cpp default. Confirm switching engines does not download weights.
+  With a cached eredu vision model, send image attachments of different sizes and
+  check prompt usage against eredu's prepared-input model-position count. Confirm
+  that text plus media consumes the configured context budget, including rejection
+  of an oversized input, and that image_token_estimate does not change that count.
+  Skip these image checks explicitly if no compatible cached vision model exists.
+  Inspect the eredu inference response log for memory_forecast on ordinary and,
+  when an already-cached compatible drafter is available, speculative requests.
+  Confirm the forecast uses the actual input/output budget and preserves unknown
+  bounds. A forecast error must be diagnostic only, allowing valid generation to
+  continue. Record unavailable log access or draft models as skipped checks.
+  Repeat a request with a cached mixed-precision GGUF and inspect the loaded
+  forecasts before and after warm-up. Retained parameter conversions may increase
+  residency and survive request reset; distinguish them from the allocator cache.
+  Do not infer a memory limit from the 256 MiB allocator-cache ceiling or checkpoint
+  size. Skip this comparison if no suitable checkpoint or forecast log is available.
+  Run the same tool round trip with both legacy and GOOSE_STATE_MACHINE=1 sessions.
 
   ## Understanding First-Person Integration Testing
   This is a crucial distinction - as a running goose instance, you are testing yourself using your own capabilities.

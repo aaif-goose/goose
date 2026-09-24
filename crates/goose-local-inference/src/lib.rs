@@ -8,16 +8,14 @@ pub mod prompt_template;
 pub mod provider_utils;
 
 mod backend;
+mod eredu;
 #[cfg(feature = "hf-hub")]
 pub mod hf_models;
 mod llamacpp;
 #[cfg(feature = "hf-hub")]
 pub mod management;
-mod mlx;
 pub mod model;
 pub(crate) mod multimodal;
-#[cfg(feature = "mlx")]
-mod native_tool_parsing;
 pub(crate) mod thinking_output;
 mod tool_emulation;
 mod tool_parsing;
@@ -26,6 +24,7 @@ use anyhow::{bail, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
 use backend::{BackendLoadedModel, LocalInferenceBackend};
+use eredu::{EreduBackend, EREDU_BACKEND_ID};
 use goose_provider_types::base::{MessageStream, Provider, ProviderDescriptor, ProviderMetadata};
 use goose_provider_types::conversation::message::{
     Message, MessageContent, SystemNotificationType,
@@ -36,7 +35,6 @@ use goose_provider_types::images::ImageFormat;
 use goose_provider_types::model::ModelConfig;
 use goose_provider_types::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
 use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
-use mlx::{MlxBackend, MLX_BACKEND_ID};
 use model::ChatTemplate;
 use rmcp::model::Tool;
 use serde_json::{json, Value};
@@ -76,6 +74,7 @@ struct ModelCacheKey {
     backend_id: &'static str,
     model_id: String,
     chat_template: ChatTemplate,
+    draft_model_path: Option<PathBuf>,
 }
 
 impl ModelCacheKey {
@@ -83,11 +82,13 @@ impl ModelCacheKey {
         backend_id: &'static str,
         model_id: impl Into<String>,
         chat_template: ChatTemplate,
+        draft_model_path: Option<PathBuf>,
     ) -> Self {
         Self {
             backend_id,
             model_id: model_id.into(),
             chat_template,
+            draft_model_path,
         }
     }
 }
@@ -115,10 +116,10 @@ impl InferenceRuntime {
             return Ok(runtime);
         }
         let llamacpp_backend: Arc<dyn LocalInferenceBackend> = Arc::new(LlamaCppBackend::new()?);
-        let mlx_backend: Arc<dyn LocalInferenceBackend> = Arc::new(MlxBackend::new());
+        let eredu_backend: Arc<dyn LocalInferenceBackend> = Arc::new(EreduBackend::new());
         let mut backends = HashMap::new();
         backends.insert(LLAMACPP_BACKEND_ID, llamacpp_backend);
-        backends.insert(MLX_BACKEND_ID, mlx_backend);
+        backends.insert(EREDU_BACKEND_ID, eredu_backend);
         let runtime = Arc::new(Self {
             models: StdMutex::new(HashMap::new()),
             cold_load_lock: Mutex::new(()),
@@ -170,6 +171,7 @@ impl InferenceRuntime {
         &self,
         model_id: &str,
         chat_template: &ChatTemplate,
+        backend_id: Option<&str>,
     ) -> Option<ResolvedModelPaths> {
         let slots = {
             let map = self.models.lock().expect("model cache lock poisoned");
@@ -181,7 +183,11 @@ impl InferenceRuntime {
         for slot in slots {
             let state = slot.state.lock().await;
             if let ModelSlotState::Loaded { resolved, .. } = &*state {
-                return Some(resolved.as_ref().clone());
+                if selected_backend(&resolved.model_path, backend_id).ok()
+                    == Some(key_backend(&resolved.backend_id))
+                {
+                    return Some(resolved.as_ref().clone());
+                }
             }
         }
         None
@@ -256,7 +262,31 @@ pub(crate) struct ResolvedModelPaths {
 
 struct ExplicitModelPath {
     model_path: PathBuf,
-    backend_id: &'static str,
+}
+
+fn key_backend(id: &Option<String>) -> &str {
+    match id.as_deref() {
+        Some("mlx") => EREDU_BACKEND_ID,
+        Some(id) => id,
+        None => LLAMACPP_BACKEND_ID,
+    }
+}
+
+fn selected_backend(path: &Path, requested: Option<&str>) -> Result<&'static str> {
+    let gguf = has_extension(path, "gguf");
+    match requested {
+        None => Ok(if gguf {
+            LLAMACPP_BACKEND_ID
+        } else {
+            EREDU_BACKEND_ID
+        }),
+        Some("eredu" | "mlx") => Ok(EREDU_BACKEND_ID),
+        Some("llamacpp") if gguf => Ok(LLAMACPP_BACKEND_ID),
+        Some("llamacpp") => {
+            bail!("llama.cpp requires a GGUF checkpoint; use eredu for SafeTensors")
+        }
+        Some(id) => bail!("Unknown local inference backend '{id}'"),
+    }
 }
 
 fn has_extension(path: &Path, extension: &str) -> bool {
@@ -265,8 +295,12 @@ fn has_extension(path: &Path, extension: &str) -> bool {
         .is_some_and(|value| value.eq_ignore_ascii_case(extension))
 }
 
-fn is_mlx_model_directory(path: &Path) -> Result<bool> {
-    if !path.join("config.json").is_file() || !path.join("tokenizer.json").is_file() {
+fn is_safetensors_model_directory(path: &Path) -> Result<bool> {
+    if !path.join("config.json").is_file()
+        || !["tokenizer.json", "tokenizer.model", "spiece.model"]
+            .iter()
+            .any(|name| path.join(name).is_file())
+    {
         return Ok(false);
     }
 
@@ -289,10 +323,7 @@ fn explicit_model_path(model_id: &str) -> Result<Option<ExplicitModelPath>> {
     }
 
     if path.is_file() && has_extension(&path, "gguf") {
-        return Ok(Some(ExplicitModelPath {
-            model_path: path,
-            backend_id: LLAMACPP_BACKEND_ID,
-        }));
+        return Ok(Some(ExplicitModelPath { model_path: path }));
     }
 
     let mlx_directory = if path.is_dir() {
@@ -303,18 +334,17 @@ fn explicit_model_path(model_id: &str) -> Result<Option<ExplicitModelPath>> {
         None
     };
     if let Some(directory) = mlx_directory {
-        if is_mlx_model_directory(directory)? {
-            mlx::validate_model_directory(directory)
+        if is_safetensors_model_directory(directory)? {
+            eredu::validate_model_directory(directory)
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             return Ok(Some(ExplicitModelPath {
                 model_path: directory.to_path_buf(),
-                backend_id: MLX_BACKEND_ID,
             }));
         }
     }
 
     bail!(
-        "Unsupported local model path '{}': expected a GGUF file or an MLX directory containing config.json, tokenizer.json, and SafeTensors weights",
+        "Unsupported local model path '{}': expected a GGUF file or a SafeTensors directory with configuration and tokenizer files",
         path.display()
     )
 }
@@ -364,7 +394,11 @@ async fn resolve_loaded_model_path(model_id: &str) -> Result<Option<ResolvedMode
     };
     let mut settings = config_resolver::model_settings(model_id)?;
     let Some(mut resolved) = runtime
-        .loaded_model_paths(model_id, &settings.chat_template)
+        .loaded_model_paths(
+            model_id,
+            &settings.chat_template,
+            settings.backend_id.as_deref(),
+        )
         .await
     else {
         return Ok(None);
@@ -399,12 +433,13 @@ async fn resolve_model_path(model_id: &str) -> Result<Option<ResolvedModelPaths>
         };
         settings.draft_model = draft_model;
 
+        let backend_id = selected_backend(&explicit.model_path, settings.backend_id.as_deref())?;
         return Ok(Some(ResolvedModelPaths {
             model_path: explicit.model_path,
             context_limit: settings.context_size.unwrap_or(0) as usize,
             settings,
             mmproj_path: None,
-            backend_id: Some(explicit.backend_id.to_string()),
+            backend_id: Some(backend_id.to_string()),
             draft_model_path,
         }));
     }
@@ -437,12 +472,13 @@ async fn resolve_model_path(model_id: &str) -> Result<Option<ResolvedModelPaths>
         };
         settings.draft_model = draft_model;
 
+        let backend_id = selected_backend(&cached.model_path, settings.backend_id.as_deref())?;
         Some(ResolvedModelPaths {
             model_path: cached.model_path.clone(),
             context_limit: settings.context_size.unwrap_or(0) as usize,
             settings,
             mmproj_path: cached.mmproj_path.clone(),
-            backend_id: Some(cached.backend_id.clone()),
+            backend_id: Some(backend_id.to_string()),
             draft_model_path,
         })
     };
@@ -809,6 +845,7 @@ impl Provider for LocalInferenceProvider {
             backend.id(),
             model_config.model_name.clone(),
             model_settings.chat_template.clone(),
+            resolved.draft_model_path.clone(),
         );
         let model_slot = self.runtime.get_or_create_model_slot(cache_key.clone());
         let runtime = self.runtime.clone();
@@ -1035,6 +1072,59 @@ impl Provider for LocalInferenceProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backend_selection_is_independent_of_checkpoint_identity() {
+        let gguf = Path::new("model.GGUF");
+        let safetensors = Path::new("model-snapshot");
+        assert_eq!(selected_backend(gguf, None).unwrap(), "llamacpp");
+        assert_eq!(selected_backend(safetensors, None).unwrap(), "eredu");
+        assert_eq!(selected_backend(gguf, Some("eredu")).unwrap(), "eredu");
+        assert_eq!(selected_backend(safetensors, Some("mlx")).unwrap(), "eredu");
+        assert!(selected_backend(safetensors, Some("llamacpp")).is_err());
+        assert!(selected_backend(gguf, Some("unknown")).is_err());
+    }
+
+    #[tokio::test]
+    async fn loaded_paths_do_not_override_a_changed_backend() {
+        struct Loaded;
+        impl BackendLoadedModel for Loaded {
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        }
+        let runtime = InferenceRuntime {
+            models: StdMutex::new(HashMap::new()),
+            cold_load_lock: Mutex::new(()),
+            backends: HashMap::new(),
+        };
+        let key = ModelCacheKey::new(
+            "llamacpp",
+            "owner/model:Q4_K_M",
+            ChatTemplate::Embedded,
+            None,
+        );
+        let slot = runtime.get_or_create_model_slot(key);
+        *slot.state.lock().await = ModelSlotState::Loaded {
+            model: Box::new(Loaded),
+            resolved: Box::new(ResolvedModelPaths {
+                model_path: "model.gguf".into(),
+                context_limit: 0,
+                settings: model::ModelSettings::default(),
+                mmproj_path: None,
+                backend_id: Some("llamacpp".into()),
+                draft_model_path: None,
+            }),
+        };
+        assert!(runtime
+            .loaded_model_paths("owner/model:Q4_K_M", &ChatTemplate::Embedded, None)
+            .await
+            .is_some());
+        assert!(runtime
+            .loaded_model_paths("owner/model:Q4_K_M", &ChatTemplate::Embedded, Some("eredu"))
+            .await
+            .is_none());
+    }
 
     #[test]
     fn converts_marker_in_string_content_to_media_marker_part() {

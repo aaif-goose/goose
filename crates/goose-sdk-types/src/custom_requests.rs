@@ -2087,6 +2087,8 @@ pub struct LocalInferenceModelsListResponse {
 pub struct LocalInferenceModelDownloadRequest {
     pub spec: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_id: Option<String>,
@@ -2164,6 +2166,10 @@ pub struct LocalInferenceModelSettingsReadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LocalInferenceModelSettingsReadResponse {
     pub settings: LocalInferenceModelSettingsDto,
+    #[serde(default)]
+    pub default_backend: String,
+    #[serde(default)]
+    pub available_backends: Vec<String>,
 }
 
 /// Update the sampling settings for a local inference model.
