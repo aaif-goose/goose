@@ -255,6 +255,30 @@ fn args_to_input_value(arguments: Option<JsonObject>) -> Value {
     Value::Object(arguments.unwrap_or_default())
 }
 
+/// A conversation-level pass removes trailing assistant messages, but a
+/// conversation can still end with a message whose blocks all format to
+/// nothing on the wire (tool confirmations, system notifications), leaving
+/// the request ending with an assistant message. goose never uses assistant
+/// prefill intentionally, and providers that do not support it (e.g.
+/// Databricks-hosted Claude) reject such requests with a 400, so append a
+/// continuation user message instead.
+fn ensure_no_trailing_assistant(messages: &mut Vec<Value>) {
+    if messages.last().and_then(|m| m.get(ROLE_FIELD)) == Some(&json!(ASSISTANT_ROLE)) {
+        tracing::warn!(
+            "conversation formatted to end with an assistant message; appending continuation user message"
+        );
+        messages.push(json!({
+            ROLE_FIELD: USER_ROLE,
+            CONTENT_FIELD: [{
+                TYPE_FIELD: TEXT_TYPE,
+                TEXT_TYPE: CONTINUATION_USER_MESSAGE
+            }]
+        }));
+    }
+}
+
+const CONTINUATION_USER_MESSAGE: &str = "Continue.";
+
 /// Convert internal Message format to Anthropic's API message specification
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
     format_messages_with_options(messages, &AnthropicFormatOptions::default())
@@ -910,7 +934,8 @@ pub fn create_request_for_model(
     options: AnthropicFormatOptions,
 ) -> Result<Value> {
     let options = options.for_model(model_config);
-    let anthropic_messages = format_messages_with_options(messages, &options);
+    let mut anthropic_messages = format_messages_with_options(messages, &options);
+    ensure_no_trailing_assistant(&mut anthropic_messages);
     let tool_specs = format_tools(tools, &options);
     let system_spec = format_system(system, &options);
 
@@ -1562,6 +1587,42 @@ mod tests {
         assert_eq!(spec[1]["content"][0]["text"], "Hi there");
         assert_eq!(spec[2]["role"], "user");
         assert_eq!(spec[2]["content"][0]["text"], "How are you?");
+    }
+
+    #[test]
+    fn trailing_assistant_message_gets_user_continuation() -> Result<()> {
+        let model_config = ModelConfig::new("claude-sonnet-4-5");
+        let messages = vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ];
+
+        let request = create_request_with_default_options(&model_config, "system", &messages, &[])?;
+
+        let spec = request["messages"].as_array().unwrap();
+        assert_eq!(spec.last().unwrap()["role"], "user");
+        assert_eq!(spec.last().unwrap()["content"][0]["text"], "Continue.");
+        Ok(())
+    }
+
+    #[test]
+    fn trailing_user_message_that_formats_to_nothing_gets_user_continuation() -> Result<()> {
+        let model_config = ModelConfig::new("claude-sonnet-4-5");
+        let messages = vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+            Message::user().with_content(MessageContentBlock::system_notification(
+                crate::conversation::message::SystemNotificationType::InlineMessage,
+                "notification only",
+            )),
+        ];
+
+        let request = create_request_with_default_options(&model_config, "system", &messages, &[])?;
+
+        let spec = request["messages"].as_array().unwrap();
+        assert_eq!(spec.last().unwrap()["role"], "user");
+        assert_eq!(spec.last().unwrap()["content"][0]["text"], "Continue.");
+        Ok(())
     }
 
     #[test]
