@@ -16,6 +16,7 @@ activities:
   - Test delegate tool for task delegation (sync and async)
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
+  - Validate persistent provider enablement and upgrade compatibility
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Test error boundaries including nested delegation prevention
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, provider-enablement, acp-effort, advanced"
 
   - key: test_depth
     input_type: string
@@ -431,6 +432,23 @@ prompt: |
      `reasoning_content` on subsequent tool-result turns. Never log API keys.
 
   Log results to: {{ workspace_dir }}/zai_coding_plan.md
+  {% endif %}
+
+  {% if test_phases == "all" or "provider-enablement" in test_phases %}
+  ## Provider Enablement
+
+  Use an isolated GOOSE_PATH_ROOT; never change the user's real provider settings.
+  1. Run `cargo test -p goose` and the Desktop test suite (`cd ui/desktop && pnpm test:run`).
+  2. Verify legacy provider choices and selected model survive migration, while a fresh
+     installation does not enable default-only providers.
+  3. Disable Bedrock, reload the provider list, and restart Goose. It must stay disabled
+     even when its credentials are present. Re-enable it and verify its model and saved
+     credentials were preserved.
+  4. Verify disabled providers remain accessible in Configure Providers but are omitted
+     from Switch Models and recipe model choices. Existing sessions retain their provider.
+  5. Verify a failed settings write is shown to the user and does not claim a successful toggle.
+
+  Log results to: {{ workspace_dir }}/provider_enablement.md
   {% endif %}
 
   {% if test_phases == "all" or "acp-effort" in test_phases %}

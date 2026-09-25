@@ -2919,7 +2919,7 @@
     "defaultMessage": "Möchten Sie die Konfigurationsparameter für {providerName} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Anbieter löschen"
+    "defaultMessage": "Konfiguration löschen"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Anbieter aktivieren"
@@ -4211,8 +4211,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Erforderliche Parameter fehlen"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Anbieter {name} ist konfiguriert"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Anbieter {name} ist aktiviert"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Vorhandenes hinzufügen"
@@ -4660,6 +4660,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Veraltet — verwenden Sie stattdessen {replacement}."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Deaktivieren"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Aktivieren"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Einrichtung oder Anmeldung erforderlich"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Aus der Modellauswahl ausblenden und gespeicherte Zugangsdaten und Einstellungen behalten"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACP-Adapter gefunden"

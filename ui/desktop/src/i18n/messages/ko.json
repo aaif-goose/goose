@@ -2923,7 +2923,7 @@
     "defaultMessage": "{providerName}의 구성 매개변수를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "제공업체 삭제"
+    "defaultMessage": "설정 삭제"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "제공업체 활성화"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "필수 매개변수가 누락되었습니다."
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} 제공업체가 구성되었습니다."
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} 제공자가 활성화되어 있습니다"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "기존 서브레시피 추가"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "더 이상 사용되지 않습니다. 대신 {replacement}을(를) 사용하세요."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "비활성화"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "활성화"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "설정 또는 로그인이 필요합니다"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "모델 선택 목록에서 숨기고 저장된 인증 정보와 설정은 유지합니다"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACP 어댑터를 찾았습니다"

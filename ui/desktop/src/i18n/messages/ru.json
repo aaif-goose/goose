@@ -2923,7 +2923,7 @@
     "defaultMessage": "Удалить параметры конфигурации для {providerName}? Это действие нельзя отменить."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Удалить провайдера"
+    "defaultMessage": "Удалить конфигурацию"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Включить провайдера"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Отсутствуют обязательные параметры"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Провайдер {name} настроен"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Провайдер {name} включён"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Добавить существующий"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Устарел — используйте вместо него {replacement}."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Отключить"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Включить"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Требуется настройка или вход"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Скрыть из списка моделей и сохранить учётные данные и настройки"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Адаптер ACP найден"

@@ -488,7 +488,7 @@ export const SwitchModelModal = ({
     (async () => {
       try {
         const providersResponse = await acpListProviderDetails();
-        const activeProviders = providersResponse.filter((provider) => provider.is_configured);
+        const activeProviders = providersResponse.filter((provider) => provider.is_enabled);
         setActiveProvidersList(activeProviders);
         setProviderOptions([
           ...activeProviders.map(({ metadata, name }) => ({
