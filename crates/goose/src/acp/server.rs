@@ -1357,6 +1357,7 @@ impl GooseAcpAgent {
         message
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_message_content(
         &self,
         content_item: &MessageContent,
@@ -1364,8 +1365,21 @@ impl GooseAcpAgent {
         session_id: &SessionId,
         target: &SessionAgentTarget,
         tool_requests: &HashMap<String, ToolRequest>,
+        echoed_prompt_id: Option<&str>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
+        // The slash-command branches of `Agent::reply` yield the user's own prompt
+        // back into the reply stream, which the plain prompt path never does. The
+        // client rendered that prompt when it sent it, so forwarding the echo as a
+        // `user_message_chunk` shows the message twice. The match is by id because
+        // `convert_acp_prompt_to_message` rewrites the text it was given.
+        if echoed_prompt_id.is_some()
+            && message.role == Role::User
+            && message.id.as_deref() == echoed_prompt_id
+        {
+            return Ok(());
+        }
+
         let role = &message.role;
 
         match content_item {
@@ -2116,6 +2130,7 @@ impl GooseAcpAgent {
         Ok(session)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn forward_agent_stream(
         &self,
         cx: &ConnectionTo<Client>,
@@ -2124,6 +2139,7 @@ impl GooseAcpAgent {
         agent: &Arc<Agent>,
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
+        echoed_prompt_id: Option<&str>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
         let mut was_cancelled = false;
         let mut output_token_limit_reached = false;
@@ -2169,6 +2185,7 @@ impl GooseAcpAgent {
                             acp_session_id,
                             &target,
                             &tool_requests,
+                            echoed_prompt_id,
                             cx,
                         )
                         .await?;
@@ -2312,7 +2329,13 @@ impl GooseAcpAgent {
             return Err(error);
         }
 
-        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        // Slash commands make the agent yield the user's own prompt back into the
+        // reply stream. Tag the prompt here, the way the steer path tags its own
+        // message, so the echo can be recognised and dropped before it leaves the
+        // server as a `user_message_chunk` the client already rendered locally.
+        let prompt_message_id = format!("prompt_{}", Uuid::new_v4());
+        let user_message =
+            Self::convert_acp_prompt_to_message(&args.prompt).with_id(prompt_message_id.clone());
         let use_state_machine = use_state_machine_from_meta(args.meta.as_ref());
         let session_config = SessionConfig {
             id: session_id.clone(),
@@ -2346,6 +2369,7 @@ impl GooseAcpAgent {
                 &agent,
                 &cancel_token,
                 stream,
+                Some(prompt_message_id.as_str()),
             )
             .await;
         self.clear_active_run(&session_id, &run_id).await;
