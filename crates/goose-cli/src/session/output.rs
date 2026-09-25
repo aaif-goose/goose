@@ -555,11 +555,17 @@ pub fn goose_mode_message(text: &str) {
     println!("\n{} {}", accent("mode:"), text);
 }
 
+/// Any value of the environment variable turns thinking output on, which is what the
+/// documentation promises; the configured boolean is read only when it is not set.
+fn thinking_enabled(config: &Config) -> bool {
+    std::env::var_os("GOOSE_CLI_SHOW_THINKING").is_some()
+        || config
+            .get_param::<bool>("GOOSE_CLI_SHOW_THINKING")
+            .unwrap_or(false)
+}
+
 fn should_show_thinking() -> bool {
-    Config::global()
-        .get_param::<bool>("GOOSE_CLI_SHOW_THINKING")
-        .unwrap_or(false)
-        && std::io::stdout().is_terminal()
+    thinking_enabled(Config::global()) && std::io::stdout().is_terminal()
 }
 
 fn render_thinking(text: &str, theme: Theme) {
@@ -1737,6 +1743,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::env;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn recent_lines_accumulate_across_updates() {
@@ -2046,5 +2053,51 @@ mod tests {
             json!({"top_up_url": "https://router.tetrate.ai/billing"}),
         );
         assert_eq!(get_credits_top_up_url(&message), None);
+    }
+
+    fn config_with(contents: &str) -> (Config, NamedTempFile, NamedTempFile) {
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        std::fs::write(config_file.path(), contents).unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        (config, config_file, secrets_file)
+    }
+
+    #[test]
+    fn any_environment_value_shows_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some("1"))]);
+        let (config, _config_file, _secrets_file) = config_with("");
+
+        assert!(thinking_enabled(&config));
+    }
+
+    #[test]
+    fn empty_environment_value_shows_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some(""))]);
+        let (config, _config_file, _secrets_file) = config_with("");
+
+        assert!(thinking_enabled(&config));
+    }
+
+    #[test]
+    fn configured_value_is_used_when_the_variable_is_unset() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", None::<&str>)]);
+
+        let (enabled, _c1, _s1) = config_with("GOOSE_CLI_SHOW_THINKING: true\n");
+        assert!(thinking_enabled(&enabled));
+
+        let (disabled, _c2, _s2) = config_with("GOOSE_CLI_SHOW_THINKING: false\n");
+        assert!(!thinking_enabled(&disabled));
+
+        let (unset, _c3, _s3) = config_with("");
+        assert!(!thinking_enabled(&unset));
+    }
+
+    #[test]
+    fn thinking_output_needs_a_terminal() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some("1"))]);
+
+        assert_eq!(should_show_thinking(), std::io::stdout().is_terminal());
     }
 }
