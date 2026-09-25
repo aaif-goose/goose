@@ -404,7 +404,6 @@ mod tests {
     use crate::agents::{AgentConfig, GoosePlatform};
     use crate::config::permission::PermissionManager;
     use crate::config::GooseMode;
-    use crate::execution::SessionExecutionMode;
     use crate::session::SessionManager;
 
     use super::AgentManager;
@@ -420,26 +419,6 @@ mod tests {
             GoosePlatform::GooseDesktop,
         );
         AgentManager::new(agent_config, Some(100)).await.unwrap()
-    }
-
-    #[test]
-    fn test_execution_mode_constructors() {
-        assert_eq!(
-            SessionExecutionMode::chat(),
-            SessionExecutionMode::Interactive
-        );
-        assert_eq!(
-            SessionExecutionMode::scheduled(),
-            SessionExecutionMode::Background
-        );
-
-        let parent = "parent-123".to_string();
-        assert_eq!(
-            SessionExecutionMode::task(parent.clone()),
-            SessionExecutionMode::SubTask {
-                parent_session: parent
-            }
-        );
     }
 
     #[tokio::test]

@@ -36,9 +36,6 @@ pub const CODEX_KNOWN_MODELS: &[&str] = &[
 ];
 pub const CODEX_DOC_URL: &str = "https://developers.openai.com/codex/cli";
 
-/// Valid reasoning effort levels for Codex
-pub const CODEX_REASONING_LEVELS: &[&str] = &["none", "low", "medium", "high", "xhigh"];
-
 /// Spawns the Codex CLI (`codex exec`) as a one-shot child process per turn.
 /// Text prompt is piped via stdin (`-`), images are passed as temporary files
 /// via the `-i` flag. Output is JSONL on stdout (`--json`), with events like
@@ -83,15 +80,6 @@ impl CodexProvider {
             ThinkingEffort::High => Some("high".to_string()),
             ThinkingEffort::Max => Some("xhigh".to_string()),
         }
-    }
-
-    #[cfg(test)]
-    fn supports_reasoning_effort(_model_name: &str, reasoning_effort: &str) -> bool {
-        if !CODEX_REASONING_LEVELS.contains(&reasoning_effort) {
-            return false;
-        }
-
-        true
     }
 
     /// Apply permission flags based on GooseMode
@@ -1048,30 +1036,6 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
         let lines: Vec<String> = vec![];
         let result = provider.parse_response(&lines);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_reasoning_level_validation() {
-        assert!(CODEX_REASONING_LEVELS.contains(&"none"));
-        assert!(CODEX_REASONING_LEVELS.contains(&"low"));
-        assert!(CODEX_REASONING_LEVELS.contains(&"medium"));
-        assert!(CODEX_REASONING_LEVELS.contains(&"high"));
-        assert!(CODEX_REASONING_LEVELS.contains(&"xhigh"));
-        assert!(!CODEX_REASONING_LEVELS.contains(&"minimal"));
-        assert!(!CODEX_REASONING_LEVELS.contains(&"invalid"));
-    }
-
-    #[test]
-    fn test_reasoning_effort_support_by_model() {
-        assert!(CodexProvider::supports_reasoning_effort("gpt-5.2", "none"));
-        assert!(CodexProvider::supports_reasoning_effort(
-            "gpt-5.2-codex",
-            "none"
-        ));
-        assert!(CodexProvider::supports_reasoning_effort(
-            "gpt-5.2-codex",
-            "xhigh"
-        ));
     }
 
     #[test]
