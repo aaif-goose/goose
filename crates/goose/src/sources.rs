@@ -324,22 +324,6 @@ fn builtin_skill_entry(mut source: SourceEntry) -> SourceEntry {
     source
 }
 
-fn agent_base_dir(global: bool, project_dir: Option<&str>) -> Result<PathBuf, Error> {
-    if global {
-        Ok(Paths::agents_dir())
-    } else {
-        let project_dir = project_dir.ok_or_else(|| {
-            Error::invalid_params().data("projectDir is required when global is false")
-        })?;
-        if project_dir.trim().is_empty() {
-            return Err(
-                Error::invalid_params().data("projectDir must not be empty when global is false")
-            );
-        }
-        Ok(Path::new(project_dir).join(".agents").join("agents"))
-    }
-}
-
 fn validate_agent_name(name: &str) -> Result<(), Error> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -623,10 +607,13 @@ fn create_agent_source(
     content: &str,
     properties: HashMap<String, serde_json::Value>,
     global: bool,
-    project_dir: Option<&str>,
 ) -> Result<SourceEntry, Error> {
+    if !global {
+        return Err(Error::invalid_params()
+            .data("Project-scoped Agent creation and import are not supported"));
+    }
     validate_agent_name(name)?;
-    let base = agent_base_dir(global, project_dir)?;
+    let base = Paths::agents_dir();
     let slug = slugify_agent_name(name);
     let mut file_path = base.join(format!("{slug}.md"));
     if file_path.exists() {
@@ -686,7 +673,7 @@ pub fn create_source(
 ) -> Result<SourceEntry, Error> {
     require_mutable_type(source_type)?;
     if source_type == SourceType::Agent {
-        return create_agent_source(name, description, content, properties, global, project_dir);
+        return create_agent_source(name, description, content, properties, global);
     }
 
     match source_type {
@@ -1198,15 +1185,8 @@ pub fn import_sources(
                     .or_insert_with(|| value.clone());
             }
         }
-        return create_agent_source(
-            &name,
-            &description,
-            &content,
-            properties,
-            global,
-            project_dir,
-        )
-        .map(|source| vec![source]);
+        return create_agent_source(&name, &description, &content, properties, global)
+            .map(|source| vec![source]);
     }
 
     match source_type {
