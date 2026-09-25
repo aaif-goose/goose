@@ -4,7 +4,6 @@ use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::python_session::PythonSessionClient;
 use goose::agents::ToolCallContext;
 use goose::config::GooseMode;
-use goose::context_mgmt::CONVERSATION_CONTINUATION_TEXT;
 use goose::conversation::message::Message;
 use goose::session::SessionType;
 use serde_json::json;
@@ -52,6 +51,20 @@ async fn setup() -> (
         .unwrap();
     let client = PythonSessionClient::new(context.clone()).unwrap();
     (client, session.id, temp_dir, context)
+}
+
+/// Records a `python` call the agent no longer sees, as compaction or a tool-pair
+/// summary leaves it.
+async fn hide_python_call(context: &PlatformExtensionContext, session_id: &str) {
+    let call = rmcp::model::CallToolRequestParams::new("python");
+    let hidden = Message::assistant()
+        .with_tool_request("call_hidden", Ok(call))
+        .user_only();
+    context
+        .session_manager
+        .add_message(session_id, &hidden)
+        .await
+        .unwrap();
 }
 
 fn result_text(result: &rmcp::model::CallToolResult) -> String {
@@ -165,14 +178,9 @@ async fn reused_session_id_does_not_inherit_the_deleted_namespace() {
         return;
     }
     let (client, session_id, dir, context) = setup().await;
-    let compacted = Message::user().with_text(CONVERSATION_CONTINUATION_TEXT);
 
     run_cell(&client, &session_id, "secret_of_deleted = 1").await;
-    context
-        .session_manager
-        .add_message(&session_id, &compacted)
-        .await
-        .unwrap();
+    hide_python_call(&context, &session_id).await;
     let listing = client.get_moim(&session_id).await.unwrap_or_default();
     assert!(listing.contains("secret_of_deleted"), "got: {listing}");
 
@@ -192,15 +200,41 @@ async fn reused_session_id_does_not_inherit_the_deleted_namespace() {
         .await
         .unwrap();
     assert_eq!(reused.id, session_id, "the newest id is handed out again");
-    context
-        .session_manager
-        .add_message(&reused.id, &compacted)
-        .await
-        .unwrap();
+    hide_python_call(&context, &reused.id).await;
 
     let moim = client.get_moim(&reused.id).await.unwrap_or_default();
     assert!(
         !moim.contains("secret_of_deleted"),
         "the deleted session's variables leaked into its successor: {moim}"
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn listing_follows_once_a_python_call_is_hidden_from_the_agent() {
+    if !python_available() {
+        eprintln!("skipping: python3 not available");
+        return;
+    }
+    let (client, session_id, _dir, context) = setup().await;
+
+    run_cell(&client, &session_id, "summarized_away = [1, 2, 3]").await;
+    let call = rmcp::model::CallToolRequestParams::new("python");
+    let visible = Message::assistant().with_tool_request("call_visible", Ok(call));
+    context
+        .session_manager
+        .add_message(&session_id, &visible)
+        .await
+        .unwrap();
+    assert!(
+        client.get_moim(&session_id).await.is_none(),
+        "no listing while every python call is still visible"
+    );
+
+    hide_python_call(&context, &session_id).await;
+    let listing = client
+        .get_moim(&session_id)
+        .await
+        .expect("a hidden python call brings the namespace listing");
+    assert!(listing.contains("summarized_away"), "got: {listing}");
 }

@@ -30,7 +30,7 @@ pub(crate) fn tool_pair_summarization_enabled() -> bool {
         .unwrap_or(false)
 }
 
-pub const CONVERSATION_CONTINUATION_TEXT: &str =
+const CONVERSATION_CONTINUATION_TEXT: &str =
     "Your context was compacted. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
@@ -44,23 +44,6 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
     "Your context was compacted at the user's request. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
-
-/// Compaction merges the summary and the continuation into one assistant
-/// message, so the continuation is matched as its own text block.
-pub fn is_compaction_continuation(message: &Message) -> bool {
-    message
-        .content
-        .iter()
-        .filter_map(|block| block.as_text())
-        .any(|text| {
-            matches!(
-                text,
-                CONVERSATION_CONTINUATION_TEXT
-                    | TOOL_LOOP_CONTINUATION_TEXT
-                    | MANUAL_COMPACT_CONTINUATION_TEXT
-            )
-        })
-}
 
 pub struct CompactionResult {
     pub conversation: Conversation,
@@ -971,10 +954,6 @@ mod tests {
         assert!(
             continuation.contains(CONVERSATION_CONTINUATION_TEXT),
             "a trailing turn-context event must not demote the compaction to a tool-loop continuation"
-        );
-        assert!(
-            compacted.messages().iter().any(is_compaction_continuation),
-            "the merged summary + continuation message must still register as a compaction"
         );
     }
 

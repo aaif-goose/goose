@@ -88,7 +88,8 @@ pub struct PythonSessionClient {
     context: PlatformExtensionContext,
     sessions: Arc<Sessions>,
     ns_cache: Mutex<HashMap<String, String>>,
-    compacted: Mutex<HashSet<String>>,
+    /// Sessions whose agent no longer sees some of its `python` calls.
+    hidden_history: Mutex<HashSet<String>>,
     no_python_history: Mutex<HashSet<String>>,
     /// `created_at` (microseconds) of the session each id last referred to.
     incarnations: Mutex<HashMap<String, i64>>,
@@ -150,7 +151,7 @@ impl PythonSessionClient {
             context,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             ns_cache: Mutex::new(HashMap::new()),
-            compacted: Mutex::new(HashSet::new()),
+            hidden_history: Mutex::new(HashSet::new()),
             no_python_history: Mutex::new(HashSet::new()),
             incarnations: Mutex::new(HashMap::new()),
             pending_dir: Mutex::new(HashMap::new()),
@@ -556,13 +557,16 @@ impl PythonSessionClient {
         }
         if earlier {
             self.ns_cache.lock().unwrap().remove(&session.id);
-            self.compacted.lock().unwrap().remove(&session.id);
+            self.hidden_history.lock().unwrap().remove(&session.id);
             self.no_python_history.lock().unwrap().remove(&session.id);
         }
     }
 
-    async fn session_was_compacted(&self, session_id: &str) -> bool {
-        if self.compacted.lock().unwrap().contains(session_id) {
+    /// Compaction and tool-pair summarization both keep the messages they replace
+    /// but hide them from the agent, so a hidden `python` call means the model no
+    /// longer sees where some of its variables came from.
+    async fn python_calls_hidden(&self, session_id: &str) -> bool {
+        if self.hidden_history.lock().unwrap().contains(session_id) {
             return true;
         }
         let Ok(session) = self
@@ -577,10 +581,12 @@ impl PythonSessionClient {
             conversation
                 .messages()
                 .iter()
-                .any(crate::context_mgmt::is_compaction_continuation)
+                .filter(|message| !message.metadata.agent_visible)
+                .flat_map(|message| message.content.iter())
+                .any(is_python_call)
         });
         if hit {
-            self.compacted
+            self.hidden_history
                 .lock()
                 .unwrap()
                 .insert(session_id.to_string());
@@ -602,20 +608,12 @@ impl PythonSessionClient {
             .get_session(session_id, true)
             .await
             .ok()?;
-        // Stored names are unprefixed when Developer is the only extension
-        // exposing the tool and prefixed otherwise.
-        let prefixed = format!("{EXTENSION_NAME}__{PYTHON_TOOL_NAME}");
         let has_history = session.conversation.is_some_and(|conversation| {
             conversation
                 .messages()
                 .iter()
                 .flat_map(|message| message.content.iter())
-                .any(|block| {
-                    matches!(block, MessageContent::ToolRequest(request)
-                    if request.tool_call.as_ref().is_ok_and(|call| {
-                        call.name == PYTHON_TOOL_NAME || call.name == prefixed
-                    }))
-                })
+                .any(is_python_call)
         });
         if !has_history {
             self.no_python_history
@@ -686,6 +684,20 @@ fn login_shell_path(_enabled: bool) -> Option<String> {
 /// `SessionManager` reuses a session id after the latest one is deleted, so key
 /// the snapshot on the creation time too; a new session never inherits a deleted
 /// conversation's variables (which could include secrets).
+/// Stored tool names are unprefixed when Developer is the only extension exposing
+/// the tool and prefixed otherwise.
+fn is_python_call(block: &MessageContent) -> bool {
+    matches!(block, MessageContent::ToolRequest(request)
+    if request.tool_call.as_ref().is_ok_and(|call| {
+        call.name == PYTHON_TOOL_NAME
+            || call
+                .name
+                .strip_prefix(EXTENSION_NAME)
+                .and_then(|rest| rest.strip_prefix("__"))
+                == Some(PYTHON_TOOL_NAME)
+    }))
+}
+
 fn snapshot_path(state_dir: &Path, session: &Session) -> PathBuf {
     state_dir.join(format!(
         "{}-{}.pkl",
@@ -782,9 +794,9 @@ impl McpClientTrait for PythonSessionClient {
     }
 
     /// The listing rides in the turn context, so every change to it invalidates the
-    /// provider's prompt cache from that message onward. Before a compaction the model
-    /// still sees its own `python` calls, so the re-anchor is only emitted once history
-    /// has actually been compacted away. A session with neither a live kernel slot
+    /// provider's prompt cache from that message onward. Until compaction or tool-pair
+    /// summarization hides a `python` call, the model still sees its own calls, so the
+    /// re-anchor is only emitted once one has been hidden. A session with neither a live kernel slot
     /// nor a snapshot has no variables to list, but a copied conversation may show
     /// `python` calls whose variables never existed here. A session resumed in a new
     /// process has no kernel yet, so one is restored from the snapshot to list what
@@ -796,7 +808,7 @@ impl McpClientTrait for PythonSessionClient {
         if !self.has_slot(&session) && !has_snapshot {
             return self.fresh_namespace_notice(session_id).await;
         }
-        if !self.session_was_compacted(session_id).await {
+        if !self.python_calls_hidden(session_id).await {
             return None;
         }
 
