@@ -87,7 +87,18 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::claude_acp_inventory()),
         );
-        registry.register::<ClaudeCodeProvider>(true);
+        registry.register_with_inventory::<ClaudeCodeProvider>(
+            true,
+            Some(registrations::cli_agent_inventory(
+                || {
+                    crate::config::Config::global()
+                        .get_claude_code_command()
+                        .unwrap_or_default()
+                        .into()
+                },
+                false,
+            )),
+        );
         registry.register_with_inventory::<CodexAcpProvider>(
             false,
             Some(registrations::codex_acp_inventory()),
@@ -96,10 +107,29 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::copilot_acp_inventory()),
         );
-        registry.register::<CodexProvider>(true);
+        registry.register_with_inventory::<CodexProvider>(
+            true,
+            Some(registrations::cli_agent_inventory(
+                || {
+                    crate::config::Config::global()
+                        .get_codex_command()
+                        .unwrap_or_default()
+                        .into()
+                },
+                false,
+            )),
+        );
         registry.register_with_inventory::<CursorAgentProvider>(
             false,
-            Some(registrations::refresh_only()),
+            Some(registrations::cli_agent_inventory(
+                || {
+                    crate::config::Config::global()
+                        .get_cursor_agent_command()
+                        .unwrap_or_default()
+                        .into()
+                },
+                true,
+            )),
         );
         registry.register_with_inventory::<DatabricksProviderDef>(
             true,
@@ -113,14 +143,25 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::refresh_only()),
         );
-        registry.register::<GeminiCliProvider>(false);
+        registry.register_with_inventory::<GeminiCliProvider>(
+            false,
+            Some(registrations::cli_agent_inventory(
+                || {
+                    crate::config::Config::global()
+                        .get_gemini_cli_command()
+                        .unwrap_or_default()
+                        .into()
+                },
+                false,
+            )),
+        );
         registry.register_with_inventory::<GeminiOAuthProvider>(
             false,
             Some(registrations::gemini_oauth_inventory()),
         );
         registry.register_with_inventory::<GithubCopilotProvider>(
             false,
-            Some(registrations::refresh_only()),
+            Some(registrations::github_copilot_inventory()),
         );
         registry.register::<GondolaProvider>(false);
         registry.register_with_inventory::<GoogleProviderDef>(
