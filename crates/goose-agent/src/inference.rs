@@ -514,6 +514,9 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             }
 
             if ends_with_successful_tool_response(conversation.messages())
+                && !accumulator
+                    .iter()
+                    .any(|message| message.metadata.output_token_limit_reached)
                 && accumulator.iter().all(is_empty_response)
             {
                 let mut message = accumulator
