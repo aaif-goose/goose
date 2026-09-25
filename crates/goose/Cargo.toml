@@ -263,6 +263,7 @@ icu_locale = { version = "=2.1.1", default-features = false }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
+tinfoil = { git = "https://github.com/tinfoilsh/tinfoil-rs", rev = "419248f429e70be36d1080adb8681ea1f992e9d9", version = "0.2.0" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "minwinbase", "sddl", "securitybaseapi", "winbase", "winerror"] }

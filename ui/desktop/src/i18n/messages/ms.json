@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Fail YAML atau JSON anda harus mengikut struktur ini. Medan yang diperlukan ialah: title, description, dan sama ada instructions atau prompt."
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "TEE disahkan"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Klik untuk mengedit"
   },

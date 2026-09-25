@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "YAML 또는 JSON 파일은 이 구조를 따라야 합니다. 필수 필드는 제목, 설명, 지침 또는 프롬프트입니다."
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "검증된 TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "편집하려면 클릭하세요"
   },

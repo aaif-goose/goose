@@ -18,6 +18,7 @@ import ToolCallConfirmation from './ToolCallConfirmation';
 import ElicitationRequest from './ElicitationRequest';
 import MessageCopyLink from './MessageCopyLink';
 import MessageUsageStats from './MessageUsageStats';
+import InferenceSecurityBadge from './InferenceSecurityBadge';
 import { getTextDirection } from '../utils/textDirection';
 import { cn } from '../utils';
 import type { ToolRenderState } from './messageRowContext';
@@ -94,8 +95,16 @@ function GooseMessage({
         })
       : undefined;
 
+  const responseStats = !isStreaming &&
+    (message.metadata.usage || message.metadata.inferenceSecurity === 'attested_tee') && (
+      <div className="flex items-center gap-2 pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+        {message.metadata.usage && <MessageUsageStats usage={message.metadata.usage} />}
+        <InferenceSecurityBadge security={message.metadata.inferenceSecurity} />
+      </div>
+    );
+
   return (
-    <div className="goose-message flex w-[90%] justify-start min-w-0">
+    <div className="goose-message group flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
         {thinkingContent && (
           <ThinkingContent
@@ -127,21 +136,22 @@ function GooseMessage({
 
             {toolRequests.length === 0 && (
               <div className="relative flex items-center justify-between">
-                {!isStreaming && (
-                  <div className="text-xs font-mono text-text-secondary pt-1 transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0">
-                    {timestamp}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="relative">
+                    {!isStreaming && (
+                      <div className="text-xs font-mono text-text-secondary transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0">
+                        {timestamp}
+                      </div>
+                    )}
+                    {message.content.every((content) => content.type === 'text') &&
+                      !isStreaming && (
+                        <div className="absolute left-0 top-0">
+                          <MessageCopyLink text={displayText} contentRef={contentRef} />
+                        </div>
+                      )}
                   </div>
-                )}
-                {message.content.every((content) => content.type === 'text') && !isStreaming && (
-                  <div className="absolute left-0 pt-1">
-                    <MessageCopyLink text={displayText} contentRef={contentRef} />
-                  </div>
-                )}
-                {!isStreaming && message.metadata.usage && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
-                  </div>
-                )}
+                </div>
+                {responseStats}
               </div>
             )}
           </div>
@@ -176,24 +186,27 @@ function GooseMessage({
                 })}
               </div>
               <div className="flex items-center justify-between">
-                <div
-                  className={cn(
-                    'text-xs text-text-secondary pt-1',
-                    message.metadata.usage &&
-                      'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
-                  )}
-                >
-                  {!isStreaming && !hideTimestamp && timestamp}
-                </div>
-                {!isStreaming && message.metadata.usage && (
-                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
-                    <MessageUsageStats usage={message.metadata.usage} />
+                <div className="flex items-center gap-2 pt-1">
+                  <div
+                    className={cn(
+                      'text-xs text-text-secondary',
+                      message.metadata.usage &&
+                        'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
+                    )}
+                  >
+                    {!isStreaming && !hideTimestamp && timestamp}
                   </div>
-                )}
+                </div>
+                {responseStats}
               </div>
             </div>
           </div>
         )}
+
+        {thinkingContent &&
+          !displayText.trim() &&
+          imagePaths.length === 0 &&
+          toolRequests.length === 0 && <div className="flex justify-end">{responseStats}</div>}
 
         {outputTokenLimitReached && (
           <div className="mt-2 flex items-start gap-1.5 text-xs text-text-secondary">

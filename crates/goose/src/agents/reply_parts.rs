@@ -723,6 +723,7 @@ impl Agent {
             Message::new(response.role.clone(), response.created, filtered_content);
         filtered_message.metadata.output_token_limit_reached =
             response.metadata.output_token_limit_reached;
+        filtered_message.metadata.inference_security = response.metadata.inference_security;
 
         // Preserve the ID if it exists
         if let Some(id) = response.id.clone() {

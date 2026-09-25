@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "आपकी YAML या JSON फ़ाइल को इस संरचना का पालन करना चाहिए। आवश्यक फ़ील्ड हैं: शीर्षक, विवरण, और या तो निर्देश या संकेत।"
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "सत्यापित TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "संपादित करने के लिए क्लिक करें"
   },

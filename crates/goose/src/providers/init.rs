@@ -32,6 +32,7 @@ use super::{
     provider_registry::ProviderRegistry,
     snowflake_def::SnowflakeProviderDef,
     tetrate::TetrateProvider,
+    tinfoil::TinfoilProvider,
     xai::XaiProvider,
     xai_oauth::XaiOAuthProvider,
 };
@@ -175,6 +176,8 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<SnowflakeProviderDef>(false);
         registry
             .register_with_inventory::<TetrateProvider>(true, Some(registrations::refresh_only()));
+        registry
+            .register_with_inventory::<TinfoilProvider>(false, Some(registrations::refresh_only()));
         registry.register_with_inventory::<XaiProvider>(false, Some(registrations::refresh_only()));
         registry.register_with_inventory::<XaiOAuthProvider>(
             true,

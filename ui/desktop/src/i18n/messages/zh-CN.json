@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "你的 YAML 或 JSON 文件应遵循此结构。必填字段：title、description，以及 instructions 或 prompt 之一。"
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "已验证的 TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "点击编辑"
   },

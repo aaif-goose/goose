@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "YAML または JSON ファイルはこの構造に従う必要があります。必須フィールドは title、description、および instructions または prompt です。"
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "検証済みTEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "クリックして編集"
   },

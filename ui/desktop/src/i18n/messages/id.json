@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "File YAML atau JSON Anda harus mengikuti struktur ini. Bidang yang diperlukan adalah: title, description, dan salah satu dari instructions atau prompt."
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "TEE terverifikasi"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Klik untuk mengedit"
   },

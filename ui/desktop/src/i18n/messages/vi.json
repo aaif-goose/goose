@@ -1497,6 +1497,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Tệp YAML hoặc JSON của bạn phải tuân theo cấu trúc này. Các trường bắt buộc là: title, description, và instructions hoặc prompt."
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "TEE đã xác minh"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Nhấp để chỉnh sửa"
   },
