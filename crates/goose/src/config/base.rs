@@ -49,6 +49,8 @@ pub enum ConfigError {
     LockError(String),
     #[error("Secret stored using file-based fallback")]
     FallbackToFileStorage,
+    #[error("keyring read timed out; set GOOSE_KEYRING_TIMEOUT_SECS=0 to disable timeout")]
+    KeyringTimeout,
 }
 
 impl From<serde_json::Error> for ConfigError {
@@ -677,19 +679,21 @@ impl Config {
     }
 
     pub fn all_secrets(&self) -> Result<HashMap<String, Value>, ConfigError> {
-        let mut cache = self.secrets_cache.lock().unwrap();
-
-        let values = if let Some(ref cached_secrets) = *cache {
-            cached_secrets.clone()
-        } else {
-            tracing::debug!("secrets cache miss, fetching from storage");
-            let loaded = self.load_secrets_from_storage()?;
-
-            *cache = Some(loaded.clone());
-            loaded
-        };
-
-        Ok(values)
+        {
+            let cache = self.secrets_cache.lock().unwrap();
+            if let Some(ref cached) = *cache {
+                return Ok(cached.clone());
+            }
+        }
+        tracing::debug!("secrets cache miss, fetching from storage");
+        let loaded = self.load_secrets_from_storage()?;
+        {
+            let mut cache = self.secrets_cache.lock().unwrap();
+            if cache.is_none() {
+                *cache = Some(loaded.clone());
+            }
+        }
+        Ok(loaded)
     }
 
     /// Parse an environment variable value into a JSON Value.
@@ -954,12 +958,17 @@ impl Config {
         match &self.secrets {
             #[cfg(feature = "system-keyring")]
             SecretStorage::Keyring { service } => {
-                let result =
-                    self.handle_keyring_operation(|entry| entry.get_password(), service, None);
+                let result = self.handle_keyring_operation(
+                    |entry| entry.get_password(),
+                    service,
+                    None,
+                    Self::keyring_read_timeout(),
+                );
 
                 match result {
                     Ok(content) => Ok(serde_json::from_str(&content)?),
                     Err(ConfigError::FallbackToFileStorage) => self.fallback_to_file_storage(),
+                    Err(ConfigError::KeyringTimeout) => self.fallback_to_file_storage(),
                     Err(ConfigError::KeyringError(msg))
                         if msg.contains("No entry found")
                             || msg.contains("No matching entry found") =>
@@ -1010,9 +1019,10 @@ impl Config {
             SecretStorage::Keyring { service } => {
                 let json_value = serde_json::to_string(values)?;
                 match self.handle_keyring_operation(
-                    |entry| entry.set_password(&json_value),
+                    move |entry| entry.set_password(&json_value),
                     service,
                     Some(values),
+                    None,
                 ) {
                     Ok(_) => {}
                     Err(ConfigError::FallbackToFileStorage) => {}
@@ -1227,15 +1237,24 @@ impl Config {
         }
     }
 
+    #[cfg(feature = "system-keyring")]
+    fn keyring_read_timeout() -> Option<std::time::Duration> {
+        std::env::var("GOOSE_KEYRING_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|&t| t > 0)
+            .map(std::time::Duration::from_secs)
+    }
+
     /// Handle keyring operation with automatic fallback to file storage
     #[cfg(feature = "system-keyring")]
-    fn handle_keyring_operation<T>(
+    fn handle_keyring_operation<T: Send + 'static>(
         &self,
-        operation: impl FnOnce(keyring::Entry) -> Result<T, keyring::Error>,
+        operation: impl FnOnce(keyring::Entry) -> Result<T, keyring::Error> + Send + 'static,
         service: &str,
         fallback_values: Option<&HashMap<String, Value>>,
+        timeout: Option<std::time::Duration>,
     ) -> Result<T, ConfigError> {
-        // Try to get the keyring entry and perform the operation
         let entry = match Self::get_keyring_entry(service) {
             Ok(entry) => entry,
             Err(keyring_err) => {
@@ -1243,9 +1262,21 @@ impl Config {
             }
         };
 
-        // Perform the operation
-        match operation(entry) {
-            Ok(result) => Ok(result),
+        let result = if let Some(dur) = timeout {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(operation(entry));
+            });
+            match rx.recv_timeout(dur) {
+                Ok(r) => r,
+                Err(_) => return Err(ConfigError::KeyringTimeout),
+            }
+        } else {
+            operation(entry)
+        };
+
+        match result {
+            Ok(r) => Ok(r),
             Err(keyring_err) => self.handle_keyring_fallback_error(&keyring_err, fallback_values),
         }
     }
@@ -2947,5 +2978,63 @@ extensions:
             Some(ThinkingEffort::High)
         );
         assert_eq!(Config::legacy_gemini3_thinking_effort("auto"), None);
+    }
+
+    #[cfg(feature = "system-keyring")]
+    #[test]
+    fn keyring_read_timeout_absent_when_unset() {
+        let _guard = env_lock::lock_env([("GOOSE_KEYRING_TIMEOUT_SECS", None::<&str>)]);
+        assert!(Config::keyring_read_timeout().is_none());
+    }
+
+    #[cfg(feature = "system-keyring")]
+    #[test]
+    fn keyring_read_timeout_absent_when_zero() {
+        let _guard = env_lock::lock_env([("GOOSE_KEYRING_TIMEOUT_SECS", Some("0"))]);
+        assert!(Config::keyring_read_timeout().is_none());
+    }
+
+    #[cfg(feature = "system-keyring")]
+    #[test]
+    fn keyring_read_timeout_present_when_positive() {
+        let _guard = env_lock::lock_env([("GOOSE_KEYRING_TIMEOUT_SECS", Some("5"))]);
+        assert_eq!(
+            Config::keyring_read_timeout(),
+            Some(std::time::Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn all_secrets_does_not_deadlock_under_concurrent_reads() {
+        use std::sync::Arc;
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config = Arc::new(
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap(),
+        );
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let c = Arc::clone(&config);
+                std::thread::spawn(move || c.all_secrets().unwrap())
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn all_secrets_cache_is_populated_after_first_load() {
+        let config_file = tempfile::NamedTempFile::new().unwrap();
+        let secrets_file = tempfile::NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        config.set_secret("KEY", &"val").unwrap();
+        config.invalidate_secrets_cache();
+
+        let first = config.all_secrets().unwrap();
+        let second = config.all_secrets().unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.get("KEY").and_then(|v| v.as_str()), Some("val"));
     }
 }
