@@ -90,6 +90,8 @@ pub struct PythonSessionClient {
     ns_cache: Mutex<HashMap<String, String>>,
     compacted: Mutex<HashSet<String>>,
     no_python_history: Mutex<HashSet<String>>,
+    /// `created_at` (microseconds) of the session each id last referred to.
+    incarnations: Mutex<HashMap<String, i64>>,
     pending_dir: Mutex<HashMap<String, PathBuf>>,
     interpreter: tokio::sync::OnceCell<PathBuf>,
     resolved_path: tokio::sync::OnceCell<Option<String>>,
@@ -150,6 +152,7 @@ impl PythonSessionClient {
             ns_cache: Mutex::new(HashMap::new()),
             compacted: Mutex::new(HashSet::new()),
             no_python_history: Mutex::new(HashSet::new()),
+            incarnations: Mutex::new(HashMap::new()),
             pending_dir: Mutex::new(HashMap::new()),
             interpreter: tokio::sync::OnceCell::new(),
             resolved_path: tokio::sync::OnceCell::new(),
@@ -523,8 +526,39 @@ impl PythonSessionClient {
         self.ns_cache.lock().unwrap().get(session_id).cloned()
     }
 
-    fn has_slot(&self, session_id: &str) -> bool {
-        self.sessions.lock().unwrap().contains_key(session_id)
+    /// Whether this process ran Python for this incarnation of the session. A slot
+    /// that is busy is mid-cell, so it counts.
+    fn has_slot(&self, session: &Session) -> bool {
+        let Some(slot) = self.sessions.lock().unwrap().get(&session.id).cloned() else {
+            return false;
+        };
+        slot.try_lock().map_or(true, |slot| {
+            slot.incarnation == Some(session.created_at.timestamp_micros())
+        })
+    }
+
+    /// Session ids are reused once the newest session is deleted, so what this
+    /// client remembers under an id is dropped when a newer session stands behind it.
+    fn forget_earlier_incarnation(&self, session: &Session) {
+        let micros = session.created_at.timestamp_micros();
+        let mut earlier = self
+            .incarnations
+            .lock()
+            .unwrap()
+            .insert(session.id.clone(), micros)
+            .is_some_and(|seen| seen != micros);
+        let slot = self.sessions.lock().unwrap().get(&session.id).cloned();
+        if let Some(Ok(mut slot)) = slot.as_ref().map(|slot| slot.try_lock()) {
+            if slot.incarnation.is_some_and(|seen| seen != micros) {
+                self.discard(&mut slot, &session.id);
+                earlier = true;
+            }
+        }
+        if earlier {
+            self.ns_cache.lock().unwrap().remove(&session.id);
+            self.compacted.lock().unwrap().remove(&session.id);
+            self.no_python_history.lock().unwrap().remove(&session.id);
+        }
     }
 
     async fn session_was_compacted(&self, session_id: &str) -> bool {
@@ -757,8 +791,9 @@ impl McpClientTrait for PythonSessionClient {
     /// came back.
     async fn get_moim(&self, session_id: &str) -> Option<String> {
         let session = self.load_session(session_id).await?;
+        self.forget_earlier_incarnation(&session);
         let has_snapshot = snapshot_path(&self.state_dir(), &session).is_file();
-        if !self.has_slot(session_id) && !has_snapshot {
+        if !self.has_slot(&session) && !has_snapshot {
             return self.fresh_namespace_notice(session_id).await;
         }
         if !self.session_was_compacted(session_id).await {

@@ -30,7 +30,7 @@ pub(crate) fn tool_pair_summarization_enabled() -> bool {
         .unwrap_or(false)
 }
 
-const CONVERSATION_CONTINUATION_TEXT: &str =
+pub const CONVERSATION_CONTINUATION_TEXT: &str =
     "Your context was compacted. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";

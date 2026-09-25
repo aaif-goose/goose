@@ -4,6 +4,7 @@ use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::python_session::PythonSessionClient;
 use goose::agents::ToolCallContext;
 use goose::config::GooseMode;
+use goose::context_mgmt::CONVERSATION_CONTINUATION_TEXT;
 use goose::conversation::message::Message;
 use goose::session::SessionType;
 use serde_json::json;
@@ -153,5 +154,53 @@ async fn copied_conversation_is_told_the_namespace_is_fresh() {
     assert!(
         notice.contains("none of their variables exist here"),
         "got: {notice}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn reused_session_id_does_not_inherit_the_deleted_namespace() {
+    if !python_available() {
+        eprintln!("skipping: python3 not available");
+        return;
+    }
+    let (client, session_id, dir, context) = setup().await;
+    let compacted = Message::user().with_text(CONVERSATION_CONTINUATION_TEXT);
+
+    run_cell(&client, &session_id, "secret_of_deleted = 1").await;
+    context
+        .session_manager
+        .add_message(&session_id, &compacted)
+        .await
+        .unwrap();
+    let listing = client.get_moim(&session_id).await.unwrap_or_default();
+    assert!(listing.contains("secret_of_deleted"), "got: {listing}");
+
+    context
+        .session_manager
+        .delete_session(&session_id)
+        .await
+        .unwrap();
+    let reused = context
+        .session_manager
+        .create_session(
+            dir.path().to_path_buf(),
+            "reused".to_string(),
+            SessionType::User,
+            GooseMode::Auto,
+        )
+        .await
+        .unwrap();
+    assert_eq!(reused.id, session_id, "the newest id is handed out again");
+    context
+        .session_manager
+        .add_message(&reused.id, &compacted)
+        .await
+        .unwrap();
+
+    let moim = client.get_moim(&reused.id).await.unwrap_or_default();
+    assert!(
+        !moim.contains("secret_of_deleted"),
+        "the deleted session's variables leaked into its successor: {moim}"
     );
 }
