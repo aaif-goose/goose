@@ -74,7 +74,7 @@ partial argument streams never become executable Goose tool requests.
 ### Eredu compatibility
 
 - The dependency is pinned to git main revision
-  `a45e4cc4bf0e055a45156501ba4f71e787a94cb6` across the eredu crates.
+  `ee7670e11bc0704b340e1fa4e24bd5780f8fe687` across the eredu crates.
 - Checkpoint architecture, tensor encoding, tokenizer, and processor must be
   supported by eredu; GGUF compatibility with llama.cpp does not imply eredu
   compatibility.
@@ -177,18 +177,53 @@ possible input copies. Cold forecasts remain conservative where those facts are
 not available. Coverage for a short request does not imply coverage for a longer
 prefill or a different architecture.
 
-See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/a45e4cc4bf0e055a45156501ba4f71e787a94cb6/doc/generation-memory.md)
-and [mixed-storage projection contract](https://github.com/jbg/eredu/blob/a45e4cc4bf0e055a45156501ba4f71e787a94cb6/doc/mixed-storage-gemm.md)
+See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/ee7670e11bc0704b340e1fa4e24bd5780f8fe687/doc/generation-memory.md)
+and [mixed-storage projection contract](https://github.com/jbg/eredu/blob/ee7670e11bc0704b340e1fa4e24bd5780f8fe687/doc/mixed-storage-gemm.md)
 for coverage, calibration assumptions, and validation scope.
+
+### Recommendations before downloading weights
+
+Eredu now provides `inspect_model_metadata(&metadata, &options)`, accepting
+`ArtifactMetadata` and `MetadataInspectionOptions`, followed by
+`forecast_inspected_generation`. The facade
+validates a supplied tensor catalog and selects execution without local checkpoint
+files, weight payloads, native devices, or hardware discovery. Goose should use
+`BackendId::new("mlx")` explicitly for its eredu backend; this requires eredu's
+`mlx` feature and does not estimate llama.cpp execution.
+
+The upstream metadata-inspection gap is closed. Goose still needs to fetch and
+cache the metadata, invoke these APIs during discovery, and expose the results:
+
+- Pin one immutable repository revision and fetch bounded metadata only. Preserve
+  source/revision provenance and verify all objects belong to that revision. A
+  server ignoring range requests must not trigger a full weight download.
+- For SafeTensors, supply exact configuration and index bytes, every shard's
+  header-length prefix and JSON header, full object lengths, and applicable
+  processor sidecars. Multiple shards require an index for this API.
+- For GGUF, supply every shard's complete metadata/tensor-descriptor prefix and
+  full object length, plus required projector/companion headers with explicit
+  roles. Let eredu validate encodings, tensor contracts and companion binding.
+- Check `report().is_compatible()` for metadata selection. `is_loadable()` is
+  deliberately false until actual local artifacts are inspected. Tokenizer,
+  template and native-tool readiness need separate validation.
+- Forecast an explicit input/output budget and selected loading policy against
+  observed hardware capacity plus an application reserve. Preserve unknown fit
+  results; headers cannot prove native layout optimizations or payload integrity.
+  Refine the estimate after downloading and loading the chosen model.
+
+See the pinned [metadata forecasting contract](https://github.com/jbg/eredu/blob/ee7670e11bc0704b340e1fa4e24bd5780f8fe687/doc/metadata-forecasting.md).
 
 ### Recommended Goose follow-up work
 
 In priority order:
 
-1. Use cold and loaded forecasts for model recommendations and a preflight memory
-   estimate. Derive cold placement from the selected device with
+1. Implement the metadata-only discovery flow above, then use cold and loaded
+   forecasts for model recommendations and a preflight memory estimate. Derive
+   cold placement from the selected device with
    `GenerationMemoryOptions::for_local_device`, include loading peaks, and allow
-   an explicit reserve. Preserve unknown bounds instead of promising a model fits.
+   an explicit reserve. Use `for_hardware_device` when supplying already-observed
+   hardware facts without new discovery. Preserve unknown bounds instead of
+   promising a model fits. GGUF's default llama.cpp backend needs its own estimator.
 2. Expose per-model conversion-retention policy, live target/drafter usage and a
    settled trim action. Use the upstream observations and trimming APIs rather
    than a second accounting system. Policy changes require reload; trimming does
