@@ -2201,6 +2201,23 @@ export const zLocalInferenceBuiltinChatTemplatesListResponse_unstable = z.object
     templates: z.array(z.string())
 });
 
+export const zSessionCostAggregateGroupBy = z.enum(['working_directory']);
+
+export const zSessionCostAggregateRequest_unstable = z.object({
+    groupBy: zSessionCostAggregateGroupBy.optional().default('working_directory')
+});
+
+export const zSessionCostAggregateGroup = z.object({
+    groupKey: z.string(),
+    totalCost: z.number().nullish(),
+    sessionCount: z.int().gte(0),
+    sessionsWithCost: z.int().gte(0)
+});
+
+export const zSessionCostAggregateResponse_unstable = z.object({
+    groups: z.array(zSessionCostAggregateGroup)
+});
+
 /**
  * Streaming context-window usage update for a session.
  */
@@ -2439,7 +2456,8 @@ export const zExtRequest = z.object({
             zLocalInferenceModelSettingsUpdateRequest_unstable,
             zLocalInferenceHuggingFaceSearchRequest_unstable,
             zLocalInferenceHuggingFaceRepoVariantsRequest_unstable,
-            zLocalInferenceBuiltinChatTemplatesListRequest_unstable
+            zLocalInferenceBuiltinChatTemplatesListRequest_unstable,
+            zSessionCostAggregateRequest_unstable
         ]),
         z.record(z.string(), z.unknown())
     ]).nullish()
@@ -2526,7 +2544,8 @@ export const zExtResponse = z.union([
                 zLocalInferenceModelSettingsUpdateResponse_unstable,
                 zLocalInferenceHuggingFaceSearchResponse_unstable,
                 zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
-                zLocalInferenceBuiltinChatTemplatesListResponse_unstable
+                zLocalInferenceBuiltinChatTemplatesListResponse_unstable,
+                zSessionCostAggregateResponse_unstable
             ]),
             z.unknown()
         ]).optional()

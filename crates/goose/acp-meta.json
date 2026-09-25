@@ -554,6 +554,11 @@
       "method": "_goose/unstable/local-inference/chat-templates/builtin/list",
       "requestType": "LocalInferenceBuiltinChatTemplatesListRequest_unstable",
       "responseType": "LocalInferenceBuiltinChatTemplatesListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/session/cost/aggregate",
+      "requestType": "SessionCostAggregateRequest_unstable",
+      "responseType": "SessionCostAggregateResponse_unstable"
     }
   ],
   "notifications": [

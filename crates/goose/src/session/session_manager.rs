@@ -182,6 +182,14 @@ pub struct SessionUsageTotals {
     pub accumulated_cost: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionCostAggregateRow {
+    pub working_dir: String,
+    pub total_cost: Option<f64>,
+    pub session_count: u32,
+    pub sessions_with_cost: u32,
+}
+
 impl<'a> SessionUpdateBuilder<'a> {
     fn new(session_manager: &'a SessionManager, session_id: String) -> Self {
         Self {
@@ -500,6 +508,13 @@ impl SessionManager {
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
         self.storage.list_sessions_by_types(None).await
+    }
+
+    pub async fn aggregate_session_costs(
+        &self,
+        types: &[SessionType],
+    ) -> Result<Vec<SessionCostAggregateRow>> {
+        self.storage.aggregate_session_costs(types).await
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
@@ -2346,6 +2361,85 @@ impl SessionStorage {
             total_sessions: row.0 as usize,
             total_tokens: row.1.unwrap_or(0),
         })
+    }
+
+    async fn aggregate_session_costs(
+        &self,
+        types: &[SessionType],
+    ) -> Result<Vec<SessionCostAggregateRow>> {
+        if types.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders: String = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!(
+            r#"
+            WITH RECURSIVE
+                roots AS (
+                    SELECT id, working_dir, updated_at
+                    FROM sessions
+                    WHERE session_type IN ({})
+                      AND parent_session_id IS NULL
+                ),
+                tree(root_id, node_id) AS (
+                    SELECT id, id FROM roots
+                    UNION ALL
+                    SELECT t.root_id, s.id
+                    FROM sessions s
+                    JOIN tree t ON s.parent_session_id = t.node_id
+                ),
+                node_ledger AS (
+                    SELECT t.node_id, SUM(u.cost) AS ledger_cost
+                    FROM tree t
+                    JOIN usage_ledger u ON u.session_id = t.node_id
+                    WHERE u.cost IS NOT NULL
+                    GROUP BY t.node_id
+                ),
+                root_costs AS (
+                    SELECT
+                        t.root_id,
+                        SUM(CASE
+                            WHEN s.accumulated_cost IS NOT NULL OR nl.ledger_cost IS NOT NULL
+                            THEN MAX(COALESCE(s.accumulated_cost, 0.0), COALESCE(nl.ledger_cost, 0.0))
+                        END) AS tree_cost
+                    FROM tree t
+                    JOIN sessions s ON s.id = t.node_id
+                    LEFT JOIN node_ledger nl ON nl.node_id = t.node_id
+                    GROUP BY t.root_id
+                )
+            SELECT
+                r.working_dir,
+                SUM(rc.tree_cost) AS total_cost,
+                COUNT(*) AS session_count,
+                COUNT(rc.tree_cost) AS sessions_with_cost
+            FROM roots r
+            LEFT JOIN root_costs rc ON rc.root_id = r.id
+            GROUP BY r.working_dir
+            ORDER BY MAX(r.updated_at) DESC
+            "#,
+            placeholders
+        );
+
+        let pool = self.pool().await?;
+        let mut q = sqlx::query_as::<_, (String, Option<f64>, i64, i64)>(AssertSqlSafe(query));
+        for t in types {
+            q = q.bind(t.to_string());
+        }
+
+        let rows = q.fetch_all(pool).await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(working_dir, total_cost, session_count, sessions_with_cost)| {
+                    SessionCostAggregateRow {
+                        working_dir,
+                        total_cost,
+                        session_count: session_count as u32,
+                        sessions_with_cost: sessions_with_cost as u32,
+                    }
+                },
+            )
+            .collect())
     }
 
     async fn record_usage_metrics(
@@ -5021,5 +5115,59 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_session_costs_parity_with_usage_totals() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let root = sm
+            .create_session(
+                PathBuf::from("/project/a"),
+                "root".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+            .id;
+
+        let child = sm
+            .create_session(
+                PathBuf::from("/project/a"),
+                "child".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap()
+            .id;
+
+        sm.update(&child)
+            .parent_session_id(Some(root.clone()))
+            .apply()
+            .await
+            .unwrap();
+
+        seed_ledger(&sm, &root, &message_usage(100, 20, 0.10, false))
+            .await
+            .unwrap();
+        seed_ledger(&sm, &child, &message_usage(50, 10, 0.05, false))
+            .await
+            .unwrap();
+
+        let root_totals = sm.get_session_usage_totals(&root).await.unwrap();
+        let expected_cost = root_totals.accumulated_cost.unwrap();
+
+        let types = [SessionType::User, SessionType::Scheduled, SessionType::Acp];
+        let rows = sm.aggregate_session_costs(&types).await.unwrap();
+        let row = rows
+            .iter()
+            .find(|r| r.working_dir == "/project/a")
+            .expect("expected aggregate row for /project/a");
+
+        assert!((row.total_cost.unwrap() - expected_cost).abs() < 1e-9);
+        assert_eq!(row.session_count, 1);
     }
 }

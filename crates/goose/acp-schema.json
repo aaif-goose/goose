@@ -6734,6 +6734,67 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/chat-templates/builtin/list"
     },
+    "SessionCostAggregateRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "groupBy": {
+          "$ref": "#/$defs/SessionCostAggregateGroupBy",
+          "default": "working_directory"
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/cost/aggregate"
+    },
+    "SessionCostAggregateGroupBy": {
+      "type": "string",
+      "enum": [
+        "working_directory"
+      ]
+    },
+    "SessionCostAggregateResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionCostAggregateGroup"
+          }
+        }
+      },
+      "required": [
+        "groups"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/session/cost/aggregate"
+    },
+    "SessionCostAggregateGroup": {
+      "type": "object",
+      "properties": {
+        "groupKey": {
+          "type": "string"
+        },
+        "totalCost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "sessionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionsWithCost": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "groupKey",
+        "sessionCount",
+        "sessionsWithCost"
+      ]
+    },
     "GooseSessionNotification_unstable": {
       "type": "object",
       "properties": {
@@ -8118,6 +8179,15 @@
                   ],
                   "description": "Params for _goose/unstable/local-inference/chat-templates/builtin/list",
                   "title": "LocalInferenceBuiltinChatTemplatesListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/SessionCostAggregateRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/session/cost/aggregate",
+                  "title": "SessionCostAggregateRequest_unstable"
                 }
               ]
             },
@@ -8764,6 +8834,14 @@
                         }
                       ],
                       "title": "LocalInferenceBuiltinChatTemplatesListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/SessionCostAggregateResponse_unstable"
+                        }
+                      ],
+                      "title": "SessionCostAggregateResponse_unstable"
                     }
                   ]
                 },
