@@ -1773,6 +1773,24 @@ impl Agent {
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let session_id = session_config.id.clone();
+        let events = crate::session_context::with_session_id(
+            Some(session_id.clone()),
+            self.reply_with_state_machine_inner(user_message, session_config, cancel_token),
+        )
+        .await?;
+        Ok(crate::session_context::with_session_id_stream(
+            Some(session_id),
+            events,
+        ))
+    }
+
+    async fn reply_with_state_machine_inner(
+        &self,
+        user_message: Message,
+        session_config: SessionConfig,
+        cancel_token: Option<CancellationToken>,
+    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         let turn_guard = self
@@ -1836,6 +1854,21 @@ impl Agent {
         session_config: SessionConfig,
         cancel: CancellationToken,
     ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
+        let session_id = session_config.id.clone();
+        let stream = crate::session_context::with_session_id(
+            Some(session_id.clone()),
+            self.resume_state_machine_turn_inner(session_config, cancel),
+        )
+        .await?;
+        Ok(stream
+            .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
+    }
+
+    async fn resume_state_machine_turn_inner(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
         if !super::state_machine::enabled() {
             return Ok(None);
         }
@@ -1865,7 +1898,7 @@ impl Agent {
         }
 
         let agent = Arc::clone(self);
-        Ok(Some(Box::pin(async_stream::try_stream! {
+        let stream = Box::pin(async_stream::try_stream! {
             let initial_stream = if resume_from_persisted_response {
                 Some(
                     agent
@@ -1887,7 +1920,8 @@ impl Agent {
             while let Some(event) = stream.next().await {
                 yield event?;
             }
-        })))
+        });
+        Ok(Some(stream))
     }
 
     fn tool_confirmation_request_ids(event: &AgentEvent) -> Vec<String> {
@@ -2049,14 +2083,18 @@ impl Agent {
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let reply_span = tracing::Span::current();
-        let events = self
-            .reply_impl(
+        let session_id = session_config.id.clone();
+        let events = crate::session_context::with_session_id(
+            Some(session_id.clone()),
+            self.reply_impl(
                 user_message,
                 session_config,
                 use_state_machine,
                 cancel_token,
-            )
-            .await?;
+            ),
+        )
+        .await?;
+        let events = crate::session_context::with_session_id_stream(Some(session_id), events);
 
         // This is the single live-event identity boundary. Callers that intentionally stream
         // multiple events for one logical message must assign their shared ID before this point.
@@ -3927,7 +3965,9 @@ mod tests {
     use super::*;
     use crate::agents::gen_ai_telemetry::{self, test_support::SpanFieldCapture};
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
-    use crate::providers::base::{stream_from_single_message, MessageStream, PermissionRouting};
+    use crate::providers::base::{
+        stream_from_single_message, MessageStream, ModelInfo, PermissionRouting,
+    };
     use crate::recipe::Response;
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
@@ -4007,6 +4047,184 @@ mod tests {
         assert_eq!(
             super::super::latest_provider_session_id(&messages, "codex-acp"),
             None
+        );
+    }
+
+    #[derive(Debug, Default)]
+    struct SessionContextProvider {
+        calls: std::sync::Mutex<Vec<(&'static str, Option<String>)>>,
+    }
+
+    impl SessionContextProvider {
+        fn record(&self, operation: &'static str) {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((operation, crate::session_context::current_session_id()));
+        }
+
+        fn calls(&self) -> Vec<(&'static str, Option<String>)> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for SessionContextProvider {
+        fn get_name(&self) -> &str {
+            "session-context"
+        }
+
+        async fn resume(&self, _session_id: &str) -> Result<(), ProviderError> {
+            self.record("resume");
+            Ok(())
+        }
+
+        async fn fetch_model_info(&self, model_name: &str) -> Result<ModelInfo, ProviderError> {
+            self.record("fetch_model_info");
+            Ok(ModelInfo::new(model_name).with_context_limit(32_000))
+        }
+
+        async fn get_context_limit(&self, _model: &str, _override_limit: Option<usize>) -> usize {
+            self.record("get_context_limit");
+            32_000
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.record("stream");
+            Ok(stream_from_single_message(
+                Message::assistant().with_text("done"),
+                ProviderUsage::new("mock-model".to_string(), Usage::default()),
+            ))
+        }
+    }
+
+    async fn session_context_agent() -> (Agent, Arc<SessionContextProvider>, SessionConfig, TempDir)
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let agent = Agent::with_config(AgentConfig::new(
+            Arc::clone(&session_manager),
+            Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+            None,
+            GooseMode::default(),
+            true,
+            GoosePlatform::GooseCli,
+        ));
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "session-context".to_string(),
+                SessionType::Hidden,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let provider = Arc::new(SessionContextProvider::default());
+        agent
+            .update_provider(
+                provider.clone(),
+                goose_providers::model::ModelConfig::new("mock-model"),
+                &session.id,
+            )
+            .await
+            .unwrap();
+        session_manager
+            .add_message(&session.id, &Message::user().with_text("initial request"))
+            .await
+            .unwrap();
+        session_manager
+            .add_message(
+                &session.id,
+                &Message::assistant()
+                    .with_text("previous response")
+                    .with_inference(InferenceMetadata {
+                        provider: provider.get_name().to_string(),
+                        requested_model: "mock-model".to_string(),
+                        resolved_model: None,
+                        provider_session_id: Some("saved-provider-session".to_string()),
+                    }),
+            )
+            .await
+            .unwrap();
+
+        let session_config = SessionConfig {
+            id: session.id.clone(),
+            schedule_id: None,
+            max_turns: Some(1),
+            retry_config: None,
+        };
+
+        (agent, provider, session_config, temp_dir)
+    }
+
+    fn assert_session_context_calls(
+        provider: &SessionContextProvider,
+        session_id: &str,
+        operations: &[&'static str],
+    ) {
+        let calls = provider.calls();
+        for operation in operations {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| call == &(*operation, Some(session_id.to_string()))),
+                "{operation} was not scoped to session {session_id}: {calls:?}"
+            );
+        }
+        assert_eq!(crate::session_context::current_session_id(), None);
+    }
+
+    #[tokio::test]
+    async fn reply_scopes_resume_model_info_and_stream_to_session() {
+        let (agent, provider, session_config, _temp_dir) = session_context_agent().await;
+        let session_id = session_config.id.clone();
+        let mut events = agent
+            .reply(
+                Message::user().with_text("continue"),
+                session_config,
+                false,
+                None,
+            )
+            .await
+            .unwrap();
+        while let Some(event) = events.next().await {
+            event.unwrap();
+        }
+
+        assert_session_context_calls(
+            provider.as_ref(),
+            &session_id,
+            &["resume", "fetch_model_info", "stream"],
+        );
+    }
+
+    #[tokio::test]
+    async fn live_delegation_scopes_state_machine_setup_and_stream_to_session() {
+        let (agent, provider, mut session_config, _temp_dir) = session_context_agent().await;
+        session_config.max_turns = Some(2);
+        let session_id = session_config.id.clone();
+        let mut events = agent
+            .reply_live_delegation(
+                Message::user().with_text("continue"),
+                session_config,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        while let Some(event) = events.next().await {
+            event.unwrap();
+        }
+
+        assert_session_context_calls(
+            provider.as_ref(),
+            &session_id,
+            &["get_context_limit", "stream"],
         );
     }
 

@@ -135,11 +135,16 @@ impl ResponseGate {
 #[derive(Clone)]
 pub(super) struct ApiCall {
     body: Value,
+    session_id: Option<String>,
 }
 
 impl ApiCall {
     pub(super) fn input_tokens(&self) -> i32 {
         serialized_chars(&self.body)
+    }
+
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 
     pub(super) fn input_contains(&self, needle: &str) -> bool {
@@ -427,10 +432,15 @@ impl<'a> ConfiguredResponse<'a> {
 impl DummyApiState {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         let body: Value = request.body_json().expect("OpenAI request body");
-        self.calls
-            .lock()
-            .unwrap()
-            .push(ApiCall { body: body.clone() });
+        let session_id = request
+            .headers
+            .get(crate::session_context::SESSION_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        self.calls.lock().unwrap().push(ApiCall {
+            body: body.clone(),
+            session_id,
+        });
 
         let input_tokens = serialized_chars(&body);
         let model = body["model"].as_str().expect("OpenAI request model");
