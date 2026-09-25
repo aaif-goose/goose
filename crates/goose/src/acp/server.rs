@@ -2,8 +2,9 @@ use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 pub(super) use crate::acp::response_builder::{
-    agent_thinking_effort_support, build_config_options, build_mode_state, build_model_state,
-    build_provider_options, build_session_info, build_session_setup_config,
+    active_run_meta, agent_thinking_effort_support, build_config_options, build_mode_state,
+    build_model_state, build_provider_options, build_session_info,
+    build_session_info_with_active_run, build_session_setup_config,
     send_session_setup_notifications, session_meta, session_provider_selection,
     session_response_meta, should_refresh_inventory_for_session_init,
 };
@@ -1972,20 +1973,6 @@ impl GooseAcpAgent {
         Ok((active_run_id, agent))
     }
 
-    fn active_run_meta(active_run_id: Option<&str>) -> Meta {
-        let mut goose = serde_json::Map::new();
-        goose.insert(
-            "activeRunId".to_string(),
-            active_run_id
-                .map(|run_id| serde_json::Value::String(run_id.to_string()))
-                .unwrap_or(serde_json::Value::Null),
-        );
-
-        let mut meta = serde_json::Map::new();
-        meta.insert("goose".to_string(), serde_json::Value::Object(goose));
-        meta
-    }
-
     fn send_active_run_update(
         cx: &ConnectionTo<Client>,
         session_id: &SessionId,
@@ -1994,7 +1981,7 @@ impl GooseAcpAgent {
         cx.send_notification(SessionNotification::new(
             session_id.clone(),
             SessionUpdate::SessionInfoUpdate(
-                SessionInfoUpdate::new().meta(Self::active_run_meta(active_run_id)),
+                SessionInfoUpdate::new().meta(active_run_meta(active_run_id)),
             ),
         ))
     }
@@ -2738,6 +2725,7 @@ mod tests {
     };
     use std::io::Write;
     use std::path::PathBuf;
+    use std::time::Duration;
     use tempfile::NamedTempFile;
     use test_case::test_case;
 
@@ -3732,5 +3720,114 @@ print(\"hello, world\")
             .await
             .unwrap();
         client.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_info_reports_each_sessions_active_run_from_the_shared_registry() {
+        let root = tempfile::tempdir().unwrap();
+        let provider_factory: AcpProviderFactory = Arc::new(
+            |_provider_name, _extensions, _working_dir, _use_default_model| {
+                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+            },
+        );
+        let shared_registry: ActiveRunRegistry = Default::default();
+        let new_agent = |registry: ActiveRunRegistry| {
+            let provider_factory = provider_factory.clone();
+            let data_dir = root.path().to_path_buf();
+            GooseAcpAgent::new(GooseAcpAgentOptions {
+                provider_factory,
+                builtin_selection: AcpBuiltinSelection::default(),
+                data_dir: data_dir.clone(),
+                config_dir: data_dir,
+                disable_session_naming: true,
+                goose_platform: GoosePlatform::GooseCli,
+                additional_source_roots: Vec::new(),
+                scheduler: None,
+                session_cwd: None,
+                active_prompt_runs: registry,
+            })
+        };
+        let owner = Arc::new(new_agent(shared_registry.clone()).await.unwrap());
+        let observer = Arc::new(new_agent(shared_registry).await.unwrap());
+
+        let mut sessions = Vec::new();
+        for title in ["First run probe", "Second run probe"] {
+            sessions.push(
+                owner
+                    .session_manager
+                    .create_session(
+                        root.path().to_path_buf(),
+                        title.to_string(),
+                        SessionType::Acp,
+                        GooseMode::Auto,
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+        let probe = |agent: Arc<GooseAcpAgent>, session_id: String| async move {
+            let info = agent
+                .on_get_session_info(GetSessionInfoRequest { session_id })
+                .await
+                .unwrap();
+            let goose = info
+                .session
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("goose"))
+                .cloned()
+                .expect("session info must carry the goose meta object");
+            goose.get("activeRunId").cloned().expect("activeRunId key")
+        };
+        let wait_for = |agent: Arc<GooseAcpAgent>,
+                        session_id: String,
+                        expected: serde_json::Value| async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+            loop {
+                if probe(agent.clone(), session_id.clone()).await == expected {
+                    break;
+                }
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "session {session_id} never reported {expected}"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+
+        assert!(probe(observer.clone(), sessions[0].id.clone())
+            .await
+            .is_null());
+        assert!(probe(observer.clone(), sessions[1].id.clone())
+            .await
+            .is_null());
+
+        owner
+            .test_start_active_run(&sessions[0].id, "run-1".to_string(), Arc::new(Agent::new()))
+            .await
+            .unwrap();
+        owner
+            .test_start_active_run(&sessions[1].id, "run-2".to_string(), Arc::new(Agent::new()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            probe(observer.clone(), sessions[0].id.clone()).await,
+            serde_json::json!("run-1")
+        );
+        assert_eq!(
+            probe(observer.clone(), sessions[1].id.clone()).await,
+            serde_json::json!("run-2")
+        );
+
+        owner.test_drop_active_run_guard(&sessions[0].id, "run-1");
+        owner.test_drop_active_run_guard(&sessions[1].id, "run-2");
+        wait_for(
+            observer.clone(),
+            sessions[0].id.clone(),
+            serde_json::Value::Null,
+        )
+        .await;
+        wait_for(observer, sessions[1].id.clone(), serde_json::Value::Null).await;
     }
 }
