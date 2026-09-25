@@ -74,7 +74,7 @@ partial argument streams never become executable Goose tool requests.
 ### Eredu compatibility
 
 - The dependency is pinned to git main revision
-  `3d6fd6dac6436d0e396d47ccba0804d9cd90833e` across the eredu crates.
+  `464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f` across the eredu crates.
 - Checkpoint architecture, tensor encoding, tokenizer, and processor must be
   supported by eredu; GGUF compatibility with llama.cpp does not imply eredu
   compatibility.
@@ -144,15 +144,30 @@ request state and replays the conversation each turn, so KV prefix reuse remains
 unimplemented. Arbitrary in-flight outlooks and feature-conditioned external
 assistant continuations remain upstream gaps.
 
-Fully resident MLX models now retain reusable F32 parameter conversions when
-needed by mixed-precision projections. Request reset preserves these conversions;
-dropping their residency owner releases them. They count as active resident
-parameters, not reusable allocator-cache blocks, and can therefore consume memory
-beyond the 256 MiB cache ceiling. Goose's per-request loaded forecast observes
-warm residency without adding the conversion subset a second time. Model file
-size alone is consequently an especially poor estimate for such checkpoints.
+Optional retained F32 weight conversions now have their own managed 256 MiB
+budget, separate from the allocator cache. Goose leaves the execution-plan
+override unset and inherits that finite default. The bound covers retained
+payload plus outstanding reservations across the target's eligible owners;
+embedded prediction shares it, while each separately loaded external drafter has
+its own budget. Unsupported retention paths report an effective disabled policy.
+Unlimited retention requires an explicit upstream override that Goose does not
+request. This resolves the earlier unbounded-retention gap.
 
-See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/3d6fd6dac6436d0e396d47ccba0804d9cd90833e/doc/generation-memory.md)
+Eligible mixed-dtype Metal decode projections now read the original weights
+without full-weight F32 casts. Other paths, including multi-row prefill, can still
+need temporary casts. Neither retention nor allocator-cache policy limits those
+temporaries, native backing capacity, KV state, or total process memory. Request
+reset preserves admitted conversions; dropping their owner releases its claims.
+Eredu also exposes settled trimming, but Goose does not currently expose trimming
+or custom conversion-retention budgets.
+
+Goose's existing loaded forecasts include the new retention policy, scope, usage,
+and reservation accounting without adding retained payload to resident parameters
+twice or clamping temporary workspace to the retention budget. These observations
+precede generation, so use a subsequent request's forecast to inspect warmed
+residency; Goose does not yet expose a separate post-generation retention report.
+
+See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f/doc/generation-memory.md)
 for coverage, calibration assumptions, and validation scope.
 
 ## Building

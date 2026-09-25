@@ -81,10 +81,14 @@ instructions: |
   bounds. A forecast error must be diagnostic only, allowing valid generation to
   continue. Record unavailable log access or draft models as skipped checks.
   Repeat a request with a cached mixed-precision GGUF and inspect the loaded
-  forecasts before and after warm-up. Retained parameter conversions may increase
-  residency and survive request reset; distinguish them from the allocator cache.
-  Do not infer a memory limit from the 256 MiB allocator-cache ceiling or checkpoint
-  size. Skip this comparison if no suitable checkpoint or forecast log is available.
+  forecasts before and after warm-up. Check each reported conversion-retention
+  group's effective policy and that retained payload plus reservations stays within
+  its bound (256 MiB by default); unavailable observations are not zero usage.
+  Target and external drafter budgets are separate. Reset may preserve admitted
+  conversions. Do not add their payload to residency a second time or treat either
+  the conversion-retention budget or allocator-cache ceiling as a total-memory
+  limit: prefill and other fallback paths may still need temporary full-weight casts.
+  Skip this comparison if no suitable checkpoint or forecast log is available.
   Run the same tool round trip with both legacy and GOOSE_STATE_MACHINE=1 sessions.
 
   ## Understanding First-Person Integration Testing
