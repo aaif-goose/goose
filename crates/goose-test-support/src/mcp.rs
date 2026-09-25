@@ -1,6 +1,6 @@
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, ProtocolVersion,
-    Role, ServerCapabilities, ServerInfo, TextContent,
+    Role, ServerCapabilities, ServerConfig, TextContent,
 };
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
@@ -51,7 +51,7 @@ impl McpFixtureServer {
 
 #[tool_handler]
 impl ServerHandler for McpFixtureServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::LATEST)
             .with_server_info(Implementation::new("mcp-fixture", "1.0.0"))

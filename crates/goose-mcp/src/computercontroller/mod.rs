@@ -8,7 +8,7 @@ use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
         CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation, InitializeResult,
-        ServerCapabilities, ServerInfo,
+        ServerCapabilities, ServerConfig,
     },
     schemars::JsonSchema,
     tool, tool_handler, tool_router, ServerHandler,
@@ -877,7 +877,7 @@ impl ComputerControllerServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for ComputerControllerServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
                 "goose-computercontroller",

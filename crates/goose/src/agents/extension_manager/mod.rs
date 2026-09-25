@@ -33,7 +33,7 @@ use crate::oauth::GooseCredentialStore;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
-    ServerInfo, ServerNotification, Tool,
+    ServerConfig, ServerNotification, Tool,
 };
 use schemars::_private::NoSerialize;
 use serde_json::Value;
@@ -110,7 +110,7 @@ struct Extension {
     resolved_config: ExtensionConfig,
 
     client: McpClientBox,
-    server_info: Option<ServerInfo>,
+    server_info: Option<ServerConfig>,
 }
 
 impl Extension {
@@ -118,7 +118,7 @@ impl Extension {
         config: ExtensionConfig,
         resolved_config: ExtensionConfig,
         client: McpClientBox,
-        server_info: Option<ServerInfo>,
+        server_info: Option<ServerConfig>,
     ) -> Self {
         Self {
             client,
@@ -599,7 +599,7 @@ impl ExtensionManager {
         name: String,
         config: ExtensionConfig,
         client: McpClientBox,
-        info: Option<ServerInfo>,
+        info: Option<ServerConfig>,
     ) {
         let normalized = name_to_key(&name);
         self.extensions.lock().await.insert(
