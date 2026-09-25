@@ -478,6 +478,15 @@ impl Provider for OllamaProvider {
 
         self.fetch_models_from_api().await
     }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        Ok(crate::base::merge_configured_model_info(
+            &self.name,
+            &names,
+            self.custom_models.as_deref().unwrap_or_default(),
+        ))
+    }
 }
 
 /// Default per-chunk timeout for Ollama streaming responses (seconds).
@@ -613,6 +622,29 @@ mod tests {
             provider.fetch_supported_models().await.unwrap(),
             vec!["static-model".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_model_info_preserves_configured_metadata() {
+        let declared = ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("unrecognized-static-model").with_context_limit(4096)
+        };
+
+        let provider = from_declarative_config(
+            ollama_config(Some(false), vec![declared]),
+            None,
+            crate::declarative::EnvKeyResolver,
+        )
+        .unwrap()
+        .build();
+
+        let models = provider.fetch_supported_model_info().await.unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unrecognized-static-model");
+        assert_eq!(models[0].context_limit, Some(4096));
+        assert!(models[0].reasoning);
     }
 
     #[test]

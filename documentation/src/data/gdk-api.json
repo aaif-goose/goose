@@ -696,6 +696,33 @@
           "methods": []
         },
         {
+          "name": "ProviderModelInfo",
+          "kind": "record",
+          "docs": "A model advertised by the provider. Providers without model discovery\nreturn an empty list rather than an error.",
+          "fields": [
+            {
+              "name": "name",
+              "type": "String",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "context_limit",
+              "type": "Option<u64>",
+              "default": null,
+              "docs": ""
+            },
+            {
+              "name": "supports_reasoning",
+              "type": "bool",
+              "default": null,
+              "docs": ""
+            }
+          ],
+          "variants": [],
+          "methods": []
+        },
+        {
           "name": "Usage",
           "kind": "record",
           "docs": "",
@@ -1277,6 +1304,14 @@
                 }
               ],
               "returns": "u64",
+              "throws": "GooseError",
+              "isAsync": true
+            },
+            {
+              "name": "list_models",
+              "docs": "",
+              "params": [],
+              "returns": "Vec<ProviderModelInfo>",
               "throws": "GooseError",
               "isAsync": true
             },
