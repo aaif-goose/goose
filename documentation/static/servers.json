@@ -637,6 +637,18 @@
     "environmentVariables": []
   },
   {
+    "id": "saascity",
+    "name": "SaaSCity",
+    "description": "Audit a homepage before launch, find startup and SaaS directories by DR, link type and price, and list the product on SaaSCity",
+    "url": "https://saascity.io/api/mcp",
+    "link": "https://github.com/nyyhao/saascity-mcp",
+    "installation_notes": "Hosted remote server. No API key or account needed.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "selenium-mcp",
     "name": "Selenium",
     "description": "Web browser automation and testing",
