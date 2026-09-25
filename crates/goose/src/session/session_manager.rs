@@ -2359,6 +2359,18 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
+        // `total_tokens` is the size of the context most recently sent, which the
+        // CLI context bar and the desktop indicator read back. A request that
+        // reports no usage at all — an interrupted stream, or a provider that
+        // omits it — must not erase it, and a provider that reports only the
+        // parts still yields a usable size.
+        let context_tokens = current_usage.total_tokens.or_else(|| {
+            match (current_usage.input_tokens, current_usage.output_tokens) {
+                (None, None) => None,
+                (input, output) => Some(input.unwrap_or(0) + output.unwrap_or(0)),
+            }
+        });
+
         sqlx::query(
             r#"
             INSERT INTO usage_ledger (
@@ -2400,7 +2412,8 @@ impl SessionStorage {
             r#"
             UPDATE sessions SET
                 schedule_id = ?,
-                total_tokens = ?, input_tokens = ?, output_tokens = ?,
+                total_tokens = COALESCE(?, total_tokens),
+                input_tokens = ?, output_tokens = ?,
                 cache_read_tokens = ?, cache_write_tokens = ?,
                 accumulated_total_tokens = COALESCE(accumulated_total_tokens, 0) + ?,
                 accumulated_input_tokens = COALESCE(accumulated_input_tokens, 0) + ?,
@@ -2416,7 +2429,7 @@ impl SessionStorage {
             "#,
         )
         .bind(schedule_id)
-        .bind(current_usage.total_tokens)
+        .bind(context_tokens)
         .bind(current_usage.input_tokens)
         .bind(current_usage.output_tokens)
         .bind(current_usage.cache_read_input_tokens)
@@ -4876,6 +4889,60 @@ mod tests {
         let session = sm.get_session(&id, false).await.unwrap();
         assert_eq!(session.accumulated_usage, totals.accumulated_usage);
         assert!((session.accumulated_cost.unwrap() - 5.54).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn test_usage_record_without_token_counts_keeps_the_context_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(1000), Some(200), Some(1200)),
+            "test-model",
+            &message_usage(1000, 200, 0.01, false),
+        )
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        assert_eq!(session.usage.total_tokens, Some(1200));
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::default(),
+            "test-model",
+            &message_usage(0, 0, 0.0, false),
+        )
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        assert_eq!(
+            session.usage.total_tokens,
+            Some(1200),
+            "a usage record with no token counts must not zero the context size"
+        );
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(3000), None, None),
+            "test-model",
+            &message_usage(3000, 0, 0.0, false),
+        )
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, false).await.unwrap();
+        assert_eq!(
+            session.usage.total_tokens,
+            Some(3000),
+            "the size can be derived from the input/output parts"
+        );
     }
 
     #[tokio::test]
