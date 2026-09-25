@@ -2179,6 +2179,12 @@ impl Agent {
                 .await;
         }
 
+        // Superfast Decision Gate (shadow mode, off by default). When enabled it
+        // classifies the pending user turn on a detached task and only logs the
+        // recommendation and latency. It never changes routing and never blocks
+        // this turn. When disabled (the default) this call returns immediately.
+        crate::agents::superfast::shadow_classify(message_text.clone());
+
         let command_result = self
             .execute_command(&message_text, &session_config.id)
             .await;

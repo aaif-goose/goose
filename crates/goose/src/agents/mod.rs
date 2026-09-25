@@ -20,6 +20,7 @@ mod schedule_tool;
 pub mod state_machine;
 pub mod subagent_execution_tool;
 pub(crate) mod subagent_handler;
+pub mod superfast;
 pub(crate) mod subagent_task_config;
 mod tool_confirmation_coordinator;
 mod tool_confirmation_router;
