@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "कार्यशील निर्देशिका अद्यतन करने में विफल"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "अमान्य URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो को स्थानांतरित करें (तीर कुंजियों का उपयोग करें)"
+    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो को स्थानांतरित करें"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "चित्र-में-चित्र"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "पिक्चर-इन-पिक्चर में बजाना"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो का आकार बदलें"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# आइटम मिला} other{# आइटम मिले}}"

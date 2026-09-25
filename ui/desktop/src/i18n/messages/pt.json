@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Falha ao atualizar o diretório de trabalho"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "URL inválida"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Mover a janela Picture-in-Picture (use as teclas de seta)"
+    "defaultMessage": "Mover a janela Picture-in-Picture"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Reproduzindo em Picture-in-Picture"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Redimensionar a janela Picture-in-Picture"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item encontrado} other{# itens encontrados}}"

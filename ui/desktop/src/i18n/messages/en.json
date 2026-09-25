@@ -1983,13 +1983,16 @@
     "defaultMessage": "Invalid URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Move Picture-in-Picture window (use arrow keys)"
+    "defaultMessage": "Move Picture-in-Picture window"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Playing in Picture-in-Picture"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Resize Picture-in-Picture window"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item found} other{# items found}}"

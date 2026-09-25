@@ -1962,13 +1962,16 @@
     "defaultMessage": "Ungültige URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Bild-in-Bild-Fenster verschieben (Pfeiltasten verwenden)"
+    "defaultMessage": "Bild-in-Bild-Fenster verschieben"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Bild-in-Bild"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Wiedergabe im Bild-in-Bild-Modus"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Bild-in-Bild-Fenster in der Größe ändern"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# Element gefunden} other{# Elemente gefunden}}"

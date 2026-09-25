@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "URL không hợp lệ"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình (dùng phím mũi tên)"
+    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Hình-trong-hình"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Đang phát ở chế độ Hình-trong-hình"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Thay đổi kích cỡ cửa sổ Hình-trong-hình"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# mục được tìm thấy} other{# mục được tìm thấy}}"

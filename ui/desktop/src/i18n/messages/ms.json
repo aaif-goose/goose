@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal mengemas kini direktori kerja"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "URL tidak sah"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Alihkan tetingkap Gambar-dalam-Gambar (gunakan kekunci anak panah)"
+    "defaultMessage": "Alihkan tetingkap Gambar-dalam-Gambar"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Gambar-dalam-Gambar"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Bermain dalam Gambar-dalam-Gambar"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Ubah saiz tetingkap Gambar-dalam-Gambar"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item dijumpai} other{# item dijumpai}}"

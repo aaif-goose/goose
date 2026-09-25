@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Не удалось обновить рабочий каталог"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "Неверный URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Переместить окно «картинка в картинке» (используйте стрелки)"
+    "defaultMessage": "Переместить окно «картинка в картинке»"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Картинка в картинке"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Воспроизведение в режиме «картинка в картинке»"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Изменить размер окна «картинка в картинке»"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count, plural, one {Найден # элемент} few {Найдено # элемента} many {Найдено # элементов} other {Найдено # элемента}}"

@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "作業ディレクトリの更新に失敗しました"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "無効なURL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "ピクチャ・イン・ピクチャウィンドウを移動（矢印キーを使用）"
+    "defaultMessage": "ピクチャ・イン・ピクチャウィンドウを移動"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "ピクチャ・イン・ピクチャ"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "ピクチャ・イン・ピクチャで再生中"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "ピクチャ・イン・ピクチャウィンドウのサイズを変更"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# 件見つかりました} other{# 件見つかりました}}"
