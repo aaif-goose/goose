@@ -81,3 +81,7 @@ Both should serve future experiments: Operations can update session configuratio
 The pull request proves that automatic effort can be expressed as a bounded, restart-safe behavior. It does not yet prove that Jev selects the right effort, that the extra latency pays for itself or that automatic effort is better than model routing.
 
 Those are now questions we can answer with use rather than architecture. We can inspect which effort real turns receive, the returned confidence, the routing latency, cache usage, reasoning tokens and whether the task ultimately succeeds. If automatic effort works, we have a useful new behavior. If it does not, we can remove one Operation and keep what we learned. Either way, we got to test the idea without first redesigning the agent around it.
+
+# Wrapping Up
+
+Automatic effort selection helps with cost, but also makes for a useful test of whether goose's state machine can absorb new ideas cheaply. One bounded Operation, two pieces of reusable plumbing, and a single lifecycle test were enough to let goose decide how hard to think without inference, tools, or retries ever knowing about it. Whether or not Jev picks the right effort, this is the kind of experiment we want goose to make easy.
