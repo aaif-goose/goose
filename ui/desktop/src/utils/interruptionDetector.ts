@@ -109,27 +109,3 @@ export function detectInterruption(input: string): InterruptionMatch | null {
 
   return null;
 }
-
-/**
- * Checks if input is likely an interruption command
- */
-export function isInterruptionCommand(input: string): boolean {
-  const match = detectInterruption(input);
-  return match?.shouldInterrupt ?? false;
-}
-
-/**
- * Gets a user-friendly message for the interruption action
- */
-export function getInterruptionMessage(match: InterruptionMatch): string {
-  switch (match.keyword.action) {
-    case 'stop':
-      return `Stopped processing. You said "${match.matchedText}".`;
-    case 'pause':
-      return `Paused processing. You said "${match.matchedText}".`;
-    case 'redirect':
-      return `Stopping to redirect. You said "${match.matchedText}".`;
-    default:
-      return `Interrupted processing. You said "${match.matchedText}".`;
-  }
-}
