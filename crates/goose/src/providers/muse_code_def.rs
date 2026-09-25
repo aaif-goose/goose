@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
 use goose_providers::anthropic::{
-    AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION,
+    AnthropicFormatOptions, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION,
 };
 use goose_providers::api_client::{ApiClient, AuthMethod, AuthProvider, TlsConfig};
 use goose_providers::base::{
@@ -27,8 +27,7 @@ use crate::config::Config;
 use crate::conversation::message::Message;
 use crate::providers::base::ProviderDef;
 use crate::providers::oauth_device_flow::{
-    refresh_device_flow_token, run_device_flow, DeviceFlowConfig, DeviceFlowTokenRefreshError,
-    DeviceFlowTokens, RequestEncoding,
+    run_device_flow, DeviceFlowConfig, DeviceFlowTokens, RequestEncoding,
 };
 use crate::providers::private_file::write_private_file;
 
@@ -48,7 +47,10 @@ const MUSE_CODE_KNOWN_MODELS: &[&str] = &[
 ];
 
 const REFRESH_THRESHOLD_SECS: i64 = 300;
-const DEFAULT_TOKEN_LIFETIME_SECS: i64 = 3600;
+/// Minted Model API keys are valid for about a day. The identity token is not
+/// renewable: auth.meta.com does not issue a refresh_token and rejects
+/// grant_type=refresh_token. Re-mint from the stored identity token instead.
+const API_KEY_LIFETIME_SECS: i64 = 24 * 60 * 60;
 
 static GLOBAL_MUSE_REFRESH_MUTEX: std::sync::OnceLock<TokioMutex<()>> = std::sync::OnceLock::new();
 
@@ -102,47 +104,36 @@ fn known_models() -> Vec<ModelInfo> {
         .collect()
 }
 
-fn tokens_to_muse(tokens: DeviceFlowTokens, prior_refresh: Option<&str>) -> MuseToken {
-    let refresh_token = tokens
-        .refresh_token
-        .or_else(|| prior_refresh.map(str::to_string))
-        .unwrap_or_default();
-    let expires_at = tokens
-        .expires_at
-        .unwrap_or_else(|| Utc::now() + Duration::seconds(DEFAULT_TOKEN_LIFETIME_SECS));
+fn tokens_to_muse(tokens: DeviceFlowTokens) -> MuseToken {
     MuseToken {
         access_token: tokens.access_token,
-        refresh_token,
+        refresh_token: String::new(),
         api_key: String::new(),
-        expires_at,
+        expires_at: Utc::now(),
     }
 }
 
-fn muse_refresh_error(error: anyhow::Error) -> ProviderError {
-    let refresh_error = error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<DeviceFlowTokenRefreshError>());
-    let status = refresh_error.map(|error| error.status).or_else(|| {
-        error
-            .chain()
-            .find_map(|cause| cause.downcast_ref::<reqwest::Error>())
-            .and_then(reqwest::Error::status)
-    });
-    let details = error.to_string();
+fn minted_key_expiry() -> DateTime<Utc> {
+    Utc::now() + Duration::seconds(API_KEY_LIFETIME_SECS)
+}
 
-    if refresh_error.and_then(|error| error.error.as_deref()) == Some("invalid_grant") {
-        return ProviderError::Authentication(details);
+fn mint_error(status: reqwest::StatusCode, body: &str) -> ProviderError {
+    let details = format!("key mint failed ({status}): {body}");
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return ProviderError::Authentication(format!(
+            "Meta session expired ({status}). Sign in to Muse Code again. {body}"
+        ));
     }
-
-    match status {
-        Some(reqwest::StatusCode::TOO_MANY_REQUESTS) => ProviderError::RateLimitExceeded {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return ProviderError::RateLimitExceeded {
             details,
             retry_delay: None,
-        },
-        Some(status) if status.is_server_error() => ProviderError::ServerError(details),
-        Some(_) => ProviderError::RequestFailed(details),
-        _ => ProviderError::from(error),
+        };
     }
+    if status.is_server_error() {
+        return ProviderError::ServerError(details);
+    }
+    ProviderError::RequestFailed(details)
 }
 
 fn join_url(host: &str, path: &str) -> String {
@@ -193,7 +184,7 @@ fn muse_cli_keychain_token() -> Option<MuseToken> {
             access_token: stored.access_token,
             refresh_token: String::new(),
             api_key: stored.api_key,
-            expires_at: Utc::now() + Duration::seconds(DEFAULT_TOKEN_LIFETIME_SECS),
+            expires_at: minted_key_expiry(),
         })
     }
 
@@ -241,7 +232,7 @@ fn muse_cli_token() -> Option<MuseToken> {
         .meta
         .expires_at
         .and_then(|ts| DateTime::from_timestamp(ts as i64, 0))
-        .unwrap_or_else(|| Utc::now() + Duration::seconds(DEFAULT_TOKEN_LIFETIME_SECS));
+        .unwrap_or_else(minted_key_expiry);
     Some(MuseToken {
         access_token,
         refresh_token: String::new(),
@@ -325,8 +316,9 @@ impl MuseCodeAuth {
         let token_url = join_url(&self.auth_host, "/oidc/device/token/");
         let cfg = self.device_flow_config(&device_auth_url, &token_url);
         let tokens = run_device_flow(&self.client, &cfg).await?;
-        let mut token = tokens_to_muse(tokens, None);
+        let mut token = tokens_to_muse(tokens);
         token.api_key = self.mint_api_key(&token.access_token).await?;
+        token.expires_at = minted_key_expiry();
         Ok(token)
     }
 
@@ -345,10 +337,7 @@ impl MuseCodeAuth {
         let status = response.status();
         let bytes = response.bytes().await?;
         if !status.is_success() {
-            anyhow::bail!(
-                "key mint failed ({status}): {}",
-                String::from_utf8_lossy(&bytes)
-            );
+            return Err(mint_error(status, &String::from_utf8_lossy(&bytes)).into());
         }
         let minted: MintedKey = serde_json::from_slice(&bytes)?;
         minted
@@ -357,18 +346,26 @@ impl MuseCodeAuth {
             .ok_or_else(|| anyhow::anyhow!("mint response missing api_key"))
     }
 
-    async fn do_refresh_token(&self, refresh_token: &str) -> Result<MuseToken> {
-        let token_url = join_url(&self.auth_host, "/oidc/device/token/");
-        let cfg = DeviceFlowConfig {
-            device_auth_url: None,
-            token_url: &token_url,
-            client_id: &self.client_id,
-            scopes: None,
-            extra_headers: Self::oauth_headers(),
-            encoding: RequestEncoding::Form,
-        };
-        let tokens = refresh_device_flow_token(&self.client, &cfg, refresh_token).await?;
-        Ok(tokens_to_muse(tokens, Some(refresh_token)))
+    async fn renew_api_key(&self, token: &MuseToken) -> Result<MuseToken, ProviderError> {
+        if token.access_token.is_empty() {
+            return Err(ProviderError::Authentication(
+                "Meta session cannot be renewed. Sign in to Muse Code again.".to_string(),
+            ));
+        }
+        let api_key = self
+            .mint_api_key(&token.access_token)
+            .await
+            .map_err(|error| match error.downcast::<ProviderError>() {
+                Ok(provider_error) => provider_error,
+                Err(error) => {
+                    ProviderError::Authentication(format!("Failed to renew Muse API key: {error}"))
+                }
+            })?;
+        Ok(MuseToken {
+            api_key,
+            expires_at: minted_key_expiry(),
+            ..token.clone()
+        })
     }
 
     async fn get_valid_token(&self) -> Result<MuseToken, ProviderError> {
@@ -376,7 +373,7 @@ impl MuseCodeAuth {
         if let Some(token) = self.cache.load() {
             match self.use_or_refresh(token, generation).await {
                 Ok(token) => return self.ensure_api_key(token, generation).await,
-                Err(ProviderError::NotConfigured | ProviderError::Authentication(_)) => {}
+                Err(ProviderError::NotConfigured) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -432,66 +429,51 @@ impl MuseCodeAuth {
         token: MuseToken,
         generation: u64,
     ) -> Result<MuseToken, ProviderError> {
-        if token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS) {
+        if !token.api_key.is_empty()
+            && token.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS)
+        {
             return Ok(token);
         }
 
-        if token.refresh_token.is_empty() {
-            if token.expires_at > Utc::now() {
+        if token.access_token.is_empty() {
+            if !token.api_key.is_empty() && token.expires_at > Utc::now() {
                 return Ok(token);
             }
             let _ = self.cache.clear();
-            return Err(ProviderError::NotConfigured);
+            return Err(ProviderError::Authentication(
+                "Meta session expired. Sign in to Muse Code again.".to_string(),
+            ));
         }
 
         let _guard = global_muse_refresh_mutex().lock().await;
-
         if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) != generation {
             return Err(ProviderError::Authentication(
                 "Muse Code credential was removed during authentication".to_string(),
             ));
         }
-
         if let Some(reloaded) = self.cache.load() {
             if reloaded != token
+                && !reloaded.api_key.is_empty()
                 && reloaded.expires_at - Utc::now() > Duration::seconds(REFRESH_THRESHOLD_SECS)
             {
                 return Ok(reloaded);
             }
-            if reloaded != token && !reloaded.refresh_token.is_empty() {
-                drop(_guard);
-                return self.refresh_with_token(reloaded, generation).await;
-            }
         }
-
         drop(_guard);
-        self.refresh_with_token(token, generation).await
-    }
 
-    async fn refresh_with_token(
-        &self,
-        token: MuseToken,
-        generation: u64,
-    ) -> Result<MuseToken, ProviderError> {
-        let refresh_token = token.refresh_token.clone();
-        match self.do_refresh_token(&refresh_token).await {
-            Ok(refreshed) => {
-                self.save_unless_cleaned(&refreshed, generation).await?;
-                Ok(refreshed)
+        match self.renew_api_key(&token).await {
+            Ok(renewed) => {
+                self.save_unless_cleaned(&renewed, generation).await?;
+                Ok(renewed)
             }
             Err(error) => {
-                let mapped = muse_refresh_error(error);
-                if matches!(mapped, ProviderError::Authentication(_)) {
+                if matches!(error, ProviderError::Authentication(_)) {
                     let _guard = global_muse_refresh_mutex().lock().await;
                     if MUSE_TOKEN_GENERATION.load(Ordering::SeqCst) == generation {
                         let _ = self.cache.clear();
                     }
-                    return Err(mapped);
                 }
-                if token.expires_at > Utc::now() {
-                    return Ok(token);
-                }
-                Err(mapped)
+                Err(error)
             }
         }
     }
@@ -500,9 +482,12 @@ impl MuseCodeAuth {
 #[async_trait]
 impl AuthProvider for SharedAuthProvider {
     async fn get_auth_header(&self) -> Result<(String, String)> {
-        let token = self.0.get_valid_token().await?;
+        let token = self.0.get_valid_token().await.map_err(anyhow::Error::new)?;
         if token.api_key.is_empty() {
-            anyhow::bail!("muse_code api key is missing; sign in again");
+            return Err(ProviderError::Authentication(
+                "Muse Code API key is missing. Sign in again.".to_string(),
+            )
+            .into());
         }
         Ok((
             "Authorization".to_string(),
@@ -552,6 +537,13 @@ async fn from_env(tls_config: Option<TlsConfig>) -> Result<MuseCodeProvider> {
         inner: AnthropicProviderBuilder::new(api_client)
             .name(MUSE_CODE_PROVIDER_NAME)
             .custom_models(Some(known_models()))
+            .format_options(AnthropicFormatOptions {
+                // Meta's Messages adapter is stateless. Replay thinking so
+                // multi-turn tool loops keep the chain of thought.
+                preserve_unsigned_thinking: true,
+                preserve_thinking_context: true,
+                ..AnthropicFormatOptions::default()
+            })
             .build(),
         auth,
     })
@@ -873,8 +865,15 @@ mod tests {
 
         let stored = TokenCache::new().load().expect("token should be cached");
         assert_eq!(stored.access_token, "muse-access");
-        assert_eq!(stored.refresh_token, "muse-refresh");
+        assert!(
+            stored.refresh_token.is_empty(),
+            "Meta does not issue a renewable refresh token"
+        );
         assert_eq!(stored.api_key, "LLM-muse-key");
+        assert!(
+            stored.expires_at - Utc::now() > Duration::hours(23),
+            "minted key should be valid for about a day"
+        );
     }
 
     #[tokio::test]
@@ -943,7 +942,7 @@ mod tests {
 
         let stored = TokenCache::new().load().expect("token should be cached");
         assert_eq!(stored.access_token, "new-access");
-        assert_eq!(stored.refresh_token, "new-refresh");
+        assert!(stored.refresh_token.is_empty());
         assert_eq!(stored.api_key, "LLM-new-key");
     }
 
@@ -1047,6 +1046,119 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer LLM-cli-key")
         );
+    }
+
+    #[tokio::test]
+    async fn expired_api_key_is_reminted_from_the_identity_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/muse-code/key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "api_key": "LLM-renewed"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"data": [{"id": "muse-spark-1.3"}]})),
+            )
+            .mount(&server)
+            .await;
+
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", None::<&str>),
+            ("MUSE_CODE_HOST", None::<&str>),
+            ("MUSE_CODE_AUTH_HOST", None::<&str>),
+            ("MUSE_AUTH_PATH", None::<&str>),
+            ("XDG_CONFIG_HOME", None::<&str>),
+        ]);
+        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+        std::env::set_var("MUSE_CODE_HOST", server.uri());
+        std::env::set_var(
+            "MUSE_AUTH_PATH",
+            temp_dir
+                .path()
+                .join("missing-auth.json")
+                .to_string_lossy()
+                .as_ref(),
+        );
+        TokenCache::new()
+            .save(&MuseToken {
+                access_token: "identity-token".to_string(),
+                refresh_token: String::new(),
+                api_key: "LLM-stale".to_string(),
+                expires_at: Utc::now() - Duration::minutes(1),
+            })
+            .expect("stale token should save");
+
+        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+            .await
+            .expect("provider should build");
+        provider
+            .fetch_supported_models()
+            .await
+            .expect("expired key should be reminted");
+
+        let stored = TokenCache::new()
+            .load()
+            .expect("renewed token should be cached");
+        assert_eq!(stored.api_key, "LLM-renewed");
+        assert_eq!(stored.access_token, "identity-token");
+        assert!(stored.refresh_token.is_empty());
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.url.path() == "/muse-code/key"),
+            "renewal must mint a key instead of calling the token endpoint"
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| !request.url.path().contains("/oidc/device/token")),
+            "identity tokens are not refreshable"
+        );
+    }
+
+    #[tokio::test]
+    async fn expired_session_without_identity_token_requires_sign_in() {
+        let server = MockServer::start().await;
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", None::<&str>),
+            ("MUSE_CODE_HOST", None::<&str>),
+            ("MUSE_AUTH_PATH", None::<&str>),
+            ("XDG_CONFIG_HOME", None::<&str>),
+        ]);
+        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
+        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
+        std::env::set_var("MUSE_CODE_HOST", server.uri());
+        std::env::set_var(
+            "MUSE_AUTH_PATH",
+            temp_dir
+                .path()
+                .join("missing-auth.json")
+                .to_string_lossy()
+                .as_ref(),
+        );
+        TokenCache::new()
+            .save(&MuseToken {
+                access_token: String::new(),
+                refresh_token: "not-a-meta-refresh-token".to_string(),
+                api_key: "LLM-stale".to_string(),
+                expires_at: Utc::now() - Duration::minutes(1),
+            })
+            .expect("stale token should save");
+
+        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+            .await
+            .expect("provider should build");
+        let err = provider.fetch_supported_models().await.unwrap_err();
+        assert!(matches!(err, ProviderError::Authentication(_)));
+        assert!(TokenCache::new().load().is_none());
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[tokio::test]

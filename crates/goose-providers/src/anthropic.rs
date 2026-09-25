@@ -17,10 +17,11 @@ use super::api_client::ApiClient;
 use super::base::{
     known_models_from_registry, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
 };
+pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
     block_binding_behavior, create_request_for_model, is_thinking_signature_error,
-    response_to_streaming_message, AnthropicFormatOptions, PrefixMismatchBehavior,
-    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    response_to_streaming_message, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
+    INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
