@@ -386,13 +386,8 @@ fn capability_thinking_effort_value(
 fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffort] {
     if !model_config.is_reasoning_model() {
         &[ThinkingEffort::Off]
-    } else if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model()
-    {
-        &[
-            ThinkingEffort::Low,
-            ThinkingEffort::High,
-            ThinkingEffort::Max,
-        ]
+    } else if let Some(policy) = model_config.thinking_effort_policy() {
+        policy.supported_values()
     } else {
         &[
             ThinkingEffort::Off,
@@ -412,13 +407,8 @@ fn current_thinking_effort_value(model_config: &ModelConfig) -> String {
     let configured = model_config
         .thinking_effort()
         .or_else(|| Config::global().get_goose_thinking_effort());
-    if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model() {
-        return match configured {
-            Some(ThinkingEffort::Off | ThinkingEffort::Low) => ThinkingEffort::Low,
-            Some(ThinkingEffort::Medium | ThinkingEffort::High) => ThinkingEffort::High,
-            Some(ThinkingEffort::Max) | None => ThinkingEffort::Max,
-        }
-        .to_string();
+    if let Some(policy) = model_config.thinking_effort_policy() {
+        return policy.resolve(configured).to_string();
     }
 
     configured

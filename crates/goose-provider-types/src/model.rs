@@ -10,6 +10,32 @@ use std::collections::HashMap;
 
 pub const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
 
+const ALWAYS_ON_REASONING_EFFORTS: &[ThinkingEffort] = &[
+    ThinkingEffort::Low,
+    ThinkingEffort::High,
+    ThinkingEffort::Max,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ThinkingEffortPolicy {
+    supported_values: &'static [ThinkingEffort],
+    default: ThinkingEffort,
+}
+
+impl ThinkingEffortPolicy {
+    pub fn supported_values(self) -> &'static [ThinkingEffort] {
+        self.supported_values
+    }
+
+    pub fn resolve(self, effort: Option<ThinkingEffort>) -> ThinkingEffort {
+        match effort.unwrap_or(self.default) {
+            ThinkingEffort::Off | ThinkingEffort::Low => ThinkingEffort::Low,
+            ThinkingEffort::Medium | ThinkingEffort::High => ThinkingEffort::High,
+            ThinkingEffort::Max => ThinkingEffort::Max,
+        }
+    }
+}
+
 /// Request param keys that describe model-family-agnostic reasoning behavior and
 /// are therefore safe to carry across a model switch or subagent delegation.
 /// Provider-specific keys (e.g. `anthropic_beta`) are deliberately excluded so
@@ -382,6 +408,26 @@ impl ModelConfig {
     pub fn thinking_effort(&self) -> Option<ThinkingEffort> {
         self.request_param::<String>("thinking_effort")
             .and_then(|s| s.parse::<ThinkingEffort>().ok())
+    }
+
+    pub fn thinking_effort_policy(&self) -> Option<ThinkingEffortPolicy> {
+        if self.is_reasoning_model()
+            && (self.is_glm_5_3_reasoning_model() || self.is_kimi_k3_reasoning_model())
+        {
+            Some(ThinkingEffortPolicy {
+                supported_values: ALWAYS_ON_REASONING_EFFORTS,
+                default: ThinkingEffort::Max,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn effective_thinking_effort(&self) -> Option<ThinkingEffort> {
+        let configured = self.thinking_effort();
+        self.thinking_effort_policy()
+            .map(|policy| policy.resolve(configured))
+            .or(configured)
     }
 
     pub fn with_prompt_cache_disabled(self) -> Self {
@@ -1046,6 +1092,37 @@ mod tests {
                     "{model}"
                 );
             }
+        }
+
+        #[test]
+        fn always_on_effort_policy_normalizes_unsupported_values() {
+            for model in ["glm-5.3", "catalog.schema.goose-kimi-k3"] {
+                let policy = ModelConfig::new(model)
+                    .thinking_effort_policy()
+                    .expect("always-on reasoning policy");
+                assert_eq!(
+                    policy.supported_values(),
+                    &[
+                        ThinkingEffort::Low,
+                        ThinkingEffort::High,
+                        ThinkingEffort::Max,
+                    ]
+                );
+                for (configured, expected) in [
+                    (None, ThinkingEffort::Max),
+                    (Some(ThinkingEffort::Off), ThinkingEffort::Low),
+                    (Some(ThinkingEffort::Low), ThinkingEffort::Low),
+                    (Some(ThinkingEffort::Medium), ThinkingEffort::High),
+                    (Some(ThinkingEffort::High), ThinkingEffort::High),
+                    (Some(ThinkingEffort::Max), ThinkingEffort::Max),
+                ] {
+                    assert_eq!(policy.resolve(configured), expected);
+                }
+            }
+
+            let mut disabled = ModelConfig::new("glm-5.3");
+            disabled.reasoning = Some(false);
+            assert!(disabled.thinking_effort_policy().is_none());
         }
 
         #[test]

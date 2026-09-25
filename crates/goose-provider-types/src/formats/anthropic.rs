@@ -87,7 +87,7 @@ impl AnthropicFormatOptions {
             .unwrap_or(self.preserve_unsigned_thinking)
             || preserve_thinking_context;
         let thinking_disabled = model_config.reasoning == Some(false)
-            || model_config.thinking_effort() == Some(ThinkingEffort::Off);
+            || model_config.effective_thinking_effort() == Some(ThinkingEffort::Off);
         let emit_clear_thinking = model_config
             .request_param::<bool>("emit_clear_thinking")
             .unwrap_or(self.emit_clear_thinking);
@@ -186,7 +186,7 @@ pub fn thinking_type_for_provider(provider_name: &str, model_config: &ModelConfi
         return ThinkingType::Adaptive;
     }
 
-    let effort = model_config.thinking_effort();
+    let effort = model_config.effective_thinking_effort();
 
     if effort.is_none() && model_config.request_param::<i32>("budget_tokens").is_some() {
         return match mode {
@@ -755,7 +755,7 @@ fn provider_usage_with_cost(
 
 pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
     model_config
-        .thinking_effort()
+        .effective_thinking_effort()
         .unwrap_or(ThinkingEffort::High)
 }
 
@@ -777,7 +777,7 @@ pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
     }
 
     let effort = model_config
-        .thinking_effort()
+        .effective_thinking_effort()
         .unwrap_or(ThinkingEffort::High);
     match effort {
         ThinkingEffort::Off => 1024,
@@ -1827,6 +1827,45 @@ mod tests {
         assert!(budget > 0);
         assert_eq!(payload["max_tokens"], 64000);
         assert!(budget < 64000);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_glm_5_3_uses_always_on_effort_policy() -> Result<()> {
+        let messages = vec![Message::user().with_text("Hello")];
+
+        for (effort, expected_budget) in [
+            (None, 32_000),
+            (Some(ThinkingEffort::Off), 4_000),
+            (Some(ThinkingEffort::Low), 4_000),
+            (Some(ThinkingEffort::Medium), 16_000),
+            (Some(ThinkingEffort::High), 16_000),
+            (Some(ThinkingEffort::Max), 32_000),
+        ] {
+            let mut config = ModelConfig::new("glm-5.3").with_default_thinking_effort(effort);
+            config.reasoning = Some(true);
+            config.max_tokens = Some(64_000);
+
+            let payload = create_request_for_model(
+                "zai",
+                &config,
+                "glm-5.3",
+                "system",
+                &messages,
+                &[],
+                AnthropicFormatOptions {
+                    preserve_unsigned_thinking: true,
+                    preserve_thinking_context: true,
+                    emit_clear_thinking: true,
+                    ..Default::default()
+                },
+            )?;
+
+            assert_eq!(payload["thinking"]["type"], "enabled");
+            assert_eq!(payload["thinking"]["budget_tokens"], expected_budget);
+            assert_eq!(payload["thinking"]["clear_thinking"], false);
+        }
 
         Ok(())
     }
