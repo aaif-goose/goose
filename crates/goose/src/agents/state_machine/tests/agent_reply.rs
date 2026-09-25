@@ -33,7 +33,8 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
         api.uri(),
         goose_providers::api_client::AuthMethod::NoAuth,
         None,
-    )?;
+    )?
+    .with_request_builder(crate::session_context::session_id_request_builder());
     let provider: Arc<dyn Provider> = Arc::new(
         goose_providers::openai::OpenAiProviderBuilder::new(api_client)
             .name("openai")
@@ -229,6 +230,12 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .contains(&confirmation_id.as_str())));
     assert_eq!(calculator.total(), 1);
     assert_eq!(api.call_count(), 2);
+    assert!(
+        api.calls()
+            .iter()
+            .all(|call| call.session_id() == Some(session_config.id.as_str())),
+        "initial and resumed provider requests must retain the session context"
+    );
 
     assert!(agent
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
