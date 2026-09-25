@@ -54,13 +54,13 @@ import {
 } from './types';
 import { useDisplayMode, AVAILABLE_DISPLAY_MODES } from './useDisplayMode';
 import {
-  PIP_FRAME_INSET,
-  PIP_RESIZE_HANDLES,
-  PIP_TITLE_BAR_HEIGHT,
-  pipFrameRect,
-  pipResizeZoneRect,
-  type PipResizeHandle,
-} from './pipGeometry';
+  PIP_SHELL_CLASSES,
+  PipPlaceholder,
+  PipWindow,
+  pipFrameStyle,
+  pipPanelStyle,
+  usePipWindow,
+} from './PipWindow';
 
 const i18n = defineMessages({
   appFallbackTitle: {
@@ -83,22 +83,6 @@ const i18n = defineMessages({
     id: 'mcpAppRenderer.fullscreen',
     defaultMessage: 'Fullscreen',
   },
-  close: {
-    id: 'mcpAppRenderer.close',
-    defaultMessage: 'Close',
-  },
-  movePipWindow: {
-    id: 'mcpAppRenderer.movePipWindow',
-    defaultMessage: 'Move Picture-in-Picture window',
-  },
-  resizePipWindow: {
-    id: 'mcpAppRenderer.resizePipWindow',
-    defaultMessage: 'Resize Picture-in-Picture window',
-  },
-  playingInPip: {
-    id: 'mcpAppRenderer.playingInPip',
-    defaultMessage: 'Playing in Picture-in-Picture',
-  },
   invalidUrl: {
     id: 'mcpAppRenderer.invalidUrl',
     defaultMessage: 'Invalid URL',
@@ -115,8 +99,6 @@ const i18n = defineMessages({
 
 const DEFAULT_IFRAME_HEIGHT = 200;
 const FULLSCREEN_HEADER_HEIGHT = 48;
-// Matches the panel's rounded-xl radius so the title bar fills the corner gap.
-const PIP_TITLE_BAR_OVERLAP = 12;
 const DEFAULT_SANDBOX_PERMISSIONS = 'allow-scripts allow-same-origin allow-forms';
 
 async function fetchMcpAppProxyUrl(csp: McpUiResourceCsp | null): Promise<string | null> {
@@ -223,17 +205,6 @@ const SANDBOX_PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready';
 
 // In PiP the iframe must fill the window even when the guest's content is
 // shorter, otherwise the window's own background shows below the app.
-const PIP_RESIZE_CURSOR: Record<PipResizeHandle, string> = {
-  top: 'cursor-ns-resize',
-  bottom: 'cursor-ns-resize',
-  left: 'cursor-ew-resize',
-  right: 'cursor-ew-resize',
-  'top-left': 'cursor-nwse-resize',
-  'bottom-right': 'cursor-nwse-resize',
-  'top-right': 'cursor-nesw-resize',
-  'bottom-left': 'cursor-nesw-resize',
-};
-
 function iframeHeightFor(guestHeight: number, hostContext: McpUiHostContext): number {
   const dimensions = hostContext.containerDimensions;
   if (hostContext.displayMode !== 'pip' || !dimensions || !('maxHeight' in dimensions)) {
@@ -555,7 +526,7 @@ export default function McpAppRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const dm = useDisplayMode({ displayMode, onDisplayModeChange, containerRef, sessionId });
+  const dm = useDisplayMode({ displayMode, onDisplayModeChange, containerRef });
   const {
     activeDisplayMode,
     effectiveDisplayModes,
@@ -569,11 +540,10 @@ export default function McpAppRenderer({
     appTitle,
     changeDisplayMode,
     inlineHeight,
-    pipGeometry,
-    pipHandlers,
-    pipResizeHandlers,
     fullscreenCloseRef,
   } = dm;
+
+  const pip = usePipWindow({ active: isPip, sessionId });
 
   const { resolvedTheme, mcpHostStyles } = useTheme();
 
@@ -1074,7 +1044,7 @@ export default function McpAppRenderer({
     // Fullscreen controls are rendered by renderFullscreenHeader instead.
     if (activeDisplayMode === 'fullscreen') return null;
 
-    // PiP controls are rendered by renderPipControls instead.
+    // PiP controls are rendered by PipWindow instead.
     if (activeDisplayMode === 'pip') return null;
 
     // Inline mode — show controls on hover or keyboard focus
@@ -1109,8 +1079,7 @@ export default function McpAppRenderer({
   const containerClasses = cn(
     'mcp-app-container bg-background-primary [&_iframe]:!w-full',
     isFillsViewport && 'fixed inset-0 z-[1000] overflow-hidden [&_iframe]:!h-full',
-    isPip &&
-      'pointer-events-auto absolute z-10 overflow-hidden rounded-xl border border-border-primary shadow-2xl',
+    isPip && PIP_SHELL_CLASSES.panel,
     isInline && 'group/mcp-app relative overflow-hidden',
     isInline && !isError && 'mt-6 mb-2',
     isInline && !isError && meta.prefersBorder && 'border border-border-primary rounded-lg',
@@ -1121,118 +1090,12 @@ export default function McpAppRenderer({
     ...(isFillsViewport
       ? {}
       : isPip
-        ? {
-            top: `${PIP_FRAME_INSET.top}px`,
-            left: `${PIP_FRAME_INSET.left}px`,
-            width: `${pipGeometry.width}px`,
-            height: `${pipGeometry.height}px`,
-          }
+        ? pipPanelStyle(pip.geometry)
         : {
             width: '100%',
             height: `${effectiveInlineHeight}px`,
           }),
   };
-
-  const pipFrame = pipFrameRect(pipGeometry);
-  const pipFrameStyle: React.CSSProperties | undefined = isPip
-    ? {
-        width: `${pipFrame.width}px`,
-        height: `${pipFrame.height}px`,
-        right: `${pipFrame.right}px`,
-        bottom: `${pipFrame.bottom}px`,
-      }
-    : undefined;
-
-  // Title bar above the panel, styled like the fullscreen header. A drag layer
-  // fills the bar so the whole bar moves the window, with the buttons layered
-  // over it. The bar only takes pointer events while the PiP is hovered or
-  // focused, so it never intercepts clicks meant for the chat behind it. It
-  // extends under the panel's rounded top corners so the two join cleanly.
-  const renderPipControls = () => (
-    <div
-      className="pointer-events-none absolute flex translate-y-1 select-none items-center rounded-t-xl border border-b-0 border-border-primary bg-background-primary px-2 opacity-0 transition-[opacity,transform] duration-200 ease-out group-hover/pip:pointer-events-auto group-hover/pip:translate-y-0 group-hover/pip:opacity-100 focus-within:pointer-events-auto focus-within:translate-y-0 focus-within:opacity-100 motion-reduce:transition-none"
-      style={{
-        left: `${PIP_FRAME_INSET.left}px`,
-        right: `${PIP_FRAME_INSET.right}px`,
-        top: `${PIP_FRAME_INSET.top - PIP_TITLE_BAR_HEIGHT}px`,
-        height: `${PIP_TITLE_BAR_HEIGHT + PIP_TITLE_BAR_OVERLAP}px`,
-        paddingBottom: `${PIP_TITLE_BAR_OVERLAP}px`,
-      }}
-    >
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={intl.formatMessage(i18n.movePipWindow)}
-        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
-        className="absolute inset-0 cursor-grab rounded-t-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-active active:cursor-grabbing"
-        onPointerDown={pipHandlers.onPointerDown}
-        onPointerMove={pipHandlers.onPointerMove}
-        onPointerUp={pipHandlers.onPointerUp}
-        onLostPointerCapture={pipHandlers.onLostPointerCapture}
-        onKeyDown={pipHandlers.onKeyDown}
-      />
-      <div className="pointer-events-none min-w-0 flex-1" />
-      <span className="pointer-events-none truncate px-3 text-xs font-medium text-text-secondary">
-        {fullscreenTitle}
-      </span>
-      <div className="pointer-events-none relative flex flex-1 items-center justify-end gap-0.5">
-        {appSupportsFullscreen && (
-          <button
-            onClick={() => changeDisplayMode('fullscreen')}
-            className="pointer-events-auto cursor-pointer rounded-md p-1 text-text-secondary transition-colors hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
-            title={intl.formatMessage(i18n.fullscreen)}
-            aria-label={intl.formatMessage(i18n.fullscreen)}
-          >
-            <Maximize2 size={14} />
-          </button>
-        )}
-        <button
-          onClick={() => changeDisplayMode('inline')}
-          className="pointer-events-auto cursor-pointer rounded-md p-1 text-text-secondary transition-colors hover:bg-black/10 hover:text-text-primary dark:hover:bg-white/10"
-          title={intl.formatMessage(i18n.close)}
-          aria-label={intl.formatMessage(i18n.close)}
-        >
-          <X size={14} />
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderPipResizeZones = () =>
-    PIP_RESIZE_HANDLES.map((handle) => {
-      const handlers = pipResizeHandlers[handle];
-      const zone = pipResizeZoneRect(handle, pipGeometry);
-      // Arrow keys on one handle can reach any size, so only the bottom-right
-      // corner is exposed to keyboard and screen readers.
-      const isKeyboardHandle = handle === 'bottom-right';
-      return (
-        <div
-          key={handle}
-          role={isKeyboardHandle ? 'button' : undefined}
-          tabIndex={isKeyboardHandle ? 0 : undefined}
-          aria-hidden={isKeyboardHandle ? undefined : true}
-          aria-label={isKeyboardHandle ? intl.formatMessage(i18n.resizePipWindow) : undefined}
-          aria-keyshortcuts={
-            isKeyboardHandle ? 'ArrowUp ArrowDown ArrowLeft ArrowRight' : undefined
-          }
-          className={cn(
-            'pointer-events-auto absolute z-20 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-border-active',
-            PIP_RESIZE_CURSOR[handle]
-          )}
-          style={{
-            left: `${zone.left}px`,
-            top: `${zone.top}px`,
-            width: `${zone.width}px`,
-            height: `${zone.height}px`,
-          }}
-          onPointerDown={handlers.onPointerDown}
-          onPointerMove={handlers.onPointerMove}
-          onPointerUp={handlers.onPointerUp}
-          onLostPointerCapture={handlers.onLostPointerCapture}
-          onKeyDown={isKeyboardHandle ? handlers.onKeyDown : undefined}
-        />
-      );
-    });
 
   return (
     <>
@@ -1244,29 +1107,24 @@ export default function McpAppRenderer({
         />
       )}
       {isPip && (
-        <div
-          className="mt-6 mb-2 flex items-center justify-center rounded-lg border border-dashed border-border-primary bg-black/[0.02] dark:bg-white/[0.02]"
-          style={{ width: '100%', height: `${inlineHeight}px` }}
-        >
-          <button
-            onClick={() => changeDisplayMode('inline')}
-            className="cursor-pointer flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
-          >
-            <PictureInPicture2 size={14} />
-            <span>{intl.formatMessage(i18n.playingInPip)}</span>
-          </button>
-        </div>
+        <PipPlaceholder height={inlineHeight} onReturn={() => changeDisplayMode('inline')} />
       )}
 
-      {/* Stable app container — never unmounted, only repositioned via CSS.
-          In PiP the frame carries the floating controls and resize zones
-          around the panel, so the app never sees them. */}
+      {/* Stable app shell — never unmounted, only restyled per mode, so the
+          iframe keeps its state. Mode-specific chrome renders as siblings of
+          the container inside this frame, never as its ancestors. */}
       <div
-        className={cn(isPip && 'group/pip pointer-events-none fixed z-[900]')}
-        style={pipFrameStyle}
+        className={cn(isPip && PIP_SHELL_CLASSES.frame)}
+        style={isPip ? pipFrameStyle(pip.geometry) : undefined}
       >
-        {isPip && renderPipControls()}
-        {isPip && renderPipResizeZones()}
+        {isPip && (
+          <PipWindow
+            {...pip}
+            title={fullscreenTitle}
+            onFullscreen={appSupportsFullscreen ? () => changeDisplayMode('fullscreen') : undefined}
+            onClose={() => changeDisplayMode('inline')}
+          />
+        )}
         <div
           ref={containerRef}
           className={cn(containerClasses, isFillsViewport && 'flex flex-col')}
@@ -1278,7 +1136,7 @@ export default function McpAppRenderer({
             className={cn(
               'relative w-full',
               !isPip && 'flex-1 min-h-0',
-              isPip && 'max-h-full overflow-y-auto overflow-x-hidden'
+              isPip && PIP_SHELL_CLASSES.content
             )}
           >
             {!isPip && renderDisplayModeControls()}

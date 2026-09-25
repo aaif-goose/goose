@@ -2,26 +2,14 @@
  * useDisplayMode — Manages display mode state for MCP App containers.
  *
  * Encapsulates the display mode state machine, capability negotiation,
- * PiP drag/resize handling, entrance animations, and postMessage interception
- * for ui/initialize and ui/request-display-mode.
+ * entrance animations, and postMessage interception for ui/initialize and
+ * ui/request-display-mode. Mode-specific chrome and geometry live with each
+ * mode's component (see PipWindow.tsx).
  */
 
 import type { McpUiDisplayMode } from '@modelcontextprotocol/ext-apps/app-bridge';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GooseDisplayMode, OnDisplayModeChange } from './types';
-import {
-  DEFAULT_PIP_GEOMETRY,
-  clampPipGeometry,
-  getViewport,
-  loadPipGeometry,
-  movePipGeometry,
-  resizePipGeometry,
-  PIP_RESIZE_HANDLES,
-  type PipResizeHandle,
-  savePipGeometry,
-  type PipGeometry,
-  type Viewport,
-} from './pipGeometry';
 
 const DEFAULT_IFRAME_HEIGHT = 200;
 
@@ -31,16 +19,6 @@ interface UseDisplayModeOptions {
   displayMode: GooseDisplayMode;
   onDisplayModeChange?: OnDisplayModeChange;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** Chat session used to remember PiP size and position between openings. */
-  sessionId?: string | null;
-}
-
-interface PipPointerHandlers {
-  onPointerDown: (e: React.PointerEvent) => void;
-  onPointerMove: (e: React.PointerEvent) => void;
-  onPointerUp: (e: React.PointerEvent) => void;
-  onLostPointerCapture: () => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
 }
 
 export interface DisplayModeState {
@@ -60,15 +38,6 @@ export interface DisplayModeState {
   /** Remembered inline height for placeholders when detached. */
   inlineHeight: number;
 
-  /** PiP size and position offset from the default bottom-right corner. */
-  pipGeometry: PipGeometry;
-
-  /** PiP move handle event handlers. */
-  pipHandlers: PipPointerHandlers;
-
-  /** PiP resize handle event handlers, one set per edge and corner. */
-  pipResizeHandlers: Record<PipResizeHandle, PipPointerHandlers>;
-
   /** Ref for the fullscreen close button (auto-focused on enter). */
   fullscreenCloseRef: React.RefObject<HTMLButtonElement | null>;
 }
@@ -79,7 +48,6 @@ export function useDisplayMode({
   displayMode,
   onDisplayModeChange,
   containerRef,
-  sessionId,
 }: UseDisplayModeOptions): DisplayModeState {
   const [activeDisplayMode, setActiveDisplayMode] = useState<GooseDisplayMode>(displayMode);
 
@@ -160,37 +128,6 @@ export function useDisplayMode({
     [onDisplayModeChange, activeDisplayMode, containerRef]
   );
 
-  // ── PiP move / resize ─────────────────────────────────────────────────
-
-  const [pipGeometry, setPipGeometry] = useState<PipGeometry>(DEFAULT_PIP_GEOMETRY);
-  const pipGeometryRef = useRef(pipGeometry);
-
-  const updatePipGeometry = useCallback(
-    (next: PipGeometry) => {
-      pipGeometryRef.current = next;
-      setPipGeometry(next);
-      savePipGeometry(sessionId, next);
-    },
-    [sessionId]
-  );
-
-  const pipMoveHandlers = useMemo(
-    () => createPipGesture(pipGeometryRef, updatePipGeometry, movePipGeometry),
-    [updatePipGeometry]
-  );
-  const pipResizeHandlers = useMemo(
-    () =>
-      Object.fromEntries(
-        PIP_RESIZE_HANDLES.map((handle) => [
-          handle,
-          createPipGesture(pipGeometryRef, updatePipGeometry, (origin, dx, dy, viewport) =>
-            resizePipGeometry(origin, dx, dy, viewport, handle)
-          ),
-        ])
-      ) as Record<PipResizeHandle, PipPointerHandlers>,
-    [updatePipGeometry]
-  );
-
   // ── Effects ───────────────────────────────────────────────────────────
 
   // Cache iframe contentWindows for O(1) source matching via MutationObserver.
@@ -262,24 +199,6 @@ export function useDisplayMode({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeDisplayMode, changeDisplayMode]);
 
-  // Entering PiP restores the session's last geometry (or defaults), re-clamped
-  // to the current window so a smaller window never leaves it off-screen.
-  useEffect(() => {
-    if (activeDisplayMode !== 'pip') return;
-    updatePipGeometry(
-      clampPipGeometry(loadPipGeometry(sessionId) ?? DEFAULT_PIP_GEOMETRY, getViewport())
-    );
-  }, [activeDisplayMode, sessionId, updatePipGeometry]);
-
-  useEffect(() => {
-    if (activeDisplayMode !== 'pip') return;
-    const handleResize = () => {
-      updatePipGeometry(clampPipGeometry(pipGeometryRef.current, getViewport()));
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [activeDisplayMode, updatePipGeometry]);
-
   // ── Derived state ─────────────────────────────────────────────────────
 
   const isFullscreen = activeDisplayMode === 'fullscreen';
@@ -305,74 +224,7 @@ export function useDisplayMode({
     changeDisplayMode,
 
     inlineHeight: savedInlineHeight,
-    pipGeometry,
-    pipHandlers: pipMoveHandlers,
-    pipResizeHandlers,
 
     fullscreenCloseRef,
-  };
-}
-
-type PipGestureApply = (
-  origin: PipGeometry,
-  dx: number,
-  dy: number,
-  viewport: Viewport
-) => PipGeometry;
-
-/**
- * Pointer-drag and arrow-key gesture that applies a (dx, dy) delta to the PiP
- * geometry. Used for both moving (delta shifts position) and resizing (delta
- * moves the dragged edge or corner).
- */
-function createPipGesture(
-  geometryRef: React.RefObject<PipGeometry>,
-  setGeometry: (next: PipGeometry) => void,
-  apply: PipGestureApply
-): PipPointerHandlers {
-  let drag: { startX: number; startY: number; origin: PipGeometry } | null = null;
-
-  return {
-    onPointerDown: (e) => {
-      e.preventDefault();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      drag = { startX: e.clientX, startY: e.clientY, origin: geometryRef.current };
-    },
-    onPointerMove: (e) => {
-      if (!drag) return;
-      setGeometry(
-        apply(drag.origin, e.clientX - drag.startX, e.clientY - drag.startY, getViewport())
-      );
-    },
-    onPointerUp: (e) => {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      drag = null;
-    },
-    onLostPointerCapture: () => {
-      drag = null;
-    },
-    onKeyDown: (e) => {
-      const step = e.shiftKey ? 32 : 8;
-      let dx = 0;
-      let dy = 0;
-      switch (e.key) {
-        case 'ArrowUp':
-          dy = -step;
-          break;
-        case 'ArrowDown':
-          dy = step;
-          break;
-        case 'ArrowLeft':
-          dx = -step;
-          break;
-        case 'ArrowRight':
-          dx = step;
-          break;
-        default:
-          return;
-      }
-      e.preventDefault();
-      setGeometry(apply(geometryRef.current, dx, dy, getViewport()));
-    },
   };
 }
