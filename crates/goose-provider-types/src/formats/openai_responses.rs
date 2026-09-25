@@ -149,21 +149,22 @@ pub struct ResponseUsage {
 pub struct InputTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<i32>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<i32>,
 }
 
 impl ResponseUsage {
     fn to_usage(&self) -> Usage {
-        // input_tokens already includes cached tokens
-        let cached_tokens = self
-            .input_tokens_details
-            .as_ref()
-            .and_then(|d| d.cached_tokens);
+        // input_tokens already includes both cache reads and cache writes
+        let details = self.input_tokens_details.as_ref();
+        let cached_tokens = details.and_then(|d| d.cached_tokens);
+        let cache_write_tokens = details.and_then(|d| d.cache_write_tokens);
         Usage::new(
             Some(self.input_tokens),
             Some(self.output_tokens),
             Some(self.total_tokens),
         )
-        .with_cache_tokens(cached_tokens, None)
+        .with_cache_tokens(cached_tokens, cache_write_tokens)
     }
 }
 
