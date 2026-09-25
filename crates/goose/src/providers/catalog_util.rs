@@ -172,6 +172,21 @@ mod tests {
             host_field.default_value.as_deref(),
             Some("http://localhost:1337")
         );
+
+        let openllm = entries
+            .iter()
+            .find(|entry| entry.provider_id == "openllm")
+            .expect("setup catalog should include openllm declarative provider");
+        assert_eq!(openllm.setup_method, ProviderSetupMethod::ConfigFields);
+        assert_eq!(openllm.fields.len(), 1);
+        assert_eq!(openllm.fields[0].key, "OPENLLM_HOST");
+        assert_eq!(openllm.fields[0].label, "Host URL");
+        assert!(!openllm.fields[0].required);
+        assert!(!openllm.fields[0].secret);
+        assert_eq!(
+            openllm.fields[0].default_value.as_deref(),
+            Some("http://127.0.0.1:8787")
+        );
     }
 
     #[tokio::test]
