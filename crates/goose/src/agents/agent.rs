@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
 use futures::{stream, FutureExt, StreamExt, TryStreamExt};
+use goose_agent::inference::ends_with_successful_tool_response;
 use tracing_futures::Instrument;
 
 use super::container::Container;
@@ -3379,7 +3380,9 @@ impl Agent {
                                     session_manager.replace_conversation(&session_config.id, &conversation).await?;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());
                                 }
-                                Ok(RetryResult::Skipped) if empty_response => {
+                                Ok(RetryResult::Skipped)
+                                    if empty_response
+                                        && !ends_with_successful_tool_response(conversation.messages()) => {
                                     // No recipe retry configured, and this empty
                                     // turn would otherwise fall through to a
                                     // silent exit. Retry a bounded number of
