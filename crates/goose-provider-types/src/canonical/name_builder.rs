@@ -57,6 +57,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "opencode_zen" => "opencode",
         "ollama_cloud" => "ollama-cloud",
         "kimi_code" => "kimi-code-plan-cn",
+        "muse_code" => "meta",
         _ => provider,
     }
 }

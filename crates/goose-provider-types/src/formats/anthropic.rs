@@ -78,7 +78,7 @@ impl AnthropicFormatOptions {
         }
     }
 
-    fn for_model(self, model_config: &ModelConfig) -> Self {
+    fn for_model(self, provider_name: &str, model_config: &ModelConfig) -> Self {
         let preserve_thinking_context = model_config
             .request_param::<bool>("preserve_thinking_context")
             .unwrap_or(self.preserve_thinking_context);
@@ -86,8 +86,11 @@ impl AnthropicFormatOptions {
             .request_param::<bool>("preserve_unsigned_thinking")
             .unwrap_or(self.preserve_unsigned_thinking)
             || preserve_thinking_context;
-        let thinking_disabled = model_config.reasoning == Some(false)
-            || model_config.thinking_effort() == Some(ThinkingEffort::Off);
+        let always_on = canonical_thinking_mode(provider_name, &model_config.model_name)
+            == Some(ThinkingMode::AlwaysOnAdaptive);
+        let thinking_disabled = !always_on
+            && (model_config.reasoning == Some(false)
+                || model_config.thinking_effort() == Some(ThinkingEffort::Off));
         let emit_clear_thinking = model_config
             .request_param::<bool>("emit_clear_thinking")
             .unwrap_or(self.emit_clear_thinking);
@@ -148,7 +151,18 @@ pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -
 }
 
 fn canonical_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
-    maybe_get_canonical_model(provider_name, model_name).and_then(|model| model.thinking_mode)
+    maybe_get_canonical_model(provider_name, model_name)
+        .and_then(|model| model.thinking_mode)
+        .or_else(|| provider_thinking_mode(provider_name, model_name))
+}
+
+/// Models that always reason when the canonical entry has no thinking mode.
+/// Muse Spark rejects `thinking: disabled` and ignores `budget_tokens`.
+fn provider_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
+    if provider_name == "muse_code" && model_name.starts_with("muse-spark") {
+        return Some(ThinkingMode::AlwaysOnAdaptive);
+    }
+    None
 }
 
 /// Adaptive models run adaptive thinking when `thinking` is omitted, so turning
@@ -759,6 +773,15 @@ pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
         .unwrap_or(ThinkingEffort::High)
 }
 
+fn adaptive_effort_wire(provider_name: &str, model_config: &ModelConfig) -> String {
+    let effort = adaptive_output_effort(model_config);
+    // Meta Messages accepts low, medium, high, and xhigh. goose's max maps to xhigh.
+    if provider_name == "muse_code" && effort == ThinkingEffort::Max {
+        return "xhigh".to_string();
+    }
+    effort.to_string()
+}
+
 pub fn adaptive_output_effort(model_config: &ModelConfig) -> ThinkingEffort {
     match thinking_effort(model_config) {
         ThinkingEffort::Off => ThinkingEffort::High,
@@ -805,7 +828,7 @@ fn apply_thinking_config(
     match thinking_type_for_provider(provider_name, model_config) {
         ThinkingType::Adaptive => {
             obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = adaptive_output_effort(model_config).to_string();
+            let effort = adaptive_effort_wire(provider_name, model_config);
             obj.insert("output_config".to_string(), json!({"effort": effort}));
         }
         ThinkingType::Enabled => {
@@ -909,7 +932,7 @@ pub fn create_request_for_model(
     tools: &[Tool],
     options: AnthropicFormatOptions,
 ) -> Result<Value> {
-    let options = options.for_model(model_config);
+    let options = options.for_model(provider_name, model_config);
     let anthropic_messages = format_messages_with_options(messages, &options);
     let tool_specs = format_tools(tools, &options);
     let system_spec = format_system(system, &options);

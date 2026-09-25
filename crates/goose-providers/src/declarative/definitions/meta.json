@@ -16,6 +16,42 @@
       "output_token_cost": 0.00000425,
       "currency": "USD",
       "reasoning": true
+    },
+    {
+      "name": "muse-spark-1.2",
+      "context_limit": 1048576,
+      "max_tokens": 131072,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00000425,
+      "currency": "USD",
+      "reasoning": true
+    },
+    {
+      "name": "muse-spark-1.2-contributor",
+      "context_limit": 1048576,
+      "max_tokens": 131072,
+      "input_token_cost": 0.0000001,
+      "output_token_cost": 0.0000002,
+      "currency": "USD",
+      "reasoning": true
+    },
+    {
+      "name": "muse-spark-1.3",
+      "context_limit": 1048576,
+      "max_tokens": 131072,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00000425,
+      "currency": "USD",
+      "reasoning": true
+    },
+    {
+      "name": "muse-spark-1.3-contributor",
+      "context_limit": 1048576,
+      "max_tokens": 131072,
+      "input_token_cost": 0.0000001,
+      "output_token_cost": 0.0000002,
+      "currency": "USD",
+      "reasoning": true
     }
   ],
   "preserves_thinking": true,
