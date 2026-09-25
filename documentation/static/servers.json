@@ -68,6 +68,23 @@
     ]
   },
   {
+    "id": "atomicmail",
+    "name": "Atomic Mail",
+    "description": "Give goose its own email inbox \u2014 register, send and receive over JMAP",
+    "command": "npx -y @atomicmail/mcp",
+    "link": "https://github.com/Atomic-Mail/atomic-mail-agentic",
+    "installation_notes": "Install using npx package manager. No key is needed to start: the register tool provisions an inbox by proof of work.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "ATOMIC_MAIL_API_KEY",
+        "description": "API key for an existing inbox. Optional \u2014 omit it and call register to provision a new one.",
+        "required": false
+      }
+    ]
+  },
+  {
     "id": "autovisualiser",
     "name": "Auto Visualiser",
     "description": "Automatic data visualisation via MCP-UI",
