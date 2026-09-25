@@ -127,6 +127,8 @@ pub struct MessageUsageData {
 pub enum CostSourceData {
     /// Cost returned directly by the provider (e.g. OpenRouter `usage.cost`).
     ProviderReported,
+    /// Cost computed from an exact user-configured provider/model override.
+    UserConfigured,
     /// Cost computed from the canonical pricing table.
     Estimated,
 }
@@ -250,7 +252,7 @@ mod tests {
                     cache_read_tokens: Some(1000),
                     cache_write_tokens: None,
                     cost: Some(0.0123),
-                    cost_source: Some(CostSourceData::Estimated),
+                    cost_source: Some(CostSourceData::UserConfigured),
                     elapsed_ms: Some(4200),
                     time_to_first_token_ms: Some(840),
                     is_compaction: false,
@@ -273,7 +275,7 @@ mod tests {
                         "totalTokens": 1540,
                         "cacheReadTokens": 1000,
                         "cost": 0.0123,
-                        "costSource": "estimated",
+                        "costSource": "user_configured",
                         "elapsedMs": 4200,
                         "timeToFirstTokenMs": 840,
                         "isCompaction": false

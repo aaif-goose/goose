@@ -12,7 +12,7 @@ fn print_aligned(label: &str, value: &str, width: usize) {
     println!("  {:<width$} {}", label, value, width = width);
 }
 
-use goose::config::base::CONFIG_YAML_NAME;
+use goose::config::base::{CONFIG_YAML_NAME, PRICING_YAML_NAME};
 use std::fs;
 use std::path::Path;
 
@@ -109,10 +109,12 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
     let config = Config::global();
     let config_dir = Paths::config_dir();
     let config_yaml_file = config_dir.join(CONFIG_YAML_NAME);
+    let pricing_yaml_file = config_dir.join(PRICING_YAML_NAME);
 
     let paths = [
         ("Config dir:", &config_dir),
         ("Config yaml:", &config_yaml_file),
+        ("Pricing yaml:", &pricing_yaml_file),
         ("Sessions DB (sqlite):", &sessions_db),
         ("Logs dir:", &logs_dir),
     ];

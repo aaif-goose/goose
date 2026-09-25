@@ -80,7 +80,7 @@ MaaS endpoints always use `/v1/chat/completions` and the model configured by `AZ
 
 The deployments API provides the deployment name and underlying `modelName`, `modelVersion`, and `modelPublisher`. goose uses the underlying model name to look up a context window in its bundled model catalog. An explicit `GOOSE_CONTEXT_LIMIT` or session override still takes precedence.
 
-Azure pricing depends on region, SKU, offer, deployment type, and contract. The deployments API does not provide a reliable per-token price, so this provider does not attach a price to discovered deployments.
+Azure pricing depends on region, SKU, offer, deployment type, and contract. The deployments API does not provide a reliable per-token price, so this provider does not attach a price to discovered deployments. To use negotiated rates for the exact underlying model (for example, `gpt-5.6-sol`), add them to the automatically discovered [`pricing.yaml`](/docs/guides/config-files#pricing-overrides); no custom provider or activation environment variable is required.
 
 ## Troubleshooting
 

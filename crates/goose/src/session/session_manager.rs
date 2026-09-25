@@ -905,6 +905,7 @@ async fn insert_usage_ledger_row(
 ) -> Result<()> {
     let cost_source = usage.cost_source.map(|cs| match cs {
         CostSource::ProviderReported => "provider_reported",
+        CostSource::UserConfigured => "user_configured",
         CostSource::Estimated => "estimated",
     });
 
@@ -4790,6 +4791,36 @@ mod tests {
         insert_usage_ledger_row(&mut tx, session_id, None, usage).await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_user_configured_cost_source_is_persisted() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+        let usage = MessageUsage {
+            cost_source: Some(CostSource::UserConfigured),
+            ..message_usage(100, 20, 0.10, false)
+        };
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(100), Some(20), Some(120)),
+            "negotiated-model",
+            &usage,
+        )
+        .await
+        .unwrap();
+
+        let source: String = sqlx::query_scalar(
+            "SELECT cost_source FROM usage_ledger WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(&id)
+        .fetch_one(sm.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+        assert_eq!(source, "user_configured");
     }
 
     #[tokio::test]

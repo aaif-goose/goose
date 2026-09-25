@@ -88,6 +88,19 @@ describe('applyGooseSessionNotification', () => {
       expect(state.messages[1].metadata.usage).toEqual(FULL_USAGE);
     });
 
+    it('preserves user-configured cost provenance', () => {
+      const state = makeState();
+      const usage = { ...FULL_USAGE, costSource: 'user_configured' as const };
+
+      const changes = applyGooseSessionNotification(
+        state,
+        messageUsageNotification('a1', usage)
+      );
+
+      const messages = expectOnlyMessagesChange(changes);
+      expect(messages[1].metadata.usage).toEqual(usage);
+    });
+
     it.each([
       ['absent', undefined],
       ['unknown', 'missing'],

@@ -6983,6 +6983,11 @@
         },
         {
           "type": "string",
+          "const": "user_configured",
+          "description": "Cost computed from an exact user-configured provider/model override."
+        },
+        {
+          "type": "string",
           "const": "estimated",
           "description": "Cost computed from the canonical pricing table."
         }

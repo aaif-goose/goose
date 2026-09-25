@@ -172,7 +172,7 @@ export type MessageUsage = {
   cacheReadTokens?: number | null;
   cacheWriteTokens?: number | null;
   cost?: number | null;
-  costSource?: 'provider_reported' | 'estimated' | null;
+  costSource?: 'provider_reported' | 'user_configured' | 'estimated' | null;
   elapsedMs?: number | null;
   timeToFirstTokenMs?: number | null;
   isCompaction?: boolean;

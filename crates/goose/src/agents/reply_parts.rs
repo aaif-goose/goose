@@ -782,15 +782,7 @@ impl Agent {
         usage: &ProviderUsage,
         provider_name: Option<&str>,
     ) -> (Option<f64>, Option<CostSource>) {
-        if let Some(cost) = usage.cost {
-            return (Some(cost), Some(CostSource::ProviderReported));
-        }
-        match provider_name.and_then(|pn| {
-            crate::providers::canonical_cost::estimate_model_cost(pn, &usage.model, &usage.usage)
-        }) {
-            Some(cost) => (Some(cost), Some(CostSource::Estimated)),
-            None => (None, None),
-        }
+        crate::providers::canonical_cost::resolve_usage_cost(provider_name, usage)
     }
 }
 
@@ -853,6 +845,22 @@ mod tests {
     use rmcp::object;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn legacy_cost_resolution_uses_user_configured_provenance() {
+        let overrides = r#"[{"provider":"test-provider","model":"negotiated","input_usd_per_million_tokens":1.0,"output_usd_per_million_tokens":2.0}]"#;
+        let _guard = env_lock::lock_env([("GOOSE_PRICING_OVERRIDES", Some(overrides))]);
+        let agent = crate::agents::Agent::new();
+        let usage = ProviderUsage::new(
+            "negotiated".to_string(),
+            Usage::new(Some(1_000_000), Some(500_000), None),
+        );
+
+        let (cost, source) = agent.resolve_chunk_cost(&usage, Some("test-provider"));
+
+        assert_eq!(cost, Some(2.0));
+        assert_eq!(source, Some(CostSource::UserConfigured));
+    }
 
     #[derive(Clone)]
     struct GenAiTracingProvider;

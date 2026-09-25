@@ -2236,6 +2236,7 @@ export const zStatusMessageUpdate = z.object({
  */
 export const zCostSourceData = z.union([
     z.literal('provider_reported'),
+    z.literal('user_configured'),
     z.literal('estimated')
 ]);
 
