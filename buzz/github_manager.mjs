@@ -1,6 +1,47 @@
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 
 export const ISSUE_FIRST_COMMENT_MARKER = "<!-- buzz:issue-first -->";
+
+const openPullRequestLinksQuery = `
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: 100, after: $endCursor, states: OPEN) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        closingIssuesReferences(first: 100) {
+          pageInfo { hasNextPage }
+          nodes {
+            number
+            url
+            repository { name owner { login } }
+          }
+        }
+      }
+    }
+  }
+}`;
+const pullRequestLinksQuery = `
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      closingIssuesReferences(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          number
+          url
+          repository { name owner { login } }
+        }
+      }
+    }
+  }
+}`;
 
 export function issueFirstNotice(repository) {
   return `${ISSUE_FIRST_COMMENT_MARKER}
@@ -14,18 +55,27 @@ export function getProjectIssues(
   { command, projectNumber, projectOwner, projectLimit, repository },
 ) {
   const normalizedRepository = repository.toLowerCase();
+  const snapshotPath = process.env.BUZZ_PROJECT_SNAPSHOT_FILE;
+  if (
+    snapshotPath &&
+    process.env.BUZZ_REFRESH_PROJECT_SNAPSHOT === "true" &&
+    existsSync(snapshotPath)
+  ) {
+    unlinkSync(snapshotPath);
+  }
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const project = runJson(command, [
-      "project",
-      "item-list",
-      String(projectNumber),
-      "--owner",
-      projectOwner,
-      "--limit",
-      String(projectLimit),
-      "--format",
-      "json",
-    ]);
+    const project = readProjectSnapshot(snapshotPath) ||
+      runJson(command, [
+        "project",
+        "item-list",
+        String(projectNumber),
+        "--owner",
+        projectOwner,
+        "--limit",
+        String(projectLimit),
+        "--format",
+        "json",
+      ]);
     if (!Number.isSafeInteger(project.totalCount) || !Array.isArray(project.items)) {
       throw new Error("GitHub returned an invalid project item list.");
     }
@@ -35,6 +85,7 @@ export function getProjectIssues(
       );
     }
     if (project.items.length === project.totalCount) {
+      writeProjectSnapshot(snapshotPath, project);
       return {
         project,
         byNumber: new Map(
@@ -54,6 +105,26 @@ export function getProjectIssues(
       );
     }
   }
+}
+
+function readProjectSnapshot(path) {
+  if (!path || !existsSync(path)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`Could not read project snapshot ${path}: ${error.message}`);
+  }
+}
+
+function writeProjectSnapshot(path, project) {
+  if (!path || existsSync(path)) {
+    return;
+  }
+  const temporaryPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporaryPath, `${JSON.stringify(project)}\n`, { mode: 0o600 });
+  renameSync(temporaryPath, path);
 }
 
 export function getOpenIssues(runJson, { command, repository }) {
@@ -84,37 +155,6 @@ export function getOpenPullRequests(
   runJson,
   { command, repository, limit },
 ) {
-  const pullRequests = runJson(command, [
-    "pr",
-    "list",
-    "--repo",
-    repository,
-    "--state",
-    "open",
-    "--limit",
-    String(limit),
-    "--json",
-    [
-      "author",
-      "body",
-      "closingIssuesReferences",
-      "comments",
-      "createdAt",
-      "isDraft",
-      "number",
-      "title",
-      "updatedAt",
-      "url",
-    ].join(","),
-  ]);
-  if (!Array.isArray(pullRequests)) {
-    throw new Error("GitHub returned an invalid pull request list.");
-  }
-  if (pullRequests.length >= limit) {
-    throw new Error(
-      `GitHub returned ${pullRequests.length} pull requests at the limit. Raise --limit.`,
-    );
-  }
   const pages = runJson(command, [
     "api",
     "--paginate",
@@ -124,19 +164,166 @@ export function getOpenPullRequests(
   if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
     throw new Error("GitHub returned invalid pull request metadata.");
   }
-  const associationByNumber = new Map(
-    pages
-      .flat()
-      .map((pullRequest) => [
+  const pullRequests = pages.flat();
+  if (pullRequests.length >= limit) {
+    throw new Error(
+      `GitHub returned ${pullRequests.length} pull requests at the limit. Raise --limit.`,
+    );
+  }
+  const [owner, name] = repositoryParts(repository);
+  const linkPages = runJson(command, [
+    "api",
+    "graphql",
+    "--paginate",
+    "--slurp",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-f",
+    `query=${openPullRequestLinksQuery}`,
+  ]);
+  if (!Array.isArray(linkPages)) {
+    throw new Error("GitHub returned invalid pull request links.");
+  }
+  const closingByNumber = new Map(
+    linkPages.flatMap((page) => {
+      const connection = page.data?.repository?.pullRequests;
+      if (!connection || !Array.isArray(connection.nodes)) {
+        throw new Error("GitHub returned invalid pull request links.");
+      }
+      return connection.nodes.map((pullRequest) => [
         pullRequest.number,
-        pullRequest.author_association,
-      ]),
+        closingIssueNodes(pullRequest.closingIssuesReferences),
+      ]);
+    }),
   );
   return pullRequests.map((pullRequest) => ({
-    ...pullRequest,
-    authorAssociation:
-      associationByNumber.get(pullRequest.number) || "UNKNOWN",
+    number: pullRequest.number,
+    title: pullRequest.title,
+    url: pullRequest.html_url,
+    body: pullRequest.body || "",
+    createdAt: pullRequest.created_at,
+    updatedAt: pullRequest.updated_at,
+    isDraft: Boolean(pullRequest.draft),
+    author: {
+      login: pullRequest.user?.login || null,
+      is_bot: pullRequest.user?.type === "Bot",
+    },
+    authorAssociation: pullRequest.author_association || "UNKNOWN",
+    closingIssuesReferences: closingByNumber.get(pullRequest.number) || [],
+    comments: [],
   }));
+}
+
+export function getPullRequestClosingIssues(
+  runJson,
+  { command, repository, number },
+) {
+  const [owner, name] = repositoryParts(repository);
+  const result = runJson(command, [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${number}`,
+    "-f",
+    `query=${pullRequestLinksQuery}`,
+  ]);
+  const pullRequest = result.data?.repository?.pullRequest;
+  if (!pullRequest) {
+    throw new Error(`Could not find pull request #${number}.`);
+  }
+  return closingIssueNodes(pullRequest.closingIssuesReferences);
+}
+
+function closingIssueNodes(connection) {
+  if (!connection || !Array.isArray(connection.nodes)) {
+    throw new Error("GitHub returned invalid closing issue links.");
+  }
+  if (connection.pageInfo?.hasNextPage) {
+    throw new Error("A pull request closes more than 100 issues.");
+  }
+  return connection.nodes;
+}
+
+function repositoryParts(repository) {
+  const [owner, name, extra] = repository.split("/");
+  if (!owner || !name || extra) {
+    throw new Error(`Invalid GitHub repository: ${repository}`);
+  }
+  return [owner, name];
+}
+
+export function getRecentIssues(runJson, { command, repository, count }) {
+  const issues = [];
+  for (let page = 1; issues.length < count; page += 1) {
+    const entries = runJson(command, [
+      "api",
+      `repos/${repository}/issues?state=all&sort=created&direction=desc&per_page=100&page=${page}`,
+    ]);
+    if (!Array.isArray(entries)) {
+      throw new Error("GitHub returned invalid recent issue data.");
+    }
+    issues.push(...entries.filter((entry) => !entry.pull_request));
+    if (entries.length < 100) {
+      break;
+    }
+  }
+  return issues.slice(0, count);
+}
+
+export function pullRequestReadyAt(pullRequest, timeline) {
+  if (pullRequest.draft) {
+    return null;
+  }
+  const readyEvents = (timeline || [])
+    .filter(
+      (event) =>
+        event?.event === "ready_for_review" &&
+        Number.isFinite(Date.parse(event.created_at)),
+    )
+    .sort((left, right) =>
+      right.created_at.localeCompare(left.created_at),
+    );
+  return readyEvents[0]?.created_at || pullRequest.created_at;
+}
+
+export function readyTransitionCoreTeamMember(
+  events,
+  { projectOwner, projectNumber, coreTeamByGithub },
+) {
+  const transitions = (events || [])
+    .filter(
+      (event) =>
+        event?.status === "Ready" &&
+        event.project?.number === projectNumber &&
+        event.project.owner?.login?.toLowerCase() === projectOwner.toLowerCase(),
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  const transition = transitions[0];
+  if (!transition) {
+    return { transition: null, person: null, reason: "no Ready transition" };
+  }
+  const login = transition.actor?.login;
+  if (transition.wasAutomated || !login) {
+    return {
+      transition,
+      person: null,
+      reason: "the Ready transition has no human actor",
+    };
+  }
+  const person = coreTeamByGithub.get(login.toLowerCase()) || null;
+  return person
+    ? { transition, person, reason: "Ready transition actor" }
+    : {
+        transition,
+        person: null,
+        reason: `Ready transition actor @${login} is not in the core team`,
+      };
 }
 
 export function pullRequestIssueMentions(body, repository) {

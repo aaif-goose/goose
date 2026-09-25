@@ -15,52 +15,42 @@ import { fileURLToPath } from "node:url";
 import {
   coreAssignees,
   firstHumanCommentAfter,
-  getOpenIssues,
   getProjectIssues,
-  linkedPullRequestForVerification,
+  pullRequestReadyAt,
+  readyTransitionCoreTeamMember,
   readCoreTeam,
 } from "./github_manager.mjs";
 
 const managedPhases = new Set(["Accepted / design", "Ready"]);
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const issueDetailsQuery = `
+const phaseTransitionQuery = `
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      number
-      title
-      url
-      assignees(first: 100) { nodes { login } }
-      projectItems(first: 20) {
+      timelineItems(
+        last: 100
+        itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]
+      ) {
+        pageInfo { hasPreviousPage }
         nodes {
-          id
-          project { id }
-          fieldValues(first: 50) {
-            nodes {
-              ... on ProjectV2ItemFieldSingleSelectValue {
-                name
-                updatedAt
-                field { ... on ProjectV2FieldCommon { id } }
+          ... on ProjectV2ItemStatusChangedEvent {
+            actor { login }
+            createdAt
+            project {
+              number
+              owner {
+                ... on Organization { login }
+                ... on User { login }
               }
             }
+            status
+            wasAutomated
           }
-        }
-      }
-      closedByPullRequestsReferences(first: 100) {
-        pageInfo { hasNextPage }
-        nodes {
-          number
-          title
-          url
-          state
-          isDraft
-          repository { nameWithOwner }
-          assignees(first: 100) { nodes { login } }
         }
       }
     }
   }
 }`;
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const options = parseArguments(process.argv.slice(2));
 if (options.help) {
   printHelp();
@@ -82,233 +72,81 @@ const coreTeamPath =
 const gh = process.env.GH_BIN || "gh";
 const coreTeam = readCoreTeamOrFail();
 const coreGithubHandles = new Set(coreTeam.people.map((person) => person.github));
-const projectMetadata = getProjectMetadata();
+const checkedAt = new Date().toISOString();
+const rateLimit = getRateLimit();
+
+if (rateLimit.remaining < options.minimumGraphqlPoints) {
+  printResult({
+    status: "deferred-rate-limit",
+    graphql: rateLimit,
+    transitions: [],
+    agent_work: [],
+    failures: [],
+  });
+  process.exit(0);
+}
+
+let state = readLifecycleState();
+const projectMetadata =
+  state?.version === 2 ? state.project : getProjectMetadata();
 const { project } = getProjectIssuesOrFail();
-const openIssuesByNumber = new Map(
-  getOpenIssuesOrFail().map((issue) => [issue.number, issue]),
-);
 const projectIssues = project.items.filter(
   (item) =>
     item.content?.type === "Issue" &&
-    item.content.repository?.toLowerCase() === options.repository.toLowerCase() &&
-    openIssuesByNumber.has(item.content.number),
+    item.content.repository?.toLowerCase() === options.repository.toLowerCase(),
 );
-const state = readLifecycleState();
-const checkedAt = new Date().toISOString();
 
 if (!state) {
   const initializedState = {
-    version: 1,
+    version: 2,
     repository: options.repository,
-    project_id: projectMetadata.id,
+    project: projectMetadata,
     checked_at: checkedAt,
     issues: {},
   };
   for (const item of projectIssues) {
     const entry = newStateEntry(item.status || null, checkedAt, []);
     if (item.status === "Ready") {
-      const details = getIssueDetails(item.content.number, item.status);
-      entry.ignored_pull_requests = activePullRequestUrls(details.pullRequests);
+      entry.ignored_pull_requests = linkedPullRequestUrls(item);
     }
     initializedState.issues[String(item.content.number)] = entry;
   }
   if (!options.dryRun) {
     writeLifecycleState(initializedState);
   }
-  console.log(
-    JSON.stringify(
-      {
-        repository: options.repository,
-        project: options.projectTitle,
-        dry_run: options.dryRun,
-        status: options.dryRun ? "would-initialize" : "initialized",
-        issues_initialized: projectIssues.length,
-        transitions: [],
-        agent_work: [],
-      },
-      null,
-      2,
-    ),
-  );
+  printResult({
+    status: options.dryRun ? "would-initialize" : "initialized",
+    issues_initialized: projectIssues.length,
+    transitions: [],
+    agent_work: [],
+    failures: [],
+  });
   process.exit(0);
 }
 
+if (state.version === 1) {
+  state = migrateState(state, projectMetadata);
+  persistState();
+}
 if (
   state.repository.toLowerCase() !== options.repository.toLowerCase() ||
-  state.project_id !== projectMetadata.id
+  state.project.id !== projectMetadata.id ||
+  state.project.title !== options.projectTitle
 ) {
   fail(`${statePath} belongs to a different repository or project.`);
 }
 
 const transitions = [];
 const agentWork = [];
+const failures = [];
 
 for (const item of projectIssues.sort(
   (left, right) => left.content.number - right.content.number,
 )) {
-  const issueNumber = item.content.number;
-  const stateKey = String(issueNumber);
-  const currentPhase = item.status || null;
-  let entry = state.issues[stateKey] || null;
-  let details = null;
-  let transitioned = false;
-
-  if (!entry || entry.phase !== currentPhase) {
-    transitioned = true;
-    const previousPhase = entry?.phase || null;
-    const previousShepherds = entry?.previous_shepherds || [];
-    let phaseUpdatedAt = checkedAt;
-    let shepherds = previousShepherds;
-    let pending = [];
-
-    if (managedPhases.has(currentPhase)) {
-      details = getIssueDetails(issueNumber, currentPhase);
-      phaseUpdatedAt = details.status.updatedAt;
-      const assignedCore = coreAssignees(
-        details.issue.assignees.nodes,
-        coreGithubHandles,
-      );
-      if (assignedCore.length > 0) {
-        shepherds = assignedCore;
-        pending = assignedCore;
-      }
-    }
-
-    entry = newStateEntry(currentPhase, phaseUpdatedAt, shepherds);
-    entry.unassignment_pending = pending;
-    state.issues[stateKey] = entry;
-    persistState();
-    transitions.push({
-      issue: issueNumber,
-      from: previousPhase,
-      to: currentPhase,
-      previous_shepherds: shepherds,
-      actions: pending.map(() =>
-        options.dryRun ? "would-unassign-core-shepherd" : "unassign-core-shepherd",
-      ),
-    });
-  }
-
-  if (entry.unassignment_pending.length > 0) {
-    details ||= getIssueDetails(issueNumber, currentPhase);
-    const assignedHandles = new Set(
-      details.issue.assignees.nodes.map((assignee) =>
-        assignee.login.toLowerCase(),
-      ),
-    );
-    let changedAssignments = false;
-    for (const handle of [...entry.unassignment_pending]) {
-      if (!options.dryRun) {
-        if (assignedHandles.has(handle.toLowerCase())) {
-          runCommand(gh, [
-            "issue",
-            "edit",
-            String(issueNumber),
-            "--repo",
-            options.repository,
-            "--remove-assignee",
-            handle,
-          ]);
-          changedAssignments = true;
-        }
-        entry.unassignment_pending = entry.unassignment_pending.filter(
-          (pending) => pending.toLowerCase() !== handle.toLowerCase(),
-        );
-        persistState();
-      }
-    }
-    if (changedAssignments) {
-      details = null;
-    }
-  }
-
-  if (!managedPhases.has(currentPhase)) {
-    continue;
-  }
-
-  details ||= getIssueDetails(issueNumber, currentPhase);
-  const pendingHandles = new Set(
-    entry.unassignment_pending.map((handle) => handle.toLowerCase()),
-  );
-  const assignedCore = coreAssignees(
-    details.issue.assignees.nodes,
-    coreGithubHandles,
-  ).filter((handle) => !pendingHandles.has(handle.toLowerCase()));
-
-  if (currentPhase === "Accepted / design") {
-    const comments = getIssueComments(issueNumber, entry.phase_updated_at);
-    const trigger = firstHumanCommentAfter(comments, entry.phase_updated_at);
-    if (trigger && entry.design_comment_id === null) {
-      entry.design_comment_id = trigger.id;
-      persistState();
-    }
-    if (
-      entry.design_comment_id !== null &&
-      assignedCore.length > 0 &&
-      !entry.design_assignment_complete
-    ) {
-      entry.design_assignment_complete = true;
-      persistState();
-    }
-    if (
-      entry.design_comment_id !== null &&
-      assignedCore.length === 0 &&
-      !entry.design_assignment_complete
-    ) {
-      const comment = comments.find(
-        (candidate) => candidate.id === entry.design_comment_id,
-      );
-      agentWork.push({
-        kind: "design-shepherd",
-        issue: issueRecord(details.issue, currentPhase),
-        previous_shepherds: entry.previous_shepherds,
-        trigger: comment
-          ? {
-              comment_id: comment.id,
-              author: comment.user.login,
-              url: comment.html_url,
-              created_at: comment.created_at,
-            }
-          : { comment_id: entry.design_comment_id },
-      });
-    }
-    continue;
-  }
-
-  let pullRequest;
   try {
-    pullRequest = linkedPullRequestForVerification(
-      details.pullRequests,
-      options.repository,
-      entry.ignored_pull_requests,
-    );
+    reconcileIssue(item);
   } catch (error) {
-    fail(`Issue #${issueNumber}: ${error.message}`);
-  }
-  if (pullRequest) {
-    agentWork.push({
-      kind: "verification",
-      issue: issueRecord(details.issue, currentPhase),
-      pull_request: {
-        number: pullRequest.number,
-        title: pullRequest.title,
-        url: pullRequest.url,
-        state: pullRequest.state,
-        draft: pullRequest.isDraft,
-        assignees: pullRequest.assignees.nodes.map((assignee) => assignee.login),
-      },
-      previous_shepherds: entry.previous_shepherds,
-      project_item: {
-        id: details.projectItem.id,
-        project_id: projectMetadata.id,
-        status_field_id: projectMetadata.statusField.id,
-        verification_option_id: projectMetadata.verificationOption.id,
-      },
-    });
-  }
-
-  if (transitioned && options.dryRun) {
-    entry.unassignment_pending = [];
+    failures.push({ issue: item.content.number, reason: error.message });
   }
 }
 
@@ -317,51 +155,441 @@ if (!options.dryRun) {
   writeLifecycleState(state);
 }
 
-console.log(
-  JSON.stringify(
-    {
-      repository: options.repository,
-      project: options.projectTitle,
-      dry_run: options.dryRun,
-      status: "reconciled",
-      transitions,
-      agent_work: agentWork,
-    },
-    null,
-    2,
-  ),
-);
+printResult({
+  status: "reconciled",
+  graphql: rateLimit,
+  transitions,
+  agent_work: agentWork,
+  failures,
+});
 
-function newStateEntry(phase, phaseUpdatedAt, previousShepherds) {
-  return {
-    phase,
-    phase_updated_at: phaseUpdatedAt,
+function reconcileIssue(item) {
+  const issueNumber = item.content.number;
+  const stateKey = String(issueNumber);
+  const currentPhase = item.status || null;
+  let entry = state.issues[stateKey] || null;
+
+  if (!entry) {
+    entry = newStateEntry(currentPhase, checkedAt, []);
+    if (currentPhase === "Ready") {
+      entry.ignored_pull_requests = linkedPullRequestUrls(item);
+    }
+    state.issues[stateKey] = entry;
+    persistState();
+    transitions.push({
+      issue: issueNumber,
+      from: null,
+      to: currentPhase,
+      actions: ["observed"],
+    });
+    return;
+  }
+
+  if (entry.phase !== currentPhase) {
+    entry = recordTransition(item, entry, currentPhase);
+    state.issues[stateKey] = entry;
+    persistState();
+  }
+
+  clearPendingAssignees(issueNumber, entry);
+
+  if (currentPhase === "Accepted / design") {
+    reconcileDesign(item, entry);
+  } else if (currentPhase === "Ready") {
+    reconcileReady(item, entry);
+  }
+}
+
+function recordTransition(item, previousEntry, currentPhase) {
+  const issueNumber = item.content.number;
+  let phaseUpdatedAt = checkedAt;
+  let readyActor = null;
+  let readyActorChecked = false;
+  let readyActorReason = null;
+  const assignedCore = managedPhases.has(currentPhase)
+    ? coreAssignees(item.assignees, coreGithubHandles)
+    : [];
+
+  if (managedPhases.has(currentPhase)) {
+    const events = getPhaseTransitions(issueNumber);
+    const transition = latestPhaseTransition(events, currentPhase);
+    if (!transition) {
+      throw new Error(`Could not find the ${currentPhase} transition.`);
+    }
+    phaseUpdatedAt = transition.createdAt;
+    if (currentPhase === "Ready") {
+      const selection = readyTransitionCoreTeamMember(events, {
+        projectOwner: options.projectOwner,
+        projectNumber: options.projectNumber,
+        coreTeamByGithub: coreTeam.byGithub,
+      });
+      readyActor = selection.person?.github || null;
+      readyActorChecked = true;
+      readyActorReason = selection.reason;
+    }
+  }
+
+  const previousShepherds =
+    assignedCore.length > 0
+      ? assignedCore
+      : previousEntry.previous_shepherds;
+  const entry = newStateEntry(
+    currentPhase,
+    phaseUpdatedAt,
+    previousShepherds,
+  );
+  entry.unassignment_pending = assignedCore;
+  entry.ready_actor = readyActor;
+  entry.ready_actor_checked = readyActorChecked;
+  entry.ready_actor_reason = readyActorReason;
+  transitions.push({
+    issue: issueNumber,
+    from: previousEntry.phase,
+    to: currentPhase,
     previous_shepherds: previousShepherds,
-    unassignment_pending: [],
-    design_comment_id: null,
-    design_assignment_complete: false,
-    ignored_pull_requests: [],
-  };
+    ready_actor: readyActor,
+    actions: assignedCore.map(() =>
+      options.dryRun
+        ? "would-unassign-core-shepherd"
+        : "unassign-core-shepherd",
+    ),
+  });
+  return entry;
+}
+
+function clearPendingAssignees(issueNumber, entry) {
+  for (const handle of [...entry.unassignment_pending]) {
+    if (!options.dryRun) {
+      runJson(gh, [
+        "api",
+        "--method",
+        "DELETE",
+        `repos/${options.repository}/issues/${issueNumber}/assignees`,
+        "-f",
+        `assignees[]=${handle}`,
+      ]);
+      entry.unassignment_pending = entry.unassignment_pending.filter(
+        (pending) => pending.toLowerCase() !== handle.toLowerCase(),
+      );
+      persistState();
+    }
+  }
+}
+
+function reconcileDesign(item, entry) {
+  if (entry.design_assignment_complete) {
+    return;
+  }
+  const issue = getIssue(item.content.number);
+  const pending = new Set(
+    entry.unassignment_pending.map((handle) => handle.toLowerCase()),
+  );
+  const assignedCore = coreAssignees(issue.assignees, coreGithubHandles).filter(
+    (handle) => !pending.has(handle.toLowerCase()),
+  );
+  if (entry.design_comment_id !== null && assignedCore.length > 0) {
+    entry.design_assignment_complete = true;
+    persistState();
+    return;
+  }
+
+  const comments = getIssueComments(item.content.number, entry.phase_updated_at);
+  const trigger = firstHumanCommentAfter(comments, entry.phase_updated_at);
+  if (trigger && entry.design_comment_id === null) {
+    entry.design_comment_id = trigger.id;
+    persistState();
+  }
+  if (entry.design_comment_id === null || assignedCore.length > 0) {
+    return;
+  }
+  const comment = comments.find(
+    (candidate) => candidate.id === entry.design_comment_id,
+  );
+  agentWork.push({
+    kind: "design-shepherd",
+    issue: issueRecord(issue, "Accepted / design"),
+    previous_shepherds: entry.previous_shepherds,
+    trigger: comment
+      ? {
+          comment_id: comment.id,
+          author: comment.user.login,
+          url: comment.html_url,
+          created_at: comment.created_at,
+        }
+      : { comment_id: entry.design_comment_id },
+  });
+}
+
+function reconcileReady(item, entry) {
+  const linkedUrls = linkedPullRequestUrls(item).filter(
+    (url) => !entry.ignored_pull_requests.includes(url),
+  );
+  if (
+    entry.verification_pending &&
+    !linkedUrls.includes(entry.verification_pending.pull_request.url)
+  ) {
+    entry.verification_pending = null;
+    persistState();
+  }
+
+  let pullRequest = null;
+  if (entry.verification_pending) {
+    pullRequest = getPullRequest(entry.verification_pending.pull_request.number);
+    if (!activePullRequest(pullRequest)) {
+      entry.verification_pending = null;
+      persistState();
+      return;
+    }
+    const readyAt = pullRequestReadyAt(
+      pullRequest,
+      getPullRequestTimeline(pullRequest.number),
+    );
+    if (!readyAt) {
+      return;
+    }
+    if (readyAt !== entry.verification_pending.pull_request.ready_at) {
+      entry.verification_pending.pull_request.ready_at = readyAt;
+      persistState();
+    }
+    if (
+      Date.parse(readyAt) >
+      Date.parse(checkedAt) - options.pullRequestReadyAgeMilliseconds
+    ) {
+      return;
+    }
+  } else {
+    const candidates = linkedUrls
+      .map((url) => pullRequestNumber(url))
+      .filter((number) => number !== null)
+      .map((number) => getPullRequest(number))
+      .filter(activePullRequest);
+    if (candidates.length > 1) {
+      throw new Error(
+        `More than one active pull request is linked: ${candidates
+          .map((candidate) => candidate.html_url)
+          .join(", ")}`,
+      );
+    }
+    pullRequest = candidates[0] || null;
+    if (!pullRequest) {
+      return;
+    }
+    const timeline = getPullRequestTimeline(pullRequest.number);
+    const readyAt = pullRequestReadyAt(pullRequest, timeline);
+    if (
+      !readyAt ||
+      Date.parse(readyAt) >
+        Date.parse(checkedAt) - options.pullRequestReadyAgeMilliseconds
+    ) {
+      return;
+    }
+    ensureReadyActor(item.content.number, entry);
+    const fallback = entry.previous_shepherds.filter((handle) =>
+      coreTeam.byGithub.has(handle.toLowerCase()),
+    );
+    const assignee =
+      entry.ready_actor || (fallback.length === 1 ? fallback[0] : null);
+    entry.verification_pending = {
+      pull_request: {
+        number: pullRequest.number,
+        url: pullRequest.html_url,
+        ready_at: readyAt,
+      },
+      assignee,
+      selection: entry.ready_actor
+        ? "Ready transition actor"
+        : assignee
+          ? "only previous shepherd"
+          : "requires selection",
+      created_at: checkedAt,
+    };
+    persistState();
+  }
+
+  if (pullRequest.draft) {
+    return;
+  }
+  const issue = getIssue(item.content.number);
+  agentWork.push({
+    kind: "verification",
+    issue: issueRecord(issue, "Ready"),
+    pull_request: pullRequestRecord(pullRequest),
+    assignee: entry.verification_pending.assignee,
+    selection: entry.verification_pending.selection,
+    ready_actor: entry.ready_actor,
+    previous_shepherds: entry.previous_shepherds,
+    project_item: {
+      id: item.id,
+      project_id: projectMetadata.id,
+      status_field_id: projectMetadata.status_field_id,
+      verification_option_id: projectMetadata.verification_option_id,
+    },
+  });
+}
+
+function ensureReadyActor(issueNumber, entry) {
+  if (entry.ready_actor_checked) {
+    return;
+  }
+  const selection = readyTransitionCoreTeamMember(getPhaseTransitions(issueNumber), {
+    projectOwner: options.projectOwner,
+    projectNumber: options.projectNumber,
+    coreTeamByGithub: coreTeam.byGithub,
+  });
+  entry.ready_actor = selection.person?.github || null;
+  entry.ready_actor_checked = true;
+  entry.ready_actor_reason = selection.reason;
+  if (selection.transition) {
+    entry.phase_updated_at = selection.transition.createdAt;
+  }
+  persistState();
+}
+
+function latestPhaseTransition(events, phase) {
+  return (
+    events
+      .filter(
+        (event) =>
+          event.status === phase &&
+          event.project?.number === options.projectNumber &&
+          event.project.owner?.login?.toLowerCase() ===
+            options.projectOwner.toLowerCase(),
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ||
+    null
+  );
+}
+
+function getPhaseTransitions(issueNumber) {
+  const [owner, name] = parseRepository(options.repository);
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${issueNumber}`,
+    "-f",
+    `query=${phaseTransitionQuery}`,
+  ]);
+  const timeline = response.data?.repository?.issue?.timelineItems;
+  if (!timeline || !Array.isArray(timeline.nodes)) {
+    throw new Error("GitHub returned invalid project transition data.");
+  }
+  if (timeline.pageInfo?.hasPreviousPage) {
+    throw new Error("The issue has more than 100 project status transitions.");
+  }
+  return timeline.nodes.filter(Boolean);
+}
+
+function getIssue(number) {
+  const issue = runJson(gh, [
+    "api",
+    `repos/${options.repository}/issues/${number}`,
+  ]);
+  if (!issue || issue.pull_request || issue.state !== "open") {
+    throw new Error("The issue is no longer open.");
+  }
+  return issue;
+}
+
+function getPullRequest(number) {
+  const pullRequest = runJson(gh, [
+    "api",
+    `repos/${options.repository}/pulls/${number}`,
+  ]);
+  if (!pullRequest || pullRequest.number !== number) {
+    throw new Error(`GitHub returned invalid pull request #${number}.`);
+  }
+  return pullRequest;
+}
+
+function getPullRequestTimeline(number) {
+  const pages = runJson(gh, [
+    "api",
+    "--paginate",
+    "--slurp",
+    `repos/${options.repository}/issues/${number}/timeline?per_page=100`,
+  ]);
+  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
+    throw new Error(
+      `GitHub returned invalid timeline data for pull request #${number}.`,
+    );
+  }
+  return pages.flat();
+}
+
+function getIssueComments(issueNumber, since) {
+  const pages = runJson(gh, [
+    "api",
+    "--paginate",
+    "--slurp",
+    `repos/${options.repository}/issues/${issueNumber}/comments?since=${encodeURIComponent(since)}&per_page=100`,
+  ]);
+  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
+    throw new Error(`GitHub returned invalid comments for issue #${issueNumber}.`);
+  }
+  return pages.flat();
+}
+
+function activePullRequest(pullRequest) {
+  return pullRequest.state === "open" || Boolean(pullRequest.merged_at);
+}
+
+function linkedPullRequestUrls(item) {
+  const urls = item["linked pull requests"] || [];
+  if (!Array.isArray(urls)) {
+    throw new Error("GitHub returned invalid linked pull requests.");
+  }
+  return [...new Set(urls.filter((url) => pullRequestNumber(url) !== null))];
+}
+
+function pullRequestNumber(url) {
+  const match = String(url).match(
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)$/i,
+  );
+  return match &&
+    `${match[1]}/${match[2]}`.toLowerCase() === options.repository.toLowerCase()
+    ? Number.parseInt(match[3], 10)
+    : null;
 }
 
 function issueRecord(issue, phase) {
   return {
     number: issue.number,
     title: issue.title,
-    url: issue.url,
+    url: issue.html_url,
     status: phase,
-    assignees: issue.assignees.nodes.map((assignee) => assignee.login),
+    assignees: (issue.assignees || []).map((assignee) => assignee.login),
   };
 }
 
-function activePullRequestUrls(pullRequests) {
-  return pullRequests
-    .filter(
-      (pullRequest) =>
-        pullRequest.repository.nameWithOwner.toLowerCase() ===
-          options.repository.toLowerCase() && pullRequest.state !== "CLOSED",
-    )
-    .map((pullRequest) => pullRequest.url);
+function pullRequestRecord(pullRequest) {
+  return {
+    number: pullRequest.number,
+    title: pullRequest.title,
+    url: pullRequest.html_url,
+    state: pullRequest.merged_at ? "MERGED" : pullRequest.state.toUpperCase(),
+    draft: Boolean(pullRequest.draft),
+    assignees: (pullRequest.assignees || []).map((assignee) => assignee.login),
+  };
+}
+
+function getRateLimit() {
+  const result = runJson(gh, ["api", "rate_limit"]);
+  const graphql = result.resources?.graphql;
+  if (
+    !Number.isSafeInteger(graphql?.remaining) ||
+    typeof graphql.reset !== "number"
+  ) {
+    fail("GitHub returned invalid GraphQL rate-limit data.");
+  }
+  return {
+    remaining: graphql.remaining,
+    reset_at: new Date(graphql.reset * 1000).toISOString(),
+  };
 }
 
 function getProjectMetadata() {
@@ -402,7 +630,12 @@ function getProjectMetadata() {
   if (!project.id || !statusField?.id || !verificationOption?.id) {
     fail("The project must have a Status field with a Verification option.");
   }
-  return { id: project.id, statusField, verificationOption };
+  return {
+    id: project.id,
+    title: project.title,
+    status_field_id: statusField.id,
+    verification_option_id: verificationOption.id,
+  };
 }
 
 function getProjectIssuesOrFail() {
@@ -419,82 +652,42 @@ function getProjectIssuesOrFail() {
   }
 }
 
-function getOpenIssuesOrFail() {
-  try {
-    return getOpenIssues(runJson, {
-      command: gh,
-      repository: options.repository,
-    });
-  } catch (error) {
-    fail(error.message);
-  }
-}
-
-function getIssueDetails(issueNumber, expectedPhase) {
-  const repositoryParts = options.repository.split("/");
-  if (repositoryParts.length !== 2 || repositoryParts.some((part) => !part)) {
-    fail(`Invalid GitHub repository: ${options.repository}`);
-  }
-  const response = runJson(gh, [
-    "api",
-    "graphql",
-    "-F",
-    `owner=${repositoryParts[0]}`,
-    "-F",
-    `name=${repositoryParts[1]}`,
-    "-F",
-    `number=${issueNumber}`,
-    "-f",
-    `query=${issueDetailsQuery}`,
-  ]);
-  const issue = response.data?.repository?.issue;
-  if (!issue || issue.closedByPullRequestsReferences?.pageInfo?.hasNextPage) {
-    fail(`GitHub returned incomplete lifecycle data for issue #${issueNumber}.`);
-  }
-  const projectItem = issue.projectItems.nodes.find(
-    (item) => item.project.id === projectMetadata.id,
-  );
-  const status = projectItem?.fieldValues.nodes.find(
-    (value) => value.field?.id === projectMetadata.statusField.id,
-  );
-  if (
-    !projectItem ||
-    !status ||
-    typeof status.updatedAt !== "string" ||
-    !Number.isFinite(Date.parse(status.updatedAt))
-  ) {
-    fail(`Could not read the project status update time for issue #${issueNumber}.`);
-  }
-  if (status.name !== expectedPhase) {
-    fail(
-      `Issue #${issueNumber} changed from ${JSON.stringify(expectedPhase)} to ${JSON.stringify(status.name)} during reconciliation. Retry the run.`,
-    );
-  }
+function newStateEntry(phase, phaseUpdatedAt, previousShepherds) {
   return {
-    issue,
-    projectItem,
-    status,
-    pullRequests: issue.closedByPullRequestsReferences.nodes,
+    phase,
+    phase_updated_at: phaseUpdatedAt,
+    previous_shepherds: previousShepherds,
+    unassignment_pending: [],
+    design_comment_id: null,
+    design_assignment_complete: false,
+    ignored_pull_requests: [],
+    ready_actor: null,
+    ready_actor_checked: false,
+    ready_actor_reason: null,
+    verification_pending: null,
   };
 }
 
-function getIssueComments(issueNumber, since) {
-  const pages = runJson(gh, [
-    "api",
-    "--method",
-    "GET",
-    "--paginate",
-    "--slurp",
-    `repos/${options.repository}/issues/${issueNumber}/comments`,
-    "-f",
-    `since=${since}`,
-    "-f",
-    "per_page=100",
-  ]);
-  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
-    fail(`GitHub returned invalid comments for issue #${issueNumber}.`);
-  }
-  return pages.flat();
+function migrateState(previous, metadata) {
+  const issues = Object.fromEntries(
+    Object.entries(previous.issues).map(([number, entry]) => [
+      number,
+      {
+        ...entry,
+        ready_actor: null,
+        ready_actor_checked: false,
+        ready_actor_reason: null,
+        verification_pending: null,
+      },
+    ]),
+  );
+  return {
+    version: 2,
+    repository: previous.repository,
+    project: metadata,
+    checked_at: previous.checked_at,
+    issues,
+  };
 }
 
 function readCoreTeamOrFail() {
@@ -516,24 +709,42 @@ function readLifecycleState() {
   } catch (error) {
     fail(`Could not read ${statePath}: ${error.message}`);
   }
-  if (
-    parsed.version !== 1 ||
-    typeof parsed.repository !== "string" ||
-    typeof parsed.project_id !== "string" ||
-    !parsed.issues ||
-    typeof parsed.issues !== "object" ||
-    Array.isArray(parsed.issues) ||
-    Object.entries(parsed.issues).some(
-      ([number, entry]) => !/^[1-9]\d*$/.test(number) || !validStateEntry(entry),
-    )
-  ) {
+  if (!validState(parsed)) {
     fail(`Invalid issue lifecycle state in ${statePath}.`);
   }
   return parsed;
 }
 
-function validStateEntry(entry) {
+function validState(value) {
+  if (
+    !value ||
+    ![1, 2].includes(value.version) ||
+    typeof value.repository !== "string" ||
+    !value.issues ||
+    typeof value.issues !== "object" ||
+    Array.isArray(value.issues) ||
+    Object.entries(value.issues).some(
+      ([number, entry]) =>
+        !/^[1-9]\d*$/.test(number) ||
+        !validStateEntry(entry, value.version),
+    )
+  ) {
+    return false;
+  }
+  if (value.version === 1) {
+    return typeof value.project_id === "string";
+  }
   return (
+    value.project &&
+    typeof value.project.id === "string" &&
+    typeof value.project.title === "string" &&
+    typeof value.project.status_field_id === "string" &&
+    typeof value.project.verification_option_id === "string"
+  );
+}
+
+function validStateEntry(entry, version) {
+  const common =
     entry &&
     (entry.phase === null || typeof entry.phase === "string") &&
     typeof entry.phase_updated_at === "string" &&
@@ -543,7 +754,31 @@ function validStateEntry(entry) {
     (entry.design_comment_id === null ||
       Number.isSafeInteger(entry.design_comment_id)) &&
     typeof entry.design_assignment_complete === "boolean" &&
-    stringArray(entry.ignored_pull_requests)
+    stringArray(entry.ignored_pull_requests);
+  if (!common || version === 1) {
+    return common;
+  }
+  return (
+    (entry.ready_actor === null || typeof entry.ready_actor === "string") &&
+    typeof entry.ready_actor_checked === "boolean" &&
+    (entry.ready_actor_reason === null ||
+      typeof entry.ready_actor_reason === "string") &&
+    validVerificationPending(entry.verification_pending)
+  );
+}
+
+function validVerificationPending(value) {
+  return (
+    value === null ||
+    (value &&
+      Number.isSafeInteger(value.pull_request?.number) &&
+      typeof value.pull_request.url === "string" &&
+      typeof value.pull_request.ready_at === "string" &&
+      Number.isFinite(Date.parse(value.pull_request.ready_at)) &&
+      (value.assignee === null || typeof value.assignee === "string") &&
+      typeof value.selection === "string" &&
+      typeof value.created_at === "string" &&
+      Number.isFinite(Date.parse(value.created_at)))
   );
 }
 
@@ -569,27 +804,30 @@ function writeLifecycleState(value) {
 }
 
 function runJson(command, arguments_) {
-  const result = runCommand(command, arguments_);
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    fail(`${command} returned invalid JSON: ${result.stdout.trim()}`);
-  }
-}
-
-function runCommand(command, arguments_) {
   const result = spawnSync(command, arguments_, {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
   });
   if (result.error) {
-    fail(`Could not run ${command}: ${result.error.message}`);
+    throw new Error(`Could not run ${command}: ${result.error.message}`);
   }
   if (result.status !== 0) {
     const message = result.stderr.trim() || result.stdout.trim();
-    fail(`${command} failed${message ? `: ${message}` : "."}`);
+    throw new Error(`${command} failed${message ? `: ${message}` : "."}`);
   }
-  return result;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${command} returned invalid JSON: ${result.stdout.trim()}`);
+  }
+}
+
+function parseRepository(value) {
+  const [owner, name, extra] = value.split("/");
+  if (!owner || !name || extra) {
+    fail(`Invalid GitHub repository: ${value}`);
+  }
+  return [owner, name];
 }
 
 function parseArguments(arguments_) {
@@ -599,6 +837,11 @@ function parseArguments(arguments_) {
     projectNumber: 1,
     projectTitle: "Goose Issues",
     projectLimit: 1000,
+    minimumGraphqlPoints: Number.parseInt(
+      process.env.BUZZ_MIN_GRAPHQL_POINTS || "200",
+      10,
+    ),
+    pullRequestReadyAgeMilliseconds: 24 * 60 * 60 * 1000,
     dryRun: false,
     help: false,
   };
@@ -620,6 +863,15 @@ function parseArguments(arguments_) {
         requiredValue(arguments_, ++index, argument),
         argument,
       );
+    } else if (argument === "--min-graphql-points") {
+      parsed.minimumGraphqlPoints = nonnegativeInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--pr-ready-age-hours") {
+      parsed.pullRequestReadyAgeMilliseconds =
+        positiveNumber(requiredValue(arguments_, ++index, argument), argument) *
+        60 * 60 * 1000;
     } else if (argument === "--dry-run") {
       parsed.dryRun = true;
     } else if (argument === "--help" || argument === "-h") {
@@ -627,6 +879,9 @@ function parseArguments(arguments_) {
     } else {
       fail(`Unknown option: ${argument}`);
     }
+  }
+  if (!Number.isSafeInteger(parsed.minimumGraphqlPoints)) {
+    fail("BUZZ_MIN_GRAPHQL_POINTS must be a nonnegative integer.");
   }
   return parsed;
 }
@@ -641,10 +896,41 @@ function requiredValue(arguments_, index, option) {
 
 function positiveInteger(value, option) {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== value) {
     fail(`${option} must be a positive integer.`);
   }
   return parsed;
+}
+
+function nonnegativeInteger(value, option) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || String(parsed) !== value) {
+    fail(`${option} must be a nonnegative integer.`);
+  }
+  return parsed;
+}
+
+function positiveNumber(value, option) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail(`${option} must be a positive number.`);
+  }
+  return parsed;
+}
+
+function printResult(result) {
+  console.log(
+    JSON.stringify(
+      {
+        repository: options.repository,
+        project: options.projectTitle,
+        dry_run: options.dryRun,
+        ...result,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 function fail(message) {
@@ -657,16 +943,17 @@ function printHelp() {
   manage_issue_lifecycle [options]
 
 Options:
-  --repo <owner/repo>       GitHub repository (default: aaif-goose/goose)
-  --project-owner <owner>   GitHub project owner (default: aaif-goose)
-  --project-number <number> GitHub project number (default: 1)
-  --project <title>         GitHub project title (default: Goose Issues)
-  --project-limit <number>  Maximum project items (default: 1000)
-  --dry-run                 Report changes without writing GitHub or state
-  -h, --help                Show this help
+  --repo <owner/repo>          GitHub repository (default: aaif-goose/goose)
+  --project-owner <owner>      GitHub project owner (default: aaif-goose)
+  --project-number <number>    GitHub project number (default: 1)
+  --project <title>            GitHub project title (default: Goose Issues)
+  --project-limit <number>     Maximum project items (default: 1000)
+  --min-graphql-points <count> Defer below this budget (default: 200)
+  --pr-ready-age-hours <hours> PR review delay (default: 24)
+  --dry-run                    Report changes without writing GitHub or state
+  -h, --help                   Show this help
 
-Detects transitions into Accepted / design and Ready, clears core-team issue
-assignees once, and reports design-comment or linked-PR work for the Goose
-manager. The first non-dry run initializes state without changing existing
-issues.`);
+Tracks phase transitions, clears core-team assignees when an issue enters
+Accepted / design or Ready, and persists design and verification work. Ready
+issues stay unassigned until a linked pull request is ready for review.`);
 }

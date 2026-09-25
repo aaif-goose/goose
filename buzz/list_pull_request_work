@@ -45,18 +45,25 @@ try {
 
 const generatedAt = Date.now();
 const staleAfterMilliseconds = options.staleAfterDays * 24 * 60 * 60 * 1000;
-const work = pullRequests
-  .map((pullRequest) =>
-    pullRequestWork(pullRequest, {
-      repository: options.repository,
-      coreTeamGithub: coreTeam.byGithub,
-      viewerLogin: viewer.login,
-      now: generatedAt,
-      staleAfterMilliseconds,
-    }),
-  )
-  .filter(Boolean)
-  .sort((left, right) => left.number - right.number);
+const work = [];
+for (const pullRequest of pullRequests) {
+  const settings = {
+    repository: options.repository,
+    coreTeamGithub: coreTeam.byGithub,
+    viewerLogin: viewer.login,
+    now: generatedAt,
+    staleAfterMilliseconds,
+  };
+  let result = pullRequestWork(pullRequest, settings);
+  if (result?.eligible_for_issue_first) {
+    pullRequest.comments = getPullRequestComments(pullRequest.number, viewer.login);
+    result = pullRequestWork(pullRequest, settings);
+  }
+  if (result) {
+    work.push(result);
+  }
+}
+work.sort((left, right) => left.number - right.number);
 
 console.log(
   JSON.stringify(
@@ -72,6 +79,27 @@ console.log(
     2,
   ),
 );
+
+function getPullRequestComments(number, viewerLogin) {
+  const pages = runJson(gh, [
+    "api",
+    "--paginate",
+    "--slurp",
+    `repos/${options.repository}/issues/${number}/comments?per_page=100`,
+  ]);
+  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
+    fail(`GitHub returned invalid comments for pull request #${number}.`);
+  }
+  return pages.flat().map((comment) => ({
+    id: String(comment.id),
+    body: comment.body || "",
+    createdAt: comment.created_at,
+    url: comment.html_url,
+    author: { login: comment.user?.login || null },
+    viewerDidAuthor:
+      comment.user?.login?.toLowerCase() === viewerLogin.toLowerCase(),
+  }));
+}
 
 function parseArguments(arguments_) {
   const parsed = {

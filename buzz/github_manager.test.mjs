@@ -12,12 +12,16 @@ import {
   firstHumanCommentAfter,
   getOpenIssues,
   getOpenPullRequests,
+  getPullRequestClosingIssues,
   getProjectIssues,
+  getRecentIssues,
   issueFirstNotice,
   issueReferenceFromChannel,
   linkedPullRequestForVerification,
   pullRequestIssueMentions,
+  pullRequestReadyAt,
   pullRequestWork,
+  readyTransitionCoreTeamMember,
   readCoreTeam,
   selectRecentQueueEntries,
 } from "./github_manager.mjs";
@@ -167,6 +171,55 @@ test("matches project repository names without case sensitivity", () => {
   assert.equal(result.byNumber.get(123), issueItem);
 });
 
+test("reuses a complete project snapshot within one manager cycle", (context) => {
+  const directory = mkdtempSync(join(tmpdir(), "buzz-project-snapshot-"));
+  context.after(() => rmSync(directory, { recursive: true }));
+  const previousSnapshot = process.env.BUZZ_PROJECT_SNAPSHOT_FILE;
+  const previousRefresh = process.env.BUZZ_REFRESH_PROJECT_SNAPSHOT;
+  process.env.BUZZ_PROJECT_SNAPSHOT_FILE = join(directory, "project.json");
+  delete process.env.BUZZ_REFRESH_PROJECT_SNAPSHOT;
+  context.after(() => {
+    if (previousSnapshot === undefined) {
+      delete process.env.BUZZ_PROJECT_SNAPSHOT_FILE;
+    } else {
+      process.env.BUZZ_PROJECT_SNAPSHOT_FILE = previousSnapshot;
+    }
+    if (previousRefresh === undefined) {
+      delete process.env.BUZZ_REFRESH_PROJECT_SNAPSHOT;
+    } else {
+      process.env.BUZZ_REFRESH_PROJECT_SNAPSHOT = previousRefresh;
+    }
+  });
+
+  let calls = 0;
+  const options = {
+    command: "gh",
+    projectNumber: 1,
+    projectOwner: "aaif-goose",
+    projectLimit: 1000,
+    repository: "aaif-goose/goose",
+  };
+  const readProject = () => {
+    calls += 1;
+    return {
+      totalCount: 1,
+      items: [
+        {
+          content: {
+            type: "Issue",
+            repository: "aaif-goose/goose",
+            number: 123,
+          },
+        },
+      ],
+    };
+  };
+
+  getProjectIssues(readProject, options);
+  getProjectIssues(readProject, options);
+  assert.equal(calls, 1);
+});
+
 test("normalizes paginated REST issues and excludes pull requests", () => {
   const issues = getOpenIssues(
     () => [
@@ -194,32 +247,159 @@ test("normalizes paginated REST issues and excludes pull requests", () => {
 });
 
 test("lists enough pull request data to make issue-first decisions", () => {
-  let arguments_;
+  let graphqlArguments;
   const pullRequests = getOpenPullRequests(
     (_command, receivedArguments) => {
-      if (receivedArguments[0] === "pr") {
-        arguments_ = receivedArguments;
-        return [{ number: 123 }];
+      if (receivedArguments.includes("graphql")) {
+        graphqlArguments = receivedArguments;
+        return [{
+          data: {
+            repository: {
+              pullRequests: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    number: 123,
+                    closingIssuesReferences: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [{ number: 456 }],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }];
       }
-      return [[{ number: 123, author_association: "NONE" }]];
+      return [[{
+        number: 123,
+        title: "Change",
+        html_url: "https://github.com/aaif-goose/goose/pull/123",
+        body: "Fix",
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-02T00:00:00Z",
+        draft: false,
+        user: { login: "person", type: "User" },
+        author_association: "NONE",
+      }]];
     },
     { command: "gh", repository: "aaif-goose/goose", limit: 1000 },
   );
-  assert.deepEqual(pullRequests, [
-    { number: 123, authorAssociation: "NONE" },
+  assert.equal(pullRequests[0].number, 123);
+  assert.equal(pullRequests[0].author.login, "person");
+  assert.deepEqual(pullRequests[0].closingIssuesReferences, [{ number: 456 }]);
+  assert.deepEqual(pullRequests[0].comments, []);
+  assert.deepEqual(graphqlArguments.slice(0, 4), [
+    "api",
+    "graphql",
+    "--paginate",
+    "--slurp",
   ]);
-  assert.deepEqual(arguments_.slice(0, 8), [
-    "pr",
-    "list",
-    "--repo",
-    "aaif-goose/goose",
-    "--state",
-    "open",
-    "--limit",
-    "1000",
-  ]);
-  assert.match(arguments_.at(-1), /closingIssuesReferences/);
-  assert.match(arguments_.at(-1), /comments/);
+});
+
+test("reads a pull request closing relationship without gh JSON fields", () => {
+  let receivedArguments;
+  const issues = getPullRequestClosingIssues(
+    (_command, arguments_) => {
+      receivedArguments = arguments_;
+      return {
+        data: {
+          repository: {
+            pullRequest: {
+              closingIssuesReferences: {
+                pageInfo: { hasNextPage: false },
+                nodes: [{ number: 456 }],
+              },
+            },
+          },
+        },
+      };
+    },
+    {
+      command: "gh",
+      repository: "aaif-goose/goose",
+      number: 123,
+    },
+  );
+  assert.deepEqual(issues, [{ number: 456 }]);
+  assert.deepEqual(receivedArguments.slice(0, 2), ["api", "graphql"]);
+  assert.ok(receivedArguments.includes("number=123"));
+});
+
+test("reads recent issues through REST and skips pull requests", () => {
+  const issues = getRecentIssues(
+    () => [
+      {
+        number: 3,
+        created_at: "2026-09-03T00:00:00Z",
+        assignees: [],
+      },
+      { number: 2, pull_request: {} },
+      {
+        number: 1,
+        created_at: "2026-09-01T00:00:00Z",
+        assignees: [],
+      },
+    ],
+    { command: "gh", repository: "aaif-goose/goose", count: 2 },
+  );
+  assert.deepEqual(issues.map((entry) => entry.number), [3, 1]);
+});
+
+test("uses the latest ready-for-review event, or creation for a normal PR", () => {
+  assert.equal(
+    pullRequestReadyAt(
+      { draft: false, created_at: "2026-09-01T00:00:00Z" },
+      [
+        { event: "ready_for_review", created_at: "2026-09-02T00:00:00Z" },
+        { event: "ready_for_review", created_at: "2026-09-03T00:00:00Z" },
+      ],
+    ),
+    "2026-09-03T00:00:00Z",
+  );
+  assert.equal(
+    pullRequestReadyAt(
+      { draft: false, created_at: "2026-09-01T00:00:00Z" },
+      [],
+    ),
+    "2026-09-01T00:00:00Z",
+  );
+  assert.equal(
+    pullRequestReadyAt(
+      { draft: true, created_at: "2026-09-01T00:00:00Z" },
+      [],
+    ),
+    null,
+  );
+});
+
+test("selects the core member who most recently moved the issue to Ready", () => {
+  const alex = { github: "alexhancock" };
+  const selection = readyTransitionCoreTeamMember(
+    [
+      {
+        status: "Ready",
+        createdAt: "2026-09-01T00:00:00Z",
+        actor: { login: "someone" },
+        project: { number: 1, owner: { login: "aaif-goose" } },
+        wasAutomated: false,
+      },
+      {
+        status: "Ready",
+        createdAt: "2026-09-02T00:00:00Z",
+        actor: { login: "alexhancock" },
+        project: { number: 1, owner: { login: "aaif-goose" } },
+        wasAutomated: false,
+      },
+    ],
+    {
+      projectOwner: "aaif-goose",
+      projectNumber: 1,
+      coreTeamByGithub: new Map([["alexhancock", alex]]),
+    },
+  );
+  assert.equal(selection.person, alex);
+  assert.equal(selection.transition.createdAt, "2026-09-02T00:00:00Z");
 });
 
 test("finds same-repository issue references in pull request bodies", () => {

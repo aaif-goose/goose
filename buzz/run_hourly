@@ -6,9 +6,13 @@ automation_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 interval=${BUZZ_MANAGER_INTERVAL_SECONDS:-3600}
 
 while true; do
-  GOOSE_MODE=auto GOOSE_DISABLE_SESSION_NAMING=true goose run \
+  snapshot_directory=$(mktemp -d "${TMPDIR:-/tmp}/buzz-project.XXXXXX") || exit 1
+  GOOSE_MODE=auto GOOSE_DISABLE_SESSION_NAMING=true \
+    BUZZ_PROJECT_SNAPSHOT_FILE="$snapshot_directory/project.json" goose run \
     --recipe "$automation_dir/github_issue_manager.yaml" \
     --params "automation_dir=$automation_dir" \
     --no-session || printf '%s\n' "GitHub issue manager run failed" >&2
+  rm -f "$snapshot_directory/project.json"
+  rmdir "$snapshot_directory"
   sleep "$interval"
 done

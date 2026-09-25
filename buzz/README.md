@@ -251,10 +251,8 @@ changing existing issues.
 
 On later runs, entering `Accepted / design` or `Ready` removes current core-team
 assignees once. Community assignees are preserved. The transition's assignees
-are retained as previous shepherds so the agent can weigh continuity alongside
-subject interest and normalized workload. Because removal is tied to the phase
-edge, a core member can intentionally self-assign afterward without the next
-hourly run undoing it.
+are retained as previous shepherds. When an issue enters `Ready`, the script
+also records the core-team member who made that project transition.
 
 In `Accepted / design`, the first human GitHub comment created at or after the
 actual project status update produces `design-shepherd` agent work. Earlier
@@ -262,15 +260,27 @@ comments and bot comments do not trigger assignment. Once a core-team member is
 assigned, the trigger is complete even if that assignment is later removed
 manually.
 
-In `Ready`, one newly linked open or merged pull request produces `verification`
-agent work. The manager assigns one selected core-team member to both the issue
-and pull request, then moves the supplied project item to `Verification`. More
-than one active linked pull request is reported as ambiguous instead of guessed.
+In `Ready`, the issue stays unassigned until one linked pull request has been
+ready for review for 24 hours. The recorded Ready actor becomes the verifier.
+If that actor is unavailable, the only previous shepherd is used; ambiguous
+cases fall back to the recipe's interest and load selection. The manager assigns
+the verifier to both the issue and pull request, then moves the supplied project
+item to `Verification`. More than one active linked pull request is reported as
+ambiguous instead of guessed.
 
-State updates are atomic, and pending unassignments survive an interrupted run.
-The state file is named
+State updates are atomic. Pending unassignments and verification work survive an
+interrupted run, and a failure while processing one issue does not discard work
+already found for another. Version 1 state files are upgraded in place. The
+state file is named
 `issue-lifecycle-<owner>-<repository>-project-<number>.json` next to the Github
-Manager identity. Always inspect a dry run first:
+Manager identity.
+
+Routine issue, pull request, comment, timeline, and assignee operations use the
+REST API. GraphQL is reserved for Projects v2, the Ready transition actor, and
+the final move to `Verification`. The script checks the GraphQL budget before
+making changes and returns `deferred-rate-limit` below 200 remaining points.
+Set `BUZZ_MIN_GRAPHQL_POINTS` or pass `--min-graphql-points` to change that
+reserve. Always inspect a dry run first:
 
 ```sh
 ./buzz/manage_issue_lifecycle --dry-run
@@ -383,10 +393,10 @@ requests:
    exists. Start with Douwe and the issue owner, then add relevant people until
    the channel has at least three distinct humans. If Douwe owns the issue, two
    others are required. A fourth person may be added when useful.
-7. Select design shepherds and verification owners using previous-shepherd
-   continuity, interest, and rolling normalized load. Verification owners are
-   assigned to both the issue and linked pull request before the project item is
-   moved to `Verification`.
+7. Select design shepherds using previous-shepherd continuity, interest, and
+   rolling normalized load. Use the person who moved an issue to `Ready` as its
+   verifier when possible. Verification owners are assigned to both the issue
+   and linked pull request before the project item moves to `Verification`.
 8. Fix pull request descriptions that claim to implement an issue without using
    GitHub closing language.
 9. Post the issue-first notice on eligible pull requests with no issue mention.
@@ -420,8 +430,10 @@ goose run \
 
 ### `run_hourly`
 
-Runs the recipe, waits an hour after it finishes, and repeats. Override the wait
-with `BUZZ_MANAGER_INTERVAL_SECONDS`.
+Runs the recipe, waits an hour after it finishes, and repeats. Each cycle shares
+one Projects v2 snapshot between lifecycle and Inbox discovery, then refreshes
+it before the final Buzz sync. Override the wait with
+`BUZZ_MANAGER_INTERVAL_SECONDS`.
 
 ```sh
 ./buzz/run_hourly

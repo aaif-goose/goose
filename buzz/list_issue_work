@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 import {
   bestMatchingIssueChannels,
   getOpenIssues,
+  getPullRequestClosingIssues,
   getProjectIssues,
+  getRecentIssues,
   readCoreTeam,
   selectRecentQueueEntries,
 } from "./github_manager.mjs";
@@ -258,24 +260,14 @@ function getOpenIssuesOrFail() {
 }
 
 function getRecentAssignmentLoad() {
-  const repositoryParts = options.repository.split("/");
-  if (repositoryParts.length !== 2 || repositoryParts.some((part) => !part)) {
-    fail(`Invalid GitHub repository: ${options.repository}`);
-  }
-  const [owner, name] = repositoryParts;
-
-  const result = runJson(gh, [
-    "api",
-    "graphql",
-    "-f",
-    "query=query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(first:100,states:[OPEN,CLOSED],orderBy:{field:CREATED_AT,direction:DESC}){nodes{number createdAt assignees(first:100){nodes{login}}}}}}",
-    "-F",
-    `owner=${owner}`,
-    "-F",
-    `name=${name}`,
-  ]);
-  const issues = result.data?.repository?.issues?.nodes;
-  if (!Array.isArray(issues)) {
+  let issues;
+  try {
+    issues = getRecentIssues(runJson, {
+      command: gh,
+      repository: options.repository,
+      count: 100,
+    });
+  } catch (error) {
     fail(`Could not read the 100 newest issues from ${options.repository}.`);
   }
 
@@ -283,7 +275,7 @@ function getRecentAssignmentLoad() {
     coreTeam.people.map((person) => [person.github.toLowerCase(), 0]),
   );
   for (const issue of issues) {
-    for (const assignee of issue.assignees?.nodes || []) {
+    for (const assignee of issue.assignees || []) {
       const handle = assignee.login?.toLowerCase();
       if (counts.has(handle)) {
         counts.set(handle, counts.get(handle) + 1);
@@ -295,10 +287,10 @@ function getRecentAssignmentLoad() {
     window: 100,
     issues_considered: issues.length,
     newest_issue: issues[0]
-      ? { number: issues[0].number, created_at: issues[0].createdAt }
+      ? { number: issues[0].number, created_at: issues[0].created_at }
       : null,
     oldest_issue: issues.at(-1)
-      ? { number: issues.at(-1).number, created_at: issues.at(-1).createdAt }
+      ? { number: issues.at(-1).number, created_at: issues.at(-1).created_at }
       : null,
     people: coreTeam.people.map((person) => {
       const assignments = counts.get(person.github.toLowerCase());
@@ -479,17 +471,15 @@ function resolveIssueLink(link) {
     return { number };
   }
 
-  const pullRequest = runJson(gh, [
-    "pr",
-    "view",
-    link,
-    "--json",
-    "closingIssuesReferences",
-  ]);
-  const matchingIssues = pullRequest.closingIssuesReferences.filter(
+  const closingIssues = getPullRequestClosingIssues(runJson, {
+    command: gh,
+    repository: options.repository,
+    number,
+  });
+  const matchingIssues = closingIssues.filter(
     (issue) =>
-      `${issue.repository.owner.login}/${issue.repository.name}` ===
-      options.repository,
+      `${issue.repository.owner.login}/${issue.repository.name}`.toLowerCase() ===
+      options.repository.toLowerCase(),
   );
   return matchingIssues.length === 1
     ? { number: matchingIssues[0].number }
