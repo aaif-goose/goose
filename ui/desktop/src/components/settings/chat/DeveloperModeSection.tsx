@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useConfig } from '../../ConfigContext';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -36,21 +36,27 @@ const developerModes = [
 
 export const DeveloperModeSection = () => {
   const intl = useIntl();
-  const { config, upsert } = useConfig();
-  const configuredMode = config[CONFIG_KEY];
+  const { read, upsert } = useConfig();
   const [currentMode, setCurrentMode] = useState(DEFAULT_MODE);
 
+  // A read returns the effective value, including a GOOSE_DEVELOPER_MODE
+  // environment override that the listed config values leave out.
+  const loadMode = useCallback(async () => {
+    const mode = await read(CONFIG_KEY, false);
+    setCurrentMode(typeof mode === 'string' ? mode : DEFAULT_MODE);
+  }, [read]);
+
   useEffect(() => {
-    setCurrentMode(typeof configuredMode === 'string' ? configuredMode : DEFAULT_MODE);
-  }, [configuredMode]);
+    loadMode();
+  }, [loadMode]);
 
   const handleModeChange = async (mode: string) => {
     try {
       await upsert(CONFIG_KEY, mode, false);
-      setCurrentMode(mode);
     } catch (error) {
       console.error('Error updating developer mode:', error);
     }
+    await loadMode();
   };
 
   return (

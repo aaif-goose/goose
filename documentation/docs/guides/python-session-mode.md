@@ -127,6 +127,8 @@ In Python session mode the Developer extension exposes one tool, `python`, which
   Per-tool permissions apply to the single `python` tool.
 - Forking a session starts the fork with a fresh Python namespace.
   Variables from the original session are not carried into the fork; goose is told so at the start of the fork and re-runs the Python it needs.
+- Rewinding or editing an earlier message does not rewind the Python session.
+  Variables set by the removed turns stay defined, just as files they edited stay edited.
 - A command backgrounded from `sh()` that still writes to the cell's output is stopped together with the session.
   Redirect its output to a file to keep it running after the session ends.
 - Under Flatpak sandboxing, the session runs the interpreter inside the sandbox rather than on the host.
