@@ -16,6 +16,11 @@ use goose_mcp::mcp_server_runner::{serve, McpCommand};
 #[cfg(feature = "bundled-mcp")]
 use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, TutorialServer};
 
+use crate::commands::client_extension::{
+    handle_client_extension_disable, handle_client_extension_enable,
+    handle_client_extension_install, handle_client_extension_list,
+    handle_client_extension_uninstall,
+};
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
 use crate::commands::configure::handle_configure;
@@ -712,6 +717,41 @@ enum GatewayCommand {
 }
 
 #[derive(Subcommand)]
+enum ClientExtensionCommand {
+    /// Install a client extension from a local directory
+    #[command(about = "Install a client extension from a local directory")]
+    Install {
+        #[arg(help = "Path to a directory containing client-extension.json")]
+        path: PathBuf,
+    },
+
+    /// List installed client extensions
+    #[command(about = "List installed client extensions")]
+    List,
+
+    /// Enable a client extension
+    #[command(about = "Enable a client extension")]
+    Enable {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+
+    /// Disable a client extension
+    #[command(about = "Disable a client extension")]
+    Disable {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+
+    /// Uninstall a client extension from the install directory
+    #[command(about = "Uninstall a client extension from the install directory")]
+    Uninstall {
+        #[arg(help = "Client extension id")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum PluginCommand {
     /// Install a plugin from a git repository URL
     #[command(about = "Install a plugin from a git repository URL")]
@@ -1027,6 +1067,17 @@ enum Command {
     Plugin {
         #[command(subcommand)]
         command: PluginCommand,
+    },
+
+    /// Manage client extensions for goose Desktop
+    #[command(
+        name = "client-extension",
+        about = "Manage client extensions for goose Desktop",
+        visible_alias = "client-ext"
+    )]
+    ClientExtension {
+        #[command(subcommand)]
+        command: ClientExtensionCommand,
     },
 
     /// Manage scheduled jobs
@@ -1409,6 +1460,7 @@ fn get_command_name(command: &Option<Command>) -> &'static str {
         Some(Command::Recipe { .. }) => "recipe",
         Some(Command::Skills { .. }) => "skills",
         Some(Command::Plugin { .. }) => "plugin",
+        Some(Command::ClientExtension { .. }) => "client-extension",
         Some(Command::Term { .. }) => "term",
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { .. }) => "local-models",
@@ -2400,6 +2452,16 @@ fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
     }
 }
 
+fn handle_client_extension_subcommand(command: ClientExtensionCommand) -> Result<()> {
+    match command {
+        ClientExtensionCommand::Install { path } => handle_client_extension_install(path),
+        ClientExtensionCommand::List => handle_client_extension_list(),
+        ClientExtensionCommand::Enable { id } => handle_client_extension_enable(&id),
+        ClientExtensionCommand::Disable { id } => handle_client_extension_disable(&id),
+        ClientExtensionCommand::Uninstall { id } => handle_client_extension_uninstall(&id),
+    }
+}
+
 fn handle_recipe_subcommand(command: RecipeCommand) -> Result<()> {
     match command {
         RecipeCommand::Validate { recipe_name } => handle_validate(&recipe_name),
@@ -2919,6 +2981,7 @@ pub async fn cli() -> anyhow::Result<()> {
         Some(Command::Recipe { command }) => handle_recipe_subcommand(command),
         Some(Command::Skills { command }) => handle_skills_subcommand(command).await,
         Some(Command::Plugin { command }) => handle_plugin_subcommand(command),
+        Some(Command::ClientExtension { command }) => handle_client_extension_subcommand(command),
         Some(Command::Term { command }) => handle_term_subcommand(command).await,
         #[cfg(feature = "local-inference")]
         Some(Command::LocalModels { command }) => handle_local_models_command(command).await,

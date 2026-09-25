@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回應樣式"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "外掛程式動作失敗"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "外掛程式載入失敗"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "返回聊天"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "外掛程式"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "無效的外掛程式路由"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "載入外掛程式「{extensionId}」失敗"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "正在載入外掛程式…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "找不到外掛程式檢視：{extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "關閉側邊面板"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "載入外掛程式「{extensionId}」失敗"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "正在載入…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "設定已重設"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "新交談"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "外掛程式"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "配方"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "沒有最近的交談"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "外掛程式頁面"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "錯誤"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "將傳遞給提供者的隱藏指示，用於引導並為您的回應補充背景資訊。"
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "解除安裝「{name}」？這會將其從安裝目錄中移除。"
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "聊天動作"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "自訂呈現"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "訊息裝飾"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "頁面"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "側邊面板"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "安裝 UI 外掛程式，以自訂頁面、聊天動作、側邊面板和訊息裝飾擴充 goose Desktop。與將 goose 連接到外部工具的 MCP 擴充功能不同。"
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "開發範例"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "開發範例位於您的儲存庫中——請在此處停用它們，而不是解除安裝。"
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "已停用"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "使用「安裝外掛程式」選擇包含 client-extension.json 的資料夾，或從本機簽出啟用開發範例。"
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "尚未安裝任何外掛程式"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "安裝外掛程式"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "安裝外掛程式失敗"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "安裝目錄："
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "已安裝外掛程式"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "已安裝"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "未宣告任何 UI 貢獻"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "重新載入"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "外掛程式"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "切換 {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "解除安裝"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "解除安裝外掛程式失敗"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "解除安裝 {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "已解除安裝外掛程式"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "版本 {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "錯誤類型（例如「rate_limit」、「auth」－不含詳細資料）"

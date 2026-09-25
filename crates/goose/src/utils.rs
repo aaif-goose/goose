@@ -1,3 +1,6 @@
+use anyhow::Result;
+use fs_err as fs;
+use std::path::Path;
 use tokio_util::sync::CancellationToken;
 use unicode_normalization::UnicodeNormalization;
 
@@ -64,6 +67,22 @@ pub fn is_token_cancelled(cancellation_token: &Option<CancellationToken>) -> boo
     cancellation_token
         .as_ref()
         .is_some_and(|t| t.is_cancelled())
+}
+
+pub fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir_all(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn split_command_args(input: &str) -> anyhow::Result<Vec<String>> {

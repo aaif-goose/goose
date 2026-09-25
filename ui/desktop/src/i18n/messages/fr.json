@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Styles de réponse"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Échec de l'action du plugin"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Échec du chargement du plugin"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Retour au chat"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Plugin"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Route de plugin non valide"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Échec du chargement du plugin « {extensionId} »"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Chargement du plugin…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Vue du plugin introuvable : {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Fermer le panneau latéral"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Échec du chargement du plugin « {extensionId} »"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Chargement…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Configuration réinitialisée"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Nouvelle discussion"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Plugins"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Recettes"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Aucune discussion récente"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Pages de plugins"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Erreur"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Instructions masquées qui seront transmises au fournisseur pour aider à orienter et à contextualiser vos réponses."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Désinstaller « {name} » ? Cela le supprime de votre répertoire d'installation."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "action de chat"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "rendu personnalisé"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "décoration de message"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "page"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "panneau latéral"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Installez des plugins d'interface qui étendent goose Desktop avec des pages personnalisées, des actions de chat, des panneaux latéraux et des décorations de message. À ne pas confondre avec les extensions MCP, qui connectent goose à des outils externes."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Exemple de développement"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Les exemples de développement se trouvent dans votre dépôt : désactivez-les ici au lieu de les désinstaller."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Désactivé"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Utilisez Installer un plugin pour choisir un dossier contenant client-extension.json, ou activez les exemples de développement depuis votre copie locale."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Aucun plugin installé pour le moment"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Installer un plugin"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Échec de l'installation du plugin"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Répertoire d'installation :"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Plugin installé"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Installé"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Aucune contribution d'interface déclarée"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Recharger"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Plugins"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Activer ou désactiver {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Désinstaller"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Échec de la désinstallation du plugin"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Désinstaller {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Plugin désinstallé"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Version {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Types d'erreurs (par ex. « rate_limit », « auth » - sans détails)"

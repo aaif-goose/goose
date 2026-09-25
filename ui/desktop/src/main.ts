@@ -66,6 +66,7 @@ import {
   isAuthorizedFileAccessRequest,
   readSelectedRecipe,
 } from './desktopFileAccess';
+import { findDevClientExtensionsDir } from './main/clientExtensionsDevDir';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -1203,6 +1204,7 @@ const createChat = async (
         tls: true,
         env: {
           GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
+          GOOSE_CLIENT_EXTENSIONS_DEV_DIR: findDevClientExtensionsDir(app.isPackaged),
         },
         loginShellPath,
         isPackaged: app.isPackaged,

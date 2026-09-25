@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回答スタイル"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "プラグインのアクションに失敗しました"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "プラグインを読み込めませんでした"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "チャットに戻る"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "プラグイン"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "無効なプラグインルート"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "プラグイン「{extensionId}」を読み込めませんでした"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "プラグインを読み込み中…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "プラグインビューが見つかりません: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "サイドパネルを閉じる"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "プラグイン「{extensionId}」を読み込めませんでした"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "読み込み中…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "設定をリセットしました"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "新規チャット"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "プラグイン"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "レシピ"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "最近のチャットはありません"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "プラグインページ"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "エラー"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "レスポンスの方向づけやコンテキスト追加のためにプロバイダーへ渡される非表示の指示です。"
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "「{name}」をアンインストールしますか？インストールディレクトリから削除されます。"
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "チャットアクション"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "カスタムレンダー"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "メッセージ装飾"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "ページ"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "サイドパネル"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "カスタムページ、チャットアクション、サイドパネル、メッセージ装飾で goose Desktop を拡張する UI プラグインをインストールします。goose を外部ツールに接続する MCP 拡張機能とは異なります。"
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "開発用サンプル"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "開発用サンプルはリポジトリ内にあります。アンインストールする代わりに、ここで無効にしてください。"
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "無効"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "「プラグインをインストール」で client-extension.json を含むフォルダーを選択するか、ローカルのチェックアウトから開発用サンプルを有効にしてください。"
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "プラグインはまだインストールされていません"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "プラグインをインストール"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "プラグインのインストールに失敗しました"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "インストールディレクトリ:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "プラグインをインストールしました"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "インストール済み"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "宣言された UI コントリビューションはありません"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "再読み込み"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "プラグイン"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "{name} を切り替え"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "アンインストール"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "プラグインのアンインストールに失敗しました"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "{name} をアンインストール"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "プラグインをアンインストールしました"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "バージョン {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "エラーの種類（例: 「rate_limit」「auth」— 詳細なし）"

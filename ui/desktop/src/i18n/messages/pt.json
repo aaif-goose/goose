@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Estilos de resposta"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Falha na ação do plugin"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Falha ao carregar o plugin"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Voltar ao chat"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Plugin"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Rota de plugin inválida"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Falha ao carregar o plugin \"{extensionId}\""
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Carregando plugin…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Visualização do plugin não encontrada: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Fechar painel lateral"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Falha ao carregar o plugin \"{extensionId}\""
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Carregando…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Configuração reposta"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Nova conversa"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Plugins"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Receitas"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Sem conversas recentes"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Páginas de plugins"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Erro"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Instruções ocultas que serão passadas ao fornecedor para ajudar a orientar e adicionar contexto às suas respostas."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Desinstalar \"{name}\"? Isso o remove do diretório de instalação."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "ação de chat"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "renderização personalizada"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "decoração de mensagem"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "página"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "painel lateral"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Instale plugins de interface que ampliam o goose Desktop com páginas personalizadas, ações de chat, painéis laterais e decorações de mensagem. Diferentes das extensões MCP, que conectam o goose a ferramentas externas."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Exemplo de desenvolvimento"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Os exemplos de desenvolvimento ficam no seu repositório — desative-os aqui em vez de desinstalá-los."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Desativado"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Use Instalar plugin para escolher uma pasta com client-extension.json ou ative os exemplos de desenvolvimento do seu checkout local."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Nenhum plugin instalado ainda"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Instalar plugin"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Falha ao instalar o plugin"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Diretório de instalação:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Plugin instalado"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Instalado"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Nenhuma contribuição de interface declarada"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Recarregar"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Plugins"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Alternar {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Desinstalar"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Falha ao desinstalar o plugin"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Desinstalar {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Plugin desinstalado"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Versão {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Tipos de erro (ex.: \"rate_limit\", \"auth\" - sem detalhes)"

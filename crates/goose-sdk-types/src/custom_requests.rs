@@ -662,6 +662,80 @@ pub struct DefaultsSaveRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DefaultsClearRequest {}
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientExtensionSourceKind {
+    #[default]
+    Installed,
+    Dev,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionInfo {
+    pub id: String,
+    pub version: String,
+    pub directory: String,
+    pub source: ClientExtensionSourceKind,
+    pub enabled: bool,
+    pub manifest: serde_json::Value,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/list", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsListResponse {
+    pub install_dir: String,
+    pub extensions: Vec<ClientExtensionInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/install", response = ClientExtensionsInstallResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsInstallRequest {
+    pub source_path: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsInstallResponse {
+    pub installed_id: String,
+    pub install_dir: String,
+    pub extensions: Vec<ClientExtensionInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/set_enabled", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsSetEnabledRequest {
+    pub id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/uninstall", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsUninstallRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/read_main", response = ClientExtensionsReadMainResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsReadMainRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsReadMainResponse {
+    pub html: String,
+}
+
 /// Sources that onboarding knows how to discover and import.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

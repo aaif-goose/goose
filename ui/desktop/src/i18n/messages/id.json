@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Gaya Respons"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Aksi plugin gagal"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Plugin gagal dimuat"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Kembali ke obrolan"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Plugin"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Rute plugin tidak valid"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Gagal memuat plugin \"{extensionId}\""
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Memuat plugin…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Tampilan plugin tidak ditemukan: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Tutup panel samping"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Gagal memuat plugin \"{extensionId}\""
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Memuat…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Konfigurasi Disetel Ulang"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Obrolan Baru"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Plugin"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Resep"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Tidak ada obrolan terbaru"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Halaman plugin"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Kesalahan"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Instruksi tersembunyi yang akan diteruskan ke penyedia untuk membantu mengarahkan dan menambahkan konteks ke respons Anda."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Hapus instalasi \"{name}\"? Tindakan ini akan menghapusnya dari direktori instalasi Anda."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "aksi obrolan"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "render kustom"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "dekorasi pesan"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "halaman"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "panel samping"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Instal plugin UI yang memperluas goose Desktop dengan halaman kustom, aksi obrolan, panel samping, dan dekorasi pesan. Berbeda dari Ekstensi MCP, yang menghubungkan goose ke alat eksternal."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Contoh dev"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Contoh dev berada di repositori Anda — nonaktifkan di sini alih-alih menghapus instalasinya."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Dinonaktifkan"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Gunakan Instal plugin untuk memilih folder berisi client-extension.json, atau aktifkan contoh dev dari checkout lokal Anda."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Belum ada plugin yang terinstal"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Instal plugin"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Gagal menginstal plugin"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Direktori instalasi:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Plugin terinstal"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Terinstal"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Tidak ada kontribusi UI yang dideklarasikan"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Muat ulang"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Plugin"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Alihkan {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Hapus instalasi"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Gagal menghapus instalasi plugin"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Hapus instalasi {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Instalasi plugin dihapus"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Versi {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Jenis kesalahan (mis., \"rate_limit\", \"auth\" - tanpa detail)"

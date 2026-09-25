@@ -1,0 +1,28 @@
+{
+  "id": "message-decorations",
+  "version": "0.1.0",
+  "engines": {
+    "grc": ">=1.40.0"
+  },
+  "main": "index.html",
+  "contributes": {
+    "contentSuffixes": [
+      {
+        "id": "image-badge",
+        "when": "message.hasImage"
+      }
+    ],
+    "customRenders": [
+      {
+        "id": "json-preview",
+        "match": {
+          "contentType": "code",
+          "language": "json"
+        },
+        "display": "inline",
+        "priority": 10,
+        "when": "message.role.assistant"
+      }
+    ]
+  }
+}

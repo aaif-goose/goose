@@ -9,6 +9,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner, PairRouteWrapper, resolveSessionInitialMessage } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
 import { FeaturesProvider } from './contexts/FeaturesContext';
+import { ClientExtensionsProvider } from './client-extensions/ClientExtensionsContext';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { createSession } from './sessions';
 import { RecipeParameterScopesUnsupportedError } from './acp/errors';
@@ -55,6 +56,14 @@ vi.mock('./sessions', async (importOriginal) => ({
 
 vi.mock('./acp/capabilities', () => ({
   getAcpFeatureCapabilities: vi.fn().mockResolvedValue({ localInference: true }),
+}));
+
+vi.mock('./acp/clientExtensions', () => ({
+  acpListClientExtensions: vi.fn().mockResolvedValue({ installDir: '', extensions: [] }),
+  acpInstallClientExtension: vi.fn(),
+  acpSetClientExtensionEnabled: vi.fn(),
+  acpUninstallClientExtension: vi.fn(),
+  acpReadClientExtensionMain: vi.fn(),
 }));
 
 vi.mock('./acp/acpConnection', async (importOriginal) => ({
@@ -203,7 +212,9 @@ Object.defineProperty(window, 'matchMedia', {
 function AppInnerTestWrapper({ children }: { children: React.ReactNode }) {
   return (
     <IntlTestWrapper>
-      <FeaturesProvider>{children}</FeaturesProvider>
+      <FeaturesProvider>
+        <ClientExtensionsProvider>{children}</ClientExtensionsProvider>
+      </FeaturesProvider>
     </IntlTestWrapper>
   );
 }

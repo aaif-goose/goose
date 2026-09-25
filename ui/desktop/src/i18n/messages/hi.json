@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "प्रतिक्रिया शैलियाँ"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "प्लगइन एक्शन विफल रहा"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "प्लगइन लोड नहीं हो सका"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "चैट पर वापस जाएँ"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "प्लगइन"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "अमान्य प्लगइन रूट"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "प्लगइन \"{extensionId}\" लोड करने में विफल"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "प्लगइन लोड हो रहा है…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "प्लगइन व्यू नहीं मिला: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "साइड पैनल बंद करें"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "प्लगइन \"{extensionId}\" लोड करने में विफल"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "लोड हो रहा है…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "कॉन्फ़िगरेशन रीसेट"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "नई चैट"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "प्लगइन"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "व्यंजन विधि"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "कोई हालिया चैट नहीं"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "प्लगइन पेज"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "त्रुटि"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "छिपे हुए निर्देश जो आपकी प्रतिक्रियाओं को निर्देशित करने और संदर्भ जोड़ने में सहायता के लिए प्रदाता को भेजे जाएंगे।"
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "\"{name}\" अनइंस्टॉल करें? इससे यह आपकी इंस्टॉल डायरेक्टरी से हट जाएगा।"
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "चैट एक्शन"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "कस्टम रेंडर"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "संदेश सजावट"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "पेज"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "साइड पैनल"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "UI प्लगइन इंस्टॉल करें जो कस्टम पेज, चैट एक्शन, साइड पैनल और संदेश सजावट के साथ goose Desktop को विस्तारित करते हैं। ये MCP एक्सटेंशन से अलग हैं, जो goose को बाहरी टूल से जोड़ते हैं।"
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "डेव उदाहरण"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "डेव उदाहरण आपकी रिपॉजिटरी में रहते हैं — अनइंस्टॉल करने के बजाय उन्हें यहाँ अक्षम करें।"
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "अक्षम"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "client-extension.json वाला फ़ोल्डर चुनने के लिए प्लगइन इंस्टॉल करें का उपयोग करें, या अपने लोकल चेकआउट से डेव उदाहरण सक्षम करें।"
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "अभी तक कोई प्लगइन इंस्टॉल नहीं है"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "प्लगइन इंस्टॉल करें"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "प्लगइन इंस्टॉल करने में विफल"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "इंस्टॉल डायरेक्टरी:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "प्लगइन इंस्टॉल हो गया"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "इंस्टॉल किया गया"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "कोई UI योगदान घोषित नहीं है"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "पुनः लोड करें"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "प्लगइन"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "{name} टॉगल करें"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "अनइंस्टॉल करें"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "प्लगइन अनइंस्टॉल करने में विफल"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "{name} अनइंस्टॉल करें"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "प्लगइन अनइंस्टॉल हो गया"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "संस्करण {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "त्रुटि प्रकार (उदाहरण के लिए, \"रेट_लिमिट\", \"ऑथ\" - कोई विवरण नहीं)"

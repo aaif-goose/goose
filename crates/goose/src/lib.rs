@@ -9,6 +9,7 @@ pub mod action_required_manager;
 pub mod agents;
 pub mod builtin_extension;
 pub mod checks;
+pub mod client_extensions;
 pub mod config;
 pub mod context_limit;
 pub mod context_mgmt;

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hello Page</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        line-height: 1.5;
+      }
+      button {
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid #8884;
+        background: transparent;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Hello from a client extension page</h1>
+    <p id="status">Waiting for activation…</p>
+    <button id="toast" type="button">Show toast</button>
+    <script>
+      const status = document.getElementById('status');
+      const toastButton = document.getElementById('toast');
+
+      function reply(payload) {
+        if (window.parent) {
+          window.parent.postMessage(payload, '*');
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data) return;
+
+        if (data.type === 'grc/activate') {
+          status.textContent = `Activated view "${data.viewId}" on route ${data.context.route}`;
+          return;
+        }
+
+        if (data.type === 'grc/action') {
+          status.textContent = `Received action "${data.actionId}"`;
+        }
+      });
+
+      toastButton.addEventListener('click', () => {
+        reply({
+          type: 'grc/ui/showMessage',
+          text: 'Toast from hello-page extension',
+        });
+      });
+    </script>
+  </body>
+</html>

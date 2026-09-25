@@ -1,9 +1,24 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { applyThemeTokens, buildMcpHostStyles, themes } from '../theme/theme-tokens';
-import type { ThemeId, ThemeVariant } from '../theme/theme-tokens';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
+import {
+  applyThemeTokens,
+  buildMcpHostStyles,
+  getPluginThemeOptions,
+  getThemeDefinition,
+  hasTheme,
+  subscribePluginThemes,
+} from '../theme/theme-tokens';
+import type { PluginThemeOption, ThemeId, ThemeVariant } from '../theme/theme-tokens';
 import type { McpUiHostStyles } from '@modelcontextprotocol/ext-apps/app-bridge';
 
-type ThemePreference = 'light' | 'dark' | 'aura' | 'system';
+type ThemePreference = ThemeId | 'system';
 type ResolvedTheme = ThemeVariant;
 
 interface ThemeContextValue {
@@ -12,6 +27,7 @@ interface ThemeContextValue {
   resolvedThemeId: ThemeId;
   resolvedTheme: ResolvedTheme;
   mcpHostStyles: McpUiHostStyles;
+  pluginThemes: PluginThemeOption[];
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -23,7 +39,7 @@ function getSystemTheme(): ResolvedTheme {
 // Resolve a user preference to a concrete theme id. 'system' picks the light or
 // dark built-in from the OS; named themes (light/dark/aura) map to themselves.
 function resolveThemeId(preference: ThemePreference): ThemeId {
-  if (preference === 'system') {
+  if (preference === 'system' || !hasTheme(preference)) {
     return getSystemTheme();
   }
   return preference;
@@ -44,8 +60,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Start with light theme to avoid flash, will update once settings load
   const [userThemePreference, setUserThemePreferenceState] = useState<ThemePreference>('light');
   const [resolvedThemeId, setResolvedThemeId] = useState<ThemeId>('light');
-  const resolvedTheme = themes[resolvedThemeId].variant;
+  const pluginThemes = useSyncExternalStore(subscribePluginThemes, getPluginThemeOptions);
+  const resolvedTheme = getThemeDefinition(resolvedThemeId).variant;
   const mcpHostStyles = useMemo(() => buildMcpHostStyles(resolvedThemeId), [resolvedThemeId]);
+
+  useEffect(() => {
+    setResolvedThemeId(resolveThemeId(userThemePreference));
+  }, [userThemePreference, pluginThemes]);
 
   useEffect(() => {
     async function loadThemeFromSettings() {
@@ -87,7 +108,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
     // Broadcast to other windows via Electron
     window.electron?.broadcastThemeChange({
-      mode: themes[resolvedId].variant,
+      mode: getThemeDefinition(resolvedId).variant,
       useSystemTheme: preference === 'system',
       theme: resolvedId,
     });
@@ -95,7 +116,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
   // Listen for system theme changes when preference is 'system'
   useEffect(() => {
-    if (userThemePreference !== 'system') return;
+    if (userThemePreference !== 'system' && hasTheme(userThemePreference)) return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -105,7 +126,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [userThemePreference]);
+  }, [userThemePreference, pluginThemes]);
 
   // Listen for theme changes from other windows (via Electron IPC)
   useEffect(() => {
@@ -113,9 +134,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
     const handleThemeChanged = (_event: unknown, ...args: unknown[]) => {
       const themeData = args[0] as { useSystemTheme: boolean; theme: ThemeId };
-      const newPreference: ThemePreference = themeData.useSystemTheme
-        ? 'system'
-        : themeData.theme;
+      const newPreference: ThemePreference = themeData.useSystemTheme ? 'system' : themeData.theme;
 
       setUserThemePreferenceState(newPreference);
       setResolvedThemeId(resolveThemeId(newPreference));
@@ -137,10 +156,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
 
   // Apply theme class and CSS tokens whenever the resolved theme changes
   useEffect(() => {
-    applyThemeToDocument(themes[resolvedThemeId].variant);
+    applyThemeToDocument(getThemeDefinition(resolvedThemeId).variant);
     applyThemeTokens(resolvedThemeId);
     document.documentElement.dataset.theme = resolvedThemeId;
-  }, [resolvedThemeId]);
+  }, [resolvedThemeId, pluginThemes]);
 
   const value: ThemeContextValue = {
     userThemePreference,
@@ -148,6 +167,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     resolvedThemeId,
     resolvedTheme,
     mcpHostStyles,
+    pluginThemes,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

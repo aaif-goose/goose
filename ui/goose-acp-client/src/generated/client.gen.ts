@@ -15,6 +15,14 @@ import type {
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
+  ClientExtensionsInstallRequest_unstable,
+  ClientExtensionsInstallResponse_unstable,
+  ClientExtensionsListRequest_unstable,
+  ClientExtensionsListResponse_unstable,
+  ClientExtensionsReadMainRequest_unstable,
+  ClientExtensionsReadMainResponse_unstable,
+  ClientExtensionsSetEnabledRequest_unstable,
+  ClientExtensionsUninstallRequest_unstable,
   ConfigReadAllRequest_unstable,
   ConfigReadAllResponse_unstable,
   ConfigReadRequest_unstable,
@@ -196,6 +204,9 @@ import {
   zAppsImportResponse_unstable,
   zAppsListResponse_unstable,
   zCanonicalModelInfoResponse_unstable,
+  zClientExtensionsInstallResponse_unstable,
+  zClientExtensionsListResponse_unstable,
+  zClientExtensionsReadMainResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
   zCreateScheduleResponse_unstable,
@@ -831,6 +842,66 @@ export class GooseExtClient {
     return zDefaultsReadResponse_unstable.parse(
       raw,
     ) as DefaultsReadResponse_unstable;
+  }
+
+  async clientExtensionsList_unstable(
+    params: ClientExtensionsListRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/list",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsInstall_unstable(
+    params: ClientExtensionsInstallRequest_unstable,
+  ): Promise<ClientExtensionsInstallResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/install",
+      params,
+    );
+    return zClientExtensionsInstallResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsInstallResponse_unstable;
+  }
+
+  async clientExtensionsSetEnabled_unstable(
+    params: ClientExtensionsSetEnabledRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/set_enabled",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsUninstall_unstable(
+    params: ClientExtensionsUninstallRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/uninstall",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsReadMain_unstable(
+    params: ClientExtensionsReadMainRequest_unstable,
+  ): Promise<ClientExtensionsReadMainResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/read_main",
+      params,
+    );
+    return zClientExtensionsReadMainResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsReadMainResponse_unstable;
   }
 
   async onboardingImportScan_unstable(

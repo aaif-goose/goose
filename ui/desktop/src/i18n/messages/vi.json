@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Phong cách phản hồi"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Hành động của plugin thất bại"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Không thể tải plugin"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Quay lại trò chuyện"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Plugin"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Tuyến plugin không hợp lệ"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Không thể tải plugin \"{extensionId}\""
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Đang tải plugin…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Không tìm thấy chế độ xem plugin: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Đóng bảng bên"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Không thể tải plugin \"{extensionId}\""
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Đang tải…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Đặt lại cấu hình"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Trò chuyện mới"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Plugin"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Công thức"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Không có cuộc trò chuyện gần đây"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Trang plugin"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Lỗi"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Các hướng dẫn ẩn sẽ được chuyển đến nhà cung cấp để giúp định hướng và bổ sung ngữ cảnh cho các phản hồi của bạn."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Gỡ cài đặt \"{name}\"? Thao tác này sẽ xóa nó khỏi thư mục cài đặt của bạn."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "hành động trò chuyện"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "kết xuất tùy chỉnh"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "trang trí tin nhắn"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "trang"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "bảng bên"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Cài đặt các plugin giao diện mở rộng goose Desktop với trang tùy chỉnh, hành động trò chuyện, bảng bên và trang trí tin nhắn. Khác với Tiện ích mở rộng MCP, vốn kết nối goose với các công cụ bên ngoài."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Ví dụ phát triển"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Các ví dụ phát triển nằm trong kho mã của bạn — hãy tắt chúng tại đây thay vì gỡ cài đặt."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Đã tắt"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Dùng Cài đặt plugin để chọn thư mục chứa client-extension.json, hoặc bật các ví dụ phát triển từ bản checkout cục bộ của bạn."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Chưa cài đặt plugin nào"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Cài đặt plugin"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Không thể cài đặt plugin"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Thư mục cài đặt:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Đã cài đặt plugin"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Đã cài đặt"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Chưa khai báo đóng góp giao diện nào"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Tải lại"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Plugin"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Bật/tắt {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Gỡ cài đặt"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Không thể gỡ cài đặt plugin"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Gỡ cài đặt {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Đã gỡ cài đặt plugin"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Phiên bản {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Loại lỗi (ví dụ: \"rate_limit\", \"auth\" - không có chi tiết)"

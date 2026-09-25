@@ -257,6 +257,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Response Styles"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Plugin action failed"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Plugin failed to load"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Back to chat"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Plugin"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Invalid plugin route"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Failed to load plugin \"{extensionId}\""
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Loading plugin…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Plugin view not found: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Close sidecar"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Failed to load plugin \"{extensionId}\""
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Loading…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Configuration Reset"
   },
@@ -2387,6 +2420,9 @@
   "navigation.itemHome": {
     "defaultMessage": "New Chat"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Plugins"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Recipes"
   },
@@ -2422,6 +2458,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "No recent chats"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Plugin pages"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Error"
@@ -2620,6 +2659,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Hidden instructions that will be passed to the provider to help direct and add context to your responses."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Uninstall \"{name}\"? This removes it from your install directory."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "chat action"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "custom render"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "message decoration"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "page"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "side panel"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Install UI plugins that extend goose Desktop with custom pages, chat actions, side panels, and message decorations. Distinct from MCP Extensions, which connect goose to external tools."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Dev example"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Dev examples live in your repo — disable them here instead of uninstalling."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Disabled"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Use Install plugin to pick a folder with client-extension.json, or enable dev examples from your local checkout."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "No plugins installed yet"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Install plugin"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Failed to install plugin"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Install directory:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Installed plugin"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Installed"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "No UI contributions declared"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Reload"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Plugins"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Toggle {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Uninstall"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Failed to uninstall plugin"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Uninstall {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Uninstalled plugin"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Version {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Error types (e.g., \"rate_limit\", \"auth\" - no details)"

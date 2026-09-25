@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回复风格"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "插件操作失败"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "插件加载失败"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "返回聊天"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "插件"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "无效的插件路由"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "加载插件“{extensionId}”失败"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "正在加载插件…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "未找到插件视图：{extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "关闭侧边栏"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "加载插件“{extensionId}”失败"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "正在加载…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "配置已重置"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "新对话"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "插件"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "配方"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "没有最近的聊天"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "插件页面"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "错误"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "传给提供商的隐藏指令，用于引导并为回复补充上下文。"
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "卸载“{name}”？这将把它从安装目录中移除。"
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "聊天操作"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "自定义渲染"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "消息装饰"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "页面"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "侧边栏"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "安装 UI 插件，通过自定义页面、聊天操作、侧边栏和消息装饰来扩展 goose Desktop。与将 goose 连接到外部工具的 MCP 扩展不同。"
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "开发示例"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "开发示例位于你的仓库中——请在此处禁用它们，而不是卸载。"
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "已禁用"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "使用“安装插件”选择包含 client-extension.json 的文件夹，或从本地检出启用开发示例。"
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "尚未安装任何插件"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "安装插件"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "安装插件失败"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "安装目录："
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "已安装插件"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "已安装"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "未声明任何 UI 贡献"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "重新加载"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "插件"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "切换 {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "卸载"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "卸载插件失败"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "卸载 {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "已卸载插件"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "版本 {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "错误类型（例如“rate_limit”“auth”——不含详情）"

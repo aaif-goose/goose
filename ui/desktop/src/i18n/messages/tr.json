@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Yanıt Stilleri"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Eklenti eylemi başarısız oldu"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Eklenti yüklenemedi"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Sohbete dön"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Eklenti"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Geçersiz eklenti yolu"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "\"{extensionId}\" eklentisi yüklenemedi"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Eklenti yükleniyor…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Eklenti görünümü bulunamadı: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Yan paneli kapat"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "\"{extensionId}\" eklentisi yüklenemedi"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Yükleniyor…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Yapılandırma Sıfırlama"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Yeni Sohbet"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Eklentiler"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Tarifler"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Son sohbet yok"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Eklenti sayfaları"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Hata"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Yanıtlarınızı yönlendirmeye ve bağlam eklemeye yardımcı olmak için sağlayıcıya iletilecek gizli talimatlar."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "\"{name}\" kaldırılsın mı? Bu işlem onu kurulum dizininizden kaldırır."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "sohbet eylemi"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "özel oluşturma"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "mesaj süslemesi"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "sayfa"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "yan panel"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "goose Desktop uygulamasını özel sayfalar, sohbet eylemleri, yan paneller ve mesaj süslemeleriyle genişleten arayüz eklentileri kurun. goose uygulamasını harici araçlara bağlayan MCP uzantılarından farklıdır."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Geliştirme örneği"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Geliştirme örnekleri deponuzda bulunur; kaldırmak yerine burada devre dışı bırakın."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Devre dışı"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Eklenti kur seçeneğiyle client-extension.json içeren bir klasör seçin veya yerel çalışma kopyanızdaki geliştirme örneklerini etkinleştirin."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Henüz kurulu eklenti yok"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Eklenti kur"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Eklenti kurulamadı"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Kurulum dizini:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Eklenti kuruldu"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Kurulu"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Bildirilmiş arayüz katkısı yok"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Yeniden yükle"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Eklentiler"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "{name} durumunu değiştir"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Kaldır"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Eklenti kaldırılamadı"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "{name} öğesini kaldır"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Eklenti kaldırıldı"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Sürüm {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Hata türleri (ör. \"rate_limit\", \"auth\" - ayrıntı yok)"

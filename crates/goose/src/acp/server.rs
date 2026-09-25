@@ -101,6 +101,7 @@ mod agent_mentions;
 pub use crate::execution::ActiveRunRegistry;
 use crate::execution::StartRunError;
 mod apps;
+mod client_extensions;
 mod config;
 mod custom_dispatch;
 mod diagnostics;

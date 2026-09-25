@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Gaya Respons"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Tindakan pemalam gagal"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Pemalam gagal dimuatkan"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Kembali ke sembang"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Pemalam"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Laluan pemalam tidak sah"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Gagal memuatkan pemalam \"{extensionId}\""
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Memuatkan pemalam…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Paparan pemalam tidak ditemui: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Tutup panel sisi"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Gagal memuatkan pemalam \"{extensionId}\""
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Memuatkan…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Konfigurasi Ditetapkan Semula"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Sembang Baharu"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Pemalam"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Resipi"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Tiada sembang terkini"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Halaman pemalam"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Ralat"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Arahan tersembunyi yang akan dihantar kepada penyedia untuk membantu mengarah dan menambah konteks pada respons anda."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Nyahpasang \"{name}\"? Ini akan membuangnya daripada direktori pemasangan anda."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "tindakan sembang"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "paparan tersuai"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "hiasan mesej"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "halaman"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "panel sisi"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Pasang pemalam UI yang memanjangkan goose Desktop dengan halaman tersuai, tindakan sembang, panel sisi dan hiasan mesej. Berbeza daripada Sambungan MCP, yang menghubungkan goose ke alat luaran."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Contoh pembangunan"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Contoh pembangunan berada dalam repositori anda — nyahaktifkannya di sini dan bukannya menyahpasangnya."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Dilumpuhkan"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Gunakan Pasang pemalam untuk memilih folder yang mengandungi client-extension.json, atau dayakan contoh pembangunan daripada checkout tempatan anda."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Belum ada pemalam dipasang"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Pasang pemalam"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Gagal memasang pemalam"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Direktori pemasangan:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Pemalam dipasang"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Dipasang"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "Tiada sumbangan UI diisytiharkan"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Muat Semula"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Pemalam"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Togol {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Nyahpasang"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Gagal menyahpasang pemalam"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Nyahpasang {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Pemalam dinyahpasang"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Versi {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Jenis ralat (cth., \"rate_limit\", \"auth\" - tanpa butiran)"

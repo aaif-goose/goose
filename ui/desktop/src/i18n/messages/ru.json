@@ -236,6 +236,39 @@
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Стили ответов"
   },
+  "clientExtensionChatActions.actionFailed": {
+    "defaultMessage": "Не удалось выполнить действие плагина"
+  },
+  "clientExtensionChatActions.loadFailed": {
+    "defaultMessage": "Не удалось загрузить плагин"
+  },
+  "clientExtensionPage.backToChat": {
+    "defaultMessage": "Назад к чату"
+  },
+  "clientExtensionPage.fallbackTitle": {
+    "defaultMessage": "Плагин"
+  },
+  "clientExtensionPage.invalidRoute": {
+    "defaultMessage": "Недопустимый маршрут плагина"
+  },
+  "clientExtensionPage.loadFailed": {
+    "defaultMessage": "Не удалось загрузить плагин «{extensionId}»"
+  },
+  "clientExtensionPage.loading": {
+    "defaultMessage": "Загрузка плагина…"
+  },
+  "clientExtensionPage.viewNotFound": {
+    "defaultMessage": "Представление плагина не найдено: {extensionId}/{viewId}"
+  },
+  "clientExtensionSidecar.close": {
+    "defaultMessage": "Закрыть боковую панель"
+  },
+  "clientExtensionSidecar.loadFailed": {
+    "defaultMessage": "Не удалось загрузить плагин «{extensionId}»"
+  },
+  "clientExtensionSidecar.loading": {
+    "defaultMessage": "Загрузка…"
+  },
   "configSettings.configReset": {
     "defaultMessage": "Конфигурация сброшена"
   },
@@ -2367,6 +2400,9 @@
   "navigation.itemHome": {
     "defaultMessage": "Новый чат"
   },
+  "navigation.itemPlugins": {
+    "defaultMessage": "Плагины"
+  },
   "navigation.itemRecipes": {
     "defaultMessage": "Рецепты"
   },
@@ -2402,6 +2438,9 @@
   },
   "navigationPanel.noChats": {
     "defaultMessage": "Нет недавних чатов"
+  },
+  "navigationPanel.pluginPages": {
+    "defaultMessage": "Страницы плагинов"
   },
   "navigationPanel.statusError": {
     "defaultMessage": "Ошибка"
@@ -2600,6 +2639,84 @@
   },
   "permissionSetting.permissionRulesDescription": {
     "defaultMessage": "Скрытые инструкции, которые будут переданы провайдеру, чтобы направлять ответы и добавлять к ним контекст."
+  },
+  "pluginsView.confirmUninstall": {
+    "defaultMessage": "Удалить «{name}»? Он будет удалён из каталога установки."
+  },
+  "pluginsView.contribution.chatAction": {
+    "defaultMessage": "действие чата"
+  },
+  "pluginsView.contribution.customRender": {
+    "defaultMessage": "пользовательский рендеринг"
+  },
+  "pluginsView.contribution.messageSuffix": {
+    "defaultMessage": "оформление сообщения"
+  },
+  "pluginsView.contribution.page": {
+    "defaultMessage": "страница"
+  },
+  "pluginsView.contribution.sidecar": {
+    "defaultMessage": "боковая панель"
+  },
+  "pluginsView.description": {
+    "defaultMessage": "Устанавливайте UI-плагины, расширяющие goose Desktop пользовательскими страницами, действиями чата, боковыми панелями и оформлением сообщений. Отличаются от расширений MCP, которые подключают goose к внешним инструментам."
+  },
+  "pluginsView.devSource": {
+    "defaultMessage": "Пример для разработки"
+  },
+  "pluginsView.devUninstallHint": {
+    "defaultMessage": "Примеры для разработки находятся в вашем репозитории — отключите их здесь вместо удаления."
+  },
+  "pluginsView.disabledSource": {
+    "defaultMessage": "Отключено"
+  },
+  "pluginsView.empty": {
+    "defaultMessage": "Нажмите «Установить плагин», чтобы выбрать папку с client-extension.json, или включите примеры для разработки из локальной копии репозитория."
+  },
+  "pluginsView.emptyTitle": {
+    "defaultMessage": "Плагины ещё не установлены"
+  },
+  "pluginsView.install": {
+    "defaultMessage": "Установить плагин"
+  },
+  "pluginsView.installFailed": {
+    "defaultMessage": "Не удалось установить плагин"
+  },
+  "pluginsView.installHint": {
+    "defaultMessage": "Каталог установки:"
+  },
+  "pluginsView.installSuccess": {
+    "defaultMessage": "Плагин установлен"
+  },
+  "pluginsView.installedSource": {
+    "defaultMessage": "Установлено"
+  },
+  "pluginsView.noContributions": {
+    "defaultMessage": "UI-вклады не объявлены"
+  },
+  "pluginsView.reload": {
+    "defaultMessage": "Перезагрузить"
+  },
+  "pluginsView.title": {
+    "defaultMessage": "Плагины"
+  },
+  "pluginsView.togglePlugin": {
+    "defaultMessage": "Переключить {name}"
+  },
+  "pluginsView.uninstall": {
+    "defaultMessage": "Удалить"
+  },
+  "pluginsView.uninstallFailed": {
+    "defaultMessage": "Не удалось удалить плагин"
+  },
+  "pluginsView.uninstallPlugin": {
+    "defaultMessage": "Удалить {name}"
+  },
+  "pluginsView.uninstallSuccess": {
+    "defaultMessage": "Плагин удалён"
+  },
+  "pluginsView.version": {
+    "defaultMessage": "Версия {version}"
   },
   "privacyInfoModal.collectErrors": {
     "defaultMessage": "Типы ошибок (например, «rate_limit», «auth» - без подробностей)"

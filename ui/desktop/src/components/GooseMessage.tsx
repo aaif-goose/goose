@@ -25,6 +25,8 @@ import {
   STREAMING_RENDER_COOLDOWN_MS,
   useThrottledStreamingText,
 } from '../hooks/useThrottledStreamingText';
+import { ClientExtensionMessageDecorations } from '../client-extensions/ClientExtensionMessageDecorations';
+import { useMessageDisplayText } from '../client-extensions/useMessageDisplayText';
 
 const MAX_STREAMING_MARKDOWN_LENGTH = 16_000;
 const LARGE_STREAMING_RENDER_COOLDOWN_MS = 250;
@@ -64,6 +66,12 @@ function GooseMessage({
   const displayText = isOutputTokenLimitFallback ? '' : textContent;
   const imagePaths = isOutputTokenLimitFallback ? [] : allImagePaths;
   const thinkingContent = isOutputTokenLimitFallback ? null : getThinkingContent(message);
+  const renderedText = useMessageDisplayText(
+    sessionId,
+    message,
+    displayText,
+    imagePaths.length
+  );
 
   const timestamp = useMemo(() => formatMessageTimestamp(message.created), [message.created]);
   const toolRequests = getToolRequests(message);
@@ -109,7 +117,7 @@ function GooseMessage({
           />
         )}
 
-        {(displayText.trim() || imagePaths.length > 0) && (
+        {(renderedText.trim() || imagePaths.length > 0) && (
           <div className="flex flex-col group">
             {displayText.trim() && (
               <div ref={contentRef} className="agent-message-bubble w-full" dir={messageDir}>
@@ -124,6 +132,13 @@ function GooseMessage({
                 ))}
               </div>
             )}
+
+            <ClientExtensionMessageDecorations
+              sessionId={sessionId}
+              message={message}
+              displayText={displayText}
+              imageCount={imagePaths.length}
+            />
 
             {toolRequests.length === 0 && (
               <div className="relative flex items-center justify-between">
