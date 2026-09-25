@@ -37,7 +37,7 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "peerDependencies": {
     "@agentclientprotocol/sdk": "^1.5.0"
@@ -45,9 +45,9 @@
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.5.0",
     "@hey-api/openapi-ts": "^0.99.0",
-    "@types/node": "^26.2.0",
-    "prettier": "^3.9.6",
-    "tsx": "^4.23.12",
+    "@types/node": "^26.6.2",
+    "prettier": "^3.9.8",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }
 }
