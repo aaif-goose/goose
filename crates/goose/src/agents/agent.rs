@@ -31,14 +31,15 @@ use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
-    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    has_unapplied_tool_confirmation_response, is_answer_content, is_thinking_content,
+    pending_tool_confirmations, persist_tool_confirmation_decision, run_goose, BangShellOperation,
+    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, ThinkingRecoveryOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
+    THINKING_ONLY_CONTINUATION_MESSAGE, THINKING_ONLY_TURN_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -1725,6 +1726,7 @@ impl Agent {
                 std::time::Duration::from_secs(retry_timeout),
                 std::time::Duration::from_secs(on_failure_timeout),
             )),
+            Arc::new(ThinkingRecoveryOperation),
             Arc::new(StopHookOperation::new(
                 self.hook_manager.clone(),
                 stop_hook_block_cap,
@@ -2712,7 +2714,8 @@ impl Agent {
                 let mut did_recovery_compact_this_iteration = false;
                 let mut exit_chat = false;
                 let mut provider_errored = false;
-                let mut provider_produced_content = false;
+                let mut provider_produced_answer = false;
+                let mut provider_produced_thinking = false;
                 let mut provider_reached_output_token_limit = false;
                 let mut pending_final_output: Option<String> = None;
                 let mut pending_turn_usage: Option<ProviderUsage> = None;
@@ -2766,23 +2769,10 @@ impl Agent {
                                     continue;
                                 }
 
-                                provider_produced_content |= response.content.iter().any(|content| {
-                                    match content {
-                                        MessageContent::Text(text) => !text.text.is_empty(),
-                                        MessageContent::Image(image) => !image.data.is_empty(),
-                                        MessageContent::Thinking(thinking) => {
-                                            !thinking.thinking.is_empty()
-                                                || !thinking.signature.is_empty()
-                                        }
-                                        MessageContent::RedactedThinking(thinking) => {
-                                            !thinking.data.is_empty()
-                                        }
-                                        MessageContent::SystemNotification(notification) => {
-                                            !notification.msg.is_empty()
-                                        }
-                                        _ => true,
-                                    }
-                                });
+                                provider_produced_answer |=
+                                    response.content.iter().any(is_answer_content);
+                                provider_produced_thinking |=
+                                    response.content.iter().any(is_thinking_content);
 
                                 let (tool_requests, filtered_response) = self
                                     .categorize_tool_requests(
@@ -3282,23 +3272,29 @@ impl Agent {
                     }
                 }
 
-                // An empty provider response — no tool calls, no text, and no error
-                // or recovery compaction that legitimately produces no assistant
-                // output — must never be persisted: strict providers reject a
-                // conversation that contains an empty assistant turn. Drop it here
-                // regardless of what the match below decides to do about the turn
-                // (final-output nudge, steer, goal/grind, retry, or fallback).
-                let empty_response = no_tools_called
+                // An unproductive provider response — no tool calls, no text, and
+                // no error or recovery compaction that legitimately produces no
+                // assistant output — comes in two shapes: fully empty, or thinking
+                // with no answer.
+                let unproductive_response = no_tools_called
                     && !exit_chat
                     && !provider_errored
                     && !did_recovery_compact_this_iteration
                     && !provider_reached_output_token_limit
-                    && !provider_produced_content
+                    && !provider_produced_answer
                     && last_assistant_text.is_empty();
+                let thinking_only_response = unproductive_response && provider_produced_thinking;
+                let empty_response = unproductive_response && !provider_produced_thinking;
 
+                // An empty response must never be persisted: strict providers
+                // reject a conversation that contains an empty assistant turn.
+                // Drop it here regardless of what the match below decides to do
+                // about the turn (final-output nudge, steer, goal/grind, retry,
+                // or fallback). A thinking-only response is kept: the model's
+                // thinking is preserved for the continuation retry below.
                 if empty_response {
                     messages_to_add = Conversation::default();
-                } else {
+                } else if !thinking_only_response {
                     empty_turn_retries = 0;
                 }
 
@@ -3379,25 +3375,46 @@ impl Agent {
                                     session_manager.replace_conversation(&session_config.id, &conversation).await?;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());
                                 }
-                                Ok(RetryResult::Skipped) if empty_response => {
-                                    // No recipe retry configured, and this empty
-                                    // turn would otherwise fall through to a
-                                    // silent exit. Retry a bounded number of
-                                    // times, then surface a visible message so
-                                    // the user is never left with no response.
+                                Ok(RetryResult::Skipped) if empty_response || thinking_only_response => {
+                                    // No recipe retry configured, and this
+                                    // unproductive turn would otherwise fall
+                                    // through to a silent exit. Retry a bounded
+                                    // number of times — for a thinking-only turn,
+                                    // keep the thinking and prompt the model to
+                                    // continue — then surface a visible message
+                                    // so the user is never left with no response.
                                     if empty_turn_retries < MAX_EMPTY_TURN_RETRIES {
                                         empty_turn_retries += 1;
                                         retrying_after_empty_turn = true;
-                                        warn!(
-                                            "Provider returned an empty response; retrying ({}/{})",
-                                            empty_turn_retries, MAX_EMPTY_TURN_RETRIES
-                                        );
+                                        if thinking_only_response {
+                                            warn!(
+                                                "Provider returned a thinking-only response; prompting it to continue ({}/{})",
+                                                empty_turn_retries, MAX_EMPTY_TURN_RETRIES
+                                            );
+                                            push_message_with_id(
+                                                &mut messages_to_add,
+                                                Message::user()
+                                                    .with_text(THINKING_ONLY_CONTINUATION_MESSAGE)
+                                                    .with_visibility(false, true),
+                                            );
+                                        } else {
+                                            warn!(
+                                                "Provider returned an empty response; retrying ({}/{})",
+                                                empty_turn_retries, MAX_EMPTY_TURN_RETRIES
+                                            );
+                                        }
                                     } else {
-                                        warn!("Provider returned an empty response after retries; ending turn");
-                                        last_assistant_text = EMPTY_TURN_MESSAGE.to_string();
+                                        let turn_message = if thinking_only_response {
+                                            warn!("Provider returned a thinking-only response after retries; ending turn");
+                                            THINKING_ONLY_TURN_MESSAGE
+                                        } else {
+                                            warn!("Provider returned an empty response after retries; ending turn");
+                                            EMPTY_TURN_MESSAGE
+                                        };
+                                        last_assistant_text = turn_message.to_string();
                                         let message = push_message_with_id(
                                             &mut messages_to_add,
-                                            Message::assistant().with_text(EMPTY_TURN_MESSAGE),
+                                            Message::assistant().with_text(turn_message),
                                         );
                                         yield AgentEvent::Message(message);
                                         exit_chat = true;
@@ -4966,6 +4983,49 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
+    struct ThinkingOnlyProvider {
+        answers_after: usize,
+        call_count: AtomicUsize,
+    }
+
+    impl ThinkingOnlyProvider {
+        fn new(answers_after: usize) -> Self {
+            Self {
+                answers_after,
+                call_count: AtomicUsize::new(0),
+            }
+        }
+
+        fn call_count(&self) -> usize {
+            self.call_count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for ThinkingOnlyProvider {
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+            let message = if call < self.answers_after {
+                Message::assistant()
+                    .with_content(MessageContent::thinking("thought hard, said nothing", ""))
+            } else {
+                Message::assistant().with_text("recovered answer")
+            };
+            let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+            Ok(stream_from_single_message(message, usage))
+        }
+
+        fn get_name(&self) -> &str {
+            "thinking-only"
+        }
+    }
+
     struct RefusingProvider {
         call_count: AtomicUsize,
     }
@@ -5316,6 +5376,84 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .agent_visible_messages()
             .iter()
             .all(|message| message.id.as_deref() != Some("provider-output-limit")));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn thinking_only_response_is_prompted_to_continue() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let provider = Arc::new(ThinkingOnlyProvider::new(1));
+        let (agent, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+
+        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+
+        assert_eq!(
+            provider.call_count(),
+            2,
+            "a thinking-only response should be followed by a continuation request"
+        );
+        assert!(
+            visible_texts(&messages).contains(&"recovered answer".to_string()),
+            "the answer from the continuation request should be surfaced"
+        );
+
+        let session = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        let conversation = session
+            .conversation
+            .expect("session should have a conversation");
+        let thinking = conversation
+            .messages()
+            .iter()
+            .find(|message| {
+                message.content.iter().any(|content| {
+                    matches!(content, MessageContent::Thinking(thinking) if thinking.thinking == "thought hard, said nothing")
+                })
+            })
+            .expect("the thinking-only response should be kept");
+        assert!(thinking.is_agent_visible());
+        let continuation = conversation
+            .messages()
+            .iter()
+            .find(|message| {
+                message
+                    .as_concat_text()
+                    .contains(THINKING_ONLY_CONTINUATION_MESSAGE)
+            })
+            .expect("a continuation prompt should be persisted");
+        assert_eq!(continuation.role, rmcp::model::Role::User);
+        assert!(continuation.is_agent_visible());
+        assert!(!continuation.is_user_visible());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let provider = Arc::new(ThinkingOnlyProvider::new(usize::MAX));
+        let (agent, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+
+        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+
+        assert_eq!(
+            provider.call_count(),
+            1 + MAX_EMPTY_TURN_RETRIES as usize,
+            "thinking-only continuation retries should be bounded"
+        );
+        let texts = visible_texts(&messages);
+        assert!(
+            texts.iter().any(|text| text == THINKING_ONLY_TURN_MESSAGE),
+            "the turn must not end silently: {texts:?}"
+        );
 
         Ok(())
     }

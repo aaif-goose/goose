@@ -22,6 +22,7 @@ mod ops_slash_command;
 mod ops_status;
 mod ops_steer;
 mod ops_stop_hook;
+mod ops_thinking_recovery;
 mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
@@ -64,6 +65,10 @@ pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
 pub(super) use ops_stop_hook::StopHookOperation;
+pub(super) use ops_thinking_recovery::{
+    is_answer_content, is_thinking_content, ThinkingRecoveryOperation,
+    THINKING_ONLY_CONTINUATION_MESSAGE, THINKING_ONLY_TURN_MESSAGE,
+};
 pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
