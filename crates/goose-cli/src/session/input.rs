@@ -31,6 +31,14 @@ pub enum InputResult {
     Edit(Option<String>),
     ListSkills,
     LoadSkills(Vec<String>),
+    SecretsCommand(SecretsCommandAction),
+}
+
+#[derive(Debug)]
+pub enum SecretsCommandAction {
+    List,
+    Delete(String),
+    Add(Vec<(String, String)>),
 }
 
 #[derive(Debug)]
@@ -131,6 +139,34 @@ pub fn get_input(
                     crate::session::editor::get_editor_input(&editor_cmd, &message_refs, None)?;
 
                 if has_meaningful_content {
+                    let detected = goose::secret_input::detect_secrets(&message);
+                    if !detected.is_empty() {
+                        if let Ok(confirmed) = cliclack::confirm(
+                            "Detected what looks like sensitive data. Store securely and redact?",
+                        )
+                        .initial_value(true)
+                        .interact()
+                        {
+                            if confirmed {
+                                if let Ok((redacted, stored)) =
+                                    goose::secret_input::redact_and_store_secrets(
+                                        &message, &detected,
+                                    )
+                                {
+                                    for (key, pattern) in &stored {
+                                        eprintln!(
+                                            "{}",
+                                            console::style(format!(
+                                                "  ✓ {pattern} stored securely as {key}"
+                                            ))
+                                            .green()
+                                        );
+                                    }
+                                    return Ok(InputResult::Message(redacted));
+                                }
+                            }
+                        }
+                    }
                     editor.add_history_entry(message.as_str())?;
                     return Ok(InputResult::Message(message));
                 }
@@ -189,11 +225,6 @@ pub fn get_input(
         },
     };
 
-    // Add valid input to history (history saving to file is handled in the Session::interactive method)
-    if !input.trim().is_empty() {
-        editor.add_history_entry(input.as_str())?;
-    }
-
     // Handle non-slash commands first
     if !input.starts_with('/') {
         let trimmed = input.trim();
@@ -201,13 +232,80 @@ pub fn get_input(
             || trimmed.eq_ignore_ascii_case("exit")
             || trimmed.eq_ignore_ascii_case("quit")
         {
+            if !input.trim().is_empty() {
+                editor.add_history_entry(input.as_str())?;
+            }
             return Ok(if trimmed.is_empty() {
                 InputResult::Retry
             } else {
                 InputResult::Exit
             });
         }
+
+        let detected = goose::secret_input::detect_secrets(trimmed);
+        if !detected.is_empty() {
+            let pattern_names: Vec<&str> =
+                detected.iter().map(|d| d.pattern_name.as_str()).collect();
+            let label = if pattern_names.len() == 1 {
+                format!("a {}", pattern_names[0])
+            } else {
+                format!(
+                    "{} sensitive values ({})",
+                    pattern_names.len(),
+                    pattern_names.join(", ")
+                )
+            };
+
+            eprintln!(
+                "\n{}",
+                console::style(format!("⚠  This looks like it might contain {label}."))
+                    .yellow()
+                    .bold()
+            );
+
+            let confirmed = cliclack::confirm(
+                "Is this sensitive data? (If yes, it will be stored securely and redacted from the conversation.)",
+            )
+            .initial_value(true)
+            .interact()
+            .unwrap_or(false);
+
+            if confirmed {
+                match goose::secret_input::redact_and_store_secrets(trimmed, &detected) {
+                    Ok((redacted, stored)) => {
+                        for (key, pattern) in &stored {
+                            eprintln!(
+                                "{}",
+                                console::style(format!("  ✓ {pattern} stored securely as {key}"))
+                                    .green()
+                            );
+                        }
+                        // Do NOT add to history - the original contained secrets
+                        return Ok(InputResult::Message(redacted));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}",
+                            console::style(format!(
+                                "  ✗ Failed to store secret: {e}. Proceeding without redaction."
+                            ))
+                            .red()
+                        );
+                    }
+                }
+            }
+        }
+
+        // No secrets detected, or user declined redaction - add to history normally
+        if !input.trim().is_empty() {
+            editor.add_history_entry(input.as_str())?;
+        }
         return Ok(InputResult::Message(trimmed.to_string()));
+    }
+
+    // Slash commands go to history
+    if !input.trim().is_empty() {
+        editor.add_history_entry(input.as_str())?;
     }
 
     // Handle slash commands
@@ -236,6 +334,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_EDIT: &str = "/edit";
     const CMD_EDIT_WITH_SPACE: &str = "/edit ";
     const CMD_SKILLS: &str = "/skills";
+    const CMD_SECRETS: &str = "/secrets";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -339,6 +438,10 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             Some(InputResult::Compact)
         }
         "/r" => Some(InputResult::ToggleFullToolOutput),
+        s if s == CMD_SECRETS || s.starts_with(&format!("{CMD_SECRETS} ")) => {
+            let args = s.get(CMD_SECRETS.len()..).unwrap_or("").trim();
+            parse_secrets_command(args)
+        }
         s if s == CMD_EDIT => Some(InputResult::Edit(None)),
         s if s.starts_with(CMD_EDIT_WITH_SPACE) => {
             let prefill = s
@@ -408,6 +511,43 @@ fn parse_prompt_command(args: &str) -> Option<InputResult> {
     Some(InputResult::PromptCommand(options))
 }
 
+fn parse_secrets_command(args: &str) -> Option<InputResult> {
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    match parts.first().copied() {
+        None | Some("list") => Some(InputResult::SecretsCommand(SecretsCommandAction::List)),
+        Some("delete") => {
+            let name = parts.get(1)?;
+            Some(InputResult::SecretsCommand(SecretsCommandAction::Delete(
+                name.to_string(),
+            )))
+        }
+        Some("add") => {
+            let key_descs: Vec<(String, String)> = parts[1..]
+                .iter()
+                .filter_map(|arg| {
+                    arg.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                })
+                .collect();
+            if key_descs.is_empty() {
+                println!("Usage: /secrets add KEY_NAME=description [KEY_NAME=description ...]");
+                Some(InputResult::Retry)
+            } else {
+                Some(InputResult::SecretsCommand(SecretsCommandAction::Add(
+                    key_descs,
+                )))
+            }
+        }
+        Some(unknown) => {
+            println!(
+                "Unknown secrets subcommand: {unknown}\n\
+                 Usage: /secrets [list | delete <name> | add <KEY=description> ...]"
+            );
+            Some(InputResult::Retry)
+        }
+    }
+}
+
 fn help_text() -> String {
     let modes = GooseMode::VARIANTS.join(", ");
     let newline_key = get_newline_key().to_ascii_uppercase();
@@ -435,6 +575,10 @@ fn help_text() -> String {
 {additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOOSE_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
+/secrets - List stored secrets, delete a secret, or add new ones via secure editor
+         /secrets list - Show stored secret names (values are never displayed)
+         /secrets delete <name> - Remove a stored secret
+         /secrets add <NAME=description> [...] - Open editor to securely input secret values
 /skills - List available skills or enable skills by name (usage: /skills [<name>...])
 /? or /help - Display this help message
 /clear - Clears the current chat history
@@ -882,6 +1026,66 @@ mod tests {
         assert!(matches!(
             handle_slash_command("/skills   "),
             Some(InputResult::ListSkills)
+        ));
+    }
+
+    #[test]
+    fn test_secrets_list() {
+        assert!(matches!(
+            handle_slash_command("/secrets"),
+            Some(InputResult::SecretsCommand(SecretsCommandAction::List))
+        ));
+        assert!(matches!(
+            handle_slash_command("/secrets list"),
+            Some(InputResult::SecretsCommand(SecretsCommandAction::List))
+        ));
+    }
+
+    #[test]
+    fn test_secrets_delete() {
+        let Some(InputResult::SecretsCommand(SecretsCommandAction::Delete(name))) =
+            handle_slash_command("/secrets delete MY_KEY")
+        else {
+            panic!("Expected SecretsCommand::Delete");
+        };
+        assert_eq!(name, "MY_KEY");
+    }
+
+    #[test]
+    fn test_secrets_add() {
+        let Some(InputResult::SecretsCommand(SecretsCommandAction::Add(keys))) =
+            handle_slash_command("/secrets add API_KEY=My_API_key")
+        else {
+            panic!("Expected SecretsCommand::Add");
+        };
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].0, "API_KEY");
+        assert_eq!(keys[0].1, "My_API_key");
+    }
+
+    #[test]
+    fn test_secrets_add_multiple() {
+        let Some(InputResult::SecretsCommand(SecretsCommandAction::Add(keys))) =
+            handle_slash_command("/secrets add KEY_A=first KEY_B=second")
+        else {
+            panic!("Expected SecretsCommand::Add");
+        };
+        assert_eq!(keys.len(), 2);
+    }
+
+    #[test]
+    fn test_secrets_unknown_subcommand() {
+        assert!(matches!(
+            handle_slash_command("/secrets foobar"),
+            Some(InputResult::Retry)
+        ));
+    }
+
+    #[test]
+    fn test_secrets_add_no_args() {
+        assert!(matches!(
+            handle_slash_command("/secrets add"),
+            Some(InputResult::Retry)
         ));
     }
 }
