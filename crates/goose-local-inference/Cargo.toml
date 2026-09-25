@@ -57,11 +57,11 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-eredu = { git = "https://github.com/jbg/eredu", rev = "464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f", version = "0.5.0", default-features = false, features = ["mlx", "metal", "image"], optional = true }
-eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f", version = "0.5.0", default-features = false, optional = true }
-eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f", version = "0.5.0", default-features = false, optional = true }
-eredu-core = { git = "https://github.com/jbg/eredu", rev = "464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f", version = "0.5.0", default-features = false, optional = true }
-eredu-text = { git = "https://github.com/jbg/eredu", rev = "464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f", version = "0.1.1", default-features = false, optional = true }
+eredu = { git = "https://github.com/jbg/eredu", rev = "a45e4cc4bf0e055a45156501ba4f71e787a94cb6", version = "0.5.0", default-features = false, features = ["mlx", "metal", "image"], optional = true }
+eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "a45e4cc4bf0e055a45156501ba4f71e787a94cb6", version = "0.5.0", default-features = false, optional = true }
+eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "a45e4cc4bf0e055a45156501ba4f71e787a94cb6", version = "0.5.0", default-features = false, optional = true }
+eredu-core = { git = "https://github.com/jbg/eredu", rev = "a45e4cc4bf0e055a45156501ba4f71e787a94cb6", version = "0.5.0", default-features = false, optional = true }
+eredu-text = { git = "https://github.com/jbg/eredu", rev = "a45e4cc4bf0e055a45156501ba4f71e787a94cb6", version = "0.1.1", default-features = false, optional = true }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"], optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { workspace = true, features = ["sampler", "metal", "mtmd"] }

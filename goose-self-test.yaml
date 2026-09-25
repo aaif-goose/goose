@@ -87,7 +87,8 @@ instructions: |
   Target and external drafter budgets are separate. Reset may preserve admitted
   conversions. Do not add their payload to residency a second time or treat either
   the conversion-retention budget or allocator-cache ceiling as a total-memory
-  limit: prefill and other fallback paths may still need temporary full-weight casts.
+  limit: unsupported projection layouts, arithmetic or row counts may still need
+  temporary full-weight casts. Supported multi-row Metal prefill can now avoid them.
   Skip this comparison if no suitable checkpoint or forecast log is available.
   Run the same tool round trip with both legacy and GOOSE_STATE_MACHINE=1 sessions.
 

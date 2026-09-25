@@ -66,15 +66,15 @@ Download requests may supply `format` (`gguf` or `safetensors`) independently of
 `backendId`. Old `mlx` requests and `mlx-safetensors` format values remain accepted.
 
 Eredu uses its prepared-chat pipeline for native tools, reasoning, sampling,
-cancellation, and external drafting (including supported Gemma assistants). Auto tool mode uses Goose's tool
-emulation when the checkpoint/template cannot support native tools. Force-native
-mode reports the incompatibility. Tool calls are emitted only after completion;
+cancellation, and external drafting (including supported Gemma assistants). Auto
+tool mode uses Goose's tool emulation when the checkpoint/template cannot support
+native tools. Force-native mode reports the incompatibility. Tool calls are emitted only after completion;
 partial argument streams never become executable Goose tool requests.
 
 ### Eredu compatibility
 
 - The dependency is pinned to git main revision
-  `464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f` across the eredu crates.
+  `a45e4cc4bf0e055a45156501ba4f71e787a94cb6` across the eredu crates.
 - Checkpoint architecture, tensor encoding, tokenizer, and processor must be
   supported by eredu; GGUF compatibility with llama.cpp does not imply eredu
   compatibility.
@@ -153,10 +153,14 @@ its own budget. Unsupported retention paths report an effective disabled policy.
 Unlimited retention requires an explicit upstream override that Goose does not
 request. This resolves the earlier unbounded-retention gap.
 
-Eligible mixed-dtype Metal decode projections now read the original weights
-without full-weight F32 casts. Other paths, including multi-row prefill, can still
-need temporary casts. Neither retention nor allocator-cache policy limits those
-temporaries, native backing capacity, KV state, or total process memory. Request
+Eligible mixed-dtype Metal projections now read the original narrow weights
+without full-weight F32 casts during decode and supported multi-row prefill or
+speculative verification. The multi-row path requires materialized row-contiguous
+F16/BF16 weights, F32 activations, supported geometry (currently 2–2,000 rows), and
+native SIMD GEMM dispatch. NAX/TF32 and other unsupported cases retain the native
+fallback and may still need temporary casts. Goose inherits the selector without
+changing native arithmetic settings. Neither retention nor allocator-cache policy
+limits those temporaries, native backing capacity, KV state, or total process memory. Request
 reset preserves admitted conversions; dropping their owner releases its claims.
 Eredu also exposes settled trimming, but Goose does not currently expose trimming
 or custom conversion-retention budgets.
@@ -167,8 +171,45 @@ twice or clamping temporary workspace to the retention budget. These observation
 precede generation, so use a subsequent request's forecast to inspect warmed
 residency; Goose does not yet expose a separate post-generation retention report.
 
-See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/464d40c4b1d38ed6f449c53cca46a3d80cc4cf9f/doc/generation-memory.md)
+Loaded forecasts now use proven binding, dtype-flow and native dispatch facts to
+remove unnecessary promotion allowances, while retaining split-K partials and
+possible input copies. Cold forecasts remain conservative where those facts are
+not available. Coverage for a short request does not imply coverage for a longer
+prefill or a different architecture.
+
+See the pinned [upstream memory documentation](https://github.com/jbg/eredu/blob/a45e4cc4bf0e055a45156501ba4f71e787a94cb6/doc/generation-memory.md)
+and [mixed-storage projection contract](https://github.com/jbg/eredu/blob/a45e4cc4bf0e055a45156501ba4f71e787a94cb6/doc/mixed-storage-gemm.md)
 for coverage, calibration assumptions, and validation scope.
+
+### Recommended Goose follow-up work
+
+In priority order:
+
+1. Use cold and loaded forecasts for model recommendations and a preflight memory
+   estimate. Derive cold placement from the selected device with
+   `GenerationMemoryOptions::for_local_device`, include loading peaks, and allow
+   an explicit reserve. Preserve unknown bounds instead of promising a model fits.
+2. Expose per-model conversion-retention policy, live target/drafter usage and a
+   settled trim action. Use the upstream observations and trimming APIs rather
+   than a second accounting system. Policy changes require reload; trimming does
+   not promise an equivalent drop in process memory.
+3. Add an eredu prefill-chunk setting and compare alternatives with
+   `GenerationForecast::with_prefill_chunk`. Apply it only where the selected
+   execution contract supports chunking; smaller chunks cannot help full-pass
+   paths merely because the UI accepts the setting.
+4. Expose embedded drafting separately from an external draft model, with supported
+   proposal-count and lookahead controls. Include the complete drafting plan in
+   the model-cache identity so changing settings reloads the session correctly.
+5. Adopt controlled sessions for pause/resume, settled continuation forecasts and
+   trimming during a paused request. Investigate KV-prefix reuse across agent turns
+   separately: cached state must match the exact rendered conversation, including
+   tool results and template changes. Controlled execution alone does not provide
+   that matching policy.
+
+The new `projection-profiling` feature is useful for a separate developer diagnostic
+build when investigating performance. It retains tensor samples and changes memory
+and timing, so ordinary Goose builds should keep it disabled. The projection
+optimizations themselves need no new Goose feature flag.
 
 ## Building
 
