@@ -724,6 +724,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn spark_requests_use_adaptive_thinking_and_replay_it() {
+        use goose_providers::conversation::message::MessageContent;
+        use goose_providers::formats::anthropic::create_request;
+
+        let config =
+            ModelConfig::new("muse-spark-1.3").with_canonical_limits(MUSE_CODE_PROVIDER_NAME);
+        let messages = vec![
+            Message::assistant().with_content(MessageContent::thinking("plan", "sig")),
+            Message::user().with_text("continue"),
+        ];
+        let payload = create_request(
+            MUSE_CODE_PROVIDER_NAME,
+            &config,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                preserve_unsigned_thinking: true,
+                preserve_thinking_context: true,
+                ..AnthropicFormatOptions::default()
+            },
+        )
+        .expect("request should build");
+
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert!(payload
+            .get("thinking")
+            .unwrap()
+            .get("budget_tokens")
+            .is_none());
+        assert_ne!(payload["thinking"]["type"], "disabled");
+        let replayed = &payload["messages"][0]["content"][0];
+        assert_eq!(replayed["type"], "thinking");
+        assert_eq!(replayed["thinking"], "plan");
+    }
+
     #[tokio::test]
     async fn from_env_builds_provider_against_configured_host_with_bearer_auth() {
         let server = MockServer::start().await;

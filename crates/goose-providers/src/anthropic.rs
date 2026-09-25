@@ -154,7 +154,7 @@ impl AnthropicProvider {
         format_options: AnthropicFormatOptions,
     ) -> Result<Value, ProviderError> {
         let mut payload = create_request_for_model(
-            ANTHROPIC_PROVIDER_NAME,
+            &self.name,
             model_config,
             wire_model,
             system,
