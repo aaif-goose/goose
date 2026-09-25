@@ -252,6 +252,10 @@ pub fn format_messages_with_options(
         });
 
         let mut output = Vec::new();
+        // Deferred to the end of the message so every tool result in a batch stays
+        // consecutive; a strict OpenAI-compatible API rejects a request where a
+        // synthetic user image message splits one assistant tool_calls batch.
+        let mut pending_image_messages = Vec::new();
         let mut content_array = Vec::new();
         let mut has_non_text_content = false;
         let mut reasoning_text = String::new();
@@ -354,7 +358,6 @@ pub fn format_messages_with_options(
                         Ok(result) => {
                             // Process all content, replacing images with placeholder text
                             let mut tool_content = Vec::new();
-                            let mut image_messages = Vec::new();
 
                             for content in result.content.iter() {
                                 match content {
@@ -364,7 +367,7 @@ pub fn format_messages_with_options(
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
                                             // Create a separate image message
-                                            image_messages.push(json!({
+                                            pending_image_messages.push(json!({
                                                 "role": "user",
                                                 "content": [convert_image(&image.clone(), image_format)]
                                             }));
@@ -391,14 +394,11 @@ pub fn format_messages_with_options(
                                 .collect::<Vec<String>>()
                                 .join(" "));
 
-                            // First add the tool response with all content
                             output.push(json!({
                                 "role": "tool",
                                 "content": tool_response_content,
                                 "tool_call_id": response.id
                             }));
-                            // Then add any image messages that need to follow
-                            output.extend(image_messages);
                         }
                         Err(e) => {
                             // A tool result error is shown as output so the model can interpret the error message
@@ -448,6 +448,8 @@ pub fn format_messages_with_options(
                 }
             }
         }
+
+        output.append(&mut pending_image_messages);
 
         if !content_array.is_empty() {
             if has_non_text_content {
@@ -2652,6 +2654,99 @@ mod tests {
             .contains("This tool result included an image that is uploaded in the next message."));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parallel_tool_responses_with_images_are_consecutive() {
+        // #11893: a synthetic user image message between the tool results of one
+        // tool_calls batch makes strict OpenAI-compatible APIs reject the request.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYg==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+    }
+
+    #[test]
+    fn test_mixed_tool_responses_image_and_text_ordering() {
+        // A text-only result between two image results must not let the image
+        // messages split the batch either.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("shell")))
+                .with_tool_request("call_c", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        "text result",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_c",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYw==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(
+            roles,
+            vec!["assistant", "tool", "tool", "tool", "user", "user"]
+        );
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+        assert_eq!(spec[3]["tool_call_id"], "call_c");
     }
 
     #[test]
