@@ -4007,6 +4007,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Auto"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configured"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Enter API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Remove key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Save key"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Uses Jev to choose the thinking effort for each request. The current request text is sent to TypeSafe AI."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatic thinking effort"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Block limit"
   },

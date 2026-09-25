@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "設定済み"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe APIキー"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "APIキーを入力"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "キーを削除"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "キーを保存"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Jevを使用してリクエストごとの思考レベルを選択します。現在のリクエストのテキストがTypeSafe AIに送信されます。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "思考レベルの自動選択"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "ブロック上限"
   },

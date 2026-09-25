@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use rmcp::model::ElicitationAction;
@@ -36,10 +36,62 @@ use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{Session, SessionManager, SessionType};
 use crate::tool_inspection::ToolInspectionManager;
 use goose_providers::model::ModelConfig;
+use goose_providers::thinking::ThinkingEffort;
 
 struct FeatureProvider {
     inner: Arc<dyn Provider>,
     features: ProviderFeatures,
+}
+
+struct RecordingProvider {
+    inner: Arc<dyn Provider>,
+    model_configs: Arc<Mutex<Vec<ModelConfig>>>,
+}
+
+#[async_trait::async_trait]
+impl Provider for RecordingProvider {
+    fn get_name(&self) -> &str {
+        self.inner.get_name()
+    }
+
+    fn provider_session_id(&self) -> Option<String> {
+        self.inner.provider_session_id()
+    }
+
+    async fn resume(&self, session_id: &str) -> Result<(), goose_providers::errors::ProviderError> {
+        self.inner.resume(session_id).await
+    }
+
+    async fn stream(
+        &self,
+        model_config: &ModelConfig,
+        system: &str,
+        messages: &[Message],
+        tools: &[rmcp::model::Tool],
+    ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
+        self.model_configs
+            .lock()
+            .unwrap()
+            .push(model_config.clone());
+        self.inner
+            .stream(model_config, system, messages, tools)
+            .await
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        self.inner.get_context_limit(model, override_limit).await
+    }
+
+    fn manages_own_context(&self) -> bool {
+        self.inner.manages_own_context()
+    }
+
+    async fn fetch_model_info(
+        &self,
+        model_name: &str,
+    ) -> Result<goose_providers::base::ModelInfo, goose_providers::errors::ProviderError> {
+        self.inner.fetch_model_info(model_name).await
+    }
 }
 
 #[async_trait::async_trait]
@@ -104,6 +156,8 @@ pub(super) struct TestPipeline {
     steer_queue: SteerQueue,
     max_turns: u32,
     scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
+    recorded_model_configs: Option<Arc<Mutex<Vec<ModelConfig>>>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
@@ -170,6 +224,7 @@ impl TestPipeline {
             Arc::new(ExitOnErrorOperation),
         ];
         operations.extend(remaining_operations);
+        operations.extend(self.extra_operations.clone());
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
             extension_manager: self.extension_manager.clone(),
@@ -251,6 +306,35 @@ impl TestPipeline {
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
         self.max_turns = max_turns;
         self
+    }
+
+    pub(super) fn with_operation(
+        mut self,
+        operation: Arc<dyn Operation<Session, GooseEffect>>,
+    ) -> Self {
+        self.extra_operations.push(operation);
+        self
+    }
+
+    pub(super) fn record_model_configs(mut self) -> Self {
+        let model_configs = Arc::new(Mutex::new(Vec::new()));
+        self.provider = Arc::new(RecordingProvider {
+            inner: self.provider,
+            model_configs: model_configs.clone(),
+        });
+        self.recorded_model_configs = Some(model_configs);
+        self
+    }
+
+    pub(super) fn recorded_efforts(&self) -> Vec<Option<ThinkingEffort>> {
+        self.recorded_model_configs
+            .as_ref()
+            .expect("model config recording was not enabled")
+            .lock()
+            .unwrap()
+            .iter()
+            .map(ModelConfig::thinking_effort)
+            .collect()
     }
 
     pub(super) fn working_dir(&self) -> &std::path::Path {
@@ -818,6 +902,8 @@ async fn build_test_pipeline(
         steer_queue: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         max_turns: MAX_TURNS,
         scheduler,
+        extra_operations: Vec::new(),
+        recorded_model_configs: None,
         _temp_dir: temp_dir,
     };
     let extension_manager = pipeline.extension_manager.clone();

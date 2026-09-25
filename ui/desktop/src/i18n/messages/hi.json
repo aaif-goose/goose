@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "स्वचालित"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "कॉन्फ़िगर किया गया"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API कुंजी"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API कुंजी दर्ज करें"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "कुंजी हटाएँ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "कुंजी सहेजें"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "हर अनुरोध के लिए सोचने का स्तर चुनने हेतु Jev का उपयोग करता है। वर्तमान अनुरोध का पाठ TypeSafe AI को भेजा जाता है।"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "स्वचालित सोचने का स्तर"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "ब्लॉक सीमा"
   },

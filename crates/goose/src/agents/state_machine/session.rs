@@ -26,6 +26,11 @@ impl MachineSession for Session {
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
     }
+    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
+        self.model_config
+            .as_ref()
+            .and_then(|config| config.thinking_effort())
+    }
 }
 
 #[async_trait]
@@ -83,6 +88,18 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     self.update_tool_request_meta(&session.id, tool_call_id, patch.clone())
                         .await?;
                 }
+                GooseEffect::Conversation(ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation,
+                    key,
+                    value,
+                }) => {
+                    self.update_message_metadata(&session.id, message_id, |mut metadata| {
+                        metadata.set_operation_note(operation, key, value.clone());
+                        metadata
+                    })
+                    .await?;
+                }
                 GooseEffect::Conversation(ConversationEffect::SetMessageVisibility {
                     message_id,
                     user_visible,
@@ -104,6 +121,12 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::SetExtensionData(extension_data) => {
                     self.update(&session.id)
                         .extension_data(extension_data.clone())
+                        .apply()
+                        .await?;
+                }
+                GooseEffect::SetModelConfig(model_config) => {
+                    self.update(&session.id)
+                        .model_config(model_config.clone())
                         .apply()
                         .await?;
                 }

@@ -118,6 +118,9 @@ function getOrCreateAssistantMessageForUpdate(
 ): Message {
   const existing = findMessageForChunk(state, 'assistant', gooseMeta.messageId, gooseMeta.created);
   if (existing) {
+    if (gooseMeta.operationLogs) {
+      existing.metadata.operationLogs = gooseMeta.operationLogs;
+    }
     return existing;
   }
 
@@ -126,7 +129,10 @@ function getOrCreateAssistantMessageForUpdate(
     role: 'assistant',
     created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
     content: [],
-    metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
+    metadata: {
+      ...DEFAULT_VISIBLE_MESSAGE_METADATA,
+      ...(gooseMeta.operationLogs ? { operationLogs: gooseMeta.operationLogs } : {}),
+    },
   };
   state.messages.push(message);
   return message;

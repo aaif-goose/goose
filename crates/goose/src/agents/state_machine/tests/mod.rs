@@ -160,8 +160,54 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
 }
 
 #[tokio::test]
-async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() -> Result<()> {
+async fn turn_state_is_persisted_once_per_turn_and_reused_across_inferences() -> Result<()> {
+    use std::sync::Arc;
+
+    use goose_providers::api_client::{ApiClient, AuthMethod};
+    use goose_providers::thinking::ThinkingEffort;
+    use goose_providers::typesafe::TypeSafeProvider;
+    use serde_json::json;
+    use wiremock::matchers::{body_partial_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use crate::agents::state_machine::AutoEffortOperation;
+
+    let jev = MockServer::start().await;
+    for (request, effort) in [("add one", "high"), ("hello", "off")] {
+        let probabilities = std::collections::HashMap::from([(effort, 0.9)]);
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_partial_json(json!({ "state": request })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model": "jev-latest",
+                "answers": {
+                    "effort": {
+                        "type": "choice",
+                        "choice": effort,
+                        "confidence": 0.9,
+                        "probabilities": probabilities
+                    }
+                },
+                "usage": {"input_tokens": 12, "output_tokens": 3}
+            })))
+            .expect(1)
+            .mount(&jev)
+            .await;
+    }
+
     let (pipeline, api) = test_pipeline().await?;
+    let decision_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+        jev.uri(),
+        AuthMethod::BearerToken("test-key".to_string()),
+        None,
+    )?);
+    let pipeline =
+        pipeline
+            .record_model_configs()
+            .with_operation(Arc::new(AutoEffortOperation::new(Arc::new(
+                decision_provider,
+            ))));
     api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("The total is 1");
     api.on("hello").reply("hi there!");
@@ -184,6 +230,49 @@ async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() 
         .calls()
         .iter()
         .all(|call| call.input_contains("<turn-context>")));
+    assert_eq!(
+        pipeline.recorded_efforts(),
+        vec![
+            Some(ThinkingEffort::High),
+            Some(ThinkingEffort::High),
+            Some(ThinkingEffort::Off),
+        ]
+    );
+
+    let decisions: Vec<_> = conversation
+        .messages()
+        .iter()
+        .filter_map(|message| message.metadata.operation_note("auto_effort", "decision"))
+        .collect();
+    assert_eq!(decisions.len(), 2);
+    assert_eq!(decisions[0]["effort"], "high");
+    assert_eq!(decisions[0]["probabilities"]["high"], 0.9);
+    assert_eq!(decisions[1]["effort"], "off");
+
+    let logged_messages: Vec<_> = conversation
+        .messages()
+        .iter()
+        .filter(|message| !message.metadata.operation_logs.is_empty())
+        .collect();
+    assert_eq!(logged_messages.len(), 2);
+    assert_eq!(
+        logged_messages[0].metadata.operation_logs,
+        ["ops_auto_effort: thinking high"]
+    );
+    assert_eq!(
+        logged_messages[1].metadata.operation_logs,
+        ["ops_auto_effort: thinking off"]
+    );
+    assert!(logged_messages[0].is_tool_request());
+    assert_eq!(logged_messages[1].as_concat_text(), "hi there!");
+    assert_eq!(
+        result
+            .session
+            .model_config
+            .as_ref()
+            .and_then(|config| config.thinking_effort()),
+        Some(ThinkingEffort::Off)
+    );
 
     Ok(())
 }

@@ -4710,6 +4710,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自动"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "已配置"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "输入 API 密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "移除密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "保存密钥"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "使用 Jev 为每个请求选择思考级别。当前请求文本将发送给 TypeSafe AI。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "自动思考级别"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "阻止上限"
   },
