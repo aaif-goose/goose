@@ -503,6 +503,22 @@ pub fn register_declarative_provider(
                         declarative_inventory_identity(&cfg)
                     },
                 );
+            } else if crate::providers::opencode_go::OpenCodeGoProvider::matches_declarative_config(&config) {
+                registry.register_with_name::<crate::providers::opencode_go::OpenCodeGoProvider, _, _> (
+                    &config,
+                    provider_type,
+                    config.dynamic_models.unwrap_or(false),
+                    move |tls_config| {
+                        let mut cfg = captured.clone();
+                        resolve_config(&mut cfg)?;
+                        crate::providers::opencode_go::OpenCodeGoProvider::from_custom_config(cfg, tls_config)
+                    },
+                    move || {
+                        let mut cfg = identity_config.clone();
+                        resolve_config(&mut cfg)?;
+                        declarative_inventory_identity(&cfg)
+                    },
+                );
             } else {
                 registry.register_with_name::<OpenAiProviderDef, _, _>(
                     &config,
