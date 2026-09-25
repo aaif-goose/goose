@@ -5,6 +5,7 @@ use clap_complete_nushell::Nushell as ClapNushell;
 use goose::agents::GoosePlatform;
 #[cfg(feature = "bundled-mcp")]
 use goose::builtin_extension::register_builtin_extensions;
+use goose::config::paths::Paths;
 use goose::config::{Config, GooseMode};
 #[cfg(feature = "telemetry")]
 use goose::posthog::get_telemetry_choice;
@@ -807,11 +808,44 @@ enum RecipeCommand {
     },
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum PathName {
+    ConfigFile,
+    ConfigDir,
+    DataDir,
+    StateDir,
+    ProvidersDir,
+    PluginsDir,
+    AgentsDir,
+    AgentsHomeDir,
+}
+
+impl PathName {
+    fn path(self) -> PathBuf {
+        match self {
+            Self::ConfigFile => Paths::in_config_dir("config.yaml"),
+            Self::ConfigDir => Paths::config_dir(),
+            Self::DataDir => Paths::data_dir(),
+            Self::StateDir => Paths::state_dir(),
+            Self::ProvidersDir => goose::config::declarative_providers::custom_providers_dir(),
+            Self::PluginsDir => Paths::plugins_dir(),
+            Self::AgentsDir => Paths::agents_dir(),
+            Self::AgentsHomeDir => Paths::agents_home_dir(),
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Configure goose settings
     #[command(about = "Configure goose settings")]
     Configure {},
+
+    /// Print a goose configuration path
+    PrintPath {
+        #[arg(value_enum)]
+        path: PathName,
+    },
 
     /// Display goose configuration information
     #[command(about = "Display goose information")]
@@ -1390,6 +1424,7 @@ pub struct InputConfig {
 fn get_command_name(command: &Option<Command>) -> &'static str {
     match command {
         Some(Command::Configure {}) => "configure",
+        Some(Command::PrintPath { .. }) => "print-path",
         Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
         #[cfg(feature = "bundled-mcp")]
@@ -2816,6 +2851,10 @@ pub async fn cli() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Command::Configure {}) => handle_configure().await,
+        Some(Command::PrintPath { path }) => {
+            println!("{}", path.path().display());
+            Ok(())
+        }
         Some(Command::Doctor {}) => crate::commands::doctor::handle_doctor().await,
         Some(Command::Info { verbose, check }) => handle_info(verbose, check).await,
         #[cfg(feature = "bundled-mcp")]
@@ -2982,6 +3021,25 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn print_path_accepts_supported_names() {
+        for (name, expected) in [
+            ("config-file", Paths::in_config_dir("config.yaml")),
+            (
+                "providers-dir",
+                goose::config::declarative_providers::custom_providers_dir(),
+            ),
+        ] {
+            let cli = Cli::try_parse_from(["goose", "print-path", name]).unwrap();
+            match cli.command {
+                Some(Command::PrintPath { path }) => assert_eq!(path.path(), expected),
+                _ => panic!("expected print-path command"),
+            }
+        }
+        assert!(Cli::try_parse_from(["goose", "print-path"]).is_err());
+        assert!(Cli::try_parse_from(["goose", "print-path", "unknown"]).is_err());
+    }
 
     #[test]
     fn completion_command_accepts_nushell_alias() {
