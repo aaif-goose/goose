@@ -478,10 +478,6 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
                                 accumulator.push(chunk);
                                 continue;
                             }
-                            if is_empty_response(&chunk) {
-                                accumulator.push(chunk);
-                                continue;
-                            }
                             let chunk = emit.message(chunk).await;
                             accumulator.push(chunk);
                         }
