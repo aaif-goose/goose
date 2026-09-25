@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "뒤로"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,other{이전 메시지 #개가 표시되지 않았습니다}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "세션을 로드하지 못했습니다."
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "다시 시도"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "모두 표시"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "익스텐션이 업데이트되었습니다."

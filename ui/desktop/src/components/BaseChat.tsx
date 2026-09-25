@@ -57,6 +57,15 @@ const i18n = defineMessages({
     id: 'baseChat.reconnecting',
     defaultMessage: 'Connection lost. Reconnecting…',
   },
+  earlierMessagesHidden: {
+    id: 'baseChat.earlierMessagesHidden',
+    defaultMessage:
+      '{count, plural, one {# earlier message not shown} other {# earlier messages not shown}}',
+  },
+  showAllMessages: {
+    id: 'baseChat.showAllMessages',
+    defaultMessage: 'Show all',
+  },
 });
 
 const isUserMessage = (message: Message) => message.role === 'user';
@@ -138,7 +147,9 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    loadFullSessionHistory,
     sessionLoadError,
+    replaySkipped,
     tokenState,
     notifications: toolCallNotifications,
     pauseQueueOnStop,
@@ -520,6 +531,21 @@ export default function BaseChat({
 
             {messages.length > 0 || recipe ? (
               <>
+                {replaySkipped > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 mb-4 text-xs text-text-muted">
+                    <span>
+                      {intl.formatMessage(i18n.earlierMessagesHidden, { count: replaySkipped })}
+                    </span>
+                    <button
+                      type="button"
+                      className="underline hover:text-text-standard disabled:no-underline disabled:opacity-50"
+                      disabled={chatState !== ChatState.Idle}
+                      onClick={() => void loadFullSessionHistory()}
+                    >
+                      {intl.formatMessage(i18n.showAllMessages)}
+                    </button>
+                  </div>
+                )}
                 <SearchView>
                   <ProgressiveMessageList
                     messages={messages}

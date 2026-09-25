@@ -23,6 +23,7 @@ export interface AcpChatSessionSnapshot {
   progressMessage: string | undefined;
   chatState: ChatState;
   sessionLoadError: string | undefined;
+  replaySkipped: number;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
@@ -81,7 +82,11 @@ export interface AcpChatSessionActions {
 
   setSessionMetadata(sessionId: string, session: Session | undefined): AcpChatSessionSnapshot;
   startSessionLoad(sessionId: string): AcpChatSessionSnapshot;
-  finishSessionLoad(sessionId: string, session: Session): AcpChatSessionSnapshot;
+  finishSessionLoad(
+    sessionId: string,
+    session: Session,
+    replaySkipped?: number
+  ): AcpChatSessionSnapshot;
   failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
   setSessionLoadError(
     sessionId: string,
@@ -179,6 +184,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       progressMessage: undefined,
       chatState: ChatState.Idle,
       sessionLoadError: undefined,
+      replaySkipped: 0,
       activePromptAttemptId: null,
       activeRunId: null,
       pendingCancelPromptAttemptId: null,
@@ -219,10 +225,15 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     return notify(sessionId, entry);
   };
 
-  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (sessionId, session) => {
+  const finishSessionLoad: AcpChatSessionActions['finishSessionLoad'] = (
+    sessionId,
+    session,
+    replaySkipped = 0
+  ) => {
     const entry = getOrCreateEntry(sessionId);
     entry.session = session;
     entry.sessionLoadError = undefined;
+    entry.replaySkipped = replaySkipped;
     entry.progressMessage = undefined;
     // Materialize the replayed conversation in one pass (the per-notification
     // fast path above skips message copies while loading).
@@ -693,6 +704,7 @@ function shouldClearProgressMessage(notification: SessionNotification): boolean 
 
 function resetReplayState(entry: StoreEntry): void {
   entry.messages = [];
+  entry.replaySkipped = 0;
   entry.tokenState = { ...initialTokenState };
   entry.notifications = [];
   entry.progressMessage = undefined;
@@ -773,6 +785,7 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     progressMessage: entry.progressMessage,
     chatState: entry.chatState,
     sessionLoadError: entry.sessionLoadError,
+    replaySkipped: entry.replaySkipped,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,

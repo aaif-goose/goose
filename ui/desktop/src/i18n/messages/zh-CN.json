@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "返回"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,one{未显示前面的 # 条消息} other{未显示前面的 # 条消息}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "加载会话失败"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "重试"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "全部显示"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "扩展已更新"

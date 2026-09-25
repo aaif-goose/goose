@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "Quay lại"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,other{# tin nhắn trước đó không được hiển thị}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Không thể tải phiên"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "Thử lại"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "Hiển thị tất cả"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Đã cập nhật tiện ích mở rộng"

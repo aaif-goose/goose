@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "Назад"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,one{# предыдущее сообщение не показано} few{# предыдущих сообщения не показаны} many{# предыдущих сообщений не показано} other{# предыдущего сообщения не показано}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Не удалось загрузить сеанс"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "Повторить"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "Показать все"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Расширение обновлено"

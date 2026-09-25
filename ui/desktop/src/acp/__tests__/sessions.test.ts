@@ -7,6 +7,8 @@ import {
   acpLoadSession,
   acpNewSession,
   sessionInfoToSession,
+  REPLAY_TAIL,
+  REPLAY_TAIL_THRESHOLD,
 } from '../sessions';
 
 vi.mock('../acpConnection', () => ({
@@ -150,6 +152,44 @@ describe('ACP sessions', () => {
       cwd: '/tmp',
       mcpServers: [],
       _meta: { client: 'goose-desktop' },
+    });
+  });
+
+  it('caps the replay of long conversations and lifts the cap on a full reload', async () => {
+    const longSessionInfo = sessionInfo({
+      _meta: {
+        createdAt: '2026-01-01T00:00:00Z',
+        messageCount: REPLAY_TAIL_THRESHOLD + 1,
+      },
+    });
+    const request = vi.fn().mockResolvedValue({ _meta: { replaySkipped: 623 } });
+    const client = {
+      connection: { agent: { request } },
+      goose: {
+        sessionInfo_unstable: vi.fn().mockResolvedValue({ session: longSessionInfo }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    const result = await acpLoadSession('session-1');
+
+    expect(request).toHaveBeenCalledWith(methods.agent.session.load, {
+      sessionId: 'session-1',
+      cwd: '/tmp',
+      mcpServers: [],
+      _meta: { replayTail: REPLAY_TAIL },
+    });
+    expect(result.meta.replaySkipped).toBe(623);
+
+    request.mockClear();
+    await acpLoadSession('session-1', true);
+
+    expect(request).toHaveBeenCalledWith(methods.agent.session.load, {
+      sessionId: 'session-1',
+      cwd: '/tmp',
+      mcpServers: [],
     });
   });
 
