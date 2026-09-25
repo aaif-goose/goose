@@ -963,6 +963,15 @@ pub struct ProviderConfigSaveRequest {
     pub fields: Vec<ProviderConfigFieldUpdate>,
 }
 
+/// Set model picker visibility without changing credentials, models, or existing sessions.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/providers/enablement/set", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderEnablementSetRequest {
+    pub provider_id: String,
+    pub enabled: bool,
+}
+
 /// Delete provider configuration fields and start an inventory refresh when supported.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
@@ -1833,6 +1842,9 @@ pub struct ProviderInventoryEntryDto {
     pub description: String,
     /// The default/recommended model for this provider.
     pub default_model: String,
+    /// Whether the user has enabled this provider in the model picker.
+    #[serde(default)]
+    pub enabled: bool,
     /// Whether Goose has enough configuration to use this provider.
     pub configured: bool,
     /// Whether the provider's external runtime or required configuration is available.

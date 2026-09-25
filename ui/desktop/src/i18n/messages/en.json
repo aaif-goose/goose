@@ -2741,8 +2741,20 @@
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Deprecated — use {replacement} instead."
   },
+  "providerCard.disable": {
+    "defaultMessage": "Disable"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Enable"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Setup or sign-in required"
+  },
   "providerCard.noMetadata": {
     "defaultMessage": "ProviderCard error: No metadata provided"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Hide from the model picker and keep saved credentials and settings"
   },
   "providerCard.unknownProvider": {
     "defaultMessage": "Unknown Provider"
@@ -2900,17 +2912,32 @@
   "providerGrid.addProviderTitle": {
     "defaultMessage": "Add Provider"
   },
+  "providerGrid.allFilter": {
+    "defaultMessage": "All"
+  },
   "providerGrid.chooseModel": {
     "defaultMessage": "Choose Model"
   },
   "providerGrid.configureProvider": {
     "defaultMessage": "Configure Provider"
   },
+  "providerGrid.defaultFilter": {
+    "defaultMessage": "Current & enabled"
+  },
+  "providerGrid.deprecatedFilter": {
+    "defaultMessage": "Deprecated"
+  },
   "providerGrid.editProvider": {
     "defaultMessage": "Edit Provider"
   },
+  "providerGrid.filterLabel": {
+    "defaultMessage": "Filter providers"
+  },
   "providerGrid.fromTemplateOrManual": {
     "defaultMessage": "From template or manual setup"
+  },
+  "providerGrid.noDeprecated": {
+    "defaultMessage": "No deprecated providers"
   },
   "providerGrid.noMatch": {
     "defaultMessage": "No providers match \"{query}\""
@@ -2967,7 +2994,7 @@
     "defaultMessage": "Are you sure you want to delete the configuration parameters for {providerName}? This action cannot be undone."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Delete Provider"
+    "defaultMessage": "Delete Configuration"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Enable Provider"
@@ -4328,8 +4355,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Missing required parameters"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} provider is configured"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} provider is enabled"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Add Existing"

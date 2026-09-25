@@ -32,6 +32,7 @@ pub struct ProviderInventoryEntry {
     pub provider_name: String,
     pub description: String,
     pub default_model: String,
+    pub enabled: bool,
     pub configured: bool,
     pub available: bool,
     pub provider_type: ProviderType,
@@ -305,6 +306,14 @@ impl ProviderInventoryService {
         );
 
         Ok(Some(ProviderInventoryEntry {
+            enabled: crate::config::providers::provider_enablement_override(
+                Config::global(),
+                &descriptor.provider_id,
+            )
+            .unwrap_or_else(|| {
+                !crate::config::providers::provider_enablement_migrated(Config::global())
+                    && descriptor.configured
+            }),
             provider_id: descriptor.provider_id,
             provider_name: descriptor.provider_name,
             description: descriptor.description,
@@ -348,7 +357,28 @@ impl ProviderInventoryService {
         }
     }
 
+    pub async fn ensure_enablement_migrated(&self) -> Result<()> {
+        let config = Config::global();
+        if crate::config::providers::provider_enablement_migrated(config) {
+            return Ok(());
+        }
+        tokio::task::spawn_blocking(|| Config::global().all_secrets()).await??;
+        let mut visible = Vec::new();
+        for id in self.resolve_provider_ids(&[]).await {
+            if let Some(provider) = self.describe_provider(&id).await? {
+                if provider.configured {
+                    visible.push(id);
+                }
+            }
+        }
+        config.migrate_provider_enablement(&visible)?;
+        Ok(())
+    }
+
     pub async fn entries(&self, provider_ids: &[String]) -> Result<Vec<ProviderInventoryEntry>> {
+        if let Err(error) = self.ensure_enablement_migrated().await {
+            tracing::warn!(%error, "Failed to migrate provider enablement; retaining legacy visibility");
+        }
         let ids = self.resolve_provider_ids(provider_ids).await;
         let handles: Vec<_> = ids
             .into_iter()
@@ -727,7 +757,7 @@ impl ProviderInventoryService {
             identity,
             configured: if metadata.setup.as_ref().is_some_and(|setup| setup.acp) {
                 crate::config::get_provider_entry(Config::global(), provider_id)
-                    .is_some_and(|entry| entry.enabled && entry.configured)
+                    .is_some_and(|entry| entry.configured)
             } else {
                 entry.inventory_configured()
             },

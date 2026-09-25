@@ -142,6 +142,72 @@ fn provider_secret_mutations_and_inventory_refresh_invalidate_global_secret_cach
             "provider config save should invalidate the global secrets cache"
         );
 
+        for enabled in [false, true, false] {
+            send_custom(
+                conn.cx(),
+                "_goose/unstable/providers/enablement/set",
+                serde_json::json!({
+                    "providerId": "xai", "enabled": enabled,
+                }),
+            )
+            .await
+            .expect("enablement should be saved independently of credentials");
+            let inventory = send_custom(
+                conn.cx(),
+                "_goose/unstable/providers/list",
+                serde_json::json!({
+                    "providerIds": ["xai"],
+                }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(inventory["entries"][0]["enabled"], enabled);
+            assert_eq!(inventory["entries"][0]["configured"], true);
+            assert_eq!(
+                Config::global()
+                    .get_secret::<String>("XAI_API_KEY")
+                    .unwrap(),
+                "xai-provider-config-key"
+            );
+        }
+
+        goose::config::set_provider_entry(
+            Config::global(),
+            "claude-acp",
+            &goose::config::ProviderEntry {
+                enabled: true,
+                configured: true,
+                model: "saved-acp-model".into(),
+            },
+        )
+        .unwrap();
+        send_custom(
+            conn.cx(),
+            "_goose/unstable/providers/enablement/set",
+            serde_json::json!({
+                "providerId": "claude-acp", "enabled": false,
+            }),
+        )
+        .await
+        .unwrap();
+        let acp_inventory = send_custom(
+            conn.cx(),
+            "_goose/unstable/providers/list",
+            serde_json::json!({
+                "providerIds": ["claude-acp"],
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(acp_inventory["entries"][0]["enabled"], false);
+        assert_eq!(acp_inventory["entries"][0]["configured"], true);
+        assert_eq!(
+            goose::config::get_provider_entry(Config::global(), "claude-acp")
+                .unwrap()
+                .model,
+            "saved-acp-model"
+        );
+
         let read_provider_config = send_custom(
             conn.cx(),
             "_goose/unstable/providers/config/read",

@@ -167,6 +167,11 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
     let mut providers = crate::providers::providers()
         .await
         .into_iter()
+        .filter(|(metadata, _)| {
+            let config = crate::config::Config::global();
+            !crate::config::providers::provider_enablement_migrated(config)
+                || crate::config::providers::provider_enabled(config, &metadata.name)
+        })
         .map(|(metadata, _)| ProviderOptionEntry {
             id: metadata.name,
             label: metadata.display_name,
@@ -535,6 +540,7 @@ mod tests {
     )]
     fn test_build_model_state(models: Vec<String>) -> ModelSelection {
         let inventory = ProviderInventoryEntry {
+            enabled: true,
             provider_id: "mock".to_string(),
             provider_name: "Mock".to_string(),
             description: "Mock".to_string(),
