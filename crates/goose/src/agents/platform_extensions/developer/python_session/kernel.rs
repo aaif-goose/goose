@@ -13,6 +13,7 @@ const DRIVER_SOURCE: &str = include_str!("driver.py");
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const INTERRUPT_GRACE: Duration = Duration::from_secs(5);
 const TEARDOWN_GRACE: Duration = Duration::from_millis(500);
+const CHILDREN_FILE: &str = "shell-groups";
 const STDERR_TAIL_CHARS: usize = 4096;
 
 pub struct KernelSpec {
@@ -87,7 +88,7 @@ pub struct Kernel {
     stderr_tail: Arc<Mutex<Vec<u8>>>,
     restored_names: Vec<String>,
     dropped_names: Vec<String>,
-    _driver_dir: tempfile::TempDir,
+    driver_dir: tempfile::TempDir,
 }
 
 impl Kernel {
@@ -115,6 +116,10 @@ impl Kernel {
         if let Some(path) = &spec.state_path {
             command.env("GOOSE_PYTHON_SESSION_STATE_PATH", path);
         }
+        command.env(
+            "GOOSE_PYTHON_SESSION_CHILDREN_PATH",
+            driver_dir.path().join(CHILDREN_FILE),
+        );
         #[cfg(unix)]
         command.process_group(0);
 
@@ -161,7 +166,7 @@ impl Kernel {
             stderr_tail,
             restored_names: Vec::new(),
             dropped_names: Vec::new(),
-            _driver_dir: driver_dir,
+            driver_dir,
         };
 
         let ready = tokio::time::timeout(READY_TIMEOUT, kernel.read_response(0))
@@ -349,9 +354,20 @@ impl Kernel {
     }
 
     /// The driver has its own process group (see `process_group(0)`), so one
-    /// signal reaches every subprocess it spawned.
+    /// signal reaches every subprocess it spawned, except `sh()` commands, which
+    /// run in their own sessions and are listed by the driver in `CHILDREN_FILE`.
+    /// Reading that list here covers a driver that died without reaping them.
     #[cfg(unix)]
     fn kill_process_group(&self) {
+        let listed =
+            std::fs::read_to_string(self.driver_dir.path().join(CHILDREN_FILE)).unwrap_or_default();
+        for pgid in listed.lines().filter_map(|line| line.parse::<i32>().ok()) {
+            if pgid > 1 {
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL);
+                }
+            }
+        }
         if let Some(pid) = self.child.id() {
             unsafe {
                 libc::kill(-(pid as i32), libc::SIGKILL);

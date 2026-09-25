@@ -133,7 +133,7 @@ async fn copied_conversation_is_told_the_namespace_is_fresh() {
         "a session without python history gets no notice"
     );
 
-    let call = rmcp::model::CallToolRequestParams::new("developer__python");
+    let call = rmcp::model::CallToolRequestParams::new("python");
     let message = Message::assistant().with_tool_request("call_1", Ok(call));
     context
         .session_manager

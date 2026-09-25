@@ -36,8 +36,29 @@ _DRIVER_FILE = globals().get("__file__", "<python-session-driver>")
 # serialized to valid JSON; the host's parser rejects them.
 _SURROGATE_RE = re.compile("[\ud800-\udfff]")
 # Process-group ids of shell commands currently running in their own session,
-# so a SIGTERM teardown can reap them instead of orphaning them.
+# so a SIGTERM teardown can reap them instead of orphaning them. They are also
+# published to CHILDREN_PATH for the host, which reaps them when the driver
+# dies without running its handler (os._exit, a native crash, SIGKILL).
 _child_sessions = set()
+_child_sessions_lock = threading.Lock()
+CHILDREN_PATH = os.environ.get("GOOSE_PYTHON_SESSION_CHILDREN_PATH", "")
+
+
+def _set_child_session(pgid, running):
+    with _child_sessions_lock:
+        if running:
+            _child_sessions.add(pgid)
+        else:
+            _child_sessions.discard(pgid)
+        if not CHILDREN_PATH:
+            return
+        tmp = CHILDREN_PATH + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                f.write("".join("%d\n" % p for p in sorted(_child_sessions)))
+            os.replace(tmp, CHILDREN_PATH)
+        except OSError:
+            pass
 
 
 def _truncate(text, limit=MAX_CHARS):
@@ -201,7 +222,7 @@ def sh(command, timeout=None, cwd=None, env=None):
         start_new_session=posix,
     )
     if posix:
-        _child_sessions.add(proc.pid)
+        _set_child_session(proc.pid, True)
     open_pipes = [2]
     pipes_lock = threading.Lock()
 
@@ -212,7 +233,7 @@ def sh(command, timeout=None, cwd=None, env=None):
             open_pipes[0] -= 1
             last = open_pipes[0] == 0
         if last and posix:
-            _child_sessions.discard(proc.pid)
+            _set_child_session(proc.pid, False)
 
     out = _PipeDrain(proc.stdout, _pipe_closed)
     err = _PipeDrain(proc.stderr, _pipe_closed)

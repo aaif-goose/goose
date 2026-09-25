@@ -257,6 +257,37 @@ async fn background_command_holding_the_pipes_is_reaped_with_the_kernel() {
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn background_command_is_reaped_when_the_driver_crashes() {
+    require_python!();
+    let mut kernel = spawn_kernel().await;
+    let marker = format!("sleep 301.{}", std::process::id() % 100_000);
+
+    exec(&mut kernel, &format!("r = sh(\"{marker} &\")")).await;
+    assert!(process_running(&marker));
+
+    // os._exit skips the driver's SIGTERM handler; the host reaps the group from
+    // the list the driver published.
+    let crashed = kernel
+        .exec(
+            "import os; os._exit(3)",
+            Duration::from_secs(10),
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(crashed.is_err(), "the crash should surface as an error");
+    drop(kernel);
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while process_running(&marker) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background command was orphaned by the driver crash"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[tokio::test]
 async fn image_requests_are_capped_in_the_driver() {
     require_python!();

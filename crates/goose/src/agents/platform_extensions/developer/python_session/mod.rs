@@ -568,7 +568,9 @@ impl PythonSessionClient {
             .get_session(session_id, true)
             .await
             .ok()?;
-        let python_tool = format!("{EXTENSION_NAME}__{PYTHON_TOOL_NAME}");
+        // Stored names are unprefixed when Developer is the only extension
+        // exposing the tool and prefixed otherwise.
+        let prefixed = format!("{EXTENSION_NAME}__{PYTHON_TOOL_NAME}");
         let has_history = session.conversation.is_some_and(|conversation| {
             conversation
                 .messages()
@@ -576,7 +578,9 @@ impl PythonSessionClient {
                 .flat_map(|message| message.content.iter())
                 .any(|block| {
                     matches!(block, MessageContent::ToolRequest(request)
-                        if request.tool_call.as_ref().is_ok_and(|call| call.name == python_tool))
+                    if request.tool_call.as_ref().is_ok_and(|call| {
+                        call.name == PYTHON_TOOL_NAME || call.name == prefixed
+                    }))
                 })
         });
         if !has_history {
