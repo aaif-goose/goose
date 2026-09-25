@@ -1,0 +1,103 @@
+{
+  "name": "aigateway",
+  "engine": "openai",
+  "display_name": "AIgateway",
+  "description": "1,000+ models from 85+ labs (Claude, GPT-5, Gemini, DeepSeek, Kimi, GLM) at pass-through provider pricing via a single API key",
+  "api_key_env": "AIGATEWAY_API_KEY",
+  "base_url": "https://api.aigateway.sh/v1/chat/completions",
+  "catalog_provider_id": "aigateway",
+  "models": [
+    {
+      "name": "anthropic/claude-sonnet-4-5",
+      "context_limit": 200000,
+      "input_token_cost": 0.000003,
+      "output_token_cost": 0.000015,
+      "currency": "USD"
+    },
+    {
+      "name": "anthropic/claude-haiku-4-5",
+      "context_limit": 200000,
+      "input_token_cost": 0.0000008,
+      "output_token_cost": 0.000004,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-4o",
+      "context_limit": 128000,
+      "input_token_cost": 0.0000025,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/gpt-4o-mini",
+      "context_limit": 128000,
+      "input_token_cost": 0.00000015,
+      "output_token_cost": 0.0000006,
+      "currency": "USD"
+    },
+    {
+      "name": "openai/o3-mini",
+      "context_limit": 200000,
+      "input_token_cost": 0.0000011,
+      "output_token_cost": 0.0000044,
+      "currency": "USD"
+    },
+    {
+      "name": "google/gemini-2.5-pro",
+      "context_limit": 1048576,
+      "input_token_cost": 0.00000125,
+      "output_token_cost": 0.00001,
+      "currency": "USD"
+    },
+    {
+      "name": "google/gemini-2.5-flash",
+      "context_limit": 1000000,
+      "input_token_cost": 0.0000003,
+      "output_token_cost": 0.0000025,
+      "currency": "USD"
+    },
+    {
+      "name": "deepseek/deepseek-chat",
+      "context_limit": 163840,
+      "input_token_cost": 0.00000027,
+      "output_token_cost": 0.0000011,
+      "currency": "USD"
+    },
+    {
+      "name": "deepseek/deepseek-reasoner",
+      "context_limit": 163840,
+      "input_token_cost": 0.00000055,
+      "output_token_cost": 0.00000219,
+      "currency": "USD"
+    },
+    {
+      "name": "moonshotai/kimi-k2",
+      "context_limit": 262144,
+      "input_token_cost": 0.0000006,
+      "output_token_cost": 0.0000025,
+      "currency": "USD"
+    },
+    {
+      "name": "zai-org/glm-5.3-flash",
+      "context_limit": 1000000,
+      "input_token_cost": 0.0000001,
+      "output_token_cost": 0.0000004,
+      "currency": "USD"
+    },
+    {
+      "name": "meta-llama/llama-4-maverick",
+      "context_limit": 1000000,
+      "input_token_cost": 0.00000019,
+      "output_token_cost": 0.00000085,
+      "currency": "USD"
+    },
+    {
+      "name": "meta-llama/llama-4-scout",
+      "context_limit": 10000000,
+      "input_token_cost": 0.00000008,
+      "output_token_cost": 0.0000003,
+      "currency": "USD"
+    }
+  ],
+  "supports_streaming": true
+}

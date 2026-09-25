@@ -347,6 +347,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_aigateway_provider_registry_wiring() {
+        let aigateway = get_from_registry("aigateway")
+            .await
+            .expect("aigateway provider should be registered");
+        let meta = aigateway.metadata();
+
+        assert_eq!(meta.name, "aigateway");
+        assert_eq!(meta.default_model, "anthropic/claude-sonnet-4-5");
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "AIGATEWAY_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
     async fn test_gondola_provider_registry_wiring() {
         let gondola = get_from_registry("gondola")
             .await
