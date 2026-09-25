@@ -1193,6 +1193,38 @@ impl GooseAcpAgent {
         }
     }
 
+    /// Probe the provider for the model's context window (e.g. Lemonade's
+    /// `context_length` / `max_context_window` from `/v1/models`). Returns
+    /// `None` when the provider can't be created or reports no window.
+    pub(super) async fn probed_context_limit(
+        &self,
+        provider_name: &str,
+        model: &str,
+    ) -> Option<usize> {
+        let provider = match self
+            .create_provider(provider_name, vec![], None, false)
+            .await
+        {
+            Ok(provider) => provider,
+            Err(error) => {
+                tracing::debug!(
+                    provider = provider_name,
+                    %error,
+                    "Context-limit probe skipped: provider unavailable"
+                );
+                return None;
+            }
+        };
+        provider.probe_context_limit(model).await
+    }
+
+    /// Custom and local-inference providers serve models whose live server
+    /// allocation can differ from the catalog's static capability, so the
+    /// catalog context limit is only a fallback for them.
+    fn is_catalog_context_fallback(provider: &str) -> bool {
+        provider.starts_with("custom_") || matches!(provider, "ollama" | "local")
+    }
+
     pub(super) async fn on_canonical_model_info(
         &self,
         req: CanonicalModelInfoRequest,
@@ -1204,57 +1236,101 @@ impl GooseAcpAgent {
         // Config-declared prices carry the config's currency; without them the
         // response reports registry rates, which are USD.
         let currency = crate::providers::canonical_cost::display_currency(config_info.as_ref());
-        let model_info =
-            crate::providers::canonical::maybe_get_canonical_model(&req.provider, &req.model)
-                .map(|canonical_model| {
-                    // Config-declared prices outrank the registry's catalog rates;
-                    // registry cache rates survive, so tooltip math matches
-                    // estimate_model_cost exactly.
-                    let pricing = crate::providers::canonical_cost::resolve_pricing(
-                        &req.provider,
-                        &req.model,
-                    )
-                    .unwrap_or_else(|| canonical_model.cost.clone());
-                    CanonicalModelInfoDto {
-                        provider: req.provider.clone(),
-                        model: req.model.clone(),
-                        context_limit: canonical_model.limit.context,
-                        max_output_tokens: canonical_model.limit.output,
-                        reasoning: canonical_model
-                            .reasoning
-                            .unwrap_or_else(|| ModelConfig::new(&req.model).is_reasoning_model()),
-                        input_token_cost: pricing.input,
-                        output_token_cost: pricing.output,
-                        cache_read_token_cost: pricing.cache_read,
-                        cache_write_token_cost: pricing.cache_write,
-                        currency: currency.clone(),
-                    }
-                })
-                .or_else(|| {
-                    crate::providers::canonical_cost::resolve_pricing(&req.provider, &req.model)
-                        .and_then(|pricing| {
-                            config_info.map(|info| CanonicalModelInfoDto {
-                                provider: req.provider.clone(),
-                                model: req.model.clone(),
-                                context_limit: info.context_limit.unwrap_or_else(|| {
-                                    ModelConfig::new(&req.model).context_limit()
-                                }),
-                                // ModelInfo carries no max-output limit.
-                                max_output_tokens: None,
-                                // Configs deserialize a missing `reasoning` as false; keep
-                                // name-based detection for accustomed reasoning models.
-                                reasoning: info.reasoning
-                                    || ModelConfig::new(&req.model).is_reasoning_model(),
-                                input_token_cost: pricing.input,
-                                output_token_cost: pricing.output,
-                                cache_read_token_cost: pricing.cache_read,
-                                cache_write_token_cost: pricing.cache_write,
-                                currency: currency.clone(),
-                            })
-                        })
-                });
 
-        Ok(CanonicalModelInfoResponse { model_info })
+        if let Some(canonical_model) =
+            crate::providers::canonical::maybe_get_canonical_model(&req.provider, &req.model)
+        {
+            // Config-declared prices outrank the registry's catalog rates;
+            // registry cache rates survive, so tooltip math matches
+            // estimate_model_cost exactly.
+            let pricing =
+                crate::providers::canonical_cost::resolve_pricing(&req.provider, &req.model)
+                    .unwrap_or_else(|| canonical_model.cost.clone());
+            // A catalog match is static model capability; custom and
+            // local-inference providers serve a live server-allocated window,
+            // so probe first and keep the catalog value only as fallback.
+            let context_limit = if Self::is_catalog_context_fallback(&req.provider) {
+                self.probed_context_limit(&req.provider, &req.model)
+                    .await
+                    .unwrap_or(canonical_model.limit.context)
+            } else {
+                canonical_model.limit.context
+            };
+            return Ok(CanonicalModelInfoResponse {
+                model_info: Some(CanonicalModelInfoDto {
+                    provider: req.provider.clone(),
+                    model: req.model.clone(),
+                    context_limit,
+                    max_output_tokens: canonical_model.limit.output,
+                    reasoning: canonical_model
+                        .reasoning
+                        .unwrap_or_else(|| ModelConfig::new(&req.model).is_reasoning_model()),
+                    input_token_cost: pricing.input,
+                    output_token_cost: pricing.output,
+                    cache_read_token_cost: pricing.cache_read,
+                    cache_write_token_cost: pricing.cache_write,
+                    currency,
+                }),
+            });
+        }
+
+        if let Some(info) = config_info {
+            let Some(pricing) =
+                crate::providers::canonical_cost::resolve_pricing(&req.provider, &req.model)
+            else {
+                return Ok(CanonicalModelInfoResponse { model_info: None });
+            };
+            // Config-declared limits win. Live/local providers report their
+            // server-allocated window, so probe those; catalog providers go
+            // straight to the default (probing a built-in provider would
+            // re-hit its endpoint on every request).
+            let context_limit = match info.context_limit {
+                Some(limit) => limit,
+                None => {
+                    let probed = if Self::is_catalog_context_fallback(&req.provider) {
+                        self.probed_context_limit(&req.provider, &req.model).await
+                    } else {
+                        None
+                    };
+                    probed.unwrap_or_else(|| ModelConfig::new(&req.model).context_limit())
+                }
+            };
+            return Ok(CanonicalModelInfoResponse {
+                model_info: Some(CanonicalModelInfoDto {
+                    provider: req.provider.clone(),
+                    model: req.model.clone(),
+                    context_limit,
+                    // ModelInfo carries no max-output limit.
+                    max_output_tokens: None,
+                    // Configs deserialize a missing `reasoning` as false; keep
+                    // name-based detection for accustomed reasoning models.
+                    reasoning: info.reasoning || ModelConfig::new(&req.model).is_reasoning_model(),
+                    input_token_cost: pricing.input,
+                    output_token_cost: pricing.output,
+                    cache_read_token_cost: pricing.cache_read,
+                    cache_write_token_cost: pricing.cache_write,
+                    currency,
+                }),
+            });
+        }
+
+        Ok(CanonicalModelInfoResponse {
+            model_info: self
+                .probed_context_limit(&req.provider, &req.model)
+                .await
+                .map(|context_limit| CanonicalModelInfoDto {
+                    provider: req.provider.clone(),
+                    model: req.model.clone(),
+                    context_limit,
+                    max_output_tokens: None,
+                    reasoning: ModelConfig::new(&req.model).is_reasoning_model(),
+                    input_token_cost: None,
+                    output_token_cost: None,
+                    cache_read_token_cost: None,
+                    cache_write_token_cost: None,
+                    currency,
+                }),
+        })
     }
 }
 
