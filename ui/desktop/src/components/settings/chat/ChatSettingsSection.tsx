@@ -1,4 +1,5 @@
 import { ModeSection } from '../mode/ModeSection';
+import { DeveloperModeSection } from './DeveloperModeSection';
 import { DictationSettings } from '../dictation/DictationSettings';
 import { SecurityToggle } from '../security/SecurityToggle';
 import { ResponseStylesSection } from '../response_styles/ResponseStylesSection';
@@ -17,6 +18,15 @@ const i18n = defineMessages({
     id: 'chatSettings.modeDescription',
     defaultMessage:
       'Choose the default mode Goose uses for new sessions. Existing sessions keep their current mode.',
+  },
+  developerModeTitle: {
+    id: 'chatSettings.developerModeTitle',
+    defaultMessage: 'Developer Tools',
+  },
+  developerModeDescription: {
+    id: 'chatSettings.developerModeDescription',
+    defaultMessage:
+      'Choose how the Developer extension runs. Applies when Developer next starts, such as in a new session.',
   },
   responseStylesTitle: {
     id: 'chatSettings.responseStylesTitle',
@@ -40,6 +50,16 @@ export default function ChatSettingsSection() {
         </CardHeader>
         <CardContent className="px-2">
           <ModeSection />
+        </CardContent>
+      </Card>
+
+      <Card className="pb-2 rounded-lg">
+        <CardHeader className="pb-0">
+          <CardTitle className="">{intl.formatMessage(i18n.developerModeTitle)}</CardTitle>
+          <CardDescription>{intl.formatMessage(i18n.developerModeDescription)}</CardDescription>
+        </CardHeader>
+        <CardContent className="px-2">
+          <DeveloperModeSection />
         </CardContent>
       </Card>
 

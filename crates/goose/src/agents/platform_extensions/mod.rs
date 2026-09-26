@@ -183,7 +183,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Some(Box::new(developer::DeveloperClient::new(ctx).unwrap())),
+                client_factory: developer::new_client,
             },
         );
 

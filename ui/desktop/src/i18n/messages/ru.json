@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Ожидание сохранения изображений..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Выберите, как работает расширение Developer. Применяется при следующем запуске Developer, например в новом сеансе."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Инструменты разработчика"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Настройте как Goose взаимодействует с инструментами и расширениями"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Показать {count} параметров"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Один постоянный сеанс Python. Данные хранятся в переменных между вызовами, сжатием контекста и перезапусками, а не в диалоге."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Сеанс Python"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Отдельные инструменты для оболочки, файлов, дерева каталогов и изображений."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Инструменты"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Если вы создаете отчет об ошибке, приложите к нему диагностический отчет."

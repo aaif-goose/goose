@@ -394,6 +394,21 @@ pub struct SessionNameUpdate {
     pub user_set_name: bool,
 }
 
+/// Best-effort removal of the Developer extension's Python session snapshots for
+/// a deleted session, so pickled variables (which can include secrets) do not
+/// outlive the conversation. Snapshots are named `<id>-<created>.pkl` and live
+/// next to the session database, so each store only ever touches its own.
+fn remove_python_session_snapshots(dir: &Path, session_id: &str) {
+    let prefix = format!("{session_id}-");
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 impl SessionManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
@@ -409,6 +424,10 @@ impl SessionManager {
 
     pub fn storage(&self) -> &Arc<SessionStorage> {
         &self.storage
+    }
+
+    pub fn python_session_dir(&self) -> PathBuf {
+        self.storage.python_session_dir()
     }
 
     pub(crate) fn action_required(
@@ -431,6 +450,10 @@ impl SessionManager {
 
     pub async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
         self.storage.get_session(id, include_messages).await
+    }
+
+    pub async fn session_exists(&self, id: &str) -> Result<bool> {
+        self.storage.session_exists(id).await
     }
 
     pub fn update(&self, id: &str) -> SessionUpdateBuilder<'_> {
@@ -503,7 +526,9 @@ impl SessionManager {
     }
 
     pub async fn delete_session(&self, id: &str) -> Result<()> {
-        self.storage.delete_session(id).await
+        self.storage.delete_session(id).await?;
+        remove_python_session_snapshots(&self.python_session_dir(), id);
+        Ok(())
     }
 
     pub async fn get_insights(&self) -> Result<SessionInsights> {
@@ -965,6 +990,10 @@ impl SessionStorage {
             session_dir,
             action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
+    }
+
+    pub fn python_session_dir(&self) -> PathBuf {
+        self.session_dir.join("python-session")
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
@@ -1624,10 +1653,15 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        let now = chrono::Utc::now();
+        let today = now.format("%Y%m%d").to_string();
+        // Bind created_at explicitly instead of relying on the column default:
+        // CURRENT_TIMESTAMP is only second-resolution, and a session id can be
+        // reused within the same second, so consumers that key on created_at
+        // (e.g. the Python Session snapshot path) need microsecond distinctness.
         let session = sqlx::query_as(
             r#"
-                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode, created_at, updated_at)
                 VALUES (
                     ? || '_' || CAST(COALESCE((
                         SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
@@ -1639,6 +1673,8 @@ impl SessionStorage {
                     ?,
                     ?,
                     '{}',
+                    ?,
+                    ?,
                     ?
                 )
                 RETURNING *
@@ -1650,6 +1686,8 @@ impl SessionStorage {
             .bind(session_type.to_string())
             .bind(&*working_dir.to_string_lossy())
             .bind(goose_mode.to_string())
+            .bind(now)
+            .bind(now)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -1657,6 +1695,15 @@ impl SessionStorage {
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
         Ok(session)
+    }
+
+    async fn session_exists(&self, id: &str) -> Result<bool> {
+        let pool = self.pool().await?;
+        let found = sqlx::query_scalar::<_, i64>("SELECT 1 FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+        Ok(found.is_some())
     }
 
     async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {

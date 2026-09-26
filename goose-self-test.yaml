@@ -197,6 +197,13 @@ prompt: |
   2. Update todos and confirm changes are retained
   3. Clear todos and verify clean state
 
+  ### Python Session Mode Testing (Developer)
+  The Developer extension runs in `tools` mode or `python_session` mode (`GOOSE_DEVELOPER_MODE`); check which one is active before testing.
+  1. If no tool named `python` is available, Developer is in tools mode: report that and mark this validation as skipped rather than failed
+  2. Otherwise Developer is in python_session mode: confirm the developer tools (shell, write, edit) are not available
+  3. Run a cell that assigns a large value and echoes its size, e.g. `data = list(range(100_000)); len(data)`, and confirm `=> 100000`
+  4. In a second cell reuse the variable without recomputing it, e.g. `sum(data[:10])`, and confirm `=> 45` to show state persists across calls
+
   ### Dynamic Extension Management
   1. Use platform__search_available_extensions to discover available extensions
   2. Document all available extensions

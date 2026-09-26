@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Warten auf das Speichern der Bilder..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Wählen Sie, wie die Developer-Erweiterung ausgeführt wird. Gilt ab dem nächsten Start von Developer, zum Beispiel in einer neuen Sitzung."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Entwickler-Tools"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Wählen Sie den Standardmodus, den Goose für neue Sitzungen verwendet. Bestehende Sitzungen behalten ihren aktuellen Modus bei."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "{count} Optionen anzeigen"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Eine dauerhafte Python-Sitzung. Daten bleiben über Aufrufe, Komprimierung und Neustarts hinweg in Variablen erhalten statt in der Unterhaltung."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python-Sitzung"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Separate Tools für Shell, Dateien, Verzeichnisbaum und Bilder."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Tools"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Wenn Sie einen Fehler melden, sollten Sie den Diagnosebericht anhängen."

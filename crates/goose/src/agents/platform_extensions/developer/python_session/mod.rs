@@ -1,0 +1,881 @@
+pub mod kernel;
+
+use super::image::{load_image_content, CropParams};
+use super::EXTENSION_NAME;
+use crate::agents::extension::PlatformExtensionContext;
+use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::tool_execution::ToolCallContext;
+use crate::config::Config;
+use crate::conversation::message::MessageContent;
+use crate::session::Session;
+use anyhow::Result;
+use async_trait::async_trait;
+use indoc::indoc;
+use kernel::{ExecOutcome, ImageRequest, Kernel, KernelSpec, RunningKernel};
+use rmcp::model::{
+    CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
+    ServerCapabilities, Tool, ToolAnnotations,
+};
+use schemars::{schema_for, JsonSchema};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, Once, Weak};
+use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
+
+const PYTHON_TOOL_NAME: &str = "python";
+const MAX_IMAGES_PER_CELL: usize = 8;
+const NS_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
+const CHDIR_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_CELL_TIMEOUT_SECS: u64 = 120;
+const IDLE_KERNEL_TTL: Duration = Duration::from_secs(30 * 60);
+const REAPER_TICK: Duration = Duration::from_secs(60);
+
+const INTERPRETER_KEY: &str = "GOOSE_PYTHON_SESSION_PYTHON";
+const CELL_TIMEOUT_KEY: &str = "GOOSE_PYTHON_SESSION_CELL_TIMEOUT_SECS";
+const MAX_OUTPUT_CHARS_KEY: &str = "GOOSE_PYTHON_SESSION_MAX_OUTPUT_CHARS";
+const MAX_IMAGES_KEY: &str = "GOOSE_PYTHON_SESSION_MAX_IMAGES";
+
+const KERNEL_RESET_NOTICE: &str = "[python session was restarted: variables, imports, and \
+    functions from before this point no longer exist; recreate what you need]";
+const FRESH_NAMESPACE_NOTICE: &str = "<python-session>\nThis session's Python namespace is \
+    fresh: the earlier python calls in this conversation ran elsewhere and none of their \
+    variables exist here; recreate what you need.\n</python-session>";
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct PythonParams {
+    /// Python code to run in the persistent session.
+    code: String,
+}
+
+struct PythonOutput {
+    text: String,
+    images: Vec<ImageRequest>,
+    images_dropped: usize,
+    is_error: bool,
+}
+
+struct SessionSlot {
+    kernel: Option<Kernel>,
+    state_path: Option<PathBuf>,
+    /// `created_at` (microseconds) of the session this kernel was spawned for;
+    /// a reused session id with a new creation time is a different incarnation.
+    incarnation: Option<i64>,
+    reset_pending: bool,
+    restore_notice: Option<String>,
+    last_used: Instant,
+}
+
+impl Default for SessionSlot {
+    fn default() -> Self {
+        Self {
+            kernel: None,
+            state_path: None,
+            incarnation: None,
+            reset_pending: false,
+            restore_notice: None,
+            last_used: Instant::now(),
+        }
+    }
+}
+
+type Sessions = Mutex<HashMap<String, Arc<tokio::sync::Mutex<SessionSlot>>>>;
+
+pub struct PythonSessionClient {
+    info: InitializeResult,
+    context: PlatformExtensionContext,
+    sessions: Arc<Sessions>,
+    ns_cache: Mutex<HashMap<String, String>>,
+    /// Sessions whose agent no longer sees some of its `python` calls.
+    hidden_history: Mutex<HashSet<String>>,
+    no_python_history: Mutex<HashSet<String>>,
+    /// `created_at` (microseconds) of the session each id last referred to.
+    incarnations: Mutex<HashMap<String, i64>>,
+    pending_dir: Mutex<HashMap<String, PathBuf>>,
+    interpreter: tokio::sync::OnceCell<PathBuf>,
+    resolved_path: tokio::sync::OnceCell<Option<String>>,
+    reaper: Once,
+}
+
+impl PythonSessionClient {
+    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+        let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(
+                Implementation::new(super::EXTENSION_NAME, "1.0.0")
+                    .with_title("Developer (Python session)"),
+            )
+            .with_instructions(
+                indoc! {r#"
+                You have a persistent Python session: variables, imports, functions, and open
+                resources persist across `python` calls for the whole conversation, and they
+                survive conversation compaction. Reuse variables you have already defined instead
+                of recomputing or re-reading them; after a compaction, a `<python-session>` block
+                in the turn context re-lists what still exists.
+
+                Work in three phases; do not skip the first or the last:
+                1. INSPECT before you compute. Never guess an input's format. Print a real
+                   sample of the actual data (a genuine line, the raw bytes, the file header,
+                   the directory listing) and confirm the exact task requirements before you
+                   write the solution. Most wrong answers come from computing confidently on an
+                   assumed structure.
+                2. SOLVE. Read, search, and transform data in Python and ASSIGN results to
+                   variables so later steps are cheap and survive compaction. Large data can
+                   stay in variables; print the slice you need to reason about the next step.
+                3. VERIFY before you finish. Re-read what success requires and check your output
+                   against it. If the task states how it will be judged (a command to run, a
+                   file to produce, an expected value), run that exact check and confirm it
+                   passes. Inspect the produced artifact directly - open the file you wrote,
+                   diff it against the spec. Do not declare the task done on the assumption that
+                   your code worked; declare it done only after you have seen it pass.
+
+                Tools:
+                - Shell commands: r = sh("pytest -q 2>&1"); then inspect r.code, r.out, r.err
+                  (full output is retained on the object; the echoed form is a capped tail).
+                  Use sh to run the task's own tests or acceptance commands as your verification.
+                - File edits: edit(path, old, new) replaces a unique occurrence; edit(path, "",
+                  content) creates a file. pathlib is also fine.
+                - Images: view_image(path, crop=None) returns an image (a screenshot, diagram,
+                  or photo) to you as pixels; pass a local path or http(s) URL. To read a
+                  screenshot of code or a diagram, VIEW it - do not OCR it. crop=(x, y, width,
+                  height) zooms into a region. You may view several by calling it in a loop.
+                - The last expression in a cell is echoed like a REPL; end a cell with the
+                  value you want to see.
+            "#}
+                .to_string(),
+            );
+
+        Ok(Self {
+            info,
+            context,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            ns_cache: Mutex::new(HashMap::new()),
+            hidden_history: Mutex::new(HashSet::new()),
+            no_python_history: Mutex::new(HashSet::new()),
+            incarnations: Mutex::new(HashMap::new()),
+            pending_dir: Mutex::new(HashMap::new()),
+            interpreter: tokio::sync::OnceCell::new(),
+            resolved_path: tokio::sync::OnceCell::new(),
+            reaper: Once::new(),
+        })
+    }
+
+    fn get_tools() -> Vec<Tool> {
+        let schema = schema_for!(PythonParams);
+        let schema_value =
+            serde_json::to_value(schema).expect("failed to serialize PythonParams schema");
+
+        vec![Tool::new(
+            PYTHON_TOOL_NAME.to_string(),
+            indoc! {r#"
+                Run Python in a persistent session (one per conversation). State persists
+                across calls and survives compaction: variables, imports, functions, cwd.
+
+                Inspect the real inputs before you compute, and verify your output against the
+                task's success criteria (run its tests/acceptance commands) before you finish.
+
+                Semantics:
+                - The trailing expression of the cell is echoed (like a REPL). `_` holds it.
+                - stdout/stderr/echo are each capped; assign large data to variables and
+                  print slices instead of dumping it.
+                - sh(command, timeout=None) runs a shell command and returns a result object
+                  (.code/.out/.err, up to 64 MiB per stream retained); edit(path, old, new) does a
+                  unique-match text replacement.
+                - view_image(path, crop=None) attaches an image (local path or http(s) URL) to
+                  the result so you can see it; prefer this over OCR to read text in a picture.
+                - Long-running cells are interrupted after a timeout with KeyboardInterrupt;
+                  the session and its variables survive the interrupt.
+            "#}
+            .to_string(),
+            schema_value.as_object().unwrap().clone(),
+        )
+        .annotate(ToolAnnotations::from_raw(
+            Some("Run Python".to_string()),
+            Some(false),
+            Some(true),
+            Some(false),
+            Some(true),
+        ))]
+    }
+
+    fn session_slot(&self, session_id: &str) -> Arc<tokio::sync::Mutex<SessionSlot>> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .entry(session_id.to_string())
+            .or_default()
+            .clone()
+    }
+
+    fn live_slots(sessions: &Sessions) -> Vec<Arc<tokio::sync::Mutex<SessionSlot>>> {
+        sessions.lock().unwrap().values().cloned().collect()
+    }
+
+    /// Kernels idle for half an hour are killed; the per-cell snapshot makes the
+    /// next call a transparent restore, so long-lived goosed agents do not pin a
+    /// Python process per session forever.
+    fn ensure_reaper(&self) {
+        self.reaper.call_once(|| {
+            let sessions: Weak<Sessions> = Arc::downgrade(&self.sessions);
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(REAPER_TICK);
+                loop {
+                    tick.tick().await;
+                    let Some(sessions) = sessions.upgrade() else {
+                        return;
+                    };
+                    for slot in Self::live_slots(&sessions) {
+                        if let Ok(mut slot) = slot.try_lock() {
+                            if slot.last_used.elapsed() >= IDLE_KERNEL_TTL {
+                                if let Some(kernel) = slot.kernel.take() {
+                                    kernel.stop();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    /// The PATH the kernel and its `sh()` subprocesses should see. Desktop launches
+    /// goosed with a minimal PATH, so resolve the login-shell PATH once (as the
+    /// Developer shell does) and reuse it for both interpreter discovery and the
+    /// kernel environment; otherwise `sh("rg ...")`, `cargo`, `pnpm` fail.
+    async fn resolved_path(&self) -> Option<String> {
+        let use_login_shell_path = self.context.use_login_shell_path;
+        self.resolved_path
+            .get_or_init(|| async move {
+                tokio::task::spawn_blocking(move || {
+                    login_shell_path(use_login_shell_path).or_else(|| std::env::var("PATH").ok())
+                })
+                .await
+                .ok()
+                .flatten()
+            })
+            .await
+            .clone()
+    }
+
+    async fn child_env(&self) -> Vec<(&'static str, String)> {
+        let mut env = vec![(MAX_IMAGES_KEY, MAX_IMAGES_PER_CELL.to_string())];
+        if let Some(chars) = config_value::<u64>(MAX_OUTPUT_CHARS_KEY) {
+            env.push((MAX_OUTPUT_CHARS_KEY, chars.to_string()));
+        }
+        if let Some(path) = self.resolved_path().await {
+            env.push(("PATH", path));
+        }
+        env
+    }
+
+    async fn interpreter(&self) -> Result<PathBuf, String> {
+        let path = self.resolved_path().await;
+        self.interpreter
+            .get_or_try_init(|| async move {
+                tokio::task::spawn_blocking(move || discover_interpreter(path))
+                    .await
+                    .map_err(|e| e.to_string())?
+            })
+            .await
+            .cloned()
+    }
+
+    async fn ensure_kernel(
+        &self,
+        slot: &mut SessionSlot,
+        session_id: &str,
+        working_dir: Option<PathBuf>,
+    ) -> Result<(), String> {
+        if slot.kernel.is_some() {
+            if !self.session_changed(session_id, slot.incarnation).await {
+                return Ok(());
+            }
+            // The id now belongs to a new conversation (or none): its first cell
+            // must not run against the old namespace and its secrets.
+            self.discard(slot, session_id);
+        }
+        // Without the session record there is no snapshot path or incarnation, so
+        // a kernel spawned now would never persist; fail the cell instead.
+        let Some(session) = self.load_session(session_id).await else {
+            return Err(if self.session_absent(session_id).await {
+                "the session no longer exists".to_string()
+            } else {
+                "the session could not be loaded; try again".to_string()
+            });
+        };
+        let state_dir = self.state_dir();
+        let mut env = self.child_env().await;
+        env.push(("AGENT_SESSION_ID", session_id.to_string()));
+        let spec = KernelSpec {
+            python: self.interpreter().await?,
+            working_dir: working_dir.unwrap_or_else(|| session.working_dir.clone()),
+            state_path: prepare_state_dir(&state_dir).then(|| snapshot_path(&state_dir, &session)),
+            env,
+        };
+        let kernel = Kernel::spawn(&spec).await.map_err(|e| format!("{e:#}"))?;
+        slot.state_path = spec.state_path;
+        slot.incarnation = Some(session.created_at.timestamp_micros());
+        let restored = kernel.restored_names();
+        let dropped = kernel.dropped_names();
+        if !restored.is_empty() || !dropped.is_empty() {
+            let mut notice = String::from("[python session restored from a previous process");
+            if !restored.is_empty() {
+                notice.push_str(&format!("; available again: {}", restored.join(", ")));
+            }
+            if !dropped.is_empty() {
+                notice.push_str(&format!(
+                    "; not restored (too large, not picklable, or no longer importable): {}",
+                    dropped.join(", ")
+                ));
+            }
+            notice.push(']');
+            slot.restore_notice = Some(notice);
+        }
+        slot.kernel = Some(kernel);
+        Ok(())
+    }
+
+    /// Kill the kernel and remove the snapshot of a session that no longer exists.
+    fn discard(&self, slot: &mut SessionSlot, session_id: &str) {
+        if let Some(kernel) = slot.kernel.take() {
+            kernel.stop();
+        }
+        if let Some(path) = slot.state_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
+        slot.incarnation = None;
+        slot.restore_notice = None;
+        self.ns_cache.lock().unwrap().remove(session_id);
+    }
+
+    fn state_dir(&self) -> PathBuf {
+        self.context.session_manager.python_session_dir()
+    }
+
+    async fn load_session(&self, session_id: &str) -> Option<Session> {
+        self.context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .ok()
+    }
+
+    async fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
+        if let Some(dir) = &ctx.working_dir {
+            return dir.clone();
+        }
+        match self.load_session(&ctx.session_id).await {
+            Some(session) => session.working_dir,
+            None => PathBuf::from("."),
+        }
+    }
+
+    async fn run_python(
+        &self,
+        ctx: &ToolCallContext,
+        arguments: Option<JsonObject>,
+        cancellation_token: CancellationToken,
+    ) -> Result<PythonOutput, String> {
+        let code = arguments
+            .as_ref()
+            .and_then(|args| args.get("code"))
+            .and_then(|v| v.as_str())
+            .ok_or("Missing required parameter: code")?
+            .to_string();
+
+        self.ensure_reaper();
+        let slot = self.session_slot(&ctx.session_id);
+        let mut slot = slot.lock().await;
+        slot.last_used = Instant::now();
+
+        self.ensure_kernel(&mut slot, &ctx.session_id, ctx.working_dir.clone())
+            .await?;
+
+        let pending_dir = self.pending_dir.lock().unwrap().remove(&ctx.session_id);
+        if let Some(dir) = pending_dir {
+            if let Some(kernel) = slot.kernel.as_mut() {
+                if let Err(e) = kernel.chdir(&dir, CHDIR_TIMEOUT).await {
+                    tracing::warn!("python session could not change directory: {e:#}");
+                }
+            }
+        }
+
+        let restore_notice = slot.restore_notice.take();
+        let incarnation = slot.incarnation;
+
+        // Own the kernel for the duration of the cell. If this request future is
+        // dropped mid-cell (user stop, loop teardown), the guard kills the kernel
+        // so the still-running cell and its subprocesses do not outlive the
+        // request and block the next call; `kill_on_drop` cannot help while the
+        // kernel lives in the slot.
+        let mut running = RunningKernel::new(slot.kernel.take().expect("kernel was just ensured"));
+        let exec_result = running
+            .exec(&code, cell_timeout(), cancellation_token)
+            .await;
+        let kernel = running.finish();
+        slot.kernel = Some(kernel);
+
+        // The driver snapshots after every cell, so a session deleted (or its id
+        // reused for a new conversation) while this cell ran has just re-created a
+        // snapshot after the deletion sweep. Compare the incarnation, not mere
+        // existence, so a reused id does not look alive.
+        if self.session_changed(&ctx.session_id, incarnation).await {
+            self.discard(&mut slot, &ctx.session_id);
+            return Err("the session was deleted while the cell was running".to_string());
+        }
+
+        let outcome = match exec_result {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                if let Some(mut dead) = slot.kernel.take() {
+                    dead.kill();
+                }
+                slot.reset_pending = true;
+                self.ns_cache.lock().unwrap().remove(&ctx.session_id);
+                return Err(format!("{e:#}\n{KERNEL_RESET_NOTICE}"));
+            }
+        };
+
+        // A snapshot restore after a crash brings the variables back, so the
+        // restore notice is the accurate one and the reset notice is suppressed.
+        let reset_notice = std::mem::take(&mut slot.reset_pending) && restore_notice.is_none();
+
+        if let Ok(listing) = slot
+            .kernel
+            .as_mut()
+            .expect("kernel survived exec")
+            .namespace(NS_PROBE_TIMEOUT)
+            .await
+        {
+            self.ns_cache
+                .lock()
+                .unwrap()
+                .insert(ctx.session_id.clone(), listing);
+        }
+        slot.last_used = Instant::now();
+
+        Ok(PythonOutput {
+            text: format_outcome(&outcome, reset_notice, restore_notice),
+            is_error: outcome.error.is_some(),
+            images: outcome.images,
+            images_dropped: outcome.images_dropped,
+        })
+    }
+
+    async fn assemble_result(&self, ctx: &ToolCallContext, output: PythonOutput) -> CallToolResult {
+        let is_error = output.is_error;
+        let mut blocks = vec![ContentBlock::text(output.text)];
+
+        if !output.images.is_empty() {
+            let total = output.images.len() + output.images_dropped;
+            let working_dir = self.working_dir(ctx).await;
+            for req in output.images.into_iter().take(MAX_IMAGES_PER_CELL) {
+                let crop = req.crop.map(|c| CropParams {
+                    x: c.x,
+                    y: c.y,
+                    width: c.width,
+                    height: c.height,
+                });
+                match load_image_content(&req.source, crop, Some(&working_dir)).await {
+                    Ok((image, summary)) => {
+                        blocks.push(ContentBlock::text(summary));
+                        blocks.push(image);
+                    }
+                    Err(error) => blocks.push(ContentBlock::text(format!(
+                        "[view_image could not load {}: {error}]",
+                        req.source
+                    ))),
+                }
+            }
+            if total > MAX_IMAGES_PER_CELL {
+                blocks.push(ContentBlock::text(format!(
+                    "[view_image: {total} images requested; only the first {MAX_IMAGES_PER_CELL} are shown]"
+                )));
+            }
+        }
+
+        if is_error {
+            CallToolResult::error(blocks)
+        } else {
+            CallToolResult::success(blocks)
+        }
+    }
+
+    async fn session_changed(&self, session_id: &str, incarnation: Option<i64>) -> bool {
+        match self.load_session(session_id).await {
+            Some(session) => {
+                incarnation.is_some_and(|micros| session.created_at.timestamp_micros() != micros)
+            }
+            None => self.session_absent(session_id).await,
+        }
+    }
+
+    /// A load error is ambiguous (deleted vs transient); only a confirmed
+    /// absence counts as a deletion.
+    async fn session_absent(&self, session_id: &str) -> bool {
+        matches!(
+            self.context
+                .session_manager
+                .session_exists(session_id)
+                .await,
+            Ok(false)
+        )
+    }
+
+    fn cached_listing(&self, session_id: &str) -> Option<String> {
+        self.ns_cache.lock().unwrap().get(session_id).cloned()
+    }
+
+    /// Whether this process ran Python for this incarnation of the session. A slot
+    /// that is busy is mid-cell, so it counts.
+    fn has_slot(&self, session: &Session) -> bool {
+        let Some(slot) = self.sessions.lock().unwrap().get(&session.id).cloned() else {
+            return false;
+        };
+        slot.try_lock().map_or(true, |slot| {
+            slot.incarnation == Some(session.created_at.timestamp_micros())
+        })
+    }
+
+    /// Session ids are reused once the newest session is deleted, so what this
+    /// client remembers under an id is dropped when a newer session stands behind it.
+    fn forget_earlier_incarnation(&self, session: &Session) {
+        let micros = session.created_at.timestamp_micros();
+        let mut earlier = self
+            .incarnations
+            .lock()
+            .unwrap()
+            .insert(session.id.clone(), micros)
+            .is_some_and(|seen| seen != micros);
+        let slot = self.sessions.lock().unwrap().get(&session.id).cloned();
+        if let Some(Ok(mut slot)) = slot.as_ref().map(|slot| slot.try_lock()) {
+            if slot.incarnation.is_some_and(|seen| seen != micros) {
+                self.discard(&mut slot, &session.id);
+                earlier = true;
+            }
+        }
+        if earlier {
+            self.ns_cache.lock().unwrap().remove(&session.id);
+            self.hidden_history.lock().unwrap().remove(&session.id);
+            self.no_python_history.lock().unwrap().remove(&session.id);
+        }
+    }
+
+    /// Compaction and tool-pair summarization both keep the messages they replace
+    /// but hide them from the agent, so a hidden `python` call means the model no
+    /// longer sees where some of its variables came from.
+    async fn python_calls_hidden(&self, session_id: &str) -> bool {
+        if self.hidden_history.lock().unwrap().contains(session_id) {
+            return true;
+        }
+        let Ok(session) = self
+            .context
+            .session_manager
+            .get_session(session_id, true)
+            .await
+        else {
+            return false;
+        };
+        let hit = session.conversation.is_some_and(|conversation| {
+            conversation
+                .messages()
+                .iter()
+                .filter(|message| !message.metadata.agent_visible)
+                .flat_map(|message| message.content.iter())
+                .any(is_python_call)
+        });
+        if hit {
+            self.hidden_history
+                .lock()
+                .unwrap()
+                .insert(session_id.to_string());
+        }
+        hit
+    }
+
+    /// A conversation copied from another session (ACP fork, import) still shows
+    /// earlier `python` calls, but this session has neither a kernel nor a snapshot,
+    /// so the model must be told not to expect those variables. Sessions without
+    /// Python history are remembered so the conversation is scanned once.
+    async fn fresh_namespace_notice(&self, session_id: &str) -> Option<String> {
+        if self.no_python_history.lock().unwrap().contains(session_id) {
+            return None;
+        }
+        let session = self
+            .context
+            .session_manager
+            .get_session(session_id, true)
+            .await
+            .ok()?;
+        let has_history = session.conversation.is_some_and(|conversation| {
+            conversation
+                .messages()
+                .iter()
+                .flat_map(|message| message.content.iter())
+                .any(is_python_call)
+        });
+        if !has_history {
+            self.no_python_history
+                .lock()
+                .unwrap()
+                .insert(session_id.to_string());
+            return None;
+        }
+        Some(FRESH_NAMESPACE_NOTICE.to_string())
+    }
+}
+
+impl Drop for PythonSessionClient {
+    fn drop(&mut self) {
+        // Idle kernels stop gracefully so their tracked shell commands are reaped;
+        // a kernel mid-cell is guarded by `RunningKernel`.
+        for slot in Self::live_slots(&self.sessions) {
+            if let Ok(mut slot) = slot.try_lock() {
+                if let Some(kernel) = slot.kernel.take() {
+                    kernel.stop();
+                }
+            }
+        }
+    }
+}
+
+fn config_value<T: DeserializeOwned>(key: &str) -> Option<T> {
+    Config::global().get_param(key).ok()
+}
+
+fn cell_timeout() -> Duration {
+    let secs = config_value::<u64>(CELL_TIMEOUT_KEY).unwrap_or(DEFAULT_CELL_TIMEOUT_SECS);
+    Duration::from_secs(secs.max(1))
+}
+
+fn discover_interpreter(path: Option<String>) -> Result<PathBuf, String> {
+    if let Some(configured) = config_value::<String>(INTERPRETER_KEY) {
+        return Ok(PathBuf::from(configured));
+    }
+    let path = path.unwrap_or_default();
+    ["python3", "python"]
+        .iter()
+        .map(|name| format!("{name}{}", std::env::consts::EXE_SUFFIX))
+        .find_map(|name| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join(&name))
+                .find(|candidate| candidate.is_file())
+        })
+        .ok_or_else(|| {
+            format!(
+                "no python3 or python interpreter found on PATH; install Python 3.9+ or set {INTERPRETER_KEY}"
+            )
+        })
+}
+
+#[cfg(not(windows))]
+fn login_shell_path(enabled: bool) -> Option<String> {
+    enabled
+        .then(super::shell::resolve_login_shell_path)
+        .flatten()
+}
+
+#[cfg(windows)]
+fn login_shell_path(_enabled: bool) -> Option<String> {
+    None
+}
+
+/// `SessionManager` reuses a session id after the latest one is deleted, so key
+/// the snapshot on the creation time too; a new session never inherits a deleted
+/// conversation's variables (which could include secrets).
+/// Stored tool names are unprefixed when Developer is the only extension exposing
+/// the tool and prefixed otherwise.
+fn is_python_call(block: &MessageContent) -> bool {
+    matches!(block, MessageContent::ToolRequest(request)
+    if request.tool_call.as_ref().is_ok_and(|call| {
+        call.name == PYTHON_TOOL_NAME
+            || call
+                .name
+                .strip_prefix(EXTENSION_NAME)
+                .and_then(|rest| rest.strip_prefix("__"))
+                == Some(PYTHON_TOOL_NAME)
+    }))
+}
+
+fn snapshot_path(state_dir: &Path, session: &Session) -> PathBuf {
+    state_dir.join(format!(
+        "{}-{}.pkl",
+        session.id,
+        session.created_at.timestamp_micros()
+    ))
+}
+
+/// Snapshots can hold source data and credentials; keep the directory
+/// owner-only, matching the session database's protected storage.
+fn prepare_state_dir(dir: &Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    true
+}
+
+fn format_outcome(
+    outcome: &ExecOutcome,
+    reset_notice: bool,
+    restore_notice: Option<String>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if reset_notice {
+        parts.push(KERNEL_RESET_NOTICE.to_string());
+    }
+    if let Some(notice) = restore_notice {
+        parts.push(notice);
+    }
+    if !outcome.stdout.trim().is_empty() {
+        parts.push(outcome.stdout.trim_end().to_string());
+    }
+    if !outcome.stderr.trim().is_empty() {
+        parts.push(format!("stderr:\n{}", outcome.stderr.trim_end()));
+    }
+    if let Some(error) = &outcome.error {
+        parts.push(error.clone());
+    } else if let Some(value) = &outcome.value {
+        parts.push(format!("=> {value}"));
+    }
+    if outcome.interrupted && outcome.error.is_none() {
+        parts.push("[cell was interrupted but completed anyway]".to_string());
+    }
+    if let Some(ms) = outcome.duration_ms.filter(|&ms| ms >= 5000) {
+        parts.push(format!("[cell ran {:.1}s]", ms as f64 / 1000.0));
+    }
+    if parts.is_empty() {
+        parts.push("(cell completed with no output)".to_string());
+    }
+    parts.join("\n")
+}
+
+#[async_trait]
+impl McpClientTrait for PythonSessionClient {
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        Ok(ListToolsResult {
+            tools: Self::get_tools(),
+            next_cursor: None,
+            meta: None,
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        ctx: &ToolCallContext,
+        name: &str,
+        arguments: Option<JsonObject>,
+        cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        match name {
+            PYTHON_TOOL_NAME => match self.run_python(ctx, arguments, cancellation_token).await {
+                Ok(output) => Ok(self.assemble_result(ctx, output).await),
+                Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(error)])),
+            },
+            other => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "Unknown tool: {other}"
+            ))])),
+        }
+    }
+
+    fn get_info(&self) -> Option<&InitializeResult> {
+        Some(&self.info)
+    }
+
+    /// The listing rides in the turn context, so every change to it invalidates the
+    /// provider's prompt cache from that message onward. Until compaction or tool-pair
+    /// summarization hides a `python` call, the model still sees its own calls, so the
+    /// re-anchor is only emitted once one has been hidden. A session with neither a live kernel slot
+    /// nor a snapshot has no variables to list, but a copied conversation may show
+    /// `python` calls whose variables never existed here. A session resumed in a new
+    /// process has no kernel yet, so one is restored from the snapshot to list what
+    /// came back.
+    async fn get_moim(&self, session_id: &str) -> Option<String> {
+        let session = self.load_session(session_id).await?;
+        self.forget_earlier_incarnation(&session);
+        let has_snapshot = snapshot_path(&self.state_dir(), &session).is_file();
+        if !self.has_slot(&session) && !has_snapshot {
+            return self.fresh_namespace_notice(session_id).await;
+        }
+        if !self.python_calls_hidden(session_id).await {
+            return None;
+        }
+
+        let slot = self.session_slot(session_id);
+        let listing = match slot.try_lock() {
+            Ok(mut guard) => {
+                if guard.kernel.is_none() && has_snapshot {
+                    self.ensure_reaper();
+                    let _ = self
+                        .ensure_kernel(&mut guard, session_id, Some(session.working_dir))
+                        .await;
+                }
+                match guard.kernel.as_mut() {
+                    Some(kernel) => match kernel.namespace(NS_PROBE_TIMEOUT).await {
+                        Ok(listing) => {
+                            self.ns_cache
+                                .lock()
+                                .unwrap()
+                                .insert(session_id.to_string(), listing.clone());
+                            listing
+                        }
+                        Err(_) => self.cached_listing(session_id)?,
+                    },
+                    None => self.cached_listing(session_id)?,
+                }
+            }
+            Err(_) => self.cached_listing(session_id)?,
+        };
+
+        let body = if listing.is_empty() {
+            "(no variables defined yet)".to_string()
+        } else {
+            listing
+        };
+        Some(format!(
+            "<python-session>\nVariables in your persistent Python session (they survive \
+             compaction; reuse instead of recomputing):\n{body}\n</python-session>",
+        ))
+    }
+
+    async fn update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
+        let slots: Vec<(String, Arc<tokio::sync::Mutex<SessionSlot>>)> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, slot)| (id.clone(), slot.clone()))
+            .collect();
+        for (session_id, slot) in slots {
+            match slot.try_lock() {
+                Ok(mut guard) => {
+                    self.pending_dir.lock().unwrap().remove(&session_id);
+                    if let Some(kernel) = guard.kernel.as_mut() {
+                        if let Err(e) = kernel.chdir(&new_dir, CHDIR_TIMEOUT).await {
+                            tracing::warn!("python session could not change directory: {e:#}");
+                        }
+                    }
+                }
+                // A cell holds the lock; apply the change before its next cell runs.
+                Err(_) => {
+                    self.pending_dir
+                        .lock()
+                        .unwrap()
+                        .insert(session_id, new_dir.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+}

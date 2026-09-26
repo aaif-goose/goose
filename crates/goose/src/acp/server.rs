@@ -1104,6 +1104,27 @@ impl GooseAcpAgent {
             return;
         }
 
+        // The loaded Developer decides, not the current setting: a Python session
+        // client has no file or terminal tools to take over, and wrapping it would
+        // drop its turn-context and working-directory hooks.
+        let developer_tools = match agent
+            .extension_manager
+            .list_tools_from_extension(&session.id, "developer", CancellationToken::new())
+            .await
+        {
+            Ok(result) => result.tools,
+            Err(error) => {
+                warn!(error = ?error, "Failed to list Developer tools for ACP takeover");
+                return;
+            }
+        };
+        if !developer_tools
+            .iter()
+            .any(|tool| AcpTools::takes_over(&tool.name))
+        {
+            return;
+        }
+
         let context = agent.extension_manager.get_context().clone();
         let dev_client = match DeveloperClient::new(context) {
             Ok(dev_client) => dev_client,

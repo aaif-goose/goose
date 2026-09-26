@@ -253,6 +253,7 @@ These variables control how goose handles [tool execution](/docs/guides/managing
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
 | `GOOSE_MODE` | Controls how goose handles tool execution | "auto", "approve", "chat", "smart_approve" | "auto" |
+| `GOOSE_DEVELOPER_MODE` | Controls how the [Developer extension](/docs/mcp/developer-mcp) runs: separate tools, or one persistent [Python session](/docs/guides/python-session-mode). Read when Developer starts | "tools", "python_session" | "tools" |
 | `GOOSE_TOOLSHIM` | Enables the [tool shim](/docs/guides/tool-shim) for models that output text-based tool calls | "1", "true" (case-insensitive) to enable | false |
 | `GOOSE_TOOLSHIM_BACKEND` | Interpreter backend for the tool shim | "ollama" (default), "local", "llama.cpp" | "ollama" |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Ollama model used as the [tool shim](/docs/guides/tool-shim) interpreter | Model name (e.g. llama3.2, mistral-nemo) | "mistral-nemo" |
