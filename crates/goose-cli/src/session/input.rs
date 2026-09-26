@@ -251,11 +251,11 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
                 .unwrap_or_default()
                 .trim()
                 .to_lowercase();
-            if ["light", "dark", "ansi"].contains(&t.as_str()) {
+            if ["light", "dark", "ansi", "auto"].contains(&t.as_str()) {
                 Some(InputResult::SelectTheme(t))
             } else {
                 println!(
-                    "Theme Unavailable: {} Available themes are: light, dark, ansi",
+                    "Theme Unavailable: {} Available themes are: light, dark, ansi, auto",
                     t
                 );
                 Some(InputResult::Retry)
@@ -422,7 +422,7 @@ fn help_text() -> String {
         "Available commands:
 /exit or /quit - Exit the session
 /t - Toggle Light/Dark/Ansi theme
-/t <name> - Set theme directly (light, dark, ansi)
+/t <name> - Set theme directly (light, dark, ansi, auto)
 /r - Toggle full tool output display (show complete tool parameters without truncation)
 /extension <command> - Add a stdio extension (format: ENV1=val1 command args...)
 /builtin <names> - Add builtin extensions by name (comma-separated)
