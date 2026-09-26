@@ -1152,6 +1152,7 @@ mod tests {
                     bundled: Some(true),
                     available_tools: vec![],
                 },
+                storage_key: None,
             };
             set_extension(todo_extension_entry);
 

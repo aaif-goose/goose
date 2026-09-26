@@ -72,6 +72,7 @@ impl GooseAcpAgent {
         crate::config::extensions::set_extension(ExtensionEntry {
             enabled: req.enabled,
             config: conversion.config,
+            storage_key: None,
         });
         Ok(EmptyResponse {})
     }
@@ -375,7 +376,10 @@ pub(super) fn goose_extensions_to_configs(
 fn config_entry_to_goose_entry(
     entry: ExtensionEntry,
 ) -> Result<Option<GooseExtensionEntry>, agent_client_protocol::Error> {
-    let config_key = entry.config.key();
+    let config_key = entry
+        .storage_key
+        .clone()
+        .unwrap_or_else(|| entry.config.key());
     let Some(extension) = config_to_goose_extension(&entry.config)? else {
         return Ok(None);
     };

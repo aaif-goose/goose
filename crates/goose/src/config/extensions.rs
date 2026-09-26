@@ -17,6 +17,8 @@ pub struct ExtensionEntry {
     pub enabled: bool,
     #[serde(flatten)]
     pub config: ExtensionConfig,
+    #[serde(skip, default)]
+    pub storage_key: Option<String>,
 }
 
 pub fn name_to_key(name: &str) -> String {
@@ -62,10 +64,11 @@ fn parse_extensions_map(raw: &Mapping) -> IndexMap<String, ExtensionEntry> {
 
         let v = inject_name_if_missing(key, v.clone());
         match serde_yaml::from_value::<ExtensionEntry>(v) {
-            Ok(entry) => {
+            Ok(mut entry) => {
                 if !is_extension_available(&entry.config) {
                     continue;
                 }
+                entry.storage_key = Some(key.to_string());
                 extensions_map.insert(key.to_string(), entry);
             }
             Err(err) => {
@@ -164,7 +167,10 @@ pub fn set_extension(entry: ExtensionEntry) {
 }
 
 fn set_extension_with_config(config: &Config, entry: ExtensionEntry) {
-    let key = entry.config.key();
+    let key = entry
+        .storage_key
+        .clone()
+        .unwrap_or_else(|| entry.config.key());
     with_raw_extensions_mapping(config, |_| ExtensionMutation::Upsert(key, Box::new(entry)));
 }
 
@@ -356,6 +362,7 @@ mod tests {
                 bundled: None,
                 available_tools: Vec::new(),
             },
+            storage_key: None,
         }
     }
 
@@ -514,6 +521,7 @@ extensions:
                 bundled: None,
                 available_tools: vec!["run".to_string()],
             },
+            storage_key: None,
         };
         let key = saved.config.key();
         assert_ne!(key, saved.config.name());
@@ -811,5 +819,65 @@ extensions:
         let (config, _config_file, _secrets_file) = test_config("");
 
         assert_eq!(configured_enabled_state(&config, "chatrecall"), Some(false));
+    }
+
+    #[test]
+    fn test_mismatched_key_name_operations_affect_only_that_entry() {
+        let yaml = r#"
+extensions:
+  my-tool:
+    enabled: true
+    type: stdio
+    name: My Tool
+    description: a tool
+    cmd: my-tool
+    args: []
+  mytool:
+    enabled: true
+    type: stdio
+    name: mytool
+    description: unrelated entry at normalized key
+    cmd: other-tool
+    args: []
+"#;
+        let (config, _config_file, _secrets_file) = test_config(yaml);
+
+        let entries = get_extensions_map_with_config(&config);
+        let mismatched = entries.get("my-tool").expect("my-tool must be present");
+        assert_eq!(mismatched.storage_key.as_deref(), Some("my-tool"));
+        assert_eq!(mismatched.config.name(), "My Tool");
+
+        set_extension_enabled_with_config(&config, "my-tool", false);
+        let after_disable = get_extensions_map_with_config(&config);
+        assert!(
+            !after_disable.get("my-tool").unwrap().enabled,
+            "my-tool should be disabled"
+        );
+        assert!(
+            after_disable.get("mytool").unwrap().enabled,
+            "mytool must remain enabled"
+        );
+
+        set_extension_with_config(&config, after_disable.get("my-tool").unwrap().clone());
+        let after_update = get_extensions_map_with_config(&config);
+        assert!(
+            after_update.contains_key("my-tool"),
+            "storage key must be preserved after update"
+        );
+        assert!(
+            after_update.contains_key("mytool"),
+            "mytool must still exist after update"
+        );
+
+        remove_extension_with_config(&config, "my-tool");
+        let after_remove = get_extensions_map_with_config(&config);
+        assert!(
+            !after_remove.contains_key("my-tool"),
+            "my-tool must be removed"
+        );
+        assert!(
+            after_remove.contains_key("mytool"),
+            "mytool must survive removal of my-tool"
+        );
     }
 }
