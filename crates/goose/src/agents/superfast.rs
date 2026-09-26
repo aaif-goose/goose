@@ -216,19 +216,19 @@ fn derive_route(answers: &HashMap<String, Answer>) -> TurnRoute {
     let intent = answers.get("intent");
 
     // Decisive "needs a tool" wins first — the harness must not skip work.
-    if needs_tool.map_or(false, |v| v >= 0.85) {
+    if needs_tool.is_some_and(|v| v >= 0.85) {
         return TurnRoute::NeedsTool;
     }
 
     // Strongly answerable from context, with a present and low tool-need signal.
-    if from_context.map_or(false, |v| v >= 0.85) && needs_tool.map_or(false, |v| v <= 0.3) {
+    if from_context.is_some_and(|v| v >= 0.85) && needs_tool.is_some_and(|v| v <= 0.3) {
         return TurnRoute::AnswerFromContext;
     }
 
     // Clearly chat, with a calibrated intent and a present, low tool-need signal.
     if intent.and_then(|a| a.choice.as_deref()) == Some("chat")
         && confident(intent, 0.5)
-        && needs_tool.map_or(false, |v| v <= 0.2)
+        && needs_tool.is_some_and(|v| v <= 0.2)
     {
         return TurnRoute::PlainChat;
     }
