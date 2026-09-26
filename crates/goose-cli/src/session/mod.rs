@@ -39,7 +39,7 @@ use goose::agents::{
 };
 use goose::config::extensions::name_to_key;
 use goose::config::{Config, GooseMode};
-use input::InputResult;
+use input::{InputResult, SecretsCommandAction};
 use rmcp::model::ServerNotification;
 use rmcp::model::{ElicitationAction, PromptMessage};
 use rmcp::model::{ErrorCode, ErrorData};
@@ -773,6 +773,10 @@ impl CliSession {
                 history.save(editor);
                 self.handle_list_skills().await?;
             }
+            InputResult::SecretsCommand(action) => {
+                history.save(editor);
+                self.handle_secrets_command(action);
+            }
         }
         Ok(())
     }
@@ -1249,6 +1253,77 @@ impl CliSession {
 
         println!("{table}");
         Ok(())
+    }
+
+    fn handle_secrets_command(&self, action: SecretsCommandAction) {
+        match action {
+            SecretsCommandAction::List => match goose::secret_input::list_secret_names() {
+                Ok(names) if names.is_empty() => {
+                    println!("{}", console::style("No stored secrets.").yellow());
+                }
+                Ok(names) => {
+                    println!(
+                        "{}",
+                        console::style(format!("Stored secrets ({}):", names.len())).bold()
+                    );
+                    for name in &names {
+                        println!("  • {name}");
+                    }
+                    println!(
+                        "\n{}",
+                        console::style(
+                            "Values are never displayed. Use /secrets delete <name> to remove."
+                        )
+                        .dim()
+                    );
+                }
+                Err(e) => {
+                    output::render_error(&format!("Failed to list secrets: {e}"));
+                }
+            },
+            SecretsCommandAction::Delete(name) => {
+                match goose::secret_input::delete_stored_secret(&name) {
+                    Ok(()) => {
+                        println!(
+                            "{}",
+                            console::style(format!("✓ Secret '{name}' deleted.")).green()
+                        );
+                    }
+                    Err(e) => {
+                        output::render_error(&format!("Failed to delete secret '{name}': {e}"));
+                    }
+                }
+            }
+            SecretsCommandAction::Add(key_descs) => {
+                let keys: Vec<(&str, &str)> = key_descs
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                match goose::secret_input::request_and_store_secrets(&keys) {
+                    Ok(stored) if stored.is_empty() => {
+                        println!(
+                            "{}",
+                            console::style(
+                                "No secrets were provided (all placeholders unchanged)."
+                            )
+                            .yellow()
+                        );
+                    }
+                    Ok(stored) => {
+                        for key in &stored {
+                            println!(
+                                "{}",
+                                console::style(format!("✓ Secret '{key}' stored securely."))
+                                    .green()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        output::render_error(&format!("Failed to store secrets: {e}"));
+                    }
+                }
+            }
+        }
     }
 
     async fn handle_compact(&mut self) -> Result<()> {
