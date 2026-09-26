@@ -64,6 +64,8 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
 
 type OpenAiBaseUrlParts = (String, Vec<(String, String)>, bool);
 
+pub type OpenAiSessionIdProvider = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
 /// Ensure a base URL has an explicit scheme.
 ///
 /// Users frequently enter hosts like `localhost:1234` without a scheme. The
@@ -119,7 +121,7 @@ pub fn parse_openai_base_url(raw_url: &str) -> Result<OpenAiBaseUrlParts> {
     Ok((format!("{}{}", authority, path), query_params, false))
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(serde::Serialize)]
 pub struct OpenAiProvider {
     #[serde(skip)]
     api_client: ApiClient,
@@ -134,7 +136,18 @@ pub struct OpenAiProvider {
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
     #[serde(skip)]
+    session_id_provider: Option<OpenAiSessionIdProvider>,
+    #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
+}
+
+impl std::fmt::Debug for OpenAiProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAiProvider")
+            .field("name", &self.name)
+            .field("base_path", &self.base_path)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Builder for [`OpenAiProvider`].
@@ -154,6 +167,7 @@ pub struct OpenAiProviderBuilder {
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
+    session_id_provider: Option<OpenAiSessionIdProvider>,
 }
 
 impl OpenAiProviderBuilder {
@@ -170,6 +184,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
         }
     }
 
@@ -241,6 +256,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn session_id_provider(mut self, provider: OpenAiSessionIdProvider) -> Self {
+        self.session_id_provider = Some(provider);
+        self
+    }
+
     pub fn build(self) -> OpenAiProvider {
         OpenAiProvider {
             api_client: self.api_client,
@@ -254,6 +274,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             preserve_thinking_context: self.preserve_thinking_context,
+            session_id_provider: self.session_id_provider,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -281,11 +302,30 @@ impl OpenAiProvider {
         self.stream_responses_payload(model_config, payload).await
     }
 
+    /// OpenAI cache-affinity hint; OpenRouter also uses it as its sticky-routing fallback.
+    fn insert_prompt_cache_key(&self, payload: &mut serde_json::Value) {
+        let Some(session_id) = self
+            .session_id_provider
+            .as_ref()
+            .and_then(|provider| provider())
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert(
+                "prompt_cache_key".to_string(),
+                serde_json::Value::String(session_id),
+            );
+        }
+    }
+
     async fn stream_responses_payload(
         &self,
         model_config: &ModelConfig,
-        payload: serde_json::Value,
+        mut payload: serde_json::Value,
     ) -> Result<MessageStream, ProviderError> {
+        self.insert_prompt_cache_key(&mut payload);
         let mut log = start_log(model_config, &payload)?;
         let response = self
             .with_retry(|| async {
@@ -353,6 +393,7 @@ impl OpenAiProvider {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1007,6 +1048,7 @@ mod tests {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1510,6 +1552,7 @@ mod tests {
             dynamic_models: Some(true),
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }

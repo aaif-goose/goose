@@ -2,6 +2,7 @@ use anyhow::Result;
 use futures::future::BoxFuture;
 use goose_providers::base::ProviderDescriptor;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::config::declarative_providers::DeclarativeProviderConfig;
 use crate::config::Config;
@@ -14,7 +15,7 @@ use crate::session_context::{
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::openai::{
     parse_custom_headers, parse_openai_base_url, OpenAiProvider, OpenAiProviderBuilder,
-    OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_VERSIONLESS_BASE_PATH,
+    OpenAiSessionIdProvider, OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_VERSIONLESS_BASE_PATH,
 };
 
 pub struct OpenAiProviderDef;
@@ -148,6 +149,7 @@ pub async fn from_env(
         .project(project)
         .custom_headers(custom_headers)
         .preserve_thinking_context(!is_openai)
+        .session_id_provider(session_id_provider())
         .build();
 
     // TODO(jack): replace this
@@ -227,8 +229,13 @@ pub fn from_custom_config(
                     None => api_client,
                 }
             })
+            .session_id_provider(session_id_provider())
             .build()
     })
+}
+
+fn session_id_provider() -> OpenAiSessionIdProvider {
+    Arc::new(crate::session_context::current_session_id)
 }
 
 /// Components extracted from an `OPENAI_BASE_URL` value.
