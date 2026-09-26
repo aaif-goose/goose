@@ -107,6 +107,18 @@ In your first session, goose prompts you to [set up an LLM (Large Language Model
         goose session --name react-migration
         ```
 
+        To rename an existing session, use the `session rename` subcommand:
+
+        ```sh
+        goose session rename --session-id 20260213_9 --new-name my-new-name
+        ```
+
+        If you omit the session ID, goose will prompt you to select a session interactively:
+
+        ```sh
+        goose session rename --new-name my-new-name
+        ```
+
         If you want to confirm the session name, run:
 
         ```sh
