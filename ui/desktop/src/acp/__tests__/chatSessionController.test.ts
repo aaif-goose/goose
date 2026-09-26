@@ -220,6 +220,35 @@ describe('acpChatSessionController.stop', () => {
     );
     expect(acpCancelPrompt).toHaveBeenCalledWith(SESSION_ID);
   });
+
+  it('leaves the chat state alone when stopping during a session load', () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      chatState: ChatState.LoadingConversation,
+    });
+
+    acpChatSessionController.stop(SESSION_ID);
+
+    expect(acpChatSessionActions.setChatState).not.toHaveBeenCalled();
+    expect(acpChatSessionActions.startPromptCancellation).not.toHaveBeenCalled();
+    expect(acpCancelPrompt).not.toHaveBeenCalled();
+  });
+
+  it('cancels a leftover prompt attempt when stopping during a session load', () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt('attempt-1'),
+      chatState: ChatState.LoadingConversation,
+    });
+
+    acpChatSessionController.stop(SESSION_ID);
+
+    expect(acpChatSessionActions.startPromptCancellation).toHaveBeenCalledWith(
+      SESSION_ID,
+      'attempt-1'
+    );
+    expect(acpCancelPrompt).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpChatSessionActions.setChatState).not.toHaveBeenCalled();
+  });
 });
 
 describe('acpChatSessionController.submitMessage', () => {
