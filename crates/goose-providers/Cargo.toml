@@ -53,7 +53,7 @@ url = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 base64 = { workspace = true }
-tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake"], optional = true }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake"], optional = true }
 http = { workspace = true, optional = true }
 pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
