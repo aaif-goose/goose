@@ -78,7 +78,9 @@ fn truthy(v: Option<&str>) -> bool {
 
 /// Trim a string and drop it when empty.
 fn non_empty(v: Option<&str>) -> Option<String> {
-    v.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+    v.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// A single answer returned by the decision model. Every field is optional because
