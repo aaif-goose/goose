@@ -221,10 +221,7 @@ fn document_from_resource(resource: &EmbeddedResource) -> Option<DocumentContent
     if !document_media_type_is_supported(mime) {
         return None;
     }
-    Some(
-        DocumentContent::new(blob.clone(), mime.to_string())
-            .with_name(resource_file_name(uri)),
-    )
+    Some(DocumentContent::new(blob.clone(), mime.to_string()).with_name(resource_file_name(uri)))
 }
 
 /// Last URI segment when it looks like a filename, else the generic default.
@@ -429,7 +426,8 @@ pub fn format_messages_with_options(
                                                 }));
                                             }
                                             None => {
-                                                let text = extract_text_from_resource(&resource.resource);
+                                                let text =
+                                                    extract_text_from_resource(&resource.resource);
                                                 tool_content.push(ContentBlock::text(text));
                                             }
                                         }
@@ -2845,7 +2843,10 @@ mod tests {
         // ... and the follow-up user message carries the file part.
         assert_eq!(spec.len(), 2);
         assert_eq!(spec[0]["role"], "tool");
-        assert_eq!(spec[0]["content"], "This tool result included a document that is uploaded in the next message.");
+        assert_eq!(
+            spec[0]["content"],
+            "This tool result included a document that is uploaded in the next message."
+        );
         assert_eq!(spec[1]["role"], "user");
         let file_part = &spec[1]["content"][0];
         assert_eq!(file_part["type"], "file");
@@ -2897,12 +2898,14 @@ mod tests {
     fn test_parallel_tool_responses_with_pdf_and_image_are_consecutive() {
         // Document attachments ride the same deferred emission as images (#12233),
         // so a PDF file part must not split one tool_calls batch either.
-        let pdf_resource = rmcp::model::EmbeddedResource::new(rmcp::model::ResourceContents::BlobResourceContents {
-            uri: "memoza://kbox/doc.pdf".to_string(),
-            mime_type: Some("application/pdf".to_string()),
-            blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
-            meta: None,
-        });
+        let pdf_resource = rmcp::model::EmbeddedResource::new(
+            rmcp::model::ResourceContents::BlobResourceContents {
+                uri: "memoza://kbox/doc.pdf".to_string(),
+                mime_type: Some("application/pdf".to_string()),
+                blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+                meta: None,
+            },
+        );
         let messages = vec![
             Message::assistant()
                 .with_tool_request("call_a", Ok(CallToolRequestParams::new("download_pdf")))
