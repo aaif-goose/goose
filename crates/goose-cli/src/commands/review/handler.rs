@@ -360,7 +360,7 @@ fn find_repo_root() -> Result<PathBuf> {
 fn review_git_command(repo_root: &Path) -> Command {
     let mut cmd = git_command();
     cmd.current_dir(repo_root)
-        .args(["-c", "core.quotePath=off", "-c", "diff.external="]);
+        .args(["-c", "core.quotePath=off"]);
     cmd
 }
 

@@ -129,7 +129,7 @@ fn does_not_execute_repository_diff_external() {
     fs::remove_file(&marker_path).unwrap();
 
     let output = git_command()
-        .args(["diff"])
+        .args(["diff", "--no-ext-diff"])
         .current_dir(&repo_dir)
         .output()
         .unwrap();

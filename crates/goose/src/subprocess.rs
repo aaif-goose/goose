@@ -31,8 +31,8 @@ pub trait SubprocessExt {
     fn set_no_window(&mut self) -> &mut Self;
 }
 
-/// Creates a Git command that rejects implicit bare repositories, cannot run a
-/// repository-configured fsmonitor hook, and disables repository-configured external diffs.
+/// Creates a Git command that rejects implicit bare repositories and cannot run a
+/// repository-configured fsmonitor hook.
 pub fn git_command() -> std::process::Command {
     let mut command = std::process::Command::new("git");
     command.args([
@@ -40,12 +40,6 @@ pub fn git_command() -> std::process::Command {
         "safe.bareRepository=explicit",
         "-c",
         "core.fsmonitor=false",
-        "-c",
-        "diff.external=",
-        "-c",
-        "diff.tool=",
-        "-c",
-        "diff.guitool=",
     ]);
     command
 }
