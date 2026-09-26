@@ -1,5 +1,7 @@
 use crate::base::ThinkingPreservationFormat;
-use crate::conversation::message::{Message, MessageContentBlock, ProviderMetadata};
+use crate::conversation::message::{
+    DocumentContent, Message, MessageContentBlock, ProviderMetadata,
+};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
 use crate::documents::{
     convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
@@ -18,7 +20,10 @@ use async_stream::try_stream;
 use chrono;
 use futures::Stream;
 use regex::Regex;
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
+use rmcp::model::{
+    object, CallToolRequestParams, ContentBlock, EmbeddedResource, ErrorCode, ErrorData,
+    ResourceContents, Role, Tool,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::borrow::Cow;
@@ -198,6 +203,38 @@ fn extract_content_and_signature(
     }
 }
 
+/// Lift a PDF tool-result resource into a `DocumentContent` so the provider's
+/// native file part can carry it. Mirrors the image path: without this the blob
+/// is discarded by `extract_text_from_resource`'s binary placeholder.
+fn document_from_resource(resource: &EmbeddedResource) -> Option<DocumentContent> {
+    let ResourceContents::BlobResourceContents {
+        blob,
+        mime_type,
+        uri,
+        ..
+    } = &resource.resource
+    else {
+        return None;
+    };
+    let mime = mime_type.as_deref()?;
+    if !document_media_type_is_supported(mime) {
+        return None;
+    }
+    Some(
+        DocumentContent::new(blob.clone(), mime.to_string())
+            .with_name(resource_file_name(uri)),
+    )
+}
+
+/// Last URI segment when it looks like a filename, else the generic default.
+fn resource_file_name(uri: &str) -> String {
+    uri.rsplit('/')
+        .next()
+        .filter(|segment| segment.contains('.'))
+        .unwrap_or("document.pdf")
+        .to_string()
+}
+
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
     format_messages_with_options(
         messages,
@@ -352,9 +389,9 @@ pub fn format_messages_with_options(
                 MessageContentBlock::ToolResponse(response) => {
                     match &response.tool_result {
                         Ok(result) => {
-                            // Process all content, replacing images with placeholder text
+                            // Process all content, replacing images/documents with placeholder text
                             let mut tool_content = Vec::new();
-                            let mut image_messages = Vec::new();
+                            let mut attachment_messages = Vec::new();
 
                             for content in result.content.iter() {
                                 match content {
@@ -364,7 +401,7 @@ pub fn format_messages_with_options(
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
                                             // Create a separate image message
-                                            image_messages.push(json!({
+                                            attachment_messages.push(json!({
                                                 "role": "user",
                                                 "content": [convert_image(&image.clone(), image_format)]
                                             }));
@@ -374,8 +411,24 @@ pub fn format_messages_with_options(
                                         }
                                     }
                                     ContentBlock::Resource(resource) => {
-                                        let text = extract_text_from_resource(&resource.resource);
-                                        tool_content.push(ContentBlock::text(text));
+                                        match document_from_resource(resource) {
+                                            Some(document) => {
+                                                // Mirror the image path: the tool message
+                                                // says where the document went, a follow-up
+                                                // user message carries the file part.
+                                                tool_content.push(ContentBlock::text(
+                                                    "This tool result included a document that is uploaded in the next message.",
+                                                ));
+                                                attachment_messages.push(json!({
+                                                    "role": "user",
+                                                    "content": [convert_document(&document, &DocumentFormat::OpenAi)]
+                                                }));
+                                            }
+                                            None => {
+                                                let text = extract_text_from_resource(&resource.resource);
+                                                tool_content.push(ContentBlock::text(text));
+                                            }
+                                        }
                                     }
                                     _ => {
                                         tool_content.push(content.clone());
@@ -397,8 +450,8 @@ pub fn format_messages_with_options(
                                 "content": tool_response_content,
                                 "tool_call_id": response.id
                             }));
-                            // Then add any image messages that need to follow
-                            output.extend(image_messages);
+                            // Then add any image/document messages that need to follow
+                            output.extend(attachment_messages);
                         }
                         Err(e) => {
                             // A tool result error is shown as output so the model can interpret the error message
@@ -2650,6 +2703,88 @@ mod tests {
         assert!(serialized.contains("image_url"));
         assert!(serialized
             .contains("This tool result included an image that is uploaded in the next message."));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tool_response_pdf_resource_sent_as_file_part() -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "memoza://kbox/doc.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        // Document pass-through does not depend on the vision flag.
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+        let serialized = serde_json::to_value(&spec).unwrap().to_string();
+        // The tool message keeps only the placeholder text ...
+        assert!(serialized.contains(
+            "This tool result included a document that is uploaded in the next message."
+        ));
+        assert!(!serialized.contains("[Binary content"));
+        // ... and the follow-up user message carries the file part.
+        assert_eq!(spec.len(), 2);
+        assert_eq!(spec[0]["role"], "tool");
+        assert_eq!(spec[0]["content"], "This tool result included a document that is uploaded in the next message.");
+        assert_eq!(spec[1]["role"], "user");
+        let file_part = &spec[1]["content"][0];
+        assert_eq!(file_part["type"], "file");
+        assert_eq!(file_part["file"]["filename"], "doc.pdf");
+        assert!(file_part["file"]["file_data"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:application/pdf;base64,"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tool_response_non_pdf_resource_keeps_text_placeholder() -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "memoza://kbox/report.docx".to_string(),
+            mime_type: Some("application/octet-stream".to_string()),
+            blob: "//4A".to_string(), // base64 of 3 non-UTF-8 bytes
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+        // No follow-up user message, and the current placeholder behavior is kept.
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "tool");
+        assert_eq!(
+            spec[0]["content"],
+            "[Binary content (application/octet-stream) - 3 bytes]"
+        );
 
         Ok(())
     }
