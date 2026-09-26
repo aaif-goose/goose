@@ -360,13 +360,13 @@ fn find_repo_root() -> Result<PathBuf> {
 fn review_git_command(repo_root: &Path) -> Command {
     let mut cmd = git_command();
     cmd.current_dir(repo_root)
-        .args(["-c", "core.quotePath=off"]);
+        .args(["-c", "core.quotePath=off", "-c", "diff.external="]);
     cmd
 }
 
 fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--name-only");
+    cmd.arg("diff").arg("--no-ext-diff").arg("--name-only");
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -397,7 +397,7 @@ fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Res
 
 fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff");
+    cmd.arg("diff").arg("--no-ext-diff");
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -421,7 +421,7 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
 
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
     let mut cmd = review_git_command(repo_root);
-    cmd.arg("diff").arg("--stat");
+    cmd.arg("diff").arg("--no-ext-diff").arg("--stat");
     match range {
         Some(r) => {
             cmd.arg(r);
