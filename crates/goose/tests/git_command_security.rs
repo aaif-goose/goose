@@ -125,7 +125,10 @@ fn does_not_execute_repository_diff_external() {
     ));
 
     assert_git_succeeded(&run_git(&repo_dir, &["diff"]));
-    assert!(marker_path.exists(), "diff.external hook fixture did not run");
+    assert!(
+        marker_path.exists(),
+        "diff.external hook fixture did not run"
+    );
     fs::remove_file(&marker_path).unwrap();
 
     let output = git_command()
