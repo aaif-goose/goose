@@ -1,0 +1,389 @@
+#!/usr/bin/env node
+
+import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+import { readCoreTeam } from "./github_manager.mjs";
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const minimumReadyAgeMilliseconds = 24 * 60 * 60 * 1000;
+const issueReadyTransitionQuery = `
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      issue(number: $number) {
+        timelineItems(
+          last: 100
+          itemTypes: [PROJECT_V2_ITEM_STATUS_CHANGED_EVENT]
+        ) {
+          pageInfo { hasPreviousPage }
+          nodes {
+            ... on ProjectV2ItemStatusChangedEvent {
+              actor { login }
+              createdAt
+              project {
+                number
+                owner {
+                  ... on Organization { login }
+                  ... on User { login }
+                }
+              }
+              status
+              wasAutomated
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+const pullRequestsForAssignmentQuery = `
+  query($owner: String!, $name: String!, $endCursor: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(first: 100, after: $endCursor, states: OPEN) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          number
+          url
+          createdAt
+          isDraft
+          assignees(first: 100) {
+            pageInfo { hasNextPage }
+            nodes { login }
+          }
+          timelineItems(last: 1, itemTypes: [READY_FOR_REVIEW_EVENT]) {
+            nodes {
+              ... on ReadyForReviewEvent { createdAt }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+const options = parseArguments(process.argv.slice(2));
+if (options.help) {
+  printHelp();
+  process.exit(0);
+}
+const repository = parseRepository(options.repository);
+
+const gh = process.env.GH_BIN || "gh";
+const coreTeamPath =
+  process.env.BUZZ_CORE_TEAM_FILE || join(scriptDirectory, "core-team.json");
+const { byGithub: coreTeamByGithub } = readCoreTeam(coreTeamPath);
+const results = [];
+
+for (const pullRequest of getPullRequestsReadyForAssignment()) {
+  try {
+    results.push(reconcilePullRequest(pullRequest));
+  } catch (error) {
+    results.push({
+      pull_request: pullRequest.number,
+      url: pullRequest.url,
+      action: "failed",
+      reason: error.message,
+    });
+  }
+}
+
+console.log(
+  JSON.stringify(
+    {
+      repository: options.repository,
+      dry_run: options.dryRun,
+      results,
+    },
+    null,
+    2,
+  ),
+);
+if (results.some((result) => result.action === "failed")) {
+  process.exitCode = 1;
+}
+
+function getPullRequestsReadyForAssignment() {
+  const pages = runJson(gh, [
+    "api",
+    "graphql",
+    "--paginate",
+    "--slurp",
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+    "-f",
+    `query=${pullRequestsForAssignmentQuery}`,
+  ]);
+  if (!Array.isArray(pages)) {
+    throw new Error("GitHub returned an invalid paginated pull request list.");
+  }
+
+  const readyBefore = Date.now() - minimumReadyAgeMilliseconds;
+  return pages
+    .flatMap((page) => {
+      const pullRequests = page.data?.repository?.pullRequests?.nodes;
+      if (!Array.isArray(pullRequests)) {
+        throw new Error("GitHub returned an invalid pull request page.");
+      }
+      return pullRequests.filter(Boolean);
+    })
+    .filter((pullRequest) => {
+      if (
+        !Array.isArray(pullRequest.assignees?.nodes) ||
+        pullRequest.assignees.pageInfo?.hasNextPage ||
+        !Array.isArray(pullRequest.timelineItems?.nodes)
+      ) {
+        throw new Error(
+          `GitHub returned incomplete data for pull request #${pullRequest.number}.`,
+        );
+      }
+      const readyAt =
+        pullRequest.timelineItems.nodes[0]?.createdAt || pullRequest.createdAt;
+      return (
+        pullRequest.isDraft === false &&
+        Date.parse(pullRequest.createdAt) <= readyBefore &&
+        Date.parse(readyAt) <= readyBefore
+      );
+    })
+    .map((pullRequest) => ({
+      number: pullRequest.number,
+      url: pullRequest.url,
+      assignees: pullRequest.assignees.nodes,
+    }));
+}
+
+function assignedCoreTeamMembers(assignees) {
+  return assignees
+    .map((assignee) => assignee.login)
+    .filter((login) => coreTeamByGithub.has(login.toLowerCase()));
+}
+
+function readyTransitionCoreTeamMember(events) {
+  const readyTransitions = events
+    .filter(
+      (event) =>
+        event.status === "Ready" &&
+        event.project?.number === options.projectNumber &&
+        event.project.owner?.login?.toLowerCase() ===
+          options.projectOwner.toLowerCase(),
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  if (readyTransitions.length === 0) {
+    return { reason: "linked issue has no Ready transition in the project" };
+  }
+
+  const transition = readyTransitions[0];
+  const login = transition.actor?.login;
+  if (transition.wasAutomated || !login) {
+    return { reason: "the latest Ready transition has no human actor" };
+  }
+  const person = coreTeamByGithub.get(login.toLowerCase());
+  return person
+    ? { person }
+    : { reason: `Ready transition actor @${login} is not in the core team` };
+}
+
+function reconcilePullRequest(pullRequest) {
+  const existingCoreTeamMembers = assignedCoreTeamMembers(pullRequest.assignees);
+  if (existingCoreTeamMembers.length > 0) {
+    return {
+      pull_request: pullRequest.number,
+      url: pullRequest.url,
+      action: "unchanged",
+      assignees: existingCoreTeamMembers,
+      reason: "a core-team member is already assigned",
+    };
+  }
+
+  const linkedIssues = getClosingIssues(pullRequest.number).filter(
+    (issue) =>
+      `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() ===
+      repository.normalized,
+  );
+  if (linkedIssues.length !== 1) {
+    return {
+      pull_request: pullRequest.number,
+      url: pullRequest.url,
+      action: "skipped",
+      reason: "pull request does not close exactly one issue in the repository",
+    };
+  }
+
+  const issue = linkedIssues[0];
+  const selection = readyTransitionCoreTeamMember(
+    getReadyTransitions(issue.number),
+  );
+  if (!selection.person) {
+    return {
+      pull_request: pullRequest.number,
+      url: pullRequest.url,
+      linked_issue: issue.number,
+      action: "skipped",
+      reason: selection.reason,
+    };
+  }
+
+  if (!options.dryRun) {
+    const updatedPullRequest = runJson(gh, [
+      "api",
+      "--method",
+      "POST",
+      `repos/${options.repository}/issues/${pullRequest.number}/assignees`,
+      "-f",
+      `assignees[]=${selection.person.github}`,
+    ]);
+    const assigned = updatedPullRequest.assignees?.some(
+      (assignee) =>
+        assignee.login?.toLowerCase() === selection.person.github.toLowerCase(),
+    );
+    if (!assigned) {
+      return {
+        pull_request: pullRequest.number,
+        url: pullRequest.url,
+        linked_issue: issue.number,
+        assignee: selection.person.github,
+        action: "skipped",
+        reason: "GitHub did not apply the assignee",
+      };
+    }
+  }
+  return {
+    pull_request: pullRequest.number,
+    url: pullRequest.url,
+    linked_issue: issue.number,
+    assignee: selection.person.github,
+    action: options.dryRun ? "would-assign" : "assigned",
+  };
+}
+
+function getClosingIssues(pullRequestNumber) {
+  const pullRequest = runJson(gh, [
+    "pr",
+    "view",
+    String(pullRequestNumber),
+    "--repo",
+    options.repository,
+    "--json",
+    "closingIssuesReferences",
+  ]);
+  if (!Array.isArray(pullRequest.closingIssuesReferences)) {
+    throw new Error("GitHub returned invalid closing issue references.");
+  }
+  return pullRequest.closingIssuesReferences;
+}
+
+function getReadyTransitions(issueNumber) {
+  const response = runJson(gh, [
+    "api",
+    "graphql",
+    "-F",
+    `owner=${repository.owner}`,
+    "-F",
+    `name=${repository.name}`,
+    "-F",
+    `number=${issueNumber}`,
+    "-f",
+    `query=${issueReadyTransitionQuery}`,
+  ]);
+  const timeline = response.data?.repository?.issue?.timelineItems;
+  if (!timeline || !Array.isArray(timeline.nodes)) {
+    throw new Error(`GitHub returned an invalid timeline for issue #${issueNumber}.`);
+  }
+  if (timeline.pageInfo?.hasPreviousPage) {
+    throw new Error(
+      `Issue #${issueNumber} has more than 100 project status changes.`,
+    );
+  }
+  return timeline.nodes.filter(Boolean);
+}
+
+function parseRepository(value) {
+  const [owner, name, extra] = value.split("/");
+  if (!owner || !name || extra) {
+    throw new Error(`Invalid repository: ${value}`);
+  }
+  return { owner, name, normalized: value.toLowerCase() };
+}
+
+function parseArguments(arguments_) {
+  const parsed = {
+    repository: "aaif-goose/goose",
+    projectOwner: "aaif-goose",
+    projectNumber: 1,
+    dryRun: false,
+    help: false,
+  };
+
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--repo") {
+      parsed.repository = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-owner") {
+      parsed.projectOwner = requiredValue(arguments_, ++index, argument);
+    } else if (argument === "--project-number") {
+      parsed.projectNumber = positiveInteger(
+        requiredValue(arguments_, ++index, argument),
+        argument,
+      );
+    } else if (argument === "--dry-run") {
+      parsed.dryRun = true;
+    } else if (argument === "--help" || argument === "-h") {
+      parsed.help = true;
+    } else {
+      throw new Error(`Unknown option: ${argument}`);
+    }
+  }
+  return parsed;
+}
+
+function requiredValue(arguments_, index, option) {
+  const value = arguments_[index];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${option} requires a value.`);
+  }
+  return value;
+}
+
+function positiveInteger(value, option) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${option} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function runJson(command, arguments_) {
+  const result = spawnSync(command, arguments_, {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.error) {
+    throw new Error(`Could not run ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      result.stderr.trim() || `${command} exited with status ${result.status}.`,
+    );
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${command} returned invalid JSON.`);
+  }
+}
+
+function printHelp() {
+  console.log(`Usage: assign_pr_maintainers [options]
+
+Assign the core-team member who moved a linked issue to Ready to an open pull
+request that has been ready for review for at least one day when no core-team
+member is already assigned.
+
+Options:
+  --repo OWNER/REPO          GitHub repository (default: aaif-goose/goose)
+  --project-owner OWNER      GitHub project owner (default: aaif-goose)
+  --project-number NUMBER    GitHub project number (default: 1)
+  --dry-run                  Report assignments without changing GitHub
+  -h, --help                 Show this help`);
+}

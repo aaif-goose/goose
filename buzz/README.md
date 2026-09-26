@@ -239,6 +239,33 @@ Queue authors are only returned as `queue_requesters` when their public key is
 present in `core-team.json`. Other authors are reported as
 `ignored_queue_requesters` and cannot influence channel membership.
 
+### `assign_pr_maintainers`
+
+Finds open pull requests that have been ready for review for at least 24 hours
+and do not have a person from `core-team.json` among their GitHub assignees. For
+pull requests created as drafts, the 24 hours starts at the latest **Ready for
+review** transition; otherwise it starts when the pull request was created. For
+each pull request, it requires exactly one closing issue in the same repository,
+reads that issue's project timeline, and assigns the core-team member who most
+recently moved the issue to `Ready` in the configured project. It does not create
+or remove review requests.
+
+The same `core-team.json` roster used for issue triage determines eligibility.
+Automated Ready transitions and transitions made by people outside that roster
+are reported and skipped. Pull requests that already have any core-team member
+assigned are unchanged. Set `BUZZ_CORE_TEAM_FILE` to use another roster.
+
+Always inspect a dry run first:
+
+```sh
+./buzz/assign_pr_maintainers --dry-run
+./buzz/assign_pr_maintainers
+```
+
+Use `--repo`, `--project-owner`, or `--project-number` for another installation.
+The GitHub CLI identity needs permission to read the project timeline and assign
+pull requests.
+
 ### `syncissues`
 
 Fetches all open GitHub issues and all Buzz channels, matches issue channels by
@@ -350,8 +377,9 @@ goose run \
 
 ### `run_hourly`
 
-Runs the recipe, waits an hour after it finishes, and repeats. Override the wait
-with `BUZZ_MANAGER_INTERVAL_SECONDS`.
+Runs `assign_pr_maintainers` directly, runs the issue-manager recipe, waits an
+hour after both finish, and repeats. A failure in one does not prevent the other
+from running. Override the wait with `BUZZ_MANAGER_INTERVAL_SECONDS`.
 
 ```sh
 ./buzz/run_hourly

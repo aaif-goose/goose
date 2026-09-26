@@ -6,6 +6,8 @@ automation_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 interval=${BUZZ_MANAGER_INTERVAL_SECONDS:-3600}
 
 while true; do
+  "$automation_dir/assign_pr_maintainers" || \
+    printf '%s\n' "Pull request maintainer assignment failed" >&2
   GOOSE_MODE=auto GOOSE_DISABLE_SESSION_NAMING=true goose run \
     --recipe "$automation_dir/github_issue_manager.yaml" \
     --params "automation_dir=$automation_dir" \

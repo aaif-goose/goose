@@ -50,6 +50,8 @@ Every external pull request must:
 
 Pull requests that do not implement a Ready issue will be closed. Automated dependency and release pull requests, urgent security fixes, and work explicitly directed by the core team are exempt.
 
+Open work-in-progress pull requests as drafts. When your pull request is ready for maintainer review, mark it **Ready for review**.
+
 Don't open many pull requests in quick succession. Submit them in order of preference and wait for them to land before opening more.
 
 ## Agent Loop Migration
