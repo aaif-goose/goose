@@ -34,11 +34,11 @@ use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
     DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
-    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceInput, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -83,6 +83,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
+
+fn configured_max_turns() -> u32 {
+    Config::global()
+        .get_param::<u32>("GOOSE_MAX_TURNS")
+        .unwrap_or(DEFAULT_MAX_TURNS)
+}
 const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 const COMPACTION_PROGRESS_TEXT: &str = "goose is compacting the conversation...";
 const MAX_EMPTY_TURN_RETRIES: u32 = 3;
@@ -827,7 +833,7 @@ impl Agent {
         }
         Ok(result)
     }
-    async fn load_project_instructions(&self, session: &Session) -> Option<String> {
+    pub(super) async fn load_project_instructions(&self, session: &Session) -> Option<String> {
         let project_id = session.project_id.as_deref()?;
         let entry = crate::sources::read_project(project_id).ok()?;
         let mut parts = Vec::new();
@@ -1649,11 +1655,7 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let max_turns = max_turns.unwrap_or_else(|| {
-            Config::global()
-                .get_param::<u32>("GOOSE_MAX_TURNS")
-                .unwrap_or(DEFAULT_MAX_TURNS)
-        });
+        let max_turns = max_turns.unwrap_or_else(configured_max_turns);
         let retry_timeout = Config::global()
             .get_param::<u64>("GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS")
             .unwrap_or(DEFAULT_RETRY_TIMEOUT_SECONDS);
@@ -1765,6 +1767,92 @@ impl Agent {
             .collect();
 
         StateMachine::new(steps, cancel)
+    }
+
+    /// The turn-context event the legacy loop opens a turn with, as it would
+    /// read at the start of the next one.
+    pub(super) async fn upcoming_legacy_turn_context(&self, session: &Session) -> Option<Message> {
+        let compaction_info =
+            super::moim::compute_compaction_info(&session.id, &self.extension_manager).await;
+        super::moim::turn_context_message(
+            &session.id,
+            &self.extension_manager,
+            0,
+            configured_max_turns(),
+            chrono::Local::now(),
+            compaction_info,
+        )
+        .await
+    }
+
+    /// Assemble the prompt, tools and turn-context event the unrolled loop
+    /// would send next, by asking its operations what they contribute. Runs no
+    /// turn and no inference; operations derive their contributions from the
+    /// session and the conversation as the next turn will see it, with a
+    /// stand-in for the prompt that opens it.
+    pub(super) async fn prepare_unrolled_prompt(
+        &self,
+        session: &Session,
+    ) -> Result<(crate::agents::reply_parts::PreparedPrompt, Option<Message>)> {
+        let provider = self.provider().await?;
+        let model_config = self.effective_model_config_for_session(&session.id).await?;
+        let context_limit =
+            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+                .await?;
+        let mut messages = session
+            .conversation
+            .clone()
+            .unwrap_or_else(Conversation::empty)
+            .into_iter()
+            .collect::<Vec<_>>();
+        messages.push(Message::user().with_text(super::context_report::NEXT_PROMPT_STAND_IN));
+        let conversation = Conversation::new_unvalidated(messages);
+        let machine = self.create_state_machine(
+            provider,
+            model_config.clone(),
+            context_limit,
+            None,
+            CancellationToken::new(),
+            self.steer_queue(&session.id).await,
+        );
+        let input: InferenceInput = machine
+            .collect_inference_input(session, &conversation)
+            .await?;
+
+        #[cfg(feature = "code-mode")]
+        let code_execution_active = self
+            .extension_manager
+            .is_extension_enabled(
+                crate::agents::platform_extensions::code_execution::EXTENSION_NAME,
+            )
+            .await;
+        #[cfg(not(feature = "code-mode"))]
+        let code_execution_active = false;
+
+        let goose_mode = *self.current_goose_mode.lock().await;
+        let prompt = self.prompt_manager.lock().await.build_system_prompt_parts(
+            &session.working_dir,
+            input.prompt_parts,
+            goose_mode,
+        );
+        let turn_context = super::moim::turn_context_event(
+            &session.working_dir,
+            Some(context_limit),
+            input.moim_parts,
+            chrono::Local::now(),
+        );
+
+        Ok((
+            crate::agents::reply_parts::PreparedPrompt {
+                tools: crate::agents::reply_parts::prepare_inference_tools(
+                    input.tools,
+                    code_execution_active,
+                ),
+                prompt,
+                model_config,
+            },
+            turn_context,
+        ))
     }
 
     pub(crate) async fn reply_with_state_machine(
@@ -2540,11 +2628,7 @@ impl Agent {
         }
         let inner = Box::pin(async_stream::try_stream! {
             let mut turns_taken = 0u32;
-            let max_turns = session_config.max_turns.unwrap_or_else(|| {
-                Config::global()
-                    .get_param::<u32>("GOOSE_MAX_TURNS")
-                    .unwrap_or(DEFAULT_MAX_TURNS)
-            });
+            let max_turns = session_config.max_turns.unwrap_or_else(configured_max_turns);
             let mut compaction_attempts = 0;
             let mut empty_turn_retries = 0u32;
             let mut retrying_after_empty_turn = false;
