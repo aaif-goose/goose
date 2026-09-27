@@ -729,8 +729,34 @@ fn build_shell_command(
                 .args(unix_shell_command_args(command_line));
             command
         } else {
-            let mut command = tokio::process::Command::new(shell);
-            command.args(unix_shell_command_args(command_line));
+            let fence_config = crate::subprocess::ProcessFenceConfig::from_env();
+            let mut command = if let Some(runtime) = &fence_config.custom_runtime {
+                if let Ok(parts) = shell_words::split(runtime) {
+                    if let Some((prog, extra_args)) = parts.split_first() {
+                        let mut cmd = tokio::process::Command::new(prog);
+                        cmd.args(extra_args);
+                        if !extra_args.iter().any(|arg| arg == "--") {
+                            cmd.arg("--");
+                        }
+                        cmd.arg(&shell).args(unix_shell_command_args(command_line));
+                        cmd
+                    } else {
+                        let mut cmd = tokio::process::Command::new(&shell);
+                        cmd.args(unix_shell_command_args(command_line));
+                        cmd
+                    }
+                } else {
+                    let mut cmd = tokio::process::Command::new(runtime);
+                    cmd.arg("--")
+                        .arg(&shell)
+                        .args(unix_shell_command_args(command_line));
+                    cmd
+                }
+            } else {
+                let mut cmd = tokio::process::Command::new(&shell);
+                cmd.args(unix_shell_command_args(command_line));
+                cmd
+            };
             if let Some(path) = working_dir {
                 command.current_dir(path);
             }
@@ -744,7 +770,7 @@ fn build_shell_command(
 
     #[cfg(windows)]
     apply_session_environment(&mut command, session_id);
-    command.set_no_window();
+    command.apply_process_fencing();
     command
 }
 
@@ -1404,5 +1430,11 @@ mod tests {
             "killed process should have no exit code"
         );
         assert!(extract_text(&result).contains("Command timed out after 1 seconds"));
+    }
+
+    #[test]
+    fn build_shell_command_applies_process_fencing() {
+        let command = build_shell_command("echo test", None, None, None);
+        let _ = command;
     }
 }
