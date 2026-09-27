@@ -35,6 +35,15 @@ pub fn collect_elicitation_input(
     if cancel_token.is_cancelled() {
         return Ok(cancelled_input());
     }
+    // Piped stdin may already contain the next --text conversation turn.
+    // CLI elicitation has no separate answer channel for extension forms,
+    // so leave queued input to the session and require a terminal here.
+    if !io::stdin().is_terminal() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "elicitation requires an interactive terminal",
+        ));
+    }
     let input = collect_elicitation_input_inner(message, schema, cancel_token)?;
     if cancel_token.is_cancelled() {
         return Ok(cancelled_input());
