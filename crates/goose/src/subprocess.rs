@@ -90,25 +90,25 @@ impl ProcessFenceConfig {
         let death_signal_kill = matches!(mode, ProcessFenceMode::Strict)
             || lookup("GOOSE_FENCE_PDEATHSIG")
                 .or_else(|| lookup("GOOSE_PDEATHSIG"))
-                .map_or(false, |v| {
+                .is_some_and(|v| {
                     v.eq_ignore_ascii_case("kill") || v.eq_ignore_ascii_case("sigkill") || v == "9"
                 });
 
         let child_subreaper = matches!(mode, ProcessFenceMode::Standard | ProcessFenceMode::Strict)
             || lookup("GOOSE_FENCE_SUBREAPER")
-                .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"));
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         let isolate_namespaces = matches!(mode, ProcessFenceMode::Strict)
             || lookup("GOOSE_FENCE_NAMESPACES")
-                .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"));
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         let isolate_network = lookup("GOOSE_FENCE_ISOLATE_NET")
-            .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"));
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         let landlock_enabled =
             matches!(mode, ProcessFenceMode::Standard | ProcessFenceMode::Strict)
                 || lookup("GOOSE_FENCE_LANDLOCK")
-                    .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("true"));
+                    .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         let custom_runtime = lookup("GOOSE_FENCE_RUNTIME")
             .map(|s| s.trim().to_string())
@@ -203,10 +203,10 @@ fn configure_linux_fencing(command: &mut Command, config: &ProcessFenceConfig) {
             }
 
             if fence.mode != ProcessFenceMode::None || fence.landlock_enabled {
-                if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
-                    if fence.mode == ProcessFenceMode::Strict {
-                        return Err(std::io::Error::last_os_error());
-                    }
+                if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
+                    && fence.mode == ProcessFenceMode::Strict
+                {
+                    return Err(std::io::Error::last_os_error());
                 }
 
                 if fence.landlock_enabled || fence.mode == ProcessFenceMode::Strict {
@@ -267,10 +267,10 @@ fn configure_linux_std_fencing(command: &mut std::process::Command, config: &Pro
             }
 
             if fence.mode != ProcessFenceMode::None || fence.landlock_enabled {
-                if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
-                    if fence.mode == ProcessFenceMode::Strict {
-                        return Err(std::io::Error::last_os_error());
-                    }
+                if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
+                    && fence.mode == ProcessFenceMode::Strict
+                {
+                    return Err(std::io::Error::last_os_error());
                 }
 
                 if fence.landlock_enabled || fence.mode == ProcessFenceMode::Strict {
