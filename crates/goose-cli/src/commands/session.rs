@@ -144,11 +144,16 @@ pub async fn handle_session_remove(
 }
 
 pub async fn handle_session_rename(session_id: String, new_name: String) -> Result<()> {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        anyhow::bail!("Session name cannot be empty");
+    }
+
     let session_manager = SessionManager::instance();
 
     session_manager
         .update(&session_id)
-        .user_provided_name(&new_name)
+        .user_provided_name(new_name)
         .apply()
         .await?;
 
@@ -475,7 +480,7 @@ pub async fn prompt_interactive_session_selection(
     }
 
     // Build the selection prompt
-    let mut selector = select("Select a session to export:");
+    let mut selector = select("Select a session");
 
     // Map to display text
     let display_map: std::collections::HashMap<String, Session> = sessions
@@ -500,13 +505,13 @@ pub async fn prompt_interactive_session_selection(
 
     // Add a cancel option
     let cancel_value = String::from("cancel");
-    selector = selector.item(cancel_value, "Cancel", "Cancel export");
+    selector = selector.item(cancel_value, "Cancel", "");
 
     // Get user selection
     let selected_display_text: String = selector.interact()?;
 
     if selected_display_text == "cancel" {
-        return Err(anyhow::anyhow!("Export canceled"));
+        return Err(anyhow::anyhow!("No session selected"));
     }
 
     // Retrieve the selected session
