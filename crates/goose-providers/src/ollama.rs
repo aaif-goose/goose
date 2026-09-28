@@ -11,6 +11,7 @@ use crate::formats::ollama::{create_request, response_to_streaming_message_ollam
 use crate::images::ImageFormat;
 use crate::model::ModelConfig;
 use crate::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
+use crate::thinking::ThinkingEffort;
 use anyhow::{Error, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -234,8 +235,22 @@ fn resolve_ollama_num_ctx(options: &OllamaOptions) -> Option<usize> {
     options.input_limit
 }
 
-fn apply_ollama_options(payload: &mut Value, options: &OllamaOptions, _model_config: &ModelConfig) {
+fn ollama_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
+    match model_config.thinking_effort()? {
+        ThinkingEffort::Off => Some("none"),
+        _ if !model_config.is_reasoning_model() => None,
+        ThinkingEffort::Low => Some("low"),
+        ThinkingEffort::Medium => Some("medium"),
+        ThinkingEffort::High | ThinkingEffort::Max => Some("high"),
+    }
+}
+
+fn apply_ollama_options(payload: &mut Value, options: &OllamaOptions, model_config: &ModelConfig) {
     if let Some(obj) = payload.as_object_mut() {
+        if let Some(effort) = ollama_reasoning_effort(model_config) {
+            obj.insert("reasoning_effort".to_string(), json!(effort));
+        }
+
         // Gate stream_options behind OLLAMA_STREAM_USAGE (default: true).
         // Older Ollama builds that don't support stream_options may stall before
         // emitting any SSE data, blocking until the client timeout (600s).
@@ -680,6 +695,32 @@ mod tests {
         let mut payload = json!({});
         apply_ollama_options(&mut payload, &options, &model_config);
         assert!(payload.get("options").is_none());
+    }
+
+    #[test]
+    fn test_apply_ollama_options_disables_thinking_when_effort_off() {
+        let model_config = ModelConfig::new("qwen3").with_thinking_effort(ThinkingEffort::Off);
+        let mut payload = json!({});
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), &model_config);
+        assert_eq!(payload["reasoning_effort"], "none");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_maps_effort_for_reasoning_models() {
+        let mut model_config =
+            ModelConfig::new("gpt-oss:20b").with_thinking_effort(ThinkingEffort::Max);
+        model_config.reasoning = Some(true);
+        let mut payload = json!({});
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), &model_config);
+        assert_eq!(payload["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_omits_enabled_effort_for_non_reasoning_models() {
+        let model_config = ModelConfig::new("llama3.1").with_thinking_effort(ThinkingEffort::High);
+        let mut payload = json!({});
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), &model_config);
+        assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test]
