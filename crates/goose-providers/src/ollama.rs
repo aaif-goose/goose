@@ -48,6 +48,7 @@ const OLLAMA_MAX_RETRIES: usize = 10;
 const OLLAMA_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
 const OLLAMA_BACKOFF_MULTIPLIER: f64 = 1.5;
 const OLLAMA_MAX_RETRY_INTERVAL_MS: u64 = 15_000;
+const SHOW_INFO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Provider settings resolved from `config::Config` at construction time.
 ///
@@ -219,7 +220,11 @@ impl OllamaProvider {
             return Some(cached);
         }
 
-        let supports_thinking = self.fetch_thinking_capability(model).await?;
+        let supports_thinking =
+            tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_thinking_capability(model))
+                .await
+                .ok()
+                .flatten()?;
         if let Ok(mut cache) = self.thinking_support.lock() {
             cache.insert(model.to_string(), supports_thinking);
         }
