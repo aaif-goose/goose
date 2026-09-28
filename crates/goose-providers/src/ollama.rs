@@ -297,6 +297,7 @@ fn apply_ollama_options(
     reasoning_effort: Option<&str>,
 ) {
     if let Some(obj) = payload.as_object_mut() {
+        obj.remove("reasoning_effort");
         if let Some(effort) = reasoning_effort {
             obj.insert("reasoning_effort".to_string(), json!(effort));
         }
@@ -823,6 +824,27 @@ mod tests {
         let mut payload = json!({});
         apply_ollama_options(&mut payload, &OllamaOptions::default(), Some("none"));
         assert_eq!(payload["reasoning_effort"], "none");
+    }
+
+    #[test]
+    fn test_apply_ollama_options_drops_name_derived_reasoning_effort() {
+        let model_config =
+            ModelConfig::new("gpt-5-mini").with_thinking_effort(ThinkingEffort::High);
+        let messages = vec![crate::conversation::message::Message::user().with_text("hi")];
+        let mut payload = create_request(
+            &model_config,
+            "You are a helpful assistant.",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )
+        .unwrap();
+        assert!(payload.get("reasoning_effort").is_some());
+
+        apply_ollama_options(&mut payload, &OllamaOptions::default(), None);
+
+        assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test]
