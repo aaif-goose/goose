@@ -2923,7 +2923,7 @@
     "defaultMessage": "Bạn có chắc chắn muốn xóa các tham số cấu hình cho {providerName} không? Thao tác này không thể hoàn tác."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Xóa nhà cung cấp"
+    "defaultMessage": "Xóa cấu hình"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Bật nhà cung cấp"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Thiếu tham số bắt buộc"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Nhà cung cấp {name} đã được định cấu hình"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Nhà cung cấp {name} đã được bật"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Thêm hiện có"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Không còn được dùng — hãy sử dụng {replacement}."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Tắt"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Bật"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Cần thiết lập hoặc đăng nhập"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Ẩn khỏi danh sách chọn mô hình và giữ thông tin xác thực cùng cài đặt đã lưu"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Đã tìm thấy bộ điều hợp ACP"

@@ -2923,7 +2923,7 @@
     "defaultMessage": "{providerName}の設定パラメーターを削除してもよろしいですか？この操作は元に戻せません。"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "プロバイダーを削除"
+    "defaultMessage": "設定を削除"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "プロバイダーを有効化"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "必須パラメータが不足しています"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name}プロバイダーが設定されています"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "{name} プロバイダーは有効です"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "既存を追加"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "非推奨です。代わりに {replacement} を使用してください。"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "無効にする"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "有効にする"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "設定またはログインが必要です"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "モデル選択から非表示にし、保存済みの認証情報と設定を保持します"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "ACPアダプターが見つかりました"

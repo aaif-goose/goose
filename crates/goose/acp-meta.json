@@ -196,6 +196,11 @@
       "responseType": "ProviderConfigStatusResponse_unstable"
     },
     {
+      "method": "_goose/unstable/providers/enablement/set",
+      "requestType": "ProviderEnablementSetRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/unstable/providers/config/save",
       "requestType": "ProviderConfigSaveRequest_unstable",
       "responseType": "ProviderConfigChangeResponse_unstable"

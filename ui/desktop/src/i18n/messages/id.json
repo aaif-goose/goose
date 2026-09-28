@@ -2923,7 +2923,7 @@
     "defaultMessage": "Apakah Anda yakin ingin menghapus parameter konfigurasi untuk {providerName}? Tindakan ini tidak dapat dibatalkan."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Hapus Penyedia"
+    "defaultMessage": "Hapus konfigurasi"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Aktifkan Penyedia"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Parameter yang diperlukan tidak ada"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Penyedia {name} telah dikonfigurasi"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Penyedia {name} diaktifkan"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Tambahkan yang Sudah Ada"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Tidak digunakan lagi — gunakan {replacement} sebagai gantinya."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Nonaktifkan"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Aktifkan"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Perlu penyiapan atau masuk"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Sembunyikan dari pemilih model dan simpan kredensial serta pengaturan yang tersimpan"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Adaptor ACP ditemukan"

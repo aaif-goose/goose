@@ -83,7 +83,7 @@ export const RecipeModelSelector = ({
       try {
         setFetchError(null);
         const providersResponse = await acpListProviderDetails();
-        const activeProviders = providersResponse.filter((provider) => provider.is_configured);
+        const activeProviders = providersResponse.filter((provider) => provider.is_enabled);
 
         setProviderOptions([
           { value: '', label: intl.formatMessage(i18n.useDefaultProvider) },

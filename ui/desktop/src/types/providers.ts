@@ -35,6 +35,7 @@ export type ProviderMetadata = {
 };
 
 export type ProviderDetails = {
+  is_enabled: boolean;
   is_configured: boolean;
   is_available: boolean;
   is_refreshing?: boolean;

@@ -616,6 +616,7 @@ export const zProviderInventoryEntryDto = z.object({
     providerName: z.string(),
     description: z.string(),
     defaultModel: z.string(),
+    enabled: z.boolean().optional().default(false),
     configured: z.boolean(),
     available: z.boolean(),
     providerType: z.string(),
@@ -928,6 +929,14 @@ export const zProviderConfigStatusRequest_unstable = z.object({
 
 export const zProviderConfigStatusResponse_unstable = z.object({
     statuses: z.array(zProviderConfigStatusDto)
+});
+
+/**
+ * Set model picker visibility without changing credentials, models, or existing sessions.
+ */
+export const zProviderEnablementSetRequest_unstable = z.object({
+    providerId: z.string(),
+    enabled: z.boolean()
 });
 
 export const zProviderConfigFieldUpdate = z.object({
@@ -2368,6 +2377,7 @@ export const zExtRequest = z.object({
             zProviderReadinessCheckRequest_unstable,
             zProviderConfigReadRequest_unstable,
             zProviderConfigStatusRequest_unstable,
+            zProviderEnablementSetRequest_unstable,
             zProviderConfigSaveRequest_unstable,
             zProviderConfigDeleteRequest_unstable,
             zProviderConfigAuthenticateRequest_unstable,

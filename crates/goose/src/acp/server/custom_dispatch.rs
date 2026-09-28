@@ -342,6 +342,14 @@ impl GooseAcpAgent {
         self.on_provider_config_status(req).await
     }
 
+    #[custom_method(ProviderEnablementSetRequest)]
+    async fn dispatch_set_provider_enablement(
+        &self,
+        req: ProviderEnablementSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_set_provider_enablement(req).await
+    }
+
     #[custom_method(ProviderConfigSaveRequest)]
     async fn dispatch_save_provider_config(
         &self,

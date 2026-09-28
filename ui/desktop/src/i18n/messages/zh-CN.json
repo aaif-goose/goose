@@ -2923,7 +2923,7 @@
     "defaultMessage": "确定要删除 {providerName} 的配置参数吗？此操作无法撤销。"
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "删除提供商"
+    "defaultMessage": "删除配置"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "启用提供商"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "缺少必需参数"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "{name} 提供商已配置"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "已启用 {name} 提供商"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "添加已有"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "已弃用 — 请改用 {replacement}。"
+  },
+  "providerCard.disable": {
+    "defaultMessage": "禁用"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "启用"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "需要配置或登录"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "从模型选择器中隐藏，并保留已保存的凭据和设置"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "已找到 ACP 适配器"

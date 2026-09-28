@@ -42,6 +42,7 @@ function waitForInventoryPoll(signal?: globalThis.AbortSignal): Promise<void> {
 function providerEntryToDetails(entry: ProviderInventoryEntryDto): ProviderDetails {
   return {
     name: entry.providerId,
+    is_enabled: entry.enabled ?? entry.configured,
     is_configured: entry.configured,
     is_available: entry.available,
     is_refreshing: entry.refreshing,
@@ -109,7 +110,7 @@ export async function acpListSetupProviderDetails(): Promise<ProviderDetails[]> 
 
 export async function acpListSettingsProviderDetails(): Promise<ProviderDetails[]> {
   const providers = await acpListProviderDetails();
-  return providers.filter((provider) => provider.visible_in_setup || provider.is_configured);
+  return providers.filter((provider) => provider.visible_in_setup || provider.is_enabled);
 }
 
 export async function acpGetProviderDetails(providerId: string): Promise<ProviderDetails> {
@@ -255,6 +256,11 @@ export async function acpReadProviderConfig(providerId: string) {
   const client = await getAcpClient();
   const { fields } = await client.goose.providersConfigRead_unstable({ providerId });
   return fields;
+}
+
+export async function acpSetProviderEnabled(providerId: string, enabled: boolean): Promise<void> {
+  const client = await getAcpClient();
+  await client.goose.providersEnablementSet_unstable({ providerId, enabled });
 }
 
 export async function acpDeleteProviderConfig(providerId: string): Promise<void> {

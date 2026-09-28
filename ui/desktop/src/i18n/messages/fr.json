@@ -2923,7 +2923,7 @@
     "defaultMessage": "Voulez-vous vraiment supprimer les paramètres de configuration de {providerName} ? Cette action est irréversible."
   },
   "providerSetupActions.deleteProvider": {
-    "defaultMessage": "Supprimer le fournisseur"
+    "defaultMessage": "Supprimer la configuration"
   },
   "providerSetupActions.enableProvider": {
     "defaultMessage": "Activer le fournisseur"
@@ -4215,8 +4215,8 @@
   "standaloneAppView.missingParams": {
     "defaultMessage": "Paramètres requis manquants"
   },
-  "stringUtils.configuredProvider": {
-    "defaultMessage": "Le fournisseur {name} est configuré"
+  "stringUtils.enabledProvider": {
+    "defaultMessage": "Le fournisseur {name} est activé"
   },
   "subRecipeEditor.addExisting": {
     "defaultMessage": "Ajouter une existante"
@@ -4664,6 +4664,18 @@
   },
   "providerCard.deprecatedReplacement": {
     "defaultMessage": "Obsolète — utilisez plutôt {replacement}."
+  },
+  "providerCard.disable": {
+    "defaultMessage": "Désactiver"
+  },
+  "providerCard.enable": {
+    "defaultMessage": "Activer"
+  },
+  "providerCard.needsSetup": {
+    "defaultMessage": "Configuration ou connexion requise"
+  },
+  "providerCard.retainsSettings": {
+    "defaultMessage": "Masquer dans le sélecteur de modèles et conserver les identifiants et paramètres enregistrés"
   },
   "acpReadinessPanel.adapterFound": {
     "defaultMessage": "Adaptateur ACP trouvé"
