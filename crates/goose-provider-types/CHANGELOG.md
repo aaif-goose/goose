@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
+
+### Added
+
+- *(gdk)* add model discovery to the Provider API ([#12497](https://github.com/aaif-goose/goose/pull/12497))
+
+### Fixed
+
+- GDK tools with no args still advertise empty params input schema ([#12527](https://github.com/aaif-goose/goose/pull/12527))
+- *(costs)* estimate through canonical provider aliases ([#11916](https://github.com/aaif-goose/goose/pull/11916))
+
 ## [0.1.0-alpha.10](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.9...gdk-v0.1.0-alpha.10) - 2026-09-24
 
 ### Fixed
