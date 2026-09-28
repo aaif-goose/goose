@@ -3,6 +3,11 @@ use rmcp::model::ElicitationAction;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::{self, BufRead, IsTerminal, Write};
+use tokio_util::sync::CancellationToken;
+
+#[cfg(all(test, unix))]
+#[path = "../../tests/support/elicitation_signals.rs"]
+mod signal_tests;
 
 pub struct ElicitationInput {
     pub action: ElicitationAction,
@@ -22,7 +27,33 @@ struct SingleSelect<'a> {
     initial_value: Option<SelectChoice>,
 }
 
-pub fn collect_elicitation_input(message: &str, schema: &Value) -> io::Result<ElicitationInput> {
+pub fn collect_elicitation_input(
+    message: &str,
+    schema: &Value,
+    cancel_token: &CancellationToken,
+) -> io::Result<ElicitationInput> {
+    if cancel_token.is_cancelled() {
+        return Ok(cancelled_input());
+    }
+    let input = collect_elicitation_input_inner(message, schema, cancel_token)?;
+    if cancel_token.is_cancelled() {
+        return Ok(cancelled_input());
+    }
+    Ok(input)
+}
+
+fn cancelled_input() -> ElicitationInput {
+    ElicitationInput {
+        action: ElicitationAction::Cancel,
+        user_data: HashMap::new(),
+    }
+}
+
+fn collect_elicitation_input_inner(
+    message: &str,
+    schema: &Value,
+    cancel_token: &CancellationToken,
+) -> io::Result<ElicitationInput> {
     if !message.is_empty() {
         println!("\n{}", style(message).cyan());
     }
@@ -70,6 +101,12 @@ pub fn collect_elicitation_input(message: &str, schema: &Value) -> io::Result<El
     let mut data: HashMap<String, Value> = HashMap::new();
 
     for (name, field_schema) in properties {
+        if cancel_token.is_cancelled() {
+            return Ok(ElicitationInput {
+                action: ElicitationAction::Cancel,
+                user_data: HashMap::new(),
+            });
+        }
         let is_required = required.contains(&name.as_str());
         let field_type = field_schema
             .get("type")
@@ -122,7 +159,7 @@ pub fn collect_elicitation_input(message: &str, schema: &Value) -> io::Result<El
         print!(": ");
         io::stdout().flush()?;
 
-        let input = read_line()?;
+        let input = read_line(cancel_token)?;
 
         if input.is_none() {
             return Ok(ElicitationInput {
@@ -258,20 +295,154 @@ fn prompt_single_select(select: SingleSelect<'_>) -> io::Result<ElicitationInput
     }
 }
 
-fn read_line() -> io::Result<Option<String>> {
-    if !std::io::stdin().is_terminal() {
-        let mut line = String::new();
-        io::stdin().lock().read_line(&mut line)?;
-        return Ok(Some(line.trim().to_string()));
+#[cfg(unix)]
+fn read_line(cancel_token: &CancellationToken) -> io::Result<Option<String>> {
+    let mut reader = cancellable_stdin::Input::new(io::stdin().lock(), cancel_token)?;
+    let result = read_line_from(&mut reader);
+    if cancel_token.is_cancelled() || matches!(result, Ok(None)) {
+        if matches!(result, Ok(None)) {
+            reader.discard_terminal_input()?;
+        }
+        return Ok(None);
+    }
+    result
+}
+
+#[cfg(not(unix))]
+fn read_line(cancel_token: &CancellationToken) -> io::Result<Option<String>> {
+    if cancel_token.is_cancelled() {
+        return Ok(None);
+    }
+    let result = read_line_from(&mut io::stdin().lock());
+    if cancel_token.is_cancelled() {
+        return Ok(None);
+    }
+    result
+}
+
+#[cfg(unix)]
+mod cancellable_stdin {
+    use super::*;
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+
+    pub(super) struct Input<'a> {
+        stdin: io::StdinLock<'a>,
+        original_flags: libc::c_int,
+        cancel_token: &'a CancellationToken,
     }
 
-    let mut line = String::new();
-    match io::stdin().lock().read_line(&mut line) {
-        Ok(0) => Ok(None),
-        Ok(_) => Ok(Some(line.trim().to_string())),
-        Err(e) if e.kind() == io::ErrorKind::Interrupted => Ok(None),
-        Err(e) => Err(e),
+    impl<'a> Input<'a> {
+        pub(super) fn new(
+            stdin: io::StdinLock<'a>,
+            cancel_token: &'a CancellationToken,
+        ) -> io::Result<Self> {
+            // Nonblocking reads close the race between readiness and a signal flushing stdin.
+            let original_flags = unsafe { libc::fcntl(stdin.as_raw_fd(), libc::F_GETFL) };
+            if original_flags < 0
+                || unsafe {
+                    libc::fcntl(
+                        stdin.as_raw_fd(),
+                        libc::F_SETFL,
+                        original_flags | libc::O_NONBLOCK,
+                    )
+                } < 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(Self {
+                stdin,
+                original_flags,
+                cancel_token,
+            })
+        }
+
+        pub(super) fn discard_terminal_input(&self) -> io::Result<()> {
+            // A programmatic SIGINT need not flush the terminal's unfinished line.
+            if self.stdin.is_terminal()
+                && unsafe { libc::tcflush(self.stdin.as_raw_fd(), libc::TCIFLUSH) } < 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
     }
+
+    impl Read for Input<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let available = self.fill_buf()?;
+            let count = buffer.len().min(available.len());
+            buffer[..count].copy_from_slice(&available[..count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for Input<'_> {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            loop {
+                if self.cancel_token.is_cancelled() {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                // Rustyline's nonterminal input may already have buffered the next answer.
+                match self.stdin.fill_buf() {
+                    Ok(_) => return self.stdin.fill_buf(),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(error) => return Err(error),
+                }
+                let mut descriptor = libc::pollfd {
+                    fd: self.stdin.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                // StdinLock keeps input exclusively owned until the read returns.
+                if unsafe { libc::poll(&mut descriptor, 1, 50) } < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+        }
+
+        fn consume(&mut self, amount: usize) {
+            self.stdin.consume(amount);
+        }
+    }
+
+    impl Drop for Input<'_> {
+        fn drop(&mut self) {
+            // Restore the shared stdin description before handing input back to the CLI.
+            unsafe { libc::fcntl(self.stdin.as_raw_fd(), libc::F_SETFL, self.original_flags) };
+        }
+    }
+}
+
+fn read_line_from(reader: &mut impl BufRead) -> io::Result<Option<String>> {
+    let mut line = Vec::new();
+    loop {
+        // BufRead::read_line retries Interrupted instead of allowing cancellation.
+        let available = match reader.fill_buf() {
+            Ok(available) => available,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if available.is_empty() {
+            break;
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        line.extend_from_slice(&available[..consumed]);
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
+    }
+
+    let line = String::from_utf8(line).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        )
+    })?;
+    Ok(line.ends_with('\n').then(|| line.trim().to_string()))
 }
 
 fn format_default(value: &Value) -> String {
@@ -319,7 +490,127 @@ fn parse_value(input: &str, field_type: &str, enum_values: Option<&Vec<Value>>) 
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::io::{BufReader, Cursor, Read};
     use test_case::test_case;
+
+    #[test_case(json!({}); "confirmation")]
+    #[test_case(json!({"properties": {"answer": {"type": "boolean"}}}); "boolean")]
+    #[test_case(json!({"properties": {"answer": {"enum": ["yes", "no"]}}}); "selection")]
+    #[test_case(json!({"properties": {"answer": {"type": "string"}}}); "freeform")]
+    fn cancelled_token_never_collects_answers(schema: Value) {
+        let token = CancellationToken::new();
+        token.cancel();
+        let result = collect_elicitation_input("", &schema, &token).unwrap();
+        assert_eq!(result.action, ElicitationAction::Cancel);
+        assert!(result.user_data.is_empty());
+    }
+
+    struct ScriptedReader {
+        prefix: Cursor<&'static [u8]>,
+        error: Option<io::ErrorKind>,
+        suffix: Cursor<&'static [u8]>,
+    }
+
+    impl Read for ScriptedReader {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            let input = self.fill_buf()?;
+            let count = input.len().min(output.len());
+            output[..count].copy_from_slice(&input[..count]);
+            self.consume(count);
+            Ok(count)
+        }
+    }
+
+    impl BufRead for ScriptedReader {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+                return self.prefix.fill_buf();
+            }
+            if let Some(error) = self.error.take() {
+                return Err(error.into());
+            }
+            self.suffix.fill_buf()
+        }
+
+        fn consume(&mut self, amount: usize) {
+            if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+                self.prefix.consume(amount);
+            } else {
+                self.suffix.consume(amount);
+            }
+        }
+    }
+
+    #[test]
+    fn nonterminal_eof_cancels_elicitation_input() {
+        assert_eq!(read_line_from(&mut Cursor::new([])).unwrap(), None);
+    }
+
+    #[test]
+    fn blank_line_accepts_the_field_default() {
+        assert_eq!(
+            read_line_from(&mut Cursor::new(b"\n")).unwrap(),
+            Some(String::new())
+        );
+    }
+
+    #[test]
+    fn partial_line_at_eof_cancels_elicitation_input() {
+        assert_eq!(read_line_from(&mut Cursor::new(b"partial")).unwrap(), None);
+    }
+
+    #[test_case(""; "before any input")]
+    #[test_case("partial"; "after partial input")]
+    fn interrupted_read_cancels_elicitation_input(prefix: &'static str) {
+        let mut reader = ScriptedReader {
+            prefix: Cursor::new(prefix.as_bytes()),
+            error: Some(io::ErrorKind::Interrupted),
+            suffix: Cursor::new(b"later input\n"),
+        };
+
+        assert_eq!(read_line_from(&mut reader).unwrap(), None);
+        assert_eq!(
+            read_line_from(&mut reader).unwrap(),
+            Some("later input".to_string())
+        );
+    }
+
+    #[test_case(1; "split unicode")]
+    #[test_case(64; "multiple lines in one buffer")]
+    fn buffered_read_preserves_unicode_and_the_next_line(capacity: usize) {
+        let mut reader = BufReader::with_capacity(capacity, Cursor::new(" café \r\nnext\n"));
+
+        assert_eq!(read_line_from(&mut reader).unwrap(), Some("café".into()));
+        assert_eq!(read_line_from(&mut reader).unwrap(), Some("next".into()));
+        assert_eq!(read_line_from(&mut reader).unwrap(), None);
+    }
+
+    #[test_case(b"\xff\n"; "complete line")]
+    #[test_case(b"\xff"; "partial line at eof")]
+    fn invalid_utf8_returns_an_error(input: &[u8]) {
+        assert_eq!(
+            read_line_from(&mut Cursor::new(input)).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn non_interruption_errors_are_propagated_without_reading_more() {
+        let mut reader = ScriptedReader {
+            prefix: Cursor::new(b"partial"),
+            error: Some(io::ErrorKind::PermissionDenied),
+            suffix: Cursor::new(b"later input\n"),
+        };
+
+        assert_eq!(
+            read_line_from(&mut reader).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(
+            read_line_from(&mut reader).unwrap(),
+            Some("later input".to_string())
+        );
+    }
 
     #[test]
     fn builds_required_enum_select_with_default() {

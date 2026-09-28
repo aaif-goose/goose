@@ -628,9 +628,10 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
                     .unwrap_or(DEFAULT_MIN_PRIORITY);
 
                 let priority = annotations.and_then(|a| a.priority);
-                if priority.is_some_and(|priority| priority < min_priority)
-                    || (priority.is_none() && !debug)
-                {
+                // Tools without a priority annotation default to 0.0 (the same
+                // as DEFAULT_MIN_PRIORITY), so they are shown at the default
+                // threshold and only hidden when the user raises it.
+                if priority.unwrap_or(0.0) < min_priority {
                     continue;
                 }
 

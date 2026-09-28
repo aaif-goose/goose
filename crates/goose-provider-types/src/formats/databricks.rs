@@ -349,27 +349,17 @@ pub fn format_tools(tools: &[Tool], _model_name: &str) -> anyhow::Result<Vec<Val
             return Err(anyhow!("Duplicate tool name: {}", tool.name));
         }
 
-        let has_properties = tool
-            .input_schema
-            .get("properties")
-            .and_then(|v| v.as_object())
-            .is_some_and(|p| !p.is_empty());
-
         // Databricks serving endpoints (including Gemini-backed ones) use the
         // OpenAI-compatible chat format, so tools always use "parameters" — not
-        // the Google-native "parametersJsonSchema" field.
-        let mut def = json!({
-            "name": tool.name,
-            "description": tool.description,
-        });
-        if has_properties {
-            def["parameters"] = json!(tool.input_schema);
-        }
-        let function_def = def;
-
+        // the Google-native "parametersJsonSchema" field. "parameters" is
+        // required even when a tool takes no arguments, so it is always sent.
         result.push(json!({
             "type": "function",
-            "function": function_def,
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            },
         }));
     }
 
@@ -979,6 +969,29 @@ mod tests {
         assert_eq!(spec[1]["role"], "tool");
         assert_eq!(spec[1]["content"], "Result");
         assert_eq!(spec[1]["tool_call_id"], spec[0]["tool_calls"][0]["id"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_format_tools_zero_arg_still_sends_parameters() -> anyhow::Result<()> {
+        let tool = Tool::new(
+            "list_sessions",
+            "A tool that takes no arguments",
+            object!({
+                "type": "object",
+                "properties": {}
+            }),
+        );
+
+        let spec = format_tools(std::slice::from_ref(&tool), "glm-5-3")?;
+
+        let function = &spec[0]["function"];
+        assert!(
+            function.get("parameters").is_some(),
+            "Databricks rejects a function object without `parameters`"
+        );
+        assert_eq!(function["parameters"]["type"], "object");
 
         Ok(())
     }

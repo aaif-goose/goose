@@ -105,7 +105,7 @@ impl RecipeOperation {
             })
     }
 
-    fn successful_final_output(messages: &[Message]) -> Option<String> {
+    pub(super) fn successful_final_output(messages: &[Message]) -> Option<String> {
         let answered_responses: HashSet<&str> = messages
             .iter()
             .flat_map(|message| &message.content)

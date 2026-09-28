@@ -218,7 +218,7 @@ function delay(delayMs: number): Promise<void> {
 function createClientCallbacks(): GooseAcpCallbacks {
   return {
     requestPermission: requestAcpPermission,
-    unstable_createElicitation: requestAcpElicitation,
+    createElicitation: requestAcpElicitation,
     unstable_sessionRecipeRequestParams: requestAcpRecipeParams,
     sessionUpdate: handleAcpSessionNotification,
     unstable_sessionUpdate: handleAcpGooseSessionNotification,

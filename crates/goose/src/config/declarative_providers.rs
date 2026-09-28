@@ -7,6 +7,7 @@ use crate::providers::huggingface_auth;
 use crate::providers::inventory::declarative_inventory_identity;
 use crate::providers::ollama_def::OllamaProviderDef;
 use crate::providers::openai_def::OpenAiProviderDef;
+use crate::providers::private_file::write_private_file;
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -128,6 +129,13 @@ pub(crate) fn custom_provider_file_path(id: &str) -> Result<PathBuf> {
     Ok(custom_providers_dir().join(format!("{}.json", id)))
 }
 
+fn persist_custom_provider(provider: &DeclarativeProviderConfig) -> Result<()> {
+    let json_content = serde_json::to_string_pretty(provider)?;
+    let file_path = custom_provider_file_path(&provider.name)?;
+    write_private_file(&file_path, &json_content)?;
+    Ok(())
+}
+
 pub fn generate_api_key_name(id: &str) -> String {
     format!("{}_API_KEY", id.to_uppercase())
 }
@@ -234,12 +242,7 @@ pub fn create_custom_provider(
         setup: None,
     };
 
-    let custom_providers_dir = custom_providers_dir();
-    std::fs::create_dir_all(&custom_providers_dir)?;
-
-    let json_content = serde_json::to_string_pretty(&provider_config)?;
-    let file_path = custom_providers_dir.join(format!("{}.json", id));
-    std::fs::write(file_path, json_content)?;
+    persist_custom_provider(&provider_config)?;
 
     Ok(provider_config)
 }
@@ -354,9 +357,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             setup: existing_config.setup,
         };
 
-        let file_path = custom_provider_file_path(&updated_config.name)?;
-        let json_content = serde_json::to_string_pretty(&updated_config)?;
-        std::fs::write(file_path, json_content)?;
+        persist_custom_provider(&updated_config)?;
     }
     Ok(())
 }

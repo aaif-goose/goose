@@ -11,8 +11,10 @@ pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + S
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
 use crate::conversation::message::Message;
+use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
 use crate::formats::openai::create_request;
+use crate::http_status::read_json_response;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{handle_status, stream_openai_compat};
 use crate::openrouter_format;
@@ -23,6 +25,7 @@ use rmcp::model::Tool;
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
 pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
+pub const OPENROUTER_DECISION_DEFAULT_MODEL: &str = "typesafe/jev-1.13";
 
 // OpenRouter can run many models, we suggest the default
 pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[
@@ -392,6 +395,57 @@ impl crate::base::ProviderDescriptor for OpenRouterProvider {
                 ConfigKey::new(OPENROUTER_PARAMETERS_CONFIG_KEY, false, false, None, false),
             ],
         )
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct OpenRouterDecisionOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+impl OpenRouterProvider {
+    pub async fn create_decision_with_options(
+        &self,
+        request: &DecisionRequest,
+        options: &OpenRouterDecisionOptions,
+    ) -> Result<DecisionResponse, ProviderError> {
+        let mut payload = serde_json::to_value(request).map_err(|error| {
+            ProviderError::RequestFailed(format!("Failed to serialize Decisions request: {error}"))
+        })?;
+        let option_values = serde_json::to_value(options).map_err(|error| {
+            ProviderError::RequestFailed(format!(
+                "Failed to serialize OpenRouter Decisions options: {error}"
+            ))
+        })?;
+        if let (Some(payload), Some(options)) = (payload.as_object_mut(), option_values.as_object())
+        {
+            payload.extend(options.clone());
+        }
+        let response = self
+            .api_client
+            .request("api/alpha/decisions")
+            .response_post(&payload)
+            .await?;
+        let response = handle_status(response).await?;
+        read_json_response(response).await
+    }
+}
+
+#[async_trait]
+impl DecisionProvider for OpenRouterProvider {
+    async fn create_decision(
+        &self,
+        request: &DecisionRequest,
+    ) -> Result<DecisionResponse, ProviderError> {
+        self.create_decision_with_options(request, &OpenRouterDecisionOptions::default())
+            .await
     }
 }
 

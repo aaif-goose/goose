@@ -497,7 +497,6 @@ impl ExtensionManager {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
             timeout: Duration::from_secs(resolve_timeout(timeout)),
-            provider: self.provider.clone(),
             client_name: self.client_name.clone(),
             capabilities: self.mcp_client_capabilities(),
             working_dir,

@@ -6,12 +6,11 @@ use goose_sdk_types::custom_requests::{
     RunScheduleNowResponse, RunScheduleNowStatus, ScheduledJobDto, UnpauseScheduleRequest,
     UpdateScheduleRequest, UpdateScheduleResponse,
 };
-use tokio::fs;
 
 use super::{build_session_info, GooseAcpAgent, ResultExt};
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::Recipe;
-use crate::scheduler::{get_default_scheduled_recipes_dir, ScheduledJob, SchedulerError};
+use crate::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
 use crate::scheduler_trait::SchedulerTrait;
 use std::sync::Arc;
 
@@ -30,7 +29,7 @@ fn validate_schedule_id(id: &str) -> Result<(), agent_client_protocol::Error> {
     Ok(())
 }
 
-fn validate_schedule_recipe(recipe: &Recipe) -> Result<(), agent_client_protocol::Error> {
+fn validate_schedule_recipe(recipe: &Recipe) -> Result<String, agent_client_protocol::Error> {
     let recipe_yaml = recipe
         .to_yaml()
         .map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))?;
@@ -38,7 +37,7 @@ fn validate_schedule_recipe(recipe: &Recipe) -> Result<(), agent_client_protocol
     validate_recipe_template_from_content(&recipe_yaml, None)
         .map_err(|e| agent_client_protocol::Error::invalid_params().data(e.to_string()))?;
 
-    Ok(())
+    Ok(recipe_yaml)
 }
 
 fn schedule_not_found_or_internal(error: SchedulerError) -> agent_client_protocol::Error {
@@ -180,26 +179,12 @@ impl GooseAcpAgent {
                 "This recipe contains hidden characters that could be malicious. Please remove them before trying to save.",
             ));
         }
-        validate_schedule_recipe(&recipe)?;
-
-        let scheduled_recipes_dir = get_default_scheduled_recipes_dir().map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .data(format!("Failed to get scheduled recipes directory: {e}"))
-        })?;
-
-        let recipe_path = scheduled_recipes_dir.join(format!("{id}.yaml"));
-        let yaml_content = recipe.to_yaml().map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .data(format!("Failed to convert recipe to YAML: {e}"))
-        })?;
-        fs::write(&recipe_path, yaml_content).await.map_err(|e| {
-            agent_client_protocol::Error::internal_error()
-                .data(format!("Failed to save recipe file: {e}"))
-        })?;
+        let yaml_content = validate_schedule_recipe(&recipe)?;
+        let recipe_source = format!("{id}.yaml");
 
         let job = ScheduledJob {
-            id,
-            source: recipe_path.to_string_lossy().into_owned(),
+            id: id.clone(),
+            source: recipe_source.clone(),
             cron: req.cron,
             last_run: None,
             currently_running: false,
@@ -211,9 +196,22 @@ impl GooseAcpAgent {
         };
 
         scheduler
-            .add_scheduled_job(job.clone(), false)
+            .add_scheduled_job_with_recipe(
+                job,
+                ValidatedScheduleRecipe::new(yaml_content.into_bytes(), recipe_source.into()),
+            )
             .await
             .map_err(create_schedule_error)?;
+
+        let job = scheduler
+            .list_scheduled_jobs()
+            .await
+            .into_iter()
+            .find(|job| job.id == id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::internal_error()
+                    .data("Schedule not found after creation")
+            })?;
 
         Ok(CreateScheduleResponse {
             job: scheduled_job_to_dto(job),
@@ -347,6 +345,7 @@ mod tests {
     use crate::acp::server::AcpBuiltinSelection;
     use crate::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
     use crate::agents::GoosePlatform;
+    use crate::scheduler::get_default_scheduled_recipes_dir;
     use goose_sdk_types::custom_requests::{ListRecipesRequest, ScheduleRecipeRequest};
     use serial_test::serial;
 
@@ -361,6 +360,58 @@ mod tests {
         );
     }
 
+    fn create_schedule_request(id: &str, prompt: &str) -> CreateScheduleRequest {
+        let recipe = Recipe::builder()
+            .title(format!("{id} recipe"))
+            .description("Schedule overwrite regression test")
+            .prompt(prompt)
+            .build()
+            .unwrap();
+
+        CreateScheduleRequest {
+            id: id.to_string(),
+            recipe: recipe.try_into().unwrap(),
+            cron: "0 0 0 * * *".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn duplicate_schedule_does_not_overwrite_existing_recipe() {
+        let root = tempfile::tempdir().unwrap();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_DISABLE_KEYRING", Some("true")),
+            ("GOOSE_PATH_ROOT", root.path().to_str()),
+        ]);
+        let server = AcpServer::new(AcpServerFactoryConfig {
+            builtins: AcpBuiltinSelection::default(),
+            config_dir: root.path().join("config"),
+            goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
+            session_cwd: None,
+            enable_scheduler: true,
+        });
+        let agent = server.create_agent().await.unwrap();
+
+        let created = agent
+            .on_create_schedule(create_schedule_request("nightly", "original prompt"))
+            .await
+            .unwrap();
+        let recipe_path = created.job.source;
+        let original_recipe = std::fs::read(&recipe_path).unwrap();
+
+        let error = agent
+            .on_create_schedule(create_schedule_request("nightly", "replacement prompt"))
+            .await
+            .expect_err("duplicate schedule must be rejected");
+
+        assert_eq!(
+            error.code,
+            agent_client_protocol::Error::invalid_params().code
+        );
+        assert_eq!(std::fs::read(recipe_path).unwrap(), original_recipe);
+    }
+
     #[tokio::test]
     #[serial]
     async fn disabled_scheduler_rejects_schedule_operations_without_recipe_writes() {
@@ -371,7 +422,6 @@ mod tests {
         ]);
         let server = AcpServer::new(AcpServerFactoryConfig {
             builtins: AcpBuiltinSelection::default(),
-            data_dir: root.path().join("data"),
             config_dir: root.path().join("config"),
             goose_platform: GoosePlatform::GooseCli,
             additional_source_roots: Vec::new(),

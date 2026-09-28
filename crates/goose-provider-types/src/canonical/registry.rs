@@ -13,20 +13,21 @@ const MAX_CATALOG_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_FILENAME: &str = "canonical_models.json";
 const ETAG_FILENAME: &str = "canonical_models.etag";
 
-static ACTIVE_REGISTRY: Lazy<RwLock<CanonicalModelRegistry>> = Lazy::new(|| {
-    RwLock::new(
-        CanonicalModelRegistry::from_json(include_str!("data/canonical_models.json"))
-            .expect("bundled canonical model catalog must be valid"),
-    )
+static ACTIVE_REGISTRY: Lazy<RwLock<Result<CanonicalModelRegistry>>> = Lazy::new(|| {
+    let bundled = zstd::decode_all(include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst")).as_slice())
+        .context("Failed to decompress bundled canonical models JSON")
+        .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?));
+    RwLock::new(bundled)
+
 });
 
-pub struct CanonicalModelRegistryGuard(RwLockReadGuard<'static, CanonicalModelRegistry>);
+pub struct CanonicalModelRegistryGuard(RwLockReadGuard<'static, Result<CanonicalModelRegistry>>);
 
 impl Deref for CanonicalModelRegistryGuard {
     type Target = CanonicalModelRegistry;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0.as_ref().expect("validated registry")
     }
 }
 
@@ -43,10 +44,11 @@ impl CanonicalModelRegistry {
     }
 
     pub fn bundled() -> Result<CanonicalModelRegistryGuard> {
-        ACTIVE_REGISTRY
-            .read()
-            .map(CanonicalModelRegistryGuard)
-            .map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))
+        let guard = ACTIVE_REGISTRY.read().map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))?;
+        if let Err(error) = &*guard {
+            anyhow::bail!("{error}");
+        }
+        Ok(CanonicalModelRegistryGuard(guard))
     }
 
     pub fn from_json(content: &str) -> Result<Self> {

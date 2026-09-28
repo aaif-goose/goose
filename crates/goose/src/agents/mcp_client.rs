@@ -1,15 +1,10 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
 use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::tool_execution::ToolCallContext;
-use crate::agents::types::SharedProvider;
 use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
-/// MCP client implementation for Goose
-#[expect(deprecated)]
-use rmcp::model::{CreateMessageRequestParams, CreateMessageResult, SamplingMessage};
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,
-    SamplingMessageContentBlock,
 };
 use rmcp::model::{
     ElicitationAction, ErrorCode, ExtensionCapabilities, Extensions, JsonObject, MetaObject,
@@ -21,7 +16,7 @@ use rmcp::{
         InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
         ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
-        Role, ServerNotification, ServerResult,
+        ServerNotification, ServerResult,
     },
     service::{
         ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
@@ -49,35 +44,6 @@ pub type Error = rmcp::ServiceError;
 
 const MCP_APPS_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
 const MCP_APPS_UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
-
-fn extract_sampling_text(
-    content: &[crate::conversation::message::MessageContent],
-) -> Option<String> {
-    let visible_content = content
-        .iter()
-        .filter_map(crate::conversation::message::MessageContent::user_visible_content)
-        .collect::<Vec<_>>();
-    let text = visible_content
-        .iter()
-        .filter_map(|content| match content {
-            crate::conversation::message::MessageContent::Text(text)
-                if !text.text.trim().is_empty() =>
-            {
-                Some(text.text.as_str())
-            }
-            _ => None,
-        })
-        .collect::<String>();
-
-    (!text.is_empty()).then_some(text)
-}
-
-fn resolve_sampling_model_config() -> anyhow::Result<goose_providers::model::ModelConfig> {
-    let config = crate::config::Config::global();
-    let provider_name = config.get_goose_provider()?;
-    let model_name = config.get_goose_model()?;
-    crate::model_config::model_config_from_user_config(&provider_name, &model_name)
-}
 
 fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
     let mut extensions = ExtensionCapabilities::new();
@@ -205,7 +171,6 @@ impl Drop for ActiveToolCallGuard {
 
 pub struct GooseClient {
     notification_handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
-    provider: SharedProvider,
     session_id: Mutex<Option<String>>,
     active_tool_calls: Arc<StdMutex<HashMap<String, Vec<String>>>>,
     client_name: String,
@@ -218,7 +183,6 @@ pub struct GooseClient {
 impl GooseClient {
     pub(crate) fn new(
         handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
-        provider: SharedProvider,
         client_name: String,
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
@@ -227,7 +191,6 @@ impl GooseClient {
     ) -> Self {
         GooseClient {
             notification_handlers: handlers,
-            provider,
             session_id: Mutex::new(None),
             active_tool_calls: Arc::new(StdMutex::new(HashMap::new())),
             client_name,
@@ -429,100 +392,6 @@ impl ClientHandler for GooseClient {
         );
     }
 
-    #[expect(deprecated)]
-    async fn create_message(
-        &self,
-        params: CreateMessageRequestParams,
-        context: RequestContext<RoleClient>,
-    ) -> Result<CreateMessageResult, ErrorData> {
-        let provider = self
-            .provider
-            .lock()
-            .await
-            .as_ref()
-            .ok_or(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Could not use provider",
-                None,
-            ))?
-            .clone();
-
-        // Prefer explicit MCP metadata, then the active request scope.
-        let session_id = self.resolve_session_id(&context.extensions).await;
-
-        let provider_ready_messages: Vec<crate::conversation::message::Message> = params
-            .messages
-            .iter()
-            .map(|msg| {
-                let base = match msg.role {
-                    Role::User => crate::conversation::message::Message::user(),
-                    Role::Assistant => crate::conversation::message::Message::assistant(),
-                };
-
-                match msg.content.first().and_then(|c| c.as_text()) {
-                    Some(text) => base.with_text(&text.text),
-                    None => base,
-                }
-            })
-            .collect();
-
-        let system_prompt = params
-            .system_prompt
-            .as_deref()
-            .unwrap_or("You are a general-purpose AI agent called goose");
-
-        let model_config = resolve_sampling_model_config().map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Could not resolve model config",
-                Some(Value::from(e.to_string())),
-            )
-        })?;
-        let (response, usage) = crate::session_context::with_session_id(
-            session_id.clone(),
-            provider.complete(&model_config, system_prompt, &provider_ready_messages, &[]),
-        )
-        .await
-        .map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Unexpected error while completing the prompt",
-                Some(Value::from(e.to_string())),
-            )
-        })?;
-
-        let sampling_content = if let Some(text) = extract_sampling_text(&response.content) {
-            SamplingMessageContentBlock::text(text)
-        } else if let Some(crate::conversation::message::MessageContent::Image(img)) = response
-            .content
-            .iter()
-            .filter_map(crate::conversation::message::MessageContent::user_visible_content)
-            .find(|content| {
-                matches!(
-                    content,
-                    crate::conversation::message::MessageContent::Image(_)
-                )
-            })
-        {
-            SamplingMessageContentBlock::Image(rmcp::model::ImageContent::new(
-                img.data.clone(),
-                img.mime_type.clone(),
-            ))
-        } else {
-            return Err(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Provider returned no usable text or image content for sampling",
-                None,
-            ));
-        };
-
-        Ok(CreateMessageResult::new(
-            SamplingMessage::new(Role::Assistant, sampling_content),
-            usage.model,
-        )
-        .with_stop_reason(CreateMessageResult::STOP_REASON_END_TURN))
-    }
-
     async fn create_elicitation(
         &self,
         request: ElicitRequestParams,
@@ -599,7 +468,6 @@ impl ClientHandler for GooseClient {
             ClientCapabilities::builder()
                 .enable_roots()
                 .enable_extensions_with(extensions)
-                .enable_sampling()
                 .enable_elicitation()
                 .build(),
             self.resolved_client_info(),
@@ -638,7 +506,6 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
 #[derive(Clone)]
 pub(crate) struct ConnectContext {
     pub timeout: Duration,
-    pub provider: SharedProvider,
     pub client_name: String,
     pub capabilities: GooseMcpClientCapabilities,
     pub working_dir: PathBuf,
@@ -667,7 +534,6 @@ impl McpClient {
     {
         let ConnectContext {
             timeout,
-            provider,
             client_name,
             capabilities,
             working_dir,
@@ -680,7 +546,6 @@ impl McpClient {
 
         let client = GooseClient::new(
             notification_subscribers.clone(),
-            provider,
             client_name.clone(),
             capabilities.clone(),
             working_dir,
@@ -1171,74 +1036,6 @@ fn inject_session_context_into_request(
 mod tests {
     use super::*;
 
-    #[test]
-    fn sampling_text_preserves_text_first_provider_responses() {
-        let response = crate::conversation::message::Message::assistant().with_text("answer");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("answer")
-        );
-    }
-
-    #[test]
-    fn sampling_text_skips_thinking_before_final_text() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("internal reasoning", "signature")
-            .with_text("final answer");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("final answer")
-        );
-    }
-
-    #[test]
-    fn sampling_text_preserves_fragments_around_thinking() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_text("first")
-            .with_thinking("internal reasoning", "signature")
-            .with_text(" second");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("first second")
-        );
-    }
-
-    #[test]
-    fn sampling_text_excludes_assistant_only_blocks_without_changing_visible_text() {
-        let assistant_only = rmcp::model::TextContent::new("assistant only").with_annotations(
-            rmcp::model::Annotations::default().with_audience(vec![Role::Assistant]),
-        );
-        let response = crate::conversation::message::Message::assistant()
-            .with_text("Hello")
-            .with_content(crate::conversation::message::MessageContent::Text(
-                assistant_only,
-            ))
-            .with_text(" world");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("Hello world")
-        );
-    }
-
-    #[test]
-    fn sampling_text_rejects_thinking_only_responses() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("internal reasoning", "signature");
-
-        assert_eq!(extract_sampling_text(&response.content), None);
-    }
-
-    #[test]
-    fn sampling_does_not_expose_json_from_thinking_only_response() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("{\"private\":true}", "signature");
-
-        assert_eq!(extract_sampling_text(&response.content), None);
-    }
     use crate::agents::extension::ExtensionConfig;
     use crate::agents::GoosePlatform;
     use rmcp::model::Tool;
@@ -1314,7 +1111,6 @@ mod tests {
 
         GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             platform.to_string(),
             capabilities,
             std::env::current_dir().unwrap_or_default(),
@@ -1348,7 +1144,6 @@ mod tests {
 
         let goose_client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             "goose-test".to_string(),
             GooseMcpClientCapabilities {
                 mcpui: false,
@@ -1718,10 +1513,17 @@ mod tests {
     }
 
     #[test]
+    fn test_client_capabilities_do_not_advertise_sampling() {
+        let client = new_client(GoosePlatform::GooseCli);
+        let info = ClientHandler::get_info(&client);
+        let capabilities = serde_json::to_value(info.capabilities).unwrap();
+        assert!(capabilities.get("sampling").is_none());
+    }
+
+    #[test]
     fn test_explicit_host_info_passes_through_client_identity() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseDesktop.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: true,
@@ -1756,7 +1558,6 @@ mod tests {
     fn test_explicit_host_extensions_override_platform_fallback() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseCli.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: false,
@@ -1788,7 +1589,6 @@ mod tests {
     fn test_host_identity_does_not_disable_platform_fallback_without_explicit_extensions() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseDesktop.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: true,

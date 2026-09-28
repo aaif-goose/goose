@@ -359,6 +359,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-fable-5" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-fable-5.1" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-opus-5" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-opus-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-opus-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.7" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),

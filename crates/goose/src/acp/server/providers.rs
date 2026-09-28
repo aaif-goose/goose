@@ -5,7 +5,7 @@ use crate::providers::provider_secrets;
 use goose_providers::base::ModelInfo;
 use std::str::FromStr;
 
-const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const ACP_READINESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 fn provider_secret_to_dto(secret: provider_secrets::ProviderSecret) -> ProviderSecretDto {
     let storage = match secret.storage {

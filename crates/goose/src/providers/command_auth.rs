@@ -454,14 +454,11 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn command_runs_with_configured_cwd_and_resolves_relative_path() {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = tempfile::tempdir().unwrap();
-        let script_path = dir.path().join("get-token.sh");
-        std::fs::write(&script_path, "#!/bin/sh\npwd\n").unwrap();
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Avoid ETXTBSY when parallel subprocesses inherit a freshly written executable.
+        std::os::unix::fs::symlink("/bin/pwd", dir.path().join("get-token")).unwrap();
 
-        let mut config = auth_config("./get-token.sh", Vec::<&str>::new(), 3600);
+        let mut config = auth_config("./get-token", Vec::<&str>::new(), 3600);
         config.cwd = Some(dir.path().to_string_lossy().to_string());
         let provider = CommandAuthProvider::new(&config, "Authorization", "Bearer ");
 

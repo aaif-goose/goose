@@ -944,7 +944,6 @@ impl GooseAcpAgent {
             .unwrap_or(false)
     }
 
-    // TODO: goose reads Paths::in_state_dir globally (e.g. RequestLog), ignoring this data_dir.
     pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
         let session_manager = Arc::new(SessionManager::new(options.data_dir));
 
@@ -2713,7 +2712,6 @@ pub async fn run(builtins: Vec<String>, enable_scheduler: bool) -> Result<()> {
     let server = crate::acp::server_factory::AcpServer::new(
         crate::acp::server_factory::AcpServerFactoryConfig {
             builtins: AcpBuiltinSelection::from_requested(builtins),
-            data_dir: Paths::data_dir(),
             config_dir: Paths::config_dir(),
             goose_platform: GoosePlatform::GooseCli,
             additional_source_roots: Vec::new(),
@@ -3272,11 +3270,12 @@ print(\"hello, world\")
             .unwrap();
 
         assert_eq!(empty_audience_content.len(), 2);
-        assert!(empty_audience_content.iter().all(|text| text
-            .annotations
-            .as_ref()
-            .and_then(|annotations| annotations.audience.as_ref())
-            .is_some_and(Vec::is_empty)));
+        assert!(empty_audience_content.iter().all(|text| {
+            text.annotations
+                .as_ref()
+                .and_then(|annotations| annotations.audience.as_ref())
+                .is_some_and(Vec::is_empty)
+        }));
         assert!(audience_omitted_content.annotations.is_none());
         assert!(user_content.as_concat_text().contains("visible text"));
         assert!(user_content

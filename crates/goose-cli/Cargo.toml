@@ -27,7 +27,7 @@ path = "src/bin/mcp_conformance_driver.rs"
 clap_mangen = { version = "0.3", default-features = false }
 goose = { path = "../goose", default-features = false }
 agent-client-protocol = { workspace = true, features = ["unstable"], optional = true }
-goose-mcp = { path = "../goose-mcp", default-features = false }
+goose-mcp = { path = "../goose-mcp", default-features = false, optional = true }
 goose-providers = { path = "../goose-providers", default-features = false }
 goose-roaming = { path = "../goose-roaming", optional = true }
 rmcp = { workspace = true }
@@ -94,6 +94,7 @@ libc = { version = "0.2.182", default-features = false, features = ["std"] }
 [features]
 default = [
     "code-mode",
+    "tree-sitter",
     "local-inference",
     "aws-providers",
     "telemetry",
@@ -103,9 +104,15 @@ default = [
     "live-voice",
     "system-keyring",
     "update",
+    "bundled-mcp",
+    "scheduler",
+    "platform-apps",
+    "chat-recall",
+    "acp-http",
 ]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
+tree-sitter = ["goose/tree-sitter"]
 live-voice = ["goose/live-voice"]
 local-inference = ["goose/local-inference"]
 aws-providers = ["goose/aws-providers"]
@@ -117,7 +124,24 @@ nostr = ["goose/nostr"]
 otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
 update = ["dep:sigstore-verify", "dep:snap"]
-portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
+bundled-mcp = ["dep:goose-mcp", "goose-mcp/bundled-mcp"]
+scheduler = ["goose/scheduler"]
+platform-apps = ["goose/platform-apps"]
+chat-recall = ["goose/chat-recall"]
+acp-http = ["goose/acp-http"]
+portable-default = [
+    "rustls-tls",
+    "tree-sitter",
+    "live-voice",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "bundled-mcp",
+    "scheduler",
+    "platform-apps",
+    "chat-recall",
+    "acp-http",
+]
 # disables the update command
 disable-update = []
 rustls-tls = [
@@ -126,7 +150,7 @@ rustls-tls = [
     "axum-server/tls-rustls",
     "sigstore-verify?/rustls",
     "goose/rustls-tls",
-    "goose-mcp/rustls-tls",
+    "goose-mcp?/rustls-tls",
     "goose-providers/rustls-tls",
 ]
 native-tls = [
@@ -135,7 +159,7 @@ native-tls = [
     "axum-server/tls-openssl",
     "sigstore-verify?/native-tls",
     "goose/native-tls",
-    "goose-mcp/native-tls",
+    "goose-mcp?/native-tls",
     "goose-providers/native-tls",
 ]
 [dev-dependencies]

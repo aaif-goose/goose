@@ -125,6 +125,33 @@ export default function BaseChat({
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
   const onStreamFinish = useCallback(() => {}, []);
 
+  const [pendingQuote, setPendingQuote] = useState<string | null>(null);
+  const [quoteButtonPos, setQuoteButtonPos] = useState<{ x: number; y: number } | null>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setQuoteButtonPos(null);
+        return;
+      }
+      if (
+        !conversationRef.current ||
+        !conversationRef.current.contains(sel.anchorNode)
+      ) {
+        setQuoteButtonPos(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setQuoteButtonPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
   useEffect(() => subscribeToAcpRecovery(setAcpRecovering), []);
 
   const {
@@ -521,6 +548,7 @@ export default function BaseChat({
             {messages.length > 0 || recipe ? (
               <>
                 <SearchView>
+                  <div ref={conversationRef}>
                   <ProgressiveMessageList
                     messages={messages}
                     sessionId={sessionId}
@@ -532,6 +560,7 @@ export default function BaseChat({
                     onMessageUpdate={onMessageUpdate}
                     submitElicitationResponse={submitElicitationResponse}
                   />
+                  </div>
                 </SearchView>
 
                 <div className="block h-8" />
@@ -550,6 +579,25 @@ export default function BaseChat({
           <div role="status" className="mx-4 mb-2 text-sm text-text-secondary">
             {intl.formatMessage(i18n.reconnecting)}
           </div>
+        )}
+
+        {quoteButtonPos && (
+          <button
+            className="fixed z-50 -translate-x-1/2 -translate-y-full rounded-md bg-background-inverse px-2 py-1 text-xs font-medium text-text-inverse shadow-md hover:opacity-90"
+            style={{ left: quoteButtonPos.x, top: quoteButtonPos.y }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const sel = window.getSelection();
+              const text = sel?.toString().trim() ?? '';
+              if (text) {
+                setPendingQuote(text);
+                sel?.removeAllRanges();
+              }
+              setQuoteButtonPos(null);
+            }}
+          >
+            Add to message
+          </button>
         )}
 
         <ChatInputCard
@@ -605,6 +653,8 @@ export default function BaseChat({
               stop: liveVoice.stop,
               toggleMute: liveVoice.toggleMute,
             }}
+            appendQuote={pendingQuote}
+            onAppendQuoteConsumed={() => setPendingQuote(null)}
             {...customChatInputProps}
           />
         </ChatInputCard>

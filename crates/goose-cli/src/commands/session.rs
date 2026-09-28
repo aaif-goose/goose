@@ -32,7 +32,12 @@ fn display_path_with_tilde(path: &Path) -> String {
 async fn remove_sessions(session_manager: &SessionManager, sessions: Vec<Session>) -> Result<()> {
     println!("The following sessions will be removed:");
     for session in &sessions {
-        println!("- {} {}", session.id, session.name);
+        println!(
+            "- {} {} ({})",
+            session.id,
+            session.name,
+            display_path_with_tilde(&session.working_dir)
+        );
     }
 
     let should_delete = confirm("Are you sure you want to delete these sessions?")
@@ -70,8 +75,13 @@ fn prompt_interactive_session_removal(sessions: &[Session]) -> Result<Vec<Sessio
                 &s.name
             };
             let truncated_desc = safe_truncate(desc, TRUNCATED_DESC_LENGTH);
-            let display_text =
-                format!("{} - {} ({})", session_activity_at(s), truncated_desc, s.id);
+            let display_text = format!(
+                "{} - {} ({}) - {}",
+                session_activity_at(s),
+                truncated_desc,
+                s.id,
+                display_path_with_tilde(&s.working_dir)
+            );
             (display_text, s.clone())
         })
         .collect();
@@ -141,6 +151,24 @@ pub async fn handle_session_remove(
     }
 
     remove_sessions(&session_manager, matched_sessions).await
+}
+
+pub async fn handle_session_rename(session_id: String, new_name: String) -> Result<()> {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        anyhow::bail!("Session name cannot be empty");
+    }
+
+    let session_manager = SessionManager::instance();
+
+    session_manager
+        .update(&session_id)
+        .user_provided_name(new_name)
+        .apply()
+        .await?;
+
+    println!("Session `{}` renamed to '{}'.", session_id, new_name);
+    Ok(())
 }
 
 fn write_line_or_broken_pipe_ok<W: Write>(out: &mut W, line: &str) -> Result<bool> {
@@ -462,7 +490,7 @@ pub async fn prompt_interactive_session_selection(
     }
 
     // Build the selection prompt
-    let mut selector = select("Select a session to export:");
+    let mut selector = select("Select a session");
 
     // Map to display text
     let display_map: std::collections::HashMap<String, Session> = sessions
@@ -487,13 +515,13 @@ pub async fn prompt_interactive_session_selection(
 
     // Add a cancel option
     let cancel_value = String::from("cancel");
-    selector = selector.item(cancel_value, "Cancel", "Cancel export");
+    selector = selector.item(cancel_value, "Cancel", "");
 
     // Get user selection
     let selected_display_text: String = selector.interact()?;
 
     if selected_display_text == "cancel" {
-        return Err(anyhow::anyhow!("Export canceled"));
+        return Err(anyhow::anyhow!("No session selected"));
     }
 
     // Retrieve the selected session

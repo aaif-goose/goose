@@ -20,6 +20,18 @@ otel = [
     "dep:opentelemetry-stdout",
 ]
 code-mode = ["dep:pctx_code_mode"]
+tree-sitter = [
+    "dep:tree-sitter",
+    "dep:tree-sitter-go",
+    "dep:tree-sitter-java",
+    "dep:tree-sitter-javascript",
+    "dep:tree-sitter-kotlin-ng",
+    "dep:tree-sitter-python",
+    "dep:tree-sitter-ruby",
+    "dep:tree-sitter-rust",
+    "dep:tree-sitter-swift",
+    "dep:tree-sitter-typescript",
+]
 live-voice = ["goose-providers/live-websocket"]
 local-inference = [
     "dep:candle-core",
@@ -58,6 +70,7 @@ rustls-tls = [
     "oauth2/reqwest",
     "oauth2/rustls-tls",
     "goose-providers/rustls-tls",
+    "goose-context-management/rustls-tls",
 ]
 native-tls = [
     "dep:rcgen",
@@ -76,10 +89,26 @@ native-tls = [
     "oauth2/reqwest",
     "oauth2/native-tls",
     "goose-providers/native-tls",
+    "goose-context-management/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-portable-default = ["rustls-tls", "live-voice", "aws-providers", "telemetry", "otel"]
+portable-default = [
+    "rustls-tls",
+    "tree-sitter",
+    "live-voice",
+    "aws-providers",
+    "telemetry",
+    "otel",
+    "scheduler",
+    "platform-apps",
+    "chat-recall",
+    "acp-http",
+]
 nostr = ["dep:nostr", "dep:nostr-sdk"]
+platform-apps = []
+chat-recall = []
+scheduler = ["dep:tokio-cron-scheduler"]
+acp-http = ["dep:agent-client-protocol-http"]
 
 [lints]
 workspace = true
@@ -143,7 +172,7 @@ goose-download-manager = { path = "../goose-download-manager" }
 goose-sdk-types = { path = "../goose-sdk-types" }
 goose-agent = { path = "../goose-agent" }
 rand = { workspace = true }
-tokio-cron-scheduler = { version = "0.15", default-features = false }
+tokio-cron-scheduler = { version = "0.15", default-features = false, optional = true }
 urlencoding = { workspace = true }
 v_htmlescape = { version = "0.17", default-features = false, features = ["std"] }
 sqlx = { version = "0.9.0", default-features = false, features = [
@@ -175,11 +204,10 @@ tempfile = { workspace = true }
 tokio-util = { workspace = true, features = ["compat"] }
 agent-client-protocol-schema = { workspace = true }
 agent-client-protocol = { workspace = true, features = [
-    "unstable_elicitation",
     "unstable_end_turn_token_usage",
     "unstable_session_fork",
 ] }
-agent-client-protocol-http = { workspace = true, features = ["server"] }
+agent-client-protocol-http = { workspace = true, features = ["server"], optional = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 
 # For local Whisper transcription (optional, behind "local-inference" feature)
@@ -199,23 +227,23 @@ shellexpand = { workspace = true }
 indexmap = { version = "2.9", default-features = false, features = ["serde", "std"] }
 ignore = { workspace = true }
 rayon = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-go = { workspace = true }
-tree-sitter-java = { workspace = true }
-tree-sitter-javascript = { workspace = true }
-tree-sitter-kotlin-ng = { workspace = true }
-tree-sitter-python = { workspace = true }
-tree-sitter-ruby = { workspace = true }
-tree-sitter-rust = { workspace = true }
-tree-sitter-swift = { workspace = true }
-tree-sitter-typescript = { workspace = true }
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-java = { workspace = true, optional = true }
+tree-sitter-javascript = { workspace = true, optional = true }
+tree-sitter-kotlin-ng = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
+tree-sitter-ruby = { workspace = true, optional = true }
+tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter-swift = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
 which = { workspace = true }
 pastey = { version = "0.2", default-features = false }
 shell-words = { workspace = true }
 goose-acp-macros = { path = "../goose-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
-process-wrap = { version = "9", default-features = false, features = ["std"] }
+process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }
 nostr = { version = "0.45.1", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
 nostr-sdk = { version = "0.45.1", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }
@@ -287,8 +315,13 @@ path = "examples/test_whisper.rs"
 required-features = ["local-inference"]
 
 [[bin]]
+name = "goose-acp"
+path = "src/bin/goose-acp.rs"
+
+[[bin]]
 name = "analyze_cli"
 path = "src/bin/analyze_cli.rs"
+required-features = ["tree-sitter"]
 
 [[bin]]
 name = "build_canonical_models"
