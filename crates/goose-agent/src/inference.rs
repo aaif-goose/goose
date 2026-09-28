@@ -242,6 +242,17 @@ fn ends_with_provider_turn(messages: &[Message]) -> bool {
     })
 }
 
+fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
+    let projected = messages_for_provider(conversation, turn, true);
+    if projected
+        .last()
+        .is_some_and(|message| message.content.is_empty())
+    {
+        return false;
+    }
+    ends_with_provider_turn(&messages_for_provider(conversation, turn, false))
+}
+
 fn cancellation_response(persisted: &[Message], pending: &[Message]) -> Option<Message> {
     let mut answered = persisted
         .iter()
@@ -347,8 +358,7 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
         };
-        trailing_error(conversation).is_none()
-            && ends_with_provider_turn(&messages_for_provider(conversation, turn, true))
+        trailing_error(conversation).is_none() && should_infer(conversation, turn)
     }
 
     async fn infer(
@@ -363,7 +373,7 @@ impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> 
             return not_applicable();
         }
 
-        if !ends_with_provider_turn(&messages_for_provider(conversation, messages, true)) {
+        if !should_infer(conversation, messages) {
             return not_applicable();
         }
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
