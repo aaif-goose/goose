@@ -2,7 +2,7 @@ use crate::config::paths::Paths;
 use goose_providers::canonical::{load_cached_catalog, refresh_remote_catalog};
 use std::path::PathBuf;
 
-const CATALOG_URL_ENV: &str = "GOOSE_MODEL_CATALOG_URL";
+const CATALOG_URL: &str = "https://models.dev/api.json";
 
 fn cache_dir() -> PathBuf {
     Paths::in_data_dir("model_catalog")
@@ -14,15 +14,8 @@ pub fn initialize() {
         tracing::warn!(%error, "ignoring invalid cached model catalog");
     }
 
-    let Ok(url) = std::env::var(CATALOG_URL_ENV) else {
-        return;
-    };
-    if url.trim().is_empty() {
-        return;
-    }
-
     tokio::spawn(async move {
-        if let Err(error) = refresh_remote_catalog(&url, &cache_dir).await {
+        if let Err(error) = refresh_remote_catalog(CATALOG_URL, &cache_dir).await {
             tracing::warn!(%error, "failed to refresh remote model catalog");
         }
     });

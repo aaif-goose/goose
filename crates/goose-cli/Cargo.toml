@@ -109,7 +109,9 @@ default = [
     "platform-apps",
     "chat-recall",
     "acp-http",
+    "online-model-meta",
 ]
+online-model-meta = ["goose/online-model-meta"]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
 tree-sitter = ["goose/tree-sitter"]

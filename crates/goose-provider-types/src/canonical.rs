@@ -1,5 +1,6 @@
 pub mod catalog;
 mod model;
+pub mod models_dev;
 mod name_builder;
 mod registry;
 

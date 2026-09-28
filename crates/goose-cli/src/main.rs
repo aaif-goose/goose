@@ -21,6 +21,7 @@ async fn run() -> Result<()> {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
 
+    #[cfg(feature = "online-model-meta")]
     goose::model_catalog::initialize();
 
     let result = cli().await;

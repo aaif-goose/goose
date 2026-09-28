@@ -10,6 +10,7 @@ description.workspace = true
 
 [features]
 default = []
+online-model-meta = []
 telemetry = []
 otel = [
     "dep:tracing-opentelemetry",

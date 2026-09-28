@@ -10,15 +10,16 @@ use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
 const MAX_CATALOG_BYTES: usize = 32 * 1024 * 1024;
-const CATALOG_FILENAME: &str = "canonical_models.json";
-const ETAG_FILENAME: &str = "canonical_models.etag";
+const CATALOG_FILENAME: &str = "models_dev_api.json";
+const ETAG_FILENAME: &str = "models_dev_api.etag";
 
 static ACTIVE_REGISTRY: Lazy<RwLock<Result<CanonicalModelRegistry>>> = Lazy::new(|| {
-    let bundled = zstd::decode_all(include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst")).as_slice())
-        .context("Failed to decompress bundled canonical models JSON")
-        .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?));
+    let bundled = zstd::decode_all(
+        include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst")).as_slice(),
+    )
+    .context("Failed to decompress bundled canonical models JSON")
+    .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?));
     RwLock::new(bundled)
-
 });
 
 pub struct CanonicalModelRegistryGuard(RwLockReadGuard<'static, Result<CanonicalModelRegistry>>);
@@ -44,7 +45,9 @@ impl CanonicalModelRegistry {
     }
 
     pub fn bundled() -> Result<CanonicalModelRegistryGuard> {
-        let guard = ACTIVE_REGISTRY.read().map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))?;
+        let guard = ACTIVE_REGISTRY
+            .read()
+            .map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))?;
         if let Err(error) = &*guard {
             anyhow::bail!("{error}");
         }
@@ -123,7 +126,7 @@ impl Default for CanonicalModelRegistry {
 fn activate(registry: CanonicalModelRegistry) -> Result<()> {
     *ACTIVE_REGISTRY
         .write()
-        .map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))? = registry;
+        .map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))? = Ok(registry);
     Ok(())
 }
 
@@ -132,7 +135,8 @@ pub fn load_cached_catalog(cache_dir: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
-    activate(CanonicalModelRegistry::from_file(path)?)?;
+    let content = std::fs::read_to_string(path)?;
+    activate(super::models_dev::from_models_dev(&content)?)?;
     Ok(true)
 }
 
@@ -141,7 +145,10 @@ pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool>
         .timeout(Duration::from_secs(15))
         .build()?;
     let etag_path = cache_dir.join(ETAG_FILENAME);
-    let mut request = client.get(url).header("User-Agent", "goose/model-catalog");
+    let mut request = client.get(url).header(
+        "User-Agent",
+        "goose/model-catalog (https://github.com/aaif-goose/goose)",
+    );
     if let Ok(etag) = std::fs::read_to_string(&etag_path) {
         request = request.header(IF_NONE_MATCH, etag);
     }
@@ -171,7 +178,7 @@ pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool>
         body.extend_from_slice(&chunk);
     }
     let content = std::str::from_utf8(&body).context("canonical model catalog is not UTF-8")?;
-    let registry = CanonicalModelRegistry::from_json(content)?;
+    let registry = super::models_dev::from_models_dev(content)?;
 
     std::fs::create_dir_all(cache_dir)?;
     atomic_write(cache_dir.join(CATALOG_FILENAME), &body)?;
