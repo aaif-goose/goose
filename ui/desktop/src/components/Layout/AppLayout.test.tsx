@@ -32,11 +32,6 @@ vi.mock('../ChatSessionsContainer', async () => {
   return { default: ChatSessionsContainerMock };
 });
 
-Object.defineProperty(window, 'electron', {
-  configurable: true,
-  value: { platform: 'win32', on: vi.fn(), off: vi.fn() },
-});
-
 describe('AppLayout', () => {
   it('keeps the chat mounted when visiting settings and returning', () => {
     chatMounts.mockClear();
