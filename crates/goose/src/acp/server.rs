@@ -3526,6 +3526,55 @@ print(\"hello, world\")
         );
     }
 
+    #[tokio::test]
+    async fn initialize_stamps_the_protocol_version_goose_implements() {
+        let root = tempfile::tempdir().unwrap();
+        let active_runs = Arc::new(ActiveRunRegistry::default());
+        let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
+        let provider_factory: AcpProviderFactory = Arc::new(
+            |_provider_name, _extensions, _working_dir, _use_default_model| {
+                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+            },
+        );
+        let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
+            provider_factory,
+            builtin_selection: AcpBuiltinSelection::default(),
+            data_dir: root.path().to_path_buf(),
+            config_dir: root.path().to_path_buf(),
+            disable_session_naming: true,
+            goose_platform: GoosePlatform::GooseCli,
+            additional_source_roots: Vec::new(),
+            scheduler: None,
+            session_cwd: None,
+            active_runs,
+            live_voice,
+        })
+        .await
+        .unwrap();
+
+        let offered_v2 = agent_client_protocol::schema::ProtocolVersion::from(2u16);
+        let response = agent
+            .on_initialize(InitializeRequest::new(offered_v2))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.protocol_version,
+            agent_client_protocol::schema::ProtocolVersion::V1,
+            "goose implements ACP v1 and must stamp v1 even when the client offers v2"
+        );
+
+        let response = agent
+            .on_initialize(InitializeRequest::new(
+                agent_client_protocol::schema::ProtocolVersion::V1,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.protocol_version,
+            agent_client_protocol::schema::ProtocolVersion::V1
+        );
+    }
+
     #[test]
     fn test_goose_custom_notifications_capability_reads_client_meta() {
         let mut goose_meta = serde_json::Map::new();
