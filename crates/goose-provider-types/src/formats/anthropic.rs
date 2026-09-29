@@ -777,39 +777,60 @@ pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
 fn adaptive_effort_wire(provider_name: &str, model_config: &ModelConfig) -> String {
     let effort = adaptive_output_effort(model_config);
     // Meta Messages accepts low, medium, high, and xhigh. goose's max maps to xhigh.
-    if provider_name == "muse_code" && effort == ThinkingEffort::Max {
+    if provider_name == "muse_code" && effort == "max" {
         return "xhigh".to_string();
     }
-    effort.to_string()
+    effort
 }
 
-pub fn adaptive_output_effort(model_config: &ModelConfig) -> ThinkingEffort {
-    match thinking_effort(model_config) {
+pub fn adaptive_output_effort(model_config: &ModelConfig) -> String {
+    let effort = match thinking_effort(model_config) {
         ThinkingEffort::Off => ThinkingEffort::High,
         effort => effort,
+    };
+    let preferred: &[&str] = match effort {
+        ThinkingEffort::Off => unreachable!(),
+        ThinkingEffort::Low => &["low", "medium", "high", "xhigh", "max"],
+        ThinkingEffort::Medium => &["medium", "high", "low", "xhigh", "max"],
+        ThinkingEffort::High => &["high", "medium", "xhigh", "low", "max"],
+        ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],
+    };
+    let supported = maybe_get_canonical_model(ANTHROPIC_PROVIDER_NAME, &model_config.model_name)
+        .and_then(|model| model.reasoning_efforts);
+    match supported {
+        Some(values) => preferred
+            .iter()
+            .find(|level| values.iter().any(|value| value == **level))
+            .map(|level| (*level).to_string())
+            .unwrap_or_else(|| effort.to_string()),
+        None => effort.to_string(),
     }
 }
 
 pub fn thinking_budget_tokens(model_config: &ModelConfig) -> i32 {
+    let minimum = maybe_get_canonical_model(ANTHROPIC_PROVIDER_NAME, &model_config.model_name)
+        .and_then(|model| model.reasoning_budget_min)
+        .unwrap_or(1024);
     if let Some(request_param) = model_config
         .request_params
         .as_ref()
         .and_then(|params| params.get("budget_tokens"))
         .and_then(|v| serde_json::from_value::<i32>(v.clone()).ok())
     {
-        return request_param.max(1024);
+        return request_param.max(minimum);
     }
 
     let effort = model_config
         .thinking_effort()
         .unwrap_or(ThinkingEffort::High);
-    match effort {
+    let budget = match effort {
         ThinkingEffort::Off => 1024,
         ThinkingEffort::Low => 4000,
         ThinkingEffort::Medium => 10000,
         ThinkingEffort::High => 16000,
         ThinkingEffort::Max => 32000,
-    }
+    };
+    budget.max(minimum)
 }
 
 // Anthropic counts thinking tokens against max_tokens, so the budget must leave
@@ -2355,6 +2376,34 @@ mod tests {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!(effort));
         ModelConfig::new(name).with_merged_request_params(params)
+    }
+
+    #[test]
+    fn test_adaptive_effort_prefers_catalog_options() {
+        let max = cfg_with_effort("claude-opus-4-6", "max");
+        assert_eq!(adaptive_output_effort(&max), "max");
+        let unsupported_max = cfg_with_effort("claude-opus-4-5", "max");
+        assert_eq!(adaptive_output_effort(&unsupported_max), "high");
+        assert_eq!(
+            adaptive_output_effort(&cfg_with_effort("claude-opus-4-7", "max")),
+            "max"
+        );
+        assert_eq!(
+            adaptive_output_effort(&cfg_with_effort("unknown-model", "max")),
+            "max"
+        );
+    }
+
+    #[test]
+    fn test_budget_minimum_comes_from_catalog_when_available() {
+        let explicit = cfg_with_effort("claude-sonnet-4-5", "high").with_merged_request_params(
+            std::collections::HashMap::from([("budget_tokens".to_string(), json!(1))]),
+        );
+        assert_eq!(thinking_budget_tokens(&explicit), 1024);
+        assert_eq!(
+            thinking_budget_tokens(&cfg_with_effort("claude-sonnet-4-5", "low")),
+            4000
+        );
     }
 
     #[test]

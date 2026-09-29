@@ -131,6 +131,10 @@ pub struct CanonicalModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_efforts: Option<Vec<String>>,
 
+    /// Minimum thinking budget advertised by models.dev, when budget_tokens is supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_budget_min: Option<i32>,
+
     /// Request shape to use when enabling thinking/reasoning.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_mode: Option<ThinkingMode>,
