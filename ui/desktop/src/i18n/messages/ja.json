@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "自動圧縮の実行タイミング"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "今すぐ圧縮"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "しきい値の保存に失敗しました: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "了解しました"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gooseがタスクを完了しました。"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "コンテキストウィンドウ"
   },
   "chatInput.dictationError": {
     "defaultMessage": "音声入力エラー"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "作業ディレクトリの更新に失敗しました"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "次のURLにアクセスし、"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} 中 {used} トークンを使用中。コンテキストウィンドウの内容を表示"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "今すぐコンパクト化"
+  },
+  "contextXray.free": {
+    "defaultMessage": "空き"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "コンテキストレポートを読み込めませんでした。"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} トークンのコンテキストウィンドウ"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "更新"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "再試行"
+  },
+  "contextXray.title": {
+    "defaultMessage": "コンテキストウィンドウ"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "トークン数は o200k トークナイザーによる推定値です。"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} トークン · コンテキストウィンドウの {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "指示とヒント"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "コンパクト化の要約"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "拡張機能の指示"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "会話"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "システムプロンプト"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "ツール定義"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "ターンコンテキスト"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "オペレーションベースのエージェントループを使用します。オフにすると従来のループを使用します。"
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "エージェントループ"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} は独自の会話履歴を保持し、goose からは最新のプロンプトのみを受け取るため、内訳を表示するリクエストはありません。"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "自動コンパクション閾値を超えています。次のリクエストを送信する前に会話がコンパクションされます。"
   }
 }

@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Padatkan otomatis pada"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Padatkan sekarang"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Gagal menyimpan ambang batas: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Mengerti!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose telah menyelesaikan tugas."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Jendela konteks"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Kesalahan Dikte"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal memperbarui direktori kerja"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Kunjungi"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} dari {limit} token terpakai. Tampilkan isi jendela konteks"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Kompaksi sekarang"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Kosong"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Tidak dapat memuat laporan konteks."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · jendela konteks {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Muat ulang"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Coba lagi"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Jendela konteks"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jumlah token diperkirakan dengan tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "dari {limit} token · {percent} dari jendela konteks"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instruksi & petunjuk"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Ringkasan kompaksi"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instruksi ekstensi"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Percakapan"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt sistem"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definisi alat"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Konteks giliran"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "Gunakan loop agen berbasis operasi. Matikan untuk menggunakan loop lama."
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Loop agen"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} menyimpan riwayat percakapannya sendiri dan hanya menerima prompt terbaru dari goose, sehingga tidak ada permintaan yang bisa diuraikan."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Melewati ambang pemadatan otomatis: percakapan dipadatkan sebelum permintaan berikutnya dikirim."
   }
 }

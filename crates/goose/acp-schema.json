@@ -1438,6 +1438,179 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/diagnostics/get"
     },
+    "ContextReportRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "unrolledAgentLoop": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Which loop to model, matching the `unrolledAgentLoop` prompt meta the\nclient sends. Defaults to the agent's own default when omitted."
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Break down what fills the model's context window if the session were\nprompted right now. Makes no model call.",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ContextReportModel"
+        },
+        "totalTokens": {
+          "type": "integer",
+          "description": "Measured with goose's local tokenizer; always the sum of the segments.",
+          "minimum": 0
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextSegment"
+          },
+          "description": "Non-overlapping. Prompt and tool segments come in request order; the\nconversation follows grouped by message kind, with each part labelled\nby its position in the request."
+        },
+        "providerManagesContext": {
+          "type": "boolean",
+          "description": "The provider keeps its own history and only receives the latest prompt\n(Claude Code, Gemini CLI), so goose assembles no request to break down;\n`segments` is empty and `total_tokens` is zero."
+        },
+        "autoCompactionPending": {
+          "type": "boolean",
+          "description": "The session is past the auto-compaction threshold, so the loop compacts\nthe conversation before it sends the next request."
+        }
+      },
+      "required": [
+        "model",
+        "totalTokens",
+        "segments",
+        "providerManagesContext",
+        "autoCompactionPending"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/context/report"
+    },
+    "ContextReportModel": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "contextLimit": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "modelName",
+        "contextLimit"
+      ]
+    },
+    "ContextSegment": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/ContextCategory"
+        },
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Display-only provenance, such as a file path or a tool count."
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Truncated with a trailing `… (+N more chars)` marker. Omitted when\n`parts` carries the previews."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContextPart"
+          }
+        }
+      },
+      "required": [
+        "category",
+        "label",
+        "tokenCount"
+      ]
+    },
+    "ContextCategory": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "extension_instructions",
+            "turn_context",
+            "tool_definitions",
+            "compaction_summary",
+            "messages"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "system_prompt",
+          "description": "The base prompt, plus the residual row that reconciles the segments\nwith the request total."
+        },
+        {
+          "type": "string",
+          "const": "additional_instructions",
+          "description": "Hint files, project instructions and other prompt extras."
+        }
+      ]
+    },
+    "ContextPart": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentPreview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "tokenCount"
+      ],
+      "description": "Parts add up to their segment's `tokenCount`, except where a segment is\nsplit into prose sections; there the headings and framing are carried by\nthe segment alone."
+    },
     "ListPromptsRequest_unstable": {
       "type": "object",
       "description": "List all available goose prompt templates.",
@@ -7276,6 +7449,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ContextReportRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/context/report",
+                  "title": "ContextReportRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ListPromptsRequest_unstable"
                     }
                   ],
@@ -8252,6 +8434,14 @@
                         }
                       ],
                       "title": "DiagnosticsGetResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ContextReportResponse_unstable"
+                        }
+                      ],
+                      "title": "ContextReportResponse_unstable"
                     },
                     {
                       "allOf": [

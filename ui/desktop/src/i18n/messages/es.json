@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compactar automáticamente al"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compactar ahora"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "No se pudo guardar el umbral: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "¡Entendido!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose terminó la tarea."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Ventana de contexto"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Error de dictado"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "No se pudo actualizar el directorio de trabajo"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} de {limit} tokens usados. Mostrar qué hay en la ventana de contexto"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compactar ahora"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Libre"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "No se pudo cargar el informe de contexto."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · ventana de contexto de {limit} tokens"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Actualizar"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Reintentar"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Ventana de contexto"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "El recuento de tokens se estima con el tokenizador o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "de {limit} tokens · {percent} de la ventana de contexto"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instrucciones y sugerencias"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Resumen de compactación"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instrucciones de extensiones"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversación"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt del sistema"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definiciones de herramientas"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contexto del turno"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "Usa el bucle del agente basado en operaciones. Desactívalo para usar el bucle heredado."
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Bucle del agente"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} mantiene su propio historial de conversación y solo recibe de goose el último mensaje, así que no hay ninguna solicitud que desglosar."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Se superó el umbral de compactación automática: la conversación se compacta antes de enviar la siguiente solicitud."
   }
 }

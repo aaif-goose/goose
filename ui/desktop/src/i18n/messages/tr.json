@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Otomatik sıkıştırma eşiği"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Şimdi sıkıştır"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Eşik kaydedilemedi: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Anladım!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose görevi tamamladı."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Bağlam penceresi"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Dikte Hatası"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Çalışma dizini güncellenemedi"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Ziyaret edin"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} jetonun {used} kadarı kullanıldı. Bağlam penceresindekileri göster"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Şimdi sıkıştır"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Boş"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Bağlam raporu yüklenemedi."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} jetonluk bağlam penceresi"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Yenile"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Yeniden dene"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Bağlam penceresi"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jeton sayıları o200k belirteçleyicisiyle tahmin edilir."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} jeton · bağlam penceresinin {percent} kadarı"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Talimatlar ve ipuçları"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Sıkıştırma özeti"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Uzantı talimatları"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Sohbet"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Sistem istemi"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Araç tanımları"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Tur bağlamı"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "İşlem tabanlı ajan döngüsünü kullanır. Eski döngüyü kullanmak için kapatın."
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Ajan döngüsü"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} kendi konuşma geçmişini tutar ve goose'dan yalnızca en son istemi alır; bu nedenle ayrıştırılacak bir istek yok."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Otomatik sıkıştırma eşiği aşıldı: bir sonraki istek gönderilmeden önce konuşma sıkıştırılır."
   }
 }

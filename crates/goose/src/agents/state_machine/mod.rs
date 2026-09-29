@@ -54,7 +54,7 @@ pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_entry_hook::EntryHookOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
+pub(super) use ops_llm::{enrich_unclaimed_tool_errors, GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
@@ -68,6 +68,8 @@ pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
+#[cfg(test)]
+pub(super) use ops_unknown_tool::UNCLAIMED_TOOL_ERROR;
 
 pub fn enabled() -> bool {
     std::env::var("GOOSE_STATE_MACHINE")

@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "自動壓縮於"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "立即壓縮"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "無法儲存閾值：{error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "知道了！"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose 已完成工作。"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "上下文視窗"
   },
   "chatInput.dictationError": {
     "defaultMessage": "聽寫錯誤"
@@ -929,10 +917,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "無法更新工作目錄"
   },
@@ -4704,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "前往"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "已使用 {used} / {limit} 個 token。查看上下文視窗內容"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "立即壓縮"
+  },
+  "contextXray.free": {
+    "defaultMessage": "空閒"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "無法載入上下文報告。"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} token 上下文視窗"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "重新整理"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "重試"
+  },
+  "contextXray.title": {
+    "defaultMessage": "上下文視窗"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "token 數量由 o200k 分詞器估算。"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "/ {limit} 個 token · 佔上下文視窗的 {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "指令與提示"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "壓縮摘要"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "擴充功能指令"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "對話"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "系統提示詞"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "工具定義"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "回合上下文"
+  },
   "settings.agentLoop.description": {
     "defaultMessage": "使用以操作為基礎的代理程式迴圈。關閉後將使用舊版迴圈。"
   },
@@ -4772,5 +4807,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "代理程式迴圈"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} 自行保存對話歷史，只從 goose 接收最新的提示，因此沒有可拆解的請求。"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "已超過自動壓縮閾值：在送出下一個請求之前會先壓縮對話。"
   }
 }

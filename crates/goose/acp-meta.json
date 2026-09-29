@@ -86,6 +86,11 @@
       "responseType": "DiagnosticsGetResponse_unstable"
     },
     {
+      "method": "_goose/unstable/context/report",
+      "requestType": "ContextReportRequest_unstable",
+      "responseType": "ContextReportResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/config/prompts/list",
       "requestType": "ListPromptsRequest_unstable",
       "responseType": "ListPromptsResponse_unstable"

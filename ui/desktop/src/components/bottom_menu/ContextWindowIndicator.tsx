@@ -1,19 +1,20 @@
-import BottomMenuAlertPopover from './BottomMenuAlertPopover';
-import { Alert } from '../alerts';
+import { defineMessages, useIntl } from '../../i18n';
+import { formatTokenCount } from '../../utils/usageFormatting';
 
 interface ContextWindowIndicatorProps {
   totalTokens: number;
   tokenLimit: number;
-  alerts: Alert[];
+  onOpen?: () => void;
 }
 
-const formatTokenCount = (count: number): string => {
-  if (count >= 1_000_000) return `${Math.round(count / 1_000_000)}M`;
-  if (count >= 1_000) return `${Math.round(count / 1_000)}k`;
-  return count.toString();
-};
+const i18n = defineMessages({
+  open: {
+    id: 'contextWindowIndicator.open',
+    defaultMessage: '{used} of {limit} tokens used. Show what is in the context window',
+  },
+});
 
-const getProgressColor = (percentage: number): string => {
+const getTextColor = (percentage: number): string => {
   if (percentage <= 75) return 'text-text-primary/70';
   if (percentage <= 90) return 'text-orange-500';
   return 'text-red-500';
@@ -22,20 +23,32 @@ const getProgressColor = (percentage: number): string => {
 export function ContextWindowIndicator({
   totalTokens,
   tokenLimit,
-  alerts,
+  onOpen,
 }: ContextWindowIndicatorProps) {
+  const intl = useIntl();
   if (!tokenLimit) return null;
 
   const percentage = Math.round((totalTokens / tokenLimit) * 100);
-  const colorClass = getProgressColor(percentage);
+  const used = formatTokenCount(totalTokens);
+  const limit = formatTokenCount(tokenLimit);
+  const content = (
+    <span className={`text-xs font-mono ${getTextColor(percentage)}`}>
+      {used} / {limit}
+    </span>
+  );
+
+  if (!onOpen) {
+    return <div className="flex h-full items-center">{content}</div>;
+  }
 
   return (
-    <div className="flex items-center h-full">
-      <BottomMenuAlertPopover alerts={alerts}>
-        <span className={`text-xs font-mono ${colorClass}`}>
-          {formatTokenCount(totalTokens)} / {formatTokenCount(tokenLimit)}
-        </span>
-      </BottomMenuAlertPopover>
-    </div>
+    <button
+      type="button"
+      aria-label={intl.formatMessage(i18n.open, { used, limit })}
+      className="flex h-full cursor-pointer items-center rounded px-1 hover:bg-background-secondary"
+      onClick={onOpen}
+    >
+      {content}
+    </button>
   );
 }

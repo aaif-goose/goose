@@ -1329,3 +1329,86 @@ fn test_app_tool_call_dispatched_in_auto_mode() {
         assert!(text.contains(FAKE_CODE));
     });
 }
+
+#[test]
+#[serial]
+fn test_custom_context_report() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+
+        // A session with no messages still spends context on the prompt, the
+        // tools and the turn-context event that opens every turn.
+        for unrolled in [false, true] {
+            let empty = send_custom(
+                conn.cx(),
+                "_goose/unstable/context/report",
+                serde_json::json!({ "sessionId": session_id, "unrolledAgentLoop": unrolled }),
+            )
+            .await
+            .unwrap_or_else(|err| {
+                panic!("context report on an empty session (unrolled={unrolled}) failed: {err:?}")
+            });
+            assert!(empty["totalTokens"].as_u64().unwrap() > 0);
+            let turn_context = empty["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|segment| segment["category"] == "turn_context")
+                .unwrap_or_else(|| panic!("unrolled={unrolled} report lacks the turn context"));
+            assert!(turn_context["tokenCount"].as_u64().unwrap() > 0);
+        }
+
+        session
+            .prompt("start work", PermissionDecision::Cancel)
+            .await
+            .expect("prompt should succeed");
+
+        for unrolled in [false, true] {
+            let report = send_custom(
+                conn.cx(),
+                "_goose/unstable/context/report",
+                serde_json::json!({ "sessionId": session_id, "unrolledAgentLoop": unrolled }),
+            )
+            .await
+            .unwrap_or_else(|err| panic!("context report (unrolled={unrolled}) failed: {err:?}"));
+
+            let segments = report["segments"].as_array().expect("segments array");
+            let categories: Vec<&str> = segments
+                .iter()
+                .map(|segment| segment["category"].as_str().unwrap())
+                .collect();
+            for expected in ["system_prompt", "tool_definitions", "messages"] {
+                assert!(
+                    categories.contains(&expected),
+                    "unrolled={unrolled} missing {expected} in {categories:?}"
+                );
+            }
+
+            let assistant = segments
+                .iter()
+                .find(|segment| segment["label"] == "Assistant messages")
+                .expect("assistant segment");
+            let preview = assistant["parts"][0]["contentPreview"].as_str().unwrap();
+            assert!(preview.contains("first response"), "preview: {preview}");
+
+            let attributed: u64 = segments
+                .iter()
+                .map(|segment| segment["tokenCount"].as_u64().unwrap())
+                .sum();
+            assert_eq!(report["totalTokens"].as_u64().unwrap(), attributed);
+            assert!(report["model"]["contextLimit"].as_u64().unwrap() > 0);
+        }
+    });
+}
