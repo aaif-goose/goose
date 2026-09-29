@@ -1,8 +1,6 @@
 #![cfg(target_os = "linux")]
 
-use goose::agents::platform_extensions::developer::shell::{
-    ShellOutput, ShellParams, ShellTool,
-};
+use goose::agents::platform_extensions::developer::shell::{ShellOutput, ShellParams, ShellTool};
 use rmcp::model::CallToolResult;
 use serial_test::serial;
 use std::fs;
@@ -178,9 +176,7 @@ done
 exec "$@"
 "#;
     fs::write(&mock_wrapper, script_content).expect("write mock_fencer.sh");
-    let mut perms = fs::metadata(&mock_wrapper)
-        .expect("metadata")
-        .permissions();
+    let mut perms = fs::metadata(&mock_wrapper).expect("metadata").permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&mock_wrapper, perms).expect("set perms");
 
@@ -228,7 +224,9 @@ exec "$@"
 
     let canonical_work_dir = work_dir.path().canonicalize().expect("canonical work dir");
     assert!(
-        output.stdout.contains(&canonical_work_dir.display().to_string()),
+        output
+            .stdout
+            .contains(&canonical_work_dir.display().to_string()),
         "expected stdout to contain work dir {}, got: {}",
         canonical_work_dir.display(),
         output.stdout
