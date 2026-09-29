@@ -3832,19 +3832,30 @@ print(\"hello, world\")
             client_terminal: Some(false),
             ..Default::default()
         };
-        assert!(!resolve_acp_client_terminal(true, &request, Some(&goose_caps)));
+        assert!(!resolve_acp_client_terminal(
+            true,
+            &request,
+            Some(&goose_caps)
+        ));
 
         let goose_caps_delegate = GooseClientCapabilities {
             delegate_shell: Some(false),
             ..Default::default()
         };
-        assert!(!resolve_acp_client_terminal(true, &request, Some(&goose_caps_delegate)));
+        assert!(!resolve_acp_client_terminal(
+            true,
+            &request,
+            Some(&goose_caps_delegate)
+        ));
     }
 
     #[test]
     fn test_resolve_acp_client_terminal_args_meta_override() {
         let mut meta_map = serde_json::Map::new();
-        meta_map.insert("goose/clientTerminal".to_string(), serde_json::Value::Bool(false));
+        meta_map.insert(
+            "goose/clientTerminal".to_string(),
+            serde_json::Value::Bool(false),
+        );
         let request = InitializeRequest::new(agent_client_protocol::schema::ProtocolVersion::V1)
             .meta(meta_map);
         assert!(!resolve_acp_client_terminal(true, &request, None));
