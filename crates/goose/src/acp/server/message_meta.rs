@@ -1,4 +1,4 @@
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{InferenceSecurity, Message, MessageContent};
 use agent_client_protocol::schema::v1::{ContentBlock, ContentChunk, MessageId, Meta};
 use serde::Serialize;
 
@@ -17,6 +17,8 @@ struct GooseMessageMeta<'a> {
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inference_security: Option<InferenceSecurity>,
 }
 
 fn goose_message_meta(
@@ -29,6 +31,7 @@ fn goose_message_meta(
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
         fallback_content: has_output_token_limit_fallback_content(message),
+        inference_security: message.metadata.inference_security,
     };
 
     match serde_json::to_value(message_meta) {
@@ -44,6 +47,8 @@ fn extend_message_meta(meta: &mut Meta, message: &Message, steer: bool) {
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
 
     if let serde_json::Value::Object(goose) = goose_value {
+        // Content metadata must not supply verification absent from the message.
+        goose.remove("inferenceSecurity");
         goose.extend(message_goose);
     } else {
         *goose_value = serde_json::Value::Object(message_goose);
@@ -104,6 +109,40 @@ mod tests {
     use super::*;
     use agent_client_protocol::schema::v1::TextContent;
     use rmcp::model::Role;
+
+    #[test]
+    fn inference_security_is_carried_in_trusted_message_metadata() {
+        let mut message = Message::assistant().with_text("verified reply");
+        assert!(message_meta(&message)["goose"]
+            .get("inferenceSecurity")
+            .is_none());
+        message.metadata.inference_security = Some(InferenceSecurity::AttestedTee);
+        let chunk = content_chunk_for_message(
+            &message,
+            ContentBlock::Text(TextContent::new("verified reply")),
+        );
+        assert_eq!(
+            chunk.meta.unwrap()["goose"]["inferenceSecurity"],
+            "attested_tee"
+        );
+    }
+
+    #[test]
+    fn content_metadata_cannot_claim_inference_security() {
+        let mut message = Message::assistant().with_text("ordinary reply");
+        let claimed: Meta = serde_json::from_value(serde_json::json!({
+            "goose": { "inferenceSecurity": "attested_tee", "toolCall": { "toolName": "test" } }
+        }))
+        .unwrap();
+        let merged = merge_message_meta(claimed.clone(), &message);
+        assert!(merged["goose"].get("inferenceSecurity").is_none());
+        assert_eq!(merged["goose"]["toolCall"]["toolName"], "test");
+        message.metadata.inference_security = Some(InferenceSecurity::AttestedTee);
+        assert_eq!(
+            merge_message_meta(claimed, &message)["goose"]["inferenceSecurity"],
+            "attested_tee"
+        );
+    }
 
     #[test]
     fn message_meta_serializes_message_fields() {

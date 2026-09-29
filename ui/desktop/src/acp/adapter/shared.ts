@@ -29,6 +29,7 @@ export interface GooseMessageMeta {
   outputTokenLimitReached?: boolean;
   fallbackContent?: boolean;
   steer?: boolean;
+  inferenceSecurity?: Message['metadata']['inferenceSecurity'];
 }
 
 export interface ToolIdentity {
@@ -75,6 +76,7 @@ export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMe
     outputTokenLimitReached: outputTokenLimitReached ? true : undefined,
     fallbackContent: goose.fallbackContent === true ? true : undefined,
     steer: goose.steer === true ? true : undefined,
+    inferenceSecurity: goose.inferenceSecurity === 'attested_tee' ? 'attested_tee' : undefined,
   };
 }
 

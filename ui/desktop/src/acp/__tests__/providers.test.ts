@@ -5,6 +5,7 @@ import {
   acpEnableProvider,
   acpGetProviderDetails,
   acpListProviderDetails,
+  acpListProviderModels,
   acpListSettingsProviderDetails,
   acpListSetupProviderDetails,
   acpRefreshProviderDetails,
@@ -28,6 +29,37 @@ function selectConfigOption(id: string, currentValue: string) {
 describe('ACP providers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('waits for model discovery after setup instead of caching the single-model fallback', async () => {
+    const fallback = providerEntry({
+      providerId: 'tinfoil',
+      providerName: 'Tinfoil',
+      refreshing: true,
+      models: [{ id: 'gpt-oss-120b', name: 'gpt-oss-120b', recommended: true }],
+    });
+    const discovered = {
+      ...fallback,
+      refreshing: false,
+      models: [
+        ...fallback.models,
+        { id: 'new-chat-model', name: 'new-chat-model', recommended: false },
+      ],
+    };
+    const client = {
+      goose: {
+        providersList_unstable: vi
+          .fn()
+          .mockResolvedValueOnce({ entries: [fallback] })
+          .mockResolvedValue({ entries: [discovered] }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    expect(await acpListProviderModels('tinfoil')).toEqual(discovered.models);
+    expect(client.goose.providersList_unstable).toHaveBeenCalledTimes(2);
   });
 
   it('exposes Coding Plan in Desktop setup and refreshes newly discovered models', async () => {

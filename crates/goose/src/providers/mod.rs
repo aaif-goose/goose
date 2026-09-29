@@ -92,6 +92,7 @@ pub mod snowflake {
 pub mod snowflake_def;
 pub mod testprovider;
 pub mod tetrate;
+pub mod tinfoil;
 pub mod toolshim;
 pub mod usage_estimator;
 pub mod utils;

@@ -1493,6 +1493,9 @@
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Ваш YAML- или JSON-файл должен соответствовать этой структуре. Обязательные поля: title, description и instructions или prompt."
   },
+  "inferenceSecurityBadge.label": {
+    "defaultMessage": "Проверенная TEE"
+  },
   "inlineEditText.clickToEdit": {
     "defaultMessage": "Нажмите, чтобы изменить"
   },

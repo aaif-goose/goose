@@ -16,7 +16,7 @@ use tokio_util::io::StreamReader;
 use super::api_client::ApiClient;
 use super::base::{stream_from_single_message, MessageStream, Provider};
 use super::retry::ProviderRetry;
-use crate::conversation::message::Message;
+use crate::conversation::message::{InferenceSecurity, Message};
 use crate::errors::ProviderError;
 use crate::formats::openai::{
     create_request, create_request_for_model_with_options, get_cost, get_usage,
@@ -128,10 +128,12 @@ impl OpenAiCompatibleProvider {
         if self.supports_streaming {
             stream_openai_compat(response, log)
         } else {
+            let inference_security = response.extensions().get::<InferenceSecurity>().copied();
             let json = read_json_response(response).await?;
-            let message = response_to_message(&json).map_err(|e| {
+            let mut message = response_to_message(&json).map_err(|e| {
                 ProviderError::RequestFailed(format!("Failed to parse message: {}", e))
             })?;
+            message.metadata.inference_security = inference_security;
             let usage_json = json.get("usage").unwrap_or(&Value::Null);
             let usage_data = get_usage(usage_json);
             let mut usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
@@ -238,6 +240,7 @@ pub fn stream_openai_compat(
     response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
 ) -> Result<MessageStream, ProviderError> {
+    let inference_security = response.extensions().get::<InferenceSecurity>().copied();
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
     Ok(Box::pin(try_stream! {
@@ -248,10 +251,13 @@ pub fn stream_openai_compat(
         let message_stream = response_to_streaming_message(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
-            let (message, usage) = message.map_err(|e|
+            let (mut message, usage) = message.map_err(|e|
                 e.downcast::<ProviderError>()
                     .unwrap_or_else(ProviderError::stream_decode_error)
             )?;
+            if let Some(message) = &mut message {
+                message.metadata.inference_security = inference_security;
+            }
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
         }

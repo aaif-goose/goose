@@ -26,6 +26,7 @@ export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatSta
 
   const gooseMeta = getGooseMessageMeta(update);
   const message = getOrCreateAssistantMessageForUpdate(state, gooseMeta);
+  message.metadata.inferenceSecurity = gooseMeta.inferenceSecurity;
 
   if (
     message.content.some(
