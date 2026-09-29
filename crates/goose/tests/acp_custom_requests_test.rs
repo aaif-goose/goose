@@ -1004,6 +1004,101 @@ fn test_custom_defaults_save_allows_unlisted_model() {
 
 #[test]
 #[serial]
+fn test_custom_client_extensions_lifecycle() {
+    let scratch = tempfile::tempdir().unwrap();
+    let source = scratch.path().join("demo-ext");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("client-extension.json"),
+        r#"{"id":"demo-ext","version":"0.1.0","main":"index.html","permissions":["sessions:read"]}"#,
+    )
+    .unwrap();
+    std::fs::write(source.join("index.html"), "<html>demo</html>").unwrap();
+    let source_path = source.to_str().unwrap().to_string();
+    let missing_dev_dir = scratch.path().join("no-dev-extensions");
+    let _env = env_lock::lock_env([(
+        "GOOSE_CLIENT_EXTENSIONS_DEV_DIR",
+        Some(missing_dev_dir.to_str().unwrap()),
+    )]);
+    let config_dir = write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    let install_dir = goose::config::paths::Paths::in_agents_home_dir("client-extensions")
+        .display()
+        .to_string();
+
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            data_root: config_dir,
+            ..Default::default()
+        };
+        let conn = AcpServerConnection::new(config, openai).await;
+
+        let listed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/list",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("list should succeed");
+        assert_eq!(listed["installDir"], install_dir);
+        assert_eq!(listed["extensions"], serde_json::json!([]));
+
+        let installed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/install",
+            serde_json::json!({ "sourcePath": source_path }),
+        )
+        .await
+        .expect("install should succeed");
+        assert_eq!(installed["installedId"], "demo-ext");
+        assert_eq!(installed["extensions"][0]["source"], "installed");
+        assert_eq!(installed["extensions"][0]["enabled"], true);
+        assert_eq!(
+            installed["extensions"][0]["manifest"]["permissions"][0],
+            "sessions:read"
+        );
+
+        let main = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/read_main",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect("read_main should succeed for an enabled extension");
+        assert_eq!(main["html"], "<html>demo</html>");
+
+        let disabled = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/set_enabled",
+            serde_json::json!({ "id": "demo-ext", "enabled": false }),
+        )
+        .await
+        .expect("disable should succeed");
+        assert_eq!(disabled["extensions"][0]["enabled"], false);
+
+        let error = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/read_main",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect_err("read_main should be rejected for a disabled extension");
+        assert_eq!(error.code, agent_client_protocol::ErrorCode::InvalidParams);
+        assert!(error.to_string().contains("disabled"));
+
+        let removed = send_custom(
+            conn.cx(),
+            "_goose/unstable/client_extensions/uninstall",
+            serde_json::json!({ "id": "demo-ext" }),
+        )
+        .await
+        .expect("uninstall should succeed");
+        assert_eq!(removed["extensions"], serde_json::json!([]));
+    });
+}
+
+#[test]
+#[serial]
 fn test_raw_config_and_secret_methods_are_removed() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async {

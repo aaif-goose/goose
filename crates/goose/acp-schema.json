@@ -3389,6 +3389,159 @@
       "x-side": "agent",
       "x-method": "_goose/unstable/defaults/clear"
     },
+    "ClientExtensionsListRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/list"
+    },
+    "ClientExtensionsListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "installDir": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientExtensionInfo"
+          }
+        }
+      },
+      "required": [
+        "installDir",
+        "extensions"
+      ],
+      "x-side": "agent"
+    },
+    "ClientExtensionInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "directory": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/ClientExtensionSourceKind"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "manifest": {}
+      },
+      "required": [
+        "id",
+        "version",
+        "directory",
+        "source",
+        "enabled",
+        "manifest"
+      ]
+    },
+    "ClientExtensionSourceKind": {
+      "type": "string",
+      "enum": [
+        "installed",
+        "dev"
+      ]
+    },
+    "ClientExtensionsInstallRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sourcePath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourcePath"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/install"
+    },
+    "ClientExtensionsInstallResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "installedId": {
+          "type": "string"
+        },
+        "installDir": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientExtensionInfo"
+          }
+        }
+      },
+      "required": [
+        "installedId",
+        "installDir",
+        "extensions"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/install"
+    },
+    "ClientExtensionsSetEnabledRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/set_enabled"
+    },
+    "ClientExtensionsUninstallRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/uninstall"
+    },
+    "ClientExtensionsReadMainRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/read_main"
+    },
+    "ClientExtensionsReadMainResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "html": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "html"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/client_extensions/read_main"
+    },
     "OnboardingImportScanRequest_unstable": {
       "type": "object",
       "properties": {
@@ -7609,6 +7762,51 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ClientExtensionsListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/list",
+                  "title": "ClientExtensionsListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionsInstallRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/install",
+                  "title": "ClientExtensionsInstallRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionsSetEnabledRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/set_enabled",
+                  "title": "ClientExtensionsSetEnabledRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionsUninstallRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/uninstall",
+                  "title": "ClientExtensionsUninstallRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ClientExtensionsReadMainRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/client_extensions/read_main",
+                  "title": "ClientExtensionsReadMainRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/OnboardingImportScanRequest_unstable"
                     }
                   ],
@@ -8452,6 +8650,30 @@
                         }
                       ],
                       "title": "DefaultsReadResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionsListResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionsListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionsInstallResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionsInstallResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ClientExtensionsReadMainResponse_unstable"
+                        }
+                      ],
+                      "title": "ClientExtensionsReadMainResponse_unstable"
                     },
                     {
                       "allOf": [

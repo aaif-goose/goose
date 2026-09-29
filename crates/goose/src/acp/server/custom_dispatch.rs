@@ -462,6 +462,46 @@ impl GooseAcpAgent {
         self.on_defaults_clear(req).await
     }
 
+    #[custom_method(ClientExtensionsListRequest)]
+    async fn dispatch_client_extensions_list(
+        &self,
+        req: ClientExtensionsListRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_list(req).await
+    }
+
+    #[custom_method(ClientExtensionsInstallRequest)]
+    async fn dispatch_client_extensions_install(
+        &self,
+        req: ClientExtensionsInstallRequest,
+    ) -> Result<ClientExtensionsInstallResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_install(req).await
+    }
+
+    #[custom_method(ClientExtensionsSetEnabledRequest)]
+    async fn dispatch_client_extensions_set_enabled(
+        &self,
+        req: ClientExtensionsSetEnabledRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_set_enabled(req).await
+    }
+
+    #[custom_method(ClientExtensionsUninstallRequest)]
+    async fn dispatch_client_extensions_uninstall(
+        &self,
+        req: ClientExtensionsUninstallRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_uninstall(req).await
+    }
+
+    #[custom_method(ClientExtensionsReadMainRequest)]
+    async fn dispatch_client_extensions_read_main(
+        &self,
+        req: ClientExtensionsReadMainRequest,
+    ) -> Result<ClientExtensionsReadMainResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_read_main(req).await
+    }
+
     #[custom_method(OnboardingImportScanRequest)]
     async fn dispatch_onboarding_import_scan(
         &self,

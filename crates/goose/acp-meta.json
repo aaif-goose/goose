@@ -271,6 +271,31 @@
       "responseType": "DefaultsReadResponse_unstable"
     },
     {
+      "method": "_goose/unstable/client_extensions/list",
+      "requestType": "ClientExtensionsListRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/install",
+      "requestType": "ClientExtensionsInstallRequest_unstable",
+      "responseType": "ClientExtensionsInstallResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/set_enabled",
+      "requestType": "ClientExtensionsSetEnabledRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/uninstall",
+      "requestType": "ClientExtensionsUninstallRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/read_main",
+      "requestType": "ClientExtensionsReadMainRequest_unstable",
+      "responseType": "ClientExtensionsReadMainResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/onboarding/import/scan",
       "requestType": "OnboardingImportScanRequest_unstable",
       "responseType": "OnboardingImportScanResponse_unstable"

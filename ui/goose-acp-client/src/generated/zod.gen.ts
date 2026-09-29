@@ -1118,6 +1118,51 @@ export const zDefaultsSaveRequest_unstable = z.object({
  */
 export const zDefaultsClearRequest_unstable = z.record(z.string(), z.unknown());
 
+export const zClientExtensionsListRequest_unstable = z.record(z.string(), z.unknown());
+
+export const zClientExtensionSourceKind = z.enum(['installed', 'dev']);
+
+export const zClientExtensionInfo = z.object({
+    id: z.string(),
+    version: z.string(),
+    directory: z.string(),
+    source: zClientExtensionSourceKind,
+    enabled: z.boolean(),
+    manifest: z.unknown()
+});
+
+export const zClientExtensionsListResponse_unstable = z.object({
+    installDir: z.string(),
+    extensions: z.array(zClientExtensionInfo)
+});
+
+export const zClientExtensionsInstallRequest_unstable = z.object({
+    sourcePath: z.string()
+});
+
+export const zClientExtensionsInstallResponse_unstable = z.object({
+    installedId: z.string(),
+    installDir: z.string(),
+    extensions: z.array(zClientExtensionInfo)
+});
+
+export const zClientExtensionsSetEnabledRequest_unstable = z.object({
+    id: z.string(),
+    enabled: z.boolean()
+});
+
+export const zClientExtensionsUninstallRequest_unstable = z.object({
+    id: z.string()
+});
+
+export const zClientExtensionsReadMainRequest_unstable = z.object({
+    id: z.string()
+});
+
+export const zClientExtensionsReadMainResponse_unstable = z.object({
+    html: z.string()
+});
+
 /**
  * Sources that onboarding knows how to discover and import.
  */
@@ -2383,6 +2428,11 @@ export const zExtRequest = z.object({
             zDefaultsReadRequest_unstable,
             zDefaultsSaveRequest_unstable,
             zDefaultsClearRequest_unstable,
+            zClientExtensionsListRequest_unstable,
+            zClientExtensionsInstallRequest_unstable,
+            zClientExtensionsSetEnabledRequest_unstable,
+            zClientExtensionsUninstallRequest_unstable,
+            zClientExtensionsReadMainRequest_unstable,
             zOnboardingImportScanRequest_unstable,
             zOnboardingImportApplyRequest_unstable,
             zExportSessionRequest_unstable,
@@ -2488,6 +2538,9 @@ export const zExtResponse = z.union([
                 zConfigReadResponse_unstable,
                 zConfigReadAllResponse_unstable,
                 zDefaultsReadResponse_unstable,
+                zClientExtensionsListResponse_unstable,
+                zClientExtensionsInstallResponse_unstable,
+                zClientExtensionsReadMainResponse_unstable,
                 zOnboardingImportScanResponse_unstable,
                 zOnboardingImportApplyResponse_unstable,
                 zExportSessionResponse_unstable,

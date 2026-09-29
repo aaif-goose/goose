@@ -1,0 +1,18 @@
+{
+  "id": "hello-sidecar",
+  "version": "0.1.0",
+  "engines": {
+    "grc": ">=1.40.0"
+  },
+  "main": "index.html",
+  "contributes": {
+    "sidecars": [
+      {
+        "id": "session-info",
+        "label": "Session",
+        "when": "route.pair",
+        "defaultOpen": false
+      }
+    ]
+  }
+}
