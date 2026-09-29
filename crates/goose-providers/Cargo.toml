@@ -40,7 +40,7 @@ chrono = { workspace = true }
 futures = { workspace = true }
 goose-provider-types = { version = "0.1.0-alpha.11", path = "../goose-provider-types", default-features = false }
 goose-local-inference = { version = "0.1.0-alpha.11", path = "../goose-local-inference", default-features = false, optional = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
 rmcp = { workspace = true, features = ["server", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -48,7 +48,7 @@ tracing = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
-tokio-util = { workspace = true, features = ["compat"] }
+tokio-util = { workspace = true, features = ["compat", "io", "codec"] }
 url = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }

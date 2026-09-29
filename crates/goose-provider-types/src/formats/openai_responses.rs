@@ -9,6 +9,7 @@ use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
     sanitize_function_name,
 };
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::utils::{sanitize_unicode_tags, strip_unicode_tags};
@@ -1005,7 +1006,7 @@ pub fn responses_api_to_streaming_message<S>(
     mut stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     try_stream! {
         use futures::StreamExt;

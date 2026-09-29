@@ -8,6 +8,7 @@ use crate::documents::{
 };
 use crate::errors::ProviderError;
 use crate::images::{convert_image, ImageFormat};
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::thinking::ThinkingEffort;
@@ -987,7 +988,7 @@ pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     use async_stream::try_stream;
     use futures::StreamExt;

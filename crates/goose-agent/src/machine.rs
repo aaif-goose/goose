@@ -9,23 +9,26 @@ use crate::operation::{
     OperationFuture, OperationResult, StepResult,
 };
 use goose_provider_types::conversation::Conversation;
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-pub trait MachineSession: Send + Sync {
+pub trait MachineSession: MaybeSend + MaybeSync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
 }
 
-#[async_trait]
-pub trait SessionLoader<S>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait SessionLoader<S>: MaybeSend + MaybeSync {
     async fn load(&self, session_id: &str) -> Result<S>;
 }
 
-#[async_trait]
-pub trait EffectHandler<S, E>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait EffectHandler<S, E>: MaybeSend + MaybeSync {
     async fn apply_effects(&self, session: &S, effects: &mut [E], emit: &Emitter) -> Result<()>;
 }
 
-pub trait EffectUsage<E>: Send + Sync {
+pub trait EffectUsage<E>: MaybeSend + MaybeSync {
     fn usage(&self, _effect: &E) -> Option<goose_provider_types::conversation::token_usage::Usage> {
         None
     }
@@ -36,7 +39,7 @@ pub enum Step<'a, S, E = ConversationEffect> {
     Inference(Arc<dyn Inference<S, E> + 'a>),
 }
 
-impl<S, E: Send> Step<'_, S, E> {
+impl<S, E: MaybeSend> Step<'_, S, E> {
     fn operation(&self) -> &dyn Operation<S, E> {
         match self {
             Step::Operation(operation) => operation.as_ref(),
@@ -67,7 +70,7 @@ fn add_tools_to_inference_input(
 impl<'a, S, E> StateMachine<'a, S, E>
 where
     S: MachineSession,
-    E: MachineEffect + Send + 'static,
+    E: MachineEffect + MaybeSend + 'static,
 {
     pub fn new(steps: Vec<Step<'a, S, E>>, cancel: CancellationToken) -> Self {
         Self { steps, cancel }

@@ -21,7 +21,7 @@ futures = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true, features = ["unicode"] }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
 rmcp = { workspace = true, features = ["server", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -32,6 +32,12 @@ tracing = { workspace = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 uuid = { workspace = true, features = ["v4", "std"] }
 zstd = "0.14.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
+chrono = { workspace = true, features = ["wasmbind"] }
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [dev-dependencies]
 env-lock = { workspace = true }

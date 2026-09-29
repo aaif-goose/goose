@@ -135,6 +135,36 @@ jobs:
           hermit uninstall rustup
           just check-lean-size
 
+  rust-check-wasm:
+    name: Check and Test GDK Agent Crates on wasm32
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen test runner
+        run: |
+          version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p}' Cargo.lock)
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Check wasm32 build
+        run: cargo check --locked --target wasm32-unknown-unknown -p goose-agent -p goose-provider-types
+        env:
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-D warnings"
+
+      - name: Run agent loop on wasm32
+        run: cargo test --locked --target wasm32-unknown-unknown -p goose-agent --test wasm
+        env:
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-D warnings"
+
   goose-sdk-uniffi:
     name: Check goose-sdk UniFFI
     runs-on: ubuntu-latest

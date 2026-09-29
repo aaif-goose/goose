@@ -20,6 +20,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
     Inference, InferenceInput, Operation, OperationResult,
 };
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 pub struct PreparedInferenceRequest {
     pub system_prompt: String,
@@ -27,8 +28,9 @@ pub struct PreparedInferenceRequest {
     pub additional_messages: Vec<Message>,
 }
 
-#[async_trait]
-pub trait InferenceRequestPreparer<S>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
     async fn prepare(
         &self,
         session: &S,
@@ -39,8 +41,9 @@ pub trait InferenceRequestPreparer<S>: Send + Sync {
 
 pub struct IdentityInferenceRequestPreparer;
 
-#[async_trait]
-impl<S: Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     async fn prepare(
         &self,
         _session: &S,
@@ -60,7 +63,7 @@ impl<S: Sync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     }
 }
 
-pub trait InferenceEffect: From<Message> + Send + 'static {
+pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
@@ -300,7 +303,7 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
     span
 }
 
-impl<'a, S: Sync, E: InferenceEffect> InferenceRunner<'a, S, E> {
+impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
         Self {
             provider,
@@ -327,8 +330,9 @@ impl<'a, S: Sync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     }
 }
 
-#[async_trait]
-impl<S: Sync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> {
     fn name(&self) -> &'static str {
         "llm"
     }
@@ -352,8 +356,9 @@ impl<S: Sync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> 
     }
 }
 
-#[async_trait]
-impl<S: Sync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;

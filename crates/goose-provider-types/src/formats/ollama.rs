@@ -10,6 +10,7 @@
 //! - qwen3-coder-32b
 
 use crate::conversation::message::{Message, MessageContentBlock};
+use crate::maybe_send::MaybeSend;
 use crate::{
     conversation::token_usage::ProviderUsage,
     formats::openai::{self, is_valid_function_name},
@@ -160,7 +161,7 @@ pub fn response_to_streaming_message_ollama<S>(
     stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     try_stream! {
         use futures::StreamExt;

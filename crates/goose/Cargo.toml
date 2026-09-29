@@ -117,6 +117,7 @@ workspace = true
 [dependencies]
 lru = { workspace = true }
 rmcp = { workspace = true, features = [
+    "auth",
     "client",
     "transport-child-process",
     "transport-streamable-http-client",
