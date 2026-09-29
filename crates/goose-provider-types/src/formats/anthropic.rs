@@ -68,6 +68,9 @@ pub struct AnthropicFormatOptions {
     pub cache_ttl: Option<CacheTtl>,
     pub prefix_mismatch_behavior: Option<PrefixMismatchBehavior>,
     pub strip_thinking_history: bool,
+    pub thinking_mode_override: Option<ThinkingMode>,
+    pub effort_options_override: Option<Vec<String>>,
+    pub thinking_supported_override: Option<bool>,
 }
 
 impl AnthropicFormatOptions {
@@ -120,6 +123,9 @@ impl AnthropicFormatOptions {
             cache_ttl,
             prefix_mismatch_behavior,
             strip_thinking_history: self.strip_thinking_history,
+            thinking_mode_override: self.thinking_mode_override,
+            effort_options_override: self.effort_options_override,
+            thinking_supported_override: self.thinking_supported_override,
         }
     }
 
@@ -151,7 +157,7 @@ pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -
     current_model != requested && current_model != resolved
 }
 
-fn canonical_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
+pub fn canonical_thinking_mode(provider_name: &str, model_name: &str) -> Option<ThinkingMode> {
     maybe_get_canonical_model(provider_name, model_name)
         .and_then(|model| model.thinking_mode)
         .or_else(|| provider_thinking_mode(provider_name, model_name))
@@ -188,9 +194,23 @@ pub fn thinking_type(model_config: &ModelConfig) -> ThinkingType {
 }
 
 pub fn thinking_type_for_provider(provider_name: &str, model_config: &ModelConfig) -> ThinkingType {
-    let mode = canonical_thinking_mode(provider_name, &model_config.model_name);
-    let reasoning = model_config
-        .reasoning
+    thinking_type_with_mode(provider_name, model_config, None, None)
+}
+
+fn thinking_type_with_mode(
+    provider_name: &str,
+    model_config: &ModelConfig,
+    mode_override: Option<ThinkingMode>,
+    thinking_supported_override: Option<bool>,
+) -> ThinkingType {
+    let canonical = canonical_thinking_mode(provider_name, &model_config.model_name);
+    let mode = if canonical == Some(ThinkingMode::AlwaysOnAdaptive) {
+        canonical
+    } else {
+        mode_override.or(canonical)
+    };
+    let reasoning = thinking_supported_override
+        .or(model_config.reasoning)
         .or_else(|| canonical_reasoning(provider_name, model_config));
 
     if reasoning != Some(true) {
@@ -774,8 +794,12 @@ pub fn thinking_effort(model_config: &ModelConfig) -> ThinkingEffort {
         .unwrap_or(ThinkingEffort::High)
 }
 
-fn adaptive_effort_wire(provider_name: &str, model_config: &ModelConfig) -> String {
-    let effort = adaptive_output_effort(model_config);
+fn adaptive_effort_wire(
+    provider_name: &str,
+    model_config: &ModelConfig,
+    effort_options_override: Option<&[String]>,
+) -> String {
+    let effort = adaptive_output_effort_with_options(model_config, effort_options_override);
     // Meta Messages accepts low, medium, high, and xhigh. goose's max maps to xhigh.
     if provider_name == "muse_code" && effort == "max" {
         return "xhigh".to_string();
@@ -784,6 +808,13 @@ fn adaptive_effort_wire(provider_name: &str, model_config: &ModelConfig) -> Stri
 }
 
 pub fn adaptive_output_effort(model_config: &ModelConfig) -> String {
+    adaptive_output_effort_with_options(model_config, None)
+}
+
+fn adaptive_output_effort_with_options(
+    model_config: &ModelConfig,
+    effort_options_override: Option<&[String]>,
+) -> String {
     let effort = match thinking_effort(model_config) {
         ThinkingEffort::Off => ThinkingEffort::High,
         effort => effort,
@@ -795,8 +826,12 @@ pub fn adaptive_output_effort(model_config: &ModelConfig) -> String {
         ThinkingEffort::High => &["high", "medium", "xhigh", "low", "max"],
         ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],
     };
-    let supported = maybe_get_canonical_model(ANTHROPIC_PROVIDER_NAME, &model_config.model_name)
-        .and_then(|model| model.reasoning_efforts);
+    let supported = effort_options_override
+        .map(|values| values.to_vec())
+        .or_else(|| {
+            maybe_get_canonical_model(ANTHROPIC_PROVIDER_NAME, &model_config.model_name)
+                .and_then(|model| model.reasoning_efforts)
+        });
     match supported {
         Some(values) => preferred
             .iter()
@@ -847,10 +882,19 @@ fn apply_thinking_config(
     options: AnthropicFormatOptions,
 ) {
     let obj = payload.as_object_mut().unwrap();
-    match thinking_type_for_provider(provider_name, model_config) {
+    match thinking_type_with_mode(
+        provider_name,
+        model_config,
+        options.thinking_mode_override,
+        options.thinking_supported_override,
+    ) {
         ThinkingType::Adaptive => {
             obj.insert("thinking".to_string(), json!({"type": "adaptive"}));
-            let effort = adaptive_effort_wire(provider_name, model_config);
+            let effort = adaptive_effort_wire(
+                provider_name,
+                model_config,
+                options.effort_options_override.as_deref(),
+            );
             obj.insert("output_config".to_string(), json!({"effort": effort}));
         }
         ThinkingType::Enabled => {
@@ -893,7 +937,11 @@ fn apply_thinking_config(
     }
 
     if !obj.contains_key("thinking")
-        && requires_explicit_thinking_disable(provider_name, &model_config.model_name)
+        && options.thinking_mode_override != Some(ThinkingMode::Enabled)
+        && canonical_thinking_mode(provider_name, &model_config.model_name)
+            != Some(ThinkingMode::AlwaysOnAdaptive)
+        && (options.thinking_mode_override == Some(ThinkingMode::Adaptive)
+            || requires_explicit_thinking_disable(provider_name, &model_config.model_name))
     {
         obj.insert("thinking".to_string(), json!({"type": "disabled"}));
     }
@@ -2404,6 +2452,61 @@ mod tests {
             thinking_budget_tokens(&cfg_with_effort("claude-sonnet-4-5", "low")),
             4000
         );
+    }
+
+    #[test]
+    fn test_official_thinking_mode_overrides_legacy_shape_not_always_on() -> Result<()> {
+        let messages = vec![Message::user().with_text("Hello")];
+        let config = cfg_with_effort("claude-sonnet-4-5", "high");
+        let payload = create_request_with_options_provider(
+            &config,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                thinking_mode_override: Some(ThinkingMode::Adaptive),
+                ..Default::default()
+            },
+        )?;
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        let new_model = cfg_with_effort("unlisted-future-claude", "high");
+        let payload = create_request_with_options_provider(
+            &new_model,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                thinking_mode_override: Some(ThinkingMode::Adaptive),
+                thinking_supported_override: Some(true),
+                ..Default::default()
+            },
+        )?;
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        let off = cfg_with_effort("claude-sonnet-4-5", "off");
+        let payload = create_request_with_options_provider(
+            &off,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                thinking_mode_override: Some(ThinkingMode::Adaptive),
+                ..Default::default()
+            },
+        )?;
+        assert_eq!(payload["thinking"]["type"], "disabled");
+        let always_on = cfg_with_effort("claude-fable-5", "off");
+        let payload = create_request_with_options_provider(
+            &always_on,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions {
+                thinking_mode_override: Some(ThinkingMode::Enabled),
+                ..Default::default()
+            },
+        )?;
+        assert_eq!(payload["thinking"]["type"], "adaptive");
+        Ok(())
     }
 
     #[test]

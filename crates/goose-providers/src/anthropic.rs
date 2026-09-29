@@ -2,6 +2,7 @@ use crate::api_client::{AuthMethod, TlsConfig};
 use crate::base::ProviderDescriptor;
 use crate::declarative::{DeclarativeProviderConfig, KeyResolver};
 use crate::errors::ProviderError;
+use crate::http_status::read_json_response;
 use crate::request_log::{start_log, LoggerHandleExt};
 use anyhow::Result;
 use async_stream::try_stream;
@@ -10,6 +11,8 @@ use futures::TryStreamExt;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 use std::io;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::pin;
 use tokio_util::io::StreamReader;
 
@@ -39,6 +42,56 @@ pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 // shared `ApiClient` default so behavior is unchanged for providers that leave
 // the field unset.
 const DEFAULT_ANTHROPIC_TIMEOUT_SECONDS: u64 = 600;
+const MODEL_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(5);
+const MODEL_CAPABILITY_TTL: Duration = Duration::from_secs(300);
+const MODEL_CAPABILITY_FAILURE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone)]
+struct OfficialThinkingCapabilities {
+    mode: goose_provider_types::canonical::ThinkingMode,
+    effort_options: Option<Vec<String>>,
+}
+
+#[derive(Clone)]
+struct CachedThinkingMode {
+    capabilities: Option<OfficialThinkingCapabilities>,
+    fetched_at: Instant,
+}
+
+fn thinking_capabilities_from_api(model: &Value) -> Option<OfficialThinkingCapabilities> {
+    use goose_provider_types::canonical::ThinkingMode;
+    let thinking = model.pointer("/capabilities/thinking")?;
+    if !thinking.get("supported")?.as_bool()? {
+        return None;
+    }
+    let supports = |kind: &str| {
+        thinking
+            .pointer(&format!("/types/{kind}/supported"))
+            .and_then(Value::as_bool)
+    };
+    let mode = match (supports("adaptive"), supports("enabled")) {
+        (Some(true), _) => ThinkingMode::Adaptive,
+        (Some(false), Some(true)) => ThinkingMode::Enabled,
+        _ => return None,
+    };
+    let effort_options = model.pointer("/capabilities/effort").and_then(|effort| {
+        let levels: Vec<String> = ["low", "medium", "high", "xhigh", "max"]
+            .into_iter()
+            .filter(|level| {
+                effort
+                    .pointer(&format!("/{level}/supported"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+            })
+            .map(str::to_string)
+            .collect();
+        (!levels.is_empty()).then_some(levels)
+    });
+    Some(OfficialThinkingCapabilities {
+        mode,
+        effort_options,
+    })
+}
 
 #[derive(serde::Serialize)]
 pub struct AnthropicProvider {
@@ -51,6 +104,8 @@ pub struct AnthropicProvider {
     skip_canonical_filtering: bool,
     #[serde(skip)]
     format_options: AnthropicFormatOptions,
+    #[serde(skip)]
+    thinking_mode_cache: Arc<Mutex<std::collections::HashMap<String, CachedThinkingMode>>>,
 }
 
 /// Builder for [`AnthropicProvider`].
@@ -139,11 +194,69 @@ impl AnthropicProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             format_options: self.format_options,
+            thinking_mode_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
 
 impl AnthropicProvider {
+    async fn api_thinking_capabilities(
+        &self,
+        model_name: &str,
+    ) -> Option<OfficialThinkingCapabilities> {
+        if self.name != ANTHROPIC_PROVIDER_NAME
+            || !url::Url::parse(self.api_client.host())
+                .ok()
+                .is_some_and(|url| {
+                    url.scheme() == "https"
+                        && url.host_str() == Some("api.anthropic.com")
+                        && url.path() == "/"
+                })
+        {
+            return None;
+        }
+        if let Some(cached) = self
+            .thinking_mode_cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(model_name).cloned())
+            .filter(|cached| {
+                cached.fetched_at.elapsed()
+                    < if cached.capabilities.is_some() {
+                        MODEL_CAPABILITY_TTL
+                    } else {
+                        MODEL_CAPABILITY_FAILURE_TTL
+                    }
+            })
+        {
+            return cached.capabilities;
+        }
+
+        let lookup = async {
+            let path = format!("v1/models/{}", urlencoding::encode(model_name));
+            let response = self.api_client.response_get(&path).await.ok()?;
+            if !response.status().is_success() {
+                return None;
+            }
+            let json: Value = read_json_response(response).await.ok()?;
+            thinking_capabilities_from_api(&json)
+        };
+        let capabilities = tokio::time::timeout(MODEL_CAPABILITY_TIMEOUT, lookup)
+            .await
+            .ok()
+            .flatten();
+        if let Ok(mut cache) = self.thinking_mode_cache.lock() {
+            cache.insert(
+                model_name.to_string(),
+                CachedThinkingMode {
+                    capabilities: capabilities.clone(),
+                    fetched_at: Instant::now(),
+                },
+            );
+        }
+        capabilities
+    }
+
     fn streaming_payload(
         &self,
         model_config: &ModelConfig,
@@ -193,13 +306,21 @@ impl AnthropicProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let capabilities = self.api_thinking_capabilities(wire_model).await;
+        let format_options = AnthropicFormatOptions {
+            thinking_mode_override: capabilities.as_ref().map(|capabilities| capabilities.mode),
+            thinking_supported_override: capabilities.as_ref().map(|_| true),
+            effort_options_override: capabilities
+                .and_then(|capabilities| capabilities.effort_options),
+            ..self.format_options.clone()
+        };
         let payload = self.streaming_payload(
             model_config,
             wire_model,
             system,
             messages,
             tools,
-            self.format_options.clone(),
+            format_options.clone(),
         )?;
         let mut log = start_log(model_config, &payload)?;
         let response = match self.post_messages(model_config, &payload).await {
@@ -216,7 +337,7 @@ impl AnthropicProvider {
                 let _ = log.error(&message);
                 let stripped = AnthropicFormatOptions {
                     strip_thinking_history: true,
-                    ..self.format_options.clone()
+                    ..format_options
                 };
                 let payload =
                     self.streaming_payload(model_config, wire_model, system, messages, tools, stripped)?;
@@ -581,6 +702,48 @@ mod tests {
     }
 
     #[test]
+    fn parses_official_thinking_capabilities_conservatively() {
+        use goose_provider_types::canonical::ThinkingMode;
+        let model = |adaptive, enabled| {
+            json!({"capabilities": {
+                "thinking": {"supported": true, "types": {
+                    "adaptive": {"supported": adaptive}, "enabled": {"supported": enabled}
+                }},
+                "effort": {"low": {"supported": true}, "high": {"supported": true},
+                           "max": {"supported": false}}
+            }})
+        };
+        let adaptive = thinking_capabilities_from_api(&model(true, true)).unwrap();
+        assert_eq!(adaptive.mode, ThinkingMode::Adaptive);
+        assert_eq!(
+            adaptive.effort_options,
+            Some(vec!["low".into(), "high".into()])
+        );
+        assert_eq!(
+            thinking_capabilities_from_api(&model(false, true))
+                .unwrap()
+                .mode,
+            ThinkingMode::Enabled
+        );
+        assert!(thinking_capabilities_from_api(&model(false, false)).is_none());
+        assert!(thinking_capabilities_from_api(&json!({"capabilities": null})).is_none());
+        assert!(
+            thinking_capabilities_from_api(&json!({"capabilities": {"thinking": {
+                "supported": false, "types": {"adaptive": {"supported": true}}
+            }}}))
+            .is_none()
+        );
+        assert_eq!(
+            thinking_capabilities_from_api(&json!({"capabilities": {"thinking": {
+                "supported": true, "types": {"adaptive": {"supported": true}}
+            }}}))
+            .unwrap()
+            .effort_options,
+            None
+        );
+    }
+
+    #[test]
     fn zai_provider_config_emits_clear_thinking() {
         let configs = crate::declarative::fixed_provider_configs().unwrap();
         let zai = configs.iter().find(|c| c.name == "zai").cloned().unwrap();
@@ -637,6 +800,7 @@ mod tests {
             dynamic_models: Some(true),
             skip_canonical_filtering: false,
             format_options: AnthropicFormatOptions::default(),
+            thinking_mode_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
