@@ -18,19 +18,18 @@ vi.mock('./NavigationPanel', () => ({ Navigation: () => null }));
 
 vi.mock('../ChatSessionsContainer', async () => {
   const { useEffect, useState } = await import('react');
-  return {
-    default: () => {
-      const [draft, setDraft] = useState('');
-      useEffect(() => chatMounts(), []);
-      return (
-        <textarea
-          data-testid="chat-draft"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-      );
-    },
-  };
+  function ChatSessionsContainerMock() {
+    const [draft, setDraft] = useState('');
+    useEffect(() => chatMounts(), []);
+    return (
+      <textarea
+        data-testid="chat-draft"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    );
+  }
+  return { default: ChatSessionsContainerMock };
 });
 
 Object.defineProperty(window, 'electron', {
