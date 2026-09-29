@@ -43,7 +43,6 @@ pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 // the field unset.
 const DEFAULT_ANTHROPIC_TIMEOUT_SECONDS: u64 = 600;
 const MODEL_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(5);
-const MODEL_CAPABILITY_TTL: Duration = Duration::from_secs(300);
 const MODEL_CAPABILITY_FAILURE_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
@@ -56,6 +55,12 @@ struct OfficialThinkingCapabilities {
 struct CachedThinkingMode {
     capabilities: Option<OfficialThinkingCapabilities>,
     fetched_at: Instant,
+}
+
+impl CachedThinkingMode {
+    fn is_valid(&self) -> bool {
+        self.capabilities.is_some() || self.fetched_at.elapsed() < MODEL_CAPABILITY_FAILURE_TTL
+    }
 }
 
 fn thinking_capabilities_from_api(model: &Value) -> Option<OfficialThinkingCapabilities> {
@@ -220,14 +225,7 @@ impl AnthropicProvider {
             .lock()
             .ok()
             .and_then(|cache| cache.get(model_name).cloned())
-            .filter(|cached| {
-                cached.fetched_at.elapsed()
-                    < if cached.capabilities.is_some() {
-                        MODEL_CAPABILITY_TTL
-                    } else {
-                        MODEL_CAPABILITY_FAILURE_TTL
-                    }
-            })
+            .filter(CachedThinkingMode::is_valid)
         {
             return cached.capabilities;
         }
@@ -699,6 +697,18 @@ mod tests {
         fn resolve_key(&self, _key: &str) -> Result<String, Self::Error> {
             Ok("test-key".to_string())
         }
+    }
+
+    #[test]
+    fn successful_capabilities_remain_cached_for_process_lifetime() {
+        let cached = CachedThinkingMode {
+            capabilities: Some(OfficialThinkingCapabilities {
+                mode: goose_provider_types::canonical::ThinkingMode::Adaptive,
+                effort_options: None,
+            }),
+            fetched_at: Instant::now() - Duration::from_secs(24 * 60 * 60),
+        };
+        assert!(cached.is_valid());
     }
 
     #[test]
