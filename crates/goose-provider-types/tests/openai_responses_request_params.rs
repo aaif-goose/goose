@@ -1,4 +1,6 @@
-use goose_provider_types::formats::openai_responses::create_responses_request;
+use goose_provider_types::formats::openai_responses::{
+    create_responses_request, create_responses_request_for_model,
+};
 use goose_provider_types::model::ModelConfig;
 use goose_provider_types::thinking::ThinkingEffort;
 use serde_json::{json, Value};
@@ -35,8 +37,25 @@ fn explicit_effort_overrides_suffix_and_generic_thinking_effort() {
 
 #[test]
 fn preserves_native_parameter_values() {
-    for effort in ["none", "minimal", "low", "medium", "high", "xhigh", "max"] {
-        let model = config(json!({"reasoning_effort": effort}));
+    for (model_name, effort) in [
+        ("gpt-5", "minimal"),
+        ("gpt-5", "low"),
+        ("gpt-5", "medium"),
+        ("gpt-5", "high"),
+        ("gpt-5-mini", "minimal"),
+        ("gpt-5-nano", "minimal"),
+        ("gpt-5-2025-08-07", "minimal"),
+        ("gpt-5-pro", "high"),
+        ("gpt-5.1", "none"),
+        ("gpt-5.1-codex-max", "xhigh"),
+        ("gpt-5.2", "none"),
+        ("gpt-5.2-pro", "medium"),
+        ("gpt-5.2-pro", "xhigh"),
+        ("gpt-5.4", "xhigh"),
+        ("gpt-6-sol", "max"),
+    ] {
+        let mut model = config(json!({"reasoning_effort": effort}));
+        model.model_name = model_name.to_string();
         let request = create_responses_request(&model, "", &[], &[]).unwrap();
         assert_eq!(request["reasoning"]["effort"], effort);
     }
@@ -77,4 +96,46 @@ fn rejects_invalid_explicit_parameters_instead_of_silently_using_defaults() {
         let error = create_responses_request(&model, "", &[], &[]).unwrap_err();
         assert!(error.to_string().contains(key), "{error}");
     }
+}
+
+#[test]
+fn rejects_efforts_unsupported_by_the_selected_model() {
+    for (model_name, effort) in [
+        ("gpt-5", "max"),
+        ("gpt-5", "none"),
+        ("gpt-5", "xhigh"),
+        ("gpt-5-mini", "max"),
+        ("gpt-5-pro", "minimal"),
+        ("gpt-5.1", "minimal"),
+        ("gpt-5.1-codex", "none"),
+        ("gpt-5.2-pro", "low"),
+        ("gpt-5.4", "minimal"),
+        ("gpt-5.4", "max"),
+        ("gpt-6-astra", "none"),
+        ("o3", "minimal"),
+    ] {
+        let mut model = config(json!({"reasoning_effort": effort}));
+        model.model_name = model_name.to_string();
+        let error = create_responses_request(&model, "", &[], &[]).unwrap_err();
+        assert!(error.to_string().contains("reasoning_effort"), "{error}");
+    }
+}
+
+#[test]
+fn validates_capability_model_when_wire_name_is_an_alias() {
+    let mut model = config(json!({"reasoning_effort": "max"}));
+    model.model_name = "deployment-alias".to_string();
+    let result =
+        create_responses_request_for_model(&model, "deployment-alias", "gpt-5", "", &[], &[]);
+    assert!(result.is_err());
+
+    let model = model.with_merged_request_params(HashMap::from([(
+        "reasoning_effort".to_string(),
+        json!("minimal"),
+    )]));
+    let request =
+        create_responses_request_for_model(&model, "deployment-alias", "gpt-5", "", &[], &[])
+            .unwrap();
+    assert_eq!(request["model"], "deployment-alias");
+    assert_eq!(request["reasoning"]["effort"], "minimal");
 }

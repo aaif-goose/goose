@@ -7,7 +7,7 @@ use crate::documents::{
 use crate::errors::ProviderError;
 use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
-    sanitize_function_name,
+    openai_reasoning_efforts_for_model, sanitize_function_name,
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
@@ -673,7 +673,7 @@ pub fn create_responses_request_for_model(
     let explicit_reasoning_effort = validated_request_param(
         model_config,
         "reasoning_effort",
-        &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        explicit_reasoning_efforts_for_model(&model_name),
     )?;
     let verbosity = validated_request_param(model_config, "verbosity", &["low", "medium", "high"])?;
     // Explicit API parameters take precedence over inferred settings, as in Chat Completions.
@@ -781,6 +781,43 @@ pub fn create_responses_request_for_model(
     }
 
     Ok(payload)
+}
+
+fn explicit_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
+    let normalized = model_name.to_ascii_lowercase();
+    // Native API values differ from the generic ThinkingEffort mapping. In particular,
+    // GPT-5 supports `minimal`, while GPT-5.1 introduced `none` in its place.
+    if normalized.contains("gpt-5.2")
+        || normalized.ends_with("gpt-5-2")
+        || normalized.contains("gpt-5-2-")
+    {
+        if normalized.contains("-pro") || normalized.contains("/pro") {
+            &["medium", "high", "xhigh"]
+        } else {
+            &["none", "low", "medium", "high", "xhigh"]
+        }
+    } else if normalized.contains("gpt-5.1")
+        || normalized.ends_with("gpt-5-1")
+        || normalized.contains("gpt-5-1-")
+    {
+        if normalized.contains("codex-max") {
+            &["low", "medium", "high", "xhigh"]
+        } else if normalized.contains("codex") {
+            &["low", "medium", "high"]
+        } else {
+            &["none", "low", "medium", "high"]
+        }
+    } else if normalized.contains("gpt-5-pro") {
+        &["high"]
+    } else if normalized.ends_with("gpt-5")
+        || normalized.contains("gpt-5-mini")
+        || normalized.contains("gpt-5-nano")
+        || normalized.contains("gpt-5-20")
+    {
+        &["minimal", "low", "medium", "high"]
+    } else {
+        openai_reasoning_efforts_for_model(model_name)
+    }
 }
 
 fn validated_request_param(
