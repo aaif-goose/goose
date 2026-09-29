@@ -670,7 +670,17 @@ pub fn create_responses_request_for_model(
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
     let is_reasoning_model = is_openai_responses_model(&model_name);
-    let reasoning_effort = if is_reasoning_model {
+    let explicit_reasoning_effort = validated_request_param(
+        model_config,
+        "reasoning_effort",
+        &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+    )?;
+    let verbosity = validated_request_param(model_config, "verbosity", &["low", "medium", "high"])?;
+    // Explicit API parameters take precedence over inferred settings, as in Chat Completions.
+    // Keep native values such as `minimal`, which ThinkingEffort cannot represent.
+    let reasoning_effort = if explicit_reasoning_effort.is_some() {
+        explicit_reasoning_effort
+    } else if is_reasoning_model {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {
                 legacy_reasoning_effort
@@ -714,6 +724,10 @@ pub fn create_responses_request_for_model(
         "input": input_items,
         "store": store,
     });
+
+    if let Some(verbosity) = verbosity {
+        payload["text"] = json!({ "verbosity": verbosity });
+    }
 
     if reasoning_effort.is_some() || reasoning_mode.is_some() {
         let mut reasoning = serde_json::Map::new();
@@ -767,6 +781,23 @@ pub fn create_responses_request_for_model(
     }
 
     Ok(payload)
+}
+
+fn validated_request_param(
+    model_config: &ModelConfig,
+    key: &str,
+    supported: &[&str],
+) -> anyhow::Result<Option<String>> {
+    match model_config.request_param::<Value>(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if supported.contains(&value.as_str()) => Ok(Some(value)),
+        Some(value) => Err(anyhow!(
+            "Invalid {} {}. Supported values are: {}",
+            key,
+            value,
+            supported.join(", ")
+        )),
+    }
 }
 
 fn sanitize_tool_arguments(value: Value) -> anyhow::Result<Value> {
