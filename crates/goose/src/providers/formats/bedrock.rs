@@ -612,13 +612,18 @@ pub fn from_bedrock_role(role: &bedrock::ConversationRole) -> Result<Role> {
 }
 
 pub fn from_bedrock_usage(usage: &bedrock::TokenUsage) -> Usage {
-    Usage::from_cache_exclusive_input(
-        Some(usage.input_tokens),
+    let cache_read = usage.cache_read_input_tokens;
+    let cache_write = usage.cache_write_input_tokens;
+    let input_tokens = usage
+        .input_tokens
+        .saturating_add(cache_read.unwrap_or(0))
+        .saturating_add(cache_write.unwrap_or(0));
+    Usage::new(
+        Some(input_tokens),
         Some(usage.output_tokens),
         Some(usage.total_tokens),
-        usage.cache_read_input_tokens,
-        usage.cache_write_input_tokens,
     )
+    .with_cache_tokens(cache_read, cache_write)
 }
 
 pub fn from_bedrock_json(document: &Document) -> Result<Value> {
@@ -1106,11 +1111,11 @@ mod tests {
     }
 
     #[test]
-    fn test_from_bedrock_usage_folds_cache_tokens_into_input() {
+    fn test_from_bedrock_usage_includes_cache_in_input_and_preserves_total() {
         let usage = bedrock::TokenUsage::builder()
             .input_tokens(7)
             .output_tokens(50)
-            .total_tokens(57)
+            .total_tokens(6057)
             .cache_read_input_tokens(5000)
             .cache_write_input_tokens(1000)
             .build()
