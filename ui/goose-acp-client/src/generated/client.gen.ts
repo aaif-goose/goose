@@ -171,6 +171,8 @@ import type {
   ScanRecipeRequest_unstable,
   ScanRecipeResponse_unstable,
   ScheduleRecipeRequest_unstable,
+  SessionCostAggregateRequest_unstable,
+  SessionCostAggregateResponse_unstable,
   SetConfigExtensionEnabledRequest_unstable,
   SetRecipeSlashCommandRequest_unstable,
   SetSessionSystemPromptRequest_unstable,
@@ -262,6 +264,7 @@ import {
   zRunScheduleNowResponse_unstable,
   zSaveRecipeResponse_unstable,
   zScanRecipeResponse_unstable,
+  zSessionCostAggregateResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
@@ -1407,5 +1410,17 @@ export class GooseExtClient {
     return zLocalInferenceBuiltinChatTemplatesListResponse_unstable.parse(
       raw,
     ) as LocalInferenceBuiltinChatTemplatesListResponse_unstable;
+  }
+
+  async sessionCostAggregate_unstable(
+    params: SessionCostAggregateRequest_unstable,
+  ): Promise<SessionCostAggregateResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/session/cost/aggregate",
+      params,
+    );
+    return zSessionCostAggregateResponse_unstable.parse(
+      raw,
+    ) as SessionCostAggregateResponse_unstable;
   }
 }

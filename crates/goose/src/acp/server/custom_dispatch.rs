@@ -918,4 +918,12 @@ impl GooseAcpAgent {
         self.on_local_inference_builtin_chat_templates_list(req)
             .await
     }
+
+    #[custom_method(SessionCostAggregateRequest)]
+    async fn dispatch_aggregate_session_costs(
+        &self,
+        req: SessionCostAggregateRequest,
+    ) -> Result<SessionCostAggregateResponse, agent_client_protocol::Error> {
+        self.on_aggregate_session_costs(req).await
+    }
 }

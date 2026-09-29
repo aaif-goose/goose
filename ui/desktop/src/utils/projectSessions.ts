@@ -5,6 +5,9 @@ export interface ProjectGroup {
   label: string;
   sessions: SessionListItem[];
   lastActivityAt: string;
+  totalCost?: number | null;
+  sessionCount?: number;
+  sessionsWithCost?: number;
 }
 
 function getSessionActivityTime(session: SessionListItem): string {
