@@ -99,21 +99,6 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liv
 
   const { setChat } = chatContext;
 
-  if (isOnSettingsRoute) {
-    return (
-      <div className="relative flex h-full w-full flex-1 bg-background-secondary">
-        <Outlet />
-        <div className="hidden">
-          <ChatSessionsContainer
-            setChat={setChat}
-            activeSessions={activeSessions}
-            liveVoice={liveVoice}
-          />
-        </div>
-      </div>
-    );
-  }
-
   const needsTrafficLightInset = safeIsMacOS && !isFullScreen;
   const headerPadding = needsTrafficLightInset ? 'pl-[96px]' : 'pl-4';
   const headerTop = needsTrafficLightInset ? 'top-[14px]' : 'top-[11px]';
@@ -125,7 +110,13 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liv
     <div className="flex flex-1 w-full h-full relative animate-fade-in bg-background-primary flex-row">
       <div
         style={{ zIndex: Z_INDEX.HEADER }}
-        className={cn('absolute flex items-center gap-1', headerPadding, headerTop, 'ml-1.5')}
+        className={cn(
+          'absolute flex items-center gap-1',
+          headerPadding,
+          headerTop,
+          'ml-1.5',
+          isOnSettingsRoute && 'hidden'
+        )}
       >
         <Button
           onClick={() => setIsNavExpanded(!isNavExpanded)}
@@ -150,7 +141,10 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions, liv
             isDragging ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 40 }
           }
           style={{ height: '100%' }}
-          className="relative flex-shrink-0 overflow-hidden h-full p-2"
+          className={cn(
+            'relative flex-shrink-0 overflow-hidden h-full p-2',
+            isOnSettingsRoute && 'hidden'
+          )}
         >
           <div className="w-full h-full overflow-hidden rounded-xl border border-border-primary">
             <Navigation activeLiveVoiceSessionId={liveVoice.activeSessionId} />
