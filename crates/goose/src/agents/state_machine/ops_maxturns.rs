@@ -2,8 +2,8 @@
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::{
-    assistant_turn_count, messages_since_kickoff, not_applicable, yielded_with, Emitter, Operation,
-    OperationResult,
+    assistant_turn_count, ends_turn, messages_since_kickoff, not_applicable, yielded_with, Emitter,
+    Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -57,7 +57,7 @@ impl Operation<Session, GooseEffect> for MaxTurnsOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        if assistant_turn_count(messages) < self.max_turns {
+        if ends_turn(messages) || assistant_turn_count(messages) < self.max_turns {
             return not_applicable();
         }
 

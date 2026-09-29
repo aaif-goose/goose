@@ -160,6 +160,25 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
 }
 
 #[tokio::test]
+async fn final_answer_on_last_allowed_turn_is_preserved() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_max_turns(1);
+    api.on("answer now").reply("Here is the answer");
+
+    let result = pipeline.run(["answer now"]).await?;
+
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, "Here is the answer");
+    assert!(result
+        .conversation()
+        .messages()
+        .iter()
+        .all(|message| message.as_concat_text() != state_machine::MAX_TURNS_MESSAGE));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("add one").call(ADD, value(1));
