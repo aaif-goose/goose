@@ -364,10 +364,15 @@ pub fn format_messages_with_options(
                                             // Add placeholder text in the tool response
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
-                                            // Create a separate image message
+                                            // Create a separate image message. Include a text part:
+                                            // some OpenAI-compatible gateways ignore a user message whose
+                                            // content is exclusively image parts.
                                             image_messages.push(json!({
                                                 "role": "user",
-                                                "content": [convert_image(&image.clone(), image_format)]
+                                                "content": [
+                                                    json!({"type": "text", "text": "This image is attached to the preceding tool result."}),
+                                                    convert_image(&image.clone(), image_format)
+                                                ]
                                             }));
                                         } else {
                                             // Add placeholder text in the tool response
@@ -660,7 +665,13 @@ fn is_image_only_user_message(msg: &Value) -> bool {
                 !arr.is_empty()
                     && arr
                         .iter()
-                        .all(|item| item.get("type") == Some(&json!("image_url")))
+                        .any(|item| item.get("type") == Some(&json!("image_url")))
+                    && arr.iter().all(|item| {
+                        matches!(
+                            item.get("type").and_then(|t| t.as_str()),
+                            Some("image_url") | Some("text")
+                        )
+                    })
             })
 }
 
