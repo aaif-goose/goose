@@ -312,6 +312,10 @@ async fn test_shell_fencing_standard_privilege_boundary() {
     );
 }
 
+/// Verifies strict fencing privilege and isolation boundaries.
+///
+/// On unprivileged Linux hosts without CAP_SYS_ADMIN, namespace isolation fails closed.
+/// On privileged hosts, execution succeeds with PR_SET_NO_NEW_PRIVS verified.
 #[cfg(target_os = "linux")]
 #[tokio::test]
 #[serial]
