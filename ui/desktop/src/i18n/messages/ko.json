@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "채팅"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "채팅 불러오는 중…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "생성됨"
   },

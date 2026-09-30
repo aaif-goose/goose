@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "交談"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "正在載入聊天…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "建立時間"
   },

@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Cuộc trò chuyện"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Đang tải cuộc trò chuyện…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Đã tạo"
   },

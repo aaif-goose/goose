@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Sohbetler"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Sohbetler yükleniyor…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Oluşturuldu"
   },

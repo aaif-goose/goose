@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chats werden geladen…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Erstellt"
   },

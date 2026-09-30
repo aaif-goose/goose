@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "चैट"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "चैट लोड हो रही हैं…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "बनाया गया"
   },

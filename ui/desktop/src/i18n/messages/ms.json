@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Sembang"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Memuatkan sembang…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Dicipta"
   },

@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Чаты"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Загрузка чатов…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Создано"
   },

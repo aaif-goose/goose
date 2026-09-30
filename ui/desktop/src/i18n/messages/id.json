@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Obrolan"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Memuat obrolan…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Dibuat"
   },

@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "チャット"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "チャットを読み込み中…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "作成"
   },

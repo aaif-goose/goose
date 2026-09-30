@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Discussions"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chargement des discussions…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Créé"
   },

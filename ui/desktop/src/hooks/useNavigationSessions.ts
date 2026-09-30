@@ -61,6 +61,7 @@ export function useNavigationSessions() {
   const chatContext = useChatContext();
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
+  const [hasLoadedSessions, setHasLoadedSessions] = useState(false);
   const recentSessionsByProject = useMemo(
     () => groupSessionsByProject(recentSessions),
     [recentSessions]
@@ -83,6 +84,8 @@ export function useNavigationSessions() {
       setRecentSessions(sessions);
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
+    } finally {
+      setHasLoadedSessions(true);
     }
   }, []);
 
@@ -214,6 +217,7 @@ export function useNavigationSessions() {
   return {
     recentSessions,
     recentSessionsByProject,
+    isLoadingSessions: !hasLoadedSessions,
     activeSessionId,
     fetchSessions,
     handleNavClick,
