@@ -59,6 +59,35 @@ import { registerPlatformEventHandlers } from './utils/platform_events';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { useLiveVoice, type LiveVoiceController } from './liveVoice/useLiveVoice';
 
+// Checks a KeyboardEvent against an Electron accelerator string (e.g. "CommandOrControl+N"),
+// mapping CommandOrControl/Command/Control to the platform-appropriate modifier.
+function matchesAccelerator(event: KeyboardEvent, accelerator: string): boolean {
+  const isMac = window.electron.platform === 'darwin';
+  const parts = accelerator.split('+').map((part) => part.trim().toLowerCase());
+  const keyPart = parts[parts.length - 1];
+  const modifierParts = parts.slice(0, -1);
+
+  const wantsPrimary = modifierParts.some(
+    (part) =>
+      part === 'commandorcontrol' ||
+      part === 'command' ||
+      part === 'cmd' ||
+      part === 'ctrl' ||
+      part === 'control'
+  );
+  const wantsAlt = modifierParts.includes('alt') || modifierParts.includes('option');
+  const wantsShift = modifierParts.includes('shift');
+
+  const primaryPressed = isMac ? event.metaKey : event.ctrlKey;
+  const otherModifierPressed = isMac ? event.ctrlKey : event.metaKey;
+
+  if (primaryPressed !== wantsPrimary || otherModifierPressed) return false;
+  if (event.altKey !== wantsAlt) return false;
+  if (event.shiftKey !== wantsShift) return false;
+
+  return event.key.toLowerCase() === keyPart;
+}
+
 function PageViewTracker() {
   usePageViewTracking();
   return null;
@@ -498,20 +527,38 @@ export function AppInner() {
   }, [navigate]);
 
   useEffect(() => {
+    let newChatWindowAccelerator: string | null | undefined;
+
+    const loadShortcut = async () => {
+      try {
+        const shortcuts = await window.electron.getSetting('keyboardShortcuts');
+        newChatWindowAccelerator = shortcuts?.newChatWindow;
+      } catch (error) {
+        console.error('Failed to load newChatWindow shortcut setting:', error);
+      }
+    };
+    loadShortcut();
+    // Settings can be changed from the Settings page in the same session, so
+    // re-read on focus rather than only once at mount.
+    window.addEventListener('focus', loadShortcut);
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      const isMac = window.electron.platform === 'darwin';
-      if ((isMac ? event.metaKey : event.ctrlKey) && event.key === 'n') {
-        event.preventDefault();
-        try {
-          window.electron.createChatWindow({ dir: getInitialWorkingDir() });
-        } catch (error) {
-          console.error('Error creating new window:', error);
-        }
+      // Respect the user's configured shortcut (including disabling it
+      // entirely) instead of hardcoding Cmd/Ctrl+N.
+      if (!newChatWindowAccelerator || !matchesAccelerator(event, newChatWindowAccelerator)) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        window.electron.createChatWindow({ dir: getInitialWorkingDir() });
+      } catch (error) {
+        console.error('Error creating new window:', error);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('focus', loadShortcut);
     };
   }, []);
 
