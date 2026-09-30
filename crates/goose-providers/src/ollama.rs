@@ -50,6 +50,12 @@ const OLLAMA_BACKOFF_MULTIPLIER: f64 = 1.5;
 const OLLAMA_MAX_RETRY_INTERVAL_MS: u64 = 15_000;
 const SHOW_INFO_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Clone, Copy)]
+struct OllamaCapabilities {
+    thinking: bool,
+    vision: bool,
+}
+
 /// Provider settings resolved from `config::Config` at construction time.
 ///
 /// All values that the Ollama provider reads out of the global config are
@@ -91,7 +97,7 @@ pub struct OllamaProvider {
     skip_canonical_filtering: bool,
     options: OllamaOptions,
     #[serde(skip)]
-    thinking_support: Mutex<HashMap<String, bool>>,
+    capabilities: Mutex<HashMap<String, OllamaCapabilities>>,
 }
 
 pub struct OllamaProviderBuilder {
@@ -166,7 +172,7 @@ impl OllamaProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             options: self.options,
-            thinking_support: Mutex::new(HashMap::new()),
+            capabilities: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -203,16 +209,16 @@ impl OllamaProvider {
             ThinkingEffort::Medium => "medium",
             ThinkingEffort::High | ThinkingEffort::Max => "high",
         };
-        let supports_thinking = match self.supports_thinking(&model_config.model_name).await {
-            Some(supports_thinking) => supports_thinking,
+        let supports_thinking = match self.model_capabilities(&model_config.model_name).await {
+            Some(capabilities) => capabilities.thinking,
             None => model_config.is_reasoning_model(),
         };
         supports_thinking.then_some(level)
     }
 
-    async fn supports_thinking(&self, model: &str) -> Option<bool> {
+    async fn model_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
         if let Some(cached) = self
-            .thinking_support
+            .capabilities
             .lock()
             .ok()
             .and_then(|cache| cache.get(model).copied())
@@ -220,18 +226,17 @@ impl OllamaProvider {
             return Some(cached);
         }
 
-        let supports_thinking =
-            tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_thinking_capability(model))
-                .await
-                .ok()
-                .flatten()?;
-        if let Ok(mut cache) = self.thinking_support.lock() {
-            cache.insert(model.to_string(), supports_thinking);
+        let capabilities = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_capabilities(model))
+            .await
+            .ok()
+            .flatten()?;
+        if let Ok(mut cache) = self.capabilities.lock() {
+            cache.insert(model.to_string(), capabilities);
         }
-        Some(supports_thinking)
+        Some(capabilities)
     }
 
-    async fn fetch_thinking_capability(&self, model: &str) -> Option<bool> {
+    async fn fetch_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
         let response = self
             .api_client
             .request("api/show")
@@ -244,11 +249,15 @@ impl OllamaProvider {
 
         let json: Value = response.json().await.ok()?;
         let capabilities = json.get("capabilities")?.as_array()?;
-        Some(
+        let has = |name| {
             capabilities
                 .iter()
-                .any(|capability| capability.as_str() == Some("thinking")),
-        )
+                .any(|capability| capability.as_str() == Some(name))
+        };
+        Some(OllamaCapabilities {
+            thinking: has("thinking"),
+            vision: has("vision"),
+        })
     }
 }
 
@@ -478,8 +487,13 @@ impl Provider for OllamaProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let mut effective_model_config = model_config.clone();
+        if let Some(capabilities) = self.model_capabilities(&model_config.model_name).await {
+            effective_model_config.supports_vision = Some(capabilities.vision);
+        }
+
         let mut payload = create_request(
-            model_config,
+            &effective_model_config,
             system,
             messages,
             tools,
@@ -854,6 +868,53 @@ mod tests {
         );
         model_config.model_name = "llama3.1".to_string();
         assert_eq!(provider.reasoning_effort(&model_config).await, None);
+    }
+
+    #[tokio::test]
+    async fn stream_uses_ollama_vision_capability_before_formatting_images() {
+        for (capabilities, supports_vision) in [
+            (vec!["completion", "vision"], true),
+            (vec!["completion"], false),
+        ] {
+            let server = mock_show_server(show_capabilities(&capabilities), 1).await;
+            Mock::given(method("POST"))
+                .and(path("/v1/chat/completions"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let model_config = ModelConfig::new("qwen3-vl:2b");
+            let message = Message::user()
+                .with_text("What is in this image?")
+                .with_image("aW1hZ2VkYXRh", "image/png");
+            let provider = provider_for(&server);
+            let _stream = provider
+                .stream(&model_config, "system", &[message], &[])
+                .await
+                .unwrap();
+
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests.len(), 2);
+            let request = requests
+                .iter()
+                .find(|request| request.url.path() == "/v1/chat/completions")
+                .unwrap();
+            let payload: Value = serde_json::from_slice(&request.body).unwrap();
+
+            if supports_vision {
+                assert_eq!(payload["messages"][1]["content"][1]["type"], "image_url");
+                assert_eq!(
+                    payload["messages"][1]["content"][1]["image_url"]["url"],
+                    "data:image/png;base64,aW1hZ2VkYXRh"
+                );
+            } else {
+                assert!(payload["messages"][1]["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains("[image omitted: model does not support vision]"));
+            }
+        }
     }
 
     #[test]
