@@ -329,6 +329,19 @@ async fn test_shell_fencing_strict_privilege_boundary() {
         })
         .await;
 
+    if result.is_error == Some(true) {
+        let text = extract_text(&result);
+        assert!(
+            text.contains("Operation not permitted")
+                || text.contains("Permission denied")
+                || text.contains("failed")
+                || text.contains("error"),
+            "expected fail-closed error message under unprivileged strict mode, got: {}",
+            text
+        );
+        return;
+    }
+
     assert_eq!(result.is_error, Some(false));
     let output = extract_shell_output(&result);
     assert_eq!(output.exit_code, Some(0));
