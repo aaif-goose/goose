@@ -144,6 +144,7 @@ import type {
   ProviderConfigSaveRequest_unstable,
   ProviderConfigStatusRequest_unstable,
   ProviderConfigStatusResponse_unstable,
+  ProviderEnablementSetRequest_unstable,
   ProviderReadinessCheckRequest_unstable,
   ProviderReadinessCheckResponse_unstable,
   ProviderSecretDeleteRequest_unstable,
@@ -678,6 +679,12 @@ export class GooseExtClient {
     return zProviderConfigStatusResponse_unstable.parse(
       raw,
     ) as ProviderConfigStatusResponse_unstable;
+  }
+
+  async providersEnablementSet_unstable(
+    params: ProviderEnablementSetRequest_unstable,
+  ): Promise<void> {
+    await this.conn.request("_goose/unstable/providers/enablement/set", params);
   }
 
   async providersConfigSave_unstable(

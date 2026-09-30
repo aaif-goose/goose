@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {
   acpEnableProvider,
+  acpSetProviderEnabled,
   acpGetProviderDetails,
   acpListProviderDetails,
   acpListSettingsProviderDetails,
@@ -26,6 +27,28 @@ function selectConfigOption(id: string, currentValue: string) {
 }
 
 describe('ACP providers', () => {
+  it('keeps enablement separate from detected credentials', async () => {
+    const client = {
+      goose: {
+        providersList_unstable: vi
+          .fn()
+          .mockResolvedValue({ entries: [providerEntry({ enabled: false, configured: true })] }),
+        providersEnablementSet_unstable: vi.fn().mockResolvedValue({}),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+    const [provider] = await acpListProviderDetails();
+    expect(provider.is_enabled).toBe(false);
+    expect(provider.is_configured).toBe(true);
+    await acpSetProviderEnabled(provider.name, false);
+    expect(client.goose.providersEnablementSet_unstable).toHaveBeenCalledWith({
+      providerId: provider.name,
+      enabled: false,
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -233,6 +256,7 @@ describe('ACP providers', () => {
   it('probes an installed ACP adapter and returns its refreshed models', async () => {
     const installed = providerEntry({ configured: true, refreshing: false });
     const refreshed = providerEntry({
+      enabled: true,
       configured: true,
       refreshing: false,
       models: [{ id: 'claude-sonnet', name: 'Claude Sonnet', recommended: true }],
@@ -268,6 +292,7 @@ describe('ACP providers', () => {
   it('waits for first-time ACP model discovery after enabling the provider', async () => {
     const available = providerEntry({ configured: false });
     const refreshed = providerEntry({
+      enabled: true,
       configured: true,
       models: [{ id: 'claude-sonnet', name: 'Claude Sonnet', recommended: true }],
     });
@@ -377,6 +402,7 @@ function providerEntry(overrides: Record<string, unknown> = {}) {
     providerName: 'Claude Code',
     description: 'Use Claude Code through ACP',
     defaultModel: 'current',
+    enabled: overrides.configured ?? true,
     configured: true,
     available: true,
     providerType: 'Builtin',

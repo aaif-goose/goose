@@ -482,6 +482,27 @@ impl Config {
             .expect("config_paths must not be empty")
     }
 
+    pub(crate) fn migrate_provider_enablement(
+        &self,
+        legacy_visible: &[String],
+    ) -> Result<(), ConfigError> {
+        let _guard = self.guard.lock().unwrap();
+        let legacy_install = self.exists();
+        // Validate all layers before any legacy migration writes to disk.
+        self.load_strict()?;
+        let mut writable = self.load_write_config()?;
+        let effective = self.load_strict()?;
+        if super::providers::migrate_enablement(
+            &effective,
+            &mut writable,
+            legacy_visible,
+            legacy_install,
+        ) {
+            self.save_values(&writable)?;
+        }
+        Ok(())
+    }
+
     pub fn exists(&self) -> bool {
         self.config_paths.iter().any(|p| p.exists())
     }
@@ -498,7 +519,11 @@ impl Config {
     /// Returns an empty mapping if the file doesn't exist or can't be parsed.
     fn load_write_config(&self) -> Result<Mapping, ConfigError> {
         if !self.write_path().exists() {
-            return Ok(Mapping::new());
+            let mut values = Mapping::new();
+            if !self.exists() {
+                values.insert(super::providers::ENABLEMENT_VERSION_KEY.into(), 1.into());
+            }
+            return Ok(values);
         }
         let content = std::fs::read_to_string(self.write_path())?;
         let mut values = parse_yaml_content(&content).unwrap_or_else(|e| {
@@ -667,9 +692,10 @@ impl Config {
         Ok(())
     }
 
-    pub fn initialize_if_empty(&self, values: Mapping) -> Result<(), ConfigError> {
+    pub fn initialize_if_empty(&self, mut values: Mapping) -> Result<(), ConfigError> {
         let _guard = self.guard.lock().unwrap();
         if !self.exists() {
+            values.insert(super::providers::ENABLEMENT_VERSION_KEY.into(), 1.into());
             self.save_values(&values)
         } else {
             Ok(())

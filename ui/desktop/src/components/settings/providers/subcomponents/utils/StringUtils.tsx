@@ -2,14 +2,14 @@ import { defineMessages } from '../../../../../i18n';
 import type { IntlShape } from 'react-intl';
 
 const i18n = defineMessages({
-  configuredProvider: {
-    id: 'stringUtils.configuredProvider',
-    defaultMessage: '{name} provider is configured',
+  enabledProvider: {
+    id: 'stringUtils.enabledProvider',
+    defaultMessage: '{name} provider is enabled',
   },
 });
 
-export function ConfiguredProviderTooltipMessage(intl: IntlShape, name: string) {
-  return intl.formatMessage(i18n.configuredProvider, { name });
+export function EnabledProviderTooltipMessage(intl: IntlShape, name: string) {
+  return intl.formatMessage(i18n.enabledProvider, { name });
 }
 
 interface ProviderDescriptionProps {

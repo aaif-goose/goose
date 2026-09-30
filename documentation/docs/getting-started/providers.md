@@ -181,7 +181,7 @@ To configure your chosen provider, see available options, or select a model, vis
   2. Click the `Settings` button on the sidebar
   3. Click the `Models` tab
   4. Click `Switch models`
-  5. Choose from your configured providers in the dropdown, or select `Use other provider` to configure a new one
+  5. Choose from your enabled providers in the dropdown, or select `Use other provider` to configure a new one
   6. Select a model from the available options, or choose `Use custom model` to enter a specific model name
   7. Click `Select model` to confirm your choice
 
@@ -400,6 +400,14 @@ You can reach a [LiteLLM](https://docs.litellm.ai/) proxy in either of two ways�
 :::tip Enterprise Deployment
 For enterprise deployments, you can pre-configure these values using environment variables or configuration files to ensure consistent governance across your organization.
 :::
+
+## Enable and Disable Providers
+
+In **Settings → Models → Configure Providers**, use **Enable** or **Disable** on a provider card to control whether it appears in model pickers. Disabling keeps its saved credentials and model settings. You can enable it again from the same screen. Deleting configuration is a separate action that clears saved settings.
+
+The green check means the provider is enabled, not that its credentials have been verified. A provider can remain enabled while it needs setup or sign-in. Disabling does not stop existing sessions or block an explicitly selected CLI or recipe provider.
+
+On upgrade, goose preserves existing enablement choices and the previous provider list. Providers that appeared automatically may therefore remain enabled initially, but disabling them now persists across restarts and credential discovery. New installations and providers added after migration start disabled until you enable or configure them.
 
 ## Configure Custom Provider
 
