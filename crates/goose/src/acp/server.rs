@@ -567,6 +567,7 @@ fn initial_session_extensions(
     goose_extensions: Option<Vec<GooseExtension>>,
     recipe_extensions: Option<&[ExtensionConfig]>,
 ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+    let recipe_extensions = recipe_extensions.filter(|extensions| !extensions.is_empty());
     // A selection the client sends is the whole session: an empty list starts no
     // extensions, and `[memory]` starts Memory without the default built-ins.
     if let (None, Some(goose_extensions)) = (recipe_extensions, goose_extensions) {
@@ -2923,7 +2924,23 @@ extensions:
     }
 
     #[test]
-    fn explicit_empty_extensions_preserve_recipe_precedence() {
+    fn empty_recipe_extensions_do_not_override_explicit_empty_extensions() {
+        let (config, _c, _s) = config_with_yaml("");
+        let project_root = tempfile::tempdir().unwrap();
+        let extensions = initial_session_extensions(
+            &config,
+            &default_builtin("developer"),
+            project_root.path(),
+            vec![],
+            Some(vec![]),
+            Some(&[]),
+        )
+        .unwrap();
+        assert!(extensions.is_empty());
+    }
+
+    #[test]
+    fn nonempty_recipe_extensions_preserve_precedence_over_explicit_empty_extensions() {
         let (config, _c, _s) = config_with_yaml("");
         let project_root = tempfile::tempdir().unwrap();
         let recipe = vec![builtin_to_extension_config("developer")];
