@@ -22,9 +22,59 @@ const CLONE_NEWIPC: libc::c_int = 0x08000000;
 const CLONE_NEWNET: libc::c_int = 0x40000000;
 
 #[cfg(target_os = "linux")]
-pub const SYS_LANDLOCK_CREATE_RULESET: libc::c_long = 444;
+pub const SYS_LANDLOCK_CREATE_RULESET: libc::c_long = libc::SYS_landlock_create_ruleset;
+#[cfg(target_os = "linux")]
+pub const SYS_LANDLOCK_ADD_RULE: libc::c_long = libc::SYS_landlock_add_rule;
+#[cfg(target_os = "linux")]
+pub const SYS_LANDLOCK_RESTRICT_SELF: libc::c_long = libc::SYS_landlock_restrict_self;
 #[cfg(target_os = "linux")]
 pub const LANDLOCK_CREATE_RULESET_VERSION: libc::c_uint = 1 << 0;
+#[cfg(target_os = "linux")]
+const LANDLOCK_RULE_PATH_BENEATH: libc::c_int = 1;
+
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct LandlockRulesetAttr {
+    handled_access_fs: u64,
+}
+
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct LandlockPathBeneathAttr {
+    allowed_access: u64,
+    parent_fd: libc::c_int,
+}
+
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_EXECUTE: u64 = 1 << 0;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_WRITE_FILE: u64 = 1 << 1;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_READ_FILE: u64 = 1 << 2;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_READ_DIR: u64 = 1 << 3;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_REMOVE_DIR: u64 = 1 << 4;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_REMOVE_FILE: u64 = 1 << 5;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_CHAR: u64 = 1 << 6;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_DIR: u64 = 1 << 7;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_REG: u64 = 1 << 8;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_SOCK: u64 = 1 << 9;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_FIFO: u64 = 1 << 10;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_BLOCK: u64 = 1 << 11;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_MAKE_SYM: u64 = 1 << 12;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_REFER: u64 = 1 << 13;
+#[cfg(target_os = "linux")]
+const LANDLOCK_ACCESS_FS_TRUNCATE: u64 = 1 << 14;
 
 /// Process fencing mode for isolating subprocesses and shell execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -53,8 +103,8 @@ impl Default for ProcessFenceConfig {
     fn default() -> Self {
         Self {
             mode: ProcessFenceMode::None,
-            isolate_process_group: true,
-            parent_death_signal: true,
+            isolate_process_group: false,
+            parent_death_signal: false,
             death_signal_kill: false,
             child_subreaper: false,
             isolate_namespaces: false,
@@ -85,8 +135,24 @@ impl ProcessFenceConfig {
             _ => ProcessFenceMode::None,
         };
 
-        let isolate_process_group = true;
-        let parent_death_signal = true;
+        let isolate_process_group = if let Some(v) = lookup("GOOSE_FENCE_PGROUP")
+            .or_else(|| lookup("GOOSE_PROCESS_GROUP"))
+        {
+            v == "1" || v.eq_ignore_ascii_case("true")
+        } else {
+            matches!(mode, ProcessFenceMode::Standard | ProcessFenceMode::Strict)
+        };
+
+        let parent_death_signal = if let Some(v) = lookup("GOOSE_FENCE_PDEATHSIG")
+            .or_else(|| lookup("GOOSE_PDEATHSIG"))
+        {
+            !v.eq_ignore_ascii_case("0")
+                && !v.eq_ignore_ascii_case("false")
+                && !v.eq_ignore_ascii_case("none")
+        } else {
+            matches!(mode, ProcessFenceMode::Standard | ProcessFenceMode::Strict)
+        };
+
         let death_signal_kill = matches!(mode, ProcessFenceMode::Strict)
             || lookup("GOOSE_FENCE_PDEATHSIG")
                 .or_else(|| lookup("GOOSE_PDEATHSIG"))
@@ -138,7 +204,14 @@ where
     F: Fn(&str) -> Option<String>,
 {
     let config = ProcessFenceConfig::from_lookup(&lookup);
-    config.mode != ProcessFenceMode::None || lookup("GOOSE_FENCE_RUNTIME").is_some()
+    config.mode != ProcessFenceMode::None
+        || config.isolate_process_group
+        || config.parent_death_signal
+        || config.child_subreaper
+        || config.isolate_namespaces
+        || config.isolate_network
+        || config.landlock_enabled
+        || config.custom_runtime.is_some()
 }
 
 /// Check Landlock LSM ABI availability on Linux.
@@ -146,8 +219,8 @@ where
 pub fn probe_landlock_abi() -> Option<u32> {
     let rc = unsafe {
         libc::syscall(
-            SYS_LANDLOCK_CREATE_RULESET,
-            std::ptr::null::<()>(),
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<LandlockRulesetAttr>(),
             0usize,
             LANDLOCK_CREATE_RULESET_VERSION,
         )
@@ -162,6 +235,149 @@ pub fn probe_landlock_abi() -> Option<u32> {
 #[cfg(not(target_os = "linux"))]
 pub fn probe_landlock_abi() -> Option<u32> {
     None
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn enforce_landlock(fence: &ProcessFenceConfig) -> Result<(), std::io::Error> {
+    let abi = libc::syscall(
+        libc::SYS_landlock_create_ruleset,
+        std::ptr::null::<LandlockRulesetAttr>(),
+        0usize,
+        LANDLOCK_CREATE_RULESET_VERSION,
+    );
+
+    if abi < 1 {
+        if fence.mode == ProcessFenceMode::Strict {
+            return Err(std::io::Error::from_raw_os_error(libc::EPERM));
+        }
+        return Ok(());
+    }
+
+    let mut handled_fs = LANDLOCK_ACCESS_FS_EXECUTE
+        | LANDLOCK_ACCESS_FS_WRITE_FILE
+        | LANDLOCK_ACCESS_FS_READ_FILE
+        | LANDLOCK_ACCESS_FS_READ_DIR
+        | LANDLOCK_ACCESS_FS_REMOVE_DIR
+        | LANDLOCK_ACCESS_FS_REMOVE_FILE
+        | LANDLOCK_ACCESS_FS_MAKE_CHAR
+        | LANDLOCK_ACCESS_FS_MAKE_DIR
+        | LANDLOCK_ACCESS_FS_MAKE_REG
+        | LANDLOCK_ACCESS_FS_MAKE_SOCK
+        | LANDLOCK_ACCESS_FS_MAKE_FIFO
+        | LANDLOCK_ACCESS_FS_MAKE_BLOCK
+        | LANDLOCK_ACCESS_FS_MAKE_SYM;
+    if abi >= 2 {
+        handled_fs |= LANDLOCK_ACCESS_FS_REFER;
+    }
+    if abi >= 3 {
+        handled_fs |= LANDLOCK_ACCESS_FS_TRUNCATE;
+    }
+
+    let attr = LandlockRulesetAttr {
+        handled_access_fs: handled_fs,
+    };
+
+    let ruleset_fd = libc::syscall(
+        libc::SYS_landlock_create_ruleset,
+        &attr as *const LandlockRulesetAttr,
+        std::mem::size_of::<LandlockRulesetAttr>(),
+        0u32,
+    );
+
+    if ruleset_fd < 0 {
+        if fence.mode == ProcessFenceMode::Strict {
+            return Err(std::io::Error::last_os_error());
+        }
+        return Ok(());
+    }
+
+    let ro_access = LANDLOCK_ACCESS_FS_READ_FILE
+        | LANDLOCK_ACCESS_FS_READ_DIR
+        | LANDLOCK_ACCESS_FS_EXECUTE;
+    let rw_access = handled_fs;
+    let file_mask = LANDLOCK_ACCESS_FS_READ_FILE
+        | LANDLOCK_ACCESS_FS_WRITE_FILE
+        | LANDLOCK_ACCESS_FS_EXECUTE
+        | if abi >= 3 { LANDLOCK_ACCESS_FS_TRUNCATE } else { 0 };
+
+    let ro_paths: &[&[u8]] = &[b"/\0"];
+    let rw_paths: &[&[u8]] = &[
+        b"/tmp\0",
+        b"/var/tmp\0",
+        b".\0",
+        b"/dev/null\0",
+        b"/dev/zero\0",
+        b"/dev/urandom\0",
+    ];
+
+    let add_path_rule = |path_bytes: &[u8], desired_access: u64| -> Result<(), std::io::Error> {
+        let fd = libc::open(
+            path_bytes.as_ptr() as *const libc::c_char,
+            libc::O_PATH | libc::O_CLOEXEC,
+        );
+        if fd < 0 {
+            return Ok(());
+        }
+
+        let mut stat: libc::stat = std::mem::zeroed();
+        let effective_access = if libc::fstat(fd, &mut stat) == 0 {
+            let is_dir = (stat.st_mode & libc::S_IFMT) == libc::S_IFDIR;
+            if is_dir {
+                desired_access
+            } else {
+                desired_access & file_mask
+            }
+        } else {
+            desired_access & file_mask
+        };
+
+        if effective_access == 0 {
+            libc::close(fd);
+            return Ok(());
+        }
+
+        let rule = LandlockPathBeneathAttr {
+            allowed_access: effective_access,
+            parent_fd: fd,
+        };
+
+        let rc = libc::syscall(
+            libc::SYS_landlock_add_rule,
+            ruleset_fd,
+            LANDLOCK_RULE_PATH_BENEATH,
+            &rule as *const LandlockPathBeneathAttr,
+            0u32,
+        );
+        libc::close(fd);
+
+        if rc < 0 && fence.mode == ProcessFenceMode::Strict {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    };
+
+    for path in ro_paths {
+        if let Err(err) = add_path_rule(path, ro_access) {
+            libc::close(ruleset_fd as libc::c_int);
+            return Err(err);
+        }
+    }
+
+    for path in rw_paths {
+        if let Err(err) = add_path_rule(path, rw_access) {
+            libc::close(ruleset_fd as libc::c_int);
+            return Err(err);
+        }
+    }
+
+    let ret = libc::syscall(libc::SYS_landlock_restrict_self, ruleset_fd, 0u32);
+    libc::close(ruleset_fd as libc::c_int);
+
+    if ret != 0 && fence.mode == ProcessFenceMode::Strict {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -199,7 +415,10 @@ fn configure_linux_fencing(command: &mut Command, config: &ProcessFenceConfig) {
             }
 
             if unshare_flags != 0 {
-                let _ = libc::unshare(unshare_flags);
+                let rc = libc::unshare(unshare_flags);
+                if rc != 0 && fence.mode == ProcessFenceMode::Strict {
+                    return Err(std::io::Error::last_os_error());
+                }
             }
 
             if fence.mode != ProcessFenceMode::None || fence.landlock_enabled {
@@ -210,15 +429,7 @@ fn configure_linux_fencing(command: &mut Command, config: &ProcessFenceConfig) {
                 }
 
                 if fence.landlock_enabled || fence.mode == ProcessFenceMode::Strict {
-                    let abi = libc::syscall(
-                        SYS_LANDLOCK_CREATE_RULESET,
-                        std::ptr::null::<()>(),
-                        0usize,
-                        LANDLOCK_CREATE_RULESET_VERSION,
-                    );
-                    if abi < 1 && fence.mode == ProcessFenceMode::Strict {
-                        return Err(std::io::Error::from_raw_os_error(libc::EPERM));
-                    }
+                    enforce_landlock(&fence)?;
                 }
             }
 
@@ -263,7 +474,10 @@ fn configure_linux_std_fencing(command: &mut std::process::Command, config: &Pro
             }
 
             if unshare_flags != 0 {
-                let _ = libc::unshare(unshare_flags);
+                let rc = libc::unshare(unshare_flags);
+                if rc != 0 && fence.mode == ProcessFenceMode::Strict {
+                    return Err(std::io::Error::last_os_error());
+                }
             }
 
             if fence.mode != ProcessFenceMode::None || fence.landlock_enabled {
@@ -274,15 +488,7 @@ fn configure_linux_std_fencing(command: &mut std::process::Command, config: &Pro
                 }
 
                 if fence.landlock_enabled || fence.mode == ProcessFenceMode::Strict {
-                    let abi = libc::syscall(
-                        SYS_LANDLOCK_CREATE_RULESET,
-                        std::ptr::null::<()>(),
-                        0usize,
-                        LANDLOCK_CREATE_RULESET_VERSION,
-                    );
-                    if abi < 1 && fence.mode == ProcessFenceMode::Strict {
-                        return Err(std::io::Error::from_raw_os_error(libc::EPERM));
-                    }
+                    enforce_landlock(&fence)?;
                 }
             }
 
@@ -371,7 +577,13 @@ fn configure_common_subprocess(command: &mut Command) {
 
 #[allow(unused_variables)]
 pub fn configure_subprocess(command: &mut Command) {
-    command.apply_process_fencing();
+    let mut config = ProcessFenceConfig::from_env();
+    // Maintain existing MCP subprocess defaults:
+    // Historically, MCP subprocesses are placed in their own process group
+    // and receive parent death signal on Linux.
+    config.isolate_process_group = true;
+    config.parent_death_signal = true;
+    command.apply_fence_config(&config);
 }
 
 pub fn configure_fenced_subprocess(command: &mut Command, config: &ProcessFenceConfig) {
@@ -379,7 +591,10 @@ pub fn configure_fenced_subprocess(command: &mut Command, config: &ProcessFenceC
 }
 
 pub fn configure_std_subprocess(command: &mut std::process::Command) {
-    command.apply_process_fencing();
+    let mut config = ProcessFenceConfig::from_env();
+    config.isolate_process_group = true;
+    config.parent_death_signal = true;
+    command.apply_fence_config(&config);
 }
 
 #[cfg(target_os = "linux")]
@@ -454,8 +669,8 @@ mod tests {
     fn test_process_fence_config_defaults() {
         let config = ProcessFenceConfig::default();
         assert_eq!(config.mode, ProcessFenceMode::None);
-        assert!(config.isolate_process_group);
-        assert!(config.parent_death_signal);
+        assert!(!config.isolate_process_group);
+        assert!(!config.parent_death_signal);
         assert!(!config.death_signal_kill);
         assert!(!config.child_subreaper);
         assert!(!config.isolate_namespaces);
@@ -470,6 +685,8 @@ mod tests {
         env.insert("GOOSE_PROCESS_FENCE", "strict".to_string());
         let config = ProcessFenceConfig::from_lookup(|k| env.get(k).cloned());
         assert_eq!(config.mode, ProcessFenceMode::Strict);
+        assert!(config.isolate_process_group);
+        assert!(config.parent_death_signal);
         assert!(config.death_signal_kill);
         assert!(config.child_subreaper);
         assert!(config.isolate_namespaces);
@@ -479,6 +696,8 @@ mod tests {
         env.insert("GOOSE_PROCESS_FENCE", "standard".to_string());
         let config = ProcessFenceConfig::from_lookup(|k| env.get(k).cloned());
         assert_eq!(config.mode, ProcessFenceMode::Standard);
+        assert!(config.isolate_process_group);
+        assert!(config.parent_death_signal);
         assert!(!config.death_signal_kill);
         assert!(config.child_subreaper);
         assert!(!config.isolate_namespaces);
@@ -488,6 +707,8 @@ mod tests {
         env.clear();
         let config = ProcessFenceConfig::from_lookup(|k| env.get(k).cloned());
         assert_eq!(config.mode, ProcessFenceMode::None);
+        assert!(!config.isolate_process_group);
+        assert!(!config.parent_death_signal);
         assert!(!config.death_signal_kill);
         assert!(!is_process_fencing_enabled_with(|k| env.get(k).cloned()));
     }
@@ -496,6 +717,7 @@ mod tests {
     fn test_process_fence_custom_env_flags() {
         let mut env = HashMap::new();
         env.insert("GOOSE_PROCESS_FENCE", "none".to_string());
+        env.insert("GOOSE_FENCE_PGROUP", "true".to_string());
         env.insert("GOOSE_FENCE_PDEATHSIG", "kill".to_string());
         env.insert("GOOSE_FENCE_SUBREAPER", "true".to_string());
         env.insert("GOOSE_FENCE_NAMESPACES", "1".to_string());
@@ -505,6 +727,8 @@ mod tests {
 
         let config = ProcessFenceConfig::from_lookup(|k| env.get(k).cloned());
         assert_eq!(config.mode, ProcessFenceMode::None);
+        assert!(config.isolate_process_group);
+        assert!(config.parent_death_signal);
         assert!(config.death_signal_kill);
         assert!(config.child_subreaper);
         assert!(config.isolate_namespaces);
@@ -512,6 +736,15 @@ mod tests {
         assert!(config.landlock_enabled);
         assert_eq!(config.custom_runtime.as_deref(), Some("vetto"));
         assert!(is_process_fencing_enabled_with(|k| env.get(k).cloned()));
+    }
+
+    #[test]
+    fn test_mcp_subprocess_defaults_preserve_isolation() {
+        let mut cmd = Command::new("echo");
+        configure_subprocess(&mut cmd);
+
+        let mut std_cmd = std::process::Command::new("echo");
+        configure_std_subprocess(&mut std_cmd);
     }
 
     #[test]

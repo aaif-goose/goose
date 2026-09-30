@@ -1,4 +1,4 @@
-#![cfg(target_os = "linux")]
+#![cfg(unix)]
 
 use goose::agents::platform_extensions::developer::shell::{ShellOutput, ShellParams, ShellTool};
 use rmcp::model::CallToolResult;
@@ -11,12 +11,17 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
+#[cfg(target_os = "linux")]
 const EXTINCTION_HELPER_ENV: &str = "GOOSE_TEST_SHELL_EXTINCTION_HELPER";
+#[cfg(target_os = "linux")]
 const EXTINCTION_MODE_ENV: &str = "GOOSE_TEST_SHELL_EXTINCTION_MODE";
+#[cfg(target_os = "linux")]
 const EXTINCTION_PID_FILE_ENV: &str = "GOOSE_TEST_SHELL_EXTINCTION_PID_FILE";
 
+#[cfg(target_os = "linux")]
 struct HelperProcess(Child);
 
+#[cfg(target_os = "linux")]
 impl Drop for HelperProcess {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -36,6 +41,7 @@ impl Drop for ProcessKillGuard {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[ctor::ctor]
 unsafe fn maybe_run_extinction_helper() {
     if std::env::var_os(EXTINCTION_HELPER_ENV).is_none() {
@@ -127,9 +133,20 @@ fn extract_text(result: &CallToolResult) -> String {
 }
 
 fn process_exists(pid: u32) -> bool {
-    PathBuf::from(format!("/proc/{pid}")).exists()
+    if pid == 0 {
+        return false;
+    }
+    unsafe {
+        if libc::kill(pid as libc::pid_t, 0) == 0 {
+            true
+        } else {
+            let err = std::io::Error::last_os_error().raw_os_error();
+            err == Some(libc::EPERM)
+        }
+    }
 }
 
+#[cfg(target_os = "linux")]
 fn process_is_running(pid: u32) -> bool {
     match process_state(pid) {
         Some('Z') | None => false,
@@ -137,6 +154,12 @@ fn process_is_running(pid: u32) -> bool {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn process_is_running(pid: u32) -> bool {
+    process_exists(pid)
+}
+
+#[cfg(target_os = "linux")]
 fn process_state(pid: u32) -> Option<char> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let (_, after_name) = stat.rsplit_once(") ")?;
@@ -262,6 +285,7 @@ exec "$@"
     assert!(visible.contains("runtime-out-test"));
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 #[serial]
 async fn test_shell_fencing_standard_privilege_boundary() {
@@ -288,6 +312,7 @@ async fn test_shell_fencing_standard_privilege_boundary() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[tokio::test]
 #[serial]
 async fn test_shell_fencing_strict_privilege_boundary() {
@@ -314,6 +339,7 @@ async fn test_shell_fencing_strict_privilege_boundary() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 #[serial]
 fn test_shell_subprocess_extinction_on_parent_exit() {
@@ -326,6 +352,7 @@ fn test_shell_subprocess_extinction_on_parent_exit() {
             .env(EXTINCTION_HELPER_ENV, "1")
             .env(EXTINCTION_MODE_ENV, "exit")
             .env(EXTINCTION_PID_FILE_ENV, pid_file.to_str().unwrap())
+            .env("GOOSE_PROCESS_FENCE", "standard")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -360,6 +387,7 @@ fn test_shell_subprocess_extinction_on_parent_exit() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 #[serial]
 fn test_shell_subprocess_extinction_on_parent_killed() {
@@ -372,6 +400,7 @@ fn test_shell_subprocess_extinction_on_parent_killed() {
             .env(EXTINCTION_HELPER_ENV, "1")
             .env(EXTINCTION_MODE_ENV, "park")
             .env(EXTINCTION_PID_FILE_ENV, pid_file.to_str().unwrap())
+            .env("GOOSE_PROCESS_FENCE", "standard")
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -414,5 +443,169 @@ fn test_shell_subprocess_extinction_on_parent_killed() {
     assert!(
         !process_is_running(child_pid),
         "child process {child_pid} survived abrupt parent termination (SIGKILL)"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_shell_fencing_opt_in_default() {
+    let _env = env_lock::lock_env([
+        ("GOOSE_PROCESS_FENCE", None),
+        ("GOOSE_FENCE_RUNTIME", None),
+        ("GOOSE_FENCE_PGROUP", None),
+    ]);
+
+    assert!(!goose::subprocess::is_process_fencing_enabled());
+    let config = goose::subprocess::ProcessFenceConfig::from_env();
+    assert_eq!(config.mode, goose::subprocess::ProcessFenceMode::None);
+    assert!(!config.isolate_process_group);
+    assert!(!config.parent_death_signal);
+
+    let tool = ShellTool::new(false).expect("ShellTool::new");
+    let result = tool
+        .shell(ShellParams {
+            command: "echo opt-in-default-test".to_string(),
+            timeout_secs: Some(10),
+        })
+        .await;
+
+    assert_eq!(result.is_error, Some(false));
+    let output = extract_shell_output(&result);
+    assert_eq!(output.exit_code, Some(0));
+    assert!(output.stdout.contains("opt-in-default-test"));
+}
+
+#[tokio::test]
+#[serial]
+async fn test_shell_fencing_explicit_none() {
+    let _env = env_lock::lock_env([
+        ("GOOSE_PROCESS_FENCE", Some("none")),
+        ("GOOSE_FENCE_RUNTIME", None),
+        ("GOOSE_FENCE_PGROUP", None),
+    ]);
+
+    assert!(!goose::subprocess::is_process_fencing_enabled());
+    let config = goose::subprocess::ProcessFenceConfig::from_env();
+    assert_eq!(config.mode, goose::subprocess::ProcessFenceMode::None);
+    assert!(!config.isolate_process_group);
+    assert!(!config.parent_death_signal);
+
+    let tool = ShellTool::new(false).expect("ShellTool::new");
+    let result = tool
+        .shell(ShellParams {
+            command: "echo explicit-none-test".to_string(),
+            timeout_secs: Some(10),
+        })
+        .await;
+
+    assert_eq!(result.is_error, Some(false));
+    let output = extract_shell_output(&result);
+    assert_eq!(output.exit_code, Some(0));
+    assert!(output.stdout.contains("explicit-none-test"));
+}
+
+#[tokio::test]
+#[serial]
+async fn test_shell_fencing_timeout_kills_process_group() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let pid_file = temp_dir.path().join("child.pid");
+
+    let _env = env_lock::lock_env([
+        ("GOOSE_PROCESS_FENCE", Some("standard")),
+        ("GOOSE_FENCE_RUNTIME", None),
+    ]);
+
+    let tool = ShellTool::new(false).expect("ShellTool::new");
+    let command = format!("sh -c 'sleep 30 & echo $! > \"{}\"; wait'", pid_file.display());
+
+    let result = tool
+        .shell(ShellParams {
+            command,
+            timeout_secs: Some(1),
+        })
+        .await;
+
+    let output = extract_shell_output(&result);
+    assert!(output.timed_out);
+
+    let mut child_pid = None;
+    for _ in 0..50 {
+        if let Ok(content) = fs::read_to_string(&pid_file) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                child_pid = Some(pid);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let pid = child_pid.expect("child pid should have been written");
+    let _guard = ProcessKillGuard(pid);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while process_exists(pid) && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        !process_exists(pid),
+        "child process {pid} in process group should have been killed on timeout"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_shell_fencing_cancellation_kills_process_group() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let pid_file = temp_dir.path().join("child.pid");
+
+    let _env = env_lock::lock_env([
+        ("GOOSE_PROCESS_FENCE", Some("standard")),
+        ("GOOSE_FENCE_RUNTIME", None),
+    ]);
+
+    let tool = ShellTool::new(false).expect("ShellTool::new");
+    let token = CancellationToken::new();
+    let token_clone = token.clone();
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        token_clone.cancel();
+    });
+
+    let command = format!("sh -c 'sleep 30 & echo $! > \"{}\"; wait'", pid_file.display());
+    let result = tool
+        .shell_with_cwd(
+            ShellParams {
+                command,
+                timeout_secs: Some(10),
+            },
+            None,
+            None,
+            token,
+        )
+        .await;
+
+    let output = extract_shell_output(&result);
+    assert_eq!(output.exit_code, None);
+
+    let mut child_pid = None;
+    for _ in 0..50 {
+        if let Ok(content) = fs::read_to_string(&pid_file) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                child_pid = Some(pid);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let pid = child_pid.expect("child pid should have been written");
+    let _guard = ProcessKillGuard(pid);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while process_exists(pid) && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        !process_exists(pid),
+        "child process {pid} in process group should have been killed on cancellation"
     );
 }
