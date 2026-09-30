@@ -283,7 +283,7 @@
     "env": [
       "BASETEN_API_KEY"
     ],
-    "model_count": 23
+    "model_count": 24
   },
   {
     "id": "bee",
@@ -416,7 +416,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 109
+    "model_count": 110
   },
   {
     "id": "crof",
@@ -438,7 +438,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 66
+    "model_count": 67
   },
   {
     "id": "crusoe",
@@ -549,7 +549,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 283
+    "model_count": 286
   },
   {
     "id": "empiriolabs",
@@ -637,7 +637,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 32
+    "model_count": 34
   },
   {
     "id": "gmicloud",
@@ -880,7 +880,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 392
+    "model_count": 394
   },
   {
     "id": "kimi-code-plan-cn",
@@ -957,7 +957,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 213
+    "model_count": 214
   },
   {
     "id": "llmgateway-providers",
@@ -968,7 +968,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 441
+    "model_count": 432
   },
   {
     "id": "llmtech",
@@ -1243,7 +1243,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 602
+    "model_count": 600
   },
   {
     "id": "nearai",
@@ -1354,7 +1354,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 149
+    "model_count": 150
   },
   {
     "id": "ollama-cloud",
@@ -1376,7 +1376,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 113
+    "model_count": 114
   },
   {
     "id": "opencode-go",
@@ -1475,7 +1475,7 @@
     "env": [
       "PIONEER_API_KEY"
     ],
-    "model_count": 114
+    "model_count": 116
   },
   {
     "id": "poe",
@@ -1553,7 +1553,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 161
+    "model_count": 165
   },
   {
     "id": "routing-run",
@@ -1608,7 +1608,7 @@
     "env": [
       "SCALEWAY_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 16
   },
   {
     "id": "scnet-token-plan",
@@ -1767,14 +1767,14 @@
   },
   {
     "id": "tempr",
-    "display_name": "Tempr",
+    "display_name": "Tempr Gateway",
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://api.temprhq.io/v1",
     "doc": "https://temprhq.io/docs/gateway-reference.html",
     "env": [
       "TEMPR_API_KEY"
     ],
-    "model_count": 57
+    "model_count": 82
   },
   {
     "id": "tencent-coding-plan",

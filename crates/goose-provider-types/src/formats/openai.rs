@@ -1928,8 +1928,9 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
         } else if normalized.contains("gpt-6") {
-            // GPT-6 Astra does not accept `none`; Sol and Luna do.
-            if normalized.contains("astra") {
+            // GPT-6 Astra and GPT-6.1 Sol require reasoning; GPT-6 Sol and Luna may disable it.
+            let (base_model, _) = extract_reasoning_effort(&normalized);
+            if normalized.contains("astra") || base_model.ends_with("gpt-6.1-sol") {
                 &["low", "medium", "high", "xhigh", "max"]
             } else {
                 &["none", "low", "medium", "high", "xhigh", "max"]
@@ -3431,6 +3432,10 @@ mod tests {
             "gpt-6-astra",
             "data_workflow_tools.goose.goose-gpt-6-astra",
             "openrouter/openai/gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6.1-sol-high",
+            "data_workflow_tools.goose.goose-gpt-6.1-sol",
+            "openrouter/openai/gpt-6.1-sol",
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
