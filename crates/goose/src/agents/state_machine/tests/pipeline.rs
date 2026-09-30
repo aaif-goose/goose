@@ -103,7 +103,7 @@ pub(super) struct TestPipeline {
     working_dir: std::path::PathBuf,
     steer_queue: SteerQueue,
     max_turns: u32,
-    scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
@@ -296,6 +296,7 @@ impl TestPipeline {
         Ok(())
     }
 
+    #[cfg(feature = "scheduler")]
     pub(super) async fn set_schedule_id(&self, schedule_id: String) -> Result<()> {
         self.session_manager
             .update(&self.session_id)
@@ -334,6 +335,7 @@ impl TestPipeline {
         self.calculator.wait_for_result().await;
     }
 
+    #[cfg(feature = "tree-sitter")]
     pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
         self.calculator.contexts()
     }
@@ -358,6 +360,7 @@ impl TestPipeline {
         Ok(pipeline)
     }
 
+    #[cfg(feature = "tree-sitter")]
     pub(super) async fn new_session(&self, working_dir: std::path::PathBuf) -> Result<Self> {
         let source_session = self.session().await?;
         let session = self
@@ -663,50 +666,49 @@ pub(super) async fn test_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
     test_pipeline_with(ProviderFeatures::default()).await
 }
 
+#[cfg(feature = "scheduler")]
 pub(super) async fn test_pipeline_with_scheduler() -> Result<(
     TestPipeline,
     Arc<DummyApi>,
     Arc<crate::scheduler::Scheduler>,
 )> {
-    let (pipeline, api, scheduler) =
-        test_pipeline_with_components(ProviderFeatures::default(), true).await?;
-    Ok((pipeline, api, scheduler.expect("scheduler was requested")))
+    let temp_dir = Arc::new(tempfile::tempdir()?);
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let scheduler = crate::scheduler::Scheduler::new(
+        temp_dir.path().join("schedule.json"),
+        session_manager.clone(),
+    )
+    .await?;
+    let (pipeline, api) = test_pipeline_with_components(
+        ProviderFeatures::default(),
+        temp_dir,
+        session_manager,
+        Some(scheduler.clone()),
+    )
+    .await?;
+    Ok((pipeline, api, scheduler))
 }
 
 pub(super) async fn test_pipeline_with(
     features: ProviderFeatures,
 ) -> Result<(TestPipeline, Arc<DummyApi>)> {
-    let (pipeline, api, _) = test_pipeline_with_components(features, false).await?;
-    Ok((pipeline, api))
+    let temp_dir = Arc::new(tempfile::tempdir()?);
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    test_pipeline_with_components(features, temp_dir, session_manager, None).await
 }
 
 async fn test_pipeline_with_components(
     features: ProviderFeatures,
-    with_scheduler: bool,
-) -> Result<(
-    TestPipeline,
-    Arc<DummyApi>,
-    Option<Arc<crate::scheduler::Scheduler>>,
-)> {
+    temp_dir: Arc<tempfile::TempDir>,
+    session_manager: Arc<SessionManager>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
+) -> Result<(TestPipeline, Arc<DummyApi>)> {
     let api = Arc::new(DummyApi::start(features).await);
-    let temp_dir = Arc::new(tempfile::tempdir()?);
-    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-    let scheduler = if with_scheduler {
-        Some(
-            crate::scheduler::Scheduler::new(
-                temp_dir.path().join("schedule.json"),
-                session_manager.clone(),
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
     let session = session_manager
         .create_session(
             temp_dir.path().to_path_buf(),
             "pipeline-test".to_string(),
-            if with_scheduler {
+            if scheduler.is_some() {
                 SessionType::Scheduled
             } else {
                 SessionType::Hidden
@@ -727,20 +729,20 @@ async fn test_pipeline_with_components(
         session_manager,
         api.clone(),
         features,
-        scheduler.clone(),
+        scheduler,
         session,
         temp_dir,
     )
     .await?;
 
-    Ok((pipeline, api, scheduler))
+    Ok((pipeline, api))
 }
 
 async fn build_test_pipeline(
     session_manager: Arc<SessionManager>,
     api: Arc<DummyApi>,
     provider_features: ProviderFeatures,
-    scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     session: Session,
     temp_dir: Arc<tempfile::TempDir>,
 ) -> Result<TestPipeline> {
@@ -772,9 +774,7 @@ async fn build_test_pipeline(
     let extension_manager = Arc::new(ExtensionManager::new(
         shared_provider.clone(),
         session_manager.clone(),
-        scheduler
-            .clone()
-            .map(|scheduler| scheduler as Arc<dyn crate::scheduler_trait::SchedulerTrait>),
+        scheduler.clone(),
         "pipeline-test".to_string(),
         ExtensionManagerCapabilities {
             mcpui: false,
@@ -875,6 +875,7 @@ fn default_extensions() -> Vec<ExtensionConfig> {
         ("calculator", "Stateful test calculator"),
         ("extensionmanager", "Extension Manager"),
         ("todo", "Todo"),
+        #[cfg(feature = "scheduler")]
         (
             crate::agents::platform_extensions::scheduler::EXTENSION_NAME,
             "Scheduler",

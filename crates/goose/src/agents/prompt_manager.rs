@@ -508,6 +508,14 @@ mod tests {
         assert_snapshot!(system_prompt)
     }
 
+    // The snapshot lists every platform extension, so it needs every feature that adds one.
+    #[cfg(all(
+        feature = "chat-recall",
+        feature = "code-mode",
+        feature = "platform-apps",
+        feature = "scheduler",
+        feature = "tree-sitter"
+    ))]
     #[tokio::test]
     async fn test_all_platform_extensions() {
         use crate::agents::platform_extensions::{PlatformExtensionContext, PLATFORM_EXTENSIONS};

@@ -9,7 +9,7 @@ use goose::config::extensions::{set_extension, ExtensionEntry};
 mod tests {
     use super::*;
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     mod schedule_tool_tests {
         use super::*;
         use async_trait::async_trait;
@@ -2889,6 +2889,7 @@ mod tests {
             names
         }
 
+        #[cfg(feature = "tree-sitter")]
         #[tokio::test]
         async fn test_bulk_load_persists_loaded_extensions() {
             let (agent, session_manager, session_id, _temp_dir) =

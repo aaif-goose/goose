@@ -806,6 +806,7 @@ extensions:
         assert_eq!(configured_enabled_state(&config, "developer"), Some(true));
     }
 
+    #[cfg(feature = "chat-recall")]
     #[test]
     fn test_default_off_extension_disabled_when_config_empty() {
         let (config, _config_file, _secrets_file) = test_config("");
