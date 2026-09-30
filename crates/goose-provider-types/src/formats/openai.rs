@@ -1932,8 +1932,8 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
             let is_gpt_6_1_sol = normalized
                 .match_indices("gpt-6.1-sol")
                 .any(|(index, name)| {
-                    let suffix = &normalized[index + name.len()..];
-                    let prefix = &normalized[..index];
+                    let (prefix, rest) = normalized.split_at(index);
+                    let (_, suffix) = rest.split_at(name.len());
                     (prefix.is_empty() || prefix.ends_with(['/', '.', '-']))
                         && (suffix.is_empty() || suffix.starts_with(['-', '@']))
                 });
