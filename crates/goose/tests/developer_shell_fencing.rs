@@ -450,7 +450,7 @@ fn test_shell_subprocess_extinction_on_parent_killed() {
 #[serial]
 async fn test_shell_fencing_opt_in_default() {
     let _env = env_lock::lock_env([
-        ("GOOSE_PROCESS_FENCE", None),
+        ("GOOSE_PROCESS_FENCE", None::<&str>),
         ("GOOSE_FENCE_RUNTIME", None),
         ("GOOSE_FENCE_PGROUP", None),
     ]);
@@ -516,7 +516,10 @@ async fn test_shell_fencing_timeout_kills_process_group() {
     ]);
 
     let tool = ShellTool::new(false).expect("ShellTool::new");
-    let command = format!("sh -c 'sleep 30 & echo $! > \"{}\"; wait'", pid_file.display());
+    let command = format!(
+        "sh -c 'sleep 30 & echo $! > \"{}\"; wait'",
+        pid_file.display()
+    );
 
     let result = tool
         .shell(ShellParams {
@@ -571,7 +574,10 @@ async fn test_shell_fencing_cancellation_kills_process_group() {
         token_clone.cancel();
     });
 
-    let command = format!("sh -c 'sleep 30 & echo $! > \"{}\"; wait'", pid_file.display());
+    let command = format!(
+        "sh -c 'sleep 30 & echo $! > \"{}\"; wait'",
+        pid_file.display()
+    );
     let result = tool
         .shell_with_cwd(
             ShellParams {

@@ -135,16 +135,16 @@ impl ProcessFenceConfig {
             _ => ProcessFenceMode::None,
         };
 
-        let isolate_process_group = if let Some(v) = lookup("GOOSE_FENCE_PGROUP")
-            .or_else(|| lookup("GOOSE_PROCESS_GROUP"))
+        let isolate_process_group = if let Some(v) =
+            lookup("GOOSE_FENCE_PGROUP").or_else(|| lookup("GOOSE_PROCESS_GROUP"))
         {
             v == "1" || v.eq_ignore_ascii_case("true")
         } else {
             matches!(mode, ProcessFenceMode::Standard | ProcessFenceMode::Strict)
         };
 
-        let parent_death_signal = if let Some(v) = lookup("GOOSE_FENCE_PDEATHSIG")
-            .or_else(|| lookup("GOOSE_PDEATHSIG"))
+        let parent_death_signal = if let Some(v) =
+            lookup("GOOSE_FENCE_PDEATHSIG").or_else(|| lookup("GOOSE_PDEATHSIG"))
         {
             !v.eq_ignore_ascii_case("0")
                 && !v.eq_ignore_ascii_case("false")
@@ -291,14 +291,17 @@ unsafe fn enforce_landlock(fence: &ProcessFenceConfig) -> Result<(), std::io::Er
         return Ok(());
     }
 
-    let ro_access = LANDLOCK_ACCESS_FS_READ_FILE
-        | LANDLOCK_ACCESS_FS_READ_DIR
-        | LANDLOCK_ACCESS_FS_EXECUTE;
+    let ro_access =
+        LANDLOCK_ACCESS_FS_READ_FILE | LANDLOCK_ACCESS_FS_READ_DIR | LANDLOCK_ACCESS_FS_EXECUTE;
     let rw_access = handled_fs;
     let file_mask = LANDLOCK_ACCESS_FS_READ_FILE
         | LANDLOCK_ACCESS_FS_WRITE_FILE
         | LANDLOCK_ACCESS_FS_EXECUTE
-        | if abi >= 3 { LANDLOCK_ACCESS_FS_TRUNCATE } else { 0 };
+        | if abi >= 3 {
+            LANDLOCK_ACCESS_FS_TRUNCATE
+        } else {
+            0
+        };
 
     let ro_paths: &[&[u8]] = &[b"/\0"];
     let rw_paths: &[&[u8]] = &[
