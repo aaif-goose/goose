@@ -3,8 +3,9 @@
  *
  * The empty-chat landing screen. Visually it's "Pair with no messages yet" —
  * a large time + greeting above a centered, narrower ChatInput. Submitting
- * creates a session and navigates to /pair so the rest of the chat lifecycle
- * lives there.
+ * navigates to /pair immediately. PairRouteWrapper creates the session in
+ * the background so Enter does not wait on session/new. Live voice still
+ * creates its session here, because it has to join a real session id.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
@@ -14,7 +15,7 @@ import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
 import { ChatState } from '../types/chatState';
 import 'react-toastify/dist/ReactToastify.css';
-import { View, ViewOptions } from '../utils/navigationUtils';
+import { View, ViewOptions, type HubDraft } from '../utils/navigationUtils';
 import { useConfig } from './ConfigContext';
 import { getEffectiveWorkingDir, getInitialWorkingDir } from '../utils/workingDir';
 import { createSession } from '../sessions';
@@ -56,7 +57,7 @@ export default function Hub({
 }: {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   /** Unsent input of this screen, kept above the route outlet across the unmount. */
-  draftRef: RefObject<string>;
+  draftRef: RefObject<HubDraft>;
   liveVoice: LiveVoiceController;
 }) {
   const intl = useIntl();
@@ -167,30 +168,34 @@ export default function Hub({
     }
   };
 
-  const handleSubmit = async (input: UserInput) => {
+  const handleSubmit = (input: UserInput) => {
     const { msg: userMessage, images } = input;
     if (!(images.length > 0 || userMessage.trim())) return;
 
-    const draftAtSubmit = draftRef.current;
-    const session = await createHubSession();
-    if (!session) return;
+    const selectedExtensions = nextChatExtensionDraft
+      ? selectNextChatExtensions(extensionsList, nextChatExtensionDraft)
+      : undefined;
+    const userCustomizedExtensions = nextChatExtensionDraft !== null;
+    const sessionOptions = userCustomizedExtensions
+      ? { extensionConfigs: selectedExtensions, userCustomizedExtensions: true as const }
+      : { allExtensions: extensionsList };
 
-    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-    window.dispatchEvent(
-      new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-        detail: { sessionId: session.id, initialMessage: { msg: userMessage, images } },
-      })
-    );
-
-    // Preserve edits made while the session was being created.
-    if (draftRef.current === draftAtSubmit) {
-      draftRef.current = '';
-    }
+    // Keep the submitted input for a retry. Pair clears it only after session/new
+    // succeeds, and only if the user has not started a newer draft.
+    draftRef.current = {
+      ...draftRef.current,
+      msg: userMessage,
+      images,
+      ...(userSelectedWorkingDirRef.current ? { userSelectedWorkingDir: workingDir } : {}),
+      ...(userCustomizedExtensions ? { extensionConfigs: selectedExtensions } : {}),
+    };
 
     setView('pair', {
       disableAnimation: true,
-      resumeSessionId: session.id,
       initialMessage: { msg: userMessage, images },
+      workingDir: userSelectedWorkingDirRef.current ? workingDir : undefined,
+      userSelectedWorkingDir: userSelectedWorkingDirRef.current,
+      ...sessionOptions,
     });
   };
 
@@ -235,7 +240,7 @@ export default function Hub({
             sessionId={null}
             draftRef={draftRef}
             handleSubmit={handleSubmit}
-            chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
+            chatState={ChatState.Idle}
             hasActiveRun={false}
             onStop={() => {}}
             initialValue=""

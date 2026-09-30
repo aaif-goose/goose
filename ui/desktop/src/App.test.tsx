@@ -11,6 +11,7 @@ import { IntlTestWrapper } from './i18n/test-utils';
 import { FeaturesProvider } from './contexts/FeaturesContext';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { createSession } from './sessions';
+import { getEffectiveWorkingDir } from './utils/workingDir';
 import { RecipeParameterScopesUnsupportedError } from './acp/errors';
 
 const mockToastError = vi.hoisted(() => vi.fn());
@@ -42,6 +43,11 @@ vi.mock('./utils/costDatabase', () => ({
 vi.mock('./acp/sessions', () => ({
   acpListSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
   acpDeleteSession: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./utils/workingDir', () => ({
+  getInitialWorkingDir: () => '/test/dir',
+  getEffectiveWorkingDir: vi.fn().mockResolvedValue('/tmp/effective-remote'),
 }));
 
 vi.mock('./sessions', async (importOriginal) => ({
@@ -144,6 +150,7 @@ vi.mock('./components/AnnouncementModal', () => ({
 const mockNavigate = vi.fn();
 const mockSearchParams = new URLSearchParams();
 const mockSetSearchParams = vi.fn();
+const mockLocation = { state: null as Record<string, unknown> | null, pathname: '/' };
 
 // Mock react-router to avoid HashRouter issues in tests
 vi.mock('react-router', () => ({
@@ -151,7 +158,7 @@ vi.mock('react-router', () => ({
   Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Route: ({ element }: { element: React.ReactNode }) => element,
   useNavigate: () => mockNavigate,
-  useLocation: () => ({ state: null, pathname: '/' }),
+  useLocation: () => mockLocation,
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
   Outlet: () => null,
 }));
@@ -210,6 +217,8 @@ function AppInnerTestWrapper({ children }: { children: React.ReactNode }) {
 
 describe('App Component - Brand New State', () => {
   beforeEach(() => {
+    mockLocation.state = null;
+    mockLocation.pathname = '/';
     vi.clearAllMocks();
     mockNavigate.mockClear();
     mockSetSearchParams.mockClear();
@@ -310,6 +319,119 @@ describe('App Component - Brand New State', () => {
       );
     });
     expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('shows a pending chat and creates the session with Hub options', async () => {
+    vi.mocked(createSession).mockResolvedValueOnce({
+      id: 'session-pending',
+      recipe: null,
+    } as Awaited<ReturnType<typeof createSession>>);
+    mockLocation.state = {
+      initialMessage: { msg: 'hello from hub', images: [] },
+      workingDir: '/tmp/picked',
+      userSelectedWorkingDir: true,
+      extensionConfigs: [{ name: 'memory', type: 'builtin' }],
+      userCustomizedExtensions: true,
+    };
+    mockLocation.pathname = '/pair';
+
+    render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+
+    expect(screen.getByTestId('pending-chat')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith('/tmp/picked', {
+        recipeDeeplink: undefined,
+        recipeId: undefined,
+        extensionConfigs: [{ name: 'memory', type: 'builtin' }],
+      });
+    });
+  });
+
+  it('resolves the effective working directory when Hub did not pass one', async () => {
+    vi.mocked(getEffectiveWorkingDir).mockResolvedValueOnce('/tmp/effective-remote');
+    vi.mocked(createSession).mockResolvedValueOnce({
+      id: 'session-effective',
+      recipe: null,
+    } as Awaited<ReturnType<typeof createSession>>);
+    mockLocation.state = { initialMessage: { msg: 'hello from hub', images: [] } };
+    mockLocation.pathname = '/pair';
+
+    render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith('/tmp/effective-remote', expect.any(Object));
+    });
+  });
+
+  it('restores the message and user-picked options when createSession fails', async () => {
+    vi.mocked(createSession).mockRejectedValueOnce(new Error('backend down'));
+    const extensionConfigs = [{ name: 'memory', type: 'builtin' as const }];
+    const draftRef = {
+      current: { msg: 'retry me', images: [] as { data: string; mimeType: string }[] },
+    };
+    mockLocation.state = {
+      initialMessage: { msg: 'retry me', images: [] },
+      workingDir: '/tmp/picked',
+      userSelectedWorkingDir: true,
+      extensionConfigs,
+      userCustomizedExtensions: true,
+    };
+    mockLocation.pathname = '/pair';
+
+    render(
+      <PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} draftRef={draftRef} />,
+      { wrapper: AppInnerTestWrapper }
+    );
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/');
+    });
+    expect(draftRef.current).toEqual({
+      msg: 'retry me',
+      images: [],
+      userSelectedWorkingDir: '/tmp/picked',
+      extensionConfigs,
+    });
+  });
+
+  it('publishes a session that finishes after PairRouteWrapper unmounts', async () => {
+    let resolveSession: ((value: Awaited<ReturnType<typeof createSession>>) => void) | undefined;
+    vi.mocked(createSession).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSession = resolve;
+        })
+    );
+    mockLocation.state = {
+      initialMessage: { msg: 'hello from hub', images: [] },
+      workingDir: '/tmp/picked',
+      userSelectedWorkingDir: true,
+    };
+    mockLocation.pathname = '/pair';
+
+    const dispatchEvent = vi.spyOn(window, 'dispatchEvent');
+    const view = render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+    await waitFor(() => expect(createSession).toHaveBeenCalled());
+    view.unmount();
+
+    resolveSession?.({
+      id: 'session-late',
+      recipe: null,
+    } as Awaited<ReturnType<typeof createSession>>);
+
+    await waitFor(() => {
+      expect(dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'session-created' })
+      );
+    });
+    expect(mockSetSearchParams).not.toHaveBeenCalled();
+    dispatchEvent.mockRestore();
   });
 
   it('should navigate home when the main process emits new-chat', async () => {
