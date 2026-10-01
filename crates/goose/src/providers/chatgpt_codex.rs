@@ -56,6 +56,22 @@ pub struct ChatGptCodexModelAttrs {
 
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
+        name: "gpt-6.1-sol",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-astra",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-sol",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-luna",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
         reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
     },
@@ -1441,6 +1457,10 @@ mod tests {
         assert_eq!(claims.chatgpt_account_id.as_deref(), Some("account-1"));
     }
 
+    #[test_case("gpt-6.1-sol", &["none", "low", "medium", "high", "xhigh"]; "gpt 6.1 sol supports extended reasoning levels")]
+    #[test_case("gpt-6-astra", &["none", "low", "medium", "high", "xhigh"]; "gpt 6 astra supports extended reasoning levels")]
+    #[test_case("gpt-6-sol", &["none", "low", "medium", "high", "xhigh"]; "gpt 6 sol supports extended reasoning levels")]
+    #[test_case("gpt-6-luna", &["none", "low", "medium", "high", "xhigh"]; "gpt 6 luna supports extended reasoning levels")]
     #[test_case("gpt-5.6-sol", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 sol supports extended reasoning levels")]
     #[test_case("gpt-5.6-terra", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 terra supports extended reasoning levels")]
     #[test_case("gpt-5.6-luna", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 luna supports extended reasoning levels")]
@@ -1454,6 +1474,10 @@ mod tests {
     fn test_known_model_names_include_gpt_5_6_models() {
         let names = known_model_names();
 
+        assert!(names.contains(&"gpt-6.1-sol"));
+        assert!(names.contains(&"gpt-6-astra"));
+        assert!(names.contains(&"gpt-6-sol"));
+        assert!(names.contains(&"gpt-6-luna"));
         assert!(names.contains(&"gpt-5.6-sol"));
         assert!(names.contains(&"gpt-5.6-terra"));
         assert!(names.contains(&"gpt-5.6-luna"));
