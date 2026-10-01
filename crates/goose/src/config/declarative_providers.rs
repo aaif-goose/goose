@@ -611,6 +611,7 @@ mod tests {
                 currency: None,
                 supports_cache_control: None,
                 reasoning: false,
+                supports_vision: None,
                 thinking_preservation_format: None,
                 request_params: None,
             }],

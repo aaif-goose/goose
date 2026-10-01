@@ -806,6 +806,10 @@ impl Provider for OpenAiProvider {
             let declared_model = self.declared_model(&model_config.model_name);
             let thinking_preservation_format =
                 declared_model.and_then(|m| m.thinking_preservation_format);
+            let supports_vision = declared_model
+                .and_then(|m| m.supports_vision)
+                .or(model_config.supports_vision)
+                .unwrap_or_default();
 
             let mut payload = create_request_with_options(
                 model_config,
@@ -817,7 +821,7 @@ impl Provider for OpenAiProvider {
                 OpenAiFormatOptions {
                     preserve_thinking_context: self.preserve_thinking_context
                         || thinking_preservation_format.is_some(),
-                    supports_vision: model_config.supports_vision.unwrap_or_default(),
+                    supports_vision,
                     thinking_preservation_format,
                 },
             )?;

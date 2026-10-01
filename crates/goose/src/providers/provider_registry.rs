@@ -69,6 +69,17 @@ impl ProviderEntry {
         if self.toolshim_enabled(model.toolshim) {
             model = model.with_toolshim(true);
         }
+        // Declared model metadata is authoritative over canonical detection, which
+        // may already have populated supports_vision earlier in materialization.
+        if let Some(supports_vision) = self
+            .metadata
+            .known_models
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(&model.model_name))
+            .and_then(|m| m.supports_vision)
+        {
+            model.supports_vision = Some(supports_vision);
+        }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
 
@@ -455,5 +466,41 @@ mod tests {
         assert!(registry.entries["custom_toolshim"].toolshim_enabled(false));
         assert!(registry.entries["custom_default"].toolshim_enabled(true));
         assert!(!registry.entries["custom_default"].toolshim_enabled(false));
+    }
+
+    #[test]
+    fn declared_supports_vision_overrides_detected_value() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("vision-model").with_vision_support(true),
+            ModelInfo::new("text-model").with_vision_support(false),
+            ModelInfo::new("undeclared-model"),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        let mut detected_without_vision = ModelConfig::new("vision-model");
+        detected_without_vision.supports_vision = Some(false);
+        let mut detected_with_vision = ModelConfig::new("text-model");
+        detected_with_vision.supports_vision = Some(true);
+
+        let vision = entry
+            .normalize_model_config(detected_without_vision)
+            .unwrap();
+        let text = entry.normalize_model_config(detected_with_vision).unwrap();
+        let undeclared = entry
+            .normalize_model_config(ModelConfig::new("undeclared-model"))
+            .unwrap();
+
+        assert_eq!(vision.supports_vision, Some(true));
+        assert_eq!(text.supports_vision, Some(false));
+        assert_eq!(undeclared.supports_vision, None);
     }
 }
