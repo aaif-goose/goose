@@ -80,9 +80,9 @@ mod tests {
         assert!(!html.contains("{{CSS}}"));
         assert!(!html.contains("{{JS}}"));
 
-        let start = html.find("application/json\">").unwrap() + "application/json\">".len();
-        let end = html[start..].find("</script>").unwrap() + start;
-        let decoded = STANDARD.decode(html[start..end].as_bytes()).unwrap();
+        let (_, session_data) = html.split_once("application/json\">").unwrap();
+        let (session_base64, _) = session_data.split_once("</script>").unwrap();
+        let decoded = STANDARD.decode(session_base64).unwrap();
         let value: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
         assert_eq!(value["id"], "20260910_1");
         assert_eq!(value["conversation"].as_array().unwrap().len(), 2);
