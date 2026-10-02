@@ -203,6 +203,17 @@ async fn delivery(
     }
 }
 
+pub(crate) fn cancellation_note(child_ids: &[String]) -> Message {
+    let text = child_ids
+        .iter()
+        .map(|child_id| {
+            format!("Subagent {child_id} was cancelled before it finished and will not run again.")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Message::user().with_text(text).with_visibility(false, true)
+}
+
 #[derive(Default)]
 struct RunningChildren {
     tasks: JoinSet<ChildOutcome>,
@@ -347,7 +358,6 @@ mod tests {
 
     use super::*;
     use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
-    use crate::agents::state_machine::subagent_stop::cancellation_note;
     use crate::config::GooseMode;
     use goose_agent::machine::EffectHandler;
 

@@ -32,9 +32,9 @@ use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CancelSubagentsOnStop,
-    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    cancellation_note, has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
+    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
@@ -1872,6 +1872,13 @@ impl Agent {
             .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
     }
 
+    pub async fn cancel_foreground_subagents(&self, session_id: &str) -> Result<()> {
+        self.config
+            .session_manager
+            .cancel_foreground_subagents(session_id, cancellation_note)
+            .await
+    }
+
     async fn resume_state_machine_turn_inner(
         self: &Arc<Self>,
         session_config: SessionConfig,
@@ -1959,12 +1966,7 @@ impl Agent {
         turn_guard: ActiveTurnGuard,
         initial_stream: Option<BoxStream<'a, Result<AgentEvent>>>,
     ) -> BoxStream<'a, Result<AgentEvent>> {
-        let mut cancel_subagents_on_stop = CancelSubagentsOnStop::new(
-            self.config.session_manager.clone(),
-            session_config.id.clone(),
-            cancel.clone(),
-        );
-        let turn = async_stream::try_stream! {
+        Box::pin(async_stream::try_stream! {
             let mut stream = initial_stream;
             loop {
                 if let Some(active_stream) = stream.as_mut() {
@@ -1999,12 +2001,7 @@ impl Agent {
                     .await?,
                 );
             }
-        };
-        Box::pin(turn.inspect(move |event| {
-            if event.is_err() {
-                cancel_subagents_on_stop.record_error();
-            }
-        }))
+        })
     }
 
     pub(super) async fn stream_state_machine_session(
