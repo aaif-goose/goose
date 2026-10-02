@@ -57,6 +57,10 @@ const i18n = defineMessages({
     id: 'toolCallWithResponse.loadingSpinner',
     defaultMessage: 'Loading spinner',
   },
+  toolIdentifier: {
+    id: 'toolCallWithResponse.toolIdentifier',
+    defaultMessage: 'Tool identifier',
+  },
 });
 
 interface ToolGraphNode {
@@ -240,6 +244,8 @@ export default function ToolCallWithResponse({
   confirmationContent,
   isApprovalClicked,
 }: ToolCallWithResponseProps) {
+  const intl = useIntl();
+
   // Handle both the wrapped ToolResult format and the unwrapped format
   // The server serializes ToolResult<T> as { status: "success", value: T } or { status: "error", error: string }
   const toolCallData = toolRequest.toolCall as Record<string, unknown>;
@@ -279,6 +285,10 @@ export default function ToolCallWithResponse({
         {/* Inline approval UI */}
         {showInlineApproval && (
           <div className="border-t border-amber-500/30">
+            <div className="px-4 pt-2 text-sm text-text-primary">
+              {intl.formatMessage(i18n.toolIdentifier)}:{' '}
+              <code className="font-mono break-all">{confirmationContent.toolName}</code>
+            </div>
             {confirmationContent.prompt && (
               <div className="px-4 py-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50/10">
                 {confirmationContent.prompt}
