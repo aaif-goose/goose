@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 121
+    "model_count": 122
   },
   {
     "id": "abacus",
@@ -96,7 +96,7 @@
     "env": [
       "AIAND_API_KEY"
     ],
-    "model_count": 11
+    "model_count": 13
   },
   {
     "id": "ainetcafe",
@@ -416,7 +416,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 110
+    "model_count": 109
   },
   {
     "id": "crof",
@@ -438,7 +438,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 67
+    "model_count": 68
   },
   {
     "id": "crusoe",
@@ -549,7 +549,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 286
+    "model_count": 289
   },
   {
     "id": "empiriolabs",
@@ -561,6 +561,17 @@
       "EMPIRIOLABS_API_KEY"
     ],
     "model_count": 66
+  },
+  {
+    "id": "engy",
+    "display_name": "engy",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.engy.ai/v1",
+    "doc": "https://engy.ai/pricing",
+    "env": [
+      "ENGY_API_KEY"
+    ],
+    "model_count": 8
   },
   {
     "id": "evroc",
@@ -648,7 +659,7 @@
     "env": [
       "GMICLOUD_API_KEY"
     ],
-    "model_count": 15
+    "model_count": 17
   },
   {
     "id": "greenpt",
@@ -880,7 +891,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 394
+    "model_count": 396
   },
   {
     "id": "kimi-code-plan-cn",
@@ -968,7 +979,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 432
+    "model_count": 433
   },
   {
     "id": "llmtech",
@@ -1332,7 +1343,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 103
+    "model_count": 106
   },
   {
     "id": "oci",
@@ -1354,7 +1365,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 150
+    "model_count": 151
   },
   {
     "id": "ollama-cloud",
@@ -1376,7 +1387,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 114
+    "model_count": 115
   },
   {
     "id": "opencode-go",
@@ -1961,7 +1972,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 34
+    "model_count": 36
   },
   {
     "id": "volcengine",
@@ -1994,7 +2005,7 @@
     "env": [
       "VULTR_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 15
   },
   {
     "id": "wafer.ai",
