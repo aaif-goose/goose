@@ -908,13 +908,11 @@ impl ChatGptCodexProvider {
         })
     }
 
-    async fn post_streaming(&self, payload: &Value) -> Result<reqwest::Response, ProviderError> {
-        let token_data = self
-            .auth_provider
-            .get_valid_token()
-            .await
-            .map_err(|e| ProviderError::Authentication(e.to_string()))?;
-
+    async fn post_streaming_with_token(
+        &self,
+        payload: &Value,
+        token_data: &TokenData,
+    ) -> Result<reqwest::Response, ProviderError> {
         let mut headers = reqwest::header::HeaderMap::new();
         if let Some(account_id) = &token_data.account_id {
             headers.insert(
@@ -950,6 +948,48 @@ impl ChatGptCodexProvider {
         .await?;
 
         handle_status(response).await
+    }
+
+    async fn refresh_access_token(&self) -> Result<TokenData, ProviderError> {
+        let mut token_data =
+            self.auth_provider.cache.load().ok_or_else(|| {
+                ProviderError::Authentication("No cached ChatGPT token".to_string())
+            })?;
+        let new_tokens = refresh_access_token_with_issuer(ISSUER, &token_data.refresh_token)
+            .await
+            .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+
+        token_data.access_token = new_tokens.access_token;
+        token_data.refresh_token = new_tokens.refresh_token;
+        if new_tokens.id_token.is_some() {
+            token_data.id_token = new_tokens.id_token;
+        }
+        token_data.expires_at =
+            Utc::now() + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
+        token_data.account_id =
+            extract_account_id(&token_data, self.auth_provider.state.as_ref()).await;
+        self.auth_provider
+            .cache
+            .save(&token_data)
+            .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+        Ok(token_data)
+    }
+
+    async fn post_streaming(&self, payload: &Value) -> Result<reqwest::Response, ProviderError> {
+        let token_data = self
+            .auth_provider
+            .get_valid_token()
+            .await
+            .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+
+        match self.post_streaming_with_token(payload, &token_data).await {
+            Err(ProviderError::Authentication(_)) => {
+                tracing::debug!("ChatGPT token was rejected; refreshing and retrying once");
+                let refreshed = self.refresh_access_token().await?;
+                self.post_streaming_with_token(payload, &refreshed).await
+            }
+            result => result,
+        }
     }
 }
 
