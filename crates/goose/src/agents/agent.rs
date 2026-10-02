@@ -3203,6 +3203,40 @@ impl Agent {
                                     session_manager.replace_conversation(&session_config.id, &compaction.conversation).await?;
                                     self.update_session_metrics(&session_config.id, session_config.schedule_id.clone(), &compaction.usage, Some(compaction.retained_context_tokens)).await?;
                                     conversation = compaction.conversation;
+                                    // The carried turn context predates the compaction, so it
+                                    // lacks context that only the compacted history needs, such
+                                    // as the python session's variable listing.
+                                    let compaction_info = super::moim::compute_compaction_info(
+                                        &session_config.id,
+                                        &self.extension_manager,
+                                    )
+                                    .await;
+                                    if let Some(turn_context) = super::moim::turn_context_message(
+                                        &session_config.id,
+                                        &self.extension_manager,
+                                        turns_taken,
+                                        max_turns,
+                                        turn_start,
+                                        compaction_info,
+                                    )
+                                    .await
+                                    {
+                                        let carried = conversation
+                                            .messages()
+                                            .iter()
+                                            .rev()
+                                            .find(|message| message.is_turn_context())
+                                            .map(Message::as_concat_text);
+                                        if carried != Some(turn_context.as_concat_text()) {
+                                            persist_and_push_message_with_id(
+                                                &session_manager,
+                                                &session_config.id,
+                                                &mut conversation,
+                                                turn_context,
+                                            )
+                                            .await?;
+                                        }
+                                    }
                                     did_recovery_compact_this_iteration = true;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());
                                     break;

@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "正在等待图片保存…"
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "选择 Developer 扩展的运行方式。在 Developer 下次启动时生效，例如在新会话中。"
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "开发者工具"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "配置 Goose 与工具和扩展的交互方式"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "显示 {count} 项选项"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "一个持久的 Python 会话。数据保存在变量中，而不是对话中，可跨调用、压缩和重启保留。"
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python 会话"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "独立的 shell、文件、目录树和图像工具。"
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "工具"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "如果你要提交 bug，建议将诊断报告一并附上。"

@@ -1,3 +1,4 @@
+use crate::agents::platform_extensions::developer::DeveloperMode;
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use crate::providers::private_file::{private_file_target_path, write_private_file};
@@ -1261,6 +1262,7 @@ config_value!(CHATGPT_CODEX_REASONING_EFFORT, String, "medium");
 
 config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
+config_value!(GOOSE_DEVELOPER_MODE, DeveloperMode);
 impl Config {
     pub(crate) fn get_goose_mode_strict(&self) -> Result<GooseMode, ConfigError> {
         match env::var("GOOSE_MODE") {

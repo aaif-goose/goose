@@ -52,6 +52,14 @@ The Developer extension is already enabled by default when goose is installed.
   </TabItem>
 </Tabs>
 
+## Python Session Mode
+
+The Developer extension can also run as one persistent Python session instead of separate tools.
+In that mode goose gets a single `python` tool, and file contents, command output, and intermediate results stay in Python variables that survive compaction and restarts instead of landing in the conversation.
+Set `GOOSE_DEVELOPER_MODE` to `python_session` with `goose configure` (`goose settings` > `Developer Mode`), in goose Desktop under Settings > Chat > Developer Tools, or as an environment variable.
+The change applies the next time the Developer extension starts.
+See the [Python Session Mode guide](/docs/guides/python-session-mode) for the `python` tool, its settings, and limitations.
+
 ## Example Usage
 
 In this example, I'm going to have goose automate setting up my JavaScript developer environment with Express, Mongoose, Nodemon, Dotenv and initialize Git.
@@ -243,6 +251,12 @@ import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
       title: 'Codebase Analysis',
       description: 'Understand codebases with semantic analysis and call graphs',
       linkUrl: '/docs/guides/codebase-analysis'
+    },
+    {
+      type: 'topic',
+      title: 'Python Session Mode',
+      description: 'Run Developer as one persistent Python session where data stays in variables',
+      linkUrl: '/docs/guides/python-session-mode'
     }
   ]}
 />

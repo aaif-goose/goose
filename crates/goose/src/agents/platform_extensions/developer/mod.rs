@@ -1,5 +1,6 @@
 pub mod edit;
 pub mod image;
+pub mod python_session;
 pub mod shell;
 mod shell_output_streaming;
 pub mod tree;
@@ -7,6 +8,7 @@ pub mod tree;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
+use crate::config::{Config, ConfigError};
 use anyhow::Result;
 use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
@@ -17,6 +19,7 @@ use rmcp::model::{
     ListToolsResult, ServerCapabilities, TextContent, Tool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shell::{shell_display_name, ShellOutput, ShellParams, ShellTool};
 use std::sync::Arc;
@@ -24,6 +27,43 @@ use tokio_util::sync::CancellationToken;
 use tree::{TreeParams, TreeTool};
 
 pub static EXTENSION_NAME: &str = "developer";
+
+/// How the Developer extension exposes execution to the model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeveloperMode {
+    /// Separate shell, file, tree, and image tools.
+    #[default]
+    Tools,
+    /// One persistent Python session behind a single `python` tool; data lives
+    /// in variables that carry across calls, compaction, and restarts.
+    PythonSession,
+}
+
+impl DeveloperMode {
+    pub fn configured() -> Self {
+        match Config::global().get_goose_developer_mode() {
+            Ok(mode) => mode,
+            Err(ConfigError::NotFound(_)) => Self::default(),
+            Err(err) => {
+                tracing::warn!("ignoring invalid GOOSE_DEVELOPER_MODE, using tools mode: {err}");
+                Self::default()
+            }
+        }
+    }
+}
+
+/// The mode is read when the extension starts, so a change applies the next
+/// time Developer is loaded (a new session, or toggling the extension).
+pub fn new_client(context: PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>> {
+    let client: Box<dyn McpClientTrait> = match DeveloperMode::configured() {
+        DeveloperMode::Tools => Box::new(DeveloperClient::new(context).unwrap()),
+        DeveloperMode::PythonSession => {
+            Box::new(python_session::PythonSessionClient::new(context).unwrap())
+        }
+    };
+    Some(client)
+}
 
 fn visible_text(text: impl Into<String>) -> ContentBlock {
     ContentBlock::Text(

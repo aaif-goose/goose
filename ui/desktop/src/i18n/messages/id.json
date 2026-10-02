@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Menunggu gambar disimpan..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Pilih cara ekstensi Developer dijalankan. Berlaku saat Developer dimulai berikutnya, misalnya di sesi baru."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Alat Pengembang"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Pilih mode default yang digunakan Goose untuk sesi baru. Sesi yang sudah ada tetap menggunakan mode saat ini."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Tampilkan {count} opsi"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Satu sesi Python yang persisten. Data tetap tersimpan dalam variabel di seluruh pemanggilan, pemadatan, dan mulai ulang, bukan di dalam percakapan."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Sesi Python"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Alat terpisah untuk shell, file, pohon direktori, dan gambar."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Alat"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Jika Anda melaporkan bug, pertimbangkan untuk melampirkan laporan diagnostik ke dalamnya."
