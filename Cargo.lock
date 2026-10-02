@@ -5471,6 +5471,8 @@ dependencies = [
  "env-lock",
  "opentelemetry 0.32.0",
  "rmcp 3.4.1",
+ "schemars 1.2.2",
+ "serde",
  "serde_json",
  "tokio",
 ]

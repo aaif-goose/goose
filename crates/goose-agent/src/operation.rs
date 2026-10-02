@@ -152,6 +152,10 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
     /// firing the hooks that mark the start of a turn.
     fn applies(&self, conversation: &Conversation) -> bool;
 
+    async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {
+        Ok(None)
+    }
+
     async fn infer(
         &self,
         session: &S,

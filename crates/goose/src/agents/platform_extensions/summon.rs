@@ -577,15 +577,26 @@ fn is_session_id(s: &str) -> bool {
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    source_cache: Mutex<Option<(Instant, PathBuf, Vec<SourceEntry>)>>,
-    background_tasks: Mutex<HashMap<String, BackgroundTask>>,
-    completed_tasks: Mutex<HashMap<String, CompletedTask>>,
+    source_cache: Arc<Mutex<Option<CachedSources>>>,
+    background_tasks: Arc<BackgroundTasks>,
+    completed_tasks: Arc<Mutex<HashMap<String, CompletedTask>>>,
 }
 
-impl Drop for SummonClient {
+type CachedSources = (Instant, PathBuf, Vec<SourceEntry>);
+
+struct BackgroundTasks(Mutex<HashMap<String, BackgroundTask>>);
+
+impl std::ops::Deref for BackgroundTasks {
+    type Target = Mutex<HashMap<String, BackgroundTask>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for BackgroundTasks {
     fn drop(&mut self) {
-        // Best-effort cancellation of running tasks on shutdown
-        if let Ok(tasks) = self.background_tasks.try_lock() {
+        if let Ok(tasks) = self.0.try_lock() {
             for task in tasks.values() {
                 task.cancellation_token.cancel();
             }
@@ -601,10 +612,22 @@ impl SummonClient {
         Ok(Self {
             info,
             context,
-            source_cache: Mutex::new(None),
-            background_tasks: Mutex::new(HashMap::new()),
-            completed_tasks: Mutex::new(HashMap::new()),
+            source_cache: Arc::new(Mutex::new(None)),
+            background_tasks: Arc::new(BackgroundTasks(Mutex::new(HashMap::new()))),
+            completed_tasks: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    fn rebound(&self, session: Arc<crate::session::Session>) -> Self {
+        let mut context = self.context.clone();
+        context.session = Some(session);
+        Self {
+            info: self.info.clone(),
+            context,
+            source_cache: Arc::clone(&self.source_cache),
+            background_tasks: Arc::clone(&self.background_tasks),
+            completed_tasks: Arc::clone(&self.completed_tasks),
+        }
     }
 
     async fn create_subagent_session(
@@ -795,13 +818,15 @@ impl SummonClient {
         )
     }
 
-    async fn get_working_dir(&self, session_id: &str) -> PathBuf {
-        self.context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .ok()
-            .map(|s| s.working_dir)
+    fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
+        ctx.working_dir
+            .clone()
+            .or_else(|| {
+                self.context
+                    .session
+                    .as_ref()
+                    .map(|session| session.working_dir.clone())
+            })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 
@@ -978,6 +1003,7 @@ impl SummonClient {
     async fn handle_load(
         &self,
         session_id: &str,
+        working_dir: &Path,
         arguments: Option<JsonObject>,
         notification_emitter: Option<ToolCallNotificationEmitter>,
     ) -> Result<CallToolResult, String> {
@@ -1000,11 +1026,9 @@ impl SummonClient {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let working_dir = self.get_working_dir(session_id).await;
-
         if source_name.is_none() {
             return self
-                .handle_load_discovery(session_id, &working_dir)
+                .handle_load_discovery(session_id, working_dir)
                 .await
                 .map(CallToolResult::success);
         }
@@ -1039,7 +1063,7 @@ impl SummonClient {
             return Ok(CallToolResult::success(task_result.content).with_meta(Some(meta)));
         }
 
-        self.handle_load_source(session_id, name, &working_dir)
+        self.handle_load_source(session_id, name, working_dir)
             .await
             .map(CallToolResult::success)
     }
@@ -1345,6 +1369,7 @@ impl SummonClient {
     async fn handle_delegate(
         &self,
         session_id: &str,
+        working_dir: &Path,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
         notification_emitter: Option<ToolCallNotificationEmitter>,
@@ -1359,19 +1384,30 @@ impl SummonClient {
 
         self.validate_delegate_params(&params)?;
 
-        let session = self
+        let mut session = match self
             .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
+            .session
+            .as_deref()
+            .filter(|session| session.id == session_id)
+        {
+            Some(session) => session.clone(),
+            None => self
+                .context
+                .session_manager
+                .get_session(session_id, false)
+                .await
+                .map_err(|e| format!("Failed to get session: {}", e))?,
+        };
+        session.working_dir = working_dir.to_path_buf();
 
         if session.session_type == SessionType::SubAgent {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
         if params.r#async {
-            let (content, task_id) = self.handle_async_delegate(session_id, params).await?;
+            let (content, task_id) = self
+                .handle_async_delegate(session_id, params, session)
+                .await?;
             let mut meta = MetaObject::new();
             meta.0.insert(
                 "subagent_session_id".to_string(),
@@ -1380,9 +1416,8 @@ impl SummonClient {
             return Ok(CallToolResult::success(content).with_meta(Some(meta)));
         }
 
-        let working_dir = session.working_dir.clone();
         let recipe = self
-            .build_delegate_recipe(&params, session_id, &working_dir)
+            .build_delegate_recipe(&params, session_id, working_dir)
             .await?;
 
         let task_config = self
@@ -1851,28 +1886,14 @@ impl SummonClient {
         )?;
         let provider = match provider_entry {
             Ok(entry) => entry.create(extensions.to_vec()).await?,
-            Err(error) => {
-                let parent_provider = if let Some(extension_manager) = self
-                    .context
-                    .extension_manager
-                    .as_ref()
-                    .and_then(|weak| weak.upgrade())
+            Err(error) => match self.context.provider.lock().await.clone() {
+                Some(provider)
+                    if provider.get_name() == provider_name && !provider.manages_own_context() =>
                 {
-                    extension_manager.get_provider().lock().await.clone()
-                } else {
-                    None
-                };
-
-                match parent_provider {
-                    Some(provider)
-                        if provider.get_name() == provider_name
-                            && !provider.manages_own_context() =>
-                    {
-                        provider
-                    }
-                    _ => return Err(error),
+                    provider
                 }
-            }
+                _ => return Err(error),
+            },
         };
         Ok((provider, model_config))
     }
@@ -2036,6 +2057,7 @@ impl SummonClient {
         &self,
         session_id: &str,
         params: DelegateParams,
+        session: crate::session::Session,
     ) -> Result<(Vec<ContentBlock>, String), String> {
         let task_count = self.background_tasks.lock().await.len();
         let max_tasks = max_background_tasks();
@@ -2045,13 +2067,6 @@ impl SummonClient {
                 max_tasks
             ));
         }
-
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| format!("Failed to get session: {}", e))?;
 
         let working_dir = session.working_dir.clone();
         let recipe = self
@@ -2185,9 +2200,15 @@ impl McpClientTrait for SummonClient {
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
         let session_id = &ctx.session_id;
+        let working_dir = self.working_dir(ctx);
         match name {
             "load" => match self
-                .handle_load(session_id, arguments, ctx.notification_emitter().cloned())
+                .handle_load(
+                    session_id,
+                    &working_dir,
+                    arguments,
+                    ctx.notification_emitter().cloned(),
+                )
                 .await
             {
                 Ok(result) => Ok(result),
@@ -2200,6 +2221,7 @@ impl McpClientTrait for SummonClient {
                 match self
                     .handle_delegate(
                         session_id,
+                        &working_dir,
                         arguments,
                         cancellation_token,
                         ctx.notification_emitter().cloned(),
@@ -2233,7 +2255,14 @@ impl McpClientTrait for SummonClient {
         }
     }
 
-    async fn get_moim(&self, _session_id: &str) -> Option<String> {
+    fn rebind_session(
+        &self,
+        session: Arc<crate::session::Session>,
+    ) -> Option<Arc<dyn McpClientTrait>> {
+        Some(Arc::new(self.rebound(session)))
+    }
+
+    async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
         self.cleanup_completed_tasks().await;
         let refreshed_turns = self.refresh_running_task_turns().await;
 
@@ -2353,6 +2382,7 @@ mod tests {
     ) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: None,
             session: None,
@@ -2381,6 +2411,172 @@ mod tests {
                 .unwrap();
         }
         session.id
+    }
+
+    #[tokio::test]
+    async fn rebound_client_refreshes_instructions_and_preserves_task_state() {
+        let data_dir = TempDir::new().unwrap();
+        let old_working_dir = TempDir::new().unwrap();
+        let new_working_dir = TempDir::new().unwrap();
+        for (working_dir, name) in [
+            (old_working_dir.path(), "old-agent"),
+            (new_working_dir.path(), "new-agent"),
+        ] {
+            let agents = working_dir.join(".goose/agents");
+            fs::create_dir_all(&agents).unwrap();
+            fs::write(
+                agents.join(format!("{name}.md")),
+                format!("---\nname: {name}\ndescription: {name}\n---\n{name}"),
+            )
+            .unwrap();
+        }
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let old_session = session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "old".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let new_session = session_manager
+            .create_session(
+                new_working_dir.path().to_path_buf(),
+                "new".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut context = create_test_context_with_session_manager(session_manager);
+        context.session = Some(Arc::new(old_session));
+        let client = SummonClient::new(context).unwrap();
+
+        let rebound = client.rebound(Arc::new(new_session));
+
+        assert!(client.get_instructions().unwrap().contains("old-agent"));
+        assert!(rebound.get_instructions().unwrap().contains("new-agent"));
+        assert!(Arc::ptr_eq(
+            &client.background_tasks,
+            &rebound.background_tasks
+        ));
+        assert!(Arc::ptr_eq(
+            &client.completed_tasks,
+            &rebound.completed_tasks
+        ));
+    }
+
+    #[tokio::test]
+    async fn leased_client_loads_sources_from_its_snapshot_directory() {
+        let data_dir = TempDir::new().unwrap();
+        let old_working_dir = TempDir::new().unwrap();
+        let new_working_dir = TempDir::new().unwrap();
+        for (working_dir, instructions) in [
+            (old_working_dir.path(), "old instructions"),
+            (new_working_dir.path(), "new instructions"),
+        ] {
+            let agents = working_dir.join(".goose/agents");
+            fs::create_dir_all(&agents).unwrap();
+            fs::write(
+                agents.join("reviewer.md"),
+                format!("---\nname: reviewer\ndescription: reviewer\n---\n{instructions}"),
+            )
+            .unwrap();
+        }
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut context = create_test_context_with_session_manager(Arc::clone(&session_manager));
+        context.session = Some(Arc::new(session.clone()));
+        let client = SummonClient::new(context).unwrap();
+        session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+        let ctx =
+            ToolCallContext::new(session.id, Some(old_working_dir.path().to_path_buf()), None);
+
+        let result = client
+            .call_tool(
+                &ctx,
+                "load",
+                Some(
+                    serde_json::json!({"source": "reviewer"})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let text = result.content[0].as_text().unwrap();
+
+        assert!(text.text.contains("old instructions"));
+        assert!(!text.text.contains("new instructions"));
+    }
+
+    #[tokio::test]
+    async fn shared_background_tasks_are_cancelled_after_all_clients_drop() {
+        let data_dir = TempDir::new().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = session_manager
+            .create_session(
+                data_dir.path().to_path_buf(),
+                "rebound".to_string(),
+                SessionType::Hidden,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(session_manager)).unwrap();
+        let rebound = client.rebound(Arc::new(session));
+        let cancellation_token = CancellationToken::new();
+        let task_token = cancellation_token.clone();
+        let handle = tokio::spawn(async move {
+            task_token.cancelled().await;
+            Ok("cancelled".to_string())
+        });
+        client.background_tasks.lock().await.insert(
+            "task".to_string(),
+            BackgroundTask {
+                id: "task".to_string(),
+                description: "task".to_string(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(0)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: cancellation_token.clone(),
+                completion_token: CancellationToken::new(),
+                notification_sink: buffered_notification_sink(Vec::new()),
+            },
+        );
+
+        let (first, second) = tokio::join!(
+            tokio::spawn(async move { drop(client) }),
+            tokio::spawn(async move { drop(rebound) })
+        );
+        first.unwrap();
+        second.unwrap();
+
+        assert!(cancellation_token.is_cancelled());
     }
 
     #[test]
@@ -2930,9 +3126,8 @@ You review code."#;
         };
 
         // Set env var to a different value — recipe should still win
-        std::env::set_var("GOOSE_SUBAGENT_MAX_TURNS", "99");
+        let _env = env_lock::lock_env([("GOOSE_SUBAGENT_MAX_TURNS", Some("99"))]);
         let result = client.resolve_max_turns(&session);
-        std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
 
         assert_eq!(
             result, 10,
@@ -2948,9 +3143,8 @@ You review code."#;
 
         let session = crate::session::Session::default(); // no recipe
 
-        std::env::set_var("GOOSE_SUBAGENT_MAX_TURNS", "7");
+        let _env = env_lock::lock_env([("GOOSE_SUBAGENT_MAX_TURNS", Some("7"))]);
         let result = client.resolve_max_turns(&session);
-        std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
 
         assert_eq!(
             result, 7,
@@ -3004,14 +3198,8 @@ You review code."#;
             )
             .unwrap(),
         );
-        let extension_manager = Arc::new(
-            crate::agents::extension_manager::ExtensionManager::new_without_provider(
-                temp_dir.path().to_path_buf(),
-            ),
-        );
-        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
-        let mut context = extension_manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let mut context = create_test_context();
+        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
         let client = SummonClient::new(context).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),
@@ -3036,14 +3224,8 @@ You review code."#;
     async fn test_build_task_config_recreates_registered_parent_provider() {
         let temp_dir = TempDir::new().unwrap();
         let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
-        let extension_manager = Arc::new(
-            crate::agents::extension_manager::ExtensionManager::new_without_provider(
-                temp_dir.path().to_path_buf(),
-            ),
-        );
-        *extension_manager.get_provider().lock().await = Some(Arc::clone(&parent_provider));
-        let mut context = extension_manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&extension_manager));
+        let mut context = create_test_context();
+        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
         let client = SummonClient::new(context).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),
@@ -3846,7 +4028,7 @@ You review code."#;
             );
         }
 
-        let moim = client.get_moim("test").await.unwrap();
+        let moim = client.get_moim("test", &[]).await.unwrap();
         assert!(moim.contains("20260204_2"));
         assert!(moim.contains("20260204_3"));
         assert!(moim.contains(r#"use load("20260204_2") to get result"#));
@@ -3897,7 +4079,7 @@ You review code."#;
         assert!(result.unwrap_err().contains("not found"));
 
         // All tasks consumed -- moim should be empty
-        assert!(client.get_moim("test").await.is_none());
+        assert!(client.get_moim("test", &[]).await.is_none());
     }
 
     #[tokio::test]
@@ -3951,7 +4133,7 @@ You review code."#;
             .unwrap()
             .clone();
         let result = client
-            .handle_load("parent", Some(arguments), None)
+            .handle_load("parent", temp_dir.path(), Some(arguments), None)
             .await
             .unwrap();
         let text = extract_text(&result.content[0]);
@@ -4372,7 +4554,7 @@ You review code."#;
         assert!(text.contains("**Turns taken:** 1"));
         assert_eq!(result.turns, Some(1));
 
-        let moim = client.get_moim("test").await.unwrap();
+        let moim = client.get_moim("test", &[]).await.unwrap();
         assert!(moim.contains("1 turns"));
 
         // Task should still be in background_tasks (not consumed)

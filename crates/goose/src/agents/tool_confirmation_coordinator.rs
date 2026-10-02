@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::permission::Permission;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub(super) struct SessionToolConfirmationState {
     pub(super) confirmation_submission_lock: Mutex<()>,
     // Tracks requests from the current confirmation pause; None means still unanswered.
     confirmations: StdMutex<HashMap<String, Option<ConfirmationAnswer>>>,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     // Wakes wait_for_all_confirmation_answers; confirmations remains the source of truth.
     confirmation_answered: Notify,
 }
@@ -30,6 +32,7 @@ impl SessionToolConfirmationState {
             turn_lock: Arc::new(Mutex::new(())),
             confirmation_submission_lock: Mutex::new(()),
             confirmations: StdMutex::new(HashMap::new()),
+            extension_lease: Arc::new(StdMutex::new(None)),
             confirmation_answered: Notify::new(),
         }
     }
@@ -123,6 +126,30 @@ impl SessionToolConfirmationState {
             .expect("tool confirmation state unavailable")
             .clear();
     }
+
+    pub(super) fn extension_lease(&self) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
+        Arc::clone(&self.extension_lease)
+    }
+
+    pub(super) fn start_new_turn(&self) {
+        self.clear_confirmations();
+        self.clear_extension_lease();
+    }
+
+    fn has_confirmations(&self) -> bool {
+        !self
+            .confirmations
+            .lock()
+            .expect("tool confirmation state unavailable")
+            .is_empty()
+    }
+
+    pub(super) fn clear_extension_lease(&self) {
+        *self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable") = None;
+    }
 }
 
 pub(super) struct ActiveTurnGuard {
@@ -138,7 +165,9 @@ impl ActiveTurnGuard {
 
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
-        self.state.clear_confirmations();
+        if !self.state.has_confirmations() {
+            self.state.clear_extension_lease();
+        }
     }
 }
 
@@ -205,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn active_turn_drop_clears_pending_requests() {
+    fn interrupted_turn_keeps_pending_requests_until_the_next_turn() {
         let coordinator = ToolConfirmationCoordinator::new();
         let session = coordinator.session("session");
         let guard = session.try_start_turn().unwrap();
@@ -214,8 +243,12 @@ mod tests {
 
         drop(guard);
 
+        assert!(session.contains_request("request"));
+        let next_turn = session.try_start_turn().unwrap();
+        session.start_new_turn();
         assert!(!session.contains_request("request"));
         assert!(session.answer("request").is_none());
+        drop(next_turn);
     }
 
     #[test]

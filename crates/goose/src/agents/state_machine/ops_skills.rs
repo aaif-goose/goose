@@ -1,6 +1,7 @@
 //! Makes filesystem skills available to inference and slash commands.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -11,9 +12,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     emit_post_tool_use, pending_advertised_tool_requests, run_pre_tool_hooks, tool_span,
-    ToolDisposition,
+    ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
@@ -30,6 +32,7 @@ const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     hook_manager: HookManager,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -192,8 +195,28 @@ fn load_supporting_file(
 }
 
 impl SkillOperation {
-    pub fn new(hook_manager: HookManager) -> Self {
-        Self { hook_manager }
+    pub fn new(
+        hook_manager: HookManager,
+        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    ) -> Self {
+        Self {
+            hook_manager,
+            extension_lease,
+        }
+    }
+
+    fn leased_session(&self, session: &Session) -> Option<Session> {
+        let lease = self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable")
+            .clone()?;
+        if lease.scope_id() != session.id.as_str() {
+            return None;
+        }
+        let mut session = session.clone();
+        session.working_dir = lease.working_dir()?.to_path_buf();
+        Some(session)
     }
 
     async fn command_response(
@@ -316,6 +339,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
             return not_applicable();
         }
 
+        let leased_session = self.leased_session(session);
         let mut response = Message::user();
         for (request, disposition) in pending {
             let result: std::result::Result<CallToolResult, ErrorData> = match disposition {
@@ -326,6 +350,16 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     )]))
                 }
                 ToolDisposition::Execute => {
+                    let Some(session) = leased_session.as_ref() else {
+                        response.add_tool_response_with_metadata(
+                            request.id,
+                            Ok(CallToolResult::error(vec![ContentBlock::text(
+                                EXPIRED_APPROVAL_RESPONSE,
+                            )])),
+                            request.metadata.as_ref(),
+                        );
+                        continue;
+                    };
                     let tool_call = request.tool_call.as_ref().map_err(|error| {
                         anyhow!("load_skill tool call could not be parsed: {error}")
                     })?;
