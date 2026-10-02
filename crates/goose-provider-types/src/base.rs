@@ -18,6 +18,7 @@ use crate::{
     },
     errors::ProviderError,
     goose_mode::GooseMode,
+    maybe_send::{MaybeSend, MaybeSync},
     model::ModelConfig,
     permission::PermissionConfirmation,
     retry::RetryConfig,
@@ -327,9 +328,14 @@ pub trait ProviderDescriptor {
 /// A message stream yields partial text content but complete tool calls, all within the Message object
 /// So a message with text will contain potentially just a word of a longer response, but tool calls
 /// messages will only be yielded once concatenated.
+#[cfg(not(target_arch = "wasm32"))]
 pub type MessageStream = Pin<
     Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>> + Send>,
 >;
+
+#[cfg(target_arch = "wasm32")]
+pub type MessageStream =
+    Pin<Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>>>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PermissionRouting {
@@ -493,8 +499,9 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
 }
 
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
-#[async_trait]
-pub trait Provider: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait Provider: MaybeSend + MaybeSync {
     /// Get the name of this provider instance
     fn get_name(&self) -> &str;
 

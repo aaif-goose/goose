@@ -16,6 +16,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
 };
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 fn empty_input_schema() -> Arc<JsonObject> {
     Arc::new(
@@ -88,12 +89,43 @@ fn result<T: ToolBase>(output: Result<T::Output, T::Error>) -> Result<CallToolRe
     Ok(CallToolResult::structured(value))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+async fn invoke_sync<S, T>(
+    session: S,
+    parameters: T::Parameter,
+) -> Result<CallToolResult, ErrorData>
+where
+    S: Send + Sync + 'static,
+    T: SyncTool<S> + 'static,
+{
+    tokio::task::spawn_blocking(move || result::<T>(T::invoke(&session, parameters)))
+        .await
+        .map_err(|error| {
+            ErrorData::internal_error(format!("synchronous tool task failed: {error}"), None)
+        })?
+}
+
+// wasm32 has no threads to move blocking work onto, so the tool runs inline
+// and cancellation cannot interrupt it.
+#[cfg(target_arch = "wasm32")]
+async fn invoke_sync<S, T>(
+    session: S,
+    parameters: T::Parameter,
+) -> Result<CallToolResult, ErrorData>
+where
+    S: MaybeSend + MaybeSync + 'static,
+    T: SyncTool<S>,
+{
+    result::<T>(T::invoke(&session, parameters))
+}
+
 /// Supplies tools whose definitions and implementations may vary by session.
 ///
 /// A provider's tool names and their handlers must remain stable from an inference
 /// advertisement until every tool call produced by that inference has been handled.
-#[async_trait]
-pub trait ToolProvider<S>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     async fn tools(&self, session: &S) -> Result<Vec<Tool>>;
 
     async fn call(
@@ -105,9 +137,16 @@ pub trait ToolProvider<S>: Send + Sync {
     ) -> Result<CallToolResult, ErrorData>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 type ToolHandler<S> = dyn for<'a> Fn(&'a S, Option<JsonObject>) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>
     + Send
     + Sync;
+
+#[cfg(target_arch = "wasm32")]
+type ToolHandler<S> = dyn for<'a> Fn(
+    &'a S,
+    Option<JsonObject>,
+) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>;
 
 struct RegisteredTool<S> {
     definition: Tool,
@@ -118,10 +157,11 @@ struct RegisteredToolProvider<S> {
     tools: Vec<RegisteredTool<S>>,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S> ToolProvider<S> for RegisteredToolProvider<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     async fn tools(&self, _session: &S) -> Result<Vec<Tool>> {
         Ok(self
@@ -160,7 +200,7 @@ pub struct ToolOperation<S> {
 
 impl<S> ToolOperation<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -190,7 +230,7 @@ where
     pub fn with_sync_tool<T>(mut self) -> Self
     where
         S: Clone,
-        T: SyncTool<S> + Send + Sync + 'static,
+        T: SyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
             definition: definition::<T>(),
@@ -198,16 +238,7 @@ where
                 let session = session.clone();
                 Box::pin(async move {
                     let parameters = parameters::<T>(arguments)?;
-                    tokio::task::spawn_blocking(move || {
-                        result::<T>(T::invoke(&session, parameters))
-                    })
-                    .await
-                    .map_err(|error| {
-                        ErrorData::internal_error(
-                            format!("synchronous tool task failed: {error}"),
-                            None,
-                        )
-                    })?
+                    invoke_sync::<S, T>(session, parameters).await
                 })
             }),
         });
@@ -216,7 +247,7 @@ where
 
     pub fn with_async_tool<T>(mut self) -> Self
     where
-        T: AsyncTool<S> + Send + Sync + 'static,
+        T: AsyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
             definition: definition::<T>(),
@@ -255,18 +286,19 @@ where
 
 impl<S> Default for ToolOperation<S>
 where
-    S: Send + Sync + 'static,
+    S: MaybeSend + MaybeSync + 'static,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S, E> Operation<S, E> for ToolOperation<S>
 where
-    S: Send + Sync + 'static,
-    E: From<Message> + Send + 'static,
+    S: MaybeSend + MaybeSync + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         "tools"

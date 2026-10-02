@@ -8,6 +8,7 @@ use crate::documents::{
 use crate::errors::ProviderError;
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::json::{parse_tool_arguments, truncation_error_message};
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::{is_goose_internal_request_param, ModelConfig};
 use crate::thinking::{
@@ -252,6 +253,10 @@ pub fn format_messages_with_options(
         });
 
         let mut output = Vec::new();
+        // Deferred to the end of the message so every tool result in a batch stays
+        // consecutive; a strict OpenAI-compatible API rejects a request where a
+        // synthetic user image message splits one assistant tool_calls batch.
+        let mut pending_image_messages = Vec::new();
         let mut content_array = Vec::new();
         let mut has_non_text_content = false;
         let mut reasoning_text = String::new();
@@ -354,7 +359,6 @@ pub fn format_messages_with_options(
                         Ok(result) => {
                             // Process all content, replacing images with placeholder text
                             let mut tool_content = Vec::new();
-                            let mut image_messages = Vec::new();
 
                             for content in result.content.iter() {
                                 match content {
@@ -364,7 +368,7 @@ pub fn format_messages_with_options(
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
                                             // Create a separate image message
-                                            image_messages.push(json!({
+                                            pending_image_messages.push(json!({
                                                 "role": "user",
                                                 "content": [convert_image(&image.clone(), image_format)]
                                             }));
@@ -391,14 +395,11 @@ pub fn format_messages_with_options(
                                 .collect::<Vec<String>>()
                                 .join(" "));
 
-                            // First add the tool response with all content
                             output.push(json!({
                                 "role": "tool",
                                 "content": tool_response_content,
                                 "tool_call_id": response.id
                             }));
-                            // Then add any image messages that need to follow
-                            output.extend(image_messages);
                         }
                         Err(e) => {
                             // A tool result error is shown as output so the model can interpret the error message
@@ -448,6 +449,8 @@ pub fn format_messages_with_options(
                 }
             }
         }
+
+        output.append(&mut pending_image_messages);
 
         if !content_array.is_empty() {
             if has_non_text_content {
@@ -1235,7 +1238,7 @@ pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     try_stream! {
         use futures::StreamExt;
@@ -1925,8 +1928,16 @@ pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [
         if normalized.contains("-pro") || normalized.contains("/pro") {
             &["high"]
         } else if normalized.contains("gpt-6") {
-            // GPT-6 Astra does not accept `none`; Sol and Luna do.
-            if normalized.contains("astra") {
+            // GPT-6 Astra and GPT-6.1 Sol require reasoning; GPT-6 Sol and Luna may disable it.
+            let is_gpt_6_1_sol = normalized
+                .match_indices("gpt-6.1-sol")
+                .any(|(index, name)| {
+                    let (prefix, rest) = normalized.split_at(index);
+                    let (_, suffix) = rest.split_at(name.len());
+                    (prefix.is_empty() || prefix.ends_with(['/', '.', '-']))
+                        && (suffix.is_empty() || suffix.starts_with(['-', '@']))
+                });
+            if normalized.contains("astra") || is_gpt_6_1_sol {
                 &["low", "medium", "high", "xhigh", "max"]
             } else {
                 &["none", "low", "medium", "high", "xhigh", "max"]
@@ -2655,6 +2666,99 @@ mod tests {
     }
 
     #[test]
+    fn test_parallel_tool_responses_with_images_are_consecutive() {
+        // #11893: a synthetic user image message between the tool results of one
+        // tool_calls batch makes strict OpenAI-compatible APIs reject the request.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYg==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+    }
+
+    #[test]
+    fn test_mixed_tool_responses_image_and_text_ordering() {
+        // A text-only result between two image results must not let the image
+        // messages split the batch either.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("shell")))
+                .with_tool_request("call_c", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        "text result",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_c",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYw==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(
+            roles,
+            vec!["assistant", "tool", "tool", "tool", "user", "user"]
+        );
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+        assert_eq!(spec[3]["tool_call_id"], "call_c");
+    }
+
+    #[test]
     fn test_format_messages_with_text_and_image_preserves_order() {
         // Text before image: order should be [text, image]
         let msg_text_first = Message::user()
@@ -3335,6 +3439,13 @@ mod tests {
             "gpt-6-astra",
             "data_workflow_tools.goose.goose-gpt-6-astra",
             "openrouter/openai/gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6.1-sol-high",
+            "data_workflow_tools.goose.goose-gpt-6.1-sol",
+            "openrouter/openai/gpt-6.1-sol",
+            "gpt-6.1-sol@eu",
+            "openai/gpt-6.1-sol-fast",
+            "openai/gpt-6.1-sol-fast-high",
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),

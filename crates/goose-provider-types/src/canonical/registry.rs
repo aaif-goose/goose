@@ -141,11 +141,9 @@ pub fn load_cached_catalog(cache_dir: &Path) -> Result<bool> {
 }
 
 pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
+    let client = reqwest::Client::builder().build()?;
     let etag_path = cache_dir.join(ETAG_FILENAME);
-    let mut request = client.get(url).header(
+    let mut request = client.get(url).timeout(Duration::from_secs(15)).header(
         "User-Agent",
         "goose/model-catalog (https://github.com/aaif-goose/goose)",
     );

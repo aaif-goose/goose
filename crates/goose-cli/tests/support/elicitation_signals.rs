@@ -64,18 +64,11 @@ fn own_descriptor(fd: libc::c_int) -> File {
     file
 }
 
-#[test_case(false, false, Some(false); "pipe sigint")]
-#[test_case(true, false, Some(false); "pty sigint")]
-#[test_case(false, true, Some(false); "pipe partial and earlier field")]
-#[test_case(true, true, Some(false); "pty partial and earlier field")]
-#[test_case(true, true, Some(true); "pty keyboard ctrl c")]
-#[test_case(false, false, None; "pipe completed lines")]
-#[test_case(true, false, None; "pty completed lines")]
-fn freeform_input_preserves_cancellation_and_ownership(
-    terminal: bool,
-    partial: bool,
-    keyboard: Option<bool>,
-) {
+#[test_case(false, Some(false); "pty sigint")]
+#[test_case(true, Some(false); "pty partial and earlier field")]
+#[test_case(true, Some(true); "pty keyboard ctrl c")]
+#[test_case(false, None; "pty completed lines")]
+fn freeform_input_preserves_cancellation_and_ownership(partial: bool, keyboard: Option<bool>) {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args([
@@ -96,48 +89,34 @@ fn freeform_input_preserves_cancellation_and_ownership(
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
-    let mut pipe_input = None;
-    let input = if terminal {
-        let mut master = -1;
-        let mut slave = -1;
-        // openpty initializes both descriptors; File takes ownership after success.
-        assert_eq!(
-            unsafe {
-                libc::openpty(
-                    &mut master,
-                    &mut slave,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                )
-            },
-            0
-        );
-        let master = own_descriptor(master);
-        let slave = own_descriptor(slave);
-        command.stdin(Stdio::from(slave));
-        // Only async-signal-safe syscalls run between fork and exec.
+    let mut master = -1;
+    let mut slave = -1;
+    // openpty initializes both descriptors; File takes ownership after success.
+    assert_eq!(
         unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                // Closing the test's PTY master must not kill the child during shutdown.
-                libc::signal(libc::SIGHUP, libc::SIG_IGN);
-                Ok(())
-            });
-        }
-        master
-    } else {
-        let mut descriptors = [-1; 2];
-        // Keep a read descriptor to observe when the child consumed the partial line.
-        assert_eq!(unsafe { libc::pipe(descriptors.as_mut_ptr()) }, 0);
-        let reader = own_descriptor(descriptors[0]);
-        let writer = own_descriptor(descriptors[1]);
-        command.stdin(Stdio::from(reader.try_clone().unwrap()));
-        pipe_input = Some(reader);
-        writer
-    };
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        },
+        0
+    );
+    let input = own_descriptor(master);
+    command.stdin(Stdio::from(own_descriptor(slave)));
+    // Only async-signal-safe syscalls run between fork and exec.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // Closing the test's PTY master must not kill the child during shutdown.
+            libc::signal(libc::SIGHUP, libc::SIG_IGN);
+            Ok(())
+        });
+    }
 
     let mut child = ChildGuard(command.spawn().unwrap());
     // Close the PTY master before waiting for the child, including on assertion failure.
@@ -155,24 +134,6 @@ fn freeform_input_preserves_cancellation_and_ownership(
         wait_for(&mut output, "z_answer: ");
         if partial {
             input.write_all(b"unfinished").unwrap();
-            if let Some(pipe) = pipe_input {
-                let deadline = Instant::now() + Duration::from_secs(5);
-                loop {
-                    let mut pending: libc::c_int = 0;
-                    assert_eq!(
-                        unsafe { libc::ioctl(pipe.as_raw_fd(), libc::FIONREAD as _, &mut pending) },
-                        0
-                    );
-                    if pending == 0 {
-                        break;
-                    }
-                    assert!(
-                        Instant::now() < deadline,
-                        "child did not consume partial input"
-                    );
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            }
         }
         if keyboard == Some(true) {
             input.write_all(&[3]).unwrap();
@@ -214,6 +175,19 @@ fn signal_child() {
         .unwrap();
     runtime.block_on(async {
         let token = CancellationToken::new();
+        if mode == "reject" {
+            let schema = serde_json::json!({"properties": {"answer": {"type": "string"}}});
+            let error = collect_elicitation_input("", &schema, &token)
+                .err()
+                .unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::NotConnected);
+            assert_eq!(
+                read_line_from(&mut io::stdin().lock()).unwrap().as_deref(),
+                Some("next chat")
+            );
+            println!("NEXT_INPUT_PRESERVED");
+            return;
+        }
         let cancelled = token.clone();
         let mut signal = Box::pin(tokio::signal::ctrl_c());
         poll_fn(|cx| {
@@ -258,4 +232,31 @@ fn signal_child() {
         );
         println!("NEXT_INPUT_PRESERVED");
     });
+}
+
+#[test]
+fn nonterminal_form_rejects_without_consuming_queued_input() {
+    let mut child = ChildGuard(
+        Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "session::elicitation::signal_tests::signal_child",
+                "--nocapture",
+            ])
+            .env(CHILD_MODE, "reject")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    child
+        .0
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"next chat\n")
+        .unwrap();
+    let mut output = child.0.stdout.take().unwrap();
+    wait_for(&mut output, "NEXT_INPUT_PRESERVED");
+    assert!(child.0.wait().unwrap().success());
 }

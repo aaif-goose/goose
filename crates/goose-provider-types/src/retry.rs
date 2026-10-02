@@ -1,8 +1,14 @@
 use crate::base::Provider;
 use crate::errors::ProviderError;
+use crate::maybe_send::MaybeSend;
 use async_trait::async_trait;
 use std::future::Future;
 use std::time::Duration;
+
+// wasm32 hosts run without a tokio runtime, so back off on the host's timer.
+#[cfg(target_arch = "wasm32")]
+use gloo_timers::future::sleep;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::time::sleep;
 
 pub const DEFAULT_MAX_RETRIES: usize = 3;
@@ -114,9 +120,9 @@ pub async fn retry_operation<F, Fut, T>(
     operation: F,
 ) -> Result<T, ProviderError>
 where
-    F: Fn() -> Fut + Send,
-    Fut: Future<Output = Result<T, ProviderError>> + Send,
-    T: Send,
+    F: Fn() -> Fut + MaybeSend,
+    Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+    T: MaybeSend,
 {
     let mut attempts = 0;
 
@@ -153,7 +159,8 @@ where
 /// Trait for retry functionality to keep Provider dyn-compatible.
 ///
 /// All `Provider` implementors get this via the blanket impl below.
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ProviderRetry {
     fn retry_config(&self) -> RetryConfig {
         RetryConfig::default()
@@ -161,9 +168,9 @@ pub trait ProviderRetry {
 
     async fn with_retry<F, Fut, T>(&self, operation: F) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send,
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
     {
         self.with_retry_config(operation, self.retry_config()).await
     }
@@ -174,12 +181,13 @@ pub trait ProviderRetry {
         config: RetryConfig,
     ) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send;
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend;
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<P: Provider> ProviderRetry for P {
     fn retry_config(&self) -> RetryConfig {
         Provider::retry_config(self)
@@ -191,9 +199,9 @@ impl<P: Provider> ProviderRetry for P {
         config: RetryConfig,
     ) -> Result<T, ProviderError>
     where
-        F: Fn() -> Fut + Send,
-        Fut: Future<Output = Result<T, ProviderError>> + Send,
-        T: Send,
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
     {
         let mut attempts = 0;
         let mut auth_retried = false;

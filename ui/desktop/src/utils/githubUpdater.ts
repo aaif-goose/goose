@@ -163,7 +163,7 @@ const SHARED_DIRECTORY_NAMES = new Set([
 
 async function pathExists(target: string): Promise<boolean> {
   try {
-    await fs.access(target);
+    await fs.stat(target);
     return true;
   } catch {
     return false;

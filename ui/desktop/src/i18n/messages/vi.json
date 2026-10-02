@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Không thể cập nhật thư mục làm việc"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "URL không hợp lệ"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình (dùng phím mũi tên)"
+    "defaultMessage": "Di chuyển cửa sổ Hình-trong-hình"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Hình-trong-hình"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Đang phát ở chế độ Hình-trong-hình"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Thay đổi kích cỡ cửa sổ Hình-trong-hình"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# mục được tìm thấy} other{# mục được tìm thấy}}"
@@ -2384,6 +2383,9 @@
   },
   "navigationPanel.chats": {
     "defaultMessage": "Cuộc trò chuyện"
+  },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Đang tải cuộc trò chuyện…"
   },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Đã tạo"
@@ -3828,9 +3830,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Mở trong cửa sổ mới"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Chia sẻ liên kết Nostr được mã hóa"
-  },
   "sessions.cancel": {
     "defaultMessage": "Hủy"
   },
@@ -3870,21 +3869,6 @@
   "sessions.import": {
     "defaultMessage": "Nhập phiên"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Nhập liên kết"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Dán một liên kết chia sẻ Nostr của Goose để tìm nạp, giải mã và nhập phiên."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nhập phiên Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Đang nhập..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Bao gồm phiên ACP"
   },
@@ -3912,12 +3896,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Tìm kiếm lịch sử..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Bất kỳ ai có liên kết này đều có thể tải về và giải mã phiên làm việc. Hãy coi nó như một bí mật."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Liên kết chia sẻ Nostr được mã hóa"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Đã sao chép vào bộ nhớ tạm"
   },
@@ -3944,12 +3922,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Đã nhập phiên làm việc thành công"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Đã tạo liên kết chia sẻ Nostr được mã hóa"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Không thể tạo liên kết chia sẻ Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Không thể cập nhật mô tả phiên làm việc: {error}"

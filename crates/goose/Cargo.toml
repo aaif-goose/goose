@@ -105,7 +105,6 @@ portable-default = [
     "chat-recall",
     "acp-http",
 ]
-nostr = ["dep:nostr", "dep:nostr-sdk"]
 platform-apps = []
 chat-recall = []
 scheduler = ["dep:tokio-cron-scheduler"]
@@ -117,6 +116,7 @@ workspace = true
 [dependencies]
 lru = { workspace = true }
 rmcp = { workspace = true, features = [
+    "auth",
     "client",
     "transport-child-process",
     "transport-streamable-http-client",
@@ -245,8 +245,6 @@ goose-acp-macros = { path = "../goose-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
 process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }
-nostr = { version = "0.45.1", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
-nostr-sdk = { version = "0.45.1", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem"], optional = true }
 axum-server = { workspace = true, optional = true }

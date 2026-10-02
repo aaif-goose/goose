@@ -929,10 +929,6 @@
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
   },
-
-
-
-
   "dirSwitcher.failedToUpdateWorkingDir": {
     "defaultMessage": "Gagal mengemas kini direktori kerja"
   },
@@ -1966,13 +1962,16 @@
     "defaultMessage": "URL tidak sah"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Alihkan tetingkap Gambar-dalam-Gambar (gunakan kekunci anak panah)"
+    "defaultMessage": "Alihkan tetingkap Gambar-dalam-Gambar"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Gambar-dalam-Gambar"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Bermain dalam Gambar-dalam-Gambar"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Ubah saiz tetingkap Gambar-dalam-Gambar"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# item dijumpai} other{# item dijumpai}}"
@@ -2384,6 +2383,9 @@
   },
   "navigationPanel.chats": {
     "defaultMessage": "Sembang"
+  },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Memuatkan sembang…"
   },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Dicipta"
@@ -3828,9 +3830,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Buka dalam tetingkap baharu"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Kongsi pautan Nostr tersulit"
-  },
   "sessions.cancel": {
     "defaultMessage": "Batal"
   },
@@ -3870,21 +3869,6 @@
   "sessions.import": {
     "defaultMessage": "Import Sesi"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Import Pautan"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Tampal pautan kongsi Nostr Goose untuk mengambil, menyahsulit, dan mengimport sesi."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Import Sesi Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Mengimport..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Sertakan sesi ACP"
   },
@@ -3912,12 +3896,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Cari sejarah..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Sesiapa sahaja yang mempunyai pautan ini boleh mengambil dan menyahsulit sesi tersebut. Anggap ia sebagai rahsia."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Pautan Kongsi Nostr Tersulit"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Disalin ke papan keratan"
   },
@@ -3944,12 +3922,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sesi berjaya diimport"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Pautan kongsi Nostr tersulit dicipta"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Gagal mencipta pautan kongsi Nostr: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Gagal mengemas kini penerangan sesi: {error}"

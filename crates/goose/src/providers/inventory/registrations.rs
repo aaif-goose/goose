@@ -16,6 +16,7 @@ use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
 use crate::providers::huggingface::HuggingFaceProvider;
 use crate::providers::huggingface_auth;
 use crate::providers::kimicode;
+use crate::providers::muse_code_def;
 use crate::providers::ollama::OLLAMA_PROVIDER_NAME;
 use crate::providers::openai::{OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_PROVIDER_NAME};
 use crate::providers::pi_acp::{PI_ACP_BINARY, PI_ACP_PROVIDER_NAME};
@@ -199,6 +200,10 @@ pub fn kimi_code_inventory() -> InventoryRegistration {
     refresh_only().with_configured(kimicode::has_configured_token)
 }
 
+pub fn muse_code_inventory() -> InventoryRegistration {
+    refresh_only().with_configured(muse_code_def::has_configured_token)
+}
+
 pub fn chatgpt_codex_inventory() -> InventoryRegistration {
     InventoryRegistration {
         supports_refresh: false,
@@ -337,6 +342,40 @@ mod tests {
         assert!(!configured());
 
         let cache_path = Paths::in_config_dir("kimicode/token.json");
+        std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            cache_path,
+            serde_json::to_string(&serde_json::json!({
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "expires_at": (Utc::now() + chrono::Duration::hours(1)).to_rfc3339(),
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert!(configured());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn muse_code_inventory_configured_uses_token_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(root_path.as_str())),
+            ("MUSE_AUTH_PATH", Some("/tmp/goose-missing-muse-auth.json")),
+            ("XDG_CONFIG_HOME", Some(root_path.as_str())),
+        ]);
+
+        let registration = muse_code_inventory();
+        let configured = registration
+            .configured
+            .expect("Muse Code should define configured resolver");
+
+        assert!(!configured());
+
+        let cache_path = Paths::in_config_dir("muse_code/token.json");
         std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
         std::fs::write(
             cache_path,

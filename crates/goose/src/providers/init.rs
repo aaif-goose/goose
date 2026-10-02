@@ -42,6 +42,7 @@ use crate::providers::base::ProviderType;
 use crate::providers::databricks_def::{self, DatabricksProviderDef};
 use crate::providers::databricks_v2_def::{self, DatabricksV2ProviderDef};
 use crate::providers::google_def::GoogleProviderDef;
+use crate::providers::muse_code_def::{MuseCodeProvider, MuseCodeProviderDef};
 use crate::providers::ollama_def::OllamaProviderDef;
 use crate::providers::openai_def::OpenAiProviderDef;
 use crate::providers::openrouter_def::OpenRouterProviderDef;
@@ -149,6 +150,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         );
         registry
             .register_with_inventory::<NanoGptProvider>(true, Some(registrations::refresh_only()));
+        registry.register_with_inventory::<MuseCodeProviderDef>(
+            true,
+            Some(registrations::muse_code_inventory()),
+        );
         registry.register_with_inventory::<OllamaProviderDef>(
             true,
             Some(registrations::ollama_inventory()),
@@ -197,6 +202,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     registry.set_cleanup(
         "kimi_code",
         Arc::new(|| Box::pin(KimiCodeProvider::cleanup())),
+    );
+    registry.set_cleanup(
+        "muse_code",
+        Arc::new(|| Box::pin(MuseCodeProvider::cleanup())),
     );
     registry.set_cleanup(
         "chatgpt_codex",
@@ -566,6 +575,7 @@ mod tests {
             "gcp_vertex_ai",
             "github_copilot",
             "kimi_code",
+            "muse_code",
             "nano-gpt",
             "tetrate",
             "xai",

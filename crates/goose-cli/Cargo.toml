@@ -98,7 +98,6 @@ default = [
     "local-inference",
     "aws-providers",
     "telemetry",
-    "nostr",
     "otel",
     "rustls-tls",
     "live-voice",
@@ -122,7 +121,6 @@ cuda = ["goose/cuda", "local-inference"]
 vulkan = ["goose/vulkan", "local-inference"]
 mlx = ["goose/mlx", "local-inference"]
 telemetry = ["goose/telemetry"]
-nostr = ["goose/nostr"]
 otel = ["goose/otel"]
 system-keyring = ["goose/system-keyring"]
 update = ["dep:sigstore-verify", "dep:snap"]

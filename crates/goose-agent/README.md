@@ -52,5 +52,23 @@ Cancellation is cooperative. Once the token fires, remaining steps are treated a
 not-applicable and each step's `cancel` hook gets a chance to rewrite its result;
 anything applied while cancelled yields to the client.
 
+## WebAssembly
+
+The crate builds for `wasm32-unknown-unknown` and runs without a tokio runtime,
+so it can be embedded in a JavaScript host. There, the clock and randomness come
+from JavaScript. Some things differ from native:
+
+- The traits you implement (`Provider`, `Operation`, `ToolProvider`,
+  `SessionLoader`, `EffectHandler`, and the rest) do not require `Send` or
+  `Sync`, and neither does `MessageStream`. So you can await JavaScript promises
+  and hold host handles directly. Implement the traits with
+  `#[async_trait(?Send)]`. The bounds are `MaybeSend` and `MaybeSync` from
+  `goose_provider_types::maybe_send`, which are the real `Send` and `Sync`
+  natively.
+- `SyncTool`s run inline instead of on a blocking thread, so cancellation cannot
+  interrupt one that has started.
+- `ProviderRetry` waits between attempts on the host's `setTimeout` instead of
+  tokio's timer, so retries work without a tokio runtime.
+
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
