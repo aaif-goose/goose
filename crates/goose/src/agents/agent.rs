@@ -1872,11 +1872,19 @@ impl Agent {
             .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
     }
 
-    pub async fn cancel_foreground_subagents(&self, session_id: &str) -> Result<()> {
-        self.config
+    pub async fn cancel_foreground_subagents(&self, session_id: &str) {
+        if let Err(error) = self
+            .config
             .session_manager
             .cancel_foreground_subagents(session_id, cancellation_note)
             .await
+        {
+            error!(
+                session_id,
+                ?error,
+                "Failed to record cancelled foreground subagents"
+            );
+        }
     }
 
     async fn resume_state_machine_turn_inner(

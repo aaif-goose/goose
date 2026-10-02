@@ -2238,13 +2238,7 @@ impl GooseAcpAgent {
         if cancel_token.is_cancelled() {
             was_cancelled = true;
             drop(stream);
-            if let Err(error) = agent.cancel_foreground_subagents(session_id).await {
-                error!(
-                    session_id,
-                    ?error,
-                    "Failed to record cancelled foreground subagents"
-                );
-            }
+            agent.cancel_foreground_subagents(session_id).await;
         }
 
         if !was_cancelled {

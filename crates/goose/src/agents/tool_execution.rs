@@ -57,7 +57,7 @@ impl ToolCallContext {
         }
     }
 
-    pub(crate) fn from_state_machine(mut self) -> Self {
+    pub(crate) fn with_state_machine(mut self) -> Self {
         self.from_state_machine = true;
         self
     }

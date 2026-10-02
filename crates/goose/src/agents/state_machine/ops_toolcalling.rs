@@ -369,7 +369,7 @@ impl<'a> ToolExecutionOperation<'a> {
                 Some(session.working_dir.clone()),
                 Some(request_id.clone()),
             )
-            .from_state_machine();
+            .with_state_machine();
             let result = self
                 .extension_manager
                 .dispatch_tool_call(&context, tool_call.clone(), cancellation_token)

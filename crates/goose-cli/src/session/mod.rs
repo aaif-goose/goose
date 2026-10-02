@@ -1539,13 +1539,9 @@ impl CliSession {
         }
 
         if cancel_token_clone.is_cancelled() && !failed_before_stop {
-            if let Err(e) = self
-                .agent
+            self.agent
                 .cancel_foreground_subagents(&self.session_id)
-                .await
-            {
-                eprintln!("Error cancelling subagents: {}", e);
-            }
+                .await;
         }
 
         let terminal_error = headless_run_error(
