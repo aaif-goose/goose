@@ -227,6 +227,7 @@ prompt: |
   ```
   load_skill(name: "goose-doc-guide")
   load_skill(name: "web-search")
+  load_skill(name: "gdk")
   ```
   Verify the skill content is returned and can be read for each. This confirms all builtin skills are accessible.
 
