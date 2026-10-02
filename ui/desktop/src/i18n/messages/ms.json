@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "Kembali"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,other{# mesej terdahulu tidak dipaparkan}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Gagal Memuatkan Sesi"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "Cuba semula"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "Tunjukkan semua"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Sambungan Dikemas Kini"

@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "戻る"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,other{以前のメッセージ # 件は表示されていません}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "セッションの読み込みに失敗しました"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "再試行"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "すべて表示"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "拡張機能を更新しました"

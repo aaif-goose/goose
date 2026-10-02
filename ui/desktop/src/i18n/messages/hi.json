@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "वापस"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,one{# पिछला संदेश नहीं दिखाया गया} other{# पिछले संदेश नहीं दिखाए गए}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "सत्र लोड करने में विफल"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "पुनः प्रयास करें"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "सभी दिखाएँ"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "एक्सटेंशन अपडेट किया गया"
