@@ -105,7 +105,9 @@ fn is_valid_csp_host_source(source: &str) -> bool {
         return false;
     }
 
-    let (host, port) = split_host_and_port(source);
+    let Some((host, port)) = split_host_and_port(source) else {
+        return false;
+    };
     if host.is_empty() {
         return false;
     }
@@ -128,18 +130,21 @@ fn is_valid_csp_host_source(source: &str) -> bool {
             .all(|label| is_valid_dns_label(label) && label != "*")
 }
 
-fn split_host_and_port(source: &str) -> (&str, Option<&str>) {
+fn split_host_and_port(source: &str) -> Option<(&str, Option<&str>)> {
     if let Some(remainder) = source.strip_prefix('[') {
-        if let Some((host, tail)) = remainder.split_once(']') {
-            let port = tail.strip_prefix(':');
-            return (host, port);
-        }
+        let (host, tail) = remainder.split_once(']')?;
+        let port = if tail.is_empty() {
+            None
+        } else {
+            Some(tail.strip_prefix(':')?)
+        };
+        return Some((host, port));
     }
 
-    match source.rsplit_once(':') {
+    Some(match source.rsplit_once(':') {
         Some((host, port)) if !host.contains(':') => (host, Some(port)),
         _ => (source, None),
-    }
+    })
 }
 
 fn is_valid_dns_label(label: &str) -> bool {
@@ -437,6 +442,130 @@ mod tests {
         assert_eq!(normalize_csp_source("javascript:alert(1)"), None);
         assert_eq!(normalize_csp_source("https://example.com;"), None);
         assert_eq!(normalize_csp_source("https://user@example.com"), None);
+    }
+
+    #[test]
+    fn rejects_invalid_ipv6_source_suffixes() {
+        for source in [
+            "[::1]trailing",
+            "[::1]&#59form-action&#32*",
+            "[::1]&#x3b&#x66orm-action&#x20*",
+            "[::1]&Tab;",
+            "[::1]]",
+            "[::1]:",
+            "[::1]:65536",
+            "[::1]:443trailing",
+            "[::1]:443:80",
+            "https://[::1]trailing/path",
+            "wss://[::1]trailing:443/socket",
+        ] {
+            assert_eq!(normalize_csp_source(source), None, "{source}");
+        }
+    }
+
+    #[test]
+    fn preserves_valid_ipv6_and_other_sources() {
+        for (source, expected) in [
+            ("[::1]", "[::1]"),
+            ("[::1]:3000", "[::1]:3000"),
+            ("[2001:DB8::1]:65535", "[2001:db8::1]:65535"),
+            ("https://[::1]/app.js", "https://[::1]"),
+            ("wss://[::1]:443/socket?x=1#fragment", "wss://[::1]:443"),
+            ("https://CDN.example.com/assets", "https://cdn.example.com"),
+            ("*.example.com:443", "*.example.com:443"),
+            ("127.0.0.1:3000", "127.0.0.1:3000"),
+            ("localhost:3000", "localhost:3000"),
+        ] {
+            assert_eq!(
+                normalize_csp_source(source).as_deref(),
+                Some(expected),
+                "{source}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_ipv6_suffix_cannot_change_proxy_or_guest_policy() {
+        use super::{
+            mcp_app_proxy, serve_guest_html, store_guest_html, AppState, GuestQuery, GuestState,
+            ProxyQuery, StoreGuestBody,
+        };
+        use axum::{extract::Query, extract::State, Json};
+
+        let state = AppState {
+            secret_key: "test-secret".to_string(),
+            guest_store: Default::default(),
+            guest_base_url: "http://127.0.0.1:12345".to_string(),
+        };
+        let domains = "[::1]&#59form-action&#32*,https://cdn.example.com".to_string();
+        let peer = ConnectInfo("127.0.0.1:12346".parse::<SocketAddr>().unwrap());
+        let response = mcp_app_proxy(
+            State(state.clone()),
+            peer,
+            Query(ProxyQuery {
+                secret: state.secret_key.clone(),
+                connect_domains: Some(domains.clone()),
+                resource_domains: Some(domains.clone()),
+                frame_domains: Some(domains.clone()),
+                base_uri_domains: Some(domains.clone()),
+                script_domains: Some(domains),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = std::str::from_utf8(&body).unwrap();
+        let csp = html
+            .split_once("http-equiv=\"Content-Security-Policy\" content=\"")
+            .unwrap()
+            .1
+            .split_once('"')
+            .unwrap()
+            .0;
+        let valid_sources = vec!["https://cdn.example.com".to_string()];
+        assert_eq!(
+            csp,
+            build_outer_csp(
+                &valid_sources,
+                &valid_sources,
+                &valid_sources,
+                &valid_sources,
+                &valid_sources,
+                &state.guest_base_url,
+            )
+        );
+        assert!(!csp.contains('&'));
+        assert_eq!(csp.matches("form-action").count(), 1);
+        assert!(csp.contains("form-action 'none'"));
+
+        let stored = store_guest_html(
+            State(state.clone()),
+            peer,
+            Json(StoreGuestBody {
+                secret: state.secret_key,
+                html: "<p>guest</p>".to_string(),
+                csp: Some(csp.to_string()),
+            }),
+        )
+        .await;
+        assert_eq!(stored.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(stored.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let stored: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let guest = serve_guest_html(
+            State(GuestState {
+                guest_store: state.guest_store,
+            }),
+            Query(GuestQuery {
+                nonce: stored["nonce"].as_str().unwrap().to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(guest.status(), StatusCode::OK);
+        assert_eq!(guest.headers()[header::CONTENT_SECURITY_POLICY], csp);
     }
 
     #[test]
