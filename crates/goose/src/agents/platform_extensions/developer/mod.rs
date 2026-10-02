@@ -171,7 +171,7 @@ impl DeveloperClient {
             )),
             Tool::new(
                 "read_image".to_string(),
-                "Read an image from a local file path or http(s) URL and return it as image content for the model to inspect. Supports png, jpeg, gif, and webp.".to_string(),
+                "Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).".to_string(),
                 Self::schema::<ImageReadParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
@@ -289,6 +289,19 @@ mod tests {
 
         assert_eq!(annotations.read_only_hint, Some(false));
         assert_eq!(annotations.open_world_hint, Some(true));
+    }
+
+    #[test]
+    fn read_image_description_identifies_its_image_only_purpose() {
+        let read_image = DeveloperClient::get_tools()
+            .into_iter()
+            .find(|tool| tool.name == "read_image")
+            .unwrap();
+
+        assert_eq!(
+            read_image.description.as_deref(),
+            Some("Read IMAGE FILES ONLY (png, jpeg, gif, and webp) from a local file path or http(s) URL and return image content for inspection. To read text files, use the shell tool (for example, cat or type).")
+        );
     }
 
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {
