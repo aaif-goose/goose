@@ -60,8 +60,8 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                             .await?;
                     }
                 }
-                GooseEffect::DeliverForegroundSubagents { message, child_ids } => {
-                    self.deliver_foreground_subagents(&session.id, message, child_ids)
+                GooseEffect::DeliverForegroundSubagent { message, child_id } => {
+                    self.deliver_foreground_subagent(&session.id, message, child_id)
                         .await?;
                 }
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(

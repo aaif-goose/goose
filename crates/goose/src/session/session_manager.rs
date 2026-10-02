@@ -475,14 +475,14 @@ impl SessionManager {
         self.storage.pending_foreground_subagents(parent_id).await
     }
 
-    pub(crate) async fn deliver_foreground_subagents(
+    pub(crate) async fn deliver_foreground_subagent(
         &self,
         parent_id: &str,
         message: &Message,
-        child_ids: &[String],
+        child_id: &str,
     ) -> Result<()> {
         self.storage
-            .deliver_foreground_subagents(parent_id, message, child_ids)
+            .deliver_foreground_subagent(parent_id, message, child_id)
             .await
     }
 
@@ -2062,37 +2062,33 @@ impl SessionStorage {
             .await?)
     }
 
-    async fn deliver_foreground_subagents(
+    async fn deliver_foreground_subagent(
         &self,
         parent_id: &str,
         message: &Message,
-        child_ids: &[String],
+        child_id: &str,
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let eligibility_query = format!(
             "SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id = ? AND s.parent_session_id = ? AND s.session_type = ? AND {PENDING_FOREGROUND_CHILD})"
         );
-        for child_id in child_ids {
-            let eligible: bool = sqlx::query_scalar(AssertSqlSafe(eligibility_query.as_str()))
-                .bind(child_id)
-                .bind(parent_id)
-                .bind(SessionType::SubAgent.to_string())
-                .fetch_one(&mut *tx)
-                .await?;
-            if !eligible {
-                return Ok(());
-            }
+        let eligible: bool = sqlx::query_scalar(AssertSqlSafe(eligibility_query.as_str()))
+            .bind(child_id)
+            .bind(parent_id)
+            .bind(SessionType::SubAgent.to_string())
+            .fetch_one(&mut *tx)
+            .await?;
+        if !eligible {
+            return Ok(());
         }
         Self::insert_message(&mut tx, parent_id, message).await?;
-        for child_id in child_ids {
-            sqlx::query(
-                "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.result_delivered_to_parent', json('true')) WHERE id = ?",
-            )
-            .bind(child_id)
-            .execute(&mut *tx)
-            .await?;
-        }
+        sqlx::query(
+            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.result_delivered_to_parent', json('true')) WHERE id = ?",
+        )
+        .bind(child_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -3078,11 +3074,7 @@ mod tests {
             .with_text("child completed")
             .with_visibility(false, true);
         manager
-            .deliver_foreground_subagents(
-                &parent.id,
-                &delivery,
-                &[child.id.clone(), "missing-child".to_string()],
-            )
+            .deliver_foreground_subagent(&parent.id, &delivery, "missing-child")
             .await?;
         assert_eq!(
             manager.pending_foreground_subagents(&parent.id).await?,
@@ -3100,7 +3092,7 @@ mod tests {
         );
 
         manager
-            .deliver_foreground_subagents(&parent.id, &delivery, std::slice::from_ref(&child.id))
+            .deliver_foreground_subagent(&parent.id, &delivery, &child.id)
             .await?;
         assert!(manager
             .pending_foreground_subagents(&parent.id)
@@ -3148,7 +3140,7 @@ mod tests {
             .await?
             .is_empty());
         manager
-            .deliver_foreground_subagents(&parent.id, &delivery, std::slice::from_ref(&child.id))
+            .deliver_foreground_subagent(&parent.id, &delivery, &child.id)
             .await?;
         assert_eq!(
             manager

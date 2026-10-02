@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::future::join_all;
 use futures::StreamExt;
 use rmcp::model::Role;
+use tokio::sync::Mutex;
+use tokio::task::{self, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::ops_maxturns::MAX_TURNS_MESSAGE;
@@ -67,10 +70,156 @@ pub(super) fn foreground_child_ids_in_message(content: &[MessageContent]) -> Vec
         .collect()
 }
 
+async fn advance_child(
+    session_manager: Arc<SessionManager>,
+    child: &Session,
+    use_login_shell_path: bool,
+    cancel: CancellationToken,
+) -> Result<()> {
+    let agent =
+        from_foreground_subagent_session(session_manager, &child.id, use_login_shell_path).await?;
+    let recipe = child
+        .recipe
+        .as_ref()
+        .ok_or_else(|| anyhow!("Subagent {} has no saved recipe", child.id))?;
+    let max_turns = recipe
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.max_turns)
+        .ok_or_else(|| anyhow!("Subagent {} has no saved turn limit", child.id))?;
+    let session_config = SessionConfig {
+        id: child.id.clone(),
+        schedule_id: None,
+        max_turns: Some(max_turns as u32),
+        retry_config: recipe.retry.clone(),
+    };
+    let mut events = agent
+        .stream_state_machine_session(session_config, cancel)
+        .await?;
+    while let Some(event) = events.next().await {
+        event?;
+    }
+    Ok(())
+}
+
+async fn run_child(
+    session_manager: Arc<SessionManager>,
+    child: Session,
+    use_login_shell_path: bool,
+    cancel: CancellationToken,
+) -> ChildOutcome {
+    let run_result = advance_child(
+        session_manager.clone(),
+        &child,
+        use_login_shell_path,
+        cancel,
+    )
+    .await;
+    let child = match session_manager.get_session(&child.id, true).await {
+        Ok(child) => child,
+        Err(error) => return ChildOutcome::Failed(error.to_string()),
+    };
+    let messages = child.conversation.as_ref().map(Conversation::messages);
+    if let Some(output) = messages.and_then(|messages| FinalOutputTool::successful_output(messages))
+    {
+        return ChildOutcome::Completed(output);
+    }
+    if let Err(error) = run_result {
+        return ChildOutcome::Failed(error.to_string());
+    }
+    if let Some(error) = child.conversation.as_ref().and_then(trailing_error) {
+        return ChildOutcome::Failed(format!("{error:?}"));
+    }
+
+    let reason = messages
+        .and_then(|messages| {
+            if messages
+                .last()
+                .is_some_and(|message| message.as_concat_text() == MAX_TURNS_MESSAGE)
+            {
+                let last_assistant_text = messages
+                    .iter()
+                    .rev()
+                    .filter(|message| message.role == Role::Assistant)
+                    .map(Message::as_concat_text)
+                    .find(|text| !text.is_empty() && text != MAX_TURNS_MESSAGE);
+                Some(format!(
+                    "max turns reached{}",
+                    last_assistant_text
+                        .map(|text| format!("; last response: {text}"))
+                        .unwrap_or_default()
+                ))
+            } else {
+                messages
+                    .last()
+                    .map(Message::as_concat_text)
+                    .filter(|text| !text.is_empty())
+            }
+        })
+        .unwrap_or_else(|| "stopped without final output".to_string());
+    ChildOutcome::Failed(reason)
+}
+
+fn readable_output(output: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(output) {
+        Ok(serde_json::Value::Object(fields)) if fields.len() == 1 => fields
+            .get("summary")
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(|| output.to_string(), str::to_owned),
+        _ => output.to_string(),
+    }
+}
+
+async fn delivery(
+    child_id: &str,
+    outcome: ChildOutcome,
+    others_waiting: bool,
+    emit: &Emitter,
+) -> GooseEffect {
+    let (notice, text) = match outcome {
+        ChildOutcome::Completed(output) => (
+            if others_waiting {
+                format!(
+                    "Subagent {child_id} completed\n\n{}",
+                    readable_output(&output)
+                )
+            } else {
+                format!("Subagent {child_id} completed")
+            },
+            format!("Subagent {child_id} completed: {output}"),
+        ),
+        ChildOutcome::Failed(reason) => (
+            format!(
+                "Subagent {child_id} failed: {}",
+                reason.lines().next().unwrap_or_default()
+            ),
+            format!("Subagent {child_id} failed: {reason}"),
+        ),
+    };
+    emit.message(inline_notice(notice)).await;
+    GooseEffect::DeliverForegroundSubagent {
+        message: Message::user().with_text(text).with_visibility(false, true),
+        child_id: child_id.to_string(),
+    }
+}
+
+#[derive(Default)]
+struct RunningChildren {
+    tasks: JoinSet<ChildOutcome>,
+    child_ids: HashMap<task::Id, String>,
+}
+
+impl RunningChildren {
+    fn contains(&self, child_id: &str) -> bool {
+        self.child_ids.values().any(|running| running == child_id)
+    }
+}
+
 pub struct ForegroundSubagentOperation {
     session_manager: Arc<SessionManager>,
     use_login_shell_path: bool,
     cancel: CancellationToken,
+    running: Mutex<RunningChildren>,
 }
 
 impl ForegroundSubagentOperation {
@@ -83,122 +232,48 @@ impl ForegroundSubagentOperation {
             session_manager,
             use_login_shell_path,
             cancel,
+            running: Mutex::default(),
         }
     }
 
-    async fn advance_child(&self, child: &Session) -> Result<()> {
-        let agent = from_foreground_subagent_session(
-            self.session_manager.clone(),
-            &child.id,
-            self.use_login_shell_path,
-        )
-        .await?;
-        let recipe = child
-            .recipe
-            .as_ref()
-            .ok_or_else(|| anyhow!("Subagent {} has no saved recipe", child.id))?;
-        let max_turns = recipe
-            .settings
-            .as_ref()
-            .and_then(|settings| settings.max_turns)
-            .ok_or_else(|| anyhow!("Subagent {} has no saved turn limit", child.id))?;
-        let session_config = SessionConfig {
-            id: child.id.clone(),
-            schedule_id: None,
-            max_turns: Some(max_turns as u32),
-            retry_config: recipe.retry.clone(),
-        };
-        let mut events = agent
-            .stream_state_machine_session(session_config, self.cancel.clone())
-            .await?;
-        while let Some(event) = events.next().await {
-            event?;
-        }
-        Ok(())
-    }
-
-    async fn run_child(&self, parent_id: &str, child_id: &str, emit: &Emitter) -> String {
-        let outcome = self.child_outcome(parent_id, child_id, emit).await;
-        if !self.cancel.is_cancelled() {
-            let notice = match &outcome {
-                ChildOutcome::Completed(_) => format!("Subagent {child_id} completed"),
-                ChildOutcome::Failed(reason) => format!(
-                    "Subagent {child_id} failed: {}",
-                    reason.lines().next().unwrap_or_default()
-                ),
-            };
-            emit.message(inline_notice(notice)).await;
-        }
-        match outcome {
-            ChildOutcome::Completed(output) => format!("Subagent {child_id} completed: {output}"),
-            ChildOutcome::Failed(reason) => format!("Subagent {child_id} failed: {reason}"),
-        }
-    }
-
-    async fn child_outcome(&self, parent_id: &str, child_id: &str, emit: &Emitter) -> ChildOutcome {
+    async fn settle_or_start(
+        &self,
+        parent_id: &str,
+        child_id: &str,
+        running: &mut RunningChildren,
+        emit: &Emitter,
+    ) -> Option<ChildOutcome> {
         let child = match self.session_manager.get_session(child_id, true).await {
             Ok(child) => child,
-            Err(error) => return ChildOutcome::Failed(error.to_string()),
+            Err(error) => return Some(ChildOutcome::Failed(error.to_string())),
         };
         if child.session_type != SessionType::SubAgent
             || child.parent_session_id.as_deref() != Some(parent_id)
         {
-            return ChildOutcome::Failed("it does not belong to this session".to_string());
+            return Some(ChildOutcome::Failed(
+                "it does not belong to this session".to_string(),
+            ));
         }
         if let Some(output) = child
             .conversation
             .as_ref()
             .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
         {
-            return ChildOutcome::Completed(output);
+            return Some(ChildOutcome::Completed(output));
         }
 
         emit.message(inline_notice(start_notice(&child))).await;
-        let run_result = self.advance_child(&child).await;
-        let child = match self.session_manager.get_session(child_id, true).await {
-            Ok(child) => child,
-            Err(error) => return ChildOutcome::Failed(error.to_string()),
-        };
-        let messages = child.conversation.as_ref().map(Conversation::messages);
-        if let Some(output) =
-            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
-        {
-            return ChildOutcome::Completed(output);
-        }
-        if let Err(error) = run_result {
-            return ChildOutcome::Failed(error.to_string());
-        }
-        if let Some(error) = child.conversation.as_ref().and_then(trailing_error) {
-            return ChildOutcome::Failed(format!("{error:?}"));
-        }
-
-        let reason = messages
-            .and_then(|messages| {
-                if messages
-                    .last()
-                    .is_some_and(|message| message.as_concat_text() == MAX_TURNS_MESSAGE)
-                {
-                    let last_assistant_text = messages
-                        .iter()
-                        .rev()
-                        .filter(|message| message.role == Role::Assistant)
-                        .map(Message::as_concat_text)
-                        .find(|text| !text.is_empty() && text != MAX_TURNS_MESSAGE);
-                    Some(format!(
-                        "max turns reached{}",
-                        last_assistant_text
-                            .map(|text| format!("; last response: {text}"))
-                            .unwrap_or_default()
-                    ))
-                } else {
-                    messages
-                        .last()
-                        .map(Message::as_concat_text)
-                        .filter(|text| !text.is_empty())
-                }
-            })
-            .unwrap_or_else(|| "stopped without final output".to_string());
-        ChildOutcome::Failed(reason)
+        let task = running.tasks.spawn(
+            run_child(
+                self.session_manager.clone(),
+                child,
+                self.use_login_shell_path,
+                self.cancel.clone(),
+            )
+            .in_current_span(),
+        );
+        running.child_ids.insert(task.id(), child_id.to_string());
+        None
     }
 }
 
@@ -227,22 +302,39 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
         if waiting.is_empty() {
             return not_applicable();
         }
-        let results = join_all(
-            waiting
-                .iter()
-                .map(|child_id| self.run_child(&session.id, child_id, emit)),
-        )
-        .await;
-        if self.cancel.is_cancelled() {
-            return yielded();
+
+        let mut running = self.running.lock().await;
+        for child_id in &waiting {
+            if running.contains(child_id) {
+                continue;
+            }
+            if let Some(outcome) = self
+                .settle_or_start(&session.id, child_id, &mut running, emit)
+                .await
+            {
+                if self.cancel.is_cancelled() {
+                    return yielded();
+                }
+                return applied([delivery(child_id, outcome, waiting.len() > 1, emit).await]);
+            }
         }
-        let delivery = Message::user()
-            .with_text(results.join("\n\n"))
-            .with_visibility(false, true);
-        applied([GooseEffect::DeliverForegroundSubagents {
-            message: delivery,
-            child_ids: waiting,
-        }])
+
+        let finished = tokio::select! {
+            biased;
+            _ = self.cancel.cancelled() => return yielded(),
+            finished = running.tasks.join_next_with_id() => {
+                finished.ok_or_else(|| anyhow!("No foreground subagent is running"))?
+            }
+        };
+        let (task_id, outcome) = match finished {
+            Ok(finished) => finished,
+            Err(error) => (error.id(), ChildOutcome::Failed(error.to_string())),
+        };
+        let child_id = running
+            .child_ids
+            .remove(&task_id)
+            .ok_or_else(|| anyhow!("Unknown foreground subagent task {task_id}"))?;
+        applied([delivery(&child_id, outcome, waiting.len() > 1, emit).await])
     }
 }
 
@@ -256,9 +348,10 @@ mod tests {
     use super::*;
     use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
     use crate::config::GooseMode;
+    use goose_agent::machine::EffectHandler;
 
     struct Fixture {
-        _temp_dir: TempDir,
+        temp_dir: TempDir,
         manager: Arc<SessionManager>,
         parent_id: String,
         child_id: String,
@@ -275,6 +368,20 @@ mod tests {
                 GooseMode::Auto,
             )
             .await?;
+        let child_id = add_scheduled_child(&manager, &temp_dir, &parent.id).await?;
+        Ok(Fixture {
+            temp_dir,
+            manager,
+            parent_id: parent.id,
+            child_id,
+        })
+    }
+
+    async fn add_scheduled_child(
+        manager: &SessionManager,
+        temp_dir: &TempDir,
+        parent_id: &str,
+    ) -> Result<String> {
         let child = manager
             .create_session(
                 temp_dir.path().to_path_buf(),
@@ -285,44 +392,61 @@ mod tests {
             .await?;
         manager
             .update(&child.id)
-            .parent_session_id(Some(parent.id.clone()))
+            .parent_session_id(Some(parent_id.to_string()))
             .apply()
             .await?;
-        Ok(Fixture {
-            _temp_dir: temp_dir,
-            manager,
-            parent_id: parent.id,
-            child_id: child.id,
-        })
+        manager
+            .save_foreground_delegation_message(
+                parent_id,
+                &Message::user().with_text(format!("Scheduled foreground subagent {}", child.id)),
+                std::slice::from_ref(&child.id),
+            )
+            .await?;
+        Ok(child.id)
     }
 
-    async fn run_child_with_notices(
+    async fn run_step(
+        operation: &ForegroundSubagentOperation,
         fixture: &Fixture,
-        cancel: CancellationToken,
-    ) -> (String, Vec<String>) {
+        emit: &Emitter,
+    ) -> Result<(Session, OperationResult<GooseEffect>)> {
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, true)
+            .await?;
+        let conversation = parent.conversation.as_ref().unwrap();
+        let result = operation.run(&parent, conversation, emit).await?;
+        Ok((parent, result))
+    }
+
+    fn delivery_effects(result: OperationResult<GooseEffect>) -> Vec<GooseEffect> {
+        let OperationResult::Applied(step) = result else {
+            panic!("expected the operation to apply");
+        };
+        assert!(!step.yield_to_client);
+        step.effects
+    }
+
+    fn delivered(effect: &GooseEffect) -> (&str, &Message) {
+        let GooseEffect::DeliverForegroundSubagent { message, child_id } = effect else {
+            panic!("expected a foreground subagent delivery");
+        };
+        (child_id, message)
+    }
+
+    async fn deliver_child_with_notices(fixture: &Fixture) -> Result<(String, Vec<String>)> {
+        let cancel = CancellationToken::new();
         let (tx, mut rx) = mpsc::channel(16);
         let emit = Emitter::new(tx, cancel.clone());
         let operation = ForegroundSubagentOperation::new(fixture.manager.clone(), false, cancel);
-        let delivery = operation
-            .run_child(&fixture.parent_id, &fixture.child_id, &emit)
-            .await;
-        drop(emit);
-        let mut notices = Vec::new();
-        while let Some(event) = rx.recv().await {
-            let AgentEvent::Message(message) = event else {
-                continue;
-            };
-            for content in message.content {
-                if let MessageContent::SystemNotification(notification) = content {
-                    assert_eq!(
-                        notification.notification_type,
-                        SystemNotificationType::InlineMessage
-                    );
-                    notices.push(notification.msg);
-                }
-            }
-        }
-        (delivery, notices)
+        let (_, result) = run_step(&operation, fixture, &emit).await?;
+        let effects = delivery_effects(result);
+        assert_eq!(effects.len(), 1);
+        let (child_id, message) = delivered(&effects[0]);
+        assert_eq!(child_id, fixture.child_id);
+        assert!(!message.is_user_visible());
+        assert!(message.is_agent_visible());
+        Ok((message.as_concat_text(), notices(&mut rx)))
     }
 
     #[test]
@@ -376,17 +500,14 @@ mod tests {
         assert!(!awaits_tool_responses(&messages));
     }
 
-    #[tokio::test]
-    async fn completed_child_uses_saved_final_output_without_running_again() -> Result<()> {
-        let fixture = fixture().await?;
-        let arguments = serde_json::json!({"result": "done"})
+    async fn save_final_output(manager: &SessionManager, child_id: &str) -> Result<()> {
+        let arguments = serde_json::json!({"summary": "done"})
             .as_object()
             .unwrap()
             .clone();
-        fixture
-            .manager
+        manager
             .add_message(
-                &fixture.child_id,
+                child_id,
                 &Message::assistant().with_tool_request(
                     "final-output-call",
                     Ok(CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)
@@ -394,10 +515,9 @@ mod tests {
                 ),
             )
             .await?;
-        fixture
-            .manager
+        manager
             .add_message(
-                &fixture.child_id,
+                child_id,
                 &Message::user().with_tool_response(
                     "final-output-call",
                     Ok(CallToolResult::success(vec![ContentBlock::text(
@@ -406,27 +526,88 @@ mod tests {
                 ),
             )
             .await?;
-
-        let (delivery, notices) = run_child_with_notices(&fixture, CancellationToken::new()).await;
-        assert_eq!(
-            delivery,
-            format!(
-                "Subagent {} completed: {{\"result\":\"done\"}}",
-                fixture.child_id
-            )
-        );
-        assert_eq!(
-            notices,
-            vec![format!("Subagent {} completed", fixture.child_id)]
-        );
         Ok(())
+    }
+
+    fn notices(rx: &mut mpsc::Receiver<AgentEvent>) -> Vec<String> {
+        let mut notices = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            let AgentEvent::Message(message) = event else {
+                continue;
+            };
+            for content in message.content {
+                if let MessageContent::SystemNotification(notification) = content {
+                    assert_eq!(
+                        notification.notification_type,
+                        SystemNotificationType::InlineMessage
+                    );
+                    notices.push(notification.msg);
+                }
+            }
+        }
+        notices
+    }
+
+    #[tokio::test]
+    async fn saved_outputs_show_results_only_while_other_children_wait() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.child_id).await?;
+        let second_child_id =
+            add_scheduled_child(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
+        save_final_output(&fixture.manager, &second_child_id).await?;
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        let emit = Emitter::new(tx, cancel.clone());
+        let operation = ForegroundSubagentOperation::new(fixture.manager.clone(), false, cancel);
+
+        for (expected_id, expected_notice) in [
+            (
+                &fixture.child_id,
+                format!("Subagent {} completed\n\ndone", fixture.child_id),
+            ),
+            (
+                &second_child_id,
+                format!("Subagent {second_child_id} completed"),
+            ),
+        ] {
+            let (parent, result) = run_step(&operation, &fixture, &emit).await?;
+            let mut effects = delivery_effects(result);
+            assert_eq!(effects.len(), 1);
+            let (child_id, message) = delivered(&effects[0]);
+            assert_eq!(child_id, expected_id);
+            assert!(!message.is_user_visible());
+            assert!(message.is_agent_visible());
+            assert_eq!(
+                message.as_concat_text(),
+                format!("Subagent {child_id} completed: {{\"summary\":\"done\"}}")
+            );
+            assert_eq!(notices(&mut rx), vec![expected_notice]);
+            fixture
+                .manager
+                .apply_effects(&parent, &mut effects, &emit)
+                .await?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn readable_output_unwraps_only_the_default_summary() {
+        assert_eq!(readable_output(r#"{"summary":"a poem"}"#), "a poem");
+        assert_eq!(
+            readable_output(r#"{"summary":"a poem","score":3}"#),
+            r#"{"summary":"a poem","score":3}"#
+        );
+        assert_eq!(
+            readable_output(r#"{"result":"done"}"#),
+            r#"{"result":"done"}"#
+        );
     }
 
     #[tokio::test]
     async fn failed_child_emits_start_and_failure_notices() -> Result<()> {
         let fixture = fixture().await?;
 
-        let (delivery, notices) = run_child_with_notices(&fixture, CancellationToken::new()).await;
+        let (delivery, notices) = deliver_child_with_notices(&fixture).await?;
         let reason = format!("Subagent {} has no saved recipe", fixture.child_id);
         assert_eq!(
             delivery,
@@ -438,6 +619,70 @@ mod tests {
                 format!("Running subagent {}", fixture.child_id),
                 format!("Subagent {} failed: {reason}", fixture.child_id),
             ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delivers_each_child_in_its_own_step() -> Result<()> {
+        let fixture = fixture().await?;
+        let second_child_id =
+            add_scheduled_child(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
+        let cancel = CancellationToken::new();
+        let (tx, _rx) = mpsc::channel(16);
+        let emit = Emitter::new(tx, cancel.clone());
+        let operation = ForegroundSubagentOperation::new(fixture.manager.clone(), false, cancel);
+
+        let mut delivered_ids = Vec::new();
+        for _ in 0..2 {
+            let (parent, result) = run_step(&operation, &fixture, &emit).await?;
+            let mut effects = delivery_effects(result);
+            assert_eq!(effects.len(), 1);
+            delivered_ids.push(delivered(&effects[0]).0.to_string());
+            fixture
+                .manager
+                .apply_effects(&parent, &mut effects, &emit)
+                .await?;
+        }
+        delivered_ids.sort();
+        let mut expected = vec![fixture.child_id.clone(), second_child_id];
+        expected.sort();
+        assert_eq!(delivered_ids, expected);
+
+        let (parent, result) = run_step(&operation, &fixture, &emit).await?;
+        assert!(matches!(result, OperationResult::NotApplicable));
+        let hidden_deliveries = parent
+            .conversation
+            .unwrap()
+            .messages()
+            .iter()
+            .filter(|message| !message.is_user_visible())
+            .count();
+        assert_eq!(hidden_deliveries, 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stop_yields_without_delivering() -> Result<()> {
+        let fixture = fixture().await?;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let (tx, _rx) = mpsc::channel(16);
+        let emit = Emitter::new(tx, cancel.clone());
+        let operation = ForegroundSubagentOperation::new(fixture.manager.clone(), false, cancel);
+
+        let (_, result) = run_step(&operation, &fixture, &emit).await?;
+        let OperationResult::Applied(step) = result else {
+            panic!("expected the operation to yield");
+        };
+        assert!(step.yield_to_client);
+        assert!(step.effects.is_empty());
+        assert_eq!(
+            fixture
+                .manager
+                .pending_foreground_subagents(&fixture.parent_id)
+                .await?,
+            vec![fixture.child_id.clone()]
         );
         Ok(())
     }
