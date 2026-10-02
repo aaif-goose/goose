@@ -38,6 +38,7 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
+    pub(crate) from_state_machine: bool,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
@@ -51,8 +52,14 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
+            from_state_machine: false,
             notification_emitter: None,
         }
+    }
+
+    pub(crate) fn from_state_machine(mut self) -> Self {
+        self.from_state_machine = true;
+        self
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {

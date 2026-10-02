@@ -1350,6 +1350,7 @@ impl SummonClient {
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
         notification_emitter: Option<ToolCallNotificationEmitter>,
+        from_state_machine: bool,
     ) -> Result<CallToolResult, String> {
         self.cleanup_completed_tasks().await;
 
@@ -1372,7 +1373,7 @@ impl SummonClient {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
-        if crate::agents::state_machine::enabled() {
+        if from_state_machine {
             return self.handle_foreground_delegate(params, &session).await;
         }
 
@@ -2307,6 +2308,7 @@ impl McpClientTrait for SummonClient {
                         arguments,
                         cancellation_token,
                         ctx.notification_emitter().cloned(),
+                        ctx.from_state_machine,
                     )
                     .await
                 {
@@ -2489,7 +2491,6 @@ mod tests {
 
     #[tokio::test]
     async fn foreground_delegate_persists_child_and_scheduling_marker() {
-        let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
         let temp_dir = TempDir::new().unwrap();
         let child_dir = temp_dir.path().join("child");
         fs::create_dir(&child_dir).unwrap();
@@ -2521,7 +2522,7 @@ mod tests {
         .clone();
 
         let result = client
-            .handle_delegate(&parent.id, Some(args), CancellationToken::new(), None)
+            .handle_delegate(&parent.id, Some(args), CancellationToken::new(), None, true)
             .await
             .unwrap();
         let meta = result.meta.as_ref().unwrap();
