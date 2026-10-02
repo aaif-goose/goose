@@ -11,6 +11,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
@@ -121,6 +122,16 @@ async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
             session_id,
         )
         .await?;
+    Ok(())
+}
+
+fn install_skill(working_dir: &std::path::Path, content: &str) -> Result<()> {
+    let skill_dir = working_dir.join(".agents/skills/review");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: review\ndescription: Review code\n---\n{content}"),
+    )?;
     Ok(())
 }
 
@@ -389,6 +400,136 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         1
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
+    install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+
+    api.on("load review")
+        .call("load_skill", json!({ "name": "review" }));
+    api.on("OLD_SKILL_CONTENT").reply("loaded original skill");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("load review"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    let new_working_dir = tempfile::tempdir()?;
+    install_skill(new_working_dir.path(), "NEW_SKILL_CONTENT")?;
+    agent
+        .config
+        .session_manager
+        .update(&session_config.id)
+        .working_dir(new_working_dir.path().to_path_buf())
+        .apply()
+        .await?;
+    agent
+        .update_extension_working_dir(&session_config.id, new_working_dir.path())
+        .await?;
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    let messages = stream_messages(stream).await?;
+
+    assert!(messages.iter().any(|message| {
+        message.content.iter().any(|content| {
+            content.as_tool_response_text().is_some_and(|text| {
+                text.contains("OLD_SKILL_CONTENT") && !text.contains("NEW_SKILL_CONTENT")
+            })
+        })
+    }));
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[1].input_contains("OLD_SKILL_CONTENT"));
+    assert!(!calls[1].input_contains("NEW_SKILL_CONTENT"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, working_dir) = agent_with_dummy_api().await?;
+    install_skill(working_dir.path(), "SKILL_MUST_NOT_LOAD")?;
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+
+    api.on("load review")
+        .call("load_skill", json!({ "name": "review" }));
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("load review"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    let messages = stream_messages(stream).await?;
+
+    assert!(messages.iter().any(|message| {
+        message.content.iter().any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        })
+    }));
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(!calls[1].input_contains("SKILL_MUST_NOT_LOAD"));
     Ok(())
 }
 
