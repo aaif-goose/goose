@@ -45,15 +45,21 @@ pub fn resolve_command(
     params_str: &str,
     working_dir: Option<&Path>,
 ) -> Result<Option<String>, String> {
-    let Some(skill) = crate::skills::list_installed_skills(working_dir)
-        .into_iter()
-        .find(|skill| skill.name.eq_ignore_ascii_case(command))
+    let fallback = working_dir
+        .is_none()
+        .then(|| std::env::current_dir().ok())
+        .flatten();
+    let Some(skill) =
+        crate::skills::discover_skills_with_details(working_dir.or(fallback.as_deref()))
+            .into_iter()
+            .find(|skill| skill.name.eq_ignore_ascii_case(command))
     else {
         return Ok(None);
     };
 
     let args = (!params_str.is_empty()).then_some(params_str);
-    let prompt = crate::skills::loaded_skill_context_with_args(&skill, args)
+    let prompt = skill
+        .loaded_context_with_args(args)
         .map_err(|e| format!("Skill /{}: {}", command, e))?;
 
     Ok(Some(prompt))
@@ -145,6 +151,40 @@ mod tests {
         assert_eq!(command.description, "Review changed code");
         assert_eq!(command.source, SlashCommandSource::Skill);
         assert_eq!(command.input_hint.as_deref(), Some("[task]"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_skill_command_renders_physical_supporting_paths() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let installed = root.join(".agents/skills/slash-linked-helper");
+        let target = root.join("physical-skill");
+        std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(
+            target.join("SKILL.md"),
+            "---\nname: slash-linked-helper\ndescription: Helper\n---\nUse guide.md.",
+        )
+        .unwrap();
+        std::fs::write(target.join("guide.md"), "guidance").unwrap();
+        std::os::unix::fs::symlink(&target, &installed).unwrap();
+
+        let prompt = resolve_command("slash-linked-helper", "", Some(&root))
+            .unwrap()
+            .unwrap();
+        assert!(prompt.contains(&format!("Skill directory: {}", target.display())));
+        assert!(prompt.contains(&format!("guide.md → {}", target.join("guide.md").display())));
+        assert!(!prompt.contains(&installed.to_string_lossy().to_string()));
+        let listed = crate::skills::list_installed_skills(Some(&root));
+        assert_eq!(
+            listed
+                .iter()
+                .find(|s| s.name == "slash-linked-helper")
+                .unwrap()
+                .path,
+            installed.to_string_lossy()
+        );
     }
 
     fn source_entry(source_type: SourceType, name: &str, description: &str) -> SourceEntry {
