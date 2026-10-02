@@ -122,7 +122,10 @@ pub(crate) async fn from_foreground_subagent_session(
     let agent = Agent::with_config(config);
     *agent.provider.lock().await = Some(provider);
     for extension in extensions {
-        agent.add_extension_inner(extension, session_id).await?;
+        let name = extension.name();
+        if let Err(e) = agent.add_extension_inner(extension, session_id).await {
+            debug!("Failed to add extension '{}' to subagent: {}", name, e);
+        }
     }
 
     let subagent_prompt = build_subagent_prompt(
