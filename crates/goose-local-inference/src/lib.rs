@@ -3,6 +3,7 @@ pub mod config_resolver;
 pub use goose_download_manager as download_manager;
 #[cfg(feature = "hf-hub")]
 pub mod huggingface_auth;
+pub mod local_files;
 pub mod paths;
 pub mod prompt_template;
 pub mod provider_utils;
@@ -22,7 +23,7 @@ pub(crate) mod thinking_output;
 mod tool_emulation;
 mod tool_parsing;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_stream::try_stream;
 use async_trait::async_trait;
 use backend::{BackendLoadedModel, LocalInferenceBackend};
@@ -34,12 +35,12 @@ use goose_provider_types::conversation::token_usage::{ProviderUsage, Usage};
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::images::ImageFormat;
 use goose_provider_types::model::ModelConfig;
-use goose_provider_types::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
-use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
-use mlx::{MlxBackend, MLX_BACKEND_ID};
+use goose_provider_types::request_log::{LoggerHandleExt, RequestLogHandle, start_log};
+use llamacpp::{LLAMACPP_BACKEND_ID, LlamaCppBackend};
+use mlx::{MLX_BACKEND_ID, MlxBackend};
 use model::ChatTemplate;
 use rmcp::model::Tool;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, Weak};
@@ -593,7 +594,9 @@ fn strip_image_parts_from_messages(messages: &mut [Value]) {
         }
     }
     if stripped {
-        tracing::warn!("Stripped image content parts from messages — vision encoder not available for this model");
+        tracing::warn!(
+            "Stripped image content parts from messages — vision encoder not available for this model"
+        );
     }
 }
 

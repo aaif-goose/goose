@@ -8,7 +8,9 @@ import type {
 } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 
-export type LocalModelResponse = LocalInferenceModelDto;
+export type LocalModelResponse = LocalInferenceModelDto & {
+  localFilePath?: string | null;
+};
 export type DownloadProgress = LocalInferenceDownloadProgressDto;
 export type DownloadModelRequest = LocalInferenceModelDownloadRequest_unstable;
 export type HfModelInfo = LocalInferenceHfModelInfoDto;
@@ -101,4 +103,21 @@ export async function listBuiltinChatTemplates(): Promise<string[]> {
   const client = await getAcpClient();
   const response = await client.goose.localInferenceChatTemplatesBuiltinList_unstable({});
   return response.templates;
+}
+
+export async function registerLocalModel(path: string): Promise<string> {
+  const client = await getAcpClient();
+  const response = await (client.goose as any).conn.request(
+    '_goose/unstable/local-inference/models/register-local',
+    { path }
+  );
+  return response.modelId;
+}
+
+export async function unregisterLocalModel(modelId: string): Promise<void> {
+  const client = await getAcpClient();
+  await (client.goose as any).conn.request(
+    '_goose/unstable/local-inference/models/unregister-local',
+    { modelId }
+  );
 }

@@ -2189,6 +2189,19 @@ ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) 
   return null;
 });
 
+ipcMain.handle('gguf-file-picker', async (event) => {
+  const senderWindow = requireRegularRendererWindow(event);
+  const result = await dialog.showOpenDialog(senderWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'GGUF Models', extensions: ['gguf'] }],
+    defaultPath: os.homedir(),
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
 ipcMain.handle('select-recipe-file', async (event) => {
   const senderWindow = requireRegularRendererWindow(event);
   const pathRoot = appConfig.GOOSE_PATH_ROOT as string | undefined;

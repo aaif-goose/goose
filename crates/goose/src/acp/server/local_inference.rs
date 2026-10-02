@@ -198,6 +198,42 @@ impl GooseAcpAgent {
         }
     }
 
+    pub(super) fn on_local_inference_model_register_local(
+        &self,
+        req: LocalInferenceModelRegisterLocalRequest,
+    ) -> Result<LocalInferenceModelRegisterLocalResponse, agent_client_protocol::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            crate::providers::local_inference::management::register_local_model(&req.path)
+                .map(|model_id| LocalInferenceModelRegisterLocalResponse { model_id })
+                .invalid_params_err()
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        {
+            let _ = req;
+            Err(local_inference_unavailable())
+        }
+    }
+
+    pub(super) fn on_local_inference_model_unregister_local(
+        &self,
+        req: LocalInferenceModelUnregisterLocalRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        #[cfg(feature = "local-inference")]
+        {
+            crate::providers::local_inference::management::unregister_local_model(&req.model_id)
+                .map(|_| EmptyResponse {})
+                .invalid_params_err()
+        }
+
+        #[cfg(not(feature = "local-inference"))]
+        {
+            let _ = req;
+            Err(local_inference_unavailable())
+        }
+    }
+
     pub(super) async fn on_local_inference_builtin_chat_templates_list(
         &self,
         _req: LocalInferenceBuiltinChatTemplatesListRequest,
