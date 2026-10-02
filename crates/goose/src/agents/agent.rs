@@ -4270,10 +4270,7 @@ mod tests {
         let capture = SpanFieldCapture::new("dispatch_tool_call");
         let _subscriber = capture.clone().set_default();
         let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
-        let tool_call = CallToolRequestParams::new(
-            crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
-        )
-        .with_arguments(object!({
+        let tool_call = CallToolRequestParams::new("test_tool").with_arguments(object!({
             "action": "list",
             "api_key": "tool-input-super-secret-token",
         }));
@@ -4308,8 +4305,7 @@ mod tests {
         let capture = SpanFieldCapture::new("dispatch_tool_call");
         let _subscriber = capture.clone().set_default();
         let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
-        let tool_name =
-            crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
+        let tool_name = "test_tool";
         let tool_call =
             CallToolRequestParams::new(tool_name).with_arguments(object!({ "action": "list" }));
 

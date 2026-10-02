@@ -1477,6 +1477,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn parses_execute_marker_and_converts_to_shell_call() {
         let tools = vec![Tool::new(
@@ -1500,6 +1501,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[test]
     fn execute_marker_ignores_command_data_before_shell_call() {
         let tools = vec![Tool::new(
@@ -1689,6 +1691,7 @@ mod tests {
         assert!(augmented.content.is_empty());
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[tokio::test]
     async fn augment_validates_execute_alias_with_call_punctuation() {
         let tools = vec![Tool::new(
@@ -1777,6 +1780,7 @@ mod tests {
         assert!(augmented.content.is_empty());
     }
 
+    #[cfg(feature = "tree-sitter")]
     #[tokio::test]
     async fn augment_validates_structured_execute_name_without_interpreter() {
         let tools = vec![Tool::new(

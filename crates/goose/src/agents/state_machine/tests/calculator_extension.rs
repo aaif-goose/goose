@@ -92,6 +92,7 @@ impl CalculatorExtension {
         *self.barrier.lock().unwrap() = Some(Arc::new(tokio::sync::Barrier::new(calls)));
     }
 
+    #[cfg(feature = "tree-sitter")]
     pub(super) fn contexts(&self) -> Vec<ToolCallContext> {
         self.contexts.lock().unwrap().clone()
     }

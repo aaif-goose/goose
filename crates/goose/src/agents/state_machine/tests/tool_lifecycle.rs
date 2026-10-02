@@ -433,17 +433,20 @@ async fn elicitation_accept_decline_and_cancel() -> Result<()> {
 async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
 
-    api.on("install the extra extension").call(
-        crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-        json!({
-            "action": "enable",
-            "extension_name": "analyze"
-        }),
-    );
-    api.on("installed successfully").reply("extension ready");
-    let result = pipeline.run(["install the extra extension"]).await?;
-    result.assert_message(-1, Agent, "extension ready");
-    assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    #[cfg(feature = "tree-sitter")]
+    {
+        api.on("install the extra extension").call(
+            crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
+            json!({
+                "action": "enable",
+                "extension_name": "analyze"
+            }),
+        );
+        api.on("installed successfully").reply("extension ready");
+        let result = pipeline.run(["install the extra extension"]).await?;
+        result.assert_message(-1, Agent, "extension ready");
+        assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    }
 
     let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
     api.on("try the tool").call(ADD, value(1));
