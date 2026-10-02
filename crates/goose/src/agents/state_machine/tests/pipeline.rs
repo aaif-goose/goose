@@ -19,8 +19,9 @@ use crate::agents::state_machine::{
     ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
     InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
     RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
+    SteerOperation, SteerQueue, Step, StopHookOperation, ThinkingRecoveryOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnknownToolOperation,
 };
 use crate::agents::AgentEvent;
 use crate::config::permission::{PermissionLevel, PermissionManager};
@@ -163,6 +164,7 @@ impl TestPipeline {
                 std::time::Duration::from_secs(1),
                 std::time::Duration::from_secs(1),
             )),
+            Arc::new(ThinkingRecoveryOperation),
             Arc::new(StopHookOperation::new(
                 self.hook_manager.clone(),
                 self.stop_hook_block_cap,
