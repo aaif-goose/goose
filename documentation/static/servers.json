@@ -804,6 +804,25 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "skylit-mcp",
+    "name": "Skylit",
+    "description": "Options flow, dealer positioning (GEX) and volatility market data",
+    "url": "https://mcp.skylit.ai/mcp",
+    "link": "https://github.com/SkylitAI/skylit-mcp",
+    "installation_notes": "This is a remote extension that requires a Skylit API key from https://app.skylit.ai/developer as a Request Header e.g Authorization: Bearer <YOUR_SKYLIT_API_KEY>. Read-only market data; calls are billed in credits from your Skylit account.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_SKYLIT_API_KEY>",
+        "required": true
+      }
+    ],
+    "show_install_command": false,
+    "type": "streamable-http"
+  }
 ]
