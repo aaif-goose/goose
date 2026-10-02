@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -33,13 +34,13 @@ use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
-    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    persist_tool_confirmation_decision, run_goose, AutoEffortOperation, BangShellOperation,
+    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -71,9 +72,11 @@ use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
+use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ElicitationAction, ErrorCode, ErrorData,
     GetPromptResult, Prompt, Tool,
@@ -85,10 +88,35 @@ use tracing::{debug, error, info, instrument, warn};
 
 const DEFAULT_MAX_TURNS: u32 = 1000;
 const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
+const AUTO_EFFORTS: [ThinkingEffort; 5] = [
+    ThinkingEffort::Off,
+    ThinkingEffort::Low,
+    ThinkingEffort::Medium,
+    ThinkingEffort::High,
+    ThinkingEffort::Max,
+];
 const COMPACTION_PROGRESS_TEXT: &str = "goose is compacting the conversation...";
 const MAX_EMPTY_TURN_RETRIES: u32 = 3;
 const EMPTY_TURN_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
+
+pub(super) fn available_auto_efforts(
+    model_config: &goose_providers::model::ModelConfig,
+    support: ThinkingEffortSupport,
+) -> Vec<ThinkingEffort> {
+    match support {
+        ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
+            AUTO_EFFORTS.to_vec()
+        }
+        ThinkingEffortSupport::Options(capability) => AUTO_EFFORTS
+            .into_iter()
+            .filter(|effort| {
+                crate::acp::map_effort_value(&capability, &effort.to_string()).is_some()
+            })
+            .collect(),
+        ThinkingEffortSupport::Unspecified | ThinkingEffortSupport::Unsupported => Vec::new(),
+    }
+}
 
 fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> anyhow::Error {
     let message = format!("{context}: {error}");
@@ -1733,6 +1761,46 @@ impl Agent {
             Arc::new(ExitOnErrorOperation),
         ];
         operations.extend(remaining_operations);
+        let auto_effort = (|| {
+            let config = Config::global();
+            if !config
+                .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
+                .unwrap_or(false)
+            {
+                return None;
+            }
+
+            let efforts = available_auto_efforts(&model_config, provider.thinking_effort_support());
+            if efforts.is_empty() {
+                return None;
+            }
+
+            let api_key = config
+                .get_secret::<String>("TYPESAFE_API_KEY")
+                .ok()?
+                .trim()
+                .to_string();
+            if api_key.is_empty() {
+                return None;
+            }
+
+            let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+            let api_client = ApiClient::with_timeout_and_tls(
+                TYPESAFE_DEFAULT_HOST.to_string(),
+                AuthMethod::BearerToken(api_key),
+                Duration::from_secs(2),
+                tls_config,
+            )
+            .ok()?;
+            Some(AutoEffortOperation::new(
+                Arc::new(TypeSafeProvider::new(api_client)),
+                TYPESAFE_DEFAULT_MODEL.to_string(),
+                efforts,
+            ))
+        })();
+        if let Some(auto_effort) = auto_effort {
+            operations.push(Arc::new(auto_effort));
+        }
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
             extension_manager: self.extension_manager.clone(),
@@ -3448,7 +3516,8 @@ impl Agent {
                                     // Surface and persist the failure message
                                     // through the normal path so recipes don't
                                     // exit silently when retries are exhausted.
-                                    let message = push_message_with_id(&mut messages_to_add, message);
+                                    let message =
+                                        push_message_with_id(&mut messages_to_add, *message);
                                     last_assistant_text = message.as_concat_text();
                                     yield AgentEvent::Message(message);
                                     exit_chat = true;

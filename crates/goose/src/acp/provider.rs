@@ -2274,7 +2274,7 @@ fn replace_effort_state(
 /// and the agent share pass through; goose's own enum values map onto their
 /// closest agent equivalent. Anything else yields `None` so we never send a
 /// value the agent would reject.
-pub(super) fn map_effort_value(
+pub(crate) fn map_effort_value(
     capability: &ThinkingEffortCapability,
     value: &str,
 ) -> Option<String> {

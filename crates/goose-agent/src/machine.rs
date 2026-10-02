@@ -10,10 +10,14 @@ use crate::operation::{
 };
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+use goose_provider_types::thinking::ThinkingEffort;
 
 pub trait MachineSession: MaybeSend + MaybeSync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
+    fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        None
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]

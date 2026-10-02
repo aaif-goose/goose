@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useConfig } from '../ConfigContext';
+import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Switch } from '../ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -29,6 +30,35 @@ const i18n = defineMessages({
   slashCommandsDescription: {
     id: 'settings.agentLoop.operations.slashCommands.description',
     defaultMessage: 'Recognizes commands such as /compact, /skills, and recipe shortcuts.',
+  },
+  autoEffortTitle: {
+    id: 'settings.agentLoop.operations.autoEffort.title',
+    defaultMessage: 'Automatic thinking effort',
+  },
+  autoEffortDescription: {
+    id: 'settings.agentLoop.operations.autoEffort.description',
+    defaultMessage:
+      'Uses Jev to choose the thinking effort for each request. The current request text is sent to TypeSafe AI.',
+  },
+  typesafeApiKeyLabel: {
+    id: 'settings.agentLoop.operations.autoEffort.apiKey.label',
+    defaultMessage: 'TypeSafe API key',
+  },
+  typesafeApiKeyPlaceholder: {
+    id: 'settings.agentLoop.operations.autoEffort.apiKey.placeholder',
+    defaultMessage: 'Enter API key',
+  },
+  apiKeyConfigured: {
+    id: 'settings.agentLoop.operations.autoEffort.apiKey.configured',
+    defaultMessage: 'Configured',
+  },
+  saveApiKey: {
+    id: 'settings.agentLoop.operations.autoEffort.apiKey.save',
+    defaultMessage: 'Save key',
+  },
+  removeApiKey: {
+    id: 'settings.agentLoop.operations.autoEffort.apiKey.remove',
+    defaultMessage: 'Remove key',
   },
   maxTurnsTitle: {
     id: 'settings.agentLoop.operations.maxTurns.title',
@@ -206,6 +236,9 @@ export default function AgentLoopSettings() {
   const { read, remove, upsert } = useConfig();
   const [enabled, setEnabled] = useState(true);
   const [slashCommandsEnabled, setSlashCommandsEnabled] = useState(true);
+  const [autoEffortEnabled, setAutoEffortEnabled] = useState(false);
+  const [typesafeApiKey, setTypesafeApiKey] = useState('');
+  const [typesafeApiKeyConfigured, setTypesafeApiKeyConfigured] = useState(false);
   const [toolPairCompactionEnabled, setToolPairCompactionEnabled] = useState(false);
   const [numbers, setNumbers] = useState(defaultNumberSettings);
 
@@ -222,6 +255,8 @@ export default function AgentLoopSettings() {
       read('GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', false),
       read('GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS', false),
       read('GOOSE_STOP_HOOK_BLOCK_CAP', false),
+      read('GOOSE_AUTO_EFFORT_ENABLED', false),
+      read('TYPESAFE_API_KEY', true),
     ]).then(
       ([
         useLegacyAgentLoop,
@@ -233,11 +268,15 @@ export default function AgentLoopSettings() {
         retryTimeout,
         failureTimeout,
         stopHookBlockCap,
+        autoEffort,
+        typesafeApiKey,
       ]) => {
         if (!active) return;
 
         setEnabled(!useLegacyAgentLoop);
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
+        setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
+        setTypesafeApiKeyConfigured(typeof typesafeApiKey === 'string' && typesafeApiKey.length > 0);
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
         );
@@ -296,6 +335,25 @@ export default function AgentLoopSettings() {
     await upsert('GOOSE_SLASH_COMMANDS_ENABLED', checked, false);
   };
 
+  const handleAutoEffortToggle = async (checked: boolean) => {
+    setAutoEffortEnabled(checked);
+    await upsert('GOOSE_AUTO_EFFORT_ENABLED', checked, false);
+  };
+
+  const saveTypesafeApiKey = async () => {
+    const apiKey = typesafeApiKey.trim();
+    if (!apiKey) return;
+    await upsert('TYPESAFE_API_KEY', apiKey, true);
+    setTypesafeApiKey('');
+    setTypesafeApiKeyConfigured(true);
+  };
+
+  const removeTypesafeApiKey = async () => {
+    await remove('TYPESAFE_API_KEY', true);
+    setTypesafeApiKey('');
+    setTypesafeApiKeyConfigured(false);
+  };
+
   const saveToolCallCutoff = async () => {
     if (numbers.toolCallCutoff.trim() === '') {
       await remove('GOOSE_TOOL_CALL_CUTOFF', false);
@@ -331,6 +389,50 @@ export default function AgentLoopSettings() {
               enabled={slashCommandsEnabled}
               onEnabledChange={handleSlashCommandsToggle}
             />
+
+            <OperationRow
+              title={intl.formatMessage(i18n.autoEffortTitle)}
+              description={intl.formatMessage(i18n.autoEffortDescription)}
+              enabled={autoEffortEnabled}
+              onEnabledChange={handleAutoEffortToggle}
+            >
+              <div className="flex w-full max-w-xl flex-col gap-2">
+                <label className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.typesafeApiKeyLabel)}
+                  {typesafeApiKeyConfigured && (
+                    <span className="ml-2 text-green-600">
+                      {intl.formatMessage(i18n.apiKeyConfigured)}
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    type="password"
+                    value={typesafeApiKey}
+                    disabled={!autoEffortEnabled}
+                    placeholder={intl.formatMessage(i18n.typesafeApiKeyPlaceholder)}
+                    onChange={(event) => setTypesafeApiKey(event.target.value)}
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!autoEffortEnabled || !typesafeApiKey.trim()}
+                    onClick={saveTypesafeApiKey}
+                  >
+                    {intl.formatMessage(i18n.saveApiKey)}
+                  </Button>
+                  {typesafeApiKeyConfigured && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!autoEffortEnabled}
+                      onClick={removeTypesafeApiKey}
+                    >
+                      {intl.formatMessage(i18n.removeApiKey)}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </OperationRow>
 
             <OperationRow
               title={intl.formatMessage(i18n.maxTurnsTitle)}

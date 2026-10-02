@@ -25,7 +25,7 @@ pub enum RetryResult {
     Skipped,
     /// Maximum retry attempts reached, cannot retry further. Carries the
     /// user-facing failure message so the caller can yield and persist it.
-    MaxAttemptsReached(Message),
+    MaxAttemptsReached(Box<Message>),
     /// Success checks passed, no retry needed
     SuccessChecksPassed,
     /// Retry is needed and will be performed
@@ -136,7 +136,7 @@ impl RetryManager {
                 "retry_max_exceeded",
                 &format!("Max retries ({}) exceeded", retry_config.max_retries),
             );
-            return Ok(RetryResult::MaxAttemptsReached(error_msg));
+            return Ok(RetryResult::MaxAttemptsReached(Box::new(error_msg)));
         }
 
         if let Some(on_failure_cmd) = &retry_config.on_failure {
@@ -375,7 +375,8 @@ mod tests {
 
     #[test]
     fn test_retry_result_enum() {
-        let max_attempts = RetryResult::MaxAttemptsReached(Message::assistant().with_text("done"));
+        let max_attempts =
+            RetryResult::MaxAttemptsReached(Box::new(Message::assistant().with_text("done")));
         assert_ne!(RetryResult::Skipped, max_attempts);
         assert_ne!(RetryResult::Skipped, RetryResult::SuccessChecksPassed);
         assert_ne!(RetryResult::Skipped, RetryResult::Retried);

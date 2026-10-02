@@ -138,7 +138,13 @@ describe('createAcpSessionNotificationAdapter', () => {
       it('maps and merges text chunks by role', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
-        adapter.apply(agentText('Hello '));
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Hello ' },
+            _meta: { goose: { operationLogs: ['ops_auto_effort: thinking high'] } },
+          } as SessionNotification['update'])
+        );
 
         const secondChunkStateChanges = adapter.apply(agentText('world'));
         let messages = expectOnlyMessagesChange(secondChunkStateChanges);
@@ -146,6 +152,7 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(messages).toHaveLength(1);
         expect(messages[0].role).toBe('assistant');
         expect(firstContent(messages[0])).toMatchObject({ type: 'text', text: 'Hello world' });
+        expect(messages[0].metadata.operationLogs).toEqual(['ops_auto_effort: thinking high']);
 
         const userTextStateChanges = adapter.apply(userText('Question'));
         messages = expectOnlyMessagesChange(userTextStateChanges);
@@ -340,7 +347,13 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
 
         const thoughtAdapter = createAcpSessionNotificationAdapter();
-        thoughtAdapter.apply(agentThought('Thinking '));
+        thoughtAdapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Thinking ' },
+            _meta: { goose: { operationLogs: ['ops_auto_effort: thinking high'] } },
+          } as SessionNotification['update'])
+        );
 
         const thoughtStateChanges = thoughtAdapter.apply(agentThought('more'));
         const thoughtMessages = expectOnlyMessagesChange(thoughtStateChanges);
@@ -351,6 +364,9 @@ describe('createAcpSessionNotificationAdapter', () => {
           thinking: 'Thinking more',
           signature: '',
         });
+        expect(thoughtMessages[0].metadata.operationLogs).toEqual([
+          'ops_auto_effort: thinking high',
+        ]);
       });
 
       it('preserves output-limit metadata when creating a thought message', () => {
@@ -425,6 +441,7 @@ describe('createAcpSessionNotificationAdapter', () => {
             locations: [{ path: 'README.md', line: 1 }],
             _meta: {
               goose: {
+                operationLogs: ['ops_auto_effort: thinking high'],
                 toolCall: {
                   extensionName: 'developer',
                   toolName: 'read_file',
@@ -437,6 +454,7 @@ describe('createAcpSessionNotificationAdapter', () => {
 
         expect(messages).toHaveLength(1);
         expect(messages[0].role).toBe('assistant');
+        expect(messages[0].metadata.operationLogs).toEqual(['ops_auto_effort: thinking high']);
         expect(firstContent(messages[0])).toMatchObject({
           type: 'toolRequest',
           id: 'tool-1',
