@@ -442,6 +442,10 @@ struct GooseClientCapabilities {
     recipe_parameter_requests: Option<bool>,
     #[serde(rename = "toolCallLabelEnrichment", default)]
     tool_call_label_enrichment: Option<bool>,
+    #[serde(rename = "clientTerminal", default)]
+    client_terminal: Option<bool>,
+    #[serde(rename = "delegateShell", default)]
+    delegate_shell: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -485,6 +489,82 @@ fn extract_use_login_shell_path(args: &InitializeRequest) -> bool {
         .and_then(|meta| meta.get("goose/useLoginShellPath"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+fn is_process_sandboxed() -> bool {
+    if std::env::var_os("VETTO_SANDBOXED").is_some()
+        || std::env::var_os("VETTO_WRAPPED").is_some()
+        || std::env::var_os("GOOSE_SANDBOX").is_some()
+        || std::env::var_os("SANDBOXED").is_some()
+        || std::env::var_os("container").is_some()
+    {
+        return true;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if std::path::Path::new("/run/.containerenv").exists()
+            || std::path::Path::new("/.dockerenv").exists()
+        {
+            return true;
+        }
+
+        if let Ok(mountinfo) = std::fs::read_to_string("/proc/self/mountinfo") {
+            if mountinfo.contains("bwrap") {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn resolve_acp_client_terminal(
+    client_terminal_capability: bool,
+    args: &InitializeRequest,
+    goose_client_capabilities: Option<&GooseClientCapabilities>,
+) -> bool {
+    if !client_terminal_capability {
+        return false;
+    }
+
+    if let Ok(val) = std::env::var("GOOSE_ACP_CLIENT_TERMINAL") {
+        let trimmed = val.trim().to_ascii_lowercase();
+        if trimmed == "false" || trimmed == "0" || trimmed == "no" || trimmed == "off" {
+            tracing::info!(
+                val = %val,
+                "GOOSE_ACP_CLIENT_TERMINAL disabled: keeping shell tool local within agent"
+            );
+            return false;
+        }
+        if trimmed == "true" || trimmed == "1" || trimmed == "yes" || trimmed == "on" {
+            return true;
+        }
+    }
+
+    if let Some(goose) = goose_client_capabilities {
+        if let Some(enabled) = goose.client_terminal.or(goose.delegate_shell) {
+            return enabled;
+        }
+    }
+
+    if let Some(val) = args
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.get("goose/clientTerminal"))
+        .and_then(|v| v.as_bool())
+    {
+        return val;
+    }
+
+    if is_process_sandboxed() {
+        tracing::info!(
+            "Sandboxed execution detected: keeping shell tool local instead of delegating to ACP client terminal"
+        );
+        return false;
+    }
+
+    true
 }
 
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
@@ -1795,9 +1875,14 @@ impl GooseAcpAgent {
         let _ = self
             .client_fs_capabilities
             .set(args.client_capabilities.fs.clone());
-        let _ = self.client_terminal.set(args.client_capabilities.terminal);
         let goose_client_capabilities =
             extract_client_capabilities_meta(&args).and_then(|meta| meta.goose);
+        let client_terminal = resolve_acp_client_terminal(
+            args.client_capabilities.terminal,
+            &args,
+            goose_client_capabilities.as_ref(),
+        );
+        let _ = self.client_terminal.set(client_terminal);
         let _ = self.client_mcp_host_info.set(extract_client_mcp_host_info(
             &args,
             goose_client_capabilities.as_ref(),
@@ -3782,5 +3867,47 @@ print(\"hello, world\")
             .await
             .unwrap();
         client.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn test_resolve_acp_client_terminal_respects_capabilities() {
+        let request = InitializeRequest::new(agent_client_protocol::schema::ProtocolVersion::V1);
+        assert!(!resolve_acp_client_terminal(false, &request, None));
+    }
+
+    #[test]
+    fn test_resolve_acp_client_terminal_client_meta_override() {
+        let request = InitializeRequest::new(agent_client_protocol::schema::ProtocolVersion::V1);
+        let goose_caps = GooseClientCapabilities {
+            client_terminal: Some(false),
+            ..Default::default()
+        };
+        assert!(!resolve_acp_client_terminal(
+            true,
+            &request,
+            Some(&goose_caps)
+        ));
+
+        let goose_caps_delegate = GooseClientCapabilities {
+            delegate_shell: Some(false),
+            ..Default::default()
+        };
+        assert!(!resolve_acp_client_terminal(
+            true,
+            &request,
+            Some(&goose_caps_delegate)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_acp_client_terminal_args_meta_override() {
+        let mut meta_map = serde_json::Map::new();
+        meta_map.insert(
+            "goose/clientTerminal".to_string(),
+            serde_json::Value::Bool(false),
+        );
+        let request = InitializeRequest::new(agent_client_protocol::schema::ProtocolVersion::V1)
+            .meta(meta_map);
+        assert!(!resolve_acp_client_terminal(true, &request, None));
     }
 }
