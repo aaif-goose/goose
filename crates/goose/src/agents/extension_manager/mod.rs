@@ -1332,11 +1332,12 @@ impl ExtensionManager {
         let resolved_tool = resolved;
         let should_hydrate_mcp_app = self.host_supports_mcp_apps();
         let read_cancellation_token = cancellation_token.clone();
-        let owned_ctx = ToolCallContext::new(
+        let mut owned_ctx = ToolCallContext::new(
             ctx.session_id.clone(),
             ctx.working_dir.clone(),
             ctx.tool_call_request_id.clone(),
         );
+        owned_ctx.from_state_machine = ctx.from_state_machine;
         let (owned_ctx, tool_call_notifications_receiver) =
             if let Some(notification_emitter) = ctx.notification_emitter().cloned() {
                 (

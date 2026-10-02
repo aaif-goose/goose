@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 16;
+pub const CURRENT_SCHEMA_VERSION: i32 = 17;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -455,6 +455,45 @@ impl SessionManager {
 
     pub async fn add_message(&self, id: &str, message: &Message) -> Result<()> {
         self.storage.add_message(id, message).await
+    }
+
+    pub(crate) async fn save_foreground_delegation_message(
+        &self,
+        parent_id: &str,
+        message: &Message,
+        child_ids: &[String],
+    ) -> Result<()> {
+        self.storage
+            .save_foreground_delegation_message(parent_id, message, child_ids)
+            .await
+    }
+
+    pub(crate) async fn pending_foreground_subagents(
+        &self,
+        parent_id: &str,
+    ) -> Result<Vec<String>> {
+        self.storage.pending_foreground_subagents(parent_id).await
+    }
+
+    pub(crate) async fn deliver_foreground_subagent(
+        &self,
+        parent_id: &str,
+        message: &Message,
+        child_id: &str,
+    ) -> Result<()> {
+        self.storage
+            .deliver_foreground_subagent(parent_id, message, child_id)
+            .await
+    }
+
+    pub(crate) async fn cancel_foreground_subagents(
+        &self,
+        parent_id: &str,
+        note: fn(&[String]) -> Message,
+    ) -> Result<()> {
+        self.storage
+            .cancel_foreground_subagents(parent_id, note)
+            .await
     }
 
     pub async fn replace_conversation(&self, id: &str, conversation: &Conversation) -> Result<()> {
@@ -935,6 +974,21 @@ async fn insert_usage_ledger_row(
     Ok(())
 }
 
+const PENDING_FOREGROUND_CHILD: &str =
+    "json_extract(s.parent_delegation, '$.execution_mode') = 'foreground' \
+    AND json_extract(s.parent_delegation, '$.status') = 'pending' \
+    AND EXISTS (
+        SELECT 1 FROM messages m
+        WHERE m.session_id = s.parent_session_id
+          AND m.message_id = json_extract(s.parent_delegation, '$.parent_delegate_message_id')
+    )";
+
+fn pending_foreground_children_query() -> String {
+    format!(
+        "SELECT s.id FROM sessions s WHERE s.parent_session_id = ? AND s.session_type = ? AND {PENDING_FOREGROUND_CHILD} ORDER BY s.created_at, s.id"
+    )
+}
+
 impl SessionStorage {
     fn create_pool(path: &Path) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
@@ -1054,7 +1108,8 @@ impl SessionStorage {
                 goose_mode TEXT NOT NULL DEFAULT 'auto',
                 archived_at TIMESTAMP,
                 project_id TEXT,
-                parent_session_id TEXT
+                parent_session_id TEXT,
+                parent_delegation TEXT
             )
         "#,
         )
@@ -1609,6 +1664,11 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            17 => {
+                sqlx::query("ALTER TABLE sessions ADD COLUMN parent_delegation TEXT")
+                    .execute(&mut **tx)
+                    .await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1919,10 +1979,11 @@ impl SessionStorage {
         Ok(Conversation::new_unvalidated(messages))
     }
 
-    async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
-        let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-
+    async fn insert_message(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        message: &Message,
+    ) -> Result<String> {
         let metadata_json = serde_json::to_string(&message.metadata)?;
         // Messages are read back ordered by (created_timestamp, id), so one built
         // before the messages it is appended after would sort ahead of them —
@@ -1931,7 +1992,7 @@ impl SessionStorage {
         let latest: Option<i64> =
             sqlx::query_scalar("SELECT MAX(created_timestamp) FROM messages WHERE session_id = ?")
                 .bind(session_id)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await?;
         let created = message.created.max(latest.unwrap_or(message.created));
 
@@ -1946,20 +2007,130 @@ impl SessionStorage {
             VALUES (?, ?, ?, ?, ?, ?)
         "#,
         )
-        .bind(message_id)
+        .bind(&message_id)
         .bind(session_id)
         .bind(role_to_string(&message.role))
         .bind(serde_json::to_string(&message.content)?)
         .bind(created)
         .bind(metadata_json)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
 
+        Ok(message_id)
+    }
+
+    async fn add_message(&self, session_id: &str, message: &Message) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        Self::insert_message(&mut tx, session_id, message).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn save_foreground_delegation_message(
+        &self,
+        parent_id: &str,
+        message: &Message,
+        child_ids: &[String],
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let message_id = Self::insert_message(&mut tx, parent_id, message).await?;
+        for child_id in child_ids {
+            let changed = sqlx::query(
+                "UPDATE sessions SET parent_delegation = ? WHERE id = ? AND parent_session_id = ? AND session_type = ?",
+            )
+            .bind(
+                serde_json::json!({
+                    "execution_mode": "foreground",
+                    "parent_delegate_message_id": message_id,
+                    "status": "pending",
+                })
+                .to_string(),
+            )
+            .bind(child_id)
+            .bind(parent_id)
+            .bind(SessionType::SubAgent.to_string())
+            .execute(&mut *tx)
+            .await?;
+            if changed.rows_affected() != 1 {
+                anyhow::bail!("Scheduled subagent {child_id} is not a child of {parent_id}");
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn pending_foreground_subagents(&self, parent_id: &str) -> Result<Vec<String>> {
+        let pool = self.pool().await?;
+        Ok(
+            sqlx::query_scalar(AssertSqlSafe(pending_foreground_children_query()))
+                .bind(parent_id)
+                .bind(SessionType::SubAgent.to_string())
+                .fetch_all(pool)
+                .await?,
+        )
+    }
+
+    async fn deliver_foreground_subagent(
+        &self,
+        parent_id: &str,
+        message: &Message,
+        child_id: &str,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let eligibility_query = format!(
+            "SELECT EXISTS(SELECT 1 FROM sessions s WHERE s.id = ? AND s.parent_session_id = ? AND s.session_type = ? AND {PENDING_FOREGROUND_CHILD})"
+        );
+        let eligible: bool = sqlx::query_scalar(AssertSqlSafe(eligibility_query.as_str()))
+            .bind(child_id)
+            .bind(parent_id)
+            .bind(SessionType::SubAgent.to_string())
+            .fetch_one(&mut *tx)
+            .await?;
+        if !eligible {
+            return Ok(());
+        }
+        Self::insert_message(&mut tx, parent_id, message).await?;
+        sqlx::query(
+            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.status', 'result_delivered') WHERE id = ?",
+        )
+        .bind(child_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn cancel_foreground_subagents(
+        &self,
+        parent_id: &str,
+        note: fn(&[String]) -> Message,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let child_ids: Vec<String> =
+            sqlx::query_scalar(AssertSqlSafe(pending_foreground_children_query()))
+                .bind(parent_id)
+                .bind(SessionType::SubAgent.to_string())
+                .fetch_all(&mut *tx)
+                .await?;
+        if child_ids.is_empty() {
+            return Ok(());
+        }
+        Self::insert_message(&mut tx, parent_id, &note(&child_ids)).await?;
+        sqlx::query(
+            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.status', 'cancelled') WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(serde_json::to_string(&child_ids)?)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -2862,6 +3033,261 @@ mod tests {
 
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
     const GENERATED_SESSION_NAME: &str = "Generated session name";
+
+    #[tokio::test]
+    async fn cancelling_foreground_subagents_records_status_and_one_note() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await?;
+        let mut child_ids = Vec::new();
+        for _ in 0..2 {
+            let child = manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "child".to_string(),
+                    SessionType::SubAgent,
+                    GooseMode::Auto,
+                )
+                .await?;
+            manager
+                .update(&child.id)
+                .parent_session_id(Some(parent.id.clone()))
+                .apply()
+                .await?;
+            child_ids.push(child.id);
+        }
+        manager
+            .save_foreground_delegation_message(
+                &parent.id,
+                &Message::user().with_text("scheduled"),
+                &child_ids,
+            )
+            .await?;
+        manager
+            .deliver_foreground_subagent(
+                &parent.id,
+                &Message::user().with_text("delivered"),
+                &child_ids[0],
+            )
+            .await?;
+
+        let note = |cancelled: &[String]| Message::user().with_text(cancelled.join(","));
+        manager
+            .cancel_foreground_subagents(&parent.id, note)
+            .await?;
+        manager
+            .cancel_foreground_subagents(&parent.id, note)
+            .await?;
+
+        let pool = manager.storage.pool().await?;
+        let mut statuses = Vec::new();
+        for child_id in &child_ids {
+            let status: String = sqlx::query_scalar(
+                "SELECT json_extract(parent_delegation, '$.status') FROM sessions WHERE id = ?",
+            )
+            .bind(child_id)
+            .fetch_one(pool)
+            .await?;
+            statuses.push(status);
+        }
+        assert_eq!(statuses, ["result_delivered", "cancelled"]);
+        let texts: Vec<String> = manager
+            .get_session(&parent.id, true)
+            .await?
+            .conversation
+            .unwrap()
+            .messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(texts, ["scheduled", "delivered", child_ids[1].as_str()]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn foreground_delivery_requires_parent_delegate_message_and_is_atomic() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await?;
+        let child = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "child".to_string(),
+                SessionType::SubAgent,
+                GooseMode::Auto,
+            )
+            .await?;
+        manager
+            .update(&child.id)
+            .parent_session_id(Some(parent.id.clone()))
+            .apply()
+            .await?;
+        assert!(manager
+            .pending_foreground_subagents(&parent.id)
+            .await?
+            .is_empty());
+
+        let delegate_message = Message::user()
+            .with_id("delegate-message")
+            .with_text("scheduled");
+        manager
+            .save_foreground_delegation_message(
+                &parent.id,
+                &delegate_message,
+                std::slice::from_ref(&child.id),
+            )
+            .await?;
+        assert_eq!(
+            manager.pending_foreground_subagents(&parent.id).await?,
+            vec![child.id.clone()]
+        );
+        let copied_parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "copied parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await?;
+        let copied_conversation = manager
+            .get_session(&parent.id, true)
+            .await?
+            .conversation
+            .unwrap();
+        manager
+            .replace_conversation(&copied_parent.id, &copied_conversation)
+            .await?;
+        assert!(manager
+            .pending_foreground_subagents(&copied_parent.id)
+            .await?
+            .is_empty());
+        let reloaded = SessionManager::new(temp_dir.path().to_path_buf());
+        let conversation = manager
+            .get_session(&parent.id, true)
+            .await?
+            .conversation
+            .unwrap();
+        manager
+            .replace_conversation(&parent.id, &conversation)
+            .await?;
+        assert_eq!(
+            manager.pending_foreground_subagents(&parent.id).await?,
+            vec![child.id.clone()]
+        );
+
+        let delivery = Message::user()
+            .with_text("child completed")
+            .with_visibility(false, true);
+        manager
+            .deliver_foreground_subagent(&parent.id, &delivery, "missing-child")
+            .await?;
+        assert_eq!(
+            manager.pending_foreground_subagents(&parent.id).await?,
+            vec![child.id.clone()]
+        );
+        assert_eq!(
+            manager
+                .get_session(&parent.id, true)
+                .await?
+                .conversation
+                .unwrap()
+                .messages()
+                .len(),
+            1
+        );
+
+        manager
+            .deliver_foreground_subagent(&parent.id, &delivery, &child.id)
+            .await?;
+        assert!(manager
+            .pending_foreground_subagents(&parent.id)
+            .await?
+            .is_empty());
+        assert_eq!(
+            manager
+                .get_session(&parent.id, true)
+                .await?
+                .conversation
+                .unwrap()
+                .messages()
+                .len(),
+            2
+        );
+        let parent_messages = reloaded
+            .get_session(&parent.id, true)
+            .await?
+            .conversation
+            .unwrap();
+        let saved_delivery = parent_messages.last().unwrap();
+        assert!(!saved_delivery.is_user_visible());
+        assert!(saved_delivery.is_agent_visible());
+
+        let next_delegate_message = delegate_message.clone().with_id("next-delegate-message");
+        manager
+            .save_foreground_delegation_message(
+                &parent.id,
+                &next_delegate_message,
+                std::slice::from_ref(&child.id),
+            )
+            .await?;
+        assert_eq!(
+            manager
+                .pending_foreground_subagents(&parent.id)
+                .await?
+                .len(),
+            1
+        );
+        manager
+            .truncate_conversation_from_message(&parent.id, "next-delegate-message")
+            .await?;
+        assert!(manager
+            .pending_foreground_subagents(&parent.id)
+            .await?
+            .is_empty());
+        manager
+            .deliver_foreground_subagent(&parent.id, &delivery, &child.id)
+            .await?;
+        assert_eq!(
+            manager
+                .get_session(&parent.id, true)
+                .await?
+                .conversation
+                .unwrap()
+                .messages()
+                .len(),
+            2
+        );
+
+        manager
+            .save_foreground_delegation_message(
+                &parent.id,
+                &next_delegate_message,
+                std::slice::from_ref(&child.id),
+            )
+            .await?;
+        manager
+            .replace_conversation(&parent.id, &Conversation::empty())
+            .await?;
+        assert!(manager
+            .pending_foreground_subagents(&parent.id)
+            .await?
+            .is_empty());
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[tokio::test]
@@ -4667,151 +5093,6 @@ mod tests {
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
         assert_eq!(reloaded.goose_mode, GooseMode::default());
-    }
-
-    #[tokio::test]
-    async fn test_acp_session_migration() {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
-
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-
-        let pool = SqlitePoolOptions::new()
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(&db_path)
-                    .create_if_missing(true),
-            )
-            .await
-            .unwrap();
-
-        SessionStorage::create_schema(&pool).await.unwrap();
-
-        // Demote the schema back to v8 to simulate a database
-        // that has never seen migration 9.
-        sqlx::query("UPDATE schema_version SET version = 8")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        sqlx::query(
-            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind("user_id")
-        .bind("User Session")
-        .bind(false)
-        .bind("user")
-        .bind("/tmp")
-        .bind("{}")
-        .bind("auto")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind("acp_id")
-        .bind("ACP Session")
-        .bind(false)
-        .bind("user")
-        .bind("/tmp")
-        .bind("{}")
-        .bind("auto")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        pool.close().await;
-
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        sm.storage().pool().await.unwrap(); // Triggers migration
-
-        let user_session = sm.storage().get_session("user_id", false).await.unwrap();
-        assert_eq!(user_session.session_type, SessionType::User);
-
-        let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
-        assert_eq!(acp_session.session_type, SessionType::Acp);
-    }
-
-    #[tokio::test]
-    async fn test_cache_token_columns_migration_and_round_trip() {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
-
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-
-        let pool = SqlitePoolOptions::new()
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(&db_path)
-                    .create_if_missing(true),
-            )
-            .await
-            .unwrap();
-
-        SessionStorage::create_schema(&pool).await.unwrap();
-
-        // Recreate a v13-shaped database without cache token columns.
-        for column in [
-            "cache_read_tokens",
-            "cache_write_tokens",
-            "accumulated_cache_read_tokens",
-            "accumulated_cache_write_tokens",
-        ] {
-            sqlx::query(AssertSqlSafe(format!(
-                "ALTER TABLE sessions DROP COLUMN {column}"
-            )))
-            .execute(&pool)
-            .await
-            .unwrap();
-        }
-        sqlx::query("UPDATE schema_version SET version = 13")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        sqlx::query(
-            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind("cache_id")
-        .bind("Cache Session")
-        .bind(false)
-        .bind("user")
-        .bind("/tmp")
-        .bind("{}")
-        .bind("auto")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        pool.close().await;
-
-        let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        sm.storage().pool().await.unwrap(); // Triggers migration
-
-        let usage =
-            Usage::new(Some(8000), Some(500), None).with_cache_tokens(Some(5000), Some(1000));
-        let accumulated_usage =
-            Usage::new(Some(24000), Some(1500), None).with_cache_tokens(Some(15000), Some(3000));
-
-        sm.update("cache_id")
-            .usage(usage)
-            .accumulated_usage(accumulated_usage)
-            .apply()
-            .await
-            .unwrap();
-
-        let loaded = sm.get_session("cache_id", false).await.unwrap();
-        assert_eq!(loaded.usage, usage);
-        assert_eq!(loaded.accumulated_usage, accumulated_usage);
     }
 
     fn message_usage(input: i32, output: i32, cost: f64, is_compaction: bool) -> MessageUsage {

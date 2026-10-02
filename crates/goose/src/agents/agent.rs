@@ -32,14 +32,14 @@ use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    cancellation_note, has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
-    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
-    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
-    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation, MAX_TURNS_MESSAGE,
+    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
+    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
@@ -1428,7 +1428,7 @@ impl Agent {
         Ok(results)
     }
 
-    async fn add_extension_inner(
+    pub(super) async fn add_extension_inner(
         &self,
         extension: ExtensionConfig,
         session_id: &str,
@@ -1696,7 +1696,7 @@ impl Agent {
                 compaction_threshold,
             )));
         }
-        let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+        let mut remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
                 provider.clone(),
                 model_config.clone(),
@@ -1720,18 +1720,25 @@ impl Agent {
                 self.hook_manager.clone(),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
-            Arc::new(RetryOperation::new(
-                &self.goal,
-                &self.grind,
-                std::time::Duration::from_secs(retry_timeout),
-                std::time::Duration::from_secs(on_failure_timeout),
-            )),
-            Arc::new(StopHookOperation::new(
-                self.hook_manager.clone(),
-                stop_hook_block_cap,
-            )),
-            Arc::new(ExitOnErrorOperation),
         ];
+        if !self.config.is_subagent {
+            remaining_operations.push(Arc::new(ForegroundSubagentOperation::new(
+                self.config.session_manager.clone(),
+                self.config.resolve_use_login_shell_path(),
+                cancel.clone(),
+            )));
+        }
+        remaining_operations.push(Arc::new(RetryOperation::new(
+            &self.goal,
+            &self.grind,
+            std::time::Duration::from_secs(retry_timeout),
+            std::time::Duration::from_secs(on_failure_timeout),
+        )));
+        remaining_operations.push(Arc::new(StopHookOperation::new(
+            self.hook_manager.clone(),
+            stop_hook_block_cap,
+        )));
+        remaining_operations.push(Arc::new(ExitOnErrorOperation));
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]
@@ -1865,6 +1872,21 @@ impl Agent {
             .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
     }
 
+    pub async fn cancel_foreground_subagents(&self, session_id: &str) {
+        if let Err(error) = self
+            .config
+            .session_manager
+            .cancel_foreground_subagents(session_id, cancellation_note)
+            .await
+        {
+            error!(
+                session_id,
+                ?error,
+                "Failed to record cancelled foreground subagents"
+            );
+        }
+    }
+
     async fn resume_state_machine_turn_inner(
         self: &Arc<Self>,
         session_config: SessionConfig,
@@ -1990,7 +2012,7 @@ impl Agent {
         })
     }
 
-    async fn stream_state_machine_session(
+    pub(super) async fn stream_state_machine_session(
         &self,
         session_config: SessionConfig,
         cancel: CancellationToken,

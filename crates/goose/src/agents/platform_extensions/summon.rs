@@ -1,4 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
+use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
 use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
@@ -6,12 +7,13 @@ use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter
 use crate::agents::AgentConfig;
 use crate::config::paths::Paths;
 use crate::config::{Config, GooseMode};
+use crate::conversation::message::Message;
 use crate::providers;
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::local_recipes::load_local_recipe_file;
-use crate::recipe::{Recipe, RecipeParameter, Settings, RECIPE_FILE_EXTENSIONS};
-use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::SessionType;
+use crate::recipe::{Recipe, RecipeParameter, Response, Settings, RECIPE_FILE_EXTENSIONS};
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
+use crate::session::{Session, SessionType};
 use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
@@ -1348,6 +1350,7 @@ impl SummonClient {
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
         notification_emitter: Option<ToolCallNotificationEmitter>,
+        from_state_machine: bool,
     ) -> Result<CallToolResult, String> {
         self.cleanup_completed_tasks().await;
 
@@ -1368,6 +1371,10 @@ impl SummonClient {
 
         if session.session_type == SessionType::SubAgent {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
+        }
+
+        if from_state_machine {
+            return self.handle_foreground_delegate(params, &session).await;
         }
 
         if params.r#async {
@@ -1446,6 +1453,104 @@ impl SummonClient {
             ))])
             .with_meta(Some(meta))),
         }
+    }
+
+    async fn handle_foreground_delegate(
+        &self,
+        params: DelegateParams,
+        parent: &Session,
+    ) -> Result<CallToolResult, String> {
+        let mut recipe = self
+            .build_delegate_recipe(&params, &parent.id, &parent.working_dir)
+            .await?;
+        let task_config = self
+            .build_task_config(&params, &recipe, parent)
+            .await
+            .map_err(|e| format!("Failed to build task config: {e}"))?;
+        crate::providers::get_from_registry(task_config.provider.get_name())
+            .await
+            .map_err(|_| {
+                format!(
+                    "Provider '{}' cannot be reconstructed for a foreground subagent",
+                    task_config.provider.get_name()
+                )
+            })?;
+
+        let max_turns = task_config
+            .max_turns
+            .expect("TaskConfig always sets max_turns");
+        recipe
+            .settings
+            .get_or_insert(Settings {
+                goose_provider: None,
+                goose_model: None,
+                temperature: None,
+                max_turns: None,
+            })
+            .max_turns = Some(max_turns);
+        if recipe
+            .response
+            .as_ref()
+            .and_then(|response| response.json_schema.as_ref())
+            .is_none()
+        {
+            recipe.response = Some(Response {
+                json_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"]
+                })),
+            });
+        }
+        FinalOutputTool::try_new(recipe.response.as_ref().unwrap().clone())
+            .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
+
+        let mut extension_data = ExtensionData::default();
+        EnabledExtensionsState::new(task_config.extensions.clone())
+            .to_extension_data(&mut extension_data)
+            .map_err(|e| format!("Failed to save delegate extensions: {e}"))?;
+
+        let child = self
+            .create_subagent_session(&task_config, "Delegated task".to_string())
+            .await?;
+        let task = recipe
+            .prompt
+            .clone()
+            .unwrap_or_else(|| "Begin.".to_string());
+        self.context
+            .session_manager
+            .update(&child.id)
+            .recipe(Some(recipe))
+            .provider_name(task_config.provider.get_name())
+            .model_config(task_config.model_config)
+            .extension_data(extension_data)
+            .apply()
+            .await
+            .map_err(|e| format!("Failed to save delegate configuration: {e}"))?;
+
+        self.context
+            .session_manager
+            .add_message(
+                &child.id,
+                &Message::user().with_text(format!("Subagent ID: {}\n\n{task}", child.id)),
+            )
+            .await
+            .map_err(|e| format!("Failed to save delegate task: {e}"))?;
+
+        let mut meta = MetaObject::new();
+        meta.0.insert(
+            "subagent_session_id".to_string(),
+            serde_json::Value::String(child.id.clone()),
+        );
+        meta.0.insert(
+            "foreground_subagent".to_string(),
+            serde_json::Value::Bool(true),
+        );
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+            "Scheduled foreground subagent {}",
+            child.id
+        ))])
+        .with_meta(Some(meta)))
     }
 
     fn validate_delegate_params(&self, params: &DelegateParams) -> Result<(), String> {
@@ -2203,6 +2308,7 @@ impl McpClientTrait for SummonClient {
                         arguments,
                         cancellation_token,
                         ctx.notification_emitter().cloned(),
+                        ctx.from_state_machine,
                     )
                     .await
                 {
@@ -2334,7 +2440,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::Message;
+    use crate::conversation::message::{Message, MessageContent};
     use futures::StreamExt;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
@@ -2381,6 +2487,120 @@ mod tests {
                 .unwrap();
         }
         session.id
+    }
+
+    #[tokio::test]
+    async fn foreground_delegate_persists_child_and_scheduling_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let child_dir = temp_dir.path().join("child");
+        fs::create_dir(&child_dir).unwrap();
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(manager.clone())).unwrap();
+        let args = serde_json::json!({
+            "instructions": "Review the change",
+            "async": true,
+            "provider": "openai",
+            "model": "test-model",
+            "extensions": [],
+            "working_dir": "child",
+            "max_turns": 3
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let result = client
+            .handle_delegate(&parent.id, Some(args), CancellationToken::new(), None, true)
+            .await
+            .unwrap();
+        let meta = result.meta.as_ref().unwrap();
+        assert_eq!(
+            meta.0.get("foreground_subagent"),
+            Some(&serde_json::json!(true))
+        );
+        let child_id = meta.0["subagent_session_id"].as_str().unwrap().to_string();
+
+        manager
+            .add_message(
+                &parent.id,
+                &Message::user().with_tool_response("delegate-call", Ok(result)),
+            )
+            .await
+            .unwrap();
+        let reloaded = crate::session::SessionManager::new(temp_dir.path().to_path_buf());
+        let child = reloaded.get_session(&child_id, true).await.unwrap();
+        assert_eq!(child.session_type, SessionType::SubAgent);
+        assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(child.working_dir, child_dir.canonicalize().unwrap());
+        assert_eq!(child.provider_name.as_deref(), Some("openai"));
+        assert_eq!(
+            child.model_config.as_ref().unwrap().model_name,
+            "test-model"
+        );
+        let recipe = child.recipe.as_ref().unwrap();
+        assert_eq!(recipe.settings.as_ref().unwrap().max_turns, Some(3));
+        assert_eq!(
+            recipe
+                .response
+                .as_ref()
+                .unwrap()
+                .json_schema
+                .as_ref()
+                .unwrap()["required"],
+            serde_json::json!(["summary"])
+        );
+        assert!(
+            EnabledExtensionsState::from_extension_data(&child.extension_data)
+                .unwrap()
+                .extensions
+                .is_empty()
+        );
+        assert!(child.conversation.as_ref().unwrap().iter().any(|message| {
+            message.content.iter().any(|content| {
+                matches!(content,
+                MessageContent::Text(text) if text.text.contains("Review the change"))
+            })
+        }));
+
+        let parent = reloaded.get_session(&parent.id, true).await.unwrap();
+        assert!(parent.conversation.as_ref().unwrap().iter().any(|message| {
+            message.content.iter().any(|content| {
+                matches!(content,
+                    MessageContent::ToolResponse(response)
+                        if response.tool_result.as_ref().is_ok_and(|result|
+                            result.meta.as_ref().is_some_and(|meta|
+                                meta.0.get("foreground_subagent") == Some(&serde_json::json!(true))
+                                    && meta.0.get("subagent_session_id").and_then(serde_json::Value::as_str)
+                                        == Some(child_id.as_str())
+                            )
+                        )
+                )
+            })
+        }));
+
+        let reloaded_agent = crate::agents::subagent_handler::from_foreground_subagent_session(
+            Arc::new(reloaded),
+            &child_id,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reloaded_agent.provider().await.unwrap().get_name(),
+            "openai"
+        );
     }
 
     #[test]

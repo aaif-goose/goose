@@ -12,6 +12,7 @@ mod ops_compaction;
 mod ops_doctor;
 mod ops_entry_hook;
 mod ops_exit_on_error;
+mod ops_foreground_subagent;
 mod ops_llm;
 mod ops_maxturns;
 mod ops_project;
@@ -30,6 +31,26 @@ mod session;
 pub(crate) use session::run as run_goose;
 mod tool_confirmation;
 mod usage;
+
+use std::collections::HashSet;
+
+use crate::conversation::message::{Message, MessageContent};
+
+/// Several operations answer parts of one tool batch in separate messages, so a
+/// tool tail alone does not mean the batch is complete.
+pub(super) fn awaits_tool_responses(messages: &[Message]) -> bool {
+    let answered: HashSet<&str> = messages
+        .iter()
+        .flat_map(Message::get_tool_response_ids)
+        .collect();
+    messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_request)
+        .any(|request| {
+            !request.was_executed_externally() && !answered.contains(request.id.as_str())
+        })
+}
 
 #[cfg(test)]
 mod tests;
@@ -54,6 +75,7 @@ pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_entry_hook::EntryHookOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
+pub(super) use ops_foreground_subagent::{cancellation_note, ForegroundSubagentOperation};
 pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;

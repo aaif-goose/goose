@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::agents::state_machine::effects::GooseEffect;
+use crate::agents::state_machine::ops_foreground_subagent::foreground_child_ids_in_message;
 use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -51,7 +52,17 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         for effect in effects.iter_mut() {
             match effect {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
-                    self.add_message(&session.id, message).await?;
+                    let child_ids = foreground_child_ids_in_message(&message.content);
+                    if child_ids.is_empty() {
+                        self.add_message(&session.id, message).await?;
+                    } else {
+                        self.save_foreground_delegation_message(&session.id, message, &child_ids)
+                            .await?;
+                    }
+                }
+                GooseEffect::DeliverForegroundSubagent { message, child_id } => {
+                    self.deliver_foreground_subagent(&session.id, message, child_id)
+                        .await?;
                 }
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(
                     conversation,

@@ -1,11 +1,17 @@
 use crate::{
-    agents::{subagent_task_config::TaskConfig, Agent, AgentConfig, AgentEvent, SessionConfig},
+    agents::{
+        subagent_task_config::TaskConfig, Agent, AgentConfig, AgentEvent, GoosePlatform,
+        SessionConfig,
+    },
+    config::permission::PermissionManager,
     conversation::{
         message::{Message, MessageContent},
         Conversation,
     },
     prompt_template::render_template,
     recipe::Recipe,
+    session::extension_data::{EnabledExtensionsState, ExtensionState},
+    session::{SessionManager, SessionType},
 };
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
@@ -58,6 +64,79 @@ pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyh
     }
 
     Ok(extract_response_text(&messages, return_last_only))
+}
+
+pub(crate) async fn from_foreground_subagent_session(
+    session_manager: Arc<SessionManager>,
+    session_id: &str,
+    use_login_shell_path: bool,
+) -> Result<Agent> {
+    let session = session_manager.get_session(session_id, false).await?;
+    if session.session_type != SessionType::SubAgent {
+        return Err(anyhow!("Session {session_id} is not a subagent"));
+    }
+    let recipe = session
+        .recipe
+        .as_ref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved recipe"))?;
+    let max_turns = recipe
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.max_turns)
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved turn limit"))?;
+    let provider_name = session
+        .provider_name
+        .as_deref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved provider"))?;
+    let model_config = session
+        .model_config
+        .as_ref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved model"))?;
+    let saved_extensions = session
+        .extension_data
+        .get_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+        )
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
+    let extensions = EnabledExtensionsState::from_value(saved_extensions)?.extensions;
+
+    let provider = crate::providers::create_with_working_dir(
+        provider_name,
+        extensions.clone(),
+        session.working_dir.clone(),
+    )
+    .await?;
+    provider.apply_model_selection(model_config).await?;
+
+    let mut config = AgentConfig::new(
+        session_manager,
+        PermissionManager::instance(),
+        None,
+        session.goose_mode,
+        true,
+        GoosePlatform::GooseCli,
+    )
+    .with_use_login_shell_path(use_login_shell_path);
+    config.is_subagent = true;
+    let agent = Agent::with_config(config);
+    *agent.provider.lock().await = Some(provider);
+    for extension in extensions {
+        let name = extension.name();
+        if let Err(e) = agent.add_extension_inner(extension, session_id).await {
+            debug!("Failed to add extension '{}' to subagent: {}", name, e);
+        }
+    }
+
+    let subagent_prompt = build_subagent_prompt(
+        &agent,
+        max_turns,
+        session_id,
+        recipe.instructions.clone().unwrap_or_default(),
+    )
+    .await?;
+    agent.override_system_prompt(subagent_prompt).await;
+    Ok(agent)
 }
 
 fn extract_response_text(messages: &Conversation, return_last_only: bool) -> String {

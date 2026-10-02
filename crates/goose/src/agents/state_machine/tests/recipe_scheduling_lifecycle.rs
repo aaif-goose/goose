@@ -11,7 +11,6 @@ use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
 #[cfg(feature = "code-mode")]
 use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
-use crate::agents::state_machine::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
 #[cfg(feature = "code-mode")]
@@ -155,11 +154,24 @@ settings:
         .call("delegate", json!({ "source": "bounded" }));
     api.on("Keep taking actions")
         .unadvertised_call("keep_working", json!({}));
-    api.on(MAX_TURNS_MESSAGE).reply("child stopped on time");
+    api.on("failed: max turns reached")
+        .reply("child stopped on time");
 
     let result = pipeline.run(["Delegate the bounded child"]).await?;
     assert_eq!(api.call_count(), 3);
-    result.assert_message(-2, ToolResponse, MAX_TURNS_MESSAGE);
+    let delivery = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message.is_agent_visible()
+                && !message.is_user_visible()
+                && message
+                    .as_concat_text()
+                    .contains("failed: max turns reached")
+        })
+        .expect("child turn-limit failure is delivered to the parent LLM");
+    assert_eq!(delivery.role, rmcp::model::Role::User);
     result.assert_message(-1, Agent, "child stopped on time");
 
     Ok(())
