@@ -279,6 +279,31 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
         "manual" => handle_manual_provider_setup(config).await,
         _ => unreachable!(),
     }
+
+    if config.exists() {
+        configure_first_time_goose_mode(config, std::io::stdin().is_terminal(), select_goose_mode)?;
+    }
+    Ok(())
+}
+
+fn configure_first_time_goose_mode(
+    config: &Config,
+    is_tty: bool,
+    select: impl FnOnce() -> anyhow::Result<GooseMode>,
+) -> anyhow::Result<()> {
+    if !is_tty || !matches!(config.get_goose_mode(), Err(ConfigError::NotFound(_))) {
+        return Ok(());
+    }
+
+    println!();
+    cliclack::intro(style(" goose-mode ").on_cyan().black())?;
+    let _ = cliclack::log::info(
+        "goose mode controls whether goose uses tools freely or asks for your approval first.\n\
+         Auto is the default. You can change it later in 'goose configure' > goose settings.",
+    );
+    let mode = select()?;
+    config.set_goose_mode(mode)?;
+    cliclack::outro(goose_mode_saved_message(mode))?;
     Ok(())
 }
 
@@ -1521,7 +1546,15 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
         );
     }
 
+    let mode = select_goose_mode()?;
+    config.set_goose_mode(mode)?;
+    cliclack::outro(goose_mode_saved_message(mode))?;
+    Ok(())
+}
+
+fn select_goose_mode() -> anyhow::Result<GooseMode> {
     let mode = cliclack::select("Which goose mode would you like to configure?")
+        .initial_value(GooseMode::Auto)
         .item(
             GooseMode::Auto,
             "Auto Mode",
@@ -1543,16 +1576,16 @@ pub fn configure_goose_mode_dialog() -> anyhow::Result<()> {
             "Engage with the selected provider without using tools, extensions, or file modification"
         )
         .interact()?;
+    Ok(mode)
+}
 
-    config.set_goose_mode(mode)?;
-    let msg = match mode {
+fn goose_mode_saved_message(mode: GooseMode) -> &'static str {
+    match mode {
         GooseMode::Auto => "Set to Auto Mode - full file modification enabled",
         GooseMode::Approve => "Set to Approve Mode - all tools and modifications require approval",
         GooseMode::SmartApprove => "Set to Smart Approve Mode - modifications require approval",
         GooseMode::Chat => "Set to Chat Mode - no tools or modifications enabled",
-    };
-    cliclack::outro(msg)?;
-    Ok(())
+    }
 }
 
 #[cfg(feature = "telemetry")]
@@ -2401,6 +2434,76 @@ fn print_config_file_saved() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn test_config(temp_dir: &TempDir) -> Config {
+        Config::new_with_file_secrets(
+            temp_dir.path().join("config.yaml"),
+            temp_dir.path().join("secrets.yaml"),
+        )
+        .unwrap()
+    }
+
+    fn no_prompt() -> anyhow::Result<GooseMode> {
+        panic!("goose mode prompt should not be shown");
+    }
+
+    #[test]
+    fn first_time_goose_mode_prompts_and_persists_selection() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+
+        let mut prompted = false;
+        configure_first_time_goose_mode(&config, true, || {
+            prompted = true;
+            Ok(GooseMode::Approve)
+        })
+        .unwrap();
+
+        assert!(prompted);
+        assert_eq!(
+            test_config(&temp_dir).get_goose_mode().unwrap(),
+            GooseMode::Approve
+        );
+    }
+
+    #[test]
+    fn first_time_goose_mode_skips_when_set_in_env() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", Some("chat"))]);
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+
+        configure_first_time_goose_mode(&config, true, no_prompt).unwrap();
+
+        assert!(!temp_dir.path().join("config.yaml").exists());
+    }
+
+    #[test]
+    fn first_time_goose_mode_keeps_existing_config_value() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+        config.set_goose_mode(GooseMode::SmartApprove).unwrap();
+
+        configure_first_time_goose_mode(&config, true, no_prompt).unwrap();
+
+        assert_eq!(config.get_goose_mode().unwrap(), GooseMode::SmartApprove);
+    }
+
+    #[test]
+    fn first_time_goose_mode_skips_without_tty() {
+        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
+        let temp_dir = TempDir::new().unwrap();
+        let config = test_config(&temp_dir);
+
+        configure_first_time_goose_mode(&config, false, no_prompt).unwrap();
+
+        assert!(matches!(
+            config.get_goose_mode(),
+            Err(ConfigError::NotFound(_))
+        ));
+    }
 
     #[test]
     fn selected_item_inside_visible_window_keeps_order() {
