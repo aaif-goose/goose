@@ -256,17 +256,12 @@ impl DatabricksV2Provider {
     }
 
     fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
-        if !model_config.is_reasoning_model()
-            || !(model_config.is_glm_5_3_reasoning_model()
-                || model_config.is_kimi_k3_reasoning_model())
-        {
-            return None;
-        }
-
-        Some(match model_config.thinking_effort() {
-            Some(ThinkingEffort::Off | ThinkingEffort::Low) => "low",
-            Some(ThinkingEffort::Medium | ThinkingEffort::High) => "high",
-            Some(ThinkingEffort::Max) | None => "max",
+        let policy = model_config.thinking_effort_policy()?;
+        Some(match policy.resolve(model_config.thinking_effort()) {
+            ThinkingEffort::Low => "low",
+            ThinkingEffort::High => "high",
+            ThinkingEffort::Max => "max",
+            ThinkingEffort::Off | ThinkingEffort::Medium => unreachable!("normalized by policy"),
         })
     }
 
