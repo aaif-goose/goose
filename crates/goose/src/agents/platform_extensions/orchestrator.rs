@@ -595,6 +595,15 @@ impl OrchestratorClient {
         }
 
         drop(stream);
+        if cancel_token.is_cancelled() {
+            if let Err(error) = agent.cancel_foreground_subagents(&session_id).await {
+                tracing::error!(
+                    session_id,
+                    ?error,
+                    "Failed to record cancelled foreground subagents"
+                );
+            }
+        }
         guard.disarm();
         manager.unregister_cancel_token(&session_id).await;
 
