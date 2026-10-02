@@ -166,6 +166,9 @@ async fn load_image(
 }
 
 async fn load_image_bytes(source: &str, working_dir: Option<&Path>) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    validate_windows_image_path(Path::new(source))?;
+
     if let Ok(url) = url::Url::parse(source) {
         match url.scheme() {
             "http" | "https" => load_url_bytes(url).await,
@@ -230,6 +233,39 @@ async fn collect_response_bytes(
 }
 
 fn load_file_bytes(path: PathBuf) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        with_windows_local_path(&path, read_file_bytes)
+    }
+    #[cfg(not(windows))]
+    {
+        read_file_bytes(&path)
+    }
+}
+
+#[cfg(any(windows, test))]
+fn with_windows_local_path<T>(
+    path: &Path,
+    action: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    validate_windows_image_path(path)?;
+    action(path)
+}
+
+#[cfg(any(windows, test))]
+fn validate_windows_image_path(path: &Path) -> Result<(), String> {
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let local_verbatim_drive = bytes.starts_with(br"\\?\")
+        && matches!(bytes.get(4..7), Some([drive, b':', b'\\']) if drive.is_ascii_alphabetic());
+    let double_separator = matches!(bytes, [b'\\' | b'/', b'\\' | b'/', ..]);
+    let nt_namespace = matches!(bytes, [b'\\' | b'/', b'?', b'?', b'\\' | b'/', ..]);
+    if (double_separator && !local_verbatim_drive) || nt_namespace {
+        return Err("network and device paths are not supported for images".to_string());
+    }
+    Ok(())
+}
+
+fn read_file_bytes(path: &Path) -> Result<Vec<u8>, String> {
     let file =
         std::fs::File::open(path).map_err(|error| format!("failed to read image file: {error}"))?;
     let file_size = file
@@ -308,6 +344,126 @@ mod local_file_tests {
     const SMALL_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
     #[test]
+    fn windows_network_paths_are_rejected_before_file_access() {
+        for path in [
+            r"\\server.invalid\share\image.png",
+            "//server.invalid/share/image.png",
+            r"\/server.invalid\share\image.png",
+            r"/\server.invalid/share/image.png",
+            r"\\?\UNC\server.invalid\share\image.png",
+            r"\\?\unc\server.invalid\share\image.png",
+            r"\\.\UNC\server.invalid\share\image.png",
+            r"\\.\pipe\image",
+            r"\\?\GLOBALROOT\Device\Mup\server.invalid\share\image.png",
+            r"\??\UNC\server.invalid\share\image.png",
+            r"/??\UNC\server.invalid\share\image.png",
+            r"\??/UNC/server.invalid/share/image.png",
+            r"\\?\C:relative.png",
+            r"\\?",
+            r"\\?\",
+            r"\\?\C",
+            r"\\?\C:",
+            r"\\?\C:/image.png",
+            r"//?/C:/image.png",
+            r"\\?\1:\image.png",
+            "//",
+            r"\\",
+        ] {
+            let mut accessed = false;
+            let result = with_windows_local_path(Path::new(path), |_| {
+                accessed = true;
+                Ok(())
+            });
+            assert!(!accessed, "filesystem action reached for {path:?}");
+            assert_eq!(
+                result.unwrap_err(),
+                "network and device paths are not supported for images"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_local_paths_reach_file_access_unchanged() {
+        for path in [
+            r"C:\images\picture.png",
+            "C:/images/picture.png",
+            r"C:picture.png",
+            r"\images\picture.png",
+            "picture.png",
+            r"images\picture.png",
+            r"\\?\C:\images\picture.png",
+            r"\\?\c:\images\画像.png",
+            r"\\?\C:\",
+            "",
+            r"\",
+            "/",
+        ] {
+            let observed =
+                with_windows_local_path(Path::new(path), |resolved| Ok(resolved.to_path_buf()))
+                    .unwrap();
+            assert_eq!(observed, Path::new(path));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_resolved_and_file_url_network_paths_are_rejected_without_io() {
+        let mut paths = Vec::new();
+        for cwd in [r"\\server.invalid\share", r"\\?\UNC\server.invalid\share"] {
+            for source in ["image.png", r"\image.png", "/image.png"] {
+                paths.push(resolve_path(source, Some(Path::new(cwd))));
+            }
+        }
+        paths.push(
+            url::Url::parse("file://server.invalid/share/image.png")
+                .unwrap()
+                .to_file_path()
+                .unwrap(),
+        );
+        for source in [
+            "file:////server.invalid/share/image.png",
+            "file:///%5C%5Cserver.invalid%5Cshare%5Cimage.png",
+        ] {
+            if let Ok(path) = url::Url::parse(source).unwrap().to_file_path() {
+                paths.push(path);
+            }
+        }
+
+        for source in [
+            r"\??\UNC\server.invalid\share\image.png",
+            r"\/server.invalid\share",
+        ] {
+            assert!(validate_windows_image_path(Path::new(source)).is_err());
+        }
+        for source in [
+            "file:///C:/images/picture.png",
+            "file://localhost/C:/images/picture.png",
+        ] {
+            let path = url::Url::parse(source).unwrap().to_file_path().unwrap();
+            assert!(with_windows_local_path(&path, |_| Ok(())).is_ok());
+        }
+        for path in paths {
+            let result: Result<(), String> = with_windows_local_path(&path, |_| {
+                panic!("filesystem action reached for {path:?}")
+            });
+            assert!(result.is_err());
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn posix_backslash_filename_is_still_a_local_image() {
+        let temp = tempfile::tempdir().unwrap();
+        let name = r"\\server.invalid\share\image.png";
+        let relative_path = Path::new(name);
+        assert!(relative_path.is_relative());
+        let png = base64::prelude::BASE64_STANDARD.decode(SMALL_PNG).unwrap();
+        std::fs::write(temp.path().join(relative_path), &png).unwrap();
+        let bytes = load_image_bytes(name, Some(temp.path())).await.unwrap();
+        assert_eq!(bytes, png);
+    }
+
+    #[test]
     fn bounded_reader_accepts_limit_and_detects_extra_byte() {
         assert_eq!(read_bounded(&b"12345678"[..], 8).unwrap(), b"12345678");
         assert_eq!(read_bounded(&b"123456789"[..], 8).unwrap(), b"123456789");
@@ -361,6 +517,30 @@ mod local_file_tests {
                 png
             );
         }
+    }
+
+    #[tokio::test]
+    async fn relative_local_path_still_supports_cropping() {
+        let temp = tempfile::tempdir().unwrap();
+        let png = base64::prelude::BASE64_STANDARD.decode(SMALL_PNG).unwrap();
+        std::fs::write(temp.path().join("small.png"), png).unwrap();
+        let loaded = load_image(
+            &ImageReadParams {
+                source: "small.png".to_string(),
+                crop: Some(CropParams {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                }),
+            },
+            Some(temp.path()),
+        )
+        .await
+        .unwrap();
+        assert!(loaded.cropped);
+        assert_eq!((loaded.width, loaded.height), (1, 1));
+        assert_eq!(loaded.mime_type, "image/png");
     }
 
     #[tokio::test]
