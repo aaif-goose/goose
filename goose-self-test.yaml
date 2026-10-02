@@ -8,6 +8,7 @@ activities:
   - Initialize test workspace and logging infrastructure
   - Test file operations (create, read, update, delete, undo)
   - Validate shell command execution and error handling
+  - Validate current-session identification through /status
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
   - Analyze code structure and parsing capabilities
@@ -77,6 +78,9 @@ instructions: |
   - Shell command execution
   - Code analysis capabilities
   - Error handling and recovery
+  - From a source checkout, run `cargo test -p goose --features rustls-tls --test status_command`.
+    Verify that /status reports the requested session ID in both agent loops and CLI/desktop configurations,
+    preserves the other status fields, remains user-only, and does not call model inference.
 
   ### Phase 2: Extension System Testing
   Test dynamic extension management:

@@ -60,7 +60,7 @@ static COMMANDS: &[CommandDef] = &[
     },
     CommandDef {
         name: "status",
-        description: "Show session status: model, provider, mode, and token usage",
+        description: "Show session status: session ID, model, provider, mode, and token usage",
     },
 ];
 
@@ -298,11 +298,13 @@ impl Agent {
 
         let text = format!(
             "**Session status**\n\n\
+             - Session ID: `{}`\n\
              - Model: {}\n\
              - Provider: {}\n\
              - Mode: {}\n\
              - Tokens (lifetime): {}\n\
              - Context: {} / {} tokens ({})",
+            session_id,
             model_config.model_name,
             provider.get_name(),
             goose_mode,
