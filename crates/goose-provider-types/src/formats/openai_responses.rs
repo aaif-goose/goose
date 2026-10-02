@@ -11,7 +11,7 @@ use crate::formats::openai::{
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
-use crate::model::ModelConfig;
+use crate::model::{is_goose_internal_request_param, ModelConfig};
 use crate::utils::{sanitize_unicode_tags, strip_unicode_tags};
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -607,21 +607,6 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message], support
     }
 }
 
-fn is_gpt_5_6_model(model_name: &str) -> bool {
-    let normalized = model_name.to_ascii_lowercase();
-    ["gpt-5.6", "gpt-5-6"].iter().any(|needle| {
-        normalized.match_indices(needle).any(|(start, matched)| {
-            let before = start
-                .checked_sub(1)
-                .and_then(|index| normalized.as_bytes().get(index));
-            let after = normalized.as_bytes().get(start + matched.len());
-
-            before.is_none_or(|byte| matches!(byte, b'-' | b'/'))
-                && after.is_none_or(|byte| matches!(byte, b'-' | b'/'))
-        })
-    })
-}
-
 pub fn create_responses_request(
     model_config: &ModelConfig,
     system: &str,
@@ -670,7 +655,9 @@ pub fn create_responses_request_for_model(
     // All models routed here are responses-capable; temperature is rejected
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
-    let is_reasoning_model = is_openai_responses_model(&model_name);
+    let is_reasoning_model = model_config
+        .reasoning
+        .unwrap_or_else(|| is_openai_responses_model(&model_name));
     let reasoning_effort = if is_reasoning_model {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {
@@ -690,6 +677,9 @@ pub fn create_responses_request_for_model(
     } else {
         None
     };
+    let reasoning_effort = model_config
+        .request_param::<String>("reasoning_effort")
+        .or(reasoning_effort);
 
     let store = model_config.request_param::<bool>("store").unwrap_or(false);
     let reasoning_mode = model_config
@@ -705,11 +695,6 @@ pub fn create_responses_request_for_model(
             }
         })
         .transpose()?;
-    if reasoning_mode.is_some() && !is_gpt_5_6_model(&model_name) {
-        return Err(anyhow!(
-            "reasoning_mode is only supported for GPT-5.6 models"
-        ));
-    }
     let mut payload = json!({
         "model": wire_model_name,
         "input": input_items,
@@ -760,11 +745,80 @@ pub fn create_responses_request_for_model(
         }
     }
 
-    if let Some(max_tokens) = model_config.max_tokens {
-        payload
-            .as_object_mut()
-            .unwrap()
-            .insert("max_output_tokens".to_string(), json!(max_tokens));
+    let params = model_config.request_params.as_ref();
+    let chat_token_limit = ["max_completion_tokens", "max_tokens"]
+        .into_iter()
+        .filter_map(|key| {
+            params
+                .and_then(|params| params.get(key))
+                .map(|value| (key, value))
+        })
+        .map(|(key, value)| {
+            let limit = value
+                .as_i64()
+                .filter(|limit| *limit > 0 && *limit <= i32::MAX as i64)
+                .ok_or_else(|| anyhow!("{key} must be a positive integer"))?;
+            Ok(limit as i32)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    if chat_token_limit.len() == 2 && chat_token_limit[0] != chat_token_limit[1] {
+        return Err(anyhow!(
+            "max_completion_tokens and max_tokens must agree for Responses API"
+        ));
+    }
+    if let Some(max_tokens) = model_config
+        .max_tokens
+        .or_else(|| chat_token_limit.first().copied())
+    {
+        payload["max_output_tokens"] = json!(max_tokens);
+    }
+
+    if let Some(params) = params {
+        if let Some(response_format) = params.get("response_format") {
+            let format = match response_format.get("type").and_then(Value::as_str) {
+                Some("json_object" | "text") => response_format.clone(),
+                Some("json_schema") => {
+                    let schema = response_format
+                        .get("json_schema")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| anyhow!("response_format.json_schema must be an object"))?;
+                    let mut format = schema.clone();
+                    format.insert("type".to_string(), json!("json_schema"));
+                    Value::Object(format)
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "Unsupported response_format for Responses API: {response_format}"
+                    ))
+                }
+            };
+            payload["text"] = json!({ "format": format });
+        }
+        let object = payload.as_object_mut().unwrap();
+        for (key, value) in params {
+            if is_goose_internal_request_param(key) {
+                continue;
+            }
+            if matches!(
+                key.as_str(),
+                "model"
+                    | "input"
+                    | "messages"
+                    | "tools"
+                    | "stream"
+                    | "stream_options"
+                    | "reasoning"
+                    | "reasoning_mode"
+                    | "reasoning_effort"
+                    | "max_tokens"
+                    | "max_completion_tokens"
+                    | "response_format"
+                    | "text"
+            ) {
+                continue;
+            }
+            object.insert(key.clone(), value.clone());
+        }
     }
 
     Ok(payload)
@@ -2038,7 +2092,7 @@ mod tests {
         let result = create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
 
         assert_eq!(result["model"], "gpt-5.6-sol");
-        assert_eq!(result["reasoning"]["effort"], "xhigh");
+        assert_eq!(result["reasoning"]["effort"], "max");
         assert_eq!(result["reasoning"]["summary"], "auto");
     }
 
@@ -2085,18 +2139,28 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_request_rejects_reasoning_mode_for_non_gpt_5_6_model() {
-        for model_name in ["gpt-5.5", "gpt-5.60", "notgpt-5.6", "gpt-5.6ish"] {
+    fn test_responses_request_forwards_reasoning_mode_without_model_name_gate() {
+        for model_name in ["gpt-5.5", "gpt-6-astra", "future-reasoner"] {
             let model_config = ModelConfig::new(model_name).with_merged_request_params(
                 std::collections::HashMap::from([("reasoning_mode".to_string(), json!("pro"))]),
             );
 
-            let error = create_responses_request(&model_config, "You are helpful.", &[], &[])
-                .expect_err("reasoning mode should be gated to GPT-5.6 models");
+            let request = create_responses_request(&model_config, "You are helpful.", &[], &[])
+                .expect("the API decides which models support reasoning.mode");
+            assert_eq!(request["reasoning"]["mode"], "pro", "{model_name}");
+            assert!(request["reasoning"].get("effort").is_none());
+        }
+    }
 
-            assert!(error
-                .to_string()
-                .contains("reasoning_mode is only supported for GPT-5.6 models"));
+    #[test]
+    fn test_responses_request_rejects_invalid_reasoning_mode_value() {
+        for value in ["fast", "", "pro "] {
+            let model_config = ModelConfig::new("gpt-6-astra").with_merged_request_params(
+                std::collections::HashMap::from([("reasoning_mode".to_string(), json!(value))]),
+            );
+            let error = create_responses_request(&model_config, "You are helpful.", &[], &[])
+                .expect_err("only standard or pro are valid reasoning modes");
+            assert!(error.to_string().contains("Invalid reasoning_mode"));
         }
     }
 
@@ -2150,6 +2214,23 @@ mod tests {
             result["max_output_tokens"],
             model_config.max_tokens.unwrap()
         );
+    }
+
+    #[test]
+    fn explicit_reasoning_metadata_overrides_model_name_in_responses() {
+        let mut config = ModelConfig::new("future-reasoner")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High);
+        config.reasoning = Some(true);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"]["effort"], "high");
+        assert!(payload.get("temperature").is_none());
+
+        config.model_name = "gpt-5.4".to_string();
+        config.reasoning = Some(false);
+        config.temperature = Some(0.5);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert!(payload.get("reasoning").is_none());
+        assert_eq!(payload["temperature"], 0.5);
     }
 
     #[test]

@@ -532,12 +532,6 @@ pub fn create_request_for_provider(
     tools: &[Tool],
     image_format: &ImageFormat,
 ) -> anyhow::Result<Value, Error> {
-    if model_config.model_name.starts_with("o1-mini") {
-        return Err(anyhow!(
-            "o1-mini model is not currently supported since goose uses tool calling and o1-mini does not support it. Please use o1 or o3 models instead."
-        ));
-    }
-
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
     let is_openai_reasoning_model = is_openai_responses_model(&model_name);
     let reasoning_effort = if is_openai_reasoning_model {
@@ -1434,7 +1428,7 @@ mod tests {
             request_headers: None,
         };
         let request = create_request(&model_config, "system", &[], &[], &ImageFormat::OpenAi)?;
-        assert_eq!(request["reasoning_effort"], "high");
+        assert_eq!(request["reasoning_effort"], "xhigh");
         assert!(request.get("thinking_effort").is_none());
         Ok(())
     }

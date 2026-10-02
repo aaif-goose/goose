@@ -127,6 +127,10 @@ pub struct CanonicalModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
 
+    /// Allowed values of the OpenAI-style reasoning effort parameter, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_efforts: Option<Vec<String>>,
+
     /// Request shape to use when enabling thinking/reasoning.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_mode: Option<ThinkingMode>,

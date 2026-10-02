@@ -164912,7 +164912,13 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/gpt-5-mini",
@@ -164943,7 +164949,13 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/gpt-5-nano",
@@ -164974,7 +164986,13 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/gpt-5-pro",
@@ -165004,7 +165022,10 @@
     "limit": {
       "context": 400000,
       "output": 272000
-    }
+    },
+    "reasoning_efforts": [
+      "high"
+    ]
   },
   {
     "id": "openai/gpt-5.1",
@@ -165035,7 +165056,13 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/gpt-5.2",
@@ -165066,7 +165093,14 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.2-chat",
@@ -165127,7 +165161,12 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.3-chat",
@@ -165190,7 +165229,14 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.3-codex-spark",
@@ -165222,7 +165268,14 @@
     "limit": {
       "context": 128000,
       "output": 32000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.4",
@@ -165254,7 +165307,14 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.4-mini",
@@ -165285,7 +165345,14 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.4-nano",
@@ -165316,7 +165383,14 @@
     "limit": {
       "context": 400000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.4-pro",
@@ -165346,7 +165420,12 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.5",
@@ -165378,7 +165457,14 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.5-pro",
@@ -165409,7 +165495,12 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/gpt-5.6",
@@ -165442,7 +165533,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-5.6-luna",
@@ -165475,7 +165574,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-5.6-sol",
@@ -165508,7 +165615,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-5.6-terra",
@@ -165541,7 +165656,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-6-astra",
@@ -165574,7 +165697,14 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-6-luna",
@@ -165607,7 +165737,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-6-sol",
@@ -165640,7 +165778,15 @@
     "limit": {
       "context": 1050000,
       "output": 128000
-    }
+    },
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
     "id": "openai/gpt-6.1-sol",
@@ -165881,7 +166027,14 @@
     "limit": {
       "context": 128000,
       "output": 32000
-    }
+    },
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
   },
   {
     "id": "openai/o1",
@@ -165913,7 +166066,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/o1-pro",
@@ -165943,7 +166101,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/o3",
@@ -165975,7 +166138,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/o3-mini",
@@ -166005,7 +166173,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/o3-pro",
@@ -166035,7 +166208,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/o4-mini",
@@ -166066,7 +166244,12 @@
     "limit": {
       "context": 200000,
       "output": 100000
-    }
+    },
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ]
   },
   {
     "id": "openai/text-embedding-3-large",
