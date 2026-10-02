@@ -281,17 +281,16 @@ async fn handle_first_time_setup(config: &Config) -> anyhow::Result<()> {
     }
 
     if config.exists() {
-        configure_first_time_goose_mode(config, std::io::stdin().is_terminal(), select_goose_mode)?;
+        configure_first_time_goose_mode(config, select_goose_mode)?;
     }
     Ok(())
 }
 
 fn configure_first_time_goose_mode(
     config: &Config,
-    is_tty: bool,
     select: impl FnOnce() -> anyhow::Result<GooseMode>,
 ) -> anyhow::Result<()> {
-    if !is_tty || !matches!(config.get_goose_mode(), Err(ConfigError::NotFound(_))) {
+    if !matches!(config.get_goose_mode(), Err(ConfigError::NotFound(_))) {
         return Ok(());
     }
 
@@ -2454,14 +2453,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 
-        let mut prompted = false;
-        configure_first_time_goose_mode(&config, true, || {
-            prompted = true;
-            Ok(GooseMode::Approve)
-        })
-        .unwrap();
+        configure_first_time_goose_mode(&config, || Ok(GooseMode::Approve)).unwrap();
 
-        assert!(prompted);
         assert_eq!(
             test_config(&temp_dir).get_goose_mode().unwrap(),
             GooseMode::Approve
@@ -2474,7 +2467,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = test_config(&temp_dir);
 
-        configure_first_time_goose_mode(&config, true, no_prompt).unwrap();
+        configure_first_time_goose_mode(&config, no_prompt).unwrap();
 
         assert!(!temp_dir.path().join("config.yaml").exists());
     }
@@ -2486,23 +2479,9 @@ mod tests {
         let config = test_config(&temp_dir);
         config.set_goose_mode(GooseMode::SmartApprove).unwrap();
 
-        configure_first_time_goose_mode(&config, true, no_prompt).unwrap();
+        configure_first_time_goose_mode(&config, no_prompt).unwrap();
 
         assert_eq!(config.get_goose_mode().unwrap(), GooseMode::SmartApprove);
-    }
-
-    #[test]
-    fn first_time_goose_mode_skips_without_tty() {
-        let _guard = env_lock::lock_env([("GOOSE_MODE", None::<&str>)]);
-        let temp_dir = TempDir::new().unwrap();
-        let config = test_config(&temp_dir);
-
-        configure_first_time_goose_mode(&config, false, no_prompt).unwrap();
-
-        assert!(matches!(
-            config.get_goose_mode(),
-            Err(ConfigError::NotFound(_))
-        ));
     }
 
     #[test]
