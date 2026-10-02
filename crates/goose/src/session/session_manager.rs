@@ -486,6 +486,16 @@ impl SessionManager {
             .await
     }
 
+    pub(crate) async fn cancel_foreground_subagents(
+        &self,
+        parent_id: &str,
+        note: fn(&[String]) -> Message,
+    ) -> Result<()> {
+        self.storage
+            .cancel_foreground_subagents(parent_id, note)
+            .await
+    }
+
     pub async fn replace_conversation(&self, id: &str, conversation: &Conversation) -> Result<()> {
         self.storage.replace_conversation(id, conversation).await
     }
@@ -966,12 +976,18 @@ async fn insert_usage_ledger_row(
 
 const PENDING_FOREGROUND_CHILD: &str =
     "json_extract(s.parent_delegation, '$.execution_mode') = 'foreground' \
-    AND json_extract(s.parent_delegation, '$.result_delivered_to_parent') = 0 \
+    AND json_extract(s.parent_delegation, '$.status') = 'pending' \
     AND EXISTS (
         SELECT 1 FROM messages m
         WHERE m.session_id = s.parent_session_id
           AND m.message_id = json_extract(s.parent_delegation, '$.parent_delegate_message_id')
     )";
+
+fn pending_foreground_children_query() -> String {
+    format!(
+        "SELECT s.id FROM sessions s WHERE s.parent_session_id = ? AND s.session_type = ? AND {PENDING_FOREGROUND_CHILD} ORDER BY s.created_at, s.id"
+    )
+}
 
 impl SessionStorage {
     fn create_pool(path: &Path) -> Pool<Sqlite> {
@@ -2033,7 +2049,7 @@ impl SessionStorage {
                 serde_json::json!({
                     "execution_mode": "foreground",
                     "parent_delegate_message_id": message_id,
-                    "result_delivered_to_parent": false,
+                    "status": "pending",
                 })
                 .to_string(),
             )
@@ -2052,14 +2068,13 @@ impl SessionStorage {
 
     async fn pending_foreground_subagents(&self, parent_id: &str) -> Result<Vec<String>> {
         let pool = self.pool().await?;
-        let query = format!(
-            "SELECT s.id FROM sessions s WHERE s.parent_session_id = ? AND s.session_type = ? AND {PENDING_FOREGROUND_CHILD} ORDER BY s.created_at, s.id"
-        );
-        Ok(sqlx::query_scalar(AssertSqlSafe(query))
-            .bind(parent_id)
-            .bind(SessionType::SubAgent.to_string())
-            .fetch_all(pool)
-            .await?)
+        Ok(
+            sqlx::query_scalar(AssertSqlSafe(pending_foreground_children_query()))
+                .bind(parent_id)
+                .bind(SessionType::SubAgent.to_string())
+                .fetch_all(pool)
+                .await?,
+        )
     }
 
     async fn deliver_foreground_subagent(
@@ -2084,9 +2099,36 @@ impl SessionStorage {
         }
         Self::insert_message(&mut tx, parent_id, message).await?;
         sqlx::query(
-            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.result_delivered_to_parent', json('true')) WHERE id = ?",
+            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.status', 'result_delivered') WHERE id = ?",
         )
         .bind(child_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn cancel_foreground_subagents(
+        &self,
+        parent_id: &str,
+        note: fn(&[String]) -> Message,
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let child_ids: Vec<String> =
+            sqlx::query_scalar(AssertSqlSafe(pending_foreground_children_query()))
+                .bind(parent_id)
+                .bind(SessionType::SubAgent.to_string())
+                .fetch_all(&mut *tx)
+                .await?;
+        if child_ids.is_empty() {
+            return Ok(());
+        }
+        Self::insert_message(&mut tx, parent_id, &note(&child_ids)).await?;
+        sqlx::query(
+            "UPDATE sessions SET parent_delegation = json_set(parent_delegation, '$.status', 'cancelled') WHERE id IN (SELECT value FROM json_each(?))",
+        )
+        .bind(serde_json::to_string(&child_ids)?)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -2991,6 +3033,83 @@ mod tests {
 
     const NUM_CONCURRENT_SESSIONS: i32 = 10;
     const GENERATED_SESSION_NAME: &str = "Generated session name";
+
+    #[tokio::test]
+    async fn cancelling_foreground_subagents_records_status_and_one_note() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await?;
+        let mut child_ids = Vec::new();
+        for _ in 0..2 {
+            let child = manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "child".to_string(),
+                    SessionType::SubAgent,
+                    GooseMode::Auto,
+                )
+                .await?;
+            manager
+                .update(&child.id)
+                .parent_session_id(Some(parent.id.clone()))
+                .apply()
+                .await?;
+            child_ids.push(child.id);
+        }
+        manager
+            .save_foreground_delegation_message(
+                &parent.id,
+                &Message::user().with_text("scheduled"),
+                &child_ids,
+            )
+            .await?;
+        manager
+            .deliver_foreground_subagent(
+                &parent.id,
+                &Message::user().with_text("delivered"),
+                &child_ids[0],
+            )
+            .await?;
+
+        let note = |cancelled: &[String]| Message::user().with_text(cancelled.join(","));
+        manager
+            .cancel_foreground_subagents(&parent.id, note)
+            .await?;
+        manager
+            .cancel_foreground_subagents(&parent.id, note)
+            .await?;
+
+        let pool = manager.storage.pool().await?;
+        let mut statuses = Vec::new();
+        for child_id in &child_ids {
+            let status: String = sqlx::query_scalar(
+                "SELECT json_extract(parent_delegation, '$.status') FROM sessions WHERE id = ?",
+            )
+            .bind(child_id)
+            .fetch_one(pool)
+            .await?;
+            statuses.push(status);
+        }
+        assert_eq!(statuses, ["result_delivered", "cancelled"]);
+        let texts: Vec<String> = manager
+            .get_session(&parent.id, true)
+            .await?
+            .conversation
+            .unwrap()
+            .messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(texts, ["scheduled", "delivered", child_ids[1].as_str()]);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn foreground_delivery_requires_parent_delegate_message_and_is_atomic() -> Result<()> {

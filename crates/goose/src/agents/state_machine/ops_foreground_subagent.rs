@@ -347,6 +347,7 @@ mod tests {
 
     use super::*;
     use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+    use crate::agents::state_machine::subagent_stop::cancellation_note;
     use crate::config::GooseMode;
     use goose_agent::machine::EffectHandler;
 
@@ -683,6 +684,54 @@ mod tests {
                 .pending_foreground_subagents(&fixture.parent_id)
                 .await?,
             vec![fixture.child_id.clone()]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancelled_children_do_not_run_on_next_turn() -> Result<()> {
+        let fixture = fixture().await?;
+        let cancel = CancellationToken::new();
+        let (tx, _rx) = mpsc::channel(16);
+        let emit = Emitter::new(tx, cancel.clone());
+        fixture
+            .manager
+            .cancel_foreground_subagents(&fixture.parent_id, cancellation_note)
+            .await?;
+
+        let messages = fixture
+            .manager
+            .get_session(&fixture.parent_id, true)
+            .await?
+            .conversation
+            .unwrap();
+        let hidden: Vec<String> = messages
+            .messages()
+            .iter()
+            .filter(|message| !message.is_user_visible())
+            .inspect(|message| assert!(message.is_agent_visible()))
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(
+            hidden,
+            vec![format!(
+                "Subagent {} was cancelled before it finished and will not run again.",
+                fixture.child_id
+            )]
+        );
+
+        let next_turn = ForegroundSubagentOperation::new(fixture.manager.clone(), false, cancel);
+        let (_, result) = run_step(&next_turn, &fixture, &emit).await?;
+        assert!(matches!(result, OperationResult::NotApplicable));
+
+        let redelegated_child_id =
+            add_scheduled_child(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
+        assert_eq!(
+            fixture
+                .manager
+                .pending_foreground_subagents(&fixture.parent_id)
+                .await?,
+            vec![redelegated_child_id]
         );
         Ok(())
     }

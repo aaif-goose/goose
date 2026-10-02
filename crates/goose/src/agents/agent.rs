@@ -33,8 +33,8 @@ use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    persist_tool_confirmation_decision, run_goose, BangShellOperation, CancelSubagentsOnStop,
+    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
@@ -1959,7 +1959,12 @@ impl Agent {
         turn_guard: ActiveTurnGuard,
         initial_stream: Option<BoxStream<'a, Result<AgentEvent>>>,
     ) -> BoxStream<'a, Result<AgentEvent>> {
-        Box::pin(async_stream::try_stream! {
+        let mut cancel_subagents_on_stop = CancelSubagentsOnStop::new(
+            self.config.session_manager.clone(),
+            session_config.id.clone(),
+            cancel.clone(),
+        );
+        let turn = async_stream::try_stream! {
             let mut stream = initial_stream;
             loop {
                 if let Some(active_stream) = stream.as_mut() {
@@ -1994,7 +1999,12 @@ impl Agent {
                     .await?,
                 );
             }
-        })
+        };
+        Box::pin(turn.inspect(move |event| {
+            if event.is_err() {
+                cancel_subagents_on_stop.record_error();
+            }
+        }))
     }
 
     pub(super) async fn stream_state_machine_session(
