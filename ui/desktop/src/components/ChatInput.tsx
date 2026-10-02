@@ -788,12 +788,30 @@ export default function ChatInput({
     }
   }, [debouncedAutosize, displayValue, textAreaRef]);
 
-  // Set consistent minimum height when displayValue is empty
+  // Collapse the composer as soon as it is empty. Cancelling the pending autosize
+  // first stops a stale measurement (taken while the previous message was still
+  // visible) from re-applying the old height once the input has been cleared.
   useEffect(() => {
     if (textAreaRef.current && displayValue === '') {
+      debouncedAutosize.cancel?.();
       textAreaRef.current.style.height = `${minTextareaHeight}px`;
     }
-  }, [displayValue, textAreaRef, minTextareaHeight]);
+  }, [debouncedAutosize, displayValue, textAreaRef, minTextareaHeight]);
+
+  // Catch-all for the empty composer: an empty textarea must never keep a grown
+  // height, regardless of what re-rendered around it. Re-assert the minimum
+  // whenever the box changes size so a missed reset can never leave it stuck.
+  useEffect(() => {
+    const element = textAreaRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (element.value === '' && parseFloat(element.style.height || '0') !== minTextareaHeight) {
+        element.style.height = `${minTextareaHeight}px`;
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [minTextareaHeight, textAreaRef]);
 
   const handleChange = (evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = evt.target.value;
