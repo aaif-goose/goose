@@ -1689,6 +1689,12 @@ impl Agent {
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
+            if let Some(operation) = super::state_machine::ContextRelevanceOperation::from_config(
+                context_limit,
+                compaction_threshold,
+            ) {
+                operations.push(Arc::new(operation));
+            }
             operations.push(Arc::new(CompactionOperation::new(
                 provider.clone(),
                 model_config.clone(),
