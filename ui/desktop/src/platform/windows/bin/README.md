@@ -6,7 +6,11 @@ This directory contains Windows-specific scripts that are only included during W
 
 ### Node.js Installation
 
-- `npx.cmd` downloads portable Node.js to `%LOCALAPPDATA%\Goose\node` when needed.
+`npx.cmd` uses the first Node.js that fits, in this order:
+
+1. Portable Node.js that Goose already downloaded to `%LOCALAPPDATA%\Goose\node`.
+2. The first `node.exe` on `PATH` that is version 22 or newer and has `npx.cmd` next to it.
+3. Otherwise, it downloads portable Node.js to `%LOCALAPPDATA%\Goose\node`.
 
 ### Windows Binaries
 
