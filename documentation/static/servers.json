@@ -804,6 +804,25 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "weio-site-check",
+    "name": "Weio Site Check",
+    "description": "Check a website's HTTPS certificate and browser warnings, and read the public business facts on its homepage",
+    "url": "https://weio.ai/mcp",
+    "link": "https://github.com/weioai/site-check-mcp",
+    "installation_notes": "This is a hosted remote extension. It works without a key (10 calls a day). An optional paid key from https://weio.ai/services/site-check-api.html can be sent as a Request Header e.g Authorization: Bearer <YOUR_WEIO_API_KEY>.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Optional: Bearer <YOUR_WEIO_API_KEY>. Without it you get 10 free calls a day.",
+        "required": false
+      }
+    ],
+    "type": "streamable-http"
+  }
 
 ]
