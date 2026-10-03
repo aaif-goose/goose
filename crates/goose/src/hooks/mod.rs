@@ -85,6 +85,17 @@ impl HookEvent {
         }
     }
 
+    /// The session lifecycle events. A subagent has no lifecycle of its own to report (#10596).
+    fn is_lifecycle(&self) -> bool {
+        matches!(
+            self,
+            HookEvent::SessionStart
+                | HookEvent::SessionEnd
+                | HookEvent::UserPromptSubmit
+                | HookEvent::Stop
+        )
+    }
+
     fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "PreToolUse" => HookEvent::PreToolUse,
@@ -469,6 +480,13 @@ impl HookManager {
             rules,
             use_login_shell_path,
         }
+    }
+
+    /// The same hooks without the lifecycle events, for a subagent: its tool calls act for the
+    /// session that started it, so that session's `PreToolUse` policy must see and can deny them.
+    pub fn without_lifecycle_events(mut self) -> Self {
+        self.rules.retain(|event, _| !event.is_lifecycle());
+        self
     }
 
     /// Returns true if any rule is registered for `event`.
@@ -1289,6 +1307,27 @@ mod tests {
             stdout: Vec::new(),
             stderr: Vec::new(),
         }
+    }
+
+    #[test]
+    fn subagent_hooks_keep_tool_events_and_drop_lifecycle_events() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rule = serde_json::json!([{ "hooks": [action("true")] }]);
+        let hooks = serde_json::json!({ "hooks": {
+            "PreToolUse": rule, "PostToolUse": rule, "SessionStart": rule, "Stop": rule,
+        }})
+        .to_string();
+        let manager = make_manager(vec![DiscoveredPlugin {
+            name: "p".to_string(),
+            root: write_plugin(tmp.path(), "p", &hooks),
+            scope: PluginScope::User,
+        }])
+        .without_lifecycle_events();
+
+        assert!(manager.has_hooks(HookEvent::PreToolUse));
+        assert!(manager.has_hooks(HookEvent::PostToolUse));
+        assert!(!manager.has_hooks(HookEvent::SessionStart));
+        assert!(!manager.has_hooks(HookEvent::Stop));
     }
 
     #[cfg(unix)]

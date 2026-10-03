@@ -1,6 +1,8 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::subagent_handler::{run_subagent_task, OnMessageCallback, SubagentRunParams};
+use crate::agents::subagent_handler::{
+    run_subagent_task, ApprovalRelay, OnMessageCallback, SubagentRunParams,
+};
 use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
 use crate::agents::AgentConfig;
@@ -611,6 +613,7 @@ impl SummonClient {
         &self,
         task_config: &TaskConfig,
         name: String,
+        goose_mode: GooseMode,
     ) -> Result<crate::session::Session, String> {
         let session = self
             .context
@@ -619,7 +622,7 @@ impl SummonClient {
                 task_config.parent_working_dir.clone(),
                 name,
                 SessionType::SubAgent,
-                GooseMode::Auto,
+                goose_mode,
             )
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;
@@ -1345,6 +1348,7 @@ impl SummonClient {
     async fn handle_delegate(
         &self,
         session_id: &str,
+        tool_call_request_id: Option<String>,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
         notification_emitter: Option<ToolCallNotificationEmitter>,
@@ -1390,14 +1394,13 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to build task config: {}", e))?;
 
-        // Subagents must use Auto until get_agent_messages forwards
-        // ActionRequired messages to the parent. Until then, any mode
-        // that requires approval will hang on the subagent's confirmation_rx.
+        // A subagent acts for the session that started it: the same mode, and its
+        // confirmations go to the owner on this delegate call.
         let mut agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
             None,
-            GooseMode::Auto,
+            session.goose_mode,
             true, // disable session naming for subagents
             crate::agents::GoosePlatform::GooseCli,
         )
@@ -1405,8 +1408,17 @@ impl SummonClient {
         agent_config.is_subagent = true;
 
         let subagent_session = self
-            .create_subagent_session(&task_config, "Delegated task".to_string())
+            .create_subagent_session(
+                &task_config,
+                "Delegated task".to_string(),
+                session.goose_mode,
+            )
             .await?;
+        let approval_relay = tool_call_request_id.map(|tool_call_request_id| ApprovalRelay {
+            session_id: session_id.to_string(),
+            tool_call_request_id,
+            action_required: self.context.session_manager.action_required(),
+        });
 
         let subagent_session_id = subagent_session.id.clone();
 
@@ -1419,6 +1431,7 @@ impl SummonClient {
             cancellation_token: Some(cancellation_token),
             on_message: None,
             notification_tx: None,
+            approval_relay,
         };
         let result = Self::run_subagent_with_notifications(
             Self::notification_sink(notification_emitter),
@@ -2065,14 +2078,13 @@ impl SummonClient {
 
         let description = safe_truncate(&Self::get_task_description(&params), TASK_LABEL_BUDGET);
 
-        // Subagents must use Auto until get_agent_messages forwards
-        // ActionRequired messages to the parent. Until then, any mode
-        // that requires approval will hang on the subagent's confirmation_rx.
+        // The parent's tool call has returned by the time a background subagent asks, so
+        // nobody can answer it: a call that needs approval in the parent's mode is declined.
         let mut agent_config = AgentConfig::new(
             self.context.session_manager.clone(),
             crate::config::permission::PermissionManager::instance(),
             None,
-            GooseMode::Auto,
+            session.goose_mode,
             true, // disable session naming for subagents
             crate::agents::GoosePlatform::GooseCli,
         )
@@ -2080,7 +2092,7 @@ impl SummonClient {
         agent_config.is_subagent = true;
 
         let subagent_session = self
-            .create_subagent_session(&task_config, description.clone())
+            .create_subagent_session(&task_config, description.clone(), session.goose_mode)
             .await?;
 
         let task_id = subagent_session.id.clone();
@@ -2110,6 +2122,7 @@ impl SummonClient {
                 cancellation_token: Some(task_token_clone),
                 on_message: Some(on_message),
                 notification_tx: None,
+                approval_relay: None,
             };
             Self::run_subagent_with_notifications(task_notification_sink, move |notification_tx| {
                 let mut params = params;
@@ -2200,6 +2213,7 @@ impl McpClientTrait for SummonClient {
                 match self
                     .handle_delegate(
                         session_id,
+                        ctx.tool_call_request_id.clone(),
                         arguments,
                         cancellation_token,
                         ctx.notification_emitter().cloned(),

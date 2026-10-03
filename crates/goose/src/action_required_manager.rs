@@ -8,7 +8,9 @@ use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::agents::tool_confirmation_router::ToolConfirmationRouter;
 use crate::conversation::message::{Message, MessageContent};
+use crate::permission::PermissionConfirmation;
 
 const ACTION_REQUIRED_STREAM_CAPACITY: usize = 8;
 
@@ -49,6 +51,7 @@ impl PendingResponseClaim {
 pub(crate) struct ActionRequiredManager {
     pending: Arc<RwLock<HashMap<String, Arc<Mutex<PendingRequest>>>>>,
     action_required_senders: Mutex<HashMap<(String, String), mpsc::Sender<Message>>>,
+    relayed_tool_confirmations: ToolConfirmationRouter,
 }
 
 impl ActionRequiredManager {
@@ -56,7 +59,52 @@ impl ActionRequiredManager {
         Self {
             pending: Arc::new(RwLock::new(HashMap::new())),
             action_required_senders: Mutex::new(HashMap::new()),
+            relayed_tool_confirmations: ToolConfirmationRouter::new(),
         }
+    }
+
+    /// Shows `message`, a subagent's tool confirmation, on the parent's running tool call, the
+    /// way the parent's own confirmations are shown, and waits for the owner's answer, which
+    /// [`Self::deliver_tool_confirmation`] brings back.
+    pub(crate) async fn relay_tool_confirmation(
+        &self,
+        session_id: &str,
+        tool_call_request_id: &str,
+        request_id: &str,
+        message: Message,
+    ) -> Result<PermissionConfirmation> {
+        let sender = self
+            .action_required_senders
+            .lock()
+            .await
+            .get(&(session_id.to_string(), tool_call_request_id.to_string()))
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Tool call request not found for confirmation: {tool_call_request_id}"
+                )
+            })?;
+        let answer = self
+            .relayed_tool_confirmations
+            .register(session_id.to_string(), request_id.to_string())
+            .await;
+        sender.send(message).await.map_err(|_| {
+            anyhow::anyhow!("Tool call action-required stream closed: {tool_call_request_id}")
+        })?;
+        answer
+            .await
+            .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {request_id}"))
+    }
+
+    pub(crate) async fn deliver_tool_confirmation(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        confirmation: PermissionConfirmation,
+    ) -> bool {
+        self.relayed_tool_confirmations
+            .deliver(session_id, request_id, confirmation)
+            .await
     }
 
     pub(crate) async fn request_and_wait(

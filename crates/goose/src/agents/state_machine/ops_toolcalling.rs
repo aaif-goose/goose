@@ -16,7 +16,8 @@ use crate::agents::state_machine::{
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::tool_execution::{
-    tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
+    is_tool_confirmation, tool_stream, ToolCallResult, ToolStreamItem,
+    CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
 };
 use crate::agents::AgentEvent;
 use crate::config::GooseMode;
@@ -988,7 +989,9 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                         }
                         ToolStreamItem::ActionRequired(msg) => {
                             let msg = emit.message(msg).await;
-                            effects.push(msg.into());
+                            if !is_tool_confirmation(&msg) {
+                                effects.push(msg.into());
+                            }
                         }
                     }
                 },

@@ -1317,3 +1317,173 @@ fn test_shell_terminal_false() {
 fn test_shell_terminal_true() {
     run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
 }
+
+fn openai_stream(delta: serde_json::Value, finish_reason: &str) -> &'static str {
+    let chunk = |delta: serde_json::Value, finish_reason: Option<&str>| {
+        serde_json::json!({
+            "id": "chatcmpl-subagent",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "gpt-5-nano",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        })
+    };
+    let body = format!(
+        "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+        chunk(delta, None),
+        chunk(serde_json::json!({}), Some(finish_reason)),
+    );
+    Box::leak(body.into_boxed_str())
+}
+
+fn openai_tool_call(call_id: &str, name: &str, arguments: serde_json::Value) -> &'static str {
+    openai_stream(
+        serde_json::json!({"role": "assistant", "content": null, "tool_calls": [{
+            "index": 0,
+            "id": call_id,
+            "type": "function",
+            "function": {"name": name, "arguments": arguments.to_string()},
+        }]}),
+        "tool_calls",
+    )
+}
+
+fn openai_text(text: &str) -> &'static str {
+    openai_stream(
+        serde_json::json!({"role": "assistant", "content": text}),
+        "stop",
+    )
+}
+
+/// Removes the hook plugin from the shared plugin directory when the test ends, so no other
+/// test in this process loads it.
+struct PluginGuard(std::path::PathBuf);
+
+impl Drop for PluginGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A subagent started with `delegate` acts for the session that started it, so its tool calls
+/// must meet the same approval and the same `PreToolUse` hooks: the owner is asked on the
+/// parent's ACP session, and the parent's hook sees and can deny the call. A subagent that ran
+/// in `auto` with no hooks ran the shell command unasked and past the hook (aaif-goose/goose#11778,
+/// aaif-goose/goose#12650).
+#[test]
+fn test_subagent_tool_calls_meet_parent_approval_and_hooks_legacy_loop() {
+    run_test(async { assert_subagent_tool_calls_meet_parent_approval_and_hooks(false).await });
+}
+
+#[test]
+fn test_subagent_tool_calls_meet_parent_approval_and_hooks_state_machine() {
+    run_test(async { assert_subagent_tool_calls_meet_parent_approval_and_hooks(true).await });
+}
+
+async fn assert_subagent_tool_calls_meet_parent_approval_and_hooks(state_machine: bool) {
+    let _agent_loop = AgentLoopOverride::new(state_machine);
+    let scratch = tempfile::tempdir().unwrap();
+    let marker = scratch.path().join("subagent-ran-this");
+    let hook_log = scratch.path().join("pre-tool-use.jsonl");
+    let command = format!("touch {}", marker.display());
+
+    let plugin = goose::config::paths::Paths::plugins_dir().join("subagent-gate-test");
+    std::fs::create_dir_all(plugin.join("hooks")).unwrap();
+    let _plugin = PluginGuard(plugin.clone());
+    let deny_touch = format!(
+        r#"#!/bin/sh
+input=$(cat)
+printf '%s\n' "$input" >> '{}'
+case "$input" in
+  *'"command":"touch '*) echo 'denied by policy hook' >&2; exit 2 ;;
+esac
+"#,
+        hook_log.display()
+    );
+    std::fs::write(plugin.join("deny.sh"), deny_touch).unwrap();
+    std::fs::write(
+        plugin.join("hooks").join("hooks.json"),
+        serde_json::json!({"hooks": {"PreToolUse": [{"hooks": [
+            {"type": "command", "command": "sh \"${PLUGIN_ROOT}/deny.sh\""}
+        ]}]}})
+        .to_string(),
+    )
+    .unwrap();
+
+    let prompt = "Delegate the marker task.";
+    let openai = OpenAiFixture::new(
+        vec![
+            (
+                prompt.to_string(),
+                openai_tool_call(
+                    "call_parent_delegate",
+                    "delegate",
+                    serde_json::json!({"instructions": format!("Run {command}")}),
+                ),
+            ),
+            (
+                "Subagent ID:".to_string(),
+                openai_tool_call(
+                    "call_subagent_shell",
+                    "shell",
+                    serde_json::json!({"command": command}),
+                ),
+            ),
+            (
+                "call_subagent_shell".to_string(),
+                openai_text("subagent finished"),
+            ),
+            (
+                "call_parent_delegate".to_string(),
+                openai_text("parent finished"),
+            ),
+        ],
+        AcpServerConnection::expected_session_id(),
+    )
+    .await;
+
+    let config = TestConnectionConfig {
+        builtins: vec!["developer".to_string(), "summon".to_string()],
+        goose_mode: GooseMode::Approve,
+        ..Default::default()
+    };
+    let mut conn = AcpServerConnection::new(config, openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+
+    let output = session
+        .prompt(prompt, PermissionDecision::AllowOnce)
+        .await
+        .unwrap();
+    assert_eq!(output.text, "parent finished");
+
+    let asked: Vec<serde_json::Value> = conn
+        .permission_requests()
+        .iter()
+        .filter(|request| request.session_id == *session.session_id())
+        .filter_map(|request| request.tool_call.fields.raw_input.clone())
+        .collect();
+    let owner_asked = asked
+        .iter()
+        .any(|input| input["command"] == command.as_str());
+    let hook_inputs: Vec<serde_json::Value> = std::fs::read_to_string(&hook_log)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        hook_inputs
+            .iter()
+            .any(|input| input["tool_name"] == "delegate"),
+        "the hook is live: it saw the parent's delegate call; it saw: {hook_inputs:?}"
+    );
+    let hook_saw = hook_inputs
+        .iter()
+        .any(|input| input["tool_input"]["command"] == command.as_str());
+    let command_ran = marker.exists();
+    assert!(
+        owner_asked && hook_saw && !command_ran,
+        "state_machine={state_machine}, subagent shell call: owner asked = {owner_asked}, \
+         PreToolUse hook saw it = {hook_saw}, ran although the hook denies it = {command_ran}\n\
+         asked about: {asked:?}\nhook saw: {hook_inputs:?}"
+    );
+}
