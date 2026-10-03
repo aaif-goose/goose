@@ -770,6 +770,12 @@
               "docs": ""
             },
             {
+              "name": "request_id",
+              "type": "Option<String>",
+              "default": null,
+              "docs": "The model vendor's own id for this call: Anthropic sends `request-id`, OpenAI `x-request-id`."
+            },
+            {
               "name": "provider_metadata_json",
               "type": "Option<String>",
               "default": null,
@@ -912,6 +918,12 @@
               "type": "Option<u64>",
               "default": null,
               "docs": ""
+            },
+            {
+              "name": "request_id",
+              "type": "Option<String>",
+              "default": null,
+              "docs": "Recovered from the message text, the only channel `ProviderError` has for it."
             }
           ],
           "variants": [],

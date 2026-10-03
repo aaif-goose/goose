@@ -15,7 +15,7 @@ use crate::formats::openai_responses::{
     create_responses_request_for_model, get_responses_usage, responses_api_to_message,
     ResponsesApiResponse,
 };
-use crate::http_status::read_json_response;
+use crate::http_status::{extract_request_id, read_json_response};
 use crate::images::ImageFormat;
 use crate::openai_compatible::{
     handle_response_openai_compat, handle_status, stream_openai_compat, stream_responses_compat,
@@ -310,6 +310,7 @@ impl OpenAiProvider {
         if self.supports_streaming {
             stream_responses_compat(response, log)
         } else {
+            let request_id = extract_request_id(response.headers());
             let json: serde_json::Value = read_json_response(response).await?;
             let parsed: ResponsesApiResponse =
                 serde_json::from_value(json.clone()).map_err(|e| {
@@ -322,6 +323,7 @@ impl OpenAiProvider {
             let usage_data = get_responses_usage(&parsed);
             let usage_json = json.get("usage").unwrap_or(&serde_json::Value::Null);
             let mut usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
+            usage.request_id = request_id;
             usage.response_id = Some(parsed.id.clone());
             let finish_reason = json
                 .pointer("/incomplete_details/reason")
@@ -831,6 +833,7 @@ impl Provider for OpenAiProvider {
             if self.supports_streaming {
                 stream_openai_compat(response, log)
             } else {
+                let request_id = extract_request_id(response.headers());
                 let json: serde_json::Value = read_json_response(response).await?;
 
                 let message = response_to_message(&json).map_err(|e| {
@@ -840,6 +843,7 @@ impl Provider for OpenAiProvider {
                 let usage_json = json.get("usage").unwrap_or(&serde_json::Value::Null);
                 let usage_data = get_usage(usage_json);
                 let mut usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
+                usage.request_id = request_id;
                 record_response_metadata(&mut usage, &json);
                 if let Some(cost) = get_cost(usage_json) {
                     usage = usage.with_cost(cost, CostSource::ProviderReported);

@@ -246,8 +246,18 @@ pub fn map_http_error_to_provider_error(
     payload: Option<Value>,
     url: &str,
 ) -> ProviderError {
+    map_http_error(status, payload, url, None)
+}
+
+/// Folds the request id into the message text so every variant carries it without a new field.
+pub fn map_http_error(
+    status: StatusCode,
+    payload: Option<Value>,
+    url: &str,
+    request_id: Option<&str>,
+) -> ProviderError {
     let extract_message = || -> String {
-        payload
+        let message = payload
             .as_ref()
             .and_then(|p| {
                 p.get("error")
@@ -256,7 +266,8 @@ pub fn map_http_error_to_provider_error(
                     .and_then(|m| m.as_str())
                     .map(String::from)
             })
-            .unwrap_or_else(|| payload.as_ref().map(|p| p.to_string()).unwrap_or_default())
+            .unwrap_or_else(|| payload.as_ref().map(|p| p.to_string()).unwrap_or_default());
+        format!("{message}{}", request_id_message_suffix(request_id))
     };
 
     let error = match status {
@@ -372,6 +383,39 @@ async fn read_response_body_with_limit(
     }
 }
 
+/// Provider ids are ~40 chars; the cap stops a huge header value inflating every telemetry row.
+const MAX_REQUEST_ID_LENGTH: usize = 128;
+
+const PROVIDER_ID_LABEL: &str = "provider request id: ";
+
+fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    let value = headers.get(name)?.to_str().ok()?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(value.chars().take(MAX_REQUEST_ID_LENGTH).collect())
+}
+
+pub fn extract_request_id(headers: &HeaderMap) -> Option<String> {
+    header_value(headers, "request-id").or_else(|| header_value(headers, "x-request-id"))
+}
+
+/// Inverse of [`parse_request_id_suffix`] — change these together.
+pub fn request_id_message_suffix(request_id: Option<&str>) -> String {
+    match request_id {
+        Some(id) => format!(" ({PROVIDER_ID_LABEL}{id})"),
+        None => String::new(),
+    }
+}
+
+/// Recovers the id [`request_id_message_suffix`] folded into an error message, which is the only
+/// channel `ProviderError` has for it since every variant carries a plain `String`.
+pub fn parse_request_id_suffix(message: &str) -> Option<String> {
+    let (_, after_open) = message.rsplit_once(" (")?;
+    let inner = after_open.strip_suffix(')')?;
+    inner.strip_prefix(PROVIDER_ID_LABEL).map(str::to_string)
+}
+
 pub async fn read_error_body(response: Response) -> Option<String> {
     read_response_body_with_limit(response, MAX_PROVIDER_JSON_RESPONSE_BYTES)
         .await
@@ -411,7 +455,8 @@ async fn handle_status_with_limit(
             .unwrap_or_default();
         let body = String::from_utf8_lossy(&body);
         let payload = serde_json::from_str::<Value>(&body).ok();
-        let mut err = map_http_error_to_provider_error(status, payload.clone(), &url);
+        let request_id = extract_request_id(&headers);
+        let mut err = map_http_error(status, payload.clone(), &url, request_id.as_deref());
         if let ProviderError::RateLimitExceeded { details, .. } = &err {
             err = ProviderError::RateLimitExceeded {
                 details: details.clone(),
@@ -612,6 +657,130 @@ mod tests {
             error.insert(key.to_string(), value);
         }
         json!({ "error": error })
+    }
+
+    #[tokio::test]
+    async fn error_carries_provider_request_id() {
+        let raw = b"HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\nx-request-id: req_abc123\r\nconnection: close\r\n\r\n{\"error\":{\"message\":\"boom\"}}".to_vec();
+        let response = response_from_raw(raw).await;
+
+        let err = handle_status(response).await.unwrap_err();
+        assert!(
+            err.to_string().contains("req_abc123"),
+            "request id should reach the user on failure, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_keeps_retry_delay_and_request_id() {
+        let raw = b"HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\nretry-after: 17\r\nx-request-id: req_rate\r\nconnection: close\r\n\r\n{\"error\":{\"message\":\"slow down\"}}".to_vec();
+        let response = response_from_raw(raw).await;
+
+        let err = handle_status(response).await.unwrap_err();
+        match &err {
+            ProviderError::RateLimitExceeded {
+                details,
+                retry_delay,
+            } => {
+                assert_eq!(*retry_delay, Some(Duration::from_secs(17)));
+                assert!(details.contains("req_rate"), "got: {details}");
+            }
+            other => panic!("expected rate limit, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn request_id_accepts_anthropic_header_name() {
+        let mut headers = HeaderMap::new();
+        headers.insert("request-id", "req_anthropic".parse().unwrap());
+        assert_eq!(
+            extract_request_id(&headers).as_deref(),
+            Some("req_anthropic")
+        );
+        assert!(extract_request_id(&empty_headers()).is_none());
+    }
+
+    fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
+        use reqwest::header::HeaderName;
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                value.parse().unwrap(),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn vendor_request_id_wins_over_gateway_x_request_id() {
+        let id = extract_request_id(&headers_of(&[
+            ("request-id", "req_011CAnthropic"),
+            ("x-request-id", "d4f1-gateway-uuid"),
+        ]));
+        assert_eq!(id.as_deref(), Some("req_011CAnthropic"));
+    }
+
+    #[test]
+    fn lone_x_request_id_is_treated_as_the_provider_id() {
+        let id = extract_request_id(&headers_of(&[("x-request-id", "req_openai")]));
+        assert_eq!(id.as_deref(), Some("req_openai"));
+    }
+
+    #[test]
+    fn blank_and_oversized_request_ids_are_rejected_and_capped() {
+        assert!(extract_request_id(&headers_of(&[("x-request-id", "   ")])).is_none());
+        assert!(extract_request_id(&empty_headers()).is_none());
+        let long = "a".repeat(MAX_REQUEST_ID_LENGTH + 50);
+        let id = extract_request_id(&headers_of(&[("x-request-id", &long)]));
+        assert_eq!(id.map(|id| id.len()), Some(MAX_REQUEST_ID_LENGTH));
+    }
+
+    #[test]
+    fn message_suffix_round_trips_through_parse_suffix() {
+        let message = format!("boom{}", request_id_message_suffix(Some("req_p")));
+        assert_eq!(parse_request_id_suffix(&message).as_deref(), Some("req_p"));
+
+        let bare = format!("boom{}", request_id_message_suffix(None));
+        assert_eq!(bare, "boom");
+        assert!(parse_request_id_suffix(&bare).is_none());
+    }
+
+    #[test]
+    fn parse_suffix_ignores_unrelated_parentheses() {
+        assert!(parse_request_id_suffix("quota exceeded (try again later)").is_none());
+        assert!(parse_request_id_suffix("plain message").is_none());
+    }
+
+    #[test]
+    fn parse_suffix_handles_multibyte_messages() {
+        let message = format!(
+            "모델 오류 — déjà vu 🚀{}",
+            request_id_message_suffix(Some("req_p"))
+        );
+        assert_eq!(parse_request_id_suffix(&message).as_deref(), Some("req_p"));
+        assert!(parse_request_id_suffix("에러 (재시도)").is_none());
+    }
+
+    #[tokio::test]
+    async fn error_carries_the_vendor_id_not_the_gateways() {
+        let raw = b"HTTP/1.1 500 Internal Server Error\r\ncontent-type: application/json\r\nrequest-id: req_011CVendor\r\nx-request-id: gw-uuid\r\nconnection: close\r\n\r\n{\"error\":{\"message\":\"boom\"}}".to_vec();
+        let err = handle_status(response_from_raw(raw).await)
+            .await
+            .unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("provider request id: req_011CVendor"),
+            "got: {text}"
+        );
+        assert!(
+            !text.contains("gw-uuid"),
+            "gateway id should be dropped: {text}"
+        );
+        assert_eq!(
+            parse_request_id_suffix(&text).as_deref(),
+            Some("req_011CVendor")
+        );
     }
 
     #[test]

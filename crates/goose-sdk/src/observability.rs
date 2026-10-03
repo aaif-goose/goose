@@ -348,6 +348,7 @@ mod tests {
             cache_creation_input_tokens: None,
             reasoning_tokens: None,
             model: "claude-sonnet-4".to_string(),
+            request_id: None,
             provider_metadata_json: None,
             additional_data_json: None,
         }
@@ -462,6 +463,7 @@ mod tests {
             kind: crate::bindings::GooseStreamErrorKind::Generic,
             message: "later read".to_string(),
             retry_after_ms: None,
+            request_id: None,
         });
 
         let events = registered.events();

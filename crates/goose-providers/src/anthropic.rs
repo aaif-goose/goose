@@ -26,6 +26,7 @@ use super::formats::anthropic::{
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
+use crate::http_status::extract_request_id;
 use crate::model::ModelConfig;
 use rmcp::model::Tool;
 
@@ -228,6 +229,8 @@ impl AnthropicProvider {
         .inspect_err(|e| {
             let _ = log.error(e);
         })?;
+        // Must be read before `bytes_stream()` consumes the response.
+        let request_id = extract_request_id(response.headers());
         let stream = response.bytes_stream().map_err(io::Error::other);
         Ok(Box::pin(try_stream! {
             let reader = StreamReader::new(stream);
@@ -235,7 +238,10 @@ impl AnthropicProvider {
             let messages = response_to_streaming_message(framed);
             pin!(messages);
             while let Some(message) = futures::StreamExt::next(&mut messages).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+                let (message, mut usage) = message.map_err(ProviderError::from_stream_error)?;
+                if let Some(usage) = usage.as_mut() {
+                    usage.request_id = request_id.clone();
+                }
                 if let Some(transformations) = usage
                     .as_ref()
                     .and_then(|usage| usage.additional_data.as_ref())
