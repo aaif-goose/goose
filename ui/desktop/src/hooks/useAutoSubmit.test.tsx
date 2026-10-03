@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
-import type { PropsWithChildren } from 'react';
+import { MemoryRouter, useLocation } from 'react-router';
+import { Fragment } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { useAutoSubmit } from './useAutoSubmit';
 import { ChatState } from '../types/chatState';
 import type { UserInput } from '../types/message';
@@ -89,5 +90,48 @@ describe('useAutoSubmit', () => {
     expect(handleSubmit).toHaveBeenCalledTimes(1);
     expect(handleSubmit).toHaveBeenCalledWith(initialMessage);
     expect(dispatchEventSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('resume auto-submit (shouldStartAgent) fires once and is removed from the URL', () => {
+    const handleSubmit = vi.fn();
+    let currentSearch = '';
+    const mount = { key: 0 };
+
+    function LocationProbe(): ReactNode {
+      const { search } = useLocation();
+      currentSearch = search;
+      return null;
+    }
+
+    const wrapper = ({ children }: PropsWithChildren) => (
+      <MemoryRouter initialEntries={['/pair?resumeSessionId=sess-1&shouldStartAgent=true']}>
+        <LocationProbe />
+        <Fragment key={mount.key}>{children}</Fragment>
+      </MemoryRouter>
+    );
+
+    const props = {
+      sessionId: 'sess-1',
+      session: makeSession({ message_count: 5 }),
+      messages: [],
+      chatState: ChatState.Idle,
+      initialMessage: undefined,
+      canAutoSubmit: true,
+      handleSubmit,
+    };
+
+    const { rerender } = renderHook(() => useAutoSubmit(props), { wrapper });
+
+    expect(handleSubmit).toHaveBeenCalledTimes(1);
+    expect(handleSubmit).toHaveBeenCalledWith({ msg: '', images: [] });
+    // The one-shot trigger is consumed: removed from the URL.
+    expect(currentSearch).not.toContain('shouldStartAgent');
+
+    // Simulate navigating to Settings and back: the chat component remounts
+    // (useRef state resets) while the router location persists.
+    mount.key += 1;
+    rerender();
+
+    expect(handleSubmit).toHaveBeenCalledTimes(1);
   });
 });
