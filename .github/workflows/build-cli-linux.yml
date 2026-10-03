@@ -386,10 +386,34 @@ jobs:
             done
           fi
 
+          for package in "out/make/deb/${ELECTRON_ARCH}/"*.deb; do
+            package_name="$(dpkg-deb --field "${package}" Package)"
+            if [ "${package_name}" != "goose" ]; then
+              echo "::error file=${package}::DEB package name must be goose, got ${package_name}"
+              exit 1
+            fi
+
+            if ! dpkg-deb --contents "${package}" | grep -qE ' \./usr/bin/goose -> \.\./lib/goose/resources/bin/goose$'; then
+              echo "::error file=${package}::DEB does not link /usr/bin/goose to the bundled CLI"
+              exit 1
+            fi
+          done
+
           for package in "out/make/rpm/${ELECTRON_ARCH}/"*.rpm; do
             package_contents="$(rpm -qlp "${package}")"
             if grep -qE '^/usr/lib/\.build-id(/|$)' <<< "${package_contents}"; then
               echo "::error file=${package}::RPM contains build-id links"
+              exit 1
+            fi
+
+            package_name="$(rpm -qp --queryformat '%{NAME}' "${package}")"
+            if [ "${package_name}" != "goose" ]; then
+              echo "::error file=${package}::RPM package name must be goose, got ${package_name}"
+              exit 1
+            fi
+
+            if ! grep -qx '/usr/bin/goose' <<< "${package_contents}"; then
+              echo "::error file=${package}::RPM does not provide /usr/bin/goose"
               exit 1
             fi
           done
