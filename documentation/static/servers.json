@@ -804,6 +804,23 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "magnemo",
+    "name": "Magnemo",
+    "description": "Memory with receipts for AI agents — agents stage, you promote; local, zero dependencies.",
+    "command": "uvx magnemo-mcp",
+    "link": "https://github.com/Magnemo-AI/magnemo",
+    "installation_notes": "Set MAGNEMO_VAULT to an absolute folder path; run `magnemo init <folder>` once. Plain markdown you own.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "MAGNEMO_VAULT",
+        "description": "Absolute path to the vault folder",
+        "required": true
+      }
+    ]
+  }
 
 ]
