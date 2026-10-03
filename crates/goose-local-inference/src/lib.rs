@@ -717,6 +717,15 @@ impl LocalInferenceProvider {
     }
 }
 
+impl LocalInferenceProvider {
+    async fn discover_context_limit(&self, model: &str) -> Result<Option<usize>, ProviderError> {
+        Ok(resolve_model_path(model)
+            .await
+            .map_err(|error| ProviderError::ExecutionError(error.to_string()))?
+            .map(|resolved| resolved.context_limit))
+    }
+}
+
 impl ProviderDescriptor for LocalInferenceProvider {
     fn metadata() -> ProviderMetadata
     where
@@ -742,12 +751,13 @@ impl Provider for LocalInferenceProvider {
 
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
         goose_provider_types::context_limit::ContextLimitResolver::new(&self.name)
-            .resolve(model, override_limit, || async {
-                Ok(resolve_model_path(model)
-                    .await
-                    .map_err(|error| ProviderError::ExecutionError(error.to_string()))?
-                    .map(|resolved| resolved.context_limit))
-            })
+            .resolve(model, override_limit, || self.discover_context_limit(model))
+            .await
+    }
+
+    async fn probe_context_limit(&self, model: &str) -> Option<usize> {
+        goose_provider_types::context_limit::ContextLimitResolver::new(&self.name)
+            .resolve_provider_reported(model, None, || self.discover_context_limit(model))
             .await
     }
 
