@@ -175,8 +175,19 @@ pub fn get_model(id: &str) -> Option<&'static WhisperModel> {
     MODELS.iter().find(|m| m.id == id)
 }
 
+fn try_new_metal_device() -> Option<Device> {
+    try_new_metal_device_with(|| Device::new_metal(0))
+}
+
+fn try_new_metal_device_with<F, E>(probe: F) -> Option<Device>
+where
+    F: FnOnce() -> std::result::Result<Device, E> + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(probe).ok()?.ok()
+}
+
 pub fn recommend_model() -> &'static str {
-    let has_gpu_or_metal = Device::new_cuda(0).is_ok() || Device::new_metal(0).is_ok();
+    let has_gpu_or_metal = Device::new_cuda(0).is_ok() || try_new_metal_device().is_some();
 
     if has_gpu_or_metal {
         "small"
@@ -215,7 +226,7 @@ impl WhisperTranscriber {
         let device = if let Ok(device) = Device::new_cuda(0) {
             tracing::debug!("using CUDA device");
             device
-        } else if let Ok(device) = Device::new_metal(0) {
+        } else if let Some(device) = try_new_metal_device() {
             tracing::debug!("using Metal device");
             device
         } else {
@@ -1177,6 +1188,29 @@ mod tests {
     use test_case::test_case;
 
     const TS: u32 = 50364; // A timestamp token for tests
+
+    #[test]
+    fn metal_probe_returns_initialized_device() {
+        let device = try_new_metal_device_with(|| Ok::<_, ()>(Device::Cpu));
+
+        assert!(matches!(device, Some(Device::Cpu)));
+    }
+
+    #[test]
+    fn metal_probe_returns_none_for_error() {
+        let device = try_new_metal_device_with(|| Err::<Device, _>(()));
+
+        assert!(device.is_none());
+    }
+
+    #[test]
+    fn metal_probe_returns_none_for_panic() {
+        let device = try_new_metal_device_with(|| -> std::result::Result<Device, ()> {
+            panic!("Metal initialization failed");
+        });
+
+        assert!(device.is_none());
+    }
 
     #[test]
     fn decodes_pcm_wav() {
