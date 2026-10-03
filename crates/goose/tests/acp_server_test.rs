@@ -1455,6 +1455,12 @@ esac
         .await
         .unwrap();
     assert_eq!(output.text, "parent finished");
+    let announced = session.session_updates().into_iter().any(|update| {
+        matches!(update, SessionUpdate::ToolCall(call)
+            if call.tool_call_id.0.as_ref() == "call_subagent_shell"
+                && call.meta.as_ref().and_then(|meta| meta.get("goose"))
+                    .and_then(|goose| goose["toolCall"]["toolName"].as_str()) == Some("shell"))
+    });
 
     let asked: Vec<serde_json::Value> = conn
         .permission_requests()
@@ -1481,8 +1487,9 @@ esac
         .any(|input| input["tool_input"]["command"] == command.as_str());
     let command_ran = marker.exists();
     assert!(
-        owner_asked && hook_saw && !command_ran,
-        "state_machine={state_machine}, subagent shell call: owner asked = {owner_asked}, \
+        announced && owner_asked && hook_saw && !command_ran,
+        "state_machine={state_machine}, subagent shell call: announced to the parent's client \
+         = {announced}, owner asked = {owner_asked}, \
          PreToolUse hook saw it = {hook_saw}, ran although the hook denies it = {command_ran}\n\
          asked about: {asked:?}\nhook saw: {hook_inputs:?}"
     );

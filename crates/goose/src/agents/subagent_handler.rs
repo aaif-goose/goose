@@ -241,7 +241,9 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
                     for content in &msg.content {
                         if let MessageContent::ActionRequired(action) = content {
                             if let ActionRequiredData::ToolConfirmation { id, .. } = &action.data {
-                                let request = Message::assistant()
+                                let request = tool_request(&conversation, id)
+                                    .into_iter()
+                                    .fold(Message::assistant(), Message::with_content)
                                     .with_content(content.clone())
                                     .user_only();
                                 let permission =
@@ -277,6 +279,16 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
 
         Ok((conversation, final_output))
     })
+}
+
+/// The subagent's tool call a confirmation is about, so the parent's client sees the call (its
+/// tool name and arguments) before it is asked about it.
+fn tool_request(conversation: &Conversation, request_id: &str) -> Option<MessageContent> {
+    conversation
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .find(|content| matches!(content, MessageContent::ToolRequest(request) if request.id == request_id))
+        .cloned()
 }
 
 async fn ask_parent(
