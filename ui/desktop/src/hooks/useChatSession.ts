@@ -191,9 +191,15 @@ export function useChatSession({
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
       }
 
-      const newMessage = hasNewMessage
-        ? createUserMessage(userMessage, images)
-        : currentMessages[currentMessages.length - 1];
+      const lastMessage = currentMessages[currentMessages.length - 1];
+      // An empty submit ("continue") re-sends the last message as a user turn;
+      // never re-send an assistant message that way — it makes the model believe
+      // the user pasted its own reply back into the chat (issue #12653).
+      if (!hasNewMessage && lastMessage.role !== 'user') {
+        return;
+      }
+
+      const newMessage = hasNewMessage ? createUserMessage(userMessage, images) : lastMessage;
       const messagesForStore = clearsConversation
         ? []
         : hasNewMessage

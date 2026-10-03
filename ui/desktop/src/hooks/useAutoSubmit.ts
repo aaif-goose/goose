@@ -10,6 +10,11 @@ import type { Session } from '../types/session';
  * 1. New session with initial message from Hub (message_count === 0, has initialMessage)
  * 2. Forked session with edited message (shouldStartAgent + initialMessage)
  * 3. Resume with shouldStartAgent (continue existing conversation)
+ *
+ * `shouldStartAgent` is a one-shot trigger: once consumed it is removed from the
+ * URL so that navigating away and back (which remounts the chat component and
+ * resets `hasAutoSubmittedRef`) can never replay the auto-submit. See
+ * https://github.com/aaif-goose/goose/issues/12653.
  */
 
 interface UseAutoSubmitProps {
@@ -35,7 +40,7 @@ export function useAutoSubmit({
   canAutoSubmit = true,
   handleSubmit,
 }: UseAutoSubmitProps): UseAutoSubmitReturn {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const hasAutoSubmittedRef = useRef(false);
 
   // Reset auto-submit flag when session changes
@@ -50,6 +55,17 @@ export function useAutoSubmit({
       })
     );
   }, [sessionId]);
+
+  const clearShouldStartAgent = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('shouldStartAgent');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [setSearchParams]);
 
   const hasUnfilledParameters = useCallback((session: Session) => {
     if (session.session_type === 'scheduled') {
@@ -93,6 +109,7 @@ export function useAutoSubmit({
     if (shouldStartAgent && initialMessage) {
       if (messages.length > 0) {
         hasAutoSubmittedRef.current = true;
+        clearShouldStartAgent();
         handleSubmit(initialMessage);
         clearInitialMessage();
         return;
@@ -104,6 +121,7 @@ export function useAutoSubmit({
     if (shouldStartAgent) {
       if (!hasUnfilledParameters(session)) {
         hasAutoSubmittedRef.current = true;
+        clearShouldStartAgent();
         handleSubmit({ msg: '', images: [] });
       }
       return;
@@ -118,6 +136,7 @@ export function useAutoSubmit({
     chatState,
     canAutoSubmit,
     clearInitialMessage,
+    clearShouldStartAgent,
     hasUnfilledParameters,
   ]);
 
