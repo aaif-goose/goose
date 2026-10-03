@@ -317,6 +317,7 @@ async fn handle_manual_provider_setup(config: &Config) {
             set_extension(ExtensionEntry {
                 enabled: true,
                 config: ExtensionConfig::default(),
+                storage_key: None,
             });
         }
         Ok(false) => {
@@ -1257,6 +1258,7 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
     set_extension(ExtensionEntry {
         enabled: true,
         config,
+        storage_key: None,
     });
 
     cliclack::outro(format!("Enabled {} extension", style(extension).green()))?;
@@ -1304,6 +1306,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             bundled: None,
             available_tools: Vec::new(),
         },
+        storage_key: None,
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
@@ -1351,6 +1354,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             bundled: None,
             available_tools: Vec::new(),
         },
+        storage_key: None,
     });
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
@@ -2046,6 +2050,7 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
+                            storage_key: None,
                         });
                         println!("✓ Developer extension enabled");
                     }
@@ -2115,6 +2120,7 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
+                            storage_key: None,
                         });
                         println!("✓ Developer extension enabled");
                     }

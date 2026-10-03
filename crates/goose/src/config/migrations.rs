@@ -116,7 +116,11 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                 }
             };
 
-            let new_entry = ExtensionEntry { config, enabled };
+            let new_entry = ExtensionEntry {
+                config,
+                enabled,
+                storage_key: None,
+            };
 
             if let Ok(value) = serde_yaml::to_value(&new_entry) {
                 extensions_map.insert(ext_key, value);
@@ -306,6 +310,7 @@ mod tests {
                 available_tools: vec!["todo_read".to_string()],
             },
             enabled: false,
+            storage_key: None,
         };
         extensions.insert(
             serde_yaml::Value::String("todo".to_string()),
@@ -351,6 +356,7 @@ mod tests {
                 available_tools: vec!["todo_read".to_string()],
             },
             enabled: true,
+            storage_key: None,
         };
         extensions.insert(
             serde_yaml::Value::String("todo".to_string()),
