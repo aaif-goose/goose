@@ -835,9 +835,18 @@ impl CliSession {
                 println!("Switching to Ansi theme");
                 output::Theme::Ansi
             }
+            "auto" => {
+                println!("Switching to Auto theme (system-based detection)");
+                output::Theme::Dark // placeholder, set_auto_theme will resolve it
+            }
             _ => output::Theme::Dark,
         };
-        output::set_theme(new_theme);
+
+        if theme_name == "auto" {
+            output::set_auto_theme();
+        } else {
+            output::set_theme(new_theme);
+        }
     }
 
     fn handle_toggle_full_tool_output(&self) {
