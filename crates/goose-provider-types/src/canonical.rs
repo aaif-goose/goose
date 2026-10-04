@@ -10,7 +10,7 @@ pub use name_builder::{
     strip_version_suffix,
 };
 pub use registry::{
-    fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
+    activate, fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
