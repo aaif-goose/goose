@@ -13,14 +13,24 @@ const MAX_CATALOG_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_FILENAME: &str = "models_dev_api.json";
 const ETAG_FILENAME: &str = "models_dev_api.etag";
 
-static ACTIVE_REGISTRY: Lazy<RwLock<Result<CanonicalModelRegistry>>> = Lazy::new(|| {
-    let bundled = zstd::decode_all(
+static ACTIVE_REGISTRY: Lazy<RwLock<Result<CanonicalModelRegistry>>> =
+    Lazy::new(|| RwLock::new(bundled_registry()));
+
+#[cfg(feature = "bundled-catalog")]
+fn bundled_registry() -> Result<CanonicalModelRegistry> {
+    zstd::decode_all(
         include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst")).as_slice(),
     )
     .context("Failed to decompress bundled canonical models JSON")
-    .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?));
-    RwLock::new(bundled)
-});
+    .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?))
+}
+
+/// Without the bundled catalog, lookups miss until the embedder installs a
+/// registry with [`activate`].
+#[cfg(not(feature = "bundled-catalog"))]
+fn bundled_registry() -> Result<CanonicalModelRegistry> {
+    Ok(CanonicalModelRegistry::new())
+}
 
 pub struct CanonicalModelRegistryGuard(RwLockReadGuard<'static, Result<CanonicalModelRegistry>>);
 
@@ -123,7 +133,9 @@ impl Default for CanonicalModelRegistry {
     }
 }
 
-fn activate(registry: CanonicalModelRegistry) -> Result<()> {
+/// Replaces the catalog used for model lookups, such as context limits and
+/// capabilities, for the rest of the process.
+pub fn activate(registry: CanonicalModelRegistry) -> Result<()> {
     *ACTIVE_REGISTRY
         .write()
         .map_err(|_| anyhow::anyhow!("canonical model registry lock poisoned"))? = Ok(registry);
