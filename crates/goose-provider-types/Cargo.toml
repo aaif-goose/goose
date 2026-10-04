@@ -19,6 +19,7 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
+percent-encoding = "2"
 rand = { workspace = true }
 regex = { workspace = true, features = ["unicode"] }
 reqwest = { workspace = true, features = ["stream"] }

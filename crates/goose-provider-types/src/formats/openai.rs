@@ -20,6 +20,7 @@ use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
 use futures::Stream;
+use percent_encoding::percent_decode_str;
 use regex::Regex;
 use rmcp::model::{
     object, CallToolRequestParams, ContentBlock, EmbeddedResource, ErrorCode, ErrorData,
@@ -221,16 +222,22 @@ fn document_from_resource(resource: &EmbeddedResource) -> Option<DocumentContent
     if !document_media_type_is_supported(mime) {
         return None;
     }
-    Some(DocumentContent::new(blob.clone(), mime.to_string()).with_name(resource_file_name(uri)))
+    let document = DocumentContent::new(blob.clone(), mime.to_string());
+    Some(match resource_file_name(uri) {
+        Some(name) => document.with_name(name),
+        None => document,
+    })
 }
 
-/// Last URI segment when it looks like a filename, else the generic default.
-fn resource_file_name(uri: &str) -> String {
-    uri.rsplit('/')
-        .next()
-        .filter(|segment| segment.contains('.'))
-        .unwrap_or("document.pdf")
-        .to_string()
+/// Last URI path segment when it looks like a filename, else `None` so the
+/// caller falls back to the single default in `convert_document`.
+fn resource_file_name(uri: &str) -> Option<String> {
+    // Drop the query string and fragment before taking the last path segment.
+    let path = uri.split(['?', '#']).next().unwrap_or(uri);
+    let segment = path.rsplit('/').next().unwrap_or_default();
+    segment
+        .contains('.')
+        .then(|| percent_decode_str(segment).decode_utf8_lossy().into_owned())
 }
 
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
@@ -2812,7 +2819,7 @@ mod tests {
     #[test]
     fn test_tool_response_pdf_resource_sent_as_file_part() -> anyhow::Result<()> {
         let resource = rmcp::model::ResourceContents::BlobResourceContents {
-            uri: "memoza://kbox/doc.pdf".to_string(),
+            uri: "https://example.com/doc.pdf".to_string(),
             mime_type: Some("application/pdf".to_string()),
             blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
             meta: None,
@@ -2860,9 +2867,61 @@ mod tests {
     }
 
     #[test]
+    fn resource_file_name_strips_query_and_percent_encoding() {
+        assert_eq!(
+            resource_file_name("https://example.com/doc.pdf").as_deref(),
+            Some("doc.pdf")
+        );
+        assert_eq!(
+            resource_file_name("https://example.com/my%20doc.pdf?v=2").as_deref(),
+            Some("my doc.pdf")
+        );
+        assert_eq!(
+            resource_file_name("https://example.com/report").as_deref(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_tool_response_pdf_resource_without_a_filename_uses_the_shared_default(
+    ) -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "https://example.com/report".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+
+        // The last URI segment is not a filename, so the name stays unset and
+        // `convert_document` supplies the single shared default.
+        assert_eq!(spec.len(), 2);
+        let file_part = &spec[1]["content"][0];
+        assert_eq!(file_part["type"], "file");
+        assert_eq!(file_part["file"]["filename"], "document.pdf");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_tool_response_non_pdf_resource_keeps_text_placeholder() -> anyhow::Result<()> {
         let resource = rmcp::model::ResourceContents::BlobResourceContents {
-            uri: "memoza://kbox/report.docx".to_string(),
+            uri: "https://example.com/report.docx".to_string(),
             mime_type: Some("application/octet-stream".to_string()),
             blob: "//4A".to_string(), // base64 of 3 non-UTF-8 bytes
             meta: None,
@@ -2900,7 +2959,7 @@ mod tests {
         // so a PDF file part must not split one tool_calls batch either.
         let pdf_resource = rmcp::model::EmbeddedResource::new(
             rmcp::model::ResourceContents::BlobResourceContents {
-                uri: "memoza://kbox/doc.pdf".to_string(),
+                uri: "https://example.com/doc.pdf".to_string(),
                 mime_type: Some("application/pdf".to_string()),
                 blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
                 meta: None,
