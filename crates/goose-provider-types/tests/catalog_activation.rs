@@ -2,7 +2,7 @@
 //! keep its activation from racing other tests.
 
 use goose_provider_types::canonical::{
-    activate, maybe_get_canonical_model, CanonicalModelRegistry,
+    activate_catalog, maybe_get_canonical_model, CanonicalModelRegistry,
 };
 use goose_provider_types::context_limit::ContextLimitResolver;
 use goose_provider_types::model::{ModelConfig, DEFAULT_CONTEXT_LIMIT};
@@ -22,7 +22,7 @@ fn activated_catalog_replaces_model_lookups() {
         }]"#,
     )
     .unwrap();
-    activate(registry).unwrap();
+    activate_catalog(registry).unwrap();
 
     let resolver = ContextLimitResolver::new("openai");
     assert_eq!(resolver.resolve_local("embedder-model", None), 32_768);
