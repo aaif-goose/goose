@@ -189,6 +189,38 @@
     "environmentVariables": []
   },
   {
+    "id": "darkmoon",
+    "name": "Darkmoon",
+    "description": "Start and monitor autonomous AI penetration test runs on your self-hosted Darkmoon Pro instance, and read campaigns and findings (read only). Requires a Darkmoon Pro Dashboard API endpoint; only use against systems you are authorized to test.",
+    "command": "npx -y @darkmoon_ai/mcp-server",
+    "link": "https://github.com/ASCIT31/Dark-Moon",
+    "installation_notes": "Requires your own Darkmoon Pro instance (the Dashboard API is a Pro feature, self-hosted; the engine and CLI are open source). Set DARKMOON_BASE_URL and either DARKMOON_USERNAME and DARKMOON_PASSWORD, or DARKMOON_TOKEN.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "DARKMOON_BASE_URL",
+        "description": "Base URL of your self-hosted Darkmoon Pro Dashboard API, without trailing slash",
+        "required": true
+      },
+      {
+        "name": "DARKMOON_USERNAME",
+        "description": "Dashboard username (not needed if DARKMOON_TOKEN is set)",
+        "required": false
+      },
+      {
+        "name": "DARKMOON_PASSWORD",
+        "description": "Dashboard password (not needed if DARKMOON_TOKEN is set)",
+        "required": false
+      },
+      {
+        "name": "DARKMOON_TOKEN",
+        "description": "Pre-issued JWT, alternative to username and password",
+        "required": false
+      }
+    ]
+  },
+  {
     "id": "datahub-mcp",
     "name": "DataHub",
     "description": "Data discovery and metadata platform for exploring datasets, lineage, and queries",
