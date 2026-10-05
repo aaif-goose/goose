@@ -146,30 +146,32 @@ fn invalid_recipe_msg(command: &str, reason: impl std::fmt::Display) -> String {
     format!("Recipe /{} is not valid: {}", command, reason)
 }
 
-pub fn resolve_command(
+fn resolve_from_path(
+    recipe_path: &PathBuf,
     command: &str,
     params_str: &str,
 ) -> Result<Option<(Recipe, String)>, String> {
-    let full_command = format!("/{}", command);
-    let Some(recipe_path) = get_recipe_for_command(&full_command) else {
-        return Ok(None);
-    };
-
-    if !recipe_path.exists() {
-        return Ok(None);
-    }
-
     let recipe_content =
-        std::fs::read_to_string(&recipe_path).map_err(|e| invalid_recipe_msg(command, e))?;
+        std::fs::read_to_string(recipe_path).map_err(|e| invalid_recipe_msg(command, e))?;
 
     let recipe_dir = recipe_path
         .parent()
         .ok_or_else(|| invalid_recipe_msg(command, "unable to resolve recipe directory"))?;
 
     let recipe_dir_str = recipe_dir.display().to_string();
+    resolve_from_content(&recipe_content, &recipe_dir_str, command, params_str)
+}
+
+fn resolve_from_content(
+    recipe_content: &str,
+    recipe_dir_str: &str,
+    command: &str,
+    params_str: &str,
+) -> Result<Option<(Recipe, String)>, String> {
+    let recipe_dir = PathBuf::from(recipe_dir_str);
     let validation_result = crate::recipe::validate_recipe::validate_recipe_template_from_content(
-        &recipe_content,
-        Some(recipe_dir_str),
+        recipe_content,
+        Some(recipe_dir_str.to_string()),
     )
     .map_err(|e| invalid_recipe_msg(command, e))?;
 
@@ -202,8 +204,8 @@ pub fn resolve_command(
     };
 
     let recipe = build_recipe_from_template(
-        recipe_content,
-        recipe_dir,
+        recipe_content.to_string(),
+        &recipe_dir,
         param_values,
         None::<fn(&str, &str) -> Result<String>>,
     )
@@ -222,6 +224,56 @@ pub fn resolve_command(
         .join("\n\n");
 
     Ok(Some((recipe, prompt)))
+}
+
+/// Built-in recipes that are always available as slash commands without
+/// requiring filesystem installation. Keyed by slash-command name.
+fn builtin_recipe_yaml(name: &str) -> Option<&'static str> {
+    if name == "ponytail" {
+        Some(include_str!("./ponytail-mode.yaml"))
+    } else {
+        None
+    }
+}
+
+pub fn builtin_recipe_commands() -> Vec<SlashCommandEntry> {
+    [("ponytail", "ponytail")]
+        .iter()
+        .filter_map(|(raw_name, yaml_key)| {
+            let name = normalize_command_name(raw_name);
+            let content = builtin_recipe_yaml(yaml_key)?;
+            let description = crate::recipe::Recipe::from_content(content)
+                .map(|recipe| recipe.description)
+                .unwrap_or_default();
+            Some(SlashCommandEntry {
+                name,
+                description,
+                source: SlashCommandSource::Recipe,
+                source_path: None,
+                input_hint: None,
+            })
+        })
+        .collect()
+}
+
+fn resolve_builtin(command: &str, params_str: &str) -> Result<Option<(Recipe, String)>, String> {
+    let Some(content) = builtin_recipe_yaml(command) else {
+        return Ok(None);
+    };
+    resolve_from_content(content, ".", command, params_str)
+}
+
+pub fn resolve_command(
+    command: &str,
+    params_str: &str,
+) -> Result<Option<(Recipe, String)>, String> {
+    let full_command = format!("/{}", command);
+    if let Some(recipe_path) = get_recipe_for_command(&full_command) {
+        if recipe_path.exists() {
+            return resolve_from_path(&recipe_path, command, params_str);
+        }
+    }
+    resolve_builtin(command, params_str)
 }
 
 fn parse_recipe_args(
