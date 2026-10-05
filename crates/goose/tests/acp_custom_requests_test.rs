@@ -4,7 +4,8 @@
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate, StopReason, TextContent,
+    CancelNotification, ContentBlock, McpServer, McpServerHttp, PromptRequest, PromptResponse,
+    SessionUpdate, StopReason, TextContent,
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
@@ -17,7 +18,9 @@ use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use serial_test::serial;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
@@ -122,6 +125,86 @@ fn steer_chunk_message_ids(updates: &[SessionUpdate]) -> Vec<String> {
             goose.get("messageId")?.as_str().map(ToString::to_string)
         })
         .collect()
+}
+
+/// Holds a fixture turn open long enough that a poll can observe its run even
+/// on a slow runner. Cancellation aborts the delayed reply early, so only a
+/// turn that runs to completion pays the full delay.
+const DELAYED_REPLY: Duration = Duration::from_secs(5);
+
+fn active_run_id_from_session_info(response: &serde_json::Value) -> Option<String> {
+    response["session"]["_meta"]["goose"]["activeRunId"]
+        .as_str()
+        .map(ToString::to_string)
+}
+
+fn assert_active_run_cleared(response: &serde_json::Value) {
+    let goose = response["session"]["_meta"]
+        .get("goose")
+        .unwrap_or_else(|| panic!("session info response must carry goose meta, got: {response}"));
+    assert!(
+        goose
+            .get("activeRunId")
+            .is_some_and(|value| value.is_null()),
+        "expected a cleared active run, got: {goose}"
+    );
+}
+
+async fn request_session_info(
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>,
+    session_id: &str,
+) -> serde_json::Value {
+    send_custom(
+        cx,
+        "_goose/unstable/session/info",
+        serde_json::json!({ "sessionId": session_id }),
+    )
+    .await
+    .expect("session info should succeed")
+}
+
+/// Drives `prompt` until the fixture reports a run id, proving the turn is in
+/// flight. Panics if the turn finishes first.
+async fn wait_for_announced_run<F>(prompt: &mut Pin<Box<F>>, session: &impl Session) -> String
+where
+    F: Future<Output = Result<PromptResponse, agent_client_protocol::Error>>,
+{
+    loop {
+        tokio::select! {
+            response = &mut *prompt => {
+                panic!("turn finished before the run could be observed: {response:?}");
+            }
+            _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                if let Some(run_id) =
+                    session.session_updates().iter().find_map(active_run_id_from_update)
+                {
+                    return run_id;
+                }
+            }
+        }
+    }
+}
+
+/// Polls session info until it reports `run_id`. The fixture delay keeps the
+/// turn in flight, so a bounded poll is enough to avoid racing the reply.
+async fn wait_for_session_info_run(
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Agent>,
+    session_id: &str,
+    run_id: &str,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let info = request_session_info(cx, session_id).await;
+        if active_run_id_from_session_info(&info).as_deref() == Some(run_id) {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "session info never reported run {run_id}, last: {}",
+            info["session"]["_meta"]["goose"]
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 fn steer_chunk_texts(updates: &[SessionUpdate]) -> Vec<String> {
@@ -716,6 +799,101 @@ fn test_steer_session_adds_input_to_active_prompt() {
             picked_up_ids.contains(&steer_message_id),
             "picked-up steer chunk must carry the queued messageId {steer_message_id:?} for correlation, got: {picked_up_ids:?}"
         );
+    });
+}
+
+#[test]
+#[serial]
+fn test_session_info_response_carries_active_run_key() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+
+        let idle = request_session_info(conn.cx(), &session_id).await;
+        assert_active_run_cleared(&idle);
+    });
+}
+
+#[test]
+#[serial]
+fn test_cancel_clears_the_active_run_from_session_info() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new_with_response_delay(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+            DELAYED_REPLY,
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().clone();
+        let id = session_id.0.to_string();
+
+        let cx = conn.cx();
+        let mut prompt = Box::pin(
+            cx.send_request(PromptRequest::new(
+                session_id.clone(),
+                vec![ContentBlock::Text(TextContent::new("start work"))],
+            ))
+            .block_task(),
+        );
+        let run_id = wait_for_announced_run(&mut prompt, &session).await;
+        wait_for_session_info_run(cx, &id, &run_id).await;
+
+        cx.send_notification(CancelNotification::new(session_id))
+            .unwrap();
+
+        let response = prompt.await.unwrap();
+        assert_eq!(response.stop_reason, StopReason::Cancelled);
+
+        assert_active_run_cleared(&request_session_info(cx, &id).await);
+    });
+}
+
+#[test]
+#[serial]
+fn test_completed_turn_clears_the_active_run_from_session_info() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new_with_response_delay(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+            DELAYED_REPLY,
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().clone();
+        let id = session_id.0.to_string();
+
+        let cx = conn.cx();
+        let mut prompt = Box::pin(
+            cx.send_request(PromptRequest::new(
+                session_id,
+                vec![ContentBlock::Text(TextContent::new("start work"))],
+            ))
+            .block_task(),
+        );
+        let run_id = wait_for_announced_run(&mut prompt, &session).await;
+        wait_for_session_info_run(cx, &id, &run_id).await;
+
+        let response = prompt.await.unwrap();
+        assert_eq!(response.stop_reason, StopReason::EndTurn);
+
+        assert_active_run_cleared(&request_session_info(cx, &id).await);
     });
 }
 
