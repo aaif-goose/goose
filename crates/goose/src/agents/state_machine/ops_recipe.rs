@@ -272,11 +272,16 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        Ok(Self::final_output(session)?
-            .as_ref()
-            .map(|tool| ("final_output".to_string(), tool.system_prompt()))
-            .into_iter()
-            .collect())
+        let mut parts = Vec::new();
+        if let Some(tool) = Self::final_output(session)? {
+            parts.push(("final_output".to_string(), tool.system_prompt()));
+        }
+        if let Some(recipe) = &session.recipe {
+            if let Some(instructions) = &recipe.instructions {
+                parts.push(("recipe".to_string(), instructions.clone()));
+            }
+        }
+        Ok(parts)
     }
 
     async fn run(
