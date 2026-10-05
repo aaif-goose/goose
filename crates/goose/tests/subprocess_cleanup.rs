@@ -196,16 +196,7 @@ fn process_is_running(pid: u32) -> bool {
 }
 
 fn process_state(pid: u32) -> Option<char> {
-    let stat = match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Ok(stat) => stat,
-        Err(error)
-            if error.kind() == std::io::ErrorKind::NotFound
-                || error.raw_os_error() == Some(libc::ESRCH) =>
-        {
-            return None;
-        }
-        Err(error) => panic!("failed to read process {pid} state: {error}"),
-    };
-    let (_, after_name) = stat.rsplit_once(") ").expect("process stat name");
-    Some(after_name.chars().next().expect("process stat state"))
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, after_name) = stat.rsplit_once(") ")?;
+    after_name.chars().next()
 }
