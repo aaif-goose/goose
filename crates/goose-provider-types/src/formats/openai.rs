@@ -1,5 +1,7 @@
 use crate::base::ThinkingPreservationFormat;
-use crate::conversation::message::{Message, MessageContentBlock, ProviderMetadata};
+use crate::conversation::message::{
+    DocumentContent, Message, MessageContentBlock, ProviderMetadata,
+};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
 use crate::documents::{
     convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
@@ -18,8 +20,12 @@ use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
 use futures::Stream;
+use percent_encoding::percent_decode_str;
 use regex::Regex;
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
+use rmcp::model::{
+    object, CallToolRequestParams, ContentBlock, EmbeddedResource, ErrorCode, ErrorData,
+    ResourceContents, Role, Tool,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::borrow::Cow;
@@ -199,6 +205,41 @@ fn extract_content_and_signature(
     }
 }
 
+/// Lift a PDF tool-result resource into a `DocumentContent` so the provider's
+/// native file part can carry it. Mirrors the image path: without this the blob
+/// is discarded by `extract_text_from_resource`'s binary placeholder.
+fn document_from_resource(resource: &EmbeddedResource) -> Option<DocumentContent> {
+    let ResourceContents::BlobResourceContents {
+        blob,
+        mime_type,
+        uri,
+        ..
+    } = &resource.resource
+    else {
+        return None;
+    };
+    let mime = mime_type.as_deref()?;
+    if !document_media_type_is_supported(mime) {
+        return None;
+    }
+    let document = DocumentContent::new(blob.clone(), mime.to_string());
+    Some(match resource_file_name(uri) {
+        Some(name) => document.with_name(name),
+        None => document,
+    })
+}
+
+/// Last URI path segment when it looks like a filename, else `None` so the
+/// caller falls back to the single default in `convert_document`.
+fn resource_file_name(uri: &str) -> Option<String> {
+    // Drop the query string and fragment before taking the last path segment.
+    let path = uri.split(['?', '#']).next().unwrap_or(uri);
+    let segment = path.rsplit('/').next().unwrap_or_default();
+    segment
+        .contains('.')
+        .then(|| percent_decode_str(segment).decode_utf8_lossy().into_owned())
+}
+
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
     format_messages_with_options(
         messages,
@@ -357,7 +398,7 @@ pub fn format_messages_with_options(
                 MessageContentBlock::ToolResponse(response) => {
                     match &response.tool_result {
                         Ok(result) => {
-                            // Process all content, replacing images with placeholder text
+                            // Process all content, replacing images/documents with placeholder text
                             let mut tool_content = Vec::new();
 
                             for content in result.content.iter() {
@@ -378,8 +419,25 @@ pub fn format_messages_with_options(
                                         }
                                     }
                                     ContentBlock::Resource(resource) => {
-                                        let text = extract_text_from_resource(&resource.resource);
-                                        tool_content.push(ContentBlock::text(text));
+                                        match document_from_resource(resource) {
+                                            Some(document) => {
+                                                // Mirror the image path: the tool message
+                                                // says where the document went, a follow-up
+                                                // user message carries the file part.
+                                                tool_content.push(ContentBlock::text(
+                                                    "This tool result included a document that is uploaded in the next message.",
+                                                ));
+                                                pending_image_messages.push(json!({
+                                                    "role": "user",
+                                                    "content": [convert_document(&document, &DocumentFormat::OpenAi)]
+                                                }));
+                                            }
+                                            None => {
+                                                let text =
+                                                    extract_text_from_resource(&resource.resource);
+                                                tool_content.push(ContentBlock::text(text));
+                                            }
+                                        }
                                     }
                                     _ => {
                                         tool_content.push(content.clone());
@@ -2756,6 +2814,194 @@ mod tests {
         assert_eq!(spec[1]["tool_call_id"], "call_a");
         assert_eq!(spec[2]["tool_call_id"], "call_b");
         assert_eq!(spec[3]["tool_call_id"], "call_c");
+    }
+
+    #[test]
+    fn test_tool_response_pdf_resource_sent_as_file_part() -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "https://example.com/doc.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        // Document pass-through does not depend on the vision flag.
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+        let serialized = serde_json::to_value(&spec).unwrap().to_string();
+        // The tool message keeps only the placeholder text ...
+        assert!(serialized.contains(
+            "This tool result included a document that is uploaded in the next message."
+        ));
+        assert!(!serialized.contains("[Binary content"));
+        // ... and the follow-up user message carries the file part.
+        assert_eq!(spec.len(), 2);
+        assert_eq!(spec[0]["role"], "tool");
+        assert_eq!(
+            spec[0]["content"],
+            "This tool result included a document that is uploaded in the next message."
+        );
+        assert_eq!(spec[1]["role"], "user");
+        let file_part = &spec[1]["content"][0];
+        assert_eq!(file_part["type"], "file");
+        assert_eq!(file_part["file"]["filename"], "doc.pdf");
+        assert!(file_part["file"]["file_data"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:application/pdf;base64,"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn resource_file_name_strips_query_and_percent_encoding() {
+        assert_eq!(
+            resource_file_name("https://example.com/doc.pdf").as_deref(),
+            Some("doc.pdf")
+        );
+        assert_eq!(
+            resource_file_name("https://example.com/my%20doc.pdf?v=2").as_deref(),
+            Some("my doc.pdf")
+        );
+        assert_eq!(
+            resource_file_name("https://example.com/report").as_deref(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_tool_response_pdf_resource_without_a_filename_uses_the_shared_default(
+    ) -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "https://example.com/report".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: false,
+                ..Default::default()
+            },
+        );
+
+        // The last URI segment is not a filename, so the name stays unset and
+        // `convert_document` supplies the single shared default.
+        assert_eq!(spec.len(), 2);
+        let file_part = &spec[1]["content"][0];
+        assert_eq!(file_part["type"], "file");
+        assert_eq!(file_part["file"]["filename"], "document.pdf");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tool_response_non_pdf_resource_keeps_text_placeholder() -> anyhow::Result<()> {
+        let resource = rmcp::model::ResourceContents::BlobResourceContents {
+            uri: "https://example.com/report.docx".to_string(),
+            mime_type: Some("application/octet-stream".to_string()),
+            blob: "//4A".to_string(), // base64 of 3 non-UTF-8 bytes
+            meta: None,
+        };
+        let tool_response = Message::user().with_tool_response(
+            "tool1",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::Resource(rmcp::model::EmbeddedResource::new(resource)),
+            ])),
+        );
+
+        let spec = format_messages_with_options(
+            std::slice::from_ref(&tool_response),
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+        // No follow-up user message, and the current placeholder behavior is kept.
+        assert_eq!(spec.len(), 1);
+        assert_eq!(spec[0]["role"], "tool");
+        assert_eq!(
+            spec[0]["content"],
+            "[Binary content (application/octet-stream) - 3 bytes]"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parallel_tool_responses_with_pdf_and_image_are_consecutive() {
+        // Document attachments ride the same deferred emission as images (#12233),
+        // so a PDF file part must not split one tool_calls batch either.
+        let pdf_resource = rmcp::model::EmbeddedResource::new(
+            rmcp::model::ResourceContents::BlobResourceContents {
+                uri: "https://example.com/doc.pdf".to_string(),
+                mime_type: Some("application/pdf".to_string()),
+                blob: "JVBERi0xLjQ=".to_string(), // base64 of "%PDF-1.4"
+                meta: None,
+            },
+        );
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("download_pdf")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::Resource(
+                        pdf_resource,
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+        // The deferred messages carry the file part and the image, in that order.
+        assert_eq!(spec[3]["content"][0]["type"], "file");
+        assert_eq!(spec[4]["content"][0]["type"], "image_url");
     }
 
     #[test]
