@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use std::path::PathBuf;
 
 use crate::config::permission::PermissionLevel;
-use crate::conversation::message::Message;
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::mcp_utils::ToolResult;
 use crate::permission::Permission;
 use rmcp::model::{ContentBlock, ServerNotification};
@@ -99,6 +99,18 @@ pub(super) enum ToolStreamItem<T> {
     ActionRequired(Message),
     Message(ServerNotification),
     Result(T),
+}
+
+/// True for a tool confirmation a running tool passes up, a subagent's. It is answered live,
+/// like the agent's own confirmations, so it is not kept in the conversation.
+pub(super) fn is_tool_confirmation(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::ActionRequired(action)
+                if matches!(action.data, ActionRequiredData::ToolConfirmation { .. })
+        )
+    })
 }
 
 pub(super) type ToolStream =

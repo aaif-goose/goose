@@ -1,9 +1,11 @@
 use crate::{
+    action_required_manager::ActionRequiredManager,
     agents::{subagent_task_config::TaskConfig, Agent, AgentConfig, AgentEvent, SessionConfig},
     conversation::{
-        message::{Message, MessageContent},
+        message::{ActionRequiredData, Message, MessageContent},
         Conversation,
     },
+    permission::Permission,
     prompt_template::render_template,
     recipe::Recipe,
 };
@@ -17,7 +19,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
 
@@ -32,6 +34,14 @@ pub struct SubagentPromptContext {
 type AgentMessagesFuture =
     Pin<Box<dyn Future<Output = Result<(Conversation, Option<String>)>> + Send>>;
 
+/// The parent's running tool call that a subagent's tool confirmations are shown on, so the owner
+/// answers them where they answer the parent's own.
+pub struct ApprovalRelay {
+    pub session_id: String,
+    pub tool_call_request_id: String,
+    pub action_required: Arc<ActionRequiredManager>,
+}
+
 pub struct SubagentRunParams {
     pub config: AgentConfig,
     pub recipe: Recipe,
@@ -41,6 +51,8 @@ pub struct SubagentRunParams {
     pub cancellation_token: Option<CancellationToken>,
     pub on_message: Option<OnMessageCallback>,
     pub notification_tx: Option<tokio::sync::mpsc::UnboundedSender<ServerNotification>>,
+    /// Without one, a tool call that needs approval is declined.
+    pub approval_relay: Option<ApprovalRelay>,
 }
 
 pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyhow::Error> {
@@ -127,6 +139,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             cancellation_token,
             on_message,
             notification_tx,
+            approval_relay,
             ..
         } = params;
 
@@ -225,6 +238,28 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
                             }
                         }
                     }
+                    for content in &msg.content {
+                        if let MessageContent::ActionRequired(action) = content {
+                            if let ActionRequiredData::ToolConfirmation { id, .. } = &action.data {
+                                let request = tool_request(&conversation, id)
+                                    .into_iter()
+                                    .fold(Message::assistant(), Message::with_content)
+                                    .with_content(content.clone())
+                                    .user_only();
+                                let permission =
+                                    ask_parent(approval_relay.as_ref(), id, request).await;
+                                if let Err(e) = agent
+                                    .submit_tool_confirmation(&session_id, id, permission)
+                                    .await
+                                {
+                                    warn!(
+                                        "Failed to answer subagent {} confirmation: {}",
+                                        session_id, e
+                                    );
+                                }
+                            }
+                        }
+                    }
                     conversation.push(msg);
                 }
                 Ok(AgentEvent::Usage(_)) => {}
@@ -244,6 +279,42 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
 
         Ok((conversation, final_output))
     })
+}
+
+/// The subagent's tool call a confirmation is about, so the parent's client sees the call (its
+/// tool name and arguments) before it is asked about it.
+fn tool_request(conversation: &Conversation, request_id: &str) -> Option<MessageContent> {
+    conversation
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .find(|content| matches!(content, MessageContent::ToolRequest(request) if request.id == request_id))
+        .cloned()
+}
+
+async fn ask_parent(
+    relay: Option<&ApprovalRelay>,
+    request_id: &str,
+    request: Message,
+) -> Permission {
+    let Some(relay) = relay else {
+        return Permission::DenyOnce;
+    };
+    match relay
+        .action_required
+        .relay_tool_confirmation(
+            &relay.session_id,
+            &relay.tool_call_request_id,
+            request_id,
+            request,
+        )
+        .await
+    {
+        Ok(confirmation) => confirmation.permission,
+        Err(e) => {
+            warn!("Declining a subagent tool call: {}", e);
+            Permission::DenyOnce
+        }
+    }
 }
 
 async fn build_subagent_prompt(

@@ -18,8 +18,8 @@ use super::tool_confirmation_coordinator::{
 };
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{
-    tool_stream, ToolCallResult, ToolStream, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-    DECLINED_RESPONSE,
+    is_tool_confirmation, tool_stream, ToolCallResult, ToolStream, ToolStreamItem,
+    CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE,
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
@@ -452,13 +452,16 @@ impl Agent {
                 provider.clone(),
                 inspection_session_manager,
             ),
-            hook_manager: if is_subagent {
-                crate::hooks::HookManager::default()
-            } else {
-                crate::hooks::HookManager::load(
+            hook_manager: {
+                let hooks = crate::hooks::HookManager::load(
                     std::env::current_dir().ok().as_deref(),
                     use_login_shell_path,
-                )
+                );
+                if is_subagent {
+                    hooks.without_lifecycle_events()
+                } else {
+                    hooks
+                }
             },
             session_start_emitted: AtomicBool::new(false),
             #[cfg(test)]
@@ -1565,8 +1568,7 @@ impl Agent {
         }
 
         if self
-            .tool_confirmation_router
-            .deliver(session_id, request_id, confirmation)
+            .deliver_live_confirmation(session_id, request_id, confirmation)
             .await
         {
             if state.contains_request(request_id) {
@@ -1626,12 +1628,30 @@ impl Agent {
             return;
         }
         if !self
-            .tool_confirmation_router
-            .deliver(session_id, &request_id, confirmation)
+            .deliver_live_confirmation(session_id, &request_id, confirmation)
             .await
         {
             error!("Failed to deliver confirmation");
         }
+    }
+
+    /// Hands an answer to the tool call waiting for it: one of this agent's own, or a subagent's
+    /// that was shown on one of this agent's tool calls.
+    async fn deliver_live_confirmation(
+        &self,
+        session_id: &str,
+        request_id: &str,
+        confirmation: PermissionConfirmation,
+    ) -> bool {
+        self.tool_confirmation_router
+            .deliver(session_id, request_id, confirmation.clone())
+            .await
+            || self
+                .config
+                .session_manager
+                .action_required()
+                .deliver_tool_confirmation(session_id, request_id, confirmation)
+                .await
     }
 
     pub async fn supports_action_required_permissions(&self) -> bool {
@@ -2980,8 +3000,10 @@ impl Agent {
                                                         match item {
                                                             ToolStreamItem::ActionRequired(msg) => {
                                                                 let msg = msg.with_generated_id_if_missing();
-                                                                if let Err(e) = session_manager.add_message(&session_config.id, &msg).await {
-                                                                    warn!("Failed to save elicitation message to session: {}", e);
+                                                                if !is_tool_confirmation(&msg) {
+                                                                    if let Err(e) = session_manager.add_message(&session_config.id, &msg).await {
+                                                                        warn!("Failed to save elicitation message to session: {}", e);
+                                                                    }
                                                                 }
                                                                 yield AgentEvent::Message(msg);
                                                             }

@@ -31,6 +31,7 @@ pub struct AcpServerConnection {
     data_root: std::path::PathBuf,
     updates: Arc<Mutex<Vec<SessionNotification>>>,
     permission: Arc<Mutex<PermissionDecision>>,
+    permission_requests: Arc<Mutex<Vec<RequestPermissionRequest>>>,
     notify: Arc<Notify>,
     permission_manager: Arc<PermissionManager>,
     _openai: super::OpenAiFixture,
@@ -102,6 +103,12 @@ impl AcpServerConnection {
     #[allow(dead_code)]
     pub fn cx(&self) -> &ConnectionTo<Agent> {
         &self.cx
+    }
+
+    /// Every `session/request_permission` the client has answered so far.
+    #[allow(dead_code)]
+    pub fn permission_requests(&self) -> Vec<RequestPermissionRequest> {
+        self.permission_requests.lock().unwrap().clone()
     }
 }
 
@@ -208,6 +215,7 @@ impl Connection for AcpServerConnection {
         let updates = Arc::new(Mutex::new(Vec::new()));
         let notify = Arc::new(Notify::new());
         let permission = Arc::new(Mutex::new(PermissionDecision::Cancel));
+        let permission_requests = Arc::new(Mutex::new(Vec::new()));
 
         let mut fs_cap = FileSystemCapabilities::default();
         if config.read_text_file.is_some() {
@@ -221,6 +229,7 @@ impl Connection for AcpServerConnection {
             let updates_clone = updates.clone();
             let notify_clone = notify.clone();
             let permission_clone = permission.clone();
+            let permission_requests_clone = permission_requests.clone();
             let read_handler = config.read_text_file;
             let write_handler = config.write_text_file;
             let terminal = config.terminal;
@@ -248,7 +257,9 @@ impl Connection for AcpServerConnection {
                     .on_receive_request(
                         {
                             let permission = permission_clone.clone();
+                            let permission_requests = permission_requests_clone.clone();
                             async move |req: RequestPermissionRequest, responder, _connection_cx| {
+                                permission_requests.lock().unwrap().push(req.clone());
                                 let decision = *permission.lock().unwrap();
                                 responder.respond(map_permission_response(&req, decision))
                             }
@@ -400,6 +411,7 @@ impl Connection for AcpServerConnection {
             data_root,
             updates,
             permission,
+            permission_requests,
             notify,
             permission_manager,
             _openai: openai,
