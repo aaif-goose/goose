@@ -37,6 +37,10 @@ const i18n = defineMessages({
     id: 'navigationPanel.noChats',
     defaultMessage: 'No recent chats',
   },
+  loadingChats: {
+    id: 'navigationPanel.loadingChats',
+    defaultMessage: 'Loading chats…',
+  },
   untitledSession: {
     id: 'navigationPanel.untitledSession',
     defaultMessage: 'Untitled session',
@@ -260,6 +264,7 @@ export const Navigation: React.FC<{
   const {
     recentSessions,
     recentSessionsByProject,
+    isLoadingSessions,
     activeSessionId,
     fetchSessions,
     handleNavClick,
@@ -364,7 +369,7 @@ export const Navigation: React.FC<{
           <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 mt-1">
             {recentSessions.length === 0 ? (
               <div className="px-3 py-2 text-xs text-text-secondary">
-                {intl.formatMessage(i18n.noChats)}
+                {intl.formatMessage(isLoadingSessions ? i18n.loadingChats : i18n.noChats)}
               </div>
             ) : recentSessionsByProject.length > 1 ? (
               recentSessionsByProject.map((group: ProjectGroup) => {

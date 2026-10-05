@@ -61,6 +61,8 @@ export function useNavigationSessions() {
   const chatContext = useChatContext();
 
   const [recentSessions, setRecentSessions] = useState<SessionListItem[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const latestFetchIdRef = useRef(0);
   const recentSessionsByProject = useMemo(
     () => groupSessionsByProject(recentSessions),
     [recentSessions]
@@ -78,11 +80,19 @@ export function useNavigationSessions() {
   }, [currentSessionId]);
 
   const fetchSessions = useCallback(async () => {
+    const fetchId = ++latestFetchIdRef.current;
+    setIsLoadingSessions(true);
     try {
       const sessions = await acpListRecentSessions(MAX_RECENT_SESSIONS);
-      setRecentSessions(sessions);
+      if (fetchId === latestFetchIdRef.current) {
+        setRecentSessions(sessions);
+      }
     } catch (error) {
       console.error('Failed to fetch sessions:', error);
+    } finally {
+      if (fetchId === latestFetchIdRef.current) {
+        setIsLoadingSessions(false);
+      }
     }
   }, []);
 
@@ -214,6 +224,7 @@ export function useNavigationSessions() {
   return {
     recentSessions,
     recentSessionsByProject,
+    isLoadingSessions,
     activeSessionId,
     fetchSessions,
     handleNavClick,
