@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 
-use crate::context_mgmt::compact_messages;
+use crate::context_mgmt::{compact_messages_with_context, CompactionRequestContext};
 use crate::conversation::message::Message;
 use crate::recipe::Recipe;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
@@ -190,15 +190,22 @@ impl Agent {
         let session = manager.get_session(session_id, true).await?;
         let conversation = session
             .conversation
+            .clone()
             .ok_or_else(|| anyhow!("Session has no conversation"))?;
 
         let model_config = self.model_config_for_session(session_id).await?;
-        let compaction = compact_messages(
+        let (_, _lease, tools, _, mut system, _) = self.prepare_tools_and_prompt(&session).await?;
+        if let Some(addendum) = self.load_project_instructions(&session).await {
+            system = format!("{system}\n\n{addendum}");
+        }
+        let context = CompactionRequestContext { system, tools };
+        let compaction = compact_messages_with_context(
             provider.as_ref(),
             &model_config,
             session_id,
             &conversation,
             true, // is_manual_compact
+            Some(&context),
         )
         .await?;
 

@@ -26,7 +26,7 @@ mod ops_stop_hook;
 mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
-mod ops_unknown_tool;
+pub(crate) mod ops_unknown_tool;
 mod session;
 pub(crate) use session::run as run_goose;
 mod tool_confirmation;

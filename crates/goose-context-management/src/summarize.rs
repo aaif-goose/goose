@@ -92,6 +92,81 @@ fn apply_structured_summary(response: &mut Message, summary_template: &str) {
     }
 }
 
+fn validate_summary(response: &Message, usage: &ProviderUsage, require_finish: bool) -> Result<()> {
+    anyhow::ensure!(
+        response.content.iter().all(|content| matches!(
+            content,
+            MessageContent::Text(_)
+                | MessageContent::Thinking(_)
+                | MessageContent::RedactedThinking(_)
+        )),
+        "Compaction returned non-summary content; conversation was not changed"
+    );
+    anyhow::ensure!(
+        !response.as_concat_text().trim().is_empty(),
+        "Compaction returned an empty summary"
+    );
+    let complete = usage.finish_reasons.as_ref().map(|reasons| {
+        !reasons.is_empty()
+            && reasons.iter().all(|reason| {
+                let reason = reason.to_ascii_lowercase();
+                if require_finish {
+                    matches!(
+                        reason.as_str(),
+                        "end_turn" | "stop" | "stop_sequence" | "completed"
+                    )
+                } else {
+                    !matches!(
+                        reason.as_str(),
+                        "max_tokens"
+                            | "max_output_tokens"
+                            | "length"
+                            | "incomplete"
+                            | "pause_turn"
+                            | "tool_use"
+                            | "tool_calls"
+                            | "refusal"
+                            | "content_filter"
+                    )
+                }
+            })
+    });
+    anyhow::ensure!(
+        complete.unwrap_or(!require_finish),
+        "Compaction did not finish a complete summary"
+    );
+    Ok(())
+}
+
+/// Summarize the native history with an appended instruction, leaving the
+/// original request prefix and provider settings intact. This never runs tools.
+pub async fn summarize_native(
+    model: &dyn CompactionModel,
+    templates: &Templates,
+    system: &str,
+    messages: &[Message],
+) -> Result<Summary> {
+    let instruction = render(&templates.compaction, &SummarizeContext {
+        messages: "Use the conversation above as the history to summarize. Ignore stale per-turn context events when describing current work.".to_string(),
+    })?;
+    let mut request = messages.to_vec();
+    request.push(Message::user().with_text(format!(
+        "{instruction}\n\nThis is a summary-only request. Do not call any tools or continue the task. Return only the summary."
+    )));
+    let (mut response, usage) = model.complete(system, &request).await?;
+    validate_summary(&response, &usage, true)?;
+    // Thinking is billable but must not become unsigned history after rendering.
+    response
+        .content
+        .retain(|content| matches!(content, MessageContent::Text(_)));
+    response.role = Role::User;
+    apply_structured_summary(&mut response, &templates.summary);
+    Ok(Summary {
+        message: response,
+        usage,
+    })
+}
+
 async fn ensure_usage_tokens(
     usage: &mut ProviderUsage,
     estimator: &dyn TokenEstimator,
@@ -143,6 +218,7 @@ pub async fn summarize(
 
         match model.complete(&system_prompt, &request).await {
             Ok((mut response, mut usage)) => {
+                validate_summary(&response, &usage, false)?;
                 response.role = Role::User;
 
                 // Usage must reflect the raw model output (billable tokens),
@@ -189,6 +265,113 @@ mod tests {
     use async_trait::async_trait;
     use rmcp::model::CallToolResult;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct NativeModel {
+        response: Message,
+        reason: Option<&'static str>,
+        captured: std::sync::Mutex<Option<(String, Vec<Message>)>>,
+    }
+
+    #[async_trait]
+    impl CompactionModel for NativeModel {
+        async fn complete(
+            &self,
+            system: &str,
+            messages: &[Message],
+        ) -> Result<(Message, ProviderUsage), ProviderError> {
+            *self.captured.lock().unwrap() = Some((system.to_string(), messages.to_vec()));
+            let mut usage = ProviderUsage::new("synthetic".into(), Default::default());
+            usage.finish_reasons = self.reason.map(|reason| vec![reason.to_string()]);
+            Ok((self.response.clone(), usage))
+        }
+    }
+
+    fn native_model(response: Message, reason: Option<&'static str>) -> NativeModel {
+        NativeModel {
+            response,
+            reason,
+            captured: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn native_history_prefix_and_signed_thinking_are_preserved() {
+        let history = vec![
+            Message::user().with_text("Implement synthetic feature"),
+            Message::assistant()
+                .with_thinking("reasoning", "signed-block")
+                .with_text("Working"),
+            Message::user().with_tool_response(
+                "call",
+                Ok(CallToolResult::success(vec![
+                    rmcp::model::ContentBlock::text("synthetic result"),
+                ])),
+            ),
+        ];
+        let model = native_model(
+            Message::assistant()
+                .with_thinking("summary reasoning", "new-signature")
+                .with_text(
+                    r#"```json
+{"user_intent":["Implement synthetic feature"],"pending_tasks":["Run the test"]}
+```"#,
+                ),
+            Some("end_turn"),
+        );
+        let summary = summarize_native(&model, &Templates::default(), "original system", &history)
+            .await
+            .unwrap();
+        let captured = model.captured.lock().unwrap();
+        let (system, request) = captured.as_ref().unwrap();
+        assert_eq!(system, "original system");
+        assert_eq!(
+            serde_json::to_value(&request[..history.len()]).unwrap(),
+            serde_json::to_value(&history).unwrap()
+        );
+        assert_eq!(request.len(), history.len() + 1);
+        assert!(request
+            .last()
+            .unwrap()
+            .as_concat_text()
+            .contains("Do not call any tools"));
+        assert!(summary.message.as_concat_text().contains("Run the test"));
+        assert!(summary
+            .message
+            .content
+            .iter()
+            .all(|content| matches!(content, MessageContent::Text(_))));
+    }
+
+    #[tokio::test]
+    async fn native_rejects_incomplete_empty_and_tool_summaries() {
+        let tool = Message::assistant().with_tool_request(
+            "unexpected",
+            Ok(rmcp::model::CallToolRequestParams::new("synthetic_tool")),
+        );
+        for (response, reason) in [
+            (
+                Message::assistant().with_text("partial"),
+                Some("max_tokens"),
+            ),
+            (
+                Message::assistant().with_text("partial"),
+                Some("pause_turn"),
+            ),
+            (Message::assistant().with_text("partial"), None),
+            (Message::assistant().with_text("  "), Some("end_turn")),
+            (tool.with_text("Also a summary"), Some("end_turn")),
+        ] {
+            let model = native_model(response, reason);
+            assert!(summarize_native(
+                &model,
+                &Templates::default(),
+                "system",
+                &[Message::user().with_text("history")]
+            )
+            .await
+            .is_err());
+        }
+    }
 
     struct OverflowingModel {
         request_count: AtomicUsize,

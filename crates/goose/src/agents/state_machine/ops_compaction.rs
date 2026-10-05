@@ -13,7 +13,9 @@ use crate::agents::state_machine::{
     trailing_error, yielded, yielded_with, ConversationEffect, Emitter, GooseEffect, Operation,
     OperationResult, SlashCommand,
 };
-use crate::context_mgmt::{compact_messages, count_context_tokens};
+use crate::context_mgmt::{
+    compact_messages_with_context, count_context_tokens, SharedCompactionRequestContext,
+};
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
@@ -65,6 +67,7 @@ pub struct CompactionOperation {
     context_limit: usize,
     threshold: f64,
     manages_own_context: bool,
+    compaction_context: SharedCompactionRequestContext,
 }
 
 impl CompactionOperation {
@@ -81,7 +84,13 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
+            compaction_context: Arc::default(),
         }
+    }
+
+    pub fn with_compaction_context(mut self, context: SharedCompactionRequestContext) -> Self {
+        self.compaction_context = context;
+        self
     }
 
     fn over_threshold(&self, tokens: usize) -> bool {
@@ -175,12 +184,18 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        let result = match compact_messages(
+        let context = self
+            .compaction_context
+            .lock()
+            .expect("compaction context unavailable")
+            .clone();
+        let result = match compact_messages_with_context(
             self.provider.as_ref(),
             &self.model_config,
             &session.id,
             conversation,
             true,
+            context.as_ref(),
         )
         .instrument(span.clone())
         .await
@@ -310,12 +325,18 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        match compact_messages(
+        let context = self
+            .compaction_context
+            .lock()
+            .expect("compaction context unavailable")
+            .clone();
+        match compact_messages_with_context(
             self.provider.as_ref(),
             &self.model_config,
             &session.id,
             conversation,
             false,
+            context.as_ref(),
         )
         .instrument(span.clone())
         .await

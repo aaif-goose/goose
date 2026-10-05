@@ -672,6 +672,27 @@ impl ProviderDescriptor for OpenAiProvider {
 
 #[async_trait]
 impl Provider for OpenAiProvider {
+    fn validate_compaction_config(&self, model: &ModelConfig) -> Result<(), ProviderError> {
+        let model_tools = model
+            .request_params
+            .as_ref()
+            .is_some_and(|params| params.contains_key("tools"));
+        let declared_tools = self
+            .declared_model(&model.model_name)
+            .and_then(|model| model.request_params.as_ref())
+            .is_some_and(|params| params.contains_key("tools"));
+        if model_tools || declared_tools {
+            return Err(ProviderError::InvalidValue(
+                "Compaction cannot safely summarize with provider-side tool overrides".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn supports_cache_preserving_compaction(&self, _model_config: &ModelConfig) -> bool {
+        self.name == OPEN_AI_PROVIDER_NAME
+    }
+
     fn get_name(&self) -> &str {
         &self.name
     }

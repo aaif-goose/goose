@@ -332,6 +332,59 @@ pub(crate) fn prepare_tools_for_provider(
     }
 }
 
+fn enrich_unclaimed_tool_errors(messages: &[Message], tools: &[rmcp::model::Tool]) -> Vec<Message> {
+    let mut available_tools = tools
+        .iter()
+        .map(|tool| tool.name.as_ref())
+        .collect::<Vec<_>>();
+    available_tools.sort_unstable();
+    available_tools.dedup();
+    let available_tools = available_tools.join(", ");
+    let mut messages = messages.to_vec();
+    for message in &mut messages {
+        for content in &mut message.content {
+            let goose_providers::conversation::message::MessageContent::ToolResponse(response) =
+                content
+            else {
+                continue;
+            };
+            let Some(metadata) = &mut response.metadata else {
+                continue;
+            };
+            if metadata
+                .remove(crate::agents::state_machine::ops_unknown_tool::UNCLAIMED_TOOL_ERROR)
+                .is_none()
+            {
+                continue;
+            }
+            let Ok(result) = &mut response.tool_result else {
+                continue;
+            };
+            result.content.push(rmcp::model::ContentBlock::text(format!(
+                "Available tools: [{available_tools}]."
+            )));
+        }
+    }
+    messages
+}
+
+pub(crate) fn prepare_provider_messages(messages: &[Message], tools: &[Tool]) -> Conversation {
+    let messages = enrich_unclaimed_tool_errors(messages, tools);
+    let projected_messages =
+        Conversation::new_unvalidated(messages.iter().cloned()).agent_visible_messages();
+    let (filtered_messages, _) =
+        fix_conversation(Conversation::new_unvalidated(projected_messages));
+    Conversation::new_unvalidated(merge_consecutive_messages_for_request(
+        filtered_messages.messages().clone(),
+    ))
+}
+
+pub(crate) fn prepare_provider_model_config(model: &ModelConfig) -> ModelConfig {
+    model
+        .clone()
+        .with_default_thinking_effort(Config::global().get_goose_thinking_effort())
+}
+
 #[tracing::instrument(
     skip(provider, model_config, session_id, system_prompt, messages, tools, toolshim_tools),
     fields(
@@ -365,13 +418,12 @@ pub(crate) async fn stream_response_from_provider(
 ) -> Result<MessageStream, ProviderError> {
     let config = model_config.clone();
 
-    let projected_messages =
-        Conversation::new_unvalidated(messages.iter().cloned()).agent_visible_messages();
-    let (filtered_messages, _) =
-        fix_conversation(Conversation::new_unvalidated(projected_messages));
-    let filtered_messages = Conversation::new_unvalidated(merge_consecutive_messages_for_request(
-        filtered_messages.messages().clone(),
-    ));
+    let advertised_tools = if config.toolshim {
+        toolshim_tools
+    } else {
+        tools
+    };
+    let filtered_messages = prepare_provider_messages(messages, advertised_tools);
 
     // Convert tool messages to text if toolshim is enabled
     let messages_for_provider = if config.toolshim {
@@ -397,8 +449,7 @@ pub(crate) async fn stream_response_from_provider(
 
     // Capture errors during stream creation and return them as part of the stream
     // so they can be handled by the existing error handling logic in the agent
-    let model_config =
-        model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
+    let model_config = prepare_provider_model_config(&model_config);
     let request_started = std::time::Instant::now();
     debug!("WAITING_LLM_STREAM_START");
     let stream_result = crate::session_context::with_session_id(
@@ -903,6 +954,61 @@ mod tests {
             let usage = ProviderUsage::new("capturing".to_string(), Usage::default());
             Ok(stream_from_single_message(message, usage))
         }
+    }
+
+    #[tokio::test]
+    async fn toolshim_unknown_tool_note_preserves_advertised_names() {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let provider = Arc::new(CapturingProvider {
+            messages: captured.clone(),
+        });
+        let mut answer = Message::user().with_tool_response(
+            "call",
+            Ok(rmcp::model::CallToolResult::success(vec![
+                rmcp::model::ContentBlock::text("Unknown tool"),
+            ])),
+        );
+        if let MessageContent::ToolResponse(response) = &mut answer.content[0] {
+            response.metadata = Some(serde_json::Map::from_iter([(
+                crate::agents::state_machine::ops_unknown_tool::UNCLAIMED_TOOL_ERROR.into(),
+                json!(true),
+            )]));
+        }
+        let history = vec![
+            Message::user().with_text("Synthetic task"),
+            Message::assistant().with_tool_request(
+                "call",
+                Ok(rmcp::model::CallToolRequestParams::new("synthetic_missing")),
+            ),
+            answer,
+        ];
+        let mut model = ModelConfig::new("synthetic");
+        model.toolshim = true;
+        let shim_tools = vec![Tool::new(
+            "synthetic_advertised",
+            "Synthetic tool",
+            object!({"type":"object"}),
+        )];
+        let stream = stream_response_from_provider(
+            provider,
+            model,
+            "synthetic",
+            "system",
+            &history,
+            &[],
+            &shim_tools,
+        )
+        .await
+        .unwrap();
+        stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(captured.lock().unwrap().iter().any(|message| message
+            .as_concat_text()
+            .contains("Available tools: [synthetic_advertised].")));
     }
 
     #[tokio::test]

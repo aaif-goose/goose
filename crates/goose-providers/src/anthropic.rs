@@ -347,6 +347,10 @@ impl ProviderDescriptor for AnthropicProvider {
 
 #[async_trait]
 impl Provider for AnthropicProvider {
+    fn supports_cache_preserving_compaction(&self, _model_config: &ModelConfig) -> bool {
+        true
+    }
+
     fn get_name(&self) -> &str {
         &self.name
     }

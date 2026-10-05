@@ -13,6 +13,7 @@ pub(super) struct ProviderFeatures {
     pub(super) cache_read_tokens: Option<i32>,
     pub(super) cache_write_tokens: Option<i32>,
     pub(super) manages_own_context: bool,
+    pub(super) native_compaction: bool,
 }
 
 impl Default for ProviderFeatures {
@@ -24,6 +25,7 @@ impl Default for ProviderFeatures {
             cache_read_tokens: None,
             cache_write_tokens: None,
             manages_own_context: false,
+            native_compaction: false,
         }
     }
 }
@@ -145,6 +147,10 @@ impl ApiCall {
 
     pub(super) fn session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
+    }
+
+    pub(super) fn wire_body(&self) -> &Value {
+        &self.body
     }
 
     pub(super) fn input_contains(&self, needle: &str) -> bool {

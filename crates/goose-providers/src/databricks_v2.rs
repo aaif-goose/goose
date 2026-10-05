@@ -488,6 +488,13 @@ impl crate::base::ProviderDescriptor for DatabricksV2Provider {
 
 #[async_trait]
 impl Provider for DatabricksV2Provider {
+    fn supports_cache_preserving_compaction(&self, model_config: &ModelConfig) -> bool {
+        matches!(
+            Self::route_for_model(&model_config.model_name),
+            DatabricksV2Route::AnthropicMessages | DatabricksV2Route::OpenAiResponses
+        )
+    }
+
     fn get_name(&self) -> &str {
         &self.name
     }

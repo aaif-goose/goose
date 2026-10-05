@@ -522,6 +522,27 @@ pub trait Provider: MaybeSend + MaybeSync {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError>;
 
+    /// Reject settings that may execute tools inside the provider before a
+    /// summary response can be checked by the caller.
+    fn validate_compaction_config(&self, model: &ModelConfig) -> Result<(), ProviderError> {
+        if model
+            .request_params
+            .as_ref()
+            .is_some_and(|params| params.contains_key("tools"))
+        {
+            return Err(ProviderError::InvalidValue(
+                "Compaction cannot safely summarize with provider-side tool overrides".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether this route can summarize native history without changing its
+    /// cache prefix. Defaults to the serialized, tool-free compaction path.
+    fn supports_cache_preserving_compaction(&self, _model_config: &ModelConfig) -> bool {
+        false
+    }
+
     async fn complete(
         &self,
         model_config: &ModelConfig,

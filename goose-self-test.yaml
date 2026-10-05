@@ -10,6 +10,7 @@ activities:
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
+  - Validate cache-preserving compaction requests and safe summary rejection
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -184,6 +185,14 @@ prompt: |
   3. Verify a configured path applies to all three routes, and that a full route (`ai-gateway/openai/v1/responses`) is accepted and its base reused, since Kotlin callers configure the full route.
   4. Verify empty paths and URLs are rejected, as neither can be joined to a route.
   5. Run `python3 documentation/automation/gdk-api/generate.py --check` to verify the generated GDK API data is current and publishes `gateway_path` as an optional argument defaulting to `None`.
+  If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
+
+  ### Cache-Preserving Compaction Validation
+  When running from a goose source checkout:
+  1. Run `cargo test -p goose --features scheduler --test cache_preserving_compaction`.
+  2. Verify synthetic HTTP requests retain the original system, tool schemas, history prefix, and thinking settings for Databricks Anthropic Messages and OpenAI Responses.
+  3. Verify truncated responses, transport failures, and cancellation leave history unchanged; session tool overrides use a tool-free fallback and provider-declared server tools fail before sending.
+  4. Report the cache counters as synthetic parser checks, not measured provider cache hits or savings.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   ### Muse Code Provider Validation

@@ -51,9 +51,7 @@ use crate::agents::AgentEvent;
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
-use crate::context_mgmt::{
-    check_if_compaction_needed, compact_messages, DEFAULT_COMPACTION_THRESHOLD,
-};
+use crate::context_mgmt::{check_if_compaction_needed, DEFAULT_COMPACTION_THRESHOLD};
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, MessageUsage, ProviderMetadata,
     SystemNotificationType,
@@ -284,6 +282,8 @@ fn resolve_use_login_shell_path(explicit: Option<bool>, platform: &GoosePlatform
 /// The main goose Agent
 pub struct Agent {
     pub(super) provider: SharedProvider,
+    compaction_context:
+        std::sync::Mutex<(String, crate::context_mgmt::SharedCompactionRequestContext)>,
     pub config: AgentConfig,
     pub(super) current_goose_mode: Mutex<GooseMode>,
 
@@ -459,6 +459,7 @@ impl Agent {
         let is_subagent = config.is_subagent;
         Self {
             provider: provider.clone(),
+            compaction_context: std::sync::Mutex::new((String::new(), Arc::default())),
             config,
             current_goose_mode: Mutex::new(initial_mode),
             extension_manager: Arc::new(ExtensionManager::new(
@@ -862,7 +863,7 @@ impl Agent {
         }
         Ok(result)
     }
-    async fn load_project_instructions(&self, session: &Session) -> Option<String> {
+    pub(super) async fn load_project_instructions(&self, session: &Session) -> Option<String> {
         let project_id = session.project_id.as_deref()?;
         let entry = crate::sources::read_project(project_id).ok()?;
         let mut parts = Vec::new();
@@ -1738,18 +1739,32 @@ impl Agent {
         let tool_pair_compaction_enabled =
             crate::context_mgmt::tool_pair_summarization_enabled() && !manages_own_context;
 
+        // Keep only the active session's prefix, including across reply calls.
+        let compaction_context = {
+            let mut cached = self
+                .compaction_context
+                .lock()
+                .expect("compaction context unavailable");
+            if cached.0 != session_config.id {
+                *cached = (session_config.id.clone(), Arc::default());
+            }
+            Arc::clone(&cached.1)
+        };
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(steer_queue, self.hook_manager.clone())),
             Arc::new(MaxTurnsOperation::new(max_turns)),
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
-            operations.push(Arc::new(CompactionOperation::new(
-                provider.clone(),
-                model_config.clone(),
-                context_limit,
-                compaction_threshold,
-            )));
+            operations.push(Arc::new(
+                CompactionOperation::new(
+                    provider.clone(),
+                    model_config.clone(),
+                    context_limit,
+                    compaction_threshold,
+                )
+                .with_compaction_context(Arc::clone(&compaction_context)),
+            ));
         }
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
@@ -1813,7 +1828,9 @@ impl Agent {
         };
         let status_operation =
             Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
-        let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
+        let inference_provider = Arc::new(
+            GooseInferenceProvider::new(provider).with_compaction_context(compaction_context),
+        );
         let inference = Arc::new(
             InferenceRunner::new(inference_provider, model_config)
                 .with_request_preparer(Arc::new(request_preparer)),
@@ -2505,12 +2522,18 @@ impl Agent {
                 );
 
                 let compact_model_config = self.model_config_for_session(&session_config.id).await?;
-                match compact_messages(
+                let (_, _lease, tools, _, mut system, _) = self.prepare_tools_and_prompt(&session).await?;
+                if let Some(addendum) = self.load_project_instructions(&session).await {
+                    system = format!("{system}\n\n{addendum}");
+                }
+                let compact_context = crate::context_mgmt::CompactionRequestContext { system, tools };
+                match crate::context_mgmt::compact_messages_with_context(
                     self.provider().await?.as_ref(),
                     &compact_model_config,
                     &session_config.id,
                     &conversation_to_compact,
                     false,
+                    Some(&compact_context),
                 )
                 .await
                 {
@@ -3301,12 +3324,14 @@ impl Agent {
                                 )
                             );
 
-                            match compact_messages(
+                            let compact_context = crate::context_mgmt::CompactionRequestContext { system: system_prompt.clone(), tools: tools.clone() };
+                            match crate::context_mgmt::compact_messages_with_context(
                                 self.provider().await?.as_ref(),
                                 &model_config,
                                 &session_config.id,
                                 &conversation,
                                 false,
+                                Some(&compact_context),
                             )
                             .await
                             {
@@ -4076,6 +4101,7 @@ mod tests {
     use crate::recipe::Response;
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use goose_providers::model::ModelConfig;
     use rmcp::model::{Annotations, Role, TextContent, Tool};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -5829,6 +5855,196 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         Ok((agent, session.id))
+    }
+
+    #[derive(Default)]
+    struct NativeSummaryTestProvider {
+        requests: std::sync::Mutex<Vec<(String, Vec<Message>, ModelConfig)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for NativeSummaryTestProvider {
+        fn get_name(&self) -> &str {
+            "native-summary-test"
+        }
+        fn supports_cache_preserving_compaction(&self, _: &ModelConfig) -> bool {
+            true
+        }
+        async fn stream(
+            &self,
+            model: &ModelConfig,
+            system: &str,
+            messages: &[Message],
+            _: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.requests.lock().unwrap().push((
+                system.to_string(),
+                messages.to_vec(),
+                model.clone(),
+            ));
+            let is_summary = messages.last().is_some_and(|message| {
+                message
+                    .as_concat_text()
+                    .contains("This is a summary-only request")
+            });
+            let text = if is_summary {
+                "Synthetic summary with the pending task"
+            } else {
+                "Synthetic ready"
+            };
+            Ok(stream_from_single_message(
+                Message::assistant().with_text(text).with_generated_id(),
+                ProviderUsage::new(
+                    model.model_name.clone(),
+                    Usage::new(Some(100), Some(10), Some(110)),
+                )
+                .with_finish_reasons(vec!["stop".to_string()]),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn native_compaction_agent_loop_parity_and_session_isolation() -> Result<()> {
+        let _env = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        for state_machine in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let provider = Arc::new(NativeSummaryTestProvider::default());
+            let (agent, id) = create_test_agent(
+                temp.path().join("data"),
+                crate::hooks::HookManager::from_plugins_for_test(vec![]),
+                provider.clone(),
+            )
+            .await?;
+            agent
+                .override_system_prompt("Synthetic original system".into())
+                .await;
+            let config = SessionConfig {
+                id: id.clone(),
+                schedule_id: None,
+                max_turns: Some(3),
+                retry_config: None,
+            };
+            let mut first = agent
+                .reply(
+                    Message::user().with_text("Synthetic first request"),
+                    config.clone(),
+                    state_machine,
+                    None,
+                )
+                .await?;
+            while let Some(event) = first.next().await {
+                event?;
+            }
+            drop(first);
+            agent
+                .config
+                .session_manager
+                .update(&id)
+                .usage(Usage::new(None, None, Some(500_000)))
+                .apply()
+                .await?;
+            let mut next = agent
+                .reply(
+                    Message::user().with_text("Synthetic current request"),
+                    config.clone(),
+                    state_machine,
+                    None,
+                )
+                .await?;
+            let mut replacements = 0;
+            while let Some(event) = next.next().await {
+                if matches!(event?, AgentEvent::HistoryReplaced(_)) {
+                    replacements += 1;
+                }
+            }
+            drop(next);
+            assert_eq!(replacements, 1, "loop {state_machine}");
+            {
+                let requests = provider.requests.lock().unwrap();
+                let original = &requests[0];
+                let summary = requests
+                    .iter()
+                    .find(|(_, messages, _)| {
+                        messages.last().is_some_and(|message| {
+                            message
+                                .as_concat_text()
+                                .contains("This is a summary-only request")
+                        })
+                    })
+                    .unwrap();
+                assert_eq!(summary.0, original.0);
+                assert_eq!(summary.2.thinking_effort(), original.2.thinking_effort());
+                assert_eq!(summary.2.thinking_effort(), Some(ThinkingEffort::High));
+                assert!(summary.1.iter().any(|message| message
+                    .as_concat_text()
+                    .contains("Synthetic current request")));
+            }
+            let mut manual = agent
+                .reply(
+                    Message::user().with_text("/compact"),
+                    config,
+                    state_machine,
+                    None,
+                )
+                .await?;
+            while let Some(event) = manual.next().await {
+                event?;
+            }
+            drop(manual);
+            if state_machine {
+                let prior = agent.compaction_context.lock().unwrap().1.clone();
+                let new_session = agent
+                    .config
+                    .session_manager
+                    .create_session(
+                        temp.path().to_path_buf(),
+                        "synthetic second session".into(),
+                        SessionType::Hidden,
+                        GooseMode::Auto,
+                    )
+                    .await?;
+                agent
+                    .update_provider(
+                        provider.clone(),
+                        ModelConfig::new("mock-model"),
+                        &new_session.id,
+                    )
+                    .await?;
+                agent
+                    .override_system_prompt("Synthetic second system".into())
+                    .await;
+                let config = SessionConfig {
+                    id: new_session.id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(3),
+                    retry_config: None,
+                };
+                let mut reply = agent
+                    .reply(
+                        Message::user().with_text("Synthetic new session request"),
+                        config,
+                        true,
+                        None,
+                    )
+                    .await?;
+                while let Some(event) = reply.next().await {
+                    event?;
+                }
+                drop(reply);
+                let cached = agent.compaction_context.lock().unwrap();
+                assert_eq!(cached.0, new_session.id);
+                assert!(!Arc::ptr_eq(&cached.1, &prior));
+                assert!(cached
+                    .1
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .system
+                    .contains("Synthetic second system"));
+            }
+        }
+        Ok(())
     }
 
     struct TraceContentProvider;

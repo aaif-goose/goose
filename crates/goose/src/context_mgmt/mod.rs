@@ -12,9 +12,9 @@ use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use indoc::indoc;
-use rmcp::model::Role;
 #[cfg(test)]
 use rmcp::model::{Annotations, ContentBlock, TextContent};
+use rmcp::model::{Role, Tool};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -74,6 +74,33 @@ pub async fn compact_messages(
     conversation: &Conversation,
     manual_compact: bool,
 ) -> Result<CompactionResult> {
+    compact_messages_with_context(
+        provider,
+        model_config,
+        session_id,
+        conversation,
+        manual_compact,
+        None,
+    )
+    .await
+}
+
+#[derive(Clone)]
+pub struct CompactionRequestContext {
+    pub system: String,
+    pub tools: Vec<Tool>,
+}
+
+pub type SharedCompactionRequestContext = Arc<std::sync::Mutex<Option<CompactionRequestContext>>>;
+
+pub async fn compact_messages_with_context(
+    provider: &dyn Provider,
+    model_config: &ModelConfig,
+    session_id: &str,
+    conversation: &Conversation,
+    manual_compact: bool,
+    context: Option<&CompactionRequestContext>,
+) -> Result<CompactionResult> {
     info!("Performing message compaction");
 
     let messages = conversation.messages();
@@ -130,8 +157,14 @@ pub async fn compact_messages(
 
     let messages_to_compact = messages.as_slice();
 
-    let (summary_message, summarization_usage) =
-        do_compact(provider, model_config, session_id, messages_to_compact).await?;
+    let (summary_message, summarization_usage) = do_compact(
+        provider,
+        model_config,
+        session_id,
+        messages_to_compact,
+        context,
+    )
+    .await?;
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -277,6 +310,7 @@ struct GooseCompactionModel<'a> {
     provider: &'a dyn Provider,
     model_config: &'a ModelConfig,
     session_id: &'a str,
+    native_tools: Option<&'a [Tool]>,
 }
 
 #[async_trait::async_trait]
@@ -286,6 +320,18 @@ impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
         system: &str,
         messages: &[Message],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
+        if let Some(tools) = self.native_tools {
+            let model =
+                crate::agents::reply_parts::prepare_provider_model_config(self.model_config);
+            // Repair the complete request so a final assistant turn is kept.
+            let messages = crate::agents::reply_parts::prepare_provider_messages(messages, tools);
+            return crate::session_context::with_session_id(
+                Some(self.session_id.to_string()),
+                self.provider
+                    .complete(&model, system, messages.messages(), tools),
+            )
+            .await;
+        }
         crate::model_config::complete_one_shot(
             self.provider,
             self.model_config,
@@ -335,6 +381,7 @@ async fn do_compact(
     model_config: &ModelConfig,
     session_id: &str,
     messages: &[Message],
+    context: Option<&CompactionRequestContext>,
 ) -> Result<(Message, ProviderUsage), anyhow::Error> {
     // Keep stale per-turn state out of the summary.
     let agent_visible_messages = Conversation::new_unvalidated(
@@ -345,20 +392,84 @@ async fn do_compact(
     )
     .agent_visible_messages();
 
+    // Auxiliary summaries cannot run provider-side tools. Keep existing
+    // serialized compaction usable when the session opts into server tools.
+    let mut fallback_config = model_config.clone();
+    if let Some(params) = &mut fallback_config.request_params {
+        params.remove("tools");
+        params.remove("tool_choice");
+    }
     let model = GooseCompactionModel {
         provider,
-        model_config,
+        model_config: &fallback_config,
         session_id,
+        native_tools: None,
     };
+    let templates = compaction_templates()?;
+    if let Some(context) = context.filter(|_| native_compaction_supported(provider, model_config)) {
+        provider.validate_compaction_config(model_config)?;
+        let native_messages =
+            Conversation::new_unvalidated(messages.iter().cloned()).agent_visible_messages();
+        let native_model = GooseCompactionModel {
+            model_config,
+            native_tools: Some(&context.tools),
+            ..model
+        };
+        match goose_context_management::summarize::summarize_native(
+            &native_model,
+            &templates,
+            &context.system,
+            &native_messages,
+        )
+        .await
+        {
+            Ok(summary) => return Ok((summary.message, summary.usage)),
+            // The appended instruction may not fit after a context error.
+            // Only overflow uses the existing lossy emergency fallback.
+            Err(error)
+                if matches!(
+                    error.downcast_ref::<ProviderError>(),
+                    Some(ProviderError::ContextLengthExceeded(_))
+                ) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    provider.validate_compaction_config(&fallback_config)?;
     let summary = goose_context_management::summarize(
         &model,
         Some(&GooseTokenEstimator),
-        &compaction_templates()?,
+        &templates,
         &agent_visible_messages,
     )
     .await?;
 
     Ok((summary.message, summary.usage))
+}
+
+fn native_compaction_supported(provider: &dyn Provider, model: &ModelConfig) -> bool {
+    // Provider-side tools can execute before Goose can inspect the response.
+    if model
+        .request_params
+        .as_ref()
+        .is_some_and(|params| params.contains_key("tools"))
+    {
+        return false;
+    }
+    if model.toolshim || model.prompt_cache_disabled() {
+        return false;
+    }
+    if model
+        .request_params
+        .as_ref()
+        .and_then(|params| params.get("tool_choice"))
+        .is_some_and(|choice| {
+            choice.as_str() != Some("auto")
+                && choice.get("type").and_then(|value| value.as_str()) != Some("auto")
+        })
+    {
+        return false;
+    }
+    provider.supports_cache_preserving_compaction(model)
 }
 
 pub use goose_context_management::format_message_for_compacting;

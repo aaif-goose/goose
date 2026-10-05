@@ -501,3 +501,56 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
 
     Ok(())
 }
+
+#[tokio::test]
+async fn native_compaction_uses_saved_prefix_across_replies_and_manual_command() -> Result<()> {
+    let (pipeline, api) = pipeline::test_pipeline_with(ProviderFeatures {
+        native_compaction: true,
+        ..Default::default()
+    })
+    .await?;
+    api.on("synthetic start").reply("ready");
+    pipeline.run(["synthetic start"]).await?;
+    let original = api.calls().last().unwrap().wire_body().clone();
+    api.on("synthetic next").reply("continued");
+    api.on("This is a summary-only request")
+        .reply("synthetic summary");
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+    let compacted = pipeline.run(["synthetic next"]).await?;
+    compacted.assert_message(-1, Agent, "continued");
+    assert_eq!(compacted.history_replacements(), 1);
+    let calls = api.calls();
+    let summary = calls
+        .iter()
+        .find(|call| call.input_contains("This is a summary-only request"))
+        .unwrap()
+        .wire_body();
+    assert_eq!(summary["tools"], original["tools"]);
+    assert_eq!(summary["messages"][0], original["messages"][0]);
+    assert_eq!(summary["model"], original["model"]);
+    assert_eq!(summary["reasoning_effort"], original["reasoning_effort"]);
+    let manual = pipeline.run(["/compact"]).await?;
+    assert_eq!(manual.history_replacements(), 1);
+    manual.assert_emitted("Compaction complete");
+    Ok(())
+}
+
+#[tokio::test]
+async fn native_tool_summary_is_rejected_without_dispatch_or_history_replacement() -> Result<()> {
+    let (pipeline, api) = pipeline::test_pipeline_with(ProviderFeatures {
+        native_compaction: true,
+        ..Default::default()
+    })
+    .await?;
+    api.on("synthetic start").reply("ready");
+    pipeline.run(["synthetic start"]).await?;
+    api.on("This is a summary-only request")
+        .call(ADD, serde_json::json!({"a":4,"b":5}));
+    let rejected = pipeline.run(["/compact"]).await?;
+    assert_eq!(rejected.history_replacements(), 0);
+    assert_eq!(pipeline.calculator_total(), 0);
+    rejected.assert_emitted("Compaction returned non-summary content");
+    Ok(())
+}

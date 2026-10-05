@@ -47,6 +47,10 @@ struct FeatureProvider {
 
 #[async_trait::async_trait]
 impl Provider for FeatureProvider {
+    fn supports_cache_preserving_compaction(&self, _model: &ModelConfig) -> bool {
+        self.features.native_compaction
+    }
+
     fn get_name(&self) -> &str {
         self.inner.get_name()
     }
@@ -91,6 +95,7 @@ pub(super) struct TestPipeline {
     api: Arc<DummyApi>,
     provider_features: ProviderFeatures,
     provider: Arc<dyn Provider>,
+    compaction_context: crate::context_mgmt::SharedCompactionRequestContext,
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -130,12 +135,15 @@ impl TestPipeline {
             Arc::new(BangShellOperation::new()),
         ];
         if !self.provider_features.manages_own_context {
-            operations.push(Arc::new(CompactionOperation::new(
-                provider.clone(),
-                self.model_config.clone(),
-                self.model_config.context_limit(),
-                COMPACTION_THRESHOLD,
-            )));
+            operations.push(Arc::new(
+                CompactionOperation::new(
+                    provider.clone(),
+                    self.model_config.clone(),
+                    self.model_config.context_limit(),
+                    COMPACTION_THRESHOLD,
+                )
+                .with_compaction_context(Arc::clone(&self.compaction_context)),
+            ));
         }
         let extension_lease = Arc::clone(&self.extension_lease);
         let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
@@ -196,7 +204,10 @@ impl TestPipeline {
             provider.clone(),
             self.model_config.clone(),
         ));
-        let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
+        let inference_provider = Arc::new(
+            GooseInferenceProvider::new(provider)
+                .with_compaction_context(Arc::clone(&self.compaction_context)),
+        );
         let inference = Arc::new(
             InferenceRunner::new(inference_provider, self.model_config.clone())
                 .with_request_preparer(Arc::new(request_preparer)),
@@ -779,15 +790,10 @@ async fn build_test_pipeline(
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
     );
-    let provider: Arc<dyn Provider> =
-        if provider_features.resolved_model.is_some() || provider_features.manages_own_context {
-            Arc::new(FeatureProvider {
-                inner: provider,
-                features: provider_features,
-            })
-        } else {
-            provider
-        };
+    let provider: Arc<dyn Provider> = Arc::new(FeatureProvider {
+        inner: provider,
+        features: provider_features,
+    });
     let shared_provider = Arc::new(TokioMutex::new(Some(provider.clone())));
     let extension_manager = Arc::new(ExtensionManager::new(
         shared_provider.clone(),
@@ -822,6 +828,7 @@ async fn build_test_pipeline(
         api,
         provider_features,
         provider: provider.clone(),
+        compaction_context: Arc::default(),
         model_config,
         extension_manager,
         extension_lease: Arc::new(StdMutex::new(None)),
