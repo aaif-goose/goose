@@ -148,6 +148,10 @@ impl TestPipeline {
             Arc::new(DoctorOperation),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(self.hook_manager.clone())),
+            Arc::new(ForegroundSubagentOperation::new(
+                ForegroundSubagentRunner::new(self.session_manager.clone(), false),
+                cancel.clone(),
+            )),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
                 self.hook_manager.clone(),
@@ -158,10 +162,6 @@ impl TestPipeline {
                 self.hook_manager.clone(),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
-            Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.session_manager.clone(), false),
-                cancel.clone(),
-            )),
             Arc::new(RetryOperation::new(
                 &self.goal,
                 &self.grind,
