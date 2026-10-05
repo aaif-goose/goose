@@ -175,13 +175,13 @@ fn long_lived_child_process_survives_spawning_thread_exit() {
     );
 
     let deadline = Instant::now() + Duration::from_secs(5);
-    while process_is_running(child_pid) && Instant::now() < deadline {
+    while process_is_running(child_pid) {
+        assert!(
+            Instant::now() < deadline,
+            "child process {child_pid} survived parent process death"
+        );
         std::thread::sleep(Duration::from_millis(100));
     }
-    assert!(
-        !process_is_running(child_pid),
-        "child process {child_pid} survived parent process death"
-    );
 }
 
 fn process_exists(pid: u32) -> bool {
@@ -190,13 +190,22 @@ fn process_exists(pid: u32) -> bool {
 
 fn process_is_running(pid: u32) -> bool {
     match process_state(pid) {
-        Some('Z') | None => false,
+        Some('Z' | 'X') | None => false,
         Some(_) => true,
     }
 }
 
 fn process_state(pid: u32) -> Option<char> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let (_, after_name) = stat.rsplit_once(") ")?;
-    after_name.chars().next()
+    let stat = match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            return None;
+        }
+        Err(error) => panic!("failed to read process {pid} state: {error}"),
+    };
+    let (_, after_name) = stat.rsplit_once(") ").expect("process stat name");
+    Some(after_name.chars().next().expect("process stat state"))
 }
