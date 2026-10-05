@@ -2307,16 +2307,20 @@ impl GooseAcpAgent {
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        // The client's trace context must stay attached while the turn's spans and tool calls are polled.
+        #[cfg(feature = "otel")]
+        let trace_cx = crate::otel::trace_context::extract_from_meta(args.meta.as_ref())
+            .unwrap_or_else(opentelemetry::Context::current);
         let session_config = SessionConfig {
             id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
         };
 
-        let stream = match agent
-            .reply(user_message, session_config, Some(cancel_token.clone()))
-            .await
-        {
+        let reply = agent.reply(user_message, session_config, Some(cancel_token.clone()));
+        #[cfg(feature = "otel")]
+        let reply = opentelemetry::context::FutureExt::with_context(reply, trace_cx.clone());
+        let stream = match reply.await {
             Ok(stream) => stream,
             Err(error) => {
                 self.clear_active_run(&session_id, &run_id).await;
@@ -2325,16 +2329,17 @@ impl GooseAcpAgent {
                     .data(format!("Error getting agent reply: {error}")));
             }
         };
-        let stream_result = self
-            .forward_agent_stream(
-                cx,
-                &args.session_id,
-                &session_id,
-                &agent,
-                &cancel_token,
-                stream,
-            )
-            .await;
+        let forward = self.forward_agent_stream(
+            cx,
+            &args.session_id,
+            &session_id,
+            &agent,
+            &cancel_token,
+            stream,
+        );
+        #[cfg(feature = "otel")]
+        let forward = opentelemetry::context::FutureExt::with_context(forward, trace_cx);
+        let stream_result = forward.await;
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         let outcome = stream_result?;

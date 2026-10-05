@@ -758,12 +758,13 @@ impl McpClientTrait for McpClient {
             client.peer_info().map(|info| info.protocol_version.clone())
         };
         if protocol_version.as_ref() == Some(&ProtocolVersion::V_2026_07_28) {
-            let extensions = inject_session_context_into_extensions(
-                Extensions::new(),
-                Some(&ctx.session_id),
-                ctx.working_dir_str(),
-                ctx.tool_call_request_id.as_deref(),
-            );
+            let extensions =
+                inject_trace_context_into_extensions(inject_session_context_into_extensions(
+                    Extensions::new(),
+                    Some(&ctx.session_id),
+                    ctx.working_dir_str(),
+                    ctx.tool_call_request_id.as_deref(),
+                ));
             if let Some(meta) = extensions.get::<MetaObject>() {
                 params.meta.get_or_insert_default().0 .0.extend(
                     meta.0
@@ -935,6 +936,22 @@ fn inject_session_context_into_extensions(
     extensions
 }
 
+#[cfg(feature = "otel")]
+fn inject_trace_context_into_extensions(mut extensions: Extensions) -> Extensions {
+    let mut meta_map = extensions
+        .get::<MetaObject>()
+        .map(|meta| meta.0.clone())
+        .unwrap_or_default();
+    crate::otel::trace_context::inject_current(&mut meta_map);
+    extensions.insert(MetaObject(meta_map));
+    extensions
+}
+
+#[cfg(not(feature = "otel"))]
+fn inject_trace_context_into_extensions(extensions: Extensions) -> Extensions {
+    extensions
+}
+
 fn inject_session_context_into_request(
     request: ClientRequest,
     session_id: Option<&str>,
@@ -970,12 +987,13 @@ fn inject_session_context_into_request(
             ClientRequest::ListToolsRequest(req)
         }
         ClientRequest::CallToolRequest(mut req) => {
-            req.extensions = inject_session_context_into_extensions(
-                req.extensions,
-                session_id,
-                working_dir,
-                tool_call_request_id,
-            );
+            req.extensions =
+                inject_trace_context_into_extensions(inject_session_context_into_extensions(
+                    req.extensions,
+                    session_id,
+                    working_dir,
+                    tool_call_request_id,
+                ));
             ClientRequest::CallToolRequest(req)
         }
         ClientRequest::ListPromptsRequest(mut req) => {
@@ -1172,6 +1190,59 @@ mod tests {
         let mcp_meta = extensions.get::<MetaObject>().unwrap();
 
         assert_eq!(&mcp_meta.0, expected_meta.as_object().unwrap());
+    }
+
+    #[cfg(feature = "otel")]
+    #[test_case(list_resources_request, false; "list_resources")]
+    #[test_case(read_resource_request, false; "read_resource")]
+    #[test_case(list_tools_request, false; "list_tools")]
+    #[test_case(call_tool_request, true; "call_tool")]
+    #[test_case(list_prompts_request, false; "list_prompts")]
+    #[test_case(get_prompt_request, false; "get_prompt")]
+    fn test_request_injects_trace_context_only_on_call_tool(
+        request_builder: fn(Extensions) -> ClientRequest,
+        expect_trace_context: bool,
+    ) {
+        use opentelemetry::trace::{
+            SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState,
+        };
+
+        let _guard = opentelemetry::Context::new()
+            .with_remote_span_context(SpanContext::new(
+                TraceId::from_hex("4bf92f3577b34da6a3ce929d0e0e4736").unwrap(),
+                SpanId::from_hex("00f067aa0ba902b7").unwrap(),
+                TraceFlags::SAMPLED,
+                true,
+                "vendor=value".parse::<TraceState>().unwrap(),
+            ))
+            .attach();
+
+        let request = inject_session_context_into_request(
+            request_builder(Extensions::new()),
+            Some("test-session-id"),
+            None,
+            None,
+        );
+        let meta = request_extensions(&request)
+            .and_then(|extensions| extensions.get::<MetaObject>())
+            .expect("request should carry meta");
+
+        assert_eq!(
+            meta.0.get(SESSION_ID_HEADER),
+            Some(&json!("test-session-id"))
+        );
+        if expect_trace_context {
+            assert_eq!(
+                meta.0.get("traceparent"),
+                Some(&json!(
+                    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+                ))
+            );
+            assert_eq!(meta.0.get("tracestate"), Some(&json!("vendor=value")));
+        } else {
+            assert!(!meta.0.contains_key("traceparent"));
+            assert!(!meta.0.contains_key("tracestate"));
+        }
     }
 
     #[test]

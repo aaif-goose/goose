@@ -31,6 +31,8 @@ static NEXT_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 
 const SESSION_ID_META_KEY: &str = "agent-session-id";
 const WORKING_DIR_META_KEY: &str = "agent-working-dir";
+const TRACEPARENT_META_KEY: &str = "traceparent";
+const TRACESTATE_META_KEY: &str = "tracestate";
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +44,8 @@ pub struct ContextReport {
     pub process_session_id: Option<String>,
     pub request_session_id: Option<String>,
     pub request_working_dir: Option<String>,
+    pub request_traceparent: Option<String>,
+    pub request_tracestate: Option<String>,
     pub roots: Vec<String>,
 }
 
@@ -157,6 +161,8 @@ impl McpFixtureServer {
             process_session_id: std::env::var("AGENT_SESSION_ID").ok(),
             request_session_id: meta_value(SESSION_ID_META_KEY),
             request_working_dir: meta_value(WORKING_DIR_META_KEY),
+            request_traceparent: meta_value(TRACEPARENT_META_KEY),
+            request_tracestate: meta_value(TRACESTATE_META_KEY),
             roots,
         };
         Ok(CallToolResult::success(vec![ContentBlock::text(
