@@ -1697,7 +1697,7 @@ impl Agent {
                 compaction_threshold,
             )));
         }
-        let mut remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+        let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
                 provider.clone(),
                 model_config.clone(),
@@ -1711,6 +1711,16 @@ impl Agent {
             Arc::new(DoctorOperation),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(self.hook_manager.clone())),
+            // Before RecipeOperation: a `delegate` response only means the subagent
+            // started, so a final output from the same batch must not be shown until
+            // the subagents have run.
+            Arc::new(ForegroundSubagentOperation::new(
+                ForegroundSubagentRunner::new(
+                    self.config.session_manager.clone(),
+                    self.config.resolve_use_login_shell_path(),
+                ),
+                cancel.clone(),
+            )),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
                 self.hook_manager.clone(),
@@ -1721,27 +1731,18 @@ impl Agent {
                 self.hook_manager.clone(),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
+            Arc::new(RetryOperation::new(
+                &self.goal,
+                &self.grind,
+                std::time::Duration::from_secs(retry_timeout),
+                std::time::Duration::from_secs(on_failure_timeout),
+            )),
+            Arc::new(StopHookOperation::new(
+                self.hook_manager.clone(),
+                stop_hook_block_cap,
+            )),
+            Arc::new(ExitOnErrorOperation),
         ];
-        if !self.config.is_subagent {
-            remaining_operations.push(Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(
-                    self.config.session_manager.clone(),
-                    self.config.resolve_use_login_shell_path(),
-                ),
-                cancel.clone(),
-            )));
-        }
-        remaining_operations.push(Arc::new(RetryOperation::new(
-            &self.goal,
-            &self.grind,
-            std::time::Duration::from_secs(retry_timeout),
-            std::time::Duration::from_secs(on_failure_timeout),
-        )));
-        remaining_operations.push(Arc::new(StopHookOperation::new(
-            self.hook_manager.clone(),
-            stop_hook_block_cap,
-        )));
-        remaining_operations.push(Arc::new(ExitOnErrorOperation));
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
             #[cfg(feature = "code-mode")]

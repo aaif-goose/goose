@@ -184,6 +184,70 @@ settings:
 }
 
 #[tokio::test]
+async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    let recipe = Recipe::builder()
+        .title("Structured delegation")
+        .description("Delegates, then returns structured output")
+        .prompt("Research and summarize")
+        .response(Response {
+            json_schema: Some(json!({
+                "type": "object",
+                "properties": { "result": { "type": "string" } },
+                "required": ["result"]
+            })),
+        })
+        .extensions(vec![ExtensionConfig::Platform {
+            name: "summon".to_string(),
+            description: "Delegate work".to_string(),
+            display_name: None,
+            bundled: None,
+            available_tools: vec![],
+        }])
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    api.on("Research and summarize").calls([
+        (
+            "call_delegate",
+            "delegate",
+            json!({ "instructions": "Find the answer" }),
+        ),
+        (
+            "call_early_output",
+            FINAL_OUTPUT_TOOL_NAME,
+            json!({ "result": "early" }),
+        ),
+    ]);
+    api.on("Find the answer")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "summary": "found it" }));
+    api.on("found it")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "final" }));
+
+    let result = pipeline.run(["Research and summarize"]).await?;
+    assert_eq!(api.call_count(), 3);
+    let shown_outputs: Vec<String> = result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| message.role == rmcp::model::Role::Assistant && message.is_user_visible())
+        .map(|message| message.as_concat_text())
+        .filter(|text| text.contains("\"result\""))
+        .collect();
+    assert_eq!(shown_outputs, vec![r#"{"result":"final"}"#.to_string()]);
+    result.assert_message(-1, Agent, r#"{"result":"final"}"#);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("do the thing").reply("attempt");
