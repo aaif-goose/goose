@@ -1547,7 +1547,7 @@ impl SummonClient {
             serde_json::Value::Bool(true),
         );
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Scheduled foreground subagent {}",
+            "Delegated to foreground subagent {}",
             child.id
         ))])
         .with_meta(Some(meta)))
@@ -2590,13 +2590,14 @@ mod tests {
             })
         }));
 
-        let reloaded_agent = crate::agents::subagent_handler::from_foreground_subagent_session(
-            Arc::new(reloaded),
-            &child_id,
-            false,
-        )
-        .await
-        .unwrap();
+        let (reloaded_agent, _) =
+            crate::agents::subagent_handler::from_foreground_subagent_session(
+                Arc::new(reloaded),
+                &child,
+                false,
+            )
+            .await
+            .unwrap();
         assert_eq!(
             reloaded_agent.provider().await.unwrap().get_name(),
             "openai"

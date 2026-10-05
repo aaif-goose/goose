@@ -1,7 +1,9 @@
 use crate::{
     agents::{
-        subagent_task_config::TaskConfig, Agent, AgentConfig, AgentEvent, GoosePlatform,
-        SessionConfig,
+        final_output_tool::FinalOutputTool,
+        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
+        subagent_task_config::TaskConfig,
+        Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig,
     },
     config::permission::PermissionManager,
     conversation::{
@@ -11,11 +13,12 @@ use crate::{
     prompt_template::render_template,
     recipe::Recipe,
     session::extension_data::{EnabledExtensionsState, ExtensionState},
-    session::{SessionManager, SessionType},
+    session::{Session, SessionManager, SessionType},
 };
 use anyhow::{anyhow, Result};
+use futures::future::BoxFuture;
 use futures::StreamExt;
-use rmcp::model::{ErrorCode, ErrorData, Notification, ServerNotification};
+use rmcp::model::{ErrorCode, ErrorData, Notification, Role, ServerNotification};
 #[expect(deprecated)]
 use rmcp::model::{LoggingLevel, LoggingMessageNotificationParam};
 use serde::Serialize;
@@ -68,10 +71,10 @@ pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyh
 
 pub(crate) async fn from_foreground_subagent_session(
     session_manager: Arc<SessionManager>,
-    session_id: &str,
+    session: &Session,
     use_login_shell_path: bool,
-) -> Result<Agent> {
-    let session = session_manager.get_session(session_id, false).await?;
+) -> Result<(Agent, SessionConfig)> {
+    let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
     }
@@ -136,7 +139,139 @@ pub(crate) async fn from_foreground_subagent_session(
     )
     .await?;
     agent.override_system_prompt(subagent_prompt).await;
-    Ok(agent)
+    let session_config = SessionConfig {
+        id: session_id.to_string(),
+        schedule_id: None,
+        max_turns: Some(max_turns as u32),
+        retry_config: recipe.retry.clone(),
+    };
+    Ok((agent, session_config))
+}
+
+pub(crate) enum SubagentOutcome {
+    Completed(String),
+    Failed(String),
+}
+
+pub(crate) enum SubagentStart {
+    HasOutcome(SubagentOutcome),
+    Started {
+        task: Option<String>,
+        run: BoxFuture<'static, SubagentOutcome>,
+    },
+}
+
+#[derive(Clone)]
+pub(crate) struct ForegroundSubagentRunner {
+    session_manager: Arc<SessionManager>,
+    use_login_shell_path: bool,
+}
+
+impl ForegroundSubagentRunner {
+    pub(crate) fn new(session_manager: Arc<SessionManager>, use_login_shell_path: bool) -> Self {
+        Self {
+            session_manager,
+            use_login_shell_path,
+        }
+    }
+
+    pub(crate) async fn start(
+        &self,
+        parent_id: &str,
+        subagent_id: &str,
+        cancel: CancellationToken,
+    ) -> SubagentStart {
+        let subagent = match self.session_manager.get_session(subagent_id, true).await {
+            Ok(subagent) => subagent,
+            Err(error) => {
+                return SubagentStart::HasOutcome(SubagentOutcome::Failed(error.to_string()))
+            }
+        };
+        if subagent.session_type != SessionType::SubAgent
+            || subagent.parent_session_id.as_deref() != Some(parent_id)
+        {
+            return SubagentStart::HasOutcome(SubagentOutcome::Failed(
+                "it does not belong to this session".to_string(),
+            ));
+        }
+        if let Some(output) = subagent
+            .conversation
+            .as_ref()
+            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+        {
+            return SubagentStart::HasOutcome(SubagentOutcome::Completed(output));
+        }
+        SubagentStart::Started {
+            task: subagent
+                .recipe
+                .as_ref()
+                .and_then(|recipe| recipe.prompt.clone()),
+            run: Box::pin(self.clone().run(subagent, cancel)),
+        }
+    }
+
+    async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
+        let (agent, session_config) = from_foreground_subagent_session(
+            self.session_manager.clone(),
+            subagent,
+            self.use_login_shell_path,
+        )
+        .await?;
+        let mut events = agent
+            .stream_state_machine_session(session_config, cancel)
+            .await?;
+        while let Some(event) = events.next().await {
+            event?;
+        }
+        Ok(())
+    }
+
+    async fn run(self, subagent: Session, cancel: CancellationToken) -> SubagentOutcome {
+        let run_result = self.run_to_end(&subagent, cancel).await;
+        let subagent = match self.session_manager.get_session(&subagent.id, true).await {
+            Ok(subagent) => subagent,
+            Err(error) => return SubagentOutcome::Failed(error.to_string()),
+        };
+        let messages = subagent.conversation.as_ref().map(Conversation::messages);
+        if let Some(output) =
+            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
+        {
+            return SubagentOutcome::Completed(output);
+        }
+        if let Err(error) = run_result {
+            return SubagentOutcome::Failed(error.to_string());
+        }
+        if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
+            return SubagentOutcome::Failed(format!("{error:?}"));
+        }
+        SubagentOutcome::Failed(failure_reason(
+            messages.map(Vec::as_slice).unwrap_or_default(),
+        ))
+    }
+}
+
+fn failure_reason(messages: &[Message]) -> String {
+    let Some(last) = messages.last() else {
+        return "stopped without final output".to_string();
+    };
+    let last_text = last.as_concat_text();
+    if last_text == MAX_TURNS_MESSAGE {
+        let last_response = messages
+            .iter()
+            .rev()
+            .filter(|message| message.role == Role::Assistant)
+            .map(Message::as_concat_text)
+            .find(|text| !text.is_empty() && text != MAX_TURNS_MESSAGE);
+        return match last_response {
+            Some(text) => format!("max turns reached; last response: {text}"),
+            None => "max turns reached".to_string(),
+        };
+    }
+    if last_text.is_empty() {
+        "stopped without final output".to_string()
+    } else {
+        last_text
+    }
 }
 
 fn extract_response_text(messages: &Conversation, return_last_only: bool) -> String {
@@ -395,8 +530,9 @@ pub fn create_tool_notification(
 
 #[cfg(test)]
 mod tests {
-    use super::{create_tool_notification, SUBAGENT_TOOL_REQUEST_TYPE};
-    use crate::conversation::message::MessageContent;
+    use super::{create_tool_notification, failure_reason, SUBAGENT_TOOL_REQUEST_TYPE};
+    use crate::agents::state_machine::MAX_TURNS_MESSAGE;
+    use crate::conversation::message::{Message, MessageContent};
     use rmcp::model::{CallToolRequestParams, ServerNotification};
     use serde_json::json;
 
@@ -439,5 +575,36 @@ mod tests {
     fn create_tool_notification_ignores_non_tool_request() {
         let content = MessageContent::text("hello");
         assert!(create_tool_notification(&content, "session_1").is_none());
+    }
+
+    #[test]
+    fn failure_reason_describes_how_the_subagent_stopped() {
+        let max_turns = Message::assistant().with_text(MAX_TURNS_MESSAGE);
+        let cases = [
+            (vec![], "stopped without final output".to_string()),
+            (
+                vec![Message::assistant().with_text("")],
+                "stopped without final output".to_string(),
+            ),
+            (
+                vec![Message::assistant().with_text("I gave up")],
+                "I gave up".to_string(),
+            ),
+            (
+                vec![Message::user().with_text("go"), max_turns.clone()],
+                "max turns reached".to_string(),
+            ),
+            (
+                vec![
+                    Message::assistant().with_text("halfway there"),
+                    Message::user().with_text("tool result"),
+                    max_turns,
+                ],
+                "max turns reached; last response: halfway there".to_string(),
+            ),
+        ];
+        for (messages, expected) in cases {
+            assert_eq!(failure_reason(&messages), expected);
+        }
     }
 }

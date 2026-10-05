@@ -116,7 +116,13 @@ async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
     result.assert_message(-1, Agent, "delegation stayed in chat");
 
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_provider_name("state-machine-test").await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
     let child_path = pipeline.working_dir().join("bounded-child.yaml");
     std::fs::write(
         &child_path,

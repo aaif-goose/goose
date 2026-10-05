@@ -32,15 +32,16 @@ use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
-    cancellation_note, has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, BangShellOperation,
+    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
     StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
     ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
+use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
     DEFAULT_RETRY_TIMEOUT_SECONDS,
@@ -1723,8 +1724,10 @@ impl Agent {
         ];
         if !self.config.is_subagent {
             remaining_operations.push(Arc::new(ForegroundSubagentOperation::new(
-                self.config.session_manager.clone(),
-                self.config.resolve_use_login_shell_path(),
+                ForegroundSubagentRunner::new(
+                    self.config.session_manager.clone(),
+                    self.config.resolve_use_login_shell_path(),
+                ),
                 cancel.clone(),
             )));
         }
@@ -1873,18 +1876,26 @@ impl Agent {
     }
 
     pub async fn cancel_foreground_subagents(&self, session_id: &str) {
-        if let Err(error) = self
-            .config
-            .session_manager
-            .cancel_foreground_subagents(session_id, cancellation_note)
-            .await
-        {
+        if let Err(error) = self.record_cancelled_subagents(session_id).await {
             error!(
                 session_id,
                 ?error,
                 "Failed to record cancelled foreground subagents"
             );
         }
+    }
+
+    async fn record_cancelled_subagents(&self, session_id: &str) -> Result<()> {
+        let session_manager = &self.config.session_manager;
+        let session = session_manager.get_session(session_id, true).await?;
+        let Some(message) = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| subagent_cancelled_message(conversation.messages()))
+        else {
+            return Ok(());
+        };
+        session_manager.add_message(session_id, &message).await
     }
 
     async fn resume_state_machine_turn_inner(
