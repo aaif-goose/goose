@@ -575,6 +575,9 @@ impl OrchestratorClient {
         }
 
         drop(stream);
+        if cancel_token.is_cancelled() {
+            agent.cancel_foreground_subagents(&session_id).await;
+        }
         guard.disarm();
         manager.unregister_cancel_token(&session_id).await;
 

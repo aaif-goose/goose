@@ -662,6 +662,7 @@ impl ExtensionLease {
             tool_call_id,
             notification_emitter,
             container,
+            from_state_machine,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -677,6 +678,7 @@ impl ExtensionLease {
         )
         .with_container(container)
         .with_extension_lease(Arc::new(self.clone()));
+        call_context.from_state_machine = from_state_machine;
         if let Some(emitter) = emitter {
             call_context = call_context.with_notification_emitter(emitter);
         }
@@ -768,19 +770,24 @@ pub struct CallRequest {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
     pub(crate) container: Option<Container>,
+    pub(crate) from_state_machine: bool,
 }
 
 impl CallRequest {
     pub fn new(tool_call_id: impl Into<String>) -> Self {
         Self {
             tool_call_id: Some(tool_call_id.into()),
-            notification_emitter: None,
-            container: None,
+            ..Default::default()
         }
     }
 
     pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
         self.container = container;
+        self
+    }
+
+    pub(crate) fn with_state_machine(mut self) -> Self {
+        self.from_state_machine = true;
         self
     }
 }
@@ -791,6 +798,7 @@ impl From<&ToolCallContext> for CallRequest {
             tool_call_id: ctx.tool_call_request_id.clone(),
             notification_emitter: ctx.notification_emitter().cloned(),
             container: ctx.container().cloned(),
+            from_state_machine: ctx.from_state_machine,
         }
     }
 }
