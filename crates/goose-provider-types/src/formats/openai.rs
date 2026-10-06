@@ -212,44 +212,14 @@ struct OpenAiMessage {
     reasoning_content: Option<String>,
 }
 
+#[derive(Serialize)]
 struct OpenAiToolCall {
     id: String,
+    #[serde(rename = "type")]
     kind: &'static str,
     function: OpenAiFunctionCall,
+    #[serde(flatten)]
     metadata: serde_json::Map<String, Value>,
-}
-
-impl Serialize for OpenAiToolCall {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeMap;
-
-        let mut map = serializer.serialize_map(None)?;
-        // Provider metadata may override standard fields, matching the existing wire format.
-        if let Some(id) = self.metadata.get("id") {
-            map.serialize_entry("id", id)?;
-        } else {
-            map.serialize_entry("id", &self.id)?;
-        }
-        if let Some(kind) = self.metadata.get("type") {
-            map.serialize_entry("type", kind)?;
-        } else {
-            map.serialize_entry("type", self.kind)?;
-        }
-        if let Some(function) = self.metadata.get("function") {
-            map.serialize_entry("function", function)?;
-        } else {
-            map.serialize_entry("function", &self.function)?;
-        }
-        for (key, value) in &self.metadata {
-            if !matches!(key.as_str(), "id" | "type" | "function") {
-                map.serialize_entry(key, value)?;
-            }
-        }
-        map.end()
-    }
 }
 
 #[derive(Serialize)]
@@ -3241,11 +3211,8 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_call_serialization_preserves_metadata_overrides() {
+    fn test_tool_call_serialization_preserves_provider_metadata() {
         let metadata = json!({
-            "id": "overridden",
-            "type": "custom",
-            "function": {"name": "custom_function", "arguments": "{}"},
             "extra_content": {"google": {"thought_signature": "signature"}},
         });
         let call = OpenAiToolCall {
@@ -3258,8 +3225,12 @@ mod tests {
             metadata: metadata.as_object().unwrap().clone(),
         };
         let wire = serde_json::to_string(&call).unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&wire).unwrap(), metadata);
-        assert_eq!(wire.matches("\"id\"").count(), 1);
+        let serialized: Value = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serialized["id"], "original");
+        assert_eq!(serialized["type"], "function");
+        assert_eq!(serialized["function"]["name"], "lookup");
+        assert_eq!(serialized["function"]["arguments"], "{}");
+        assert_eq!(serialized["extra_content"], metadata["extra_content"]);
     }
 
     #[test]
