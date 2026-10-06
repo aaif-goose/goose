@@ -226,10 +226,10 @@ impl DatabricksV2Provider {
         let (clean_name, _) = extract_reasoning_effort(routing_name);
         let lower = clean_name.to_lowercase();
 
+        // Claude model services also serve `anthropic/v1/messages`; the MLflow
+        // chat route drops the prompt-cache breakpoints Anthropic needs.
         if is_openai_responses_model(&clean_name) || Self::looks_like_gpt5(&lower) {
             DatabricksV2Route::OpenAiResponses
-        } else if is_model_service {
-            DatabricksV2Route::MlflowChatCompletions
         } else if Self::is_claude_model(&lower) {
             DatabricksV2Route::AnthropicMessages
         } else {
@@ -682,7 +682,12 @@ mod tests {
             );
         }
 
-        for model in ["databricks-claude-opus-4-7", "databricks-claude-sonnet-4-6"] {
+        for model in [
+            "databricks-claude-opus-4-7",
+            "databricks-claude-sonnet-4-6",
+            "catalog.schema.claude-alias",
+            "data_workflow_tools.goose.goose-claude-fable-5-1",
+        ] {
             assert_eq!(
                 DatabricksV2Provider::route_for_model(model),
                 DatabricksV2Route::AnthropicMessages,
@@ -692,10 +697,6 @@ mod tests {
 
         assert_eq!(
             DatabricksV2Provider::route_for_model("custom-model"),
-            DatabricksV2Route::MlflowChatCompletions
-        );
-        assert_eq!(
-            DatabricksV2Provider::route_for_model("catalog.schema.claude-alias"),
             DatabricksV2Route::MlflowChatCompletions
         );
     }
@@ -922,6 +923,49 @@ mod tests {
                 .complete(&ModelConfig::new(model), "system", &[], &[])
                 .await
                 .expect("GPT-6 model service should use the Responses API");
+        }
+
+        #[tokio::test]
+        async fn model_service_claude_uses_messages_route_with_cache_breakpoints() {
+            let model = "data_workflow_tools.goose.goose-claude-fable-5-1";
+            let body = concat!(
+                r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}"#,
+                "\n",
+                r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#,
+                "\n",
+                r#"data: {"type":"message_stop"}"#,
+                "\n",
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "system": [{"cache_control": {"type": "ephemeral"}}]
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(
+                    &ModelConfig::new(model),
+                    "system",
+                    &[
+                        Message::user().with_text("hi"),
+                        Message::assistant().with_text("hello"),
+                        Message::user().with_text("continue"),
+                    ],
+                    &[],
+                )
+                .await
+                .expect("Claude model service should use the Anthropic Messages API");
         }
 
         #[test_case::test_case("catalog.schema.goose-glm-5-3" ; "glm 5.3")]

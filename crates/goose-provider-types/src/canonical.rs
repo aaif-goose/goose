@@ -1,5 +1,6 @@
 pub mod catalog;
 mod model;
+pub mod models_dev;
 mod name_builder;
 mod registry;
 
@@ -7,7 +8,7 @@ pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, ThinkingMo
 pub use name_builder::{
     canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
 };
-pub use registry::CanonicalModelRegistry;
+pub use registry::{load_cached_catalog, refresh_remote_catalog, CanonicalModelRegistry};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelMapping {
@@ -166,7 +167,7 @@ fn should_clear_catalog_pricing(provider: &str) -> bool {
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
     let registry = CanonicalModelRegistry::bundled().ok()?;
 
-    let canonical_id = map_to_canonical_model(provider, model, registry)?;
+    let canonical_id = map_to_canonical_model(provider, model, &registry)?;
     let mut canonical = if let Some((canon_provider, canon_model)) = canonical_id.split_once('/') {
         registry.get(canon_provider, canon_model).cloned()?
     } else {
@@ -181,7 +182,7 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         // row carries the rate it actually charges to proxy that model, so prefer it. Where
         // there is no such row, report nothing: billing paid proxied inference as free is
         // worse than showing no estimate at all.
-        canonical.cost = host_catalog_pricing(provider, model, registry).unwrap_or_default();
+        canonical.cost = host_catalog_pricing(provider, model, &registry).unwrap_or_default();
     }
 
     Some(canonical)
@@ -280,9 +281,36 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_opus_5_5_resolves_with_always_on_adaptive_thinking() {
+        let canonical = maybe_get_canonical_model("anthropic", "claude-opus-5-5")
+            .expect("claude-opus-5-5 should resolve");
+        assert_eq!(canonical.id, "anthropic/claude-opus-5.5");
+        assert_eq!(canonical.limit.context, 1_000_000);
+        assert_eq!(canonical.limit.output, Some(128_000));
+        assert_eq!(
+            canonical.thinking_mode,
+            Some(ThinkingMode::AlwaysOnAdaptive)
+        );
+        assert_eq!(canonical.cost.input, Some(4.0));
+        assert_eq!(canonical.cost.output, Some(20.0));
+    }
+
+    #[test]
+    fn openai_gpt_6_sol_and_luna_resolve() {
+        for (model, input_cost) in [("gpt-6-sol", 2.0), ("gpt-6-luna", 0.1)] {
+            let canonical = maybe_get_canonical_model("openai", model)
+                .unwrap_or_else(|| panic!("{model} should resolve"));
+            assert_eq!(canonical.limit.context, 1_050_000);
+            assert_eq!(canonical.limit.output, Some(128_000));
+            assert_eq!(canonical.cost.input, Some(input_cost));
+            assert!(canonical.tool_call);
+        }
+    }
+
+    #[test]
     fn kimi_code_k3_resolves_with_reasoning_and_context_limit() {
         let canonical = maybe_get_canonical_model("kimi_code", "k3")
-            .expect("kimi_code/k3 should resolve via kimi-for-coding provider mapping");
+            .expect("kimi_code/k3 should resolve via kimi-code-plan-cn provider mapping");
         assert_eq!(canonical.limit.context, 1_048_576);
         assert_eq!(canonical.reasoning, Some(true));
         assert_eq!(canonical.temperature, Some(false));

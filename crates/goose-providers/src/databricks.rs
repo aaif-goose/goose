@@ -194,6 +194,25 @@ impl DatabricksProvider {
         Self::is_claude_model(model_name) || is_openai_responses_model(model_name)
     }
 
+    fn resolve_vision_support(
+        model_config: &ModelConfig,
+        effective_model_name: &str,
+    ) -> Option<ModelConfig> {
+        if effective_model_name == model_config.model_name {
+            return None;
+        }
+
+        let resolved = ModelConfig::new(effective_model_name)
+            .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME)
+            .supports_vision?;
+
+        if model_config.supports_vision == Some(resolved) {
+            return None;
+        }
+
+        Some(model_config.clone().with_vision_support(resolved))
+    }
+
     fn uses_responses_api(
         endpoint_info: Option<&DatabricksEndpointInfo>,
         model_names: &[&str],
@@ -588,6 +607,9 @@ impl Provider for DatabricksProvider {
             endpoint_info.as_ref(),
             &[&model_config.model_name, effective_model_name],
         );
+        let vision_resolved_config =
+            Self::resolve_vision_support(model_config, effective_model_name);
+        let model_config = vision_resolved_config.as_ref().unwrap_or(model_config);
         let path = if is_responses_model {
             "serving-endpoints/responses".to_string()
         } else {
@@ -1032,6 +1054,29 @@ mod tests {
         let info = DatabricksProvider::endpoint_info_from_value(&endpoint).unwrap();
 
         assert!(!info.supports_responses_api);
+    }
+
+    #[test]
+    fn vision_support_resolves_from_upstream_model_behind_endpoint_alias() {
+        let aliased = ModelConfig::new("production-chat");
+        assert_eq!(aliased.supports_vision, None);
+
+        let resolved = DatabricksProvider::resolve_vision_support(&aliased, "gpt-4o")
+            .expect("upstream model should resolve vision support");
+        assert_eq!(resolved.supports_vision, Some(true));
+        assert_eq!(resolved.model_name, "production-chat");
+
+        let catalog_alias = ModelConfig::new("gpt-3.5-turbo")
+            .with_canonical_vision_support(DATABRICKS_PROVIDER_NAME);
+        assert_eq!(catalog_alias.supports_vision, Some(false));
+
+        let corrected = DatabricksProvider::resolve_vision_support(&catalog_alias, "gpt-4o")
+            .expect("upstream model should override alias-derived capability");
+        assert_eq!(corrected.supports_vision, Some(true));
+
+        let downgraded =
+            DatabricksProvider::resolve_vision_support(&resolved, "gpt-3.5-turbo").unwrap();
+        assert_eq!(downgraded.supports_vision, Some(false));
     }
 
     #[test]

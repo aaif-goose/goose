@@ -6,13 +6,14 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tracing_futures::Instrument;
 
+use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::{
-    applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error, yielded,
-    yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
-    SlashCommand,
+    applied, awaits_tool_responses, last_effective_role, messages_since_kickoff, not_applicable,
+    trailing_error, yielded, yielded_with, ConversationEffect, Emitter, GooseEffect, Operation,
+    OperationResult, SlashCommand,
 };
-use crate::context_mgmt::compact_messages;
+use crate::context_mgmt::{compact_messages, count_context_tokens};
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
@@ -42,6 +43,20 @@ fn compaction_part(
         "<compaction>~{}k tokens remaining</compaction>",
         compaction_at.saturating_sub(total_tokens) / 1000
     ))
+}
+
+/// Reported usage stops at the inference that requested the tools, so the
+/// results that answered it are not counted until the next request.
+async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
+    let messages = conversation.messages();
+    if last_effective_role(messages)? != EffectiveRole::Tool {
+        return Ok(0);
+    }
+    let after_request = messages
+        .iter()
+        .rposition(Message::is_tool_call)
+        .map_or(0, |index| index + 1);
+    count_context_tokens(&messages[after_request..]).await
 }
 
 pub struct CompactionOperation {
@@ -78,8 +93,8 @@ impl CompactionOperation {
 
     async fn context_tokens(&self, session: &Session, conversation: &Conversation) -> Result<i32> {
         match session.usage.total_tokens {
-            Some(tokens) => Ok(tokens),
-            None => crate::context_mgmt::count_context_tokens(conversation).await,
+            Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
+            None => count_context_tokens(conversation.messages()).await,
         }
     }
 
@@ -244,7 +259,15 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
                 return not_applicable();
             }
         } else {
-            if last_effective_role(messages)? != EffectiveRole::User {
+            // Compact only ahead of an inference. An assistant tail ends the turn or
+            // awaits tool responses, hiding an unanswered request orphans its result,
+            // and RecipeOperation delivers a successful final output from a tool tail.
+            let tail = last_effective_role(messages)?;
+            if tail == EffectiveRole::Assistant
+                || awaits_tool_responses(messages)
+                || (tail == EffectiveRole::Tool
+                    && FinalOutputTool::successful_output(messages).is_some())
+            {
                 return not_applicable();
             }
             let tokens = self.context_tokens(session, conversation).await?;

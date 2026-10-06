@@ -1,11 +1,15 @@
+#[cfg(feature = "tree-sitter")]
 pub mod analyze;
+#[cfg(feature = "platform-apps")]
 pub mod apps;
+#[cfg(feature = "chat-recall")]
 pub mod chatrecall;
 #[cfg(feature = "code-mode")]
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+#[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
 pub mod summon;
@@ -30,6 +34,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
     || {
         let mut map = HashMap::new();
 
+        #[cfg(feature = "tree-sitter")]
         map.insert(
             analyze::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -58,6 +63,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "platform-apps")]
         map.insert(
             apps::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -72,6 +78,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "chat-recall")]
         map.insert(
             chatrecall::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -102,6 +109,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
+        #[cfg(feature = "scheduler")]
         map.insert(
             scheduler::EXTENSION_NAME,
             PlatformExtensionDef {
@@ -228,8 +236,12 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
+    /// Sibling access for the two extensions that operate on the running set
+    /// (extension management, code mode). Everything else uses the fields
+    /// below.
     pub extension_manager:
         Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
+    pub provider: crate::agents::types::SharedProvider,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
     pub session: Option<std::sync::Arc<Session>>,

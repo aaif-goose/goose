@@ -324,6 +324,24 @@ Session removal is permanent and cannot be undone. goose will show which session
 
 ---
 
+#### session rename [options]
+Rename a saved session. If no session ID is provided, goose will prompt you to select a session interactively.
+
+**Options:**
+- **`--session-id <session_id>`**: Rename a specific session by its session ID (e.g., `20251108_3`)
+- **`-n, --new-name <name>`**: The new name for the session (required)
+
+**Usage:**
+```bash
+# Rename a specific session by ID
+goose session rename --session-id 20251108_3 --new-name my-project
+
+# Interactive selection (prompts you to choose a session)
+goose session rename --new-name my-project
+```
+
+---
+
 #### session export [options]
 Export sessions in different formats for backup, sharing, migration, or documentation purposes.
 
@@ -696,6 +714,16 @@ goose acp
 
 :::info
 This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/gdk/acp) for details.
+:::
+
+:::warning Unattended environments
+goose uses the system keyring by default. On macOS, reading a credential may display a Keychain authorization prompt. If your ACP client runs goose without a user available to respond, keyring access can block indefinitely.
+
+Disable keyring access for that process and provide provider credentials through environment variables:
+
+```bash
+GOOSE_DISABLE_KEYRING=1 OPENAI_API_KEY='...' goose acp
+```
 :::
 
 ---

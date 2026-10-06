@@ -1,46 +1,77 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use futures::stream::{self, FuturesUnordered, StreamExt};
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures::FutureExt;
 use futures::Stream;
-use futures::{future, FutureExt};
-use rmcp::service::ServiceError;
+use indexmap::IndexMap;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::container::Container;
 use super::extension::{
-    ExtensionConfig, ExtensionInfo, ExtensionResult, PlatformExtensionContext, PLATFORM_EXTENSIONS,
+    ExtensionConfig, ExtensionError, ExtensionInfo, ExtensionResult, PlatformExtensionContext,
+    PLATFORM_EXTENSIONS,
 };
-use super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
+use super::tool_execution::{ToolCallContext, ToolCallResult};
 use super::types::SharedProvider;
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
-use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::extensions::name_to_key;
-use crate::config::Config;
+use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
+use crate::session::{EnabledExtensionsState, ExtensionState, Session};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
-    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ResourceContents,
-    ServerInfo, ServerNotification, Tool,
+    ListResourcesResult, ListToolsResult, MetaObject, Prompt, Resource, ServerConfig, Tool,
 };
-use schemars::_private::NoSerialize;
 use serde_json::Value;
 
 mod builtin;
+mod lease;
 mod stdio;
 mod streamable_http;
+
+pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "lowercase")]
+pub enum ExtensionMutation {
+    Enable { name: String },
+    Disable { name: String },
+}
+
+const EXTENSION_MUTATION_META_KEY: &str = "goose_extension_mutation";
+
+impl ExtensionMutation {
+    pub fn attach(self, result: &mut CallToolResult) {
+        let mut meta = result.meta.take().map(|m| m.0).unwrap_or_default();
+        meta.insert(
+            EXTENSION_MUTATION_META_KEY.to_string(),
+            serde_json::to_value(self).expect("mutation serializes"),
+        );
+        result.meta = Some(MetaObject(meta));
+    }
+
+    pub fn take(result: &mut CallToolResult) -> Option<Self> {
+        let meta = result.meta.as_mut()?;
+        let value = meta.0.remove(EXTENSION_MUTATION_META_KEY)?;
+        if meta.0.is_empty() {
+            result.meta = None;
+        }
+        serde_json::from_value(value).ok()
+    }
+}
 
 type McpClientBox = Arc<dyn McpClientTrait>;
 
@@ -101,46 +132,128 @@ fn resolve_timeout(timeout: Option<u64>) -> u64 {
     })
 }
 
-struct Extension {
-    pub config: ExtensionConfig,
+pub(super) struct Extension {
+    pub(super) key: String,
+    pub(super) config: ExtensionConfig,
+    working_dir: PathBuf,
     /// Resolved config snapshot (with secrets from keyring substituted)
     /// captured at client-creation time. Used to detect secret rotation
     /// without re-reading the keyring on every comparison. Only held in
     /// memory — never serialized to disk.
     resolved_config: ExtensionConfig,
+    pub(super) client: McpClientBox,
+    server_info: Option<ServerConfig>,
+    reconnect_on_working_dir_change: bool,
+    /// Bumped by the client on tools/list_changed; a cached list is only valid
+    /// for the version it was fetched under.
+    tools_version: Arc<AtomicU64>,
+    /// Servers may publish different tools to different sessions (extension
+    /// management hides itself from subagents), so the scope is part of the
+    /// cache key.
+    tools: Mutex<Option<CachedTools>>,
+}
 
-    client: McpClientBox,
-    server_info: Option<ServerInfo>,
+struct CachedTools {
+    scope_id: String,
+    version: u64,
+    tools: Arc<Vec<Tool>>,
 }
 
 impl Extension {
-    fn new(
-        config: ExtensionConfig,
-        resolved_config: ExtensionConfig,
-        client: McpClientBox,
-        server_info: Option<ServerInfo>,
-    ) -> Self {
-        Self {
-            client,
-            config,
-            resolved_config,
-            server_info,
-        }
-    }
-
-    fn supports_resources(&self) -> bool {
+    pub(super) fn supports_resources(&self) -> bool {
         self.server_info
             .as_ref()
             .and_then(|info| info.capabilities.resources.as_ref())
             .is_some()
     }
 
-    fn get_instructions(&self) -> Option<String> {
-        self.client.get_instructions()
+    fn invalidate_tools(&self) {
+        self.tools_version.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn get_client(&self) -> McpClientBox {
-        self.client.clone()
+    pub(super) fn is_platform(&self) -> bool {
+        match &self.config {
+            ExtensionConfig::Platform { .. } => true,
+            ExtensionConfig::Builtin { name, .. } => {
+                PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+            }
+            _ => false,
+        }
+    }
+
+    /// The extension's tools as the model sees them: filtered by
+    /// `available_tools`, prefixed unless first-class, tagged with the owner,
+    /// schema-normalized.
+    pub(super) async fn public_tools(&self, scope_id: &str) -> Arc<Vec<Tool>> {
+        let version;
+        {
+            let cache = self.tools.lock().await;
+            version = self.tools_version.load(Ordering::SeqCst);
+            if let Some(cached) = &*cache {
+                if cached.version == version && cached.scope_id == scope_id {
+                    let tools = Arc::clone(&cached.tools);
+                    if self.tools_version.load(Ordering::SeqCst) == version {
+                        return tools;
+                    }
+                }
+            }
+        }
+
+        let tools = Arc::new(self.fetch_public_tools(scope_id).await);
+
+        let mut cache = self.tools.lock().await;
+        if self.tools_version.load(Ordering::SeqCst) == version {
+            *cache = Some(CachedTools {
+                scope_id: scope_id.to_string(),
+                version,
+                tools: Arc::clone(&tools),
+            });
+        }
+        tools
+    }
+
+    async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
+        let cancel_token = CancellationToken::default();
+        let expose_unprefixed = is_unprefixed_extension(&self.config);
+        let mut tools = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = match self
+                .client
+                .list_tools(session_id, cursor, cancel_token.clone())
+                .await
+            {
+                Ok(page) => page,
+                Err(e) => {
+                    warn!(extension = %self.key, error = %e, "Failed to list tools");
+                    break;
+                }
+            };
+            for mut tool in page.tools {
+                if !self.config.is_tool_available(&tool.name) {
+                    continue;
+                }
+                if !expose_unprefixed {
+                    tool.name = format!("{}__{}", self.key, tool.name).into();
+                }
+                let mut meta = tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
+                meta.insert(
+                    TOOL_EXTENSION_META_KEY.to_string(),
+                    Value::String(self.key.clone()),
+                );
+                tool.meta = Some(MetaObject(meta));
+                let mut schema = (*tool.input_schema).clone();
+                if super::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                    tool.input_schema = Arc::new(schema);
+                }
+                tools.push(tool);
+            }
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        tools
     }
 }
 
@@ -170,11 +283,11 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
-    extensions: Mutex<HashMap<String, Extension>>,
+    extensions: Mutex<IndexMap<String, Arc<Extension>>>,
+    mutation_lock: Mutex<()>,
+    directory_lock: RwLock<()>,
     context: PlatformExtensionContext,
     provider: SharedProvider,
-    tools_cache: Mutex<Option<Arc<Vec<Tool>>>>,
-    tools_cache_version: AtomicU64,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
 }
@@ -209,24 +322,6 @@ impl ResourceItem {
             priority,
             token_count: None,
         }
-    }
-}
-
-fn require_str_parameter<'a>(v: &'a serde_json::Value, name: &str) -> Result<&'a str, ErrorData> {
-    let v = v.get(name).ok_or_else(|| {
-        ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} is required"),
-            None,
-        )
-    })?;
-    match v.as_str() {
-        Some(r) => Ok(r),
-        None => Err(ErrorData::new(
-            ErrorCode::INVALID_PARAMS,
-            format!("The parameter {name} must be a string"),
-            None,
-        )),
     }
 }
 
@@ -388,16 +483,13 @@ pub fn is_hidden_extension(name: &str) -> bool {
         .is_some_and(|def| def.hidden)
 }
 
-/// Result of resolving a tool call to its owning extension
-struct ResolvedTool {
-    extension_name: String,
-    actual_tool_name: String,
-    client: McpClientBox,
-    tool_meta: Option<Value>,
-    resource_uri: Option<String>,
-}
-
 impl ExtensionManager {
+    fn invalidate_extension_manager_tools(extensions: &IndexMap<String, Arc<Extension>>) {
+        if let Some(extension_manager) = extensions.get("extensionmanager") {
+            extension_manager.invalidate_tools();
+        }
+    }
+
     fn mcp_client_capabilities(&self) -> GooseMcpClientCapabilities {
         GooseMcpClientCapabilities {
             mcpui: self.capabilities.mcpui,
@@ -416,17 +508,18 @@ impl ExtensionManager {
         use_login_shell_path: bool,
     ) -> Self {
         Self {
-            extensions: Mutex::new(HashMap::new()),
+            extensions: Mutex::new(IndexMap::new()),
+            mutation_lock: Mutex::new(()),
+            directory_lock: RwLock::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
+                provider: provider.clone(),
                 session_manager,
                 scheduler,
                 session: None,
                 use_login_shell_path,
             },
             provider,
-            tools_cache: Mutex::new(None),
-            tools_cache_version: AtomicU64::new(0),
             client_name,
             capabilities,
         }
@@ -457,12 +550,111 @@ impl ExtensionManager {
         &self.provider
     }
 
-    pub async fn supports_resources(&self) -> bool {
-        self.extensions
+    fn hydrate_mcp_apps(&self) -> bool {
+        match &self.capabilities.host_info {
+            Some(host_info) if host_info.explicit_extensions => host_info.mcpui_enabled(),
+            _ => self.capabilities.mcpui,
+        }
+    }
+
+    /// Resolve a set against what is running. A selected extension that is
+    /// not running, or is running under a different config, is left out.
+    pub async fn resolve(&self, set: &ExtensionSet) -> ExtensionLease {
+        let _guard = self.directory_lock.read().await;
+        let members = {
+            let extensions = self.extensions.lock().await;
+            set.extensions()
+                .iter()
+                .filter_map(|config| {
+                    let running = extensions.get(&config.key())?;
+                    if running.config != *config
+                        || set
+                            .working_dir
+                            .as_ref()
+                            .is_some_and(|working_dir| running.working_dir != *working_dir)
+                    {
+                        warn!(
+                            extension = %config.key(),
+                            "selected extension differs from the running one; leaving it out"
+                        );
+                        return None;
+                    }
+                    Some(Arc::clone(running))
+                })
+                .collect()
+        };
+        ExtensionLease::new(
+            set.scope_id(),
+            set.working_dir.clone(),
+            members,
+            self.context.session_manager.action_required(),
+            self.hydrate_mcp_apps(),
+        )
+    }
+
+    pub async fn current_lease(
+        &self,
+        session_id: &str,
+        working_dir: Option<&Path>,
+    ) -> ExtensionLease {
+        let _guard = self.directory_lock.read().await;
+        self.lease_for_working_dir(session_id, working_dir).await
+    }
+
+    pub async fn current_session_lease(
+        &self,
+        session_id: &str,
+        fallback_working_dir: &Path,
+    ) -> ExtensionLease {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map(|session| session.working_dir)
+            .unwrap_or_else(|_| fallback_working_dir.to_path_buf());
+        self.lease_for_working_dir(session_id, Some(&working_dir))
+            .await
+    }
+
+    pub async fn current_session_snapshot(&self, fallback: &Session) -> (Session, ExtensionLease) {
+        let _guard = self.directory_lock.read().await;
+        let session = self
+            .context
+            .session_manager
+            .get_session(&fallback.id, fallback.conversation.is_some())
+            .await
+            .unwrap_or_else(|_| fallback.clone());
+        let lease = self
+            .lease_for_working_dir(&session.id, Some(&session.working_dir))
+            .await;
+        (session, lease)
+    }
+
+    async fn lease_for_working_dir(
+        &self,
+        session_id: &str,
+        working_dir: Option<&Path>,
+    ) -> ExtensionLease {
+        let mut extensions = self
+            .extensions
             .lock()
             .await
             .values()
-            .any(|ext| ext.supports_resources())
+            .filter(|extension| {
+                working_dir.is_none_or(|working_dir| extension.working_dir == working_dir)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        extensions.sort_by(|left, right| left.key.cmp(&right.key));
+        ExtensionLease::new(
+            session_id,
+            working_dir.map(Path::to_path_buf),
+            extensions,
+            self.context.session_manager.action_required(),
+            self.hydrate_mcp_apps(),
+        )
     }
 
     /// Add an extension with an optional working directory.
@@ -474,36 +666,68 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: Option<&str>,
     ) -> ExtensionResult<()> {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = match session_id {
+            Some(session_id) => Some(
+                self.context
+                    .session_manager
+                    .get_session(session_id, false)
+                    .await
+                    .map_err(|error| ExtensionError::SetupError(error.to_string()))?
+                    .working_dir,
+            ),
+            None => working_dir,
+        };
+        self.add_extension_if_current(config, working_dir, container, session_id, None)
+            .await
+    }
+
+    async fn add_extension_if_current(
+        self: &Arc<Self>,
+        config: ExtensionConfig,
+        working_dir: Option<PathBuf>,
+        container: Option<&Container>,
+        session_id: Option<&str>,
+        expected: Option<&Arc<Extension>>,
+    ) -> ExtensionResult<()> {
         let sanitized_name = config.key();
 
-        // Compare both the unresolved config (to detect structural changes like
-        // migrating from plaintext envs to env_keys) and the resolved config (to
-        // detect secret rotation where only keyring values changed). Only skip
-        // restart if both match.
         let resolved_config = config.clone().resolve(Config::global()).await?;
-
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
-            if existing.config == config && existing.resolved_config == resolved_config {
-                return Ok(());
-            }
-            tracing::debug!(
-                name = sanitized_name,
-                "extension config changed, restarting with updated config"
-            );
-        }
-
         let working_dir = working_dir
             .or_else(|| std::env::var("GOOSE_WORKING_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let client_working_dir = match &resolved_config {
+            ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
+            _ => working_dir.clone(),
+        };
+        let reconnect_on_working_dir_change = match &resolved_config {
+            ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
+                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str()) =>
+            {
+                name_to_key(name) == crate::skills::EXTENSION_NAME
+            }
+            _ => true,
+        };
+
+        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
+            if existing.config == config
+                && existing.resolved_config == resolved_config
+                && existing.working_dir == working_dir
+            {
+                return Ok(());
+            }
+            tracing::debug!(name = sanitized_name, "extension changed, restarting");
+        }
+
+        let tools_version = Arc::new(AtomicU64::new(0));
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
             timeout: Duration::from_secs(resolve_timeout(timeout)),
-            provider: self.provider.clone(),
             client_name: self.client_name.clone(),
             capabilities: self.mcp_client_capabilities(),
             working_dir,
             docker_container: None,
             action_required: self.context.session_manager.action_required(),
-            extension_manager: Arc::downgrade(self),
+            tools_version: Arc::clone(&tools_version),
         };
 
         let client: Box<dyn McpClientTrait> = match &resolved_config {
@@ -530,7 +754,7 @@ impl ExtensionManager {
                     name: name.clone(),
                     headers: headers.clone(),
                     static_oauth_client,
-                    ctx: ctx(*timeout, working_dir),
+                    ctx: ctx(*timeout, client_working_dir),
                 };
                 streamable_http::connect(
                     params,
@@ -558,26 +782,31 @@ impl ExtensionManager {
                 client
             }
             ExtensionConfig::Builtin { name, timeout, .. } => {
-                builtin::connect(name, container, ctx(*timeout, working_dir)).await?
+                builtin::connect(name, container, ctx(*timeout, client_working_dir)).await?
             }
             ExtensionConfig::Platform { name, .. } => {
-                builtin::connect(name, container, ctx(None, working_dir)).await?
+                builtin::connect(name, container, ctx(None, client_working_dir)).await?
             }
             ExtensionConfig::Stdio {
                 cmd,
                 args,
                 envs,
                 timeout,
-                cwd,
                 ..
             } => {
                 let mut envs = envs.get_env();
                 if let Some(sid) = session_id {
                     envs.insert("AGENT_SESSION_ID".to_string(), sid.to_string());
                 }
-                let working_dir = cwd.as_deref().map(PathBuf::from).unwrap_or(working_dir);
                 Box::new(
-                    stdio::connect(cmd, args, envs, container, ctx(*timeout, working_dir)).await?,
+                    stdio::connect(
+                        cmd,
+                        args,
+                        envs,
+                        container,
+                        ctx(*timeout, client_working_dir),
+                    )
+                    .await?,
                 )
             }
         };
@@ -585,47 +814,168 @@ impl ExtensionManager {
         let server_info = client.get_info().cloned();
 
         let mut extensions = self.extensions.lock().await;
+        if expected.is_some_and(|expected| {
+            !extensions
+                .get(&sanitized_name)
+                .is_some_and(|current| Arc::ptr_eq(current, expected))
+        }) {
+            return Ok(());
+        }
         extensions.insert(
-            sanitized_name,
-            Extension::new(config, resolved_config, Arc::from(client), server_info),
+            sanitized_name.clone(),
+            Arc::new(Extension {
+                key: sanitized_name,
+                config,
+                working_dir,
+                resolved_config,
+                client: Arc::from(client),
+                server_info,
+                reconnect_on_working_dir_change,
+                tools_version,
+                tools: Mutex::new(None),
+            }),
         );
-        drop(extensions);
-        self.invalidate_tools_cache_and_bump_version().await;
-
+        Self::invalidate_extension_manager_tools(&extensions);
         Ok(())
+    }
+
+    pub async fn apply(
+        self: &Arc<Self>,
+        mutation: ExtensionMutation,
+        container: Option<&Container>,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        let _guard = self.mutation_lock.lock().await;
+        let _directory_guard = self.directory_lock.read().await;
+        let mut session = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        match mutation {
+            ExtensionMutation::Enable { name } => {
+                let config = get_extension_by_name(&name).ok_or_else(|| {
+                    ExtensionError::ConfigError(format!("Extension '{}' not found", name))
+                })?;
+                self.add_extension_if_current(
+                    config,
+                    Some(session.working_dir.clone()),
+                    container,
+                    Some(session_id),
+                    None,
+                )
+                .await
+            }
+            ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
+        }?;
+
+        EnabledExtensionsState::new(self.get_extension_configs().await)
+            .to_extension_data(&mut session.extension_data)
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        self.context
+            .session_manager
+            .update(session_id)
+            .extension_data(session.extension_data)
+            .apply()
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))
+    }
+
+    pub fn applying_mutation(
+        self: &Arc<Self>,
+        result: ToolCallResult,
+        container: Option<Container>,
+        session_id: &str,
+    ) -> ToolCallResult {
+        let manager = Arc::clone(self);
+        let session_id = session_id.to_string();
+        let inner = result.result;
+        ToolCallResult {
+            result: Box::new(
+                async move {
+                    let mut result = inner.await?;
+                    if let Some(mutation) = ExtensionMutation::take(&mut result) {
+                        manager
+                            .apply(mutation, container.as_ref(), &session_id)
+                            .await
+                            .map_err(|e| {
+                                ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                            })?;
+                    }
+                    Ok(result)
+                }
+                .boxed(),
+            ),
+            ..result
+        }
     }
 
     pub async fn add_client(
         &self,
-        name: String,
         config: ExtensionConfig,
+        working_dir: Option<PathBuf>,
         client: McpClientBox,
-        info: Option<ServerInfo>,
+        info: Option<ServerConfig>,
     ) {
-        let normalized = name_to_key(&name);
-        self.extensions.lock().await.insert(
-            normalized,
-            Extension::new(config.clone(), config.clone(), client, info),
+        let _guard = self.directory_lock.read().await;
+        let working_dir =
+            working_dir.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        self.insert_client(config, working_dir, client, info).await;
+    }
+
+    pub async fn add_session_client(
+        &self,
+        config: ExtensionConfig,
+        session_id: &str,
+        client: McpClientBox,
+        info: Option<ServerConfig>,
+    ) -> ExtensionResult<()> {
+        let _guard = self.directory_lock.read().await;
+        let working_dir = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?
+            .working_dir;
+        self.insert_client(config, working_dir, client, info).await;
+        Ok(())
+    }
+
+    async fn insert_client(
+        &self,
+        config: ExtensionConfig,
+        working_dir: PathBuf,
+        client: McpClientBox,
+        info: Option<ServerConfig>,
+    ) {
+        let key = config.key();
+        let mut extensions = self.extensions.lock().await;
+        extensions.insert(
+            key.clone(),
+            Arc::new(Extension {
+                key,
+                config: config.clone(),
+                working_dir,
+                resolved_config: config,
+                client,
+                server_info: info,
+                reconnect_on_working_dir_change: false,
+                tools_version: Arc::new(AtomicU64::new(0)),
+                tools: Mutex::new(None),
+            }),
         );
-        self.invalidate_tools_cache_and_bump_version().await;
+        Self::invalidate_extension_manager_tools(&extensions);
     }
 
     /// Get extensions info for building the system prompt
-    pub async fn get_extensions_info(&self, working_dir: &std::path::Path) -> Vec<ExtensionInfo> {
-        let working_dir_str = working_dir.to_string_lossy();
-        self.extensions
-            .lock()
+    pub async fn get_extensions_info(&self, working_dir: &Path) -> Vec<ExtensionInfo> {
+        self.current_lease("", Some(working_dir))
             .await
-            .iter()
-            .map(|(name, ext)| {
-                let instructions = ext.get_instructions().unwrap_or_default();
-                let instructions = instructions.replace("{{WORKING_DIR}}", &working_dir_str);
-                ExtensionInfo::new(name, &instructions, ext.supports_resources())
-            })
-            .collect()
+            .instructions()
     }
 
-    /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
         self.remove_extension_by_key(&sanitized_name).await?;
@@ -633,20 +983,91 @@ impl ExtensionManager {
     }
 
     pub async fn remove_extension_by_key(&self, key: &str) -> ExtensionResult<bool> {
-        let removed = self.extensions.lock().await.remove(key).is_some();
+        let mut extensions = self.extensions.lock().await;
+        let removed = extensions.shift_remove(key).is_some();
         if removed {
-            self.invalidate_tools_cache_and_bump_version().await;
+            Self::invalidate_extension_manager_tools(&extensions);
         }
         Ok(removed)
     }
 
-    pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
-        let extensions = self.extensions.lock().await;
-        for (name, ext) in extensions.iter() {
-            if let Err(e) = ext.client.update_working_dir(new_dir.to_path_buf()).await {
-                tracing::warn!(extension = %name, error = %e, "failed to update roots");
+    pub async fn update_working_dir(
+        self: &Arc<Self>,
+        new_dir: &Path,
+        container: Option<&Container>,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        let _guard = self.mutation_lock.lock().await;
+        let _directory_guard = self.directory_lock.write().await;
+        let session = match self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+        {
+            Ok(mut session) => {
+                if session.working_dir != new_dir {
+                    self.context
+                        .session_manager
+                        .update(session_id)
+                        .working_dir(new_dir.to_path_buf())
+                        .apply()
+                        .await
+                        .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+                }
+                session.working_dir = new_dir.to_path_buf();
+                Some(Arc::new(session))
             }
+            Err(_) => None,
+        };
+        let extensions = self
+            .extensions
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for extension in extensions {
+            if extension.working_dir == new_dir {
+                continue;
+            }
+            if !extension.reconnect_on_working_dir_change {
+                let client = session
+                    .as_ref()
+                    .and_then(|session| extension.client.rebind_session(Arc::clone(session)))
+                    .unwrap_or_else(|| Arc::clone(&extension.client));
+                let replacement = Arc::new(Extension {
+                    key: extension.key.clone(),
+                    config: extension.config.clone(),
+                    working_dir: new_dir.to_path_buf(),
+                    resolved_config: extension.resolved_config.clone(),
+                    client,
+                    server_info: extension.server_info.clone(),
+                    reconnect_on_working_dir_change: false,
+                    tools_version: Arc::clone(&extension.tools_version),
+                    tools: Mutex::new(None),
+                });
+                let mut running = self.extensions.lock().await;
+                if running
+                    .get(&extension.key)
+                    .is_some_and(|current| Arc::ptr_eq(current, &extension))
+                {
+                    running.insert(extension.key.clone(), replacement);
+                    Self::invalidate_extension_manager_tools(&running);
+                }
+                continue;
+            }
+
+            self.add_extension_if_current(
+                extension.config.clone(),
+                Some(new_dir.to_path_buf()),
+                container,
+                Some(session_id),
+                Some(&extension),
+            )
+            .await?;
         }
+        Ok(())
     }
 
     pub async fn list_extensions(&self) -> ExtensionResult<Vec<String>> {
@@ -673,8 +1094,11 @@ impl ExtensionManager {
         session_id: &str,
         extension_name: Option<String>,
     ) -> ExtensionResult<Vec<Tool>> {
-        let all_tools = self.get_all_tools_cached(session_id).await?;
-        Ok(self.filter_tools(&all_tools, extension_name.as_deref(), None))
+        let lease = self.current_lease(session_id, None).await;
+        Ok(match extension_name {
+            Some(name) => lease.tools_for(&name).await,
+            None => lease.tools().await,
+        })
     }
 
     pub async fn list_tools_from_extension(
@@ -711,237 +1135,20 @@ impl ExtensionManager {
         session_id: &str,
         exclude: &str,
     ) -> ExtensionResult<Vec<Tool>> {
-        let all_tools = self.get_all_tools_cached(session_id).await?;
-        Ok(self.filter_tools(&all_tools, None, Some(exclude)))
+        let lease = self.current_lease(session_id, None).await;
+        Ok(lease.tools_excluding(exclude).await)
     }
 
-    fn filter_tools(
-        &self,
-        tools: &[Tool],
-        extension_name: Option<&str>,
-        exclude: Option<&str>,
-    ) -> Vec<Tool> {
-        let extension_name_normalized = extension_name.map(name_to_key);
-        let exclude_normalized = exclude.map(name_to_key);
-
-        tools
-            .iter()
-            .filter(|tool| {
-                let tool_owner = get_tool_owner(tool)
-                    .map(|s| name_to_key(&s))
-                    .unwrap_or_else(|| tool.name.split("__").next().unwrap_or("").to_string());
-
-                if let Some(ref excluded) = exclude_normalized {
-                    if tool_owner == *excluded {
-                        return false;
-                    }
-                }
-
-                if let Some(ref name_filter) = extension_name_normalized {
-                    tool_owner == *name_filter
-                } else {
-                    true
-                }
-            })
-            .cloned()
-            .collect()
-    }
-
-    async fn get_all_tools_cached(&self, session_id: &str) -> ExtensionResult<Arc<Vec<Tool>>> {
-        {
-            let cache = self.tools_cache.lock().await;
-            if let Some(ref tools) = *cache {
-                return Ok(Arc::clone(tools));
-            }
-        }
-
-        let version_before = self.tools_cache_version.load(Ordering::SeqCst);
-        let tools = Arc::new(self.fetch_all_tools(session_id).await?);
-
-        {
-            let mut cache = self.tools_cache.lock().await;
-            let version_after = self.tools_cache_version.load(Ordering::SeqCst);
-            if version_after == version_before && cache.is_none() {
-                *cache = Some(Arc::clone(&tools));
-            }
-        }
-
-        Ok(tools)
-    }
-
-    fn host_supports_mcp_apps(&self) -> bool {
-        if let Some(host_info) = &self.capabilities.host_info {
-            if host_info.explicit_extensions {
-                return host_info.mcpui_enabled();
-            }
-        }
-
-        self.capabilities.mcpui
-    }
-
-    async fn hydrate_mcp_app_attachment(
-        client: &McpClientBox,
-        session_id: &str,
-        resolved_tool: &ResolvedTool,
-        cancellation_token: CancellationToken,
-    ) -> Option<GooseMcpAppToolAttachment> {
-        let resource_uri = resolved_tool.resource_uri.clone()?;
-
-        let mut attachment = GooseMcpAppToolAttachment {
-            tool_name: resolved_tool.actual_tool_name.clone(),
-            tool_name_is_actual: true,
-            extension_name: resolved_tool.extension_name.clone(),
-            resource_uri: resource_uri.clone(),
-            tool_meta: resolved_tool.tool_meta.clone(),
-            resource_result: None,
-            read_error: None,
-        };
-
-        match client
-            .read_resource(session_id, &resource_uri, cancellation_token)
-            .await
-        {
-            Ok(resource_result) => {
-                attachment.resource_result = serde_json::to_value(&resource_result).ok();
-            }
-            Err(error) => {
-                attachment.read_error = Some(error.to_string());
-            }
-        }
-
-        Some(attachment)
-    }
-
-    pub(crate) async fn invalidate_tools_cache_and_bump_version(&self) {
-        self.tools_cache_version.fetch_add(1, Ordering::SeqCst);
-        *self.tools_cache.lock().await = None;
-    }
-
-    async fn fetch_all_tools(&self, session_id: &str) -> ExtensionResult<Vec<Tool>> {
-        let clients: Vec<_> = self
-            .extensions
-            .lock()
-            .await
-            .iter()
-            .map(|(name, ext)| (name.clone(), ext.config.clone(), ext.get_client()))
-            .collect();
-
-        let cancel_token = CancellationToken::default();
-        let client_futures = clients.into_iter().map(|(name, config, client)| {
-            let cancel_token = cancel_token.clone();
-            let ext_name = name.clone();
-            async move {
-                let mut tools = Vec::new();
-                let mut client_tools = match client
-                    .list_tools(session_id, None, cancel_token.clone())
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        warn!(extension = %ext_name, error = %e, "Failed to list tools");
-                        return (name, vec![]);
-                    }
-                };
-
-                let expose_unprefixed = is_unprefixed_extension(&config);
-
-                loop {
-                    for mut tool in client_tools.tools {
-                        if config.is_tool_available(&tool.name) {
-                            let public_name = if expose_unprefixed {
-                                tool.name.to_string()
-                            } else {
-                                format!("{}__{}", name, tool.name)
-                            };
-
-                            let mut meta_map = tool
-                                .meta
-                                .as_ref()
-                                .map(|m| m.0.clone())
-                                .unwrap_or_default();
-                            meta_map.insert(
-                                TOOL_EXTENSION_META_KEY.to_string(),
-                                serde_json::Value::String(name.clone()),
-                            );
-
-                            tool.name = public_name.into();
-                            tool.meta = Some(rmcp::model::MetaObject(meta_map));
-
-                            let mut schema = (*tool.input_schema).clone();
-                            if super::tool_schema_normalize::normalize_input_schema(
-                                &mut schema,
-                            ) {
-                                tool.input_schema = Arc::new(schema);
-                            }
-
-                            tools.push(tool);
-                        }
-                    }
-
-                    if client_tools.next_cursor.is_none() {
-                        break;
-                    }
-
-                    client_tools = match client
-                        .list_tools(session_id, client_tools.next_cursor, cancel_token.clone())
-                        .await
-                    {
-                        Ok(t) => t,
-                        Err(e) => {
-                            warn!(extension = %ext_name, error = %e, "Failed to list tools (pagination)");
-                            break;
-                        }
-                    };
-                }
-
-                (name, tools)
-            }
-        });
-
-        let results = future::join_all(client_futures).await;
-
-        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut tools = Vec::new();
-        for (ext_name, client_tools) in results {
-            for tool in client_tools {
-                let tool_name = tool.name.to_string();
-                if seen_names.contains(&tool_name) {
-                    warn!(
-                        tool = %tool_name,
-                        extension = %ext_name,
-                        "Duplicate tool name - skipping"
-                    );
-                    continue;
-                }
-                seen_names.insert(tool_name);
-                tools.push(tool);
-            }
-        }
-
-        Ok(tools)
-    }
-
-    // Function that gets executed for read_resource tool
     pub async fn read_resource_tool(
         &self,
         session_id: &str,
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let uri = require_str_parameter(&params, "uri")?;
-        let extension_name = require_str_parameter(&params, "extension_name")?;
-
-        let read_result = self
-            .read_resource(session_id, uri, extension_name, cancellation_token)
-            .await?;
-
-        let mut result = Vec::new();
-        for content in read_result.contents {
-            if let ResourceContents::TextResourceContents { text, .. } = content {
-                result.push(ContentBlock::text(format!("{}\n\n{}", uri, text)));
-            }
-        }
-        Ok(result)
+        self.current_lease(session_id, None)
+            .await
+            .read_resource_tool(params, cancellation_token)
+            .await
     }
 
     pub async fn read_resource(
@@ -951,34 +1158,10 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<rmcp::model::ReadResourceResult, ErrorData> {
-        let available_extensions = self
-            .extensions
-            .lock()
+        self.current_lease(session_id, None)
             .await
-            .keys()
-            .map(|s| s.as_str())
-            .collect::<Vec<&str>>()
-            .join(", ");
-        let error_msg = format!(
-            "Extension '{}' not found. Here are the available extensions: {}",
-            extension_name, available_extensions
-        );
-
-        let client = self
-            .get_server_client(extension_name)
+            .read_resource(uri, extension_name, cancellation_token)
             .await
-            .ok_or(ErrorData::new(ErrorCode::INVALID_PARAMS, error_msg, None))?;
-
-        client
-            .read_resource(session_id, uri, cancellation_token)
-            .await
-            .map_err(|_| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Could not read resource with uri: {}", uri),
-                    None,
-                )
-            })
     }
 
     pub async fn get_ui_resources(
@@ -991,7 +1174,7 @@ impl ExtensionManager {
             let extensions = self.extensions.lock().await;
             extensions
                 .iter()
-                .map(|(name, ext)| (name.clone(), ext.get_client()))
+                .map(|(name, ext)| (name.clone(), ext.client.clone()))
                 .collect()
         };
 
@@ -1022,47 +1205,10 @@ impl ExtensionManager {
         extension_name: &str,
         cancellation_token: CancellationToken,
     ) -> Result<ListResourcesResult, ErrorData> {
-        let client = self
-            .get_server_client(extension_name)
+        self.current_lease(session_id, None)
             .await
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::INVALID_PARAMS,
-                    format!("Extension {} is not valid", extension_name),
-                    None,
-                )
-            })?;
-
-        client
-            .list_resources(session_id, None, cancellation_token)
+            .list_resources_result_from_extension(extension_name, cancellation_token)
             .await
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Unable to list resources for {}, {:?}", extension_name, e),
-                    None,
-                )
-            })
-    }
-
-    async fn list_resources_from_extension(
-        &self,
-        session_id: &str,
-        extension_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
-        self.list_resources_result_from_extension(session_id, extension_name, cancellation_token)
-            .await
-            .map(|lr| {
-                let resource_list = lr
-                    .resources
-                    .into_iter()
-                    .map(|r| format!("{} - {}, uri: ({})", extension_name, r.name, r.uri))
-                    .collect::<Vec<String>>()
-                    .join("\n");
-
-                vec![ContentBlock::text(resource_list)]
-            })
     }
 
     pub async fn list_resources(
@@ -1071,351 +1217,50 @@ impl ExtensionManager {
         params: Value,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, ErrorData> {
-        let extension = params.get("extension_name").and_then(|v| v.as_str());
-
-        match extension {
-            Some(extension_name) => {
-                // Handle single extension case
-                self.list_resources_from_extension(session_id, extension_name, cancellation_token)
-                    .await
-            }
-            None => {
-                // Handle all extensions case using FuturesUnordered
-                let mut futures = FuturesUnordered::new();
-
-                // Create futures for each resource_capable_extension
-                self.extensions
-                    .lock()
-                    .await
-                    .iter()
-                    .filter(|(_name, ext)| ext.supports_resources())
-                    .map(|(name, _ext)| name.clone())
-                    .for_each(|name| {
-                        let token = cancellation_token.clone();
-                        futures.push(async move {
-                            self.list_resources_from_extension(session_id, name.as_str(), token)
-                                .await
-                        });
-                    });
-
-                let mut all_resources = Vec::new();
-                let mut errors = Vec::new();
-
-                // Process results as they complete
-                while let Some(result) = futures.next().await {
-                    match result {
-                        Ok(content) => {
-                            all_resources.extend(content);
-                        }
-                        Err(tool_error) => {
-                            errors.push(tool_error);
-                        }
-                    }
-                }
-
-                if !errors.is_empty() {
-                    tracing::error!(
-                        errors = ?errors
-                            .into_iter()
-                            .map(|e| format!("{:?}", e))
-                            .collect::<Vec<_>>(),
-                        "errors from listing resources"
-                    );
-                }
-
-                Ok(all_resources)
-            }
-        }
-    }
-
-    #[cfg(test)]
-    async fn resolve_tool(
-        &self,
-        session_id: &str,
-        tool_name: &str,
-    ) -> Result<ResolvedTool, ErrorData> {
-        self.resolve_tool_with_constraints(session_id, tool_name, None, false)
+        self.current_lease(session_id, None)
             .await
-    }
-
-    async fn resolve_tool_with_constraints(
-        &self,
-        session_id: &str,
-        tool_name: &str,
-        expected_extension_name: Option<&str>,
-        require_app_visibility: bool,
-    ) -> Result<ResolvedTool, ErrorData> {
-        let tools = self.get_all_tools_cached(session_id).await.map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("Failed to get tools: {}", e),
-                None,
-            )
-        })?;
-
-        let mut name = tool_name.to_string();
-        let mut recovery_attempted = false;
-        loop {
-            if let Some(tool) = tools.iter().find(|t| *t.name == *name) {
-                let owner = get_tool_owner(tool)
-                    .or_else(|| name.split_once("__").map(|(prefix, _)| name_to_key(prefix)))
-                    .ok_or_else(|| {
-                        ErrorData::new(
-                            ErrorCode::RESOURCE_NOT_FOUND,
-                            format!("Tool '{}' has no owner", name),
-                            None,
-                        )
-                    })?;
-
-                if expected_extension_name
-                    .is_some_and(|expected| name_to_key(expected) != name_to_key(&owner))
-                {
-                    return Err(ErrorData::new(
-                        ErrorCode::RESOURCE_NOT_FOUND,
-                        format!("Tool '{}' not found for extension", tool_name),
-                        None,
-                    ));
-                }
-
-                if require_app_visibility && !is_tool_visible_to_app(tool) {
-                    return Err(ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Tool is not visible to app clients",
-                        None,
-                    ));
-                }
-
-                let actual_tool_name = name
-                    .strip_prefix(&format!("{owner}__"))
-                    .unwrap_or(&name)
-                    .to_string();
-
-                let client = self.get_server_client(&owner).await.ok_or_else(|| {
-                    ErrorData::new(
-                        ErrorCode::RESOURCE_NOT_FOUND,
-                        format!("Extension '{}' not found for tool '{}'", owner, name),
-                        None,
-                    )
-                })?;
-
-                return Ok(ResolvedTool {
-                    extension_name: owner,
-                    actual_tool_name,
-                    client,
-                    tool_meta: get_tool_meta_value(tool),
-                    resource_uri: get_tool_resource_uri(tool),
-                });
-            }
-
-            if !recovery_attempted {
-                recovery_attempted = true;
-                let owners: Vec<(&str, Option<String>)> = tools
-                    .iter()
-                    .map(|t| (t.name.as_ref(), get_tool_owner(t)))
-                    .collect();
-                if let Some(recovered) =
-                    recover_mangled_tool_name(&name, owners.iter().map(|(n, o)| (*n, o.as_deref())))
-                {
-                    name = recovered;
-                    continue;
-                }
-            }
-
-            break;
-        }
-
-        let available = tools
-            .iter()
-            .map(|t| t.name.as_ref())
-            .collect::<Vec<&str>>()
-            .join(", ");
-
-        Err(ErrorData::new(
-            ErrorCode::RESOURCE_NOT_FOUND,
-            format!(
-                "Tool '{}' not found. Available tools: [{}]",
-                tool_name, available
-            ),
-            None,
-        ))
+            .list_resources(params, cancellation_token)
+            .await
     }
 
     pub async fn dispatch_tool_call(
         &self,
-        ctx: &super::tool_execution::ToolCallContext,
+        ctx: &ToolCallContext,
         tool_call: CallToolRequestParams,
         cancellation_token: CancellationToken,
-    ) -> std::result::Result<ToolCallResult, ErrorData> {
-        self.dispatch_tool_call_inner(ctx, tool_call, None, false, cancellation_token)
+    ) -> Result<ToolCallResult, ErrorData> {
+        self.lease_for_tool_call(ctx)
+            .await
+            .call(tool_call, CallRequest::from(ctx), cancellation_token)
             .await
     }
 
     pub async fn dispatch_app_tool_call(
         &self,
-        ctx: &super::tool_execution::ToolCallContext,
+        ctx: &ToolCallContext,
         tool_call: CallToolRequestParams,
         extension_name: &str,
         cancellation_token: CancellationToken,
-    ) -> std::result::Result<ToolCallResult, ErrorData> {
-        self.dispatch_tool_call_inner(
-            ctx,
-            tool_call,
-            Some(extension_name),
-            true,
-            cancellation_token,
-        )
-        .await
+    ) -> Result<ToolCallResult, ErrorData> {
+        self.lease_for_tool_call(ctx)
+            .await
+            .call_for_app(
+                tool_call,
+                extension_name,
+                CallRequest::from(ctx),
+                cancellation_token,
+            )
+            .await
     }
 
-    async fn dispatch_tool_call_inner(
-        &self,
-        ctx: &super::tool_execution::ToolCallContext,
-        tool_call: CallToolRequestParams,
-        expected_extension_name: Option<&str>,
-        require_app_visibility: bool,
-        cancellation_token: CancellationToken,
-    ) -> std::result::Result<ToolCallResult, ErrorData> {
-        let tool_name_str = tool_call.name.to_string();
-        let resolved = self
-            .resolve_tool_with_constraints(
-                &ctx.session_id,
-                &tool_name_str,
-                expected_extension_name,
-                require_app_visibility,
-            )
-            .await?;
-
-        if let Some(extension) = self.extensions.lock().await.get(&resolved.extension_name) {
-            if !extension
-                .config
-                .is_tool_available(&resolved.actual_tool_name)
-            {
-                return Err(ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
-                    format!(
-                        "Tool '{}' is not available for extension '{}'",
-                        resolved.actual_tool_name, resolved.extension_name
-                    ),
-                    None,
-                ));
-            }
-        }
-
-        let arguments = tool_call.arguments.clone();
-        let client = resolved.client.clone();
-        let hydration_client = client.clone();
-        let client_notifications_receiver = client.subscribe().await;
-        let session_id = ctx.session_id.clone();
-        let action_required_tool_call_request_id = ctx.tool_call_request_id.clone();
-        let action_required_manager = self.context.session_manager.action_required();
-        let action_required_receiver =
-            if let Some(tool_call_request_id) = action_required_tool_call_request_id.clone() {
-                if action_required_manager
-                    .has_action_required_stream(&session_id, &tool_call_request_id)
+    async fn lease_for_tool_call(&self, ctx: &ToolCallContext) -> ExtensionLease {
+        match ctx.working_dir.as_deref() {
+            Some(working_dir) => {
+                self.current_session_lease(&ctx.session_id, working_dir)
                     .await
-                {
-                    None
-                } else {
-                    let registered_tool_call_request_id = tool_call_request_id.clone();
-                    let receiver = action_required_manager
-                        .register_action_required_stream(session_id.clone(), tool_call_request_id)
-                        .await;
-                    Some((
-                        receiver,
-                        session_id.clone(),
-                        registered_tool_call_request_id,
-                    ))
-                }
-            } else {
-                None
-            };
-        let actual_tool_name = resolved.actual_tool_name.clone();
-        let resolved_tool = resolved;
-        let should_hydrate_mcp_app = self.host_supports_mcp_apps();
-        let read_cancellation_token = cancellation_token.clone();
-        let owned_ctx = ToolCallContext::new(
-            ctx.session_id.clone(),
-            ctx.working_dir.clone(),
-            ctx.tool_call_request_id.clone(),
-        );
-        let (owned_ctx, tool_call_notifications_receiver) =
-            if let Some(notification_emitter) = ctx.notification_emitter().cloned() {
-                (
-                    owned_ctx.with_notification_emitter(notification_emitter),
-                    None,
-                )
-            } else if owned_ctx.tool_call_request_id.is_some() {
-                let (tool_call_notifications_sender, tool_call_notifications_receiver) =
-                    mpsc::channel(TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY);
-                (
-                    owned_ctx.with_notification_emitter(ToolCallNotificationEmitter::new(
-                        tool_call_notifications_sender,
-                    )),
-                    Some(tool_call_notifications_receiver),
-                )
-            } else {
-                (owned_ctx, None)
-            };
-        let notification_stream: Box<dyn Stream<Item = ServerNotification> + Send + Unpin> =
-            match tool_call_notifications_receiver {
-                Some(tool_call_notifications_receiver) => Box::new(stream::select(
-                    ReceiverStream::new(client_notifications_receiver),
-                    ReceiverStream::new(tool_call_notifications_receiver),
-                )),
-                None => Box::new(ReceiverStream::new(client_notifications_receiver)),
-            };
-
-        let fut = async move {
-            tracing::debug!(
-                "dispatch_tool_call: calling client.call_tool tool={} session_id={} working_dir={:?}",
-                actual_tool_name,
-                owned_ctx.session_id,
-                owned_ctx.working_dir,
-            );
-            let call_result = client
-                .call_tool(&owned_ctx, &actual_tool_name, arguments, cancellation_token)
-                .await
-                .map_err(|e| match e {
-                    ServiceError::McpError(error_data) => error_data,
-                    _ => {
-                        ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), e.maybe_to_value())
-                    }
-                });
-
-            let mut result = call_result?;
-
-            remove_untrusted_mcp_app_meta(&mut result);
-
-            if should_hydrate_mcp_app && result.is_error != Some(true) {
-                if let Some(attachment) = Self::hydrate_mcp_app_attachment(
-                    &hydration_client,
-                    &session_id,
-                    &resolved_tool,
-                    read_cancellation_token,
-                )
-                .await
-                {
-                    insert_trusted_tool_update_meta(&mut result, &attachment);
-                }
             }
-
-            Ok(result)
-        };
-
-        Ok(ToolCallResult {
-            result: Box::new(fut.boxed()),
-            notification_stream: Some(notification_stream),
-            action_required_stream: action_required_receiver.map(
-                |(rx, session_id, tool_call_request_id)| {
-                    Box::new(ActionRequiredStream::new(
-                        rx,
-                        action_required_manager,
-                        session_id,
-                        tool_call_request_id,
-                    )) as _
-                },
-            ),
-        })
+            None => self.current_lease(&ctx.session_id, None).await,
+        }
     }
 
     pub async fn list_prompts_from_extension(
@@ -1521,42 +1366,7 @@ impl ExtensionManager {
             .lock()
             .await
             .get(&normalized)
-            .map(|ext| ext.get_client())
-    }
-
-    pub async fn collect_moim_parts(&self, session_id: &str) -> Vec<String> {
-        let mut platform_clients: Vec<(String, McpClientBox)> = {
-            let extensions = self.extensions.lock().await;
-            extensions
-                .iter()
-                .filter_map(|(name, extension)| {
-                    let is_platform = match &extension.config {
-                        ExtensionConfig::Platform { .. } => true,
-                        ExtensionConfig::Builtin { name: ext_name, .. } => {
-                            PLATFORM_EXTENSIONS.contains_key(name_to_key(ext_name).as_str())
-                        }
-                        _ => false,
-                    };
-                    if is_platform {
-                        Some((name.clone(), extension.get_client()))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
-        // HashMap order shuffles across restarts; the rendered block must be
-        // byte-stable so it is not re-persisted on resume.
-        platform_clients.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut parts = Vec::new();
-        for (name, client) in platform_clients {
-            if let Some(moim_content) = client.get_moim(session_id).await {
-                tracing::debug!("MOIM content from {}: {} chars", name, moim_content.len());
-                parts.push(moim_content);
-            }
-        }
-        parts
+            .map(|ext| ext.client.clone())
     }
 }
 
@@ -1573,7 +1383,9 @@ mod tests {
     use rmcp::model::ReadResourceResult;
     use rmcp::model::ServerNotification;
 
-    use tokio::sync::mpsc;
+    use super::super::tool_execution::ToolCallNotificationEmitter;
+    use std::sync::atomic::AtomicUsize;
+    use tokio::sync::{mpsc, Semaphore};
 
     impl ExtensionManager {
         async fn add_mock_extension(&self, name: String, client: McpClientBox) {
@@ -1587,7 +1399,6 @@ mod tests {
             client: McpClientBox,
             available_tools: Vec<String>,
         ) {
-            let sanitized_name = name_to_key(&name);
             let config = ExtensionConfig::Builtin {
                 name: name.clone(),
                 display_name: Some(name.clone()),
@@ -1596,12 +1407,7 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            let extension = Extension::new(config.clone(), config.clone(), client, None);
-            self.extensions
-                .lock()
-                .await
-                .insert(sanitized_name, extension);
-            self.invalidate_tools_cache_and_bump_version().await;
+            self.add_client(config, None, client, None).await;
         }
     }
 
@@ -1712,6 +1518,62 @@ mod tests {
 
         async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
             mpsc::channel(1).1
+        }
+    }
+
+    struct ResourceClient {
+        label: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for ResourceClient {
+        async fn list_resources(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListResourcesResult, Error> {
+            Ok(ListResourcesResult {
+                resources: vec![Resource::new(
+                    "resource://snapshot".to_string(),
+                    format!("{} resource", self.label),
+                )],
+                ..Default::default()
+            })
+        }
+
+        async fn read_resource(
+            &self,
+            _session_id: &str,
+            uri: &str,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ReadResourceResult, Error> {
+            Ok(ReadResourceResult::new(vec![
+                rmcp::model::ResourceContents::text(self.label, uri),
+            ]))
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            Ok(ListToolsResult::default())
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Err(Error::TransportClosed)
+        }
+
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
         }
     }
 
@@ -1873,352 +1735,6 @@ mod tests {
         assert_eq!(methods, vec!["client/subscription"]);
     }
 
-    #[tokio::test]
-    async fn test_dispatch_tool_call() {
-        use super::super::tool_execution::ToolCallContext;
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        // Add some mock clients using the helper method
-        extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        extension_manager
-            .add_mock_extension("__cli__ent__".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        extension_manager
-            .add_mock_extension("client 🚀".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let ctx = ToolCallContext::new(
-            "test-session-id".to_string(),
-            None,
-            Some("test-req-id".to_string()),
-        );
-
-        let tool_call =
-            CallToolRequestParams::new("test_client__tool".to_string()).with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await;
-        assert!(result.is_ok());
-
-        let tool_call = CallToolRequestParams::new("test_client__available_tool".to_string())
-            .with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await;
-        assert!(result.is_ok());
-
-        let tool_call = CallToolRequestParams::new("__cli__ent____tool".to_string())
-            .with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await;
-        assert!(result.is_ok());
-
-        let tool_call =
-            CallToolRequestParams::new("client___tool".to_string()).with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await;
-        assert!(result.is_ok());
-
-        let invalid_tool_call =
-            CallToolRequestParams::new("client___tools".to_string()).with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, invalid_tool_call, CancellationToken::default())
-            .await;
-        if let Err(err) = result {
-            assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
-        } else {
-            panic!("Expected ErrorData with ErrorCode::RESOURCE_NOT_FOUND");
-        }
-
-        let invalid_tool_call =
-            CallToolRequestParams::new("_client__tools".to_string()).with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, invalid_tool_call, CancellationToken::default())
-            .await;
-        if let Err(err) = result {
-            assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
-        } else {
-            panic!("Expected ErrorData with ErrorCode::RESOURCE_NOT_FOUND");
-        }
-    }
-
-    #[tokio::test]
-    async fn test_tool_availability_filtering() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        // Only "available_tool" should be available to the LLM
-        let available_tools = vec!["available_tool".to_string()];
-
-        extension_manager
-            .add_mock_extension_with_tools(
-                "test_extension".to_string(),
-                Arc::new(MockClient {}),
-                available_tools,
-            )
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-
-        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-        assert!(!tool_names.iter().any(|name| name == "test_extension__tool")); // Default unavailable
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__available_tool"));
-        assert!(!tool_names
-            .iter()
-            .any(|name| name == "test_extension__hidden_tool"));
-        assert!(tool_names.len() == 1);
-    }
-
-    #[tokio::test]
-    async fn test_tool_availability_defaults_to_available() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension_with_tools(
-                "test_extension".to_string(),
-                Arc::new(MockClient {}),
-                vec![], // Empty available_tools means all tools are available by default
-            )
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-
-        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-        assert!(tool_names.iter().any(|name| name == "test_extension__tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__available_tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__hidden_tool"));
-        assert!(tool_names
-            .iter()
-            .any(|name| name == "test_extension__render_chart"));
-        assert!(tool_names.len() == 4);
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_unavailable_tool_returns_error() {
-        use super::super::tool_execution::ToolCallContext;
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        let available_tools = vec!["available_tool".to_string()];
-
-        extension_manager
-            .add_mock_extension_with_tools(
-                "test_extension".to_string(),
-                Arc::new(MockClient {}),
-                available_tools,
-            )
-            .await;
-
-        let ctx = ToolCallContext::new(
-            "test-session-id".to_string(),
-            None,
-            Some("test-req-id".to_string()),
-        );
-
-        let unavailable_tool_call = CallToolRequestParams::new("test_extension__tool".to_string())
-            .with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, unavailable_tool_call, CancellationToken::default())
-            .await;
-
-        if let Err(err) = result {
-            assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
-        } else {
-            panic!("Expected ErrorData with ErrorCode::RESOURCE_NOT_FOUND");
-        }
-
-        // Try to call an available tool - should succeed
-        let available_tool_call =
-            CallToolRequestParams::new("test_extension__available_tool".to_string())
-                .with_arguments(object!({}));
-
-        let result = extension_manager
-            .dispatch_tool_call(&ctx, available_tool_call, CancellationToken::default())
-            .await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_tools_cache_invalidated_on_add_extension() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools_after_first = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools_after_first
-            .iter()
-            .map(|t| t.name.to_string())
-            .collect();
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
-
-        extension_manager
-            .add_mock_extension("ext_b".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools_after_second = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools_after_second
-            .iter()
-            .map(|t| t.name.to_string())
-            .collect();
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_b__")));
-    }
-
-    #[tokio::test]
-    async fn test_tools_cache_invalidated_on_remove_extension() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-        extension_manager
-            .add_mock_extension("ext_b".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools_before = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools_before.iter().map(|t| t.name.to_string()).collect();
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_b__")));
-
-        extension_manager.remove_extension("ext_b").await.unwrap();
-
-        let tools_after = extension_manager
-            .get_prefixed_tools("test-session-id", None)
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools_after.iter().map(|t| t.name.to_string()).collect();
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
-    }
-
-    #[tokio::test]
-    async fn test_get_prefixed_tools_excluding() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-        extension_manager
-            .add_mock_extension("ext_b".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools_excluding("test-session-id", "ext_a")
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-
-        assert!(!tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_b__")));
-    }
-
-    #[tokio::test]
-    async fn test_mcp_app_tools_identified_for_code_mode_exclusion() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("autovisualiser".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools_excluding("test-session-id", "code_execution")
-            .await
-            .unwrap();
-
-        let (mcp_app_tools, regular_tools): (Vec<_>, Vec<_>) = tools
-            .iter()
-            .partition(|t| get_tool_resource_uri(t).is_some());
-
-        assert_eq!(mcp_app_tools.len(), 1, "exactly one MCP app tool");
-        assert_eq!(
-            mcp_app_tools[0].name.as_ref(),
-            "autovisualiser__render_chart"
-        );
-        assert!(
-            regular_tools
-                .iter()
-                .all(|t| get_tool_resource_uri(t).is_none()),
-            "non-MCP-app tools have no resourceUri"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_get_prefixed_tools_by_extension_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-        extension_manager
-            .add_mock_extension("ext_b".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let tools = extension_manager
-            .get_prefixed_tools("test-session-id", Some("ext_a".to_string()))
-            .await
-            .unwrap();
-        let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
-
-        assert!(tool_names.iter().any(|n| n.starts_with("ext_a__")));
-        assert!(!tool_names.iter().any(|n| n.starts_with("ext_b__")));
-    }
-
     #[test]
     fn test_tool_owner_binding_uses_metadata_not_flattened_name() {
         let tool = |name: &str, owner: &str| {
@@ -2243,136 +1759,18 @@ mod tests {
         assert!(!is_tool_owned_by_extension(&sibling_tool, "ext_a"));
     }
 
-    #[tokio::test]
-    async fn app_dispatch_revalidates_owner_after_tools_cache_changes() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("ext_a__ext_b".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let app_tool = |owner: &str| {
-            let mut tool = Tool::new(
-                "ext_a__ext_b__secret".to_string(),
-                "test tool".to_string(),
-                Arc::new(serde_json::Map::new()),
-            );
-            tool.meta = Some(MetaObject(
-                serde_json::json!({
-                    TOOL_EXTENSION_META_KEY: owner,
-                    "ui": { "resourceUri": "ui://test/app" }
-                })
-                .as_object()
-                .unwrap()
-                .clone(),
-            ));
-            tool
-        };
-
-        *extension_manager.tools_cache.lock().await = Some(Arc::new(vec![app_tool("ext_a")]));
-        let initially_visible = extension_manager
-            .get_prefixed_tools("session", Some("ext_a".to_string()))
-            .await
-            .unwrap();
-        assert_eq!(initially_visible.len(), 1);
-
-        // Model tools/list_changed replacing the validated tool with a sibling
-        // owner's colliding flattened name before the actual dispatch.
-        *extension_manager.tools_cache.lock().await =
-            Some(Arc::new(vec![app_tool("ext_a__ext_b")]));
-        let ctx = ToolCallContext::new("session".to_string(), None, None);
-        let result = extension_manager
-            .dispatch_app_tool_call(
-                &ctx,
-                CallToolRequestParams::new("ext_a__ext_b__secret".to_string()),
-                "ext_a",
-                CancellationToken::default(),
-            )
-            .await;
-
-        let Err(error) = result else {
-            panic!("app dispatch accepted a sibling owner's colliding tool name");
-        };
-        assert_eq!(error.code, ErrorCode::RESOURCE_NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_tool_error_includes_available_tools() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-
-        extension_manager
-            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let result = extension_manager
-            .resolve_tool("test-session-id", "definitely_not_a_real_tool")
-            .await;
-        let err = match result {
-            Ok(_) => panic!("resolve_tool should fail for an unknown name"),
-            Err(e) => e,
-        };
-
-        let msg = err.message.to_string();
-        assert!(
-            msg.contains("definitely_not_a_real_tool"),
-            "error should echo the bad name; got: {msg}"
-        );
-        assert!(
-            msg.contains("ext_a__"),
-            "error should list at least one real tool name; got: {msg}"
-        );
-    }
-
-    struct MockDottedClient {}
+    struct NamedToolsClient(Vec<Tool>);
 
     #[async_trait::async_trait]
-    impl McpClientTrait for MockDottedClient {
-        fn get_info(&self) -> Option<&InitializeResult> {
-            None
-        }
-
-        async fn list_resources(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ListResourcesResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
-        async fn read_resource(
-            &self,
-            _session_id: &str,
-            _uri: &str,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ReadResourceResult, Error> {
-            Err(Error::TransportClosed)
-        }
-
+    impl McpClientTrait for NamedToolsClient {
         async fn list_tools(
             &self,
             _session_id: &str,
             _next_cursor: Option<String>,
             _cancellation_token: CancellationToken,
         ) -> Result<ListToolsResult, Error> {
-            use serde_json::json;
-            use std::sync::Arc;
             Ok(ListToolsResult {
-                tools: vec![
-                    Tool::new(
-                        "db.query".to_string(),
-                        "A tool with a dotted name".to_string(),
-                        Arc::new(json!({}).as_object().unwrap().clone()),
-                    ),
-                    Tool::new(
-                        "db__query".to_string(),
-                        "A sibling with the separator name".to_string(),
-                        Arc::new(json!({}).as_object().unwrap().clone()),
-                    ),
-                ],
+                tools: self.0.clone(),
                 next_cursor: None,
                 meta: None,
                 ..Default::default()
@@ -2382,153 +1780,813 @@ mod tests {
         async fn call_tool(
             &self,
             _ctx: &ToolCallContext,
-            name: &str,
+            _name: &str,
             _arguments: Option<JsonObject>,
             _cancellation_token: CancellationToken,
         ) -> Result<CallToolResult, Error> {
-            match name {
-                "db.query" | "db__query" => Ok(CallToolResult::success(vec![])),
-                _ => Err(Error::TransportClosed),
-            }
+            Ok(CallToolResult::success(vec![]))
         }
 
-        async fn list_prompts(
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+
+    fn app_tool(name: &str) -> Tool {
+        let mut tool = Tool::new(
+            name.to_string(),
+            "test tool".to_string(),
+            Arc::new(serde_json::Map::new()),
+        );
+        tool.meta = Some(MetaObject(
+            serde_json::json!({ "ui": { "resourceUri": "ui://test/app" } })
+                .as_object()
+                .unwrap()
+                .clone(),
+        ));
+        tool
+    }
+
+    /// `ext_a` publishing `ext_b__secret` and `ext_a__ext_b` publishing `secret`
+    /// flatten to the same public name. Whoever the catalog keeps, an app
+    /// dispatch scoped to the other extension must be refused.
+    #[tokio::test]
+    async fn app_dispatch_rejects_colliding_flattened_name_from_sibling_owner() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager =
+            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        extension_manager
+            .add_mock_extension(
+                "ext_a__ext_b".to_string(),
+                Arc::new(NamedToolsClient(vec![app_tool("secret")])),
+            )
+            .await;
+        extension_manager
+            .add_mock_extension(
+                "ext_a".to_string(),
+                Arc::new(NamedToolsClient(vec![app_tool("ext_b__secret")])),
+            )
+            .await;
+
+        let lease = extension_manager.current_lease("session", None).await;
+        assert_eq!(
+            lease.tools().await.len(),
+            1,
+            "colliding names collapse to one entry"
+        );
+        let owner = get_tool_owner(&lease.tools().await[0]).unwrap();
+        let other = if owner == "ext_a" {
+            "ext_a__ext_b"
+        } else {
+            "ext_a"
+        };
+
+        let ctx = ToolCallContext::new("session".to_string(), None, None);
+        let result = extension_manager
+            .dispatch_app_tool_call(
+                &ctx,
+                CallToolRequestParams::new("ext_a__ext_b__secret".to_string()),
+                other,
+                CancellationToken::default(),
+            )
+            .await;
+        let Err(error) = result else {
+            panic!("app dispatch accepted a sibling owner's colliding tool name");
+        };
+        assert_eq!(error.code, ErrorCode::RESOURCE_NOT_FOUND);
+    }
+
+    struct BlockingToolsClient {
+        calls: AtomicUsize,
+        first_fetch_started: Semaphore,
+        release_first_fetch: Semaphore,
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for BlockingToolsClient {
+        async fn list_tools(
             &self,
             _session_id: &str,
             _next_cursor: Option<String>,
-            _cancellation_token: CancellationToken,
-        ) -> Result<ListPromptsResult, Error> {
-            Err(Error::TransportClosed)
+            _cancel_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            let name = if call == 0 { "old" } else { "new" };
+
+            if call == 0 {
+                self.first_fetch_started.add_permits(1);
+                let _permit = self.release_first_fetch.acquire().await.unwrap();
+            }
+
+            Ok(ListToolsResult {
+                tools: vec![Tool::new(
+                    name,
+                    format!("{name} tool list"),
+                    Arc::new(JsonObject::new()),
+                )],
+                next_cursor: None,
+                meta: None,
+                ..Default::default()
+            })
         }
 
-        async fn get_prompt(
+        async fn call_tool(
             &self,
-            _session_id: &str,
+            _ctx: &ToolCallContext,
             _name: &str,
-            _arguments: Value,
-            _cancellation_token: CancellationToken,
-        ) -> Result<GetPromptResult, Error> {
-            Err(Error::TransportClosed)
+            _arguments: Option<JsonObject>,
+            _cancel_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Ok(CallToolResult::success(vec![]))
         }
 
-        async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-            mpsc::channel(1).1
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+
+    fn builtin_config(name: &str, available_tools: Vec<String>) -> ExtensionConfig {
+        ExtensionConfig::Builtin {
+            name: name.to_string(),
+            display_name: Some(name.to_string()),
+            description: "built-in".to_string(),
+            timeout: None,
+            bundled: None,
+            available_tools,
         }
     }
 
     #[tokio::test]
-    async fn test_resolve_tool_recovers_dotted_mangled_name() {
+    async fn resolve_leaves_out_an_extension_running_under_a_different_config() {
         let temp_dir = tempfile::tempdir().unwrap();
         let extension_manager =
             ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
         extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
+            .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
             .await;
 
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "test_client.tool")
-            .await
-            .expect("mangled dotted name should resolve to the real tool");
-        assert_eq!(resolved.extension_name, "test_client");
-        assert_eq!(resolved.actual_tool_name, "tool");
+        let same = ExtensionSet::new("s", None, vec![builtin_config("ext_a", vec![])]).unwrap();
+        assert!(extension_manager.resolve(&same).await.is_enabled("ext_a"));
+
+        let narrower = ExtensionSet::new(
+            "s",
+            None,
+            vec![builtin_config("ext_a", vec!["tool".to_string()])],
+        )
+        .unwrap();
+        let lease = extension_manager.resolve(&narrower).await;
+        assert!(!lease.is_enabled("ext_a"));
+        assert!(lease.tools().await.is_empty());
     }
 
     #[tokio::test]
-    async fn test_resolve_tool_recovers_functions_prefixed_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+    async fn working_dir_updates_preserve_supplied_clients() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let config = builtin_config("external", vec![]);
         extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
+            .add_client(
+                config.clone(),
+                None,
+                Arc::new(NamedToolsClient(vec![Tool::new(
+                    "ping",
+                    "supplied tool",
+                    Arc::new(JsonObject::new()),
+                )])),
+                None,
+            )
             .await;
 
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "functions.test_client__tool")
+        let original_set = ExtensionSet::new(
+            "session",
+            Some(std::env::current_dir().unwrap()),
+            vec![config.clone()],
+        )
+        .unwrap();
+        let original_lease = extension_manager.resolve(&original_set).await;
+
+        extension_manager
+            .update_working_dir(new_working_dir.path(), None, "session")
             .await
-            .expect("functions-prefixed name should resolve to the real tool");
-        assert_eq!(resolved.extension_name, "test_client");
-        assert_eq!(resolved.actual_tool_name, "tool");
+            .unwrap();
+
+        let updated_set = ExtensionSet::new(
+            "session",
+            Some(new_working_dir.path().to_path_buf()),
+            vec![config],
+        )
+        .unwrap();
+        let updated_lease = extension_manager.resolve(&updated_set).await;
+
+        assert!(original_lease.is_enabled("external"));
+        assert!(updated_lease.is_enabled("external"));
+        assert!(original_lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "external__ping"));
+        assert!(updated_lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "external__ping"));
     }
 
     #[tokio::test]
-    async fn test_resolve_tool_exact_dotted_name_never_rewritten() {
-        let temp_dir = tempfile::tempdir().unwrap();
+    async fn current_lease_excludes_extensions_from_another_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
         let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+            ExtensionManager::new_without_provider(data_dir.path().to_path_buf());
         extension_manager
-            .add_mock_extension("dotted".to_string(), Arc::new(MockDottedClient {}))
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(MockClient {}),
+                None,
+            )
             .await;
 
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "dotted__db.query")
-            .await
-            .expect("exact dotted tool name must resolve");
-        assert_eq!(resolved.extension_name, "dotted");
-        assert_eq!(resolved.actual_tool_name, "db.query");
+        let lease = extension_manager
+            .current_lease("session", Some(new_working_dir.path()))
+            .await;
+
+        assert!(!lease.is_enabled("external"));
     }
 
     #[tokio::test]
-    async fn test_resolve_tool_recovers_mangled_separator_with_dotted_tool_name() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("dotted".to_string(), Arc::new(MockDottedClient {}))
+    async fn session_lease_reconciles_a_stale_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(MockClient {}),
+                None,
+            )
             .await;
 
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "dotted.db.query")
+        manager
+            .update_working_dir(new_working_dir.path(), None, &session.id)
             .await
-            .expect("mangled extension separator should resolve");
-        assert_eq!(resolved.extension_name, "dotted");
-        assert_eq!(resolved.actual_tool_name, "db.query");
+            .unwrap();
+        let lease = manager
+            .current_session_lease(&session.id, old_working_dir.path())
+            .await;
+
+        assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
+        assert!(lease.is_enabled("external"));
     }
 
     #[tokio::test]
-    async fn test_resolve_tool_recovers_unprefixed_platform_extension_name() {
-        // GLM's documented reproduction (#9486): the built-in "developer"
-        // platform extension is registered with unprefixed_tools=true, so its
-        // tools are advertised with no "__" prefix at all (owner only in
-        // metadata). "developer.tool" must still resolve to the real "tool".
-        // Naming the mock extension literally "developer" makes
-        // is_unprefixed_extension look it up in the real PLATFORM_EXTENSIONS
-        // registry, exercising production behavior, not a fake stand-in.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
-        extension_manager
-            .add_mock_extension("developer".to_string(), Arc::new(MockClient {}))
-            .await;
-
-        let resolved = extension_manager
-            .resolve_tool("test-session-id", "developer.tool")
+    async fn app_dispatch_reconciles_a_stale_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-app-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
             .await
-            .expect("unprefixed extension namespace mangling should resolve");
-        assert_eq!(resolved.actual_tool_name, "tool");
-        assert_eq!(resolved.extension_name, "developer");
+            .unwrap();
+        manager
+            .add_client(
+                builtin_config("external", vec![]),
+                Some(old_working_dir.path().to_path_buf()),
+                Arc::new(NamedToolsClient(vec![app_tool("ping")])),
+                None,
+            )
+            .await;
+        manager
+            .update_working_dir(new_working_dir.path(), None, &session.id)
+            .await
+            .unwrap();
+
+        let ctx =
+            ToolCallContext::new(session.id, Some(old_working_dir.path().to_path_buf()), None);
+        manager
+            .dispatch_app_tool_call(
+                &ctx,
+                CallToolRequestParams::new("external__ping".to_string()),
+                "external",
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
-    async fn test_dispatch_rejects_unadvertised_tool_implemented_by_extension() {
+    async fn session_client_uses_the_current_session_directory() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moving-client-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .get_context()
+            .session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+
+        manager
+            .add_session_client(
+                builtin_config("external", vec![]),
+                &session.id,
+                Arc::new(MockClient {}),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(manager
+            .current_lease(&session.id, Some(new_working_dir.path()))
+            .await
+            .is_enabled("external"));
+        assert!(!manager
+            .current_lease(&session.id, Some(old_working_dir.path()))
+            .await
+            .is_enabled("external"));
+    }
+
+    #[tokio::test]
+    async fn working_dir_updates_preserve_platform_client_state() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "platform-state".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "developer".to_string(),
+                    display_name: None,
+                    description: "developer".to_string(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Some(old_working_dir.path().to_path_buf()),
+                None,
+                Some(&session.id),
+            )
+            .await
+            .unwrap();
+        let original = manager.extensions.lock().await["developer"].clone();
+
+        manager
+            .update_working_dir(new_working_dir.path(), None, &session.id)
+            .await
+            .unwrap();
+
+        let updated = manager.extensions.lock().await["developer"].clone();
+        assert!(Arc::ptr_eq(&original.client, &updated.client));
+        assert_eq!(updated.working_dir, new_working_dir.path());
+    }
+
+    #[tokio::test]
+    async fn stale_working_dir_reconnect_does_not_restore_removed_extension() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let config = ExtensionConfig::Platform {
+            name: "developer".to_string(),
+            display_name: None,
+            description: "developer".to_string(),
+            bundled: None,
+            available_tools: vec![],
+        };
+        extension_manager
+            .add_client(config.clone(), None, Arc::new(MockClient {}), None)
+            .await;
+        let stale = extension_manager
+            .extensions
+            .lock()
+            .await
+            .get("developer")
+            .unwrap()
+            .clone();
+        extension_manager
+            .remove_extension("developer")
+            .await
+            .unwrap();
+
+        extension_manager
+            .add_extension_if_current(
+                config,
+                Some(new_working_dir.path().to_path_buf()),
+                None,
+                Some("session"),
+                Some(&stale),
+            )
+            .await
+            .unwrap();
+
+        assert!(!extension_manager.is_extension_enabled("developer").await);
+    }
+
+    #[test]
+    fn set_rejects_the_same_extension_twice() {
+        let error = ExtensionSet::new(
+            "s",
+            None,
+            vec![
+                builtin_config("Ext-A", vec![]),
+                builtin_config("ext-a", vec![]),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("appears twice"));
+    }
+
+    #[tokio::test]
+    async fn extension_manager_tools_follow_resource_support() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        extension_manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .all(|tool| tool.name != "extensionmanager__list_resources"));
+
+        let resource_info = InitializeResult::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_resources()
+                .build(),
+        );
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                None,
+                Arc::new(MockClient {}),
+                Some(resource_info),
+            )
+            .await;
+
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .any(|tool| tool.name == "extensionmanager__list_resources"));
+
+        extension_manager
+            .remove_extension("resources")
+            .await
+            .unwrap();
+        let tools = extension_manager
+            .get_prefixed_tools("session", Some("extensionmanager".to_string()))
+            .await
+            .unwrap();
+        assert!(tools
+            .iter()
+            .all(|tool| tool.name != "extensionmanager__list_resources"));
+    }
+
+    #[tokio::test]
+    async fn extension_manager_resource_tools_use_the_calling_lease() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        extension_manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let resource_info = InitializeResult::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_resources()
+                .build(),
+        );
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                None,
+                Arc::new(ResourceClient { label: "old" }),
+                Some(resource_info.clone()),
+            )
+            .await;
+        let lease = extension_manager.current_lease("session", None).await;
+        extension_manager
+            .remove_extension("resources")
+            .await
+            .unwrap();
+        assert!(lease
+            .tools()
+            .await
+            .iter()
+            .any(|tool| tool.name == "extensionmanager__read_resource"));
+
+        extension_manager
+            .add_client(
+                builtin_config("resources", vec![]),
+                None,
+                Arc::new(ResourceClient { label: "new" }),
+                Some(resource_info),
+            )
+            .await;
+
+        let listed = lease
+            .call(
+                CallToolRequestParams::new("extensionmanager__list_resources")
+                    .with_arguments(object!({"extension_name": "resources"})),
+                CallRequest::default(),
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
+        assert!(listed.content.iter().any(|content| content
+            .as_text()
+            .is_some_and(|text| text.text.contains("old resource"))));
+
+        let read = lease
+            .call(
+                CallToolRequestParams::new("extensionmanager__read_resource").with_arguments(
+                    object!({
+                        "extension_name": "resources",
+                        "uri": "resource://snapshot"
+                    }),
+                ),
+                CallRequest::default(),
+                CancellationToken::default(),
+            )
+            .await
+            .unwrap()
+            .result
+            .await
+            .unwrap();
+        assert!(read.content.iter().any(|content| content
+            .as_text()
+            .is_some_and(|text| text.text.ends_with("\n\nold"))));
+    }
+
+    #[tokio::test]
+    async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         let temp_dir = tempfile::tempdir().unwrap();
         let extension_manager =
             ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let tools_client = Arc::new(BlockingToolsClient {
+            calls: AtomicUsize::new(0),
+            first_fetch_started: Semaphore::new(0),
+            release_first_fetch: Semaphore::new(0),
+        });
         extension_manager
-            .add_mock_extension("test_client".to_string(), Arc::new(MockClient {}))
+            .add_mock_extension("dynamic".to_string(), tools_client.clone())
             .await;
+        let tools_version = extension_manager.extensions.lock().await["dynamic"]
+            .tools_version
+            .clone();
 
-        let ctx = ToolCallContext::new("test-session-id".to_string(), None, None);
-        let tool_call = CallToolRequestParams::new("test_client__unadvertised_tool".to_string());
-
-        let err = match extension_manager
-            .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
-            .await
-        {
-            Ok(_) => panic!("an unadvertised tool must not be dispatched"),
-            Err(err) => err,
+        let manager = Arc::new(extension_manager);
+        let first_fetch = {
+            let manager = manager.clone();
+            tokio::spawn(async move {
+                manager
+                    .get_prefixed_tools("test-session", None)
+                    .await
+                    .unwrap()
+            })
         };
 
-        assert_eq!(err.code, ErrorCode::RESOURCE_NOT_FOUND);
+        let _started = tools_client.first_fetch_started.acquire().await.unwrap();
+        tools_version.fetch_add(1, Ordering::SeqCst);
+        tools_client.release_first_fetch.add_permits(1);
+
+        let stale_result = first_fetch.await.unwrap();
+        assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
+
+        let refreshed = manager
+            .get_prefixed_tools("test-session", None)
+            .await
+            .unwrap();
+        assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
+        assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn successful_mutation_is_persisted_when_another_mutation_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "mixed-mutations".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        let successful = manager.apply(
+            ExtensionMutation::Enable {
+                name: "analyze".to_string(),
+            },
+            None,
+            &session.id,
+        );
+        let failed = manager.apply(
+            ExtensionMutation::Enable {
+                name: "missing-extension".to_string(),
+            },
+            None,
+            &session.id,
+        );
+        let (successful, failed) = tokio::join!(successful, failed);
+
+        assert!(successful.is_ok());
+        assert!(failed.is_err());
+        let stored_session = manager
+            .get_context()
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        let stored_extensions =
+            EnabledExtensionsState::from_extension_data(&stored_session.extension_data).unwrap();
+        assert!(stored_extensions
+            .extensions
+            .iter()
+            .any(|config| config.key() == "analyze"));
+    }
+
+    #[tokio::test]
+    async fn mutation_uses_the_sessions_current_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                old_working_dir.path().to_path_buf(),
+                "moved-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .get_context()
+            .session_manager
+            .update(&session.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await
+            .unwrap();
+
+        manager
+            .apply(
+                ExtensionMutation::Enable {
+                    name: "analyze".to_string(),
+                },
+                None,
+                &session.id,
+            )
+            .await
+            .unwrap();
+
+        let extension = manager.extensions.lock().await["analyze"].clone();
+        assert_eq!(extension.working_dir, new_working_dir.path());
+    }
+
+    #[tokio::test]
+    async fn direct_add_uses_the_sessions_current_working_dir() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let old_working_dir = tempfile::tempdir().unwrap();
+        let new_working_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            data_dir.path().to_path_buf(),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                new_working_dir.path().to_path_buf(),
+                "moved-session".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: "analyze".to_string(),
+                    display_name: None,
+                    description: "analyze".to_string(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
+                Some(old_working_dir.path().to_path_buf()),
+                None,
+                Some(&session.id),
+            )
+            .await
+            .unwrap();
+
+        let extension = manager.extensions.lock().await["analyze"].clone();
+        assert_eq!(extension.working_dir, new_working_dir.path());
     }
 
     #[test]
@@ -2621,163 +2679,6 @@ mod tests {
         assert_eq!(
             recover_mangled_tool_name("platform.manage_schedule", tools.iter().copied()).as_deref(),
             Some("platform__manage_schedule")
-        );
-    }
-
-    #[test]
-    fn test_remove_untrusted_mcp_app_meta_strips_spoofed_payload() {
-        let mut result = CallToolResult::success(vec![]);
-        result.meta = Some(MetaObject(
-            serde_json::from_value(serde_json::json!({
-                "goose": {
-                    "mcpApp": {
-                        "resourceUri": "ui://spoofed/app",
-                    },
-                    "other": true,
-                },
-                TRUSTED_TOOL_UPDATE_META_KEY: {
-                    "mcpApp": {
-                        "resourceUri": "ui://spoofed/internal",
-                    },
-                },
-            }))
-            .unwrap(),
-        ));
-
-        remove_untrusted_mcp_app_meta(&mut result);
-
-        let meta = result.meta.expect("expected remaining meta");
-        assert_eq!(meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY), None);
-        assert_eq!(
-            meta.0.get("goose"),
-            Some(&serde_json::json!({ "other": true }))
-        );
-    }
-
-    #[test]
-    fn test_insert_trusted_tool_update_meta_stores_backend_payload() {
-        let mut result = CallToolResult::success(vec![]);
-        let attachment = GooseMcpAppToolAttachment {
-            tool_name: "render__secret".to_string(),
-            tool_name_is_actual: true,
-            extension_name: "weather".to_string(),
-            resource_uri: "ui://weather/app".to_string(),
-            tool_meta: None,
-            resource_result: Some(serde_json::json!({
-                "contents": [
-                    {
-                        "uri": "ui://weather/app",
-                        "mimeType": "text/html;profile=mcp-app",
-                        "text": "<div>Hello</div>",
-                    },
-                ],
-            })),
-            read_error: None,
-        };
-
-        insert_trusted_tool_update_meta(&mut result, &attachment);
-
-        let meta = result.meta.expect("expected trusted meta");
-        assert_eq!(
-            meta.0.get(TRUSTED_TOOL_UPDATE_META_KEY),
-            Some(&serde_json::json!({
-                "mcpApp": {
-                    "toolName": "render__secret",
-                    "toolNameIsActual": true,
-                    "extensionName": "weather",
-                    "resourceUri": "ui://weather/app",
-                    "resourceResult": {
-                        "contents": [
-                            {
-                                "uri": "ui://weather/app",
-                                "mimeType": "text/html;profile=mcp-app",
-                                "text": "<div>Hello</div>",
-                            },
-                        ],
-                    },
-                },
-            })),
-        );
-    }
-
-    #[tokio::test]
-    async fn test_add_extension_noop_on_identical_config() {
-        // When add_extension is called with a config that is byte-for-byte identical to
-        // the already-loaded one, it must return Ok(()) without removing the extension.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let em = Arc::new(ExtensionManager::new_without_provider(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let config = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "original".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-
-        em.add_client(
-            "test-ext".to_string(),
-            config.clone(),
-            Arc::new(MockClient {}),
-            None,
-        )
-        .await;
-        assert_eq!(em.extensions.lock().await.len(), 1);
-
-        // Calling add_extension with the same config must be a no-op (Ok, count unchanged).
-        let result = em.add_extension(config, None, None, None).await;
-        assert!(result.is_ok(), "identical config should be a no-op");
-        assert_eq!(
-            em.extensions.lock().await.len(),
-            1,
-            "extension must not be removed on no-op"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_add_extension_replaces_extension_on_config_change() {
-        // When add_extension is called with an updated config (same name, different fields),
-        // the existing extension must be removed so the caller can re-add with new config.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let em = Arc::new(ExtensionManager::new_without_provider(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let config_a = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "version-a".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-        let config_b = ExtensionConfig::Platform {
-            name: "test-ext".to_string(),
-            description: "version-b".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-
-        em.add_client(
-            "test-ext".to_string(),
-            config_a,
-            Arc::new(MockClient {}),
-            None,
-        )
-        .await;
-        assert_eq!(em.extensions.lock().await.len(), 1);
-
-        let result = em.add_extension(config_b, None, None, None).await;
-        assert!(
-            result.is_err(),
-            "unknown platform extension must return Err"
-        );
-        assert_eq!(
-            em.extensions.lock().await.len(),
-            1,
-            "old extension must be preserved when replacement client creation fails"
         );
     }
 }

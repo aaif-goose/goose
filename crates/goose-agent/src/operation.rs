@@ -8,9 +8,14 @@ use tokio_util::sync::CancellationToken;
 use crate::events::AgentEvent;
 use goose_provider_types::conversation::message::{Message, MessageContent, MessageErrorKind};
 use goose_provider_types::conversation::{effective_role, Conversation, EffectiveRole};
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use rmcp::model::Tool;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+#[cfg(target_arch = "wasm32")]
+pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 pub struct SlashCommand<'a> {
     pub command: &'a str,
@@ -70,8 +75,9 @@ pub fn ends_turn(messages: &[Message]) -> bool {
     })
 }
 
-#[async_trait]
-pub trait Operation<S, E: Send + 'static = ConversationEffect>: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend + MaybeSync {
     fn name(&self) -> &'static str;
 
     /// Note on a message something this operation did, so that a pipeline rebuilt
@@ -139,11 +145,16 @@ pub struct InferenceInput {
     pub moim_parts: Vec<String>,
 }
 
-#[async_trait]
-pub trait Inference<S, E: Send + 'static = ConversationEffect>: Operation<S, E> {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S, E> {
     /// Whether the next step would reach the provider. The machine asks before
     /// firing the hooks that mark the start of a turn.
     fn applies(&self, conversation: &Conversation) -> bool;
+
+    async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {
+        Ok(None)
+    }
 
     async fn infer(
         &self,

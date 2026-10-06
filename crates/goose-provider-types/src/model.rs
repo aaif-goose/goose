@@ -117,21 +117,36 @@ impl ModelConfig {
         config
     }
 
-    pub fn with_canonical_limits(mut self, provider_name: &str) -> Self {
+    fn canonical_model(&self, provider_name: &str) -> Option<crate::canonical::CanonicalModel> {
         // Try canonical lookup with the full model name first, then fall back
         // to the name with reasoning-effort suffixes stripped (e.g.
         // "databricks-gpt-5.4-high" → "databricks-gpt-5.4").
-        let canonical =
-            crate::canonical::maybe_get_canonical_model(provider_name, &self.model_name).or_else(
-                || {
-                    let (base, _effort) = extract_reasoning_effort(&self.model_name);
-                    if base != self.model_name {
-                        crate::canonical::maybe_get_canonical_model(provider_name, &base)
-                    } else {
-                        None
-                    }
-                },
-            );
+        crate::canonical::maybe_get_canonical_model(provider_name, &self.model_name).or_else(|| {
+            let (base, _effort) = extract_reasoning_effort(&self.model_name);
+            if base != self.model_name {
+                crate::canonical::maybe_get_canonical_model(provider_name, &base)
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn with_canonical_vision_support(mut self, provider_name: &str) -> Self {
+        if self.supports_vision.is_none() {
+            if let Some(canonical) = self.canonical_model(provider_name) {
+                self.supports_vision = Some(
+                    canonical
+                        .modalities
+                        .input
+                        .contains(&crate::canonical::Modality::Image),
+                );
+            }
+        }
+        self
+    }
+
+    pub fn with_canonical_limits(mut self, provider_name: &str) -> Self {
+        let canonical = self.canonical_model(provider_name);
 
         if let Some(canonical) = canonical {
             if self.max_tokens.is_none() {

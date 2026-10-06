@@ -17,10 +17,11 @@ use super::api_client::ApiClient;
 use super::base::{
     known_models_from_registry, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
 };
+pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
     block_binding_behavior, create_request_for_model, is_thinking_signature_error,
-    response_to_streaming_message, AnthropicFormatOptions, PrefixMismatchBehavior,
-    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    response_to_streaming_message, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
+    INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
@@ -153,7 +154,7 @@ impl AnthropicProvider {
         format_options: AnthropicFormatOptions,
     ) -> Result<Value, ProviderError> {
         let mut payload = create_request_for_model(
-            ANTHROPIC_PROVIDER_NAME,
+            &self.name,
             model_config,
             wire_model,
             system,
@@ -401,6 +402,15 @@ impl Provider for AnthropicProvider {
         self.fetch_models_from_api().await
     }
 
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let names = self.fetch_supported_models().await?;
+        Ok(crate::base::merge_configured_model_info(
+            &self.name,
+            &names,
+            self.custom_models.as_deref().unwrap_or_default(),
+        ))
+    }
+
     async fn stream(
         &self,
         model_config: &ModelConfig,
@@ -595,6 +605,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(payload["thinking"]["clear_thinking"], false);
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_model_info_preserves_configured_metadata() {
+        let mut provider = make_provider_with_custom_models("http://localhost", vec![]);
+        provider.dynamic_models = Some(false);
+        provider.custom_models = Some(vec![ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("unrecognized-static-model").with_context_limit(4096)
+        }]);
+
+        let models = provider.fetch_supported_model_info().await.unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "unrecognized-static-model");
+        assert_eq!(models[0].context_limit, Some(4096));
+        assert!(models[0].reasoning);
     }
 
     fn make_provider_with_custom_models(

@@ -10,7 +10,7 @@ use tracing::debug;
 
 use super::super::agents::Agent;
 use super::gen_ai_telemetry;
-use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
+use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name, ExtensionLease};
 #[cfg(feature = "code-mode")]
 use crate::agents::platform_extensions::code_execution;
 use crate::config::{Config, GooseMode};
@@ -19,11 +19,13 @@ use crate::conversation::{fix_conversation, merge_consecutive_messages_for_reque
 #[cfg(test)]
 use crate::providers::base::stream_from_single_message;
 use crate::providers::base::{MessageStream, Provider};
+use crate::providers::canonical_cost::resolve_usage_cost;
 use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
     modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
-use goose_providers::conversation::token_usage::{CostSource, ProviderStats, ProviderUsage, Usage};
+use crate::session::Session;
+use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
 use rmcp::model::{ErrorData, Tool};
 use tracing::warn;
@@ -196,28 +198,35 @@ fn ensure_unique_tool_names(tools: &[Tool]) -> Result<()> {
 impl Agent {
     pub async fn prepare_tools_and_prompt(
         &self,
-        session_id: &str,
-        working_dir: &std::path::Path,
-    ) -> Result<(Vec<Tool>, Vec<Tool>, String, ModelConfig)> {
-        let tools = self.list_tools(session_id, None).await;
+        fallback_session: &Session,
+    ) -> Result<(
+        Session,
+        Arc<ExtensionLease>,
+        Vec<Tool>,
+        Vec<Tool>,
+        String,
+        ModelConfig,
+    )> {
+        let (session, lease) = self
+            .extension_manager
+            .current_session_snapshot(fallback_session)
+            .await;
+        let lease = Arc::new(lease);
+        let mut tools = lease.tools().await;
+        if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
+            tools.push(final_output_tool.tool());
+        }
         ensure_unique_tool_names(&tools)?;
 
         #[cfg(feature = "code-mode")]
-        let code_execution_active = self
-            .extension_manager
-            .is_extension_enabled(code_execution::EXTENSION_NAME)
-            .await;
+        let code_execution_active = lease.is_enabled(code_execution::EXTENSION_NAME);
         #[cfg(not(feature = "code-mode"))]
         let code_execution_active = false;
 
         let tools = prepare_inference_tools(tools, code_execution_active);
 
-        // Prepare system prompt
-        let extensions_info = self
-            .extension_manager
-            .get_extensions_info(working_dir)
-            .await;
-        let model_config = self.effective_model_config_for_session(session_id).await?;
+        let extensions_info = lease.instructions();
+        let model_config = self.effective_model_config_for_session(&session.id).await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;
 
@@ -230,14 +239,21 @@ impl Agent {
             .builder()
             .with_extensions(extensions_info.into_iter())
             .with_code_execution_mode(code_execution_active)
-            .with_hints(working_dir)
+            .with_hints(&session.working_dir)
             .with_goose_mode(goose_mode)
             .build();
 
         let (tools, toolshim_tools, system_prompt) =
             prepare_tools_for_provider(tools, system_prompt, &model_config);
 
-        Ok((tools, toolshim_tools, system_prompt, model_config))
+        Ok((
+            session,
+            lease,
+            tools,
+            toolshim_tools,
+            system_prompt,
+            model_config,
+        ))
     }
 }
 
@@ -750,8 +766,7 @@ impl Agent {
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, false).await?;
 
-        let (chunk_cost, cost_source) =
-            self.resolve_chunk_cost(usage, session.provider_name.as_deref());
+        let (chunk_cost, cost_source) = resolve_usage_cost(session.provider_name.as_deref(), usage);
 
         let mut enriched = usage.clone();
         enriched.cost = chunk_cost;
@@ -775,22 +790,6 @@ impl Agent {
             .await?;
 
         Ok(enriched)
-    }
-
-    fn resolve_chunk_cost(
-        &self,
-        usage: &ProviderUsage,
-        provider_name: Option<&str>,
-    ) -> (Option<f64>, Option<CostSource>) {
-        if let Some(cost) = usage.cost {
-            return (Some(cost), Some(CostSource::ProviderReported));
-        }
-        match provider_name.and_then(|pn| {
-            crate::providers::canonical_cost::estimate_model_cost(pn, &usage.model, &usage.usage)
-        }) {
-            Some(cost) => (Some(cost), Some(CostSource::Estimated)),
-            None => (None, None),
-        }
     }
 }
 

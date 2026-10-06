@@ -174,7 +174,7 @@ impl Usage {
     }
 
     /// For providers whose reported `input_tokens`/`total_tokens` exclude
-    /// cache tokens (e.g. Anthropic, Bedrock): folds the cache breakdown in.
+    /// cache tokens (e.g. Anthropic): folds the cache breakdown in.
     pub fn from_cache_exclusive_input(
         input_tokens: Option<i32>,
         output_tokens: Option<i32>,

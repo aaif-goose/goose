@@ -4,7 +4,7 @@ use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
         Annotations, CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation,
-        InitializeResult, Role, ServerCapabilities, ServerInfo, TextContent,
+        InitializeResult, Role, ServerCapabilities, ServerConfig, TextContent,
     },
     schemars::JsonSchema,
     tool, tool_handler, tool_router, ServerHandler,
@@ -109,7 +109,7 @@ impl TutorialServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for TutorialServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(
                 "goose-tutorial",

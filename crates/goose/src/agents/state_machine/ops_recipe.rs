@@ -1,6 +1,5 @@
 //! Applies recipe commands and enforces their structured final output.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -10,7 +9,7 @@ use tracing_futures::Instrument;
 
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FinalOutputTool, FINAL_OUTPUT_CONTINUATION_MESSAGE,
-    FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
+    FINAL_OUTPUT_TOOL_NAME,
 };
 use crate::agents::state_machine::ops_toolcalling::{
     emit_post_tool_use, pending_advertised_tool_requests, run_pre_tool_hooks, tool_span,
@@ -22,7 +21,7 @@ use crate::agents::state_machine::{
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::Message;
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
@@ -49,127 +48,6 @@ impl RecipeOperation {
             .map(FinalOutputTool::try_new)
             .transpose()
             .map_err(|error| anyhow!(error))
-    }
-
-    fn assistant_block_bounds(messages: &[Message], message_index: usize) -> (usize, usize) {
-        let start = (0..message_index)
-            .rev()
-            .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
-            .last()
-            .unwrap_or(message_index);
-        let end = (message_index + 1..messages.len())
-            .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
-            .last()
-            .map_or(message_index + 1, |index| index + 1);
-        (start, end)
-    }
-
-    fn has_unanswered_siblings(messages: &[Message], request_id: &str) -> bool {
-        let answered: HashSet<&str> = messages
-            .iter()
-            .flat_map(|message| &message.content)
-            .filter_map(|content| match content {
-                MessageContent::ToolResponse(response) => Some(response.id.as_str()),
-                _ => None,
-            })
-            .collect();
-        let Some(message_index) = messages.iter().position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolRequest(request) if request.id == request_id
-                )
-            })
-        }) else {
-            return false;
-        };
-        let (start, end) = Self::assistant_block_bounds(messages, message_index);
-        messages[start..end]
-            .iter()
-            .flat_map(|message| &message.content)
-            .any(|content| match content {
-                // Another unanswered final-output call is not a reason to wait.
-                // This operation drains them one per pass, so treating a sibling
-                // final-output call as unfinished work would deadlock the pair:
-                // each would wait for the other and neither would be answered.
-                // Ordinary tool calls still have to finish first.
-                MessageContent::ToolRequest(request) => {
-                    request.id != request_id
-                        && !answered.contains(request.id.as_str())
-                        && !request
-                            .tool_call
-                            .as_ref()
-                            .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-                }
-                _ => false,
-            })
-    }
-
-    fn successful_final_output(messages: &[Message]) -> Option<String> {
-        let answered_responses: HashSet<&str> = messages
-            .iter()
-            .flat_map(|message| &message.content)
-            .filter_map(|content| match content {
-                MessageContent::ToolResponse(response) => Some(response.id.as_str()),
-                _ => None,
-            })
-            .collect();
-        let successful_responses: HashSet<&str> = messages
-            .iter()
-            .flat_map(|message| &message.content)
-            .filter_map(|content| match content {
-                MessageContent::ToolResponse(response)
-                    if response.tool_result.as_ref().is_ok_and(|result| {
-                        result.is_error != Some(true)
-                            && result.content.iter().any(|content| {
-                                content
-                                    .as_text()
-                                    .is_some_and(|text| text.text == FINAL_OUTPUT_SUCCESS_MESSAGE)
-                            })
-                    }) =>
-                {
-                    Some(response.id.as_str())
-                }
-                _ => None,
-            })
-            .collect();
-
-        for (message_index, message) in messages.iter().enumerate().rev() {
-            let output = message
-                .content
-                .iter()
-                .rev()
-                .find_map(|content| match content {
-                    MessageContent::ToolRequest(request)
-                        if successful_responses.contains(request.id.as_str()) =>
-                    {
-                        request.tool_call.as_ref().ok().and_then(|tool_call| {
-                            (tool_call.name == FINAL_OUTPUT_TOOL_NAME).then(|| {
-                                serde_json::Value::Object(
-                                    tool_call.arguments.clone().unwrap_or_default(),
-                                )
-                                .to_string()
-                            })
-                        })
-                    }
-                    _ => None,
-                });
-            if output.is_some() {
-                let (block_start, block_end) =
-                    Self::assistant_block_bounds(messages, message_index);
-                let siblings_answered = messages[block_start..block_end]
-                    .iter()
-                    .flat_map(|message| &message.content)
-                    .all(|content| match content {
-                        MessageContent::ToolRequest(request) => {
-                            answered_responses.contains(request.id.as_str())
-                        }
-                        _ => true,
-                    });
-                return siblings_answered.then_some(output).flatten();
-            }
-        }
-        None
     }
 
     async fn command_error(
@@ -322,7 +200,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 let response = emit.message(response).await;
                 return applied([response.into()]);
             }
-            if Self::has_unanswered_siblings(messages, &request.id) {
+            if FinalOutputTool::has_unanswered_siblings(messages, &request.id) {
                 return not_applicable();
             }
 
@@ -391,7 +269,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
             return applied([response.into()]);
         }
 
-        if let Some(output) = Self::successful_final_output(messages) {
+        if let Some(output) = FinalOutputTool::successful_output(messages) {
             if last_effective_role(messages)? == EffectiveRole::Tool {
                 let message = Message::assistant().with_text(output);
                 let message = emit.message(message).await;

@@ -8,7 +8,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.51.0"
+version = "1.53.0"
 rust-version = "1.94.1"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
@@ -20,7 +20,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "3.2.0", default-features = false, features = ["schemars", "auth"] }
+rmcp = { version = "3.4.1", default-features = false, features = ["schemars"] }
 agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 agent-client-protocol-http = { version = "2.2.0", default-features = false }
@@ -126,3 +126,11 @@ cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673d
 # full debug info and stay fully debuggable; release builds are unaffected.
 [profile.dev.package."*"]
 debug = false
+
+[profile.lean]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

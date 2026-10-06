@@ -18,6 +18,7 @@ use crate::{
     },
     errors::ProviderError,
     goose_mode::GooseMode,
+    maybe_send::{MaybeSend, MaybeSync},
     model::ModelConfig,
     permission::PermissionConfirmation,
     retry::RetryConfig,
@@ -327,9 +328,14 @@ pub trait ProviderDescriptor {
 /// A message stream yields partial text content but complete tool calls, all within the Message object
 /// So a message with text will contain potentially just a word of a longer response, but tool calls
 /// messages will only be yielded once concatenated.
+#[cfg(not(target_arch = "wasm32"))]
 pub type MessageStream = Pin<
     Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>> + Send>,
 >;
+
+#[cfg(target_arch = "wasm32")]
+pub type MessageStream =
+    Pin<Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>>>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PermissionRouting {
@@ -362,6 +368,29 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         thinking_preservation_format: None,
         request_params: None,
     }
+}
+
+/// Build `ModelInfo` for discovered model names, preferring metadata declared in
+/// provider configuration over the canonical registry.
+///
+/// Configured entries are authoritative: a statically declared model carries its
+/// own `context_limit`/`reasoning` values, which the canonical registry does not
+/// know about. Names absent from `configured` fall back to registry metadata.
+pub fn merge_configured_model_info(
+    provider_name: &str,
+    model_names: &[String],
+    configured: &[ModelInfo],
+) -> Vec<ModelInfo> {
+    model_names
+        .iter()
+        .map(|model_name| {
+            configured
+                .iter()
+                .find(|declared| declared.name == *model_name)
+                .cloned()
+                .unwrap_or_else(|| model_info_for_provider_model(provider_name, model_name))
+        })
+        .collect()
 }
 
 pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
@@ -470,8 +499,9 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
 }
 
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
-#[async_trait]
-pub trait Provider: Send + Sync {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait Provider: MaybeSend + MaybeSync {
     /// Get the name of this provider instance
     fn get_name(&self) -> &str;
 
@@ -560,7 +590,7 @@ pub trait Provider: Send + Sync {
         let mut models_with_dates: Vec<(String, Option<String>)> = all_models
             .iter()
             .filter_map(|model| {
-                let canonical_model = map_to_canonical_model(provider_name, model, registry)
+                let canonical_model = map_to_canonical_model(provider_name, model, &registry)
                     .and_then(|canonical_id| {
                         let (provider, model_name) = canonical_id.split_once('/')?;
                         registry.get(provider, model_name)
@@ -630,7 +660,7 @@ pub trait Provider: Send + Sync {
         Ok(map_to_canonical_model(
             self.get_name(),
             provider_model,
-            registry,
+            &registry,
         ))
     }
 
@@ -728,6 +758,29 @@ pub trait Provider: Send + Sync {
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test]
+    fn merge_configured_model_info_falls_back_to_registry_for_undeclared_models() {
+        let declared = ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("declared-model").with_context_limit(4096)
+        };
+
+        let merged = merge_configured_model_info(
+            "openai",
+            &["declared-model".to_string(), "gpt-4o".to_string()],
+            std::slice::from_ref(&declared),
+        );
+
+        assert_eq!(merged[0].context_limit, Some(4096));
+        assert!(merged[0].reasoning);
+
+        assert_eq!(merged[1].name, "gpt-4o");
+        assert_eq!(
+            merged[1].context_limit,
+            model_info_for_provider_model("openai", "gpt-4o").context_limit
+        );
+    }
 
     struct ModelInventoryProvider {
         models: Vec<String>,

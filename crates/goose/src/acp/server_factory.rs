@@ -4,11 +4,14 @@ use crate::acp::server::{
 };
 use crate::agents::GoosePlatform;
 use crate::config::paths::Paths;
+#[cfg(feature = "scheduler")]
 use crate::scheduler_trait::SchedulerTrait;
+#[cfg(feature = "scheduler")]
 use crate::session::SessionManager;
 use crate::source_roots::SourceRoot;
 use anyhow::Result;
 use std::sync::Arc;
+#[cfg(feature = "scheduler")]
 use tokio::sync::OnceCell;
 use tracing::info;
 
@@ -27,6 +30,7 @@ pub struct AcpServerFactoryConfig {
 pub struct AcpServer {
     config: AcpServerFactoryConfig,
     data_dir: std::path::PathBuf,
+    #[cfg(feature = "scheduler")]
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<crate::acp::server::LiveVoiceService>,
@@ -40,12 +44,14 @@ impl AcpServer {
         Self {
             config,
             data_dir,
+            #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
             active_runs,
             live_voice,
         }
     }
 
+    #[cfg(feature = "scheduler")]
     /// Start the scheduler now instead of on first client connect, so a
     /// headless `goose serve` runs scheduled jobs; on failure `create_agent`
     /// retries. No-op when the scheduler is disabled.
@@ -53,6 +59,7 @@ impl AcpServer {
         self.scheduler().await.map(|_| ())
     }
 
+    #[cfg(feature = "scheduler")]
     async fn scheduler(&self) -> Result<Option<Arc<dyn SchedulerTrait>>> {
         if !self.config.enable_scheduler {
             return Ok(None);
@@ -92,9 +99,10 @@ impl AcpServer {
     ) -> Result<Arc<GooseAcpAgent>> {
         let config = crate::config::Config::global();
         let disable_session_naming = config.get_goose_disable_session_naming().unwrap_or(false);
+        #[cfg(feature = "scheduler")]
         let scheduler = self.scheduler().await?;
+        #[cfg(feature = "scheduler")]
         if let Some(scheduler) = &scheduler {
-            // Listing syncs from storage, registering jobs persisted by other processes.
             scheduler.list_scheduled_jobs().await;
         }
 
@@ -130,7 +138,10 @@ impl AcpServer {
             goose_platform: self.config.goose_platform.clone(),
             additional_source_roots: self.config.additional_source_roots.clone(),
             session_cwd,
+            #[cfg(feature = "scheduler")]
             scheduler,
+            #[cfg(not(feature = "scheduler"))]
+            scheduler: None,
             active_runs: self.active_runs.clone(),
             live_voice: self.live_voice.clone(),
         })
@@ -140,7 +151,7 @@ impl AcpServer {
         Ok(Arc::new(agent))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) fn new_for_test(
         config: AcpServerFactoryConfig,
         data_dir: std::path::PathBuf,
@@ -150,6 +161,7 @@ impl AcpServer {
         Self {
             config,
             data_dir,
+            #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
             active_runs,
             live_voice,
@@ -157,7 +169,7 @@ impl AcpServer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "scheduler"))]
 mod tests {
     use super::*;
 

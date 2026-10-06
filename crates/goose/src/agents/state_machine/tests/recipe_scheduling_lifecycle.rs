@@ -11,7 +11,6 @@ use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
 #[cfg(feature = "code-mode")]
 use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
-use crate::agents::state_machine::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
 #[cfg(feature = "code-mode")]
@@ -117,7 +116,13 @@ async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
     result.assert_message(-1, Agent, "delegation stayed in chat");
 
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_provider_name("state-machine-test").await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
     let child_path = pipeline.working_dir().join("bounded-child.yaml");
     std::fs::write(
         &child_path,
@@ -155,12 +160,89 @@ settings:
         .call("delegate", json!({ "source": "bounded" }));
     api.on("Keep taking actions")
         .unadvertised_call("keep_working", json!({}));
-    api.on(MAX_TURNS_MESSAGE).reply("child stopped on time");
+    api.on("failed: max turns reached")
+        .reply("child stopped on time");
 
     let result = pipeline.run(["Delegate the bounded child"]).await?;
     assert_eq!(api.call_count(), 3);
-    result.assert_message(-2, ToolResponse, MAX_TURNS_MESSAGE);
+    let delivery = result
+        .conversation()
+        .messages()
+        .iter()
+        .find(|message| {
+            message.is_agent_visible()
+                && !message.is_user_visible()
+                && message
+                    .as_concat_text()
+                    .contains("failed: max turns reached")
+        })
+        .expect("child turn-limit failure is delivered to the parent LLM");
+    assert_eq!(delivery.role, rmcp::model::Role::User);
     result.assert_message(-1, Agent, "child stopped on time");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    let recipe = Recipe::builder()
+        .title("Structured delegation")
+        .description("Delegates, then returns structured output")
+        .prompt("Research and summarize")
+        .response(Response {
+            json_schema: Some(json!({
+                "type": "object",
+                "properties": { "result": { "type": "string" } },
+                "required": ["result"]
+            })),
+        })
+        .extensions(vec![ExtensionConfig::Platform {
+            name: "summon".to_string(),
+            description: "Delegate work".to_string(),
+            display_name: None,
+            bundled: None,
+            available_tools: vec![],
+        }])
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    api.on("Research and summarize").calls([
+        (
+            "call_delegate",
+            "delegate",
+            json!({ "instructions": "Find the answer" }),
+        ),
+        (
+            "call_early_output",
+            FINAL_OUTPUT_TOOL_NAME,
+            json!({ "result": "early" }),
+        ),
+    ]);
+    api.on("Find the answer")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "summary": "found it" }));
+    api.on("found it")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "final" }));
+
+    let result = pipeline.run(["Research and summarize"]).await?;
+    assert_eq!(api.call_count(), 3);
+    let shown_outputs: Vec<String> = result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| message.role == rmcp::model::Role::Assistant && message.is_user_visible())
+        .map(|message| message.as_concat_text())
+        .filter(|text| text.contains("\"result\""))
+        .collect();
+    assert_eq!(shown_outputs, vec![r#"{"result":"final"}"#.to_string()]);
+    result.assert_message(-1, Agent, r#"{"result":"final"}"#);
 
     Ok(())
 }

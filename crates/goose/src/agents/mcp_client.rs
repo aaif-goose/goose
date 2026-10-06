@@ -1,15 +1,9 @@
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::tool_execution::ToolCallContext;
-use crate::agents::types::SharedProvider;
 use crate::session_context::{SESSION_ID_HEADER, TOOL_CALL_REQUEST_ID_HEADER, WORKING_DIR_HEADER};
-/// MCP client implementation for Goose
-#[expect(deprecated)]
-use rmcp::model::{CreateMessageRequestParams, CreateMessageResult, SamplingMessage};
 #[expect(deprecated)]
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ListRootsResult, LoggingMessageNotification, Root,
-    SamplingMessageContentBlock,
 };
 use rmcp::model::{
     ElicitationAction, ErrorCode, ExtensionCapabilities, Extensions, JsonObject, MetaObject,
@@ -17,11 +11,11 @@ use rmcp::model::{
 use rmcp::{
     model::{
         CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientInfo, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
+        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
         InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
         ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
-        Role, ServerNotification, ServerResult,
+        ServerNotification, ServerResult,
     },
     service::{
         ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
@@ -34,7 +28,10 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex, Weak},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex,
+    },
     time::Duration,
 };
 use tokio::sync::{
@@ -49,35 +46,6 @@ pub type Error = rmcp::ServiceError;
 
 const MCP_APPS_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
 const MCP_APPS_UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
-
-fn extract_sampling_text(
-    content: &[crate::conversation::message::MessageContent],
-) -> Option<String> {
-    let visible_content = content
-        .iter()
-        .filter_map(crate::conversation::message::MessageContent::user_visible_content)
-        .collect::<Vec<_>>();
-    let text = visible_content
-        .iter()
-        .filter_map(|content| match content {
-            crate::conversation::message::MessageContent::Text(text)
-                if !text.text.trim().is_empty() =>
-            {
-                Some(text.text.as_str())
-            }
-            _ => None,
-        })
-        .collect::<String>();
-
-    (!text.is_empty()).then_some(text)
-}
-
-fn resolve_sampling_model_config() -> anyhow::Result<goose_providers::model::ModelConfig> {
-    let config = crate::config::Config::global();
-    let provider_name = config.get_goose_provider()?;
-    let model_name = config.get_goose_model()?;
-    crate::model_config::model_config_from_user_config(&provider_name, &model_name)
-}
 
 fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
     let mut extensions = ExtensionCapabilities::new();
@@ -130,6 +98,13 @@ pub trait McpClientTrait: Send + Sync {
         self.get_info().and_then(|info| info.instructions.clone())
     }
 
+    fn rebind_session(
+        &self,
+        _session: Arc<crate::session::Session>,
+    ) -> Option<Arc<dyn McpClientTrait>> {
+        None
+    }
+
     async fn list_resources(
         &self,
         _session_id: &str,
@@ -171,12 +146,8 @@ pub trait McpClientTrait: Send + Sync {
         mpsc::channel(1).1
     }
 
-    async fn get_moim(&self, _session_id: &str) -> Option<String> {
+    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         None
-    }
-
-    async fn update_working_dir(&self, _new_dir: PathBuf) -> Result<(), Error> {
-        Ok(())
     }
 }
 
@@ -205,41 +176,34 @@ impl Drop for ActiveToolCallGuard {
 
 pub struct GooseClient {
     notification_handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
-    provider: SharedProvider,
     session_id: Mutex<Option<String>>,
     active_tool_calls: Arc<StdMutex<HashMap<String, Vec<String>>>>,
     client_name: String,
     capabilities: GooseMcpClientCapabilities,
-    working_dir: Arc<tokio::sync::RwLock<PathBuf>>,
+    working_dir: PathBuf,
     action_required: Arc<ActionRequiredManager>,
-    extension_manager: Weak<ExtensionManager>,
+    tools_version: Arc<AtomicU64>,
 }
 
 impl GooseClient {
     pub(crate) fn new(
         handlers: Arc<Mutex<Vec<Sender<ServerNotification>>>>,
-        provider: SharedProvider,
         client_name: String,
         capabilities: GooseMcpClientCapabilities,
         working_dir: PathBuf,
         action_required: Arc<ActionRequiredManager>,
-        extension_manager: Weak<ExtensionManager>,
+        tools_version: Arc<AtomicU64>,
     ) -> Self {
         GooseClient {
             notification_handlers: handlers,
-            provider,
             session_id: Mutex::new(None),
             active_tool_calls: Arc::new(StdMutex::new(HashMap::new())),
             client_name,
             capabilities,
-            working_dir: Arc::new(tokio::sync::RwLock::new(working_dir)),
+            working_dir,
             action_required,
-            extension_manager,
+            tools_version,
         }
-    }
-
-    pub fn shared_working_dir(&self) -> Arc<tokio::sync::RwLock<PathBuf>> {
-        self.working_dir.clone()
     }
 
     async fn set_session_id(&self, session_id: &str) {
@@ -251,40 +215,22 @@ impl GooseClient {
         *slot = Some(session_id.to_string());
     }
 
-    async fn handle_tool_list_changed(&self) {
-        if let Some(extension_manager) = self.extension_manager.upgrade() {
-            extension_manager
-                .invalidate_tools_cache_and_bump_version()
-                .await;
-        }
+    fn handle_tool_list_changed(&self) {
+        self.tools_version.fetch_add(1, Ordering::SeqCst);
     }
 
     async fn current_session_id(&self) -> Option<String> {
         self.session_id.lock().await.clone()
     }
 
-    async fn resolve_session_id(&self, extensions: &Extensions) -> Option<String> {
-        // Prefer explicit MCP metadata, then the active request scope.
-        let current_session_id = self.current_session_id().await;
-        Self::session_id_from_extensions(extensions).or(current_session_id)
-    }
-
-    fn session_id_from_extensions(extensions: &Extensions) -> Option<String> {
-        let meta = extensions.get::<MetaObject>()?;
-        meta.0
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(SESSION_ID_HEADER))
-            .and_then(|(_, value)| value.as_str())
-            .map(|value| value.to_string())
-    }
-
-    fn tool_call_request_id_from_extensions(extensions: &Extensions) -> Option<String> {
-        let meta = extensions.get::<MetaObject>()?;
-        meta.0
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(TOOL_CALL_REQUEST_ID_HEADER))
-            .and_then(|(_, value)| value.as_str())
-            .map(|value| value.to_string())
+    /// A server that echoes our request `_meta` on its own requests lets us
+    /// route them to the exact call; otherwise fall back to the session this
+    /// client serves.
+    async fn resolve_session_id(&self, meta: &MetaObject) -> Option<String> {
+        match meta_value(meta, SESSION_ID_HEADER) {
+            Some(session_id) => Some(session_id),
+            None => self.current_session_id().await,
+        }
     }
 
     fn register_active_tool_call(
@@ -308,9 +254,9 @@ impl GooseClient {
     fn resolve_tool_call_request_id(
         &self,
         session_id: &str,
-        extensions: &Extensions,
+        meta: &MetaObject,
     ) -> Result<String, ErrorData> {
-        if let Some(tool_call_request_id) = Self::tool_call_request_id_from_extensions(extensions) {
+        if let Some(tool_call_request_id) = meta_value(meta, TOOL_CALL_REQUEST_ID_HEADER) {
             return Ok(tool_call_request_id);
         }
 
@@ -369,6 +315,14 @@ impl GooseClient {
     }
 }
 
+fn meta_value(meta: &MetaObject, key: &str) -> Option<String> {
+    meta.0
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .and_then(|(_, value)| value.as_str())
+        .map(str::to_string)
+}
+
 #[expect(deprecated)]
 fn working_dir_roots(dir: &std::path::Path) -> ListRootsResult {
     let uri = url::Url::from_file_path(dir)
@@ -395,7 +349,7 @@ impl ClientHandler for GooseClient {
         &self,
         _context: RequestContext<RoleClient>,
     ) -> Result<ListRootsResult, ErrorData> {
-        Ok(working_dir_roots(&self.working_dir.read().await))
+        Ok(working_dir_roots(&self.working_dir))
     }
 
     async fn on_progress(
@@ -412,7 +366,7 @@ impl ClientHandler for GooseClient {
     }
 
     async fn on_tool_list_changed(&self, _context: rmcp::service::NotificationContext<RoleClient>) {
-        self.handle_tool_list_changed().await;
+        self.handle_tool_list_changed();
     }
 
     #[expect(deprecated)]
@@ -429,100 +383,6 @@ impl ClientHandler for GooseClient {
         );
     }
 
-    #[expect(deprecated)]
-    async fn create_message(
-        &self,
-        params: CreateMessageRequestParams,
-        context: RequestContext<RoleClient>,
-    ) -> Result<CreateMessageResult, ErrorData> {
-        let provider = self
-            .provider
-            .lock()
-            .await
-            .as_ref()
-            .ok_or(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Could not use provider",
-                None,
-            ))?
-            .clone();
-
-        // Prefer explicit MCP metadata, then the active request scope.
-        let session_id = self.resolve_session_id(&context.extensions).await;
-
-        let provider_ready_messages: Vec<crate::conversation::message::Message> = params
-            .messages
-            .iter()
-            .map(|msg| {
-                let base = match msg.role {
-                    Role::User => crate::conversation::message::Message::user(),
-                    Role::Assistant => crate::conversation::message::Message::assistant(),
-                };
-
-                match msg.content.first().and_then(|c| c.as_text()) {
-                    Some(text) => base.with_text(&text.text),
-                    None => base,
-                }
-            })
-            .collect();
-
-        let system_prompt = params
-            .system_prompt
-            .as_deref()
-            .unwrap_or("You are a general-purpose AI agent called goose");
-
-        let model_config = resolve_sampling_model_config().map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Could not resolve model config",
-                Some(Value::from(e.to_string())),
-            )
-        })?;
-        let (response, usage) = crate::session_context::with_session_id(
-            session_id.clone(),
-            provider.complete(&model_config, system_prompt, &provider_ready_messages, &[]),
-        )
-        .await
-        .map_err(|e| {
-            ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Unexpected error while completing the prompt",
-                Some(Value::from(e.to_string())),
-            )
-        })?;
-
-        let sampling_content = if let Some(text) = extract_sampling_text(&response.content) {
-            SamplingMessageContentBlock::text(text)
-        } else if let Some(crate::conversation::message::MessageContent::Image(img)) = response
-            .content
-            .iter()
-            .filter_map(crate::conversation::message::MessageContent::user_visible_content)
-            .find(|content| {
-                matches!(
-                    content,
-                    crate::conversation::message::MessageContent::Image(_)
-                )
-            })
-        {
-            SamplingMessageContentBlock::Image(rmcp::model::ImageContent::new(
-                img.data.clone(),
-                img.mime_type.clone(),
-            ))
-        } else {
-            return Err(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                "Provider returned no usable text or image content for sampling",
-                None,
-            ));
-        };
-
-        Ok(CreateMessageResult::new(
-            SamplingMessage::new(Role::Assistant, sampling_content),
-            usage.model,
-        )
-        .with_stop_reason(CreateMessageResult::STOP_REASON_END_TURN))
-    }
-
     async fn create_elicitation(
         &self,
         request: ElicitRequestParams,
@@ -533,7 +393,7 @@ impl ClientHandler for GooseClient {
         }
 
         let session_id = self
-            .resolve_session_id(&context.extensions)
+            .resolve_session_id(&context.meta)
             .await
             .ok_or_else(|| {
                 ErrorData::new(
@@ -542,8 +402,7 @@ impl ClientHandler for GooseClient {
                     None,
                 )
             })?;
-        let tool_call_request_id =
-            self.resolve_tool_call_request_id(&session_id, &context.extensions)?;
+        let tool_call_request_id = self.resolve_tool_call_request_id(&session_id, &context.meta)?;
 
         let (message, schema_value) = match &request {
             ElicitRequestParams::FormElicitationParams {
@@ -591,7 +450,7 @@ impl ClientHandler for GooseClient {
             })
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         let extensions = self.resolved_extensions();
 
         InitializeRequestParams::new(
@@ -599,7 +458,6 @@ impl ClientHandler for GooseClient {
             ClientCapabilities::builder()
                 .enable_roots()
                 .enable_extensions_with(extensions)
-                .enable_sampling()
                 .enable_elicitation()
                 .build(),
             self.resolved_client_info(),
@@ -638,13 +496,12 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
 #[derive(Clone)]
 pub(crate) struct ConnectContext {
     pub timeout: Duration,
-    pub provider: SharedProvider,
     pub client_name: String,
     pub capabilities: GooseMcpClientCapabilities,
     pub working_dir: PathBuf,
     pub docker_container: Option<String>,
     pub action_required: Arc<ActionRequiredManager>,
-    pub extension_manager: Weak<ExtensionManager>,
+    pub tools_version: Arc<AtomicU64>,
 }
 
 /// The MCP client is the interface for MCP operations.
@@ -667,25 +524,23 @@ impl McpClient {
     {
         let ConnectContext {
             timeout,
-            provider,
             client_name,
             capabilities,
             working_dir,
             docker_container,
             action_required,
-            extension_manager,
+            tools_version,
         } = ctx;
         let notification_subscribers =
             Arc::new(Mutex::new(Vec::<mpsc::Sender<ServerNotification>>::new()));
 
         let client = GooseClient::new(
             notification_subscribers.clone(),
-            provider,
             client_name.clone(),
             capabilities.clone(),
             working_dir,
             action_required,
-            extension_manager,
+            tools_version,
         );
         let client: rmcp::service::RunningService<rmcp::RoleClient, GooseClient> =
             if let Some(protocol_version) = capabilities.protocol_version {
@@ -733,14 +588,6 @@ impl McpClient {
 
     pub fn docker_container(&self) -> Option<&str> {
         self.docker_container.as_deref()
-    }
-
-    async fn do_update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        let client = self.client.lock().await;
-        let shared = client.service().shared_working_dir();
-        *shared.write().await = new_dir;
-        client.peer().notify_roots_list_changed().await?;
-        Ok(())
     }
 
     async fn send_request_with_context(
@@ -1048,10 +895,6 @@ impl McpClientTrait for McpClient {
         self.notification_subscribers.lock().await.push(tx);
         rx
     }
-
-    async fn update_working_dir(&self, new_dir: PathBuf) -> Result<(), Error> {
-        self.do_update_working_dir(new_dir).await
-    }
 }
 
 /// Injects the given session_id and working_dir into Extensions._meta.
@@ -1171,130 +1014,9 @@ fn inject_session_context_into_request(
 mod tests {
     use super::*;
 
-    #[test]
-    fn sampling_text_preserves_text_first_provider_responses() {
-        let response = crate::conversation::message::Message::assistant().with_text("answer");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("answer")
-        );
-    }
-
-    #[test]
-    fn sampling_text_skips_thinking_before_final_text() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("internal reasoning", "signature")
-            .with_text("final answer");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("final answer")
-        );
-    }
-
-    #[test]
-    fn sampling_text_preserves_fragments_around_thinking() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_text("first")
-            .with_thinking("internal reasoning", "signature")
-            .with_text(" second");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("first second")
-        );
-    }
-
-    #[test]
-    fn sampling_text_excludes_assistant_only_blocks_without_changing_visible_text() {
-        let assistant_only = rmcp::model::TextContent::new("assistant only").with_annotations(
-            rmcp::model::Annotations::default().with_audience(vec![Role::Assistant]),
-        );
-        let response = crate::conversation::message::Message::assistant()
-            .with_text("Hello")
-            .with_content(crate::conversation::message::MessageContent::Text(
-                assistant_only,
-            ))
-            .with_text(" world");
-
-        assert_eq!(
-            extract_sampling_text(&response.content).as_deref(),
-            Some("Hello world")
-        );
-    }
-
-    #[test]
-    fn sampling_text_rejects_thinking_only_responses() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("internal reasoning", "signature");
-
-        assert_eq!(extract_sampling_text(&response.content), None);
-    }
-
-    #[test]
-    fn sampling_does_not_expose_json_from_thinking_only_response() {
-        let response = crate::conversation::message::Message::assistant()
-            .with_thinking("{\"private\":true}", "signature");
-
-        assert_eq!(extract_sampling_text(&response.content), None);
-    }
-    use crate::agents::extension::ExtensionConfig;
     use crate::agents::GoosePlatform;
-    use rmcp::model::Tool;
     use serde_json::json;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use test_case::test_case;
-    use tokio::sync::Semaphore;
-
-    struct BlockingToolsClient {
-        calls: AtomicUsize,
-        first_fetch_started: Semaphore,
-        release_first_fetch: Semaphore,
-    }
-
-    #[async_trait::async_trait]
-    impl McpClientTrait for BlockingToolsClient {
-        async fn list_tools(
-            &self,
-            _session_id: &str,
-            _next_cursor: Option<String>,
-            _cancel_token: CancellationToken,
-        ) -> Result<ListToolsResult, Error> {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            let name = if call == 0 { "old" } else { "new" };
-
-            if call == 0 {
-                self.first_fetch_started.add_permits(1);
-                let _permit = self.release_first_fetch.acquire().await.unwrap();
-            }
-
-            Ok(ListToolsResult {
-                tools: vec![Tool::new(
-                    name,
-                    format!("{name} tool list"),
-                    Arc::new(JsonObject::new()),
-                )],
-                next_cursor: None,
-                meta: None,
-                ..Default::default()
-            })
-        }
-
-        async fn call_tool(
-            &self,
-            _ctx: &ToolCallContext,
-            _name: &str,
-            _arguments: Option<JsonObject>,
-            _cancel_token: CancellationToken,
-        ) -> Result<CallToolResult, Error> {
-            Ok(CallToolResult::success(vec![]))
-        }
-
-        fn get_info(&self) -> Option<&InitializeResult> {
-            None
-        }
-    }
 
     fn new_client(platform: GoosePlatform) -> GooseClient {
         let capabilities = match platform {
@@ -1314,74 +1036,20 @@ mod tests {
 
         GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             platform.to_string(),
             capabilities,
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
-            Weak::new(),
+            Arc::new(AtomicU64::new(0)),
         )
     }
 
-    #[tokio::test]
-    async fn tool_list_changed_during_fetch_prevents_stale_cache() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
-            temp_dir.path().to_path_buf(),
-        ));
-        let tools_client = Arc::new(BlockingToolsClient {
-            calls: AtomicUsize::new(0),
-            first_fetch_started: Semaphore::new(0),
-            release_first_fetch: Semaphore::new(0),
-        });
-        let config = ExtensionConfig::Builtin {
-            name: "dynamic".to_string(),
-            display_name: Some("dynamic".to_string()),
-            description: "dynamic tools".to_string(),
-            timeout: None,
-            bundled: None,
-            available_tools: vec![],
-        };
-        extension_manager
-            .add_client("dynamic".to_string(), config, tools_client.clone(), None)
-            .await;
-
-        let goose_client = GooseClient::new(
-            Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
-            "goose-test".to_string(),
-            GooseMcpClientCapabilities {
-                mcpui: false,
-                host_info: None,
-                elicitation_handler: None,
-                protocol_version: None,
-            },
-            temp_dir.path().to_path_buf(),
-            Arc::new(ActionRequiredManager::new()),
-            Arc::downgrade(&extension_manager),
-        );
-
-        let manager = extension_manager.clone();
-        let first_fetch = tokio::spawn(async move {
-            manager
-                .get_prefixed_tools("test-session", None)
-                .await
-                .unwrap()
-        });
-
-        let _started = tools_client.first_fetch_started.acquire().await.unwrap();
-        goose_client.handle_tool_list_changed().await;
-        tools_client.release_first_fetch.add_permits(1);
-
-        let stale_result = first_fetch.await.unwrap();
-        assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
-
-        let refreshed = extension_manager
-            .get_prefixed_tools("test-session", None)
-            .await
-            .unwrap();
-        assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
-        assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
+    #[test]
+    fn tool_list_changed_bumps_tools_version() {
+        let client = new_client(GoosePlatform::GooseCli);
+        let before = client.tools_version.load(Ordering::SeqCst);
+        client.handle_tool_list_changed();
+        assert_eq!(client.tools_version.load(Ordering::SeqCst), before + 1);
     }
 
     fn request_extensions(request: &ClientRequest) -> Option<&Extensions> {
@@ -1434,123 +1102,6 @@ mod tests {
         ClientRequest::GetPromptRequest(req)
     }
 
-    #[test_case(
-        Some("ext-session"),
-        Some("current-session"),
-        Some("ext-session");
-        "extensions win"
-    )]
-    #[test_case(
-        None,
-        Some("current-session"),
-        Some("current-session");
-        "current when no extensions"
-    )]
-    #[test_case(
-        None,
-        None,
-        None;
-        "no session when no extensions or current"
-    )]
-    fn test_resolve_session_id(
-        ext_session: Option<&str>,
-        current_session: Option<&str>,
-        expected: Option<&str>,
-    ) {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async {
-            let client = new_client(GoosePlatform::GooseCli);
-            if let Some(session_id) = current_session {
-                client.set_session_id(session_id).await;
-            }
-
-            let extensions =
-                inject_session_context_into_extensions(Extensions::new(), ext_session, None, None);
-
-            let resolved = client.resolve_session_id(&extensions).await;
-
-            let expected = expected.map(str::to_string);
-            assert_eq!(resolved, expected);
-        });
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_from_extensions() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard = client.register_active_tool_call("session-a", "active-tool-call");
-        let extensions = inject_session_context_into_extensions(
-            Extensions::new(),
-            Some("session-a"),
-            None,
-            Some("extension-tool-call"),
-        );
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &extensions)
-            .unwrap();
-
-        assert_eq!(resolved, "extension-tool-call");
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_from_active_call() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard = client.register_active_tool_call("session-a", "active-tool-call");
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call");
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_errors_when_calls_overlap() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-
-        let error = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .expect_err("ambiguous elicitation should not resolve to an arbitrary call");
-
-        assert_eq!(error.code, ErrorCode::INTERNAL_ERROR);
-    }
-
-    #[test]
-    fn test_resolve_tool_call_request_id_prefers_echoed_id_while_calls_overlap() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let _guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-        let extensions = inject_session_context_into_extensions(
-            Extensions::new(),
-            Some("session-a"),
-            None,
-            Some("active-tool-call-a"),
-        );
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &extensions)
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call-a");
-    }
-
-    #[test]
-    fn test_dropping_guard_unregisters_active_tool_call() {
-        let client = new_client(GoosePlatform::GooseCli);
-        let guard_a = client.register_active_tool_call("session-a", "active-tool-call-a");
-        let _guard_b = client.register_active_tool_call("session-a", "active-tool-call-b");
-
-        drop(guard_a);
-
-        let resolved = client
-            .resolve_tool_call_request_id("session-a", &Extensions::new())
-            .unwrap();
-
-        assert_eq!(resolved, "active-tool-call-b");
-    }
-
     #[test_case(list_resources_request; "list_resources")]
     #[test_case(read_resource_request; "read_resource")]
     #[test_case(list_tools_request; "list_tools")]
@@ -1586,27 +1137,6 @@ mod tests {
         if matches!(request, ClientRequest::CallToolRequest(_)) {
             assert!(!meta.0.contains_key(TOOL_CALL_REQUEST_ID_HEADER));
         }
-    }
-
-    #[test]
-    fn test_session_id_in_mcp_meta() {
-        let session_id = "test-session-789";
-        let extensions = inject_session_context_into_extensions(
-            Default::default(),
-            Some(session_id),
-            None,
-            None,
-        );
-        let mcp_meta = extensions.get::<MetaObject>().unwrap();
-
-        assert_eq!(
-            &mcp_meta.0,
-            json!({
-                SESSION_ID_HEADER: session_id
-            })
-            .as_object()
-            .unwrap()
-        );
     }
 
     #[test_case(
@@ -1655,37 +1185,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_call_request_id_injected_only_for_call_tool() {
-        let session_id = "test-session-id";
-        let tool_call_request_id = "tool-request-1";
-
-        let call_request = inject_session_context_into_request(
-            call_tool_request(Extensions::new()),
-            Some(session_id),
-            None,
-            Some(tool_call_request_id),
-        );
-        let call_meta = request_extensions(&call_request)
-            .and_then(|extensions| extensions.get::<MetaObject>())
-            .expect("call request should have meta");
-        assert_eq!(
-            call_meta.0.get(TOOL_CALL_REQUEST_ID_HEADER),
-            Some(&Value::String(tool_call_request_id.to_string()))
-        );
-
-        let tools_request = inject_session_context_into_request(
-            list_tools_request(Extensions::new()),
-            Some(session_id),
-            None,
-            Some(tool_call_request_id),
-        );
-        let tools_meta = request_extensions(&tools_request)
-            .and_then(|extensions| extensions.get::<MetaObject>())
-            .expect("list tools request should have meta");
-        assert!(!tools_meta.0.contains_key(TOOL_CALL_REQUEST_ID_HEADER));
-    }
-
-    #[test]
     fn test_client_info_advertises_mcp_apps_ui_extension() {
         let client = new_client(GoosePlatform::GooseDesktop);
         let info = ClientHandler::get_info(&client);
@@ -1718,10 +1217,17 @@ mod tests {
     }
 
     #[test]
+    fn test_client_capabilities_do_not_advertise_sampling() {
+        let client = new_client(GoosePlatform::GooseCli);
+        let info = ClientHandler::get_info(&client);
+        let capabilities = serde_json::to_value(info.capabilities).unwrap();
+        assert!(capabilities.get("sampling").is_none());
+    }
+
+    #[test]
     fn test_explicit_host_info_passes_through_client_identity() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseDesktop.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: true,
@@ -1736,7 +1242,7 @@ mod tests {
             },
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
-            Weak::new(),
+            Arc::new(AtomicU64::new(0)),
         );
 
         let info = ClientHandler::get_info(&client);
@@ -1756,7 +1262,6 @@ mod tests {
     fn test_explicit_host_extensions_override_platform_fallback() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseCli.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: false,
@@ -1771,7 +1276,7 @@ mod tests {
             },
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
-            Weak::new(),
+            Arc::new(AtomicU64::new(0)),
         );
 
         let info = ClientHandler::get_info(&client);
@@ -1788,7 +1293,6 @@ mod tests {
     fn test_host_identity_does_not_disable_platform_fallback_without_explicit_extensions() {
         let client = GooseClient::new(
             Arc::new(Mutex::new(Vec::new())),
-            Arc::new(Mutex::new(None)),
             GoosePlatform::GooseDesktop.to_string(),
             GooseMcpClientCapabilities {
                 mcpui: true,
@@ -1803,7 +1307,7 @@ mod tests {
             },
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
-            Weak::new(),
+            Arc::new(AtomicU64::new(0)),
         );
 
         let info = ClientHandler::get_info(&client);
@@ -1814,16 +1318,6 @@ mod tests {
 
         assert!(extensions.contains_key(MCP_APPS_UI_EXTENSION_ID));
         assert_eq!(info.client_info.name, "goose2");
-    }
-
-    #[test]
-    #[expect(deprecated)]
-    fn test_working_dir_roots_returns_current_dir_as_root() {
-        let dir = PathBuf::from("/tmp/test-project");
-        let result = working_dir_roots(&dir);
-        assert_eq!(result.roots.len(), 1);
-        assert_eq!(result.roots[0].uri, "file:///tmp/test-project");
-        assert_eq!(result.roots[0].name.as_deref(), Some("working_directory"));
     }
 
     #[tokio::test]
