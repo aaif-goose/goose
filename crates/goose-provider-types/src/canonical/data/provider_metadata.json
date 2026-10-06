@@ -549,7 +549,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 292
+    "model_count": 294
   },
   {
     "id": "empiriolabs",
@@ -891,7 +891,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 395
+    "model_count": 396
   },
   {
     "id": "kimi-code-plan-cn",
@@ -968,7 +968,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 214
+    "model_count": 215
   },
   {
     "id": "llmgateway-providers",
@@ -979,7 +979,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 439
+    "model_count": 442
   },
   {
     "id": "llmtech",
@@ -1254,7 +1254,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 610
+    "model_count": 609
   },
   {
     "id": "nearai",
@@ -1398,7 +1398,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 33
+    "model_count": 34
   },
   {
     "id": "openreason",
@@ -1564,7 +1564,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 166
+    "model_count": 168
   },
   {
     "id": "routing-run",
@@ -1840,7 +1840,7 @@
     "env": [
       "THEGRID_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 16
   },
   {
     "id": "thinkingmachines",
