@@ -1905,8 +1905,8 @@ pub fn openai_reasoning_effort_for_thinking(
         .and_then(|model| model.reasoning_efforts.as_deref());
 
     let preferred: &[&str] = match effort {
-        ThinkingEffort::Off => &["none", "low"],
-        ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+        ThinkingEffort::Off => &["none", "minimal", "low"],
+        ThinkingEffort::Low => &["low", "minimal", "medium", "high", "xhigh"],
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
         ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],

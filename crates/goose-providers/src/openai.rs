@@ -57,7 +57,7 @@ impl CachedContextLimit {
         }
     }
 }
-pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-5.6-terra";
+pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-6.1-sol";
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
