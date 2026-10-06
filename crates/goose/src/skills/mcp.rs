@@ -36,6 +36,8 @@ pub struct SkillRecord {
     pub name: String,
     pub description: String,
     pub extension_name: String,
+    /// Host or extension name used when two servers advertise `name`.
+    pub namespace: String,
     /// `None` means the server omitted the list (SKILL.md-only, no digest check).
     /// `Some` is the advertised file list. Dynamic skills set `dynamic` instead.
     pub resources: Option<Vec<SkillFile>>,
@@ -186,6 +188,7 @@ fn record_from_entry(
     let uri_name = skill_name_from_uri(&entry.uri).unwrap_or("");
     if name.is_empty()
         || name != uri_name
+        || name.contains("::")
         || name.chars().any(|c| c.is_control() || c.is_whitespace())
     {
         return Err(SkillLoadError::InvalidName { uri: entry.uri });
@@ -203,9 +206,27 @@ fn record_from_entry(
         name,
         description,
         extension_name: extension_name.to_string(),
+        namespace: String::new(),
         resources,
         dynamic,
     })
+}
+
+pub fn skill_namespace(extension_name: &str, uri: Option<&str>) -> String {
+    let Some(uri) = uri else {
+        return extension_name.to_string();
+    };
+    let Ok(url) = reqwest::Url::parse(uri) else {
+        return extension_name.to_string();
+    };
+    url.host_str()
+        .filter(|host| !host.is_empty())
+        .unwrap_or(extension_name)
+        .to_string()
+}
+
+pub fn qualified_skill_name(namespace: &str, name: &str) -> String {
+    format!("{namespace}::{name}")
 }
 
 /// Decode one page of `skills/list`. Returns the records and the next cursor.
@@ -244,25 +265,31 @@ pub fn parse_skills_get(
     record_from_entry(got.skill, extension_name)
 }
 
-/// Filesystem skills win. MCP skills are appended only when the name is free.
-/// Two MCP servers advertising the same name keep the first one.
+/// Filesystem skills keep their bare name. An MCP skill is always
+/// `namespace::name`, so connecting a second server cannot rename a skill
+/// the model already saw.
 pub fn merge_skill_entries(
     filesystem: Vec<SourceEntry>,
     mcp: Vec<SkillRecord>,
 ) -> Vec<SourceEntry> {
     let mut merged = filesystem;
-    let mut seen: std::collections::HashSet<String> =
-        merged.iter().map(|skill| skill.name.clone()).collect();
-    for skill in mcp {
-        if skill.dynamic || !seen.insert(skill.name.clone()) {
+    let mut seen = std::collections::HashSet::new();
+    for skill in mcp.into_iter().filter(|skill| !skill.dynamic) {
+        let namespace = if skill.namespace.is_empty() {
+            skill.extension_name.clone()
+        } else {
+            skill.namespace.clone()
+        };
+        let published = qualified_skill_name(&namespace, &skill.name);
+        if !seen.insert(published.clone()) {
             continue;
         }
-        merged.push(mcp_source_entry(&skill));
+        merged.push(mcp_source_entry(&skill, &published));
     }
     merged
 }
 
-fn mcp_source_entry(skill: &SkillRecord) -> SourceEntry {
+fn mcp_source_entry(skill: &SkillRecord, published_name: &str) -> SourceEntry {
     let mut properties = std::collections::HashMap::new();
     properties.insert(
         "mcpExtension".to_string(),
@@ -271,7 +298,7 @@ fn mcp_source_entry(skill: &SkillRecord) -> SourceEntry {
     properties.insert("skillUri".to_string(), Value::String(skill.uri.clone()));
     SourceEntry {
         source_type: SourceType::Skill,
-        name: skill.name.clone(),
+        name: published_name.to_string(),
         description: skill.description.clone(),
         content: String::new(),
         path: skill.uri.clone(),
@@ -373,6 +400,7 @@ mod tests {
                 size: 5,
             }]),
             dynamic: false,
+            namespace: extension.to_string(),
         }
     }
 
@@ -382,27 +410,46 @@ mod tests {
             vec![entry("billing", "local")],
             vec![record("billing", "stripe"), record("refunds", "stripe")],
         );
-        assert_eq!(merged.len(), 2);
+        assert_eq!(merged.len(), 3);
         assert_eq!(merged[0].description, "local");
-        assert_eq!(merged[1].name, "refunds");
+        assert_eq!(merged[1].name, "stripe::billing");
+        assert_eq!(merged[2].name, "stripe::refunds");
         assert!(!merged[1].writable);
-        assert_eq!(merged[1].path, "skill://refunds/SKILL.md");
+        assert_eq!(merged[2].path, "skill://refunds/SKILL.md");
     }
 
     #[test]
-    fn first_mcp_server_wins_a_name_clash() {
-        let merged = merge_skill_entries(
-            vec![],
-            vec![record("billing", "stripe"), record("billing", "other")],
-        );
-        assert_eq!(merged.len(), 1);
+    fn two_mcp_servers_with_the_same_skill_keep_both_qualified_names() {
+        let mut stripe = record("billing", "stripe");
+        stripe.namespace = "billing.stripe.com".to_string();
+        let mut other = record("billing", "other");
+        other.namespace = "billing.other.test".to_string();
+        let names: Vec<String> = merge_skill_entries(vec![], vec![stripe, other])
+            .into_iter()
+            .map(|skill| skill.name)
+            .collect();
         assert_eq!(
-            merged[0]
-                .properties
-                .get("mcpExtension")
-                .and_then(Value::as_str),
-            Some("stripe")
+            names,
+            vec![
+                "billing.stripe.com::billing".to_string(),
+                "billing.other.test::billing".to_string()
+            ]
         );
+    }
+
+    #[test]
+    fn an_mcp_skill_is_always_qualified_even_when_it_is_the_only_one() {
+        let merged = merge_skill_entries(vec![], vec![record("billing", "stripe")]);
+        assert_eq!(merged[0].name, "stripe::billing");
+    }
+
+    #[test]
+    fn skill_namespace_uses_the_url_host() {
+        assert_eq!(
+            skill_namespace("stripe", Some("https://billing.stripe.com/mcp")),
+            "billing.stripe.com"
+        );
+        assert_eq!(skill_namespace("local-tools", None), "local-tools");
     }
 
     #[test]

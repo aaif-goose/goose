@@ -47,6 +47,7 @@ async fn list_extension_skills(
     client: &dyn McpClientTrait,
     session_id: &str,
     extension_name: &str,
+    server_uri: Option<&str>,
     cancel: &CancellationToken,
 ) -> Result<Vec<crate::skills::mcp::SkillRecord>, ServiceError> {
     let mut skills = Vec::new();
@@ -63,8 +64,11 @@ async fn list_extension_skills(
                 cancel.clone(),
             )
             .await?;
-        let (found, next) = crate::skills::mcp::parse_skills_list(&page, extension_name)
+        let (mut found, next) = crate::skills::mcp::parse_skills_list(&page, extension_name)
             .map_err(|_| ServiceError::UnexpectedResponse)?;
+        for skill in &mut found {
+            skill.namespace = crate::skills::mcp::skill_namespace(extension_name, server_uri);
+        }
         skills.extend(found);
         match next {
             Some(next) if next != cursor.unwrap_or_default() && skills.len() < 500 => {
@@ -491,6 +495,7 @@ impl ExtensionLease {
                 extension.client.as_ref(),
                 &self.scope_id,
                 &extension.config.name(),
+                extension.config.uri().as_deref(),
                 &cancel,
             )
             .await

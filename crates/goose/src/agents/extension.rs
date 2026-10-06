@@ -358,6 +358,13 @@ impl ExtensionConfig {
         .to_string()
     }
 
+    pub fn uri(&self) -> Option<String> {
+        match self {
+            Self::StreamableHttp { uri, .. } => Some(uri.clone()),
+            Self::Stdio { .. } | Self::Builtin { .. } | Self::Platform { .. } => None,
+        }
+    }
+
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
         let available_tools = match self {
             Self::StreamableHttp {

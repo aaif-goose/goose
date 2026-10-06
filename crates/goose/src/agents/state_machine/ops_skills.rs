@@ -117,7 +117,11 @@ async fn execute_skill(
         Ok(params) => params,
         Err(error) => return CallToolResult::error(vec![ContentBlock::text(error)]),
     };
-    let skill_name = params.name.as_str();
+    let requested = params.name.as_str();
+    let (skill_name, relative_file) = match requested.split_once('/') {
+        Some((name, path)) => (name, Some(path.replace('\\', "/"))),
+        None => (requested, None),
+    };
     let args = params.args.as_deref();
     let mcp = match lease {
         Some(lease) => lease.list_mcp_skills().await,
@@ -126,6 +130,12 @@ async fn execute_skill(
     let skills = skill_entries(working_dir, mcp);
 
     if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
+        if let Some(relative_path) = relative_file.as_deref() {
+            if crate::skills::mcp::is_mcp_skill(skill) {
+                return load_mcp_supporting_file(skill, relative_path, lease).await;
+            }
+            return load_supporting_file(skill, requested, relative_path);
+        }
         if crate::skills::mcp::is_mcp_skill(skill) {
             return load_mcp_skill(skill, args, lease).await;
         }
@@ -135,22 +145,6 @@ async fn execute_skill(
                 "Failed to parse skill arguments: {error}"
             ))]),
         };
-    }
-
-    if let Some((parent_skill_name, raw_relative_path)) = skill_name.split_once('/') {
-        let relative_path = raw_relative_path.replace('\\', "/");
-        if let Some(skill) = skills.iter().find(|skill| {
-            skill.name == parent_skill_name
-                && matches!(
-                    skill.source_type,
-                    SourceType::Skill | SourceType::BuiltinSkill
-                )
-        }) {
-            if crate::skills::mcp::is_mcp_skill(skill) {
-                return load_mcp_supporting_file(skill, &relative_path, lease).await;
-            }
-            return load_supporting_file(skill, skill_name, &relative_path);
-        }
     }
 
     let suggestions: Vec<&str> = skills
