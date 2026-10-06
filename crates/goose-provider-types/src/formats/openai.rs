@@ -199,6 +199,65 @@ fn extract_content_and_signature(
     }
 }
 
+#[derive(Default, Serialize)]
+struct OpenAiMessage {
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAiToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
+}
+
+struct OpenAiToolCall {
+    id: String,
+    kind: &'static str,
+    function: OpenAiFunctionCall,
+    metadata: serde_json::Map<String, Value>,
+}
+
+impl Serialize for OpenAiToolCall {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+        // Provider metadata may override standard fields, matching the existing wire format.
+        if let Some(id) = self.metadata.get("id") {
+            map.serialize_entry("id", id)?;
+        } else {
+            map.serialize_entry("id", &self.id)?;
+        }
+        if let Some(kind) = self.metadata.get("type") {
+            map.serialize_entry("type", kind)?;
+        } else {
+            map.serialize_entry("type", self.kind)?;
+        }
+        if let Some(function) = self.metadata.get("function") {
+            map.serialize_entry("function", function)?;
+        } else {
+            map.serialize_entry("function", &self.function)?;
+        }
+        for (key, value) in &self.metadata {
+            if !matches!(key.as_str(), "id" | "type" | "function") {
+                map.serialize_entry(key, value)?;
+            }
+        }
+        map.end()
+    }
+}
+
+#[derive(Serialize)]
+struct OpenAiFunctionCall {
+    name: String,
+    arguments: String,
+}
+
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
     format_messages_with_options(
         messages,
@@ -248,9 +307,14 @@ pub fn format_messages_with_options(
             saw_tool_response = false;
         }
 
-        let mut converted = json!({
-            "role": message.role
-        });
+        let mut converted = OpenAiMessage {
+            role: match message.role {
+                Role::User => "user",
+                Role::Assistant => "assistant",
+            }
+            .to_string(),
+            ..Default::default()
+        };
 
         let mut output = Vec::new();
         // Deferred to the end of the message so every tool result in a batch stays
@@ -307,28 +371,18 @@ pub fn format_messages_with_options(
                             None => "{}".to_string(),
                         };
 
-                        let tool_calls = converted
-                            .as_object_mut()
-                            .unwrap()
-                            .entry("tool_calls")
-                            .or_insert(json!([]));
-
-                        let mut tool_call_json = json!({
-                            "id": request.id,
-                            "type": "function",
-                            "function": {
-                                "name": sanitized_name,
-                                "arguments": arguments_str,
-                            }
-                        });
-
-                        if let Some(metadata) = &request.metadata {
-                            for (key, value) in metadata {
-                                tool_call_json[key] = value.clone();
-                            }
-                        }
-
-                        tool_calls.as_array_mut().unwrap().push(tool_call_json);
+                        converted
+                            .tool_calls
+                            .get_or_insert_default()
+                            .push(OpenAiToolCall {
+                                id: request.id.clone(),
+                                kind: "function",
+                                function: OpenAiFunctionCall {
+                                    name: sanitized_name,
+                                    arguments: arguments_str,
+                                },
+                                metadata: request.metadata.clone().unwrap_or_default(),
+                            });
                     }
                     Err(_e) => {
                         // An unparseable tool call still needs a valid assistant
@@ -339,19 +393,18 @@ pub fn format_messages_with_options(
                         // OpenAI-compatible APIs reject. Emit a placeholder call with the
                         // same id so the history stays well-formed; the error rides on the
                         // following tool response.
-                        let tool_calls = converted
-                            .as_object_mut()
-                            .unwrap()
-                            .entry("tool_calls")
-                            .or_insert(json!([]));
-                        tool_calls.as_array_mut().unwrap().push(json!({
-                            "id": request.id,
-                            "type": "function",
-                            "function": {
-                                "name": "unparseable_tool_call",
-                                "arguments": "{}",
-                            }
-                        }));
+                        converted
+                            .tool_calls
+                            .get_or_insert_default()
+                            .push(OpenAiToolCall {
+                                id: request.id.clone(),
+                                kind: "function",
+                                function: OpenAiFunctionCall {
+                                    name: "unparseable_tool_call".to_string(),
+                                    arguments: "{}".to_string(),
+                                },
+                                metadata: serde_json::Map::new(),
+                            });
                     }
                 },
                 MessageContentBlock::ToolResponse(response) => {
@@ -368,10 +421,14 @@ pub fn format_messages_with_options(
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
                                             // Create a separate image message
-                                            pending_image_messages.push(json!({
-                                                "role": "user",
-                                                "content": [convert_image(&image.clone(), image_format)]
-                                            }));
+                                            pending_image_messages.push(OpenAiMessage {
+                                                role: "user".to_string(),
+                                                content: Some(json!([convert_image(
+                                                    &image.clone(),
+                                                    image_format
+                                                )])),
+                                                ..Default::default()
+                                            });
                                         } else {
                                             // Add placeholder text in the tool response
                                             tool_content.push(ContentBlock::text("This tool result included an image that was omitted as the model does not support vision."));
@@ -395,19 +452,24 @@ pub fn format_messages_with_options(
                                 .collect::<Vec<String>>()
                                 .join(" "));
 
-                            output.push(json!({
-                                "role": "tool",
-                                "content": tool_response_content,
-                                "tool_call_id": response.id
-                            }));
+                            output.push(OpenAiMessage {
+                                role: "tool".to_string(),
+                                content: Some(tool_response_content),
+                                tool_call_id: Some(response.id.clone()),
+                                ..Default::default()
+                            });
                         }
                         Err(e) => {
                             // A tool result error is shown as output so the model can interpret the error message
-                            output.push(json!({
-                                "role": "tool",
-                                "content": format!("The tool call returned the following error:\n{}", e),
-                                "tool_call_id": response.id
-                            }));
+                            output.push(OpenAiMessage {
+                                role: "tool".to_string(),
+                                content: Some(json!(format!(
+                                    "The tool call returned the following error:\n{}",
+                                    e
+                                ))),
+                                tool_call_id: Some(response.id.clone()),
+                                ..Default::default()
+                            });
                         }
                     }
                 }
@@ -454,27 +516,26 @@ pub fn format_messages_with_options(
 
         if !content_array.is_empty() {
             if has_non_text_content {
-                converted["content"] = json!(content_array);
+                converted.content = Some(json!(content_array));
             } else {
                 let texts: Vec<String> = content_array
                     .iter()
                     .filter_map(|v| v["text"].as_str().map(|s| s.to_string()))
                     .collect();
-                converted["content"] = json!(texts.join("\n"));
+                converted.content = Some(json!(texts.join("\n")));
             }
         }
 
         // Some strict OpenAI-compatible providers require "content" to be present
         // (even as null) when tool_calls are provided. See #6717.
         if message.role == Role::Assistant
-            && converted.get("tool_calls").is_some()
-            && converted.get("content").is_none()
+            && converted.tool_calls.is_some()
+            && converted.content.is_none()
         {
-            converted["content"] = json!(null);
+            converted.content = Some(Value::Null);
         }
 
-        let has_message_payload =
-            converted.get("content").is_some() || converted.get("tool_calls").is_some();
+        let has_message_payload = converted.content.is_some() || converted.tool_calls.is_some();
 
         if options.preserve_thinking_context && message.role == Role::Assistant {
             if !has_message_payload && output.is_empty() && !reasoning_text.is_empty() {
@@ -488,10 +549,7 @@ pub fn format_messages_with_options(
                 pending_assistant_reasoning.clear();
             }
 
-            let has_tool_calls = converted
-                .get("tool_calls")
-                .and_then(|tc| tc.as_array())
-                .is_some_and(|a| !a.is_empty());
+            let has_tool_calls = converted.tool_calls.as_ref().is_some_and(|a| !a.is_empty());
 
             if has_tool_calls {
                 if reasoning_text.is_empty() {
@@ -511,14 +569,16 @@ pub fn format_messages_with_options(
         // Include reasoning_content only when non-empty. Kimi rejects empty
         // reasoning_content (""), so we must omit it entirely.
         if options.preserve_thinking_context && !reasoning_text.is_empty() {
-            converted["reasoning_content"] = json!(reasoning_text);
+            converted.reasoning_content = Some(reasoning_text);
         }
 
         if has_message_payload {
             output.insert(0, converted);
         }
 
-        messages_spec.extend(output);
+        messages_spec.extend(output.into_iter().map(|message| {
+            serde_json::to_value(message).expect("OpenAI message fields are JSON serializable")
+        }));
     }
 
     merge_split_tool_call_messages(&mut messages_spec);
@@ -1745,10 +1805,16 @@ pub fn create_request_for_model_with_options(
         None
     };
 
-    let system_message = json!({
-        "role": if is_reasoning_model { "developer" } else { "system" },
-        "content": system
-    });
+    let system_message = serde_json::to_value(OpenAiMessage {
+        role: if is_reasoning_model {
+            "developer"
+        } else {
+            "system"
+        }
+        .to_string(),
+        content: Some(Value::String(system.to_string())),
+        ..Default::default()
+    })?;
 
     let messages_spec = format_messages_with_options(messages, image_format, format_options);
     let mut tools_spec = format_tools(tools)?;
@@ -3142,6 +3208,70 @@ mod tests {
         assert!(err.to_string().contains("No message in API response"));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_request_serializes_content_before_tool_calls() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::user().with_text("Find the answer"),
+            Message::assistant()
+                .with_text("I'll look it up")
+                .with_tool_request("call_1", Ok(CallToolRequestParams::new("lookup"))),
+            Message::user().with_tool_response(
+                "call_1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("42")])),
+            ),
+        ];
+        let request = create_request(
+            &test_model_config("model-service"),
+            "system",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )?;
+        let wire = serde_json::to_string(&request)?;
+        let parsed: Value = serde_json::from_str(&wire)?;
+        let assistant = serde_json::to_string(&parsed["messages"][2])?;
+        assert!(assistant.find("\"content\"").unwrap() < assistant.find("\"tool_calls\"").unwrap());
+        assert_eq!(parsed["messages"].as_array().unwrap().len(), 4);
+        assert_eq!(parsed["messages"][3]["role"], "tool");
+        assert_eq!(parsed["messages"][3]["tool_call_id"], "call_1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_tool_call_serialization_preserves_metadata_overrides() {
+        let metadata = json!({
+            "id": "overridden",
+            "type": "custom",
+            "function": {"name": "custom_function", "arguments": "{}"},
+            "extra_content": {"google": {"thought_signature": "signature"}},
+        });
+        let call = OpenAiToolCall {
+            id: "original".to_string(),
+            kind: "function",
+            function: OpenAiFunctionCall {
+                name: "lookup".to_string(),
+                arguments: "{}".to_string(),
+            },
+            metadata: metadata.as_object().unwrap().clone(),
+        };
+        let wire = serde_json::to_string(&call).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&wire).unwrap(), metadata);
+        assert_eq!(wire.matches("\"id\"").count(), 1);
+    }
+
+    #[test]
+    fn test_message_serialization_distinguishes_missing_and_null_content() {
+        let missing = serde_json::to_value(OpenAiMessage::default()).unwrap();
+        assert!(missing.get("content").is_none());
+        let null = serde_json::to_value(OpenAiMessage {
+            content: Some(Value::Null),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(null.get("content"), Some(&Value::Null));
     }
 
     #[test]
