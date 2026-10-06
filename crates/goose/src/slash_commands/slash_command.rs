@@ -18,11 +18,13 @@ pub fn list_builtin_commands() -> Vec<SlashCommandEntry> {
 }
 
 pub fn list_acp_commands(working_dir: Option<&Path>) -> Vec<SlashCommandEntry> {
+    let mut recipes = super::recipe_slash_command::commands_from_mappings(
+        super::recipe_slash_command::list_commands(),
+    );
+    recipes.extend(super::recipe_slash_command::builtin_recipe_commands());
     merge_command_sources(
         list_builtin_commands(),
-        super::recipe_slash_command::commands_from_mappings(
-            super::recipe_slash_command::list_commands(),
-        ),
+        recipes,
         super::skill_slash_command::list_commands(working_dir),
     )
 }
