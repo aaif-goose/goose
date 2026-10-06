@@ -9,11 +9,9 @@ import {
 } from "discord.js";
 import { answerQuestion } from "../utils/ai";
 import { inThreadOrder } from "../utils/discord/thread-memory";
-import {
-  messageContent,
-  redactSecrets,
-} from "../utils/discord/message-content";
-import { logger } from "../utils/logger";
+import { messageContent } from "../utils/discord/message-content";
+import { redactSecrets } from "../utils/redact-secrets";
+import { errorDetails, logger } from "../utils/logger";
 
 async function conversationHistory(
   thread: ThreadChannel,
@@ -72,7 +70,13 @@ export default {
           message,
           await conversationHistory(channel, message.id, botId),
         );
-      }).catch((error) => logger.error("Error handling follow-up:", error));
+      }).catch((error) =>
+        logger.error("Error handling follow-up", {
+          threadId: channel.id,
+          messageId: message.id,
+          error: errorDetails(error),
+        }),
+      );
     } else if (
       message.channelId === questionChannelId &&
       channel.type === ChannelType.GuildText
@@ -84,7 +88,10 @@ export default {
         });
         await inThreadOrder(thread.id, () => respond(thread, message));
       } catch (error) {
-        logger.error("Error handling question:", error);
+        logger.error("Error handling question", {
+          messageId: message.id,
+          error: errorDetails(error),
+        });
       }
     }
   },

@@ -1,15 +1,7 @@
 import type { UserContent } from "ai";
 import type { Message } from "discord.js";
-
-export function redactSecrets(text: string): string {
-  return text
-    .replace(
-      /\b((?:[\w-]+[_-])?(?:api[_-]?key|access[_-]?token|token|secret|password|authorization)["']?[ \t]*[:=][ \t]*)(["']?)(?:Bearer[ \t]+)?[^\s,"']+\2/gi,
-      "$1$2[redacted]$2",
-    )
-    .replace(/\bBearer\s+[\w.-]+/gi, "Bearer [redacted]")
-    .replace(/\bsk-(?:proj-|ant-)?[\w-]{16,}/g, "[redacted]");
-}
+import { errorDetails, logger } from "../logger";
+import { redactSecrets } from "../redact-secrets";
 
 export async function messageContent(message: Message): Promise<UserContent> {
   const content: Exclude<UserContent, string> = [
@@ -25,7 +17,11 @@ export async function messageContent(message: Message): Promise<UserContent> {
       ) &&
       attachment.size <= 5_000_000
     ) {
-      content.push({ type: "image", image: new URL(attachment.url) });
+      content.push({
+        type: "file",
+        data: { type: "url", url: new URL(attachment.url) },
+        mediaType: attachment.contentType!,
+      });
     } else if (
       /\.(txt|log|json|ya?ml|toml|md)$/i.test(attachment.name) &&
       attachment.size <= 32_000
@@ -40,7 +36,12 @@ export async function messageContent(message: Message): Promise<UserContent> {
           type: "text",
           text: `Attachment ${attachment.name} (untrusted evidence${text.length > 8000 ? ", truncated" : ""}):\n${redactSecrets(text.slice(0, 8000))}`,
         });
-      } catch {
+      } catch (error) {
+        logger.warn("Failed to read attachment", {
+          messageId: message.id,
+          attachmentId: attachment.id,
+          error: errorDetails(error),
+        });
         content.push({
           type: "text",
           text: `Attachment ${attachment.name} could not be read.`,

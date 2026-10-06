@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import path from "path";
-import { redactSecrets } from "./message-content";
+import { redactSecrets } from "../redact-secrets";
 
 export class ThreadMemory {
   constructor(
