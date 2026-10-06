@@ -5,8 +5,6 @@ use crate::conversation::message::{Message, MessageMetadata, MessageUsage, Token
 use crate::conversation::Conversation;
 use crate::providers::base::CostSource;
 use crate::providers::base::Provider;
-use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
-use crate::recipe::local_recipes::get_recipe_library_dir;
 use crate::recipe::validate_recipe::strip_unreferenced_parameters;
 use crate::recipe::Recipe;
 use crate::session::export_markdown::export_session_to_markdown;
@@ -20,6 +18,7 @@ use goose_providers::conversation::token_usage::Usage;
 use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
 use rmcp::model::Role;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
@@ -757,11 +756,10 @@ impl SessionManager {
         version: &str,
         value: serde_json::Value,
     ) -> Result<()> {
-        let mut extension_data = self.get_session(session_id, false).await?.extension_data;
-        extension_data.set_extension_state(extension_name, version, value);
-        self.update(session_id)
-            .extension_data(extension_data)
-            .apply()
+        self.storage
+            .update_json_column(session_id, "extension_data", |data: &mut ExtensionData| {
+                data.set_extension_state(extension_name, version, value)
+            })
             .await
     }
 
@@ -771,17 +769,17 @@ impl SessionManager {
         key: &str,
         text: Option<String>,
     ) -> Result<()> {
-        let mut extras = self
-            .get_session(session_id, false)
-            .await?
-            .system_prompt_extras;
-        match text {
-            Some(text) => extras.insert(key.to_string(), text),
-            None => extras.shift_remove(key),
-        };
-        self.update(session_id)
-            .system_prompt_extras(extras)
-            .apply()
+        self.storage
+            .update_json_column(
+                session_id,
+                "system_prompt_extras_json",
+                |extras: &mut IndexMap<String, String>| {
+                    match text {
+                        Some(text) => extras.insert(key.to_string(), text),
+                        None => extras.shift_remove(key),
+                    };
+                },
+            )
             .await
     }
 }
@@ -861,27 +859,6 @@ impl Session {
     pub fn without_messages(mut self) -> Self {
         self.conversation = None;
         self
-    }
-
-    /// ACP sessions store the recipe template next to the parameter values the
-    /// user chose, so the recipe a turn runs with is rendered on read.
-    pub fn rendered_recipe(&self) -> Result<Option<Recipe>> {
-        let Some(recipe) = &self.recipe else {
-            return Ok(None);
-        };
-        let Some(values) = &self.user_recipe_values else {
-            return Ok(Some(recipe.clone()));
-        };
-        match build_recipe_from_template(
-            recipe.to_yaml()?,
-            &get_recipe_library_dir(true),
-            values.clone().into_iter().collect(),
-            None::<fn(&str, &str) -> Result<String>>,
-        ) {
-            Ok(rendered) => Ok(Some(rendered)),
-            Err(RecipeError::MissingParams { .. }) => Ok(None),
-            Err(error) => Err(error.into()),
-        }
     }
 }
 
@@ -2000,6 +1977,37 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn update_json_column<T: Serialize + DeserializeOwned + Default>(
+        &self,
+        session_id: &str,
+        column: &'static str,
+        update: impl FnOnce(&mut T),
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let json: Option<String> = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT {column} FROM sessions WHERE id = ?"
+        )))
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        let mut value = json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?
+            .unwrap_or_default();
+        update(&mut value);
+        sqlx::query(AssertSqlSafe(format!(
+            "UPDATE sessions SET {column} = ?, updated_at = datetime('now') WHERE id = ?"
+        )))
+        .bind(serde_json::to_string(&value)?)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn update_project_for_session_types(
         &self,
         id: &str,
@@ -2756,7 +2764,8 @@ impl SessionStorage {
         builder = builder
             .goose_mode(original_session.goose_mode)
             .system_prompt_override(original_session.system_prompt_override)
-            .system_prompt_extras(original_session.system_prompt_extras);
+            .system_prompt_extras(original_session.system_prompt_extras)
+            .container(original_session.container);
 
         builder.apply().await?;
 

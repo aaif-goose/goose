@@ -25,29 +25,26 @@ use crate::conversation::message::Message;
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
-use crate::recipe::Recipe;
 use crate::session::Session;
 
-fn recipe_final_output_tool(recipe: Option<&Recipe>) -> Result<Option<FinalOutputTool>> {
-    recipe
+pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
+    session
+        .recipe
+        .as_ref()
         .and_then(|recipe| recipe.response.clone())
         .map(FinalOutputTool::try_new)
         .transpose()
         .map_err(|error| anyhow!(error))
 }
 
-pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
-    recipe_final_output_tool(session.rendered_recipe()?.as_ref())
-}
-
 pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, String)>> {
-    let recipe = session.rendered_recipe()?;
-    let instructions = recipe
+    let instructions = session
+        .recipe
         .as_ref()
         .and_then(|recipe| recipe.instructions.clone())
         .map(|instructions| ("recipe".to_string(), instructions));
-    let final_output = recipe_final_output_tool(recipe.as_ref())?
-        .map(|tool| ("final_output".to_string(), tool.system_prompt()));
+    let final_output =
+        final_output_tool(session)?.map(|tool| ("final_output".to_string(), tool.system_prompt()));
     Ok(instructions.into_iter().chain(final_output).collect())
 }
 

@@ -27,6 +27,7 @@ use crate::recipe::manifest::{
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::{strip_error_location, Recipe, RecipeParameter};
 use crate::recipe_deeplink;
+use crate::session::{Session, SessionType};
 use crate::slash_commands::recipe_slash_command;
 
 use self::conversions::recipe_manifest_to_list_entry_dto;
@@ -308,6 +309,43 @@ impl GooseAcpAgent {
                 Err(agent_client_protocol::Error::internal_error().data(format!("recipe: {e}")))
             }
         }
+    }
+
+    /// ACP sessions created before the rendered recipe was stored hold the
+    /// template, which load and fork render once in place.
+    pub(super) async fn render_stored_recipe_template(
+        &self,
+        session: &mut Session,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let Some(recipe) = &session.recipe else {
+            return Ok(());
+        };
+        if session.session_type == SessionType::Scheduled
+            || recipe.parameters.as_ref().is_none_or(Vec::is_empty)
+        {
+            return Ok(());
+        }
+        let Some(rendered) = self.render_recipe(
+            recipe,
+            &get_recipe_library_dir(true),
+            session.user_recipe_values.clone().unwrap_or_default(),
+        )?
+        else {
+            return Ok(());
+        };
+        self.session_manager
+            .update(&session.id)
+            .recipe(Some(rendered))
+            .apply()
+            .await
+            .internal_err()?;
+        session.recipe = self
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .internal_err()?
+            .recipe;
+        Ok(())
     }
 
     pub(super) async fn render_recipe_for_session(

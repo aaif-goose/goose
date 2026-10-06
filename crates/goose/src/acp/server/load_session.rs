@@ -403,6 +403,7 @@ impl GooseAcpAgent {
         session = self
             .prepare_session_for_activation(session, cwd, args.mcp_servers, true)
             .await?;
+        self.render_stored_recipe_template(&mut session).await?;
 
         let replayed_from = replay_conversation_to_client(
             cx,

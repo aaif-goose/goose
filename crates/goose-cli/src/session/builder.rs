@@ -691,15 +691,17 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     let session_id =
         resolve_session_id(&session_config, &session_manager, agent.config.goose_mode).await;
 
-    session_manager
-        .update(&session_id)
-        .container(session_config.container.clone())
-        .apply()
-        .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to set session container: {}", e));
-            process::exit(1);
-        });
+    if session_config.container.is_some() {
+        session_manager
+            .update(&session_id)
+            .container(session_config.container.clone())
+            .apply()
+            .await
+            .unwrap_or_else(|e| {
+                output::render_error(&format!("Failed to set session container: {}", e));
+                process::exit(1);
+            });
+    }
 
     if session_config.resume {
         handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;

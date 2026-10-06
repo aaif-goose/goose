@@ -160,7 +160,7 @@ impl GooseAcpAgent {
                 provider,
                 model_config,
                 extension_data,
-                recipe: recipe.map(|(recipe, _)| recipe),
+                recipe: rendered,
                 user_recipe_values,
                 meta,
             },
