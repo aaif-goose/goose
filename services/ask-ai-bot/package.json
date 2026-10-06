@@ -19,7 +19,6 @@
     "@octokit/rest": "^22.0.1",
     "ai": "^7.0.18",
     "consola": "^3.4.2",
-    "dedent": "^1.7.2",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
     "marked": "^18.0.5",

@@ -7,6 +7,10 @@ on:
     paths:
       - "services/ask-ai-bot/**"
       - "documentation/**"
+      - "crates/**"
+      - "ui/**"
+      - "Cargo.toml"
+      - "AGENTS.md"
       - ".github/workflows/publish-ask-ai-bot.yml"
   workflow_dispatch:
 
@@ -46,6 +50,7 @@ jobs:
         with:
           context: .
           file: services/ask-ai-bot/Dockerfile
+          build-args: SOURCE_REVISION=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
