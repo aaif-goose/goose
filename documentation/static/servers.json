@@ -804,6 +804,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "miningbridge-intel",
+    "name": "MiningBridge Intelligence",
+    "description": "Critical-mineral and rare-earth trade intelligence: trade flows, supply-concentration risk, counterparty screening and sourcing briefs",
+    "url": "https://intel.miningbridge.in/api/mcp",
+    "link": "https://github.com/miningbridge/intel-mcp",
+    "installation_notes": "Hosted remote server. Sign in with a free MiningBridge account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
