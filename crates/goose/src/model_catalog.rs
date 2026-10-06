@@ -14,8 +14,11 @@ pub fn initialize() {
         tracing::warn!(%error, "ignoring invalid cached model catalog");
     }
 
-    tokio::spawn(async move {
-        if let Err(error) = refresh_remote_catalog(CATALOG_URL, &cache_dir).await {
+    // Parsing the downloaded catalog is slow enough to stall the runtime's
+    // timers, so the refresh runs on the blocking pool.
+    let runtime = tokio::runtime::Handle::current();
+    tokio::task::spawn_blocking(move || {
+        if let Err(error) = runtime.block_on(refresh_remote_catalog(CATALOG_URL, &cache_dir)) {
             tracing::warn!(%error, "failed to refresh remote model catalog");
         }
     });
