@@ -159,6 +159,18 @@ jobs:
           CARGO_INCREMENTAL: "0"
           RUSTFLAGS: "-D warnings"
 
+      - name: Check wasm32 build without the bundled catalog
+        run: cargo check --locked --target wasm32-unknown-unknown -p goose-provider-types --no-default-features
+        env:
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-D warnings"
+
+      - name: Test catalog activation without the bundled catalog
+        run: cargo test --locked -p goose-provider-types --no-default-features --test catalog_activation
+        env:
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-D warnings"
+
       - name: Run agent loop on wasm32
         run: cargo test --locked --target wasm32-unknown-unknown -p goose-agent --test wasm
         env:
@@ -232,7 +244,7 @@ jobs:
           gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
           cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
-          cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
+          cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket,bundled-catalog
           cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http -- --skip scenario_tests::scenarios::tests
           cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --jobs 1 scenario_tests::scenarios::tests
         env:
