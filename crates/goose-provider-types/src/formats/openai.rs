@@ -3453,7 +3453,7 @@ mod tests {
         );
         assert_eq!(
             openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
-            Some("low".to_string())
+            Some("minimal".to_string())
         );
     }
 
@@ -3469,8 +3469,8 @@ mod tests {
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
-                Some("none".to_string()),
-                "{model} must not match GPT 6.1 Sol"
+                Some("low".to_string()),
+                "{model} must use the unknown-model fallback"
             );
         }
     }

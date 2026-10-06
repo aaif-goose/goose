@@ -290,11 +290,15 @@ impl ModelConfig {
     }
 
     pub fn openai_reasoning_for_model(&self, model_name: &str) -> bool {
+        let canonical = crate::canonical::maybe_get_canonical_model("openai", model_name);
+        if canonical
+            .as_ref()
+            .is_some_and(|model| !model.id.starts_with("openai/"))
+        {
+            return false;
+        }
         self.reasoning
-            .or_else(|| {
-                crate::canonical::maybe_get_canonical_model("openai", model_name)
-                    .and_then(|model| model.reasoning)
-            })
+            .or_else(|| canonical.and_then(|model| model.reasoning))
             .unwrap_or(false)
     }
 
