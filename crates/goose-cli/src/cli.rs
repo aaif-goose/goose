@@ -1563,12 +1563,13 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     let session_id = session.id.as_str();
     agent.add_extension(extension, session_id).await?;
 
-    let lease = agent
-        .extension_manager
-        .current_lease(session_id, Some(&std::env::current_dir()?))
-        .await;
+    let working_dir = std::env::current_dir()?;
     let mut results = Vec::new();
     for step in script.steps {
+        let lease = agent
+            .extension_manager
+            .current_lease(session_id, Some(&working_dir))
+            .await;
         let result = match step {
             McpProbeStep::ListTools => serde_json::json!({
                 "action": "listTools",
