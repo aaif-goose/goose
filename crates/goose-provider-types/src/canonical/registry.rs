@@ -140,7 +140,13 @@ pub fn load_cached_catalog(cache_dir: &Path) -> Result<bool> {
     Ok(true)
 }
 
-pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool> {
+pub struct RemoteCatalog {
+    body: Vec<u8>,
+    etag: Option<String>,
+}
+
+/// Returns `None` when the cached catalog is still current.
+pub async fn fetch_remote_catalog(url: &str, cache_dir: &Path) -> Result<Option<RemoteCatalog>> {
     let client = reqwest::Client::builder().build()?;
     let etag_path = cache_dir.join(ETAG_FILENAME);
     let mut request = client.get(url).timeout(Duration::from_secs(15)).header(
@@ -153,7 +159,7 @@ pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool>
 
     let response = request.send().await?.error_for_status()?;
     if response.status() == reqwest::StatusCode::NOT_MODIFIED {
-        return Ok(false);
+        return Ok(None);
     }
     if response
         .content_length()
@@ -175,16 +181,22 @@ pub async fn refresh_remote_catalog(url: &str, cache_dir: &Path) -> Result<bool>
         }
         body.extend_from_slice(&chunk);
     }
-    let content = std::str::from_utf8(&body).context("canonical model catalog is not UTF-8")?;
-    let registry = super::models_dev::from_models_dev(content)?;
+    Ok(Some(RemoteCatalog { body, etag }))
+}
 
-    std::fs::create_dir_all(cache_dir)?;
-    atomic_write(cache_dir.join(CATALOG_FILENAME), &body)?;
-    if let Some(etag) = etag {
-        atomic_write(etag_path, etag.as_bytes())?;
+impl RemoteCatalog {
+    pub fn install(self, cache_dir: &Path) -> Result<()> {
+        let content =
+            std::str::from_utf8(&self.body).context("canonical model catalog is not UTF-8")?;
+        let registry = super::models_dev::from_models_dev(content)?;
+
+        std::fs::create_dir_all(cache_dir)?;
+        atomic_write(cache_dir.join(CATALOG_FILENAME), &self.body)?;
+        if let Some(etag) = self.etag {
+            atomic_write(cache_dir.join(ETAG_FILENAME), etag.as_bytes())?;
+        }
+        activate(registry)
     }
-    activate(registry)?;
-    Ok(true)
 }
 
 fn atomic_write(destination: PathBuf, content: &[u8]) -> Result<()> {
