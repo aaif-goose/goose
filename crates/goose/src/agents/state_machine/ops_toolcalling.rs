@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
-use crate::agents::container::Container;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_tool_approval::request_executable;
@@ -319,7 +318,6 @@ pub struct ToolExecutionOperation<'a> {
     goose_mode: &'a Mutex<GooseMode>,
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
-    container: Option<Container>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
@@ -328,14 +326,12 @@ impl<'a> ToolExecutionOperation<'a> {
         goose_mode: &'a Mutex<GooseMode>,
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
-        container: Option<Container>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
             goose_mode,
             extension_manager,
             hook_manager,
-            container,
             lease,
         }
     }
@@ -410,7 +406,7 @@ impl<'a> ToolExecutionOperation<'a> {
                 .call(
                     tool_call.clone(),
                     CallRequest::new(request_id.clone())
-                        .with_container(self.container.clone())
+                        .with_container(session.container.clone())
                         .with_state_machine(),
                     cancellation_token,
                 )
@@ -425,7 +421,7 @@ impl<'a> ToolExecutionOperation<'a> {
             });
             let result = self.extension_manager.applying_mutation(
                 result,
-                self.container.clone(),
+                session.container.clone(),
                 &session.id,
             );
             Ok(with_post_tool_hooks(

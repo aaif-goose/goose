@@ -25,7 +25,31 @@ use crate::conversation::message::Message;
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
+use crate::recipe::Recipe;
 use crate::session::Session;
+
+fn recipe_final_output_tool(recipe: Option<&Recipe>) -> Result<Option<FinalOutputTool>> {
+    recipe
+        .and_then(|recipe| recipe.response.clone())
+        .map(FinalOutputTool::try_new)
+        .transpose()
+        .map_err(|error| anyhow!(error))
+}
+
+pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
+    recipe_final_output_tool(session.rendered_recipe()?.as_ref())
+}
+
+pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, String)>> {
+    let recipe = session.rendered_recipe()?;
+    let instructions = recipe
+        .as_ref()
+        .and_then(|recipe| recipe.instructions.clone())
+        .map(|instructions| ("recipe".to_string(), instructions));
+    let final_output = recipe_final_output_tool(recipe.as_ref())?
+        .map(|tool| ("final_output".to_string(), tool.system_prompt()));
+    Ok(instructions.into_iter().chain(final_output).collect())
+}
 
 pub struct RecipeOperation {
     provider: Arc<dyn Provider>,
@@ -38,16 +62,6 @@ impl RecipeOperation {
             provider,
             hook_manager,
         }
-    }
-
-    fn final_output(session: &Session) -> Result<Option<FinalOutputTool>> {
-        session
-            .recipe
-            .as_ref()
-            .and_then(|recipe| recipe.response.clone())
-            .map(FinalOutputTool::try_new)
-            .transpose()
-            .map_err(|error| anyhow!(error))
     }
 
     async fn command_error(
@@ -138,7 +152,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(Self::final_output(session)?
+        Ok(final_output_tool(session)?
             .as_ref()
             .map(FinalOutputTool::tool)
             .into_iter()
@@ -150,11 +164,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        Ok(Self::final_output(session)?
-            .as_ref()
-            .map(|tool| ("final_output".to_string(), tool.system_prompt()))
-            .into_iter()
-            .collect())
+        recipe_prompt_parts(session)
     }
 
     async fn run(
@@ -163,7 +173,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let Some(mut final_output) = Self::final_output(session)? else {
+        let Some(mut final_output) = final_output_tool(session)? else {
             return not_applicable();
         };
 

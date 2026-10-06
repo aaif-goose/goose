@@ -63,7 +63,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
         let system_prompt = self.prompt_manager.lock().await.build_system_prompt(
-            &session.working_dir,
+            session,
             input.prompt_parts,
             goose_mode,
         );

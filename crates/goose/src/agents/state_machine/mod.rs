@@ -16,7 +16,7 @@ mod ops_foreground_subagent;
 mod ops_llm;
 mod ops_maxturns;
 mod ops_project;
-mod ops_recipe;
+pub(crate) mod ops_recipe;
 mod ops_retry;
 mod ops_skills;
 mod ops_slash_command;

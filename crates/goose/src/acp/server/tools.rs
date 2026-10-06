@@ -114,7 +114,7 @@ impl GooseAcpAgent {
             Some(session.working_dir),
             None,
         )
-        .with_container(agent.container().await);
+        .with_container(session.container);
         let tool_result = agent
             .extension_manager
             .dispatch_app_tool_call(

@@ -101,6 +101,15 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .apply()
                         .await?;
                 }
+                GooseEffect::SetGoal(goal) => {
+                    self.update(&session.id).goal(goal.clone()).apply().await?;
+                }
+                GooseEffect::SetGrind(grind) => {
+                    self.update(&session.id)
+                        .grind(grind.clone())
+                        .apply()
+                        .await?;
+                }
                 GooseEffect::RecordUsage(provider_usage) => {
                     usage::record(self, session, provider_usage, false).await?;
                 }

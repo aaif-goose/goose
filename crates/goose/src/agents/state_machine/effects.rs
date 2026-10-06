@@ -11,6 +11,8 @@ pub enum GooseEffect {
         usage: Option<ProviderUsage>,
     },
     SetRecipe(Box<Option<Recipe>>),
+    SetGoal(Option<String>),
+    SetGrind(Option<String>),
     RecordUsage(ProviderUsage),
 }
 

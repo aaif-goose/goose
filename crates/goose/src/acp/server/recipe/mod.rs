@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::Meta;
 use agent_client_protocol::{
@@ -20,7 +19,6 @@ use tokio::sync::oneshot;
 mod conversions;
 
 use super::{meta_string, GooseAcpAgent, ResultExt};
-use crate::agents::Agent;
 use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
 use crate::recipe::local_recipes::{self, get_recipe_library_dir};
 use crate::recipe::manifest::{
@@ -29,7 +27,6 @@ use crate::recipe::manifest::{
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::{strip_error_location, Recipe, RecipeParameter};
 use crate::recipe_deeplink;
-use crate::session::{Session, SessionType};
 use crate::slash_commands::recipe_slash_command;
 
 use self::conversions::recipe_manifest_to_list_entry_dto;
@@ -311,49 +308,6 @@ impl GooseAcpAgent {
                 Err(agent_client_protocol::Error::internal_error().data(format!("recipe: {e}")))
             }
         }
-    }
-
-    pub(super) async fn apply_recipe(
-        &self,
-        agent: &Arc<Agent>,
-        recipe: &Recipe,
-    ) -> Result<(), agent_client_protocol::Error> {
-        agent
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await
-            .invalid_params_err()?;
-        if let Some(instructions) = recipe.instructions.clone() {
-            agent
-                .extend_system_prompt("recipe".to_string(), instructions)
-                .await;
-        }
-        Ok(())
-    }
-
-    pub(super) async fn apply_session_recipe(
-        &self,
-        agent: &Arc<Agent>,
-        session: &Session,
-    ) -> Result<(), agent_client_protocol::Error> {
-        let Some(recipe) = session.recipe.as_ref() else {
-            return Ok(());
-        };
-
-        if session.session_type == SessionType::Scheduled {
-            self.apply_recipe(agent, recipe).await?;
-            return Ok(());
-        }
-
-        let recipe_dir = get_recipe_library_dir(true);
-        if let Some(rendered) = self.render_recipe(
-            recipe,
-            &recipe_dir,
-            session.user_recipe_values.clone().unwrap_or_default(),
-        )? {
-            self.apply_recipe(agent, &rendered).await?;
-        }
-
-        Ok(())
     }
 
     pub(super) async fn render_recipe_for_session(

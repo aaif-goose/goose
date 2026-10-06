@@ -412,7 +412,6 @@ impl GooseAcpAgent {
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
-        self.apply_session_recipe(&agent, &session).await?;
         self.register_acp_session(session_id_str.clone(), agent.clone())
             .await;
         let provider = agent

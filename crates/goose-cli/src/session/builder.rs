@@ -3,6 +3,7 @@ use crate::cli::StreamableHttpOptions;
 use super::output;
 use super::{derive_extension_name_from_command, split_extension_name_prefix, CliSession};
 use console::style;
+use goose::agents::final_output_tool::FinalOutputTool;
 use goose::agents::{Agent, Container, ExtensionError};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
@@ -11,7 +12,7 @@ use goose::model_config::model_config_from_user_config;
 use goose::providers::create;
 use goose::recipe::Recipe;
 use goose::session::session_manager::SessionType;
-use goose::session::EnabledExtensionsState;
+use goose::session::{EnabledExtensionsState, SessionManager};
 use rustyline::EditMode;
 use std::collections::{HashMap, HashSet};
 use std::process;
@@ -448,7 +449,7 @@ async fn resolve_provider_and_model(
 
 async fn resolve_session_id(
     session_config: &SessionBuilderConfig,
-    session_manager: &goose::session::session_manager::SessionManager,
+    session_manager: &SessionManager,
     goose_mode: GooseMode,
 ) -> String {
     if session_config.no_session {
@@ -618,15 +619,15 @@ async fn collect_extension_configs(
 }
 
 async fn configure_session_prompts(
-    session: &CliSession,
+    session_manager: &SessionManager,
+    session_id: &str,
     config: &Config,
     session_config: &SessionBuilderConfig,
-) {
+) -> anyhow::Result<()> {
     if let Some(ref additional_prompt) = session_config.additional_system_prompt {
-        session
-            .agent
-            .extend_system_prompt("additional".to_string(), additional_prompt.clone())
-            .await;
+        session_manager
+            .set_system_prompt_extra(session_id, "additional", Some(additional_prompt.clone()))
+            .await?;
     }
 
     let system_prompt_file: Option<String> = config.get_param("GOOSE_SYSTEM_PROMPT_FILE_PATH").ok();
@@ -638,8 +639,13 @@ async fn configure_session_prompts(
             ));
             process::exit(1);
         });
-        session.agent.override_system_prompt(override_prompt).await;
+        session_manager
+            .update(session_id)
+            .system_prompt_override(Some(override_prompt))
+            .apply()
+            .await?;
     }
+    Ok(())
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
@@ -648,10 +654,6 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let config = Config::global();
     let agent: Agent = Agent::new();
-
-    if session_config.container.is_some() {
-        agent.set_container(session_config.container.clone()).await;
-    }
 
     let session_manager = agent.config.session_manager.clone();
 
@@ -678,16 +680,26 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let recipe = session_config.recipe.as_ref();
 
-    agent
-        .apply_recipe_components(recipe.and_then(|r| r.response.clone()), true)
-        .await
-        .unwrap_or_else(|error| {
-            output::render_error(&format!("Invalid recipe response: {error}"));
-            process::exit(1);
-        });
+    if let Some(Err(error)) = recipe
+        .and_then(|r| r.response.clone())
+        .map(FinalOutputTool::try_new)
+    {
+        output::render_error(&format!("Invalid recipe response: {error}"));
+        process::exit(1);
+    }
 
     let session_id =
         resolve_session_id(&session_config, &session_manager, agent.config.goose_mode).await;
+
+    session_manager
+        .update(&session_id)
+        .container(session_config.container.clone())
+        .apply()
+        .await
+        .unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to set session container: {}", e));
+            process::exit(1);
+        });
 
     if session_config.resume {
         handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
@@ -851,6 +863,13 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let debug_mode = session_config.debug || config.get_param("GOOSE_DEBUG").unwrap_or(false);
 
+    configure_session_prompts(&session_manager, &session_id, config, &session_config)
+        .await
+        .unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to configure session prompts: {}", e));
+            process::exit(1);
+        });
+
     let session = CliSession::new(
         agent_ptr,
         session_id.clone(),
@@ -865,8 +884,6 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         Some(loading_handle),
     )
     .await;
-
-    configure_session_prompts(&session, config, &session_config).await;
 
     if !session_config.quiet {
         output::display_session_info(

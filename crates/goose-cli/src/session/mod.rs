@@ -1133,8 +1133,6 @@ impl CliSession {
 
         self.session_id = new_session_id;
         self.messages.clear();
-        self.agent.set_goal(None).await;
-        self.agent.set_grind(None).await;
 
         if let Err(e) = self
             .agent
@@ -2034,7 +2032,10 @@ async fn create_successor_session(
     let mut builder = session_manager
         .update(&new_session.id)
         .recipe(old_session.recipe.clone())
-        .user_recipe_values(old_session.user_recipe_values.clone());
+        .user_recipe_values(old_session.user_recipe_values.clone())
+        .system_prompt_override(old_session.system_prompt_override.clone())
+        .system_prompt_extras(old_session.system_prompt_extras.clone())
+        .container(old_session.container.clone());
 
     if let Some(provider_name) = old_session.provider_name.clone() {
         builder = builder.provider_name(provider_name);

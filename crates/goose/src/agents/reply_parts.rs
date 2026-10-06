@@ -13,6 +13,7 @@ use super::gen_ai_telemetry;
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name, ExtensionLease};
 #[cfg(feature = "code-mode")]
 use crate::agents::platform_extensions::code_execution;
+use crate::agents::state_machine::ops_recipe;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, MessageContent, MessageUsage, ToolRequest};
 use crate::conversation::{fix_conversation, merge_consecutive_messages_for_request, Conversation};
@@ -213,7 +214,7 @@ impl Agent {
             .await;
         let lease = Arc::new(lease);
         let mut tools = lease.tools().await;
-        if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
+        if let Some(final_output_tool) = ops_recipe::final_output_tool(&session)? {
             tools.push(final_output_tool.tool());
         }
         ensure_unique_tool_names(&tools)?;
@@ -237,6 +238,8 @@ impl Agent {
         let prompt_manager = self.prompt_manager.lock().await;
         let system_prompt = prompt_manager
             .builder()
+            .with_session(&session)
+            .with_prompt_extras(ops_recipe::recipe_prompt_parts(&session)?)
             .with_extensions(extensions_info.into_iter())
             .with_code_execution_mode(code_execution_active)
             .with_hints(&session.working_dir)
