@@ -13,7 +13,7 @@ activities:
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
-  - Test delegate tool for task delegation (sync and async)
+  - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
@@ -89,8 +89,8 @@ instructions: |
   Test the unified delegation and knowledge-loading tools:
   - Load tool for discovery and knowledge injection
   - Delegate tool for synchronous task delegation
-  - Delegate tool for asynchronous background tasks
-  - Parallel delegate execution
+  - Delegate tool for multi-turn and turn-limited tasks
+  - Multiple delegates in one message
   - Nested delegation prevention (critical security test)
 
   ### Phase 4: Advanced Self-Testing
@@ -244,12 +244,10 @@ prompt: |
   ```
   Verify the delegate completes and returns a summary of its work.
 
-  ### Parallel Delegate Test
+  ### Multiple Delegates Test
   {% if parallel_tests == "true" %}
-  **Important**: Synchronous delegates always run in serial, even when called in the same tool call message.
-  Async delegates (`async: true`) run in parallel when called in the same tool call message.
+  **Important**: Delegates run in serial, even when called in the same tool call message.
 
-  First, test sync delegates (will run sequentially):
   Make these 3 delegate calls in a single message:
   1. `delegate(instructions: "Sleep 2 seconds, then create /tmp/sync_parallel_1.txt with timestamp from 'date +%H:%M:%S'")`
   2. `delegate(instructions: "Sleep 2 seconds, then create /tmp/sync_parallel_2.txt with timestamp from 'date +%H:%M:%S'")`
@@ -258,73 +256,36 @@ prompt: |
   After completion, check timestamps: `cat /tmp/sync_parallel_*.txt`
   **Expected**: Timestamps should be ~6+ seconds apart (sequential execution).
 
-  Then, test async delegates (will run in parallel):
-  Make these 3 delegate calls in a single message:
-  1. `delegate(instructions: "Sleep 2 seconds, then create /tmp/async_parallel_1.txt with timestamp from 'date +%H:%M:%S'", async: true)`
-  2. `delegate(instructions: "Sleep 2 seconds, then create /tmp/async_parallel_2.txt with timestamp from 'date +%H:%M:%S'", async: true)`
-  3. `delegate(instructions: "Sleep 2 seconds, then create /tmp/async_parallel_3.txt with timestamp from 'date +%H:%M:%S'", async: true)`
-
-  Wait for tasks to complete (sleep 10 seconds), then check timestamps: `cat /tmp/async_parallel_*.txt`
-  **Expected**: Timestamps should be within ~5 seconds of each other (parallel execution).
-
-  Document both results to validate the parallel execution behavior.
+  Document the result to validate the execution behavior.
   {% endif %}
 
-  ### Async Delegate Test (Background Execution)
-  This tests background task execution with MOIM status monitoring.
+  ### Multi-Turn Delegate Test
+  This tests that a delegate runs to completion over several turns before returning.
 
-  1. Spawn a background delegate that takes multiple turns:
+  1. Delegate a task that takes multiple turns:
   ```
-  delegate(instructions: "Run 'sleep 1' command 10 times, one per turn. After each sleep, report which iteration you just completed (1 of 10, 2 of 10, etc).", async: true)
+  delegate(instructions: "Run 'sleep 1' command 5 times, one per turn. After each sleep, report which iteration you just completed (1 of 5, 2 of 5, etc).")
   ```
 
-  2. After spawning, the delegate runs in the background. You (the main agent) should:
-     - Sleep for 2 seconds: `sleep 2`
-     - Check the MOIM (it will show background task status with turns and time)
-     - **Say out loud** what you observe: "The background task has completed X turns and has been running for Y seconds"
-     - Repeat: sleep 2 seconds, check MOIM, report status out loud
-     - Continue until the background task disappears from MOIM (indicating completion)
+  2. Verify the call only returns after the delegate has finished, and that its result reports all 5 iterations.
 
-  3. Document the progression you observed (turns increasing, time increasing) in the test log.
+  3. Document the returned summary in the test log.
 
   This validates:
-  - Async delegate spawning returns immediately
-  - MOIM accurately reports background task status
-  - Turn counting works correctly
-  - Task cleanup happens when complete
+  - The delegate call blocks until the subagent finishes
+  - Multi-turn subagent work is reflected in the returned result
 
-  ### Async Delegate Cancellation Test
-  This tests the ability to stop a running background task mid-execution.
+  ### Delegate Turn Limit Test
+  This tests that a delegate stops when it reaches its turn limit.
 
-  1. Spawn a slow background task:
+  1. Delegate a task that needs more turns than allowed:
      ```
-     delegate(instructions: "Run 'sleep 2' fifteen times, reporting progress after each.", async: true)
-     ```
-     Note the task ID returned (e.g., "20260204_42").
-
-  2. Wait 8 seconds: `sleep 8`
-
-  3. Check MOIM and confirm the task is running with some turns completed.
-
-  4. Cancel the task:
-     ```
-     load(source: "<task_id>", cancel: true)
+     delegate(instructions: "Run 'sleep 1' ten times, one per turn, reporting progress after each.", max_turns: 3)
      ```
 
-  5. Verify the response shows:
-     - "⊘ Cancelled" status
-     - Partial output (some iterations completed)
-     - Duration and turn count
+  2. Verify the call returns before all ten iterations complete, reporting either partial progress or that the turn limit was reached.
 
-  6. Check MOIM again - the task should be gone (not in running or completed).
-
-  7. Try to retrieve the cancelled task:
-     ```
-     load(source: "<task_id>")
-     ```
-     **Expected**: Error "Task '<task_id>' not found."
-
-  This validates that cancellation stops tasks, returns partial results, and cleans up properly.
+  This validates that `max_turns` bounds a delegate and that control returns to the parent.
 
   ### Source-Based Delegate Test
   If `load()` discovered any recipes or skills, test delegating with a source:
@@ -531,8 +492,8 @@ prompt: |
   • Extensions: [✓/✗]
   • Load tool: [✓/✗]
   • Delegate (sync): [✓/✗]
-  • Delegate (async): [✓/✗]
-  • Delegate cancellation: [✓/✗]
+  • Delegate (multi-turn): [✓/✗]
+  • Delegate turn limit: [✓/✗]
   • Nested delegation blocked: [✓/✗]
 
   ⚠️ Issues Found:
