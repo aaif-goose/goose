@@ -6,6 +6,7 @@ use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 
 mod agent_reply;
 mod calculator_extension;
@@ -113,13 +114,13 @@ async fn bang_shell_requests_the_shell_tool() -> Result<()> {
 #[tokio::test]
 async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let agent = crate::execution::manager::AgentManager::instance()
-        .await?
-        .get_or_create_agent(pipeline.session_id.clone())
-        .await?;
-    agent
-        .extension_manager
-        .remove_extension(crate::agents::platform_extensions::developer::EXTENSION_NAME)
+    let mut extension_data = ExtensionData::default();
+    EnabledExtensionsState::new(Vec::new()).to_extension_data(&mut extension_data)?;
+    pipeline
+        .session_manager
+        .update(&pipeline.session_id)
+        .extension_data(extension_data)
+        .apply()
         .await?;
 
     let result = pipeline.run(["/doctor"]).await?;
@@ -130,12 +131,6 @@ async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
         crate::doctor::DEVELOPER_EXTENSION_REQUIRED_MESSAGE,
     );
     assert_eq!(api.call_count(), 0);
-    assert!(
-        !agent
-            .extension_manager
-            .is_extension_enabled(crate::agents::platform_extensions::developer::EXTENSION_NAME)
-            .await
-    );
 
     Ok(())
 }

@@ -114,10 +114,6 @@ Use write and edit to efficiently make changes. Test and verify as appropriate.
 
 When running Python scripts or commands, always use `python3` instead of `python`.
 
-## orchestrator
-
-### Instructions
-Manage agent sessions: list, view, start, send messages, and interrupt agents.
 ## scheduler
 
 ### Instructions

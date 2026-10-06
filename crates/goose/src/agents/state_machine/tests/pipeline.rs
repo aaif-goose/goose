@@ -149,7 +149,7 @@ impl TestPipeline {
                 &self.goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),

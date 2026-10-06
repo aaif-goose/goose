@@ -1762,7 +1762,7 @@ impl Agent {
                 &self.current_goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
@@ -2257,6 +2257,22 @@ impl Agent {
                     })?;
                     return Ok(Box::pin(futures::stream::empty()));
                 }
+            }
+        }
+
+        // Doctor repairs the provider by writing it to the session, not to this agent.
+        let session = session_manager
+            .get_session(&session_config.id, false)
+            .await?;
+        let live_provider_name = self
+            .provider
+            .lock()
+            .await
+            .as_ref()
+            .map(|provider| provider.get_name().to_string());
+        if let (Some(stored), Some(live)) = (&session.provider_name, &live_provider_name) {
+            if stored != live {
+                self.restore_provider_from_session(&session).await?;
             }
         }
 
