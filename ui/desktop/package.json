@@ -122,7 +122,7 @@
     "@eslint/js": "^10.0.1",
     "@formatjs/cli": "6.14.0",
     "@formatjs/icu-messageformat-parser": "3.5.16",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/line-clamp": "^0.4.4",
     "@tailwindcss/typography": "^0.5.20",
