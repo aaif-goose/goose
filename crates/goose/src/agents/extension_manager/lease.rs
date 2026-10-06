@@ -43,6 +43,39 @@ use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter
 use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
 
+async fn list_extension_skills(
+    client: &dyn McpClientTrait,
+    session_id: &str,
+    extension_name: &str,
+    cancel: &CancellationToken,
+) -> Result<Vec<crate::skills::mcp::SkillRecord>, ServiceError> {
+    let mut skills = Vec::new();
+    let mut cursor = None;
+    for _ in 0..20 {
+        let params = cursor
+            .as_ref()
+            .map(|cursor| serde_json::json!({ "cursor": cursor }));
+        let page = client
+            .send_custom(
+                session_id,
+                crate::skills::mcp::SKILLS_LIST_METHOD,
+                params,
+                cancel.clone(),
+            )
+            .await?;
+        let (found, next) = crate::skills::mcp::parse_skills_list(&page, extension_name)
+            .map_err(|_| ServiceError::UnexpectedResponse)?;
+        skills.extend(found);
+        match next {
+            Some(next) if next != cursor.unwrap_or_default() && skills.len() < 500 => {
+                cursor = Some(next);
+            }
+            _ => break,
+        }
+    }
+    Ok(skills)
+}
+
 fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
     let value = value.get(name).ok_or_else(|| {
         ErrorData::new(
@@ -442,6 +475,119 @@ impl ExtensionLease {
                 )
             })
             .collect()
+    }
+
+    /// SEP-2640 skills from running extensions in this lease that advertised
+    /// `io.modelcontextprotocol/skills`. Servers that did not advertise it are
+    /// not queried. A server that fails to list is skipped.
+    pub async fn list_mcp_skills(&self) -> Vec<crate::skills::mcp::SkillRecord> {
+        let mut skills = Vec::new();
+        let cancel = CancellationToken::new();
+        for extension in &self.extensions {
+            if !extension.client.supports_skills() {
+                continue;
+            }
+            match list_extension_skills(
+                extension.client.as_ref(),
+                &self.scope_id,
+                &extension.config.name(),
+                &cancel,
+            )
+            .await
+            {
+                Ok(found) => skills.extend(found),
+                Err(error) => warn!(
+                    extension = extension.config.name(),
+                    %error,
+                    "failed to list MCP skills"
+                ),
+            }
+        }
+        skills
+    }
+
+    pub async fn send_skill_get(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<crate::skills::mcp::SkillRecord, crate::skills::mcp::SkillLoadError> {
+        let key = name_to_key(extension_name);
+        let extension = self
+            .extensions
+            .iter()
+            .find(|extension| extension.key == key && extension.client.supports_skills())
+            .ok_or_else(|| crate::skills::mcp::SkillLoadError::NotListed {
+                name: uri.to_string(),
+            })?;
+        let page = extension
+            .client
+            .send_custom(
+                &self.scope_id,
+                crate::skills::mcp::SKILLS_GET_METHOD,
+                Some(serde_json::json!({ "uri": uri })),
+                CancellationToken::new(),
+            )
+            .await
+            .map_err(|_| crate::skills::mcp::SkillLoadError::NotListed {
+                name: uri.to_string(),
+            })?;
+        let record = crate::skills::mcp::parse_skills_get(&page, extension_name)?;
+        if record.uri != uri {
+            return Err(crate::skills::mcp::SkillLoadError::InvalidName { uri: record.uri });
+        }
+        Ok(record)
+    }
+
+    pub async fn read_skill_text(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<String, ErrorData> {
+        if crate::skills::mcp::parse_skill_uri(uri).is_none() {
+            return Err(ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("skill URI '{uri}' is not a skill file"),
+                None,
+            ));
+        }
+        let key = name_to_key(extension_name);
+        let client = self
+            .extensions
+            .iter()
+            .find(|extension| extension.key == key && extension.client.supports_skills())
+            .map(|extension| Arc::clone(&extension.client))
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("extension '{extension_name}' is not in this session"),
+                    None,
+                )
+            })?;
+        let result = client
+            .read_resource(&self.scope_id, uri, CancellationToken::new())
+            .await
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("failed to read skill '{uri}': {error}"),
+                    None,
+                )
+            })?;
+        result
+            .contents
+            .into_iter()
+            .find_map(|content| match content {
+                ResourceContents::TextResourceContents { text, .. } => Some(text),
+                ResourceContents::BlobResourceContents { .. } => None,
+                _ => None,
+            })
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("skill '{uri}' did not return text"),
+                    None,
+                )
+            })
     }
 
     pub async fn moim(&self) -> Vec<String> {
