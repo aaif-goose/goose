@@ -3,10 +3,10 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
-    NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
-    SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    CancelNotification, ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer,
+    McpServerHttp, NewSessionRequest, PromptRequest, SessionConfigKind,
+    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo, SessionUpdate,
+    SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::{
@@ -1163,6 +1163,91 @@ fn test_generated_name_does_not_replace_meta_session_title() {
             .await,
             ("Client title".to_string(), true)
         );
+    });
+}
+
+async fn cancel_during_tool_call(unrolled_agent_loop: bool) -> Vec<Message> {
+    let mcp = McpFixture::new().await;
+    let openai = OpenAiFixture::new(
+        vec![(
+            format!("Call wait_for_cancel.{TURN_CONTEXT_OPEN}"),
+            include_str!("acp_test_data/openai_wait_for_cancel_tool_call.txt"),
+        )],
+        <AcpServerConnection as Connection>::expected_session_id(),
+    )
+    .await;
+    let mut conn = <AcpServerConnection as Connection>::new(
+        TestConnectionConfig {
+            mcp_servers: vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url))],
+            ..Default::default()
+        },
+        openai,
+    )
+    .await;
+    let SessionData { session, .. } = conn.new_session().await.unwrap();
+    let session_id = session.session_id().clone();
+
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "goose".to_string(),
+        serde_json::json!({ "unrolledAgentLoop": unrolled_agent_loop }),
+    );
+    let prompt = PromptRequest::new(
+        session_id.clone(),
+        vec![ContentBlock::Text(TextContent::new(
+            "Call wait_for_cancel.",
+        ))],
+    )
+    .meta(meta);
+    let cx = conn.cx().clone();
+    let prompt = tokio::spawn(async move { cx.send_request(prompt).block_task().await });
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !session
+        .session_updates()
+        .iter()
+        .any(|update| matches!(update, SessionUpdate::ToolCall(_)))
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the tool call never started"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    conn.cx()
+        .send_notification(CancelNotification::new(session_id.clone()))
+        .unwrap();
+
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), prompt)
+        .await
+        .expect("Stop should end the prompt promptly")
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.stop_reason, StopReason::Cancelled);
+
+    SessionManager::new(conn.data_root())
+        .get_session(&session_id.0, true)
+        .await
+        .unwrap()
+        .conversation
+        .unwrap()
+        .messages()
+        .clone()
+}
+
+#[test]
+fn test_prompt_cancel_finishes_the_stopped_run() {
+    run_test(async {
+        let messages = cancel_during_tool_call(true).await;
+        assert!(
+            messages
+                .iter()
+                .flat_map(|message| message.get_tool_response_ids())
+                .any(|id| id == "call_wait_for_cancel"),
+            "the stopped run's tool response should be saved before the prompt is answered"
+        );
+
+        cancel_during_tool_call(false).await;
     });
 }
 
