@@ -11,13 +11,15 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::calculator_extension::{value, CalculatorExtension, ADD};
+use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
 use crate::config::permission::PermissionManager;
 use crate::config::GooseMode;
@@ -88,19 +90,49 @@ async fn agent_with_calculator() -> Result<(
     agent
         .extension_manager
         .add_client(
-            "calculator".to_string(),
-            ExtensionConfig::Platform {
-                name: "calculator".to_string(),
-                description: "Stateful test calculator".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: vec![],
-            },
+            calculator_config(),
+            Some(temp_dir.path().to_path_buf()),
             calculator.clone(),
             calculator.get_info().cloned(),
         )
         .await;
     Ok((agent, api, session_id, calculator, temp_dir))
+}
+
+fn calculator_config() -> ExtensionConfig {
+    ExtensionConfig::Platform {
+        name: "calculator".to_string(),
+        description: "Stateful test calculator".to_string(),
+        display_name: None,
+        bundled: None,
+        available_tools: vec![],
+    }
+}
+
+async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
+    agent
+        .add_extension(
+            ExtensionConfig::Platform {
+                name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
+                description: "Developer tools".to_string(),
+                display_name: Some("Developer".to_string()),
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+            session_id,
+        )
+        .await?;
+    Ok(())
+}
+
+fn install_skill(working_dir: &std::path::Path, content: &str) -> Result<()> {
+    let skill_dir = working_dir.join(".agents/skills/review");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        format!("---\nname: review\ndescription: Review code\n---\n{content}"),
+    )?;
+    Ok(())
 }
 
 fn confirmation_ids(messages: &[Message]) -> Vec<String> {
@@ -132,10 +164,24 @@ async fn stream_messages(
 #[tokio::test]
 async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<()> {
     let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
-    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    let hook_dir = tempfile::tempdir()?;
+    let plugin_dir = hook_dir.path().join("test-plugin");
+    std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+    std::fs::write(
+        plugin_dir.join("hooks/hooks.json"),
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
+    )?;
+    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+        crate::plugins::discovery::DiscoveredPlugin {
+            name: "test-plugin".into(),
+            root: plugin_dir.clone(),
+            scope: crate::plugins::discovery::PluginScope::Project,
+        },
+    ]));
     let agent = Arc::new(agent);
 
-    api.on("add one").call(ADD, value(1));
+    api.on("add one").call(ADD, delayed_value(1, 80));
     api.on("result: 1").reply("the result is one");
 
     let session_config = SessionConfig {
@@ -167,6 +213,19 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         }
     };
     assert_eq!(calculator.total(), 0);
+
+    let new_working_dir = tempfile::tempdir()?;
+    agent
+        .config
+        .session_manager
+        .update(&session_config.id)
+        .working_dir(new_working_dir.path().to_path_buf())
+        .apply()
+        .await?;
+    agent
+        .update_extension_working_dir(&session_config.id, new_working_dir.path())
+        .await?;
+
     {
         let session = agent
             .config
@@ -182,6 +241,19 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         )
         .contains(&confirmation_id));
     }
+
+    let replacement = Arc::new(CalculatorExtension::new(
+        agent.config.session_manager.action_required(),
+    ));
+    agent
+        .extension_manager
+        .add_client(
+            calculator_config(),
+            Some(new_working_dir.path().to_path_buf()),
+            replacement.clone(),
+            replacement.get_info().cloned(),
+        )
+        .await;
 
     agent
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
@@ -219,16 +291,55 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::DenyOnce)
         .await
         .is_err());
+
+    loop {
+        tokio::select! {
+            event = stream.next() => {
+                let event = event.expect("resumed turn should still be active")?;
+                if let AgentEvent::Message(message) = event {
+                    messages.push(message);
+                }
+            }
+            _ = async {
+                while calculator.contexts().is_empty() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            } => break,
+        }
+    }
+    assert_eq!(calculator.total(), 0);
     drop(stream);
     let stream = agent
         .resume_state_machine_turn(session_config.clone(), CancellationToken::new())
         .await?
         .expect("persisted confirmation response should resume the state-machine turn");
     messages.extend(stream_messages(stream).await?);
+
+    let hook_log = std::fs::read_to_string(plugin_dir.join("hook.log"))?;
+    let hook_payloads = hook_log
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<serde_json::Result<Vec<_>>>()?;
+    assert_eq!(hook_payloads.len(), 2);
+    assert!(hook_payloads.iter().all(|payload| {
+        payload["working_dir"].as_str() == Some(temp_dir.path().to_string_lossy().as_ref())
+    }));
     assert!(messages.iter().any(|message| message
         .get_tool_response_ids()
         .contains(&confirmation_id.as_str())));
-    assert_eq!(calculator.total(), 1);
+    assert_eq!(
+        (
+            calculator.total(),
+            calculator.contexts().len(),
+            replacement.total(),
+            replacement.contexts().len(),
+        ),
+        (1, 2, 0, 0),
+    );
+    assert!(calculator
+        .contexts()
+        .iter()
+        .all(|context| { context.working_dir.as_deref() == Some(temp_dir.path()) }));
     assert_eq!(api.call_count(), 2);
     assert!(
         api.calls()
@@ -293,6 +404,264 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
 }
 
 #[tokio::test]
+async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
+    install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+
+    api.on("load review")
+        .call("load_skill", json!({ "name": "review" }));
+    api.on("OLD_SKILL_CONTENT").reply("loaded original skill");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("load review"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    let new_working_dir = tempfile::tempdir()?;
+    install_skill(new_working_dir.path(), "NEW_SKILL_CONTENT")?;
+    agent
+        .config
+        .session_manager
+        .update(&session_config.id)
+        .working_dir(new_working_dir.path().to_path_buf())
+        .apply()
+        .await?;
+    agent
+        .update_extension_working_dir(&session_config.id, new_working_dir.path())
+        .await?;
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    let messages = stream_messages(stream).await?;
+
+    assert!(messages.iter().any(|message| {
+        message.content.iter().any(|content| {
+            content.as_tool_response_text().is_some_and(|text| {
+                text.contains("OLD_SKILL_CONTENT") && !text.contains("NEW_SKILL_CONTENT")
+            })
+        })
+    }));
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[1].input_contains("OLD_SKILL_CONTENT"));
+    assert!(!calls[1].input_contains("NEW_SKILL_CONTENT"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, working_dir) = agent_with_dummy_api().await?;
+    install_skill(working_dir.path(), "SKILL_MUST_NOT_LOAD")?;
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+
+    api.on("load review")
+        .call("load_skill", json!({ "name": "review" }));
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("load review"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    let messages = stream_messages(stream).await?;
+
+    assert!(messages.iter().any(|message| {
+        message.content.iter().any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        })
+    }));
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(!calls[1].input_contains("SKILL_MUST_NOT_LOAD"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let agent = Arc::new(agent);
+
+    api.on("add one").call(ADD, value(1));
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            let confirmation_id = confirmation_ids(std::slice::from_ref(&message)).pop();
+            if let Some(confirmation_id) = confirmation_id {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    stream_messages(stream).await?;
+
+    assert_eq!(calculator.total(), 0);
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_config.id, true)
+        .await?;
+    assert!(session
+        .conversation
+        .as_ref()
+        .expect("session conversation")
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        }));
+    assert_eq!(api.call_count(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
+    enable_developer(&agent, &session_id).await?;
+    agent
+        .update_goose_mode(GooseMode::Approve, &session_id)
+        .await?;
+    let agent = Arc::new(agent);
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("!echo should-not-run"),
+            session_config.clone(),
+            true,
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(confirmation_id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break confirmation_id;
+            }
+        }
+    };
+
+    agent.clear_extension_lease_for_test(&session_config.id);
+    agent
+        .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
+        .await?;
+    stream_messages(stream).await?;
+
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_config.id, true)
+        .await?;
+    assert!(session
+        .conversation
+        .as_ref()
+        .expect("session conversation")
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .any(|content| {
+            content
+                .as_tool_response_text()
+                .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
+        }));
+    assert_eq!(api.call_count(), 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn reply_streams_the_turn_and_ends() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("are you there?").reply("still here");
@@ -335,6 +704,7 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
 #[tokio::test]
 async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    enable_developer(&agent, &session_id).await?;
     let session_config = SessionConfig {
         id: session_id,
         schedule_id: None,
@@ -351,6 +721,7 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
         .await?;
     tokio::pin!(stream);
     let mut requested_shell = false;
+    let mut shell_output = false;
     while let Some(event) = stream.next().await {
         if let AgentEvent::Message(message) = event? {
             requested_shell |= message.content.iter().any(|content| {
@@ -360,10 +731,16 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
                         if request.tool_call.as_ref().is_ok_and(|call| call.name == "shell")
                 )
             });
+            shell_output |= message.content.iter().any(|content| {
+                content
+                    .as_tool_response_text()
+                    .is_some_and(|text| text.contains("hello"))
+            });
         }
     }
 
     assert!(requested_shell);
+    assert!(shell_output);
     assert_eq!(api.call_count(), 0);
 
     Ok(())

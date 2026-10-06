@@ -1,8 +1,9 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::is_hidden_extension;
+use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
+use crate::config::extensions::name_to_key;
 use crate::config::{get_all_extensions, get_extension_by_name};
 use crate::session::SessionType;
 use anyhow::Result;
@@ -127,7 +128,7 @@ impl ExtensionManagerClient {
         &self,
         session_id: &str,
         arguments: Option<JsonObject>,
-    ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
+    ) -> Result<CallToolResult, ExtensionManagerToolError> {
         let arguments = arguments.ok_or(ExtensionManagerToolError::MissingParameter {
             param_name: "arguments".to_string(),
         })?;
@@ -135,15 +136,11 @@ impl ExtensionManagerClient {
         let params: ManageExtensionsParams =
             serde_json::from_value(serde_json::Value::Object(arguments))?;
 
-        match self
-            .manage_extensions_impl(session_id, params.action, params.extension_name)
+        self.manage_extensions_impl(session_id, params.action, params.extension_name)
             .await
-        {
-            Ok(content) => Ok(content),
-            Err(error_data) => Err(ExtensionManagerToolError::OperationFailed {
+            .map_err(|error_data| ExtensionManagerToolError::OperationFailed {
                 message: error_data.message.to_string(),
-            }),
-        }
+            })
     }
 
     async fn manage_extensions_impl(
@@ -151,7 +148,7 @@ impl ExtensionManagerClient {
         session_id: &str,
         action: ManageExtensionAction,
         extension_name: String,
-    ) -> Result<Vec<ContentBlock>, ErrorData> {
+    ) -> Result<CallToolResult, ErrorData> {
         let session = self
             .context
             .session_manager
@@ -172,131 +169,106 @@ impl ExtensionManagerClient {
             ));
         }
 
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or_else(|| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    "Extension manager is no longer available".to_string(),
-                    None,
-                )
-            })?;
-
-        if action == ManageExtensionAction::Disable {
-            if crate::config::extensions::name_to_key(&extension_name) == "extensionmanager" {
-                return Err(ErrorData::new(
-                    ErrorCode::INVALID_REQUEST,
-                    "The Extension Manager cannot disable itself. Ask the user to disable it from goose settings instead.".to_string(),
-                    None,
-                ));
-            }
-            return extension_manager
-                .remove_extension(&extension_name)
-                .await
-                .map(|_| {
-                    vec![ContentBlock::text(format!(
+        let (mutation, text) = match action {
+            ManageExtensionAction::Disable => {
+                if name_to_key(&extension_name) == "extensionmanager" {
+                    return Err(ErrorData::new(
+                        ErrorCode::INVALID_REQUEST,
+                        "The Extension Manager cannot disable itself. Ask the user to disable it from goose settings instead.".to_string(),
+                        None,
+                    ));
+                }
+                (
+                    ExtensionMutation::Disable {
+                        name: extension_name.clone(),
+                    },
+                    format!(
                         "The extension '{}' has been disabled successfully",
                         extension_name
-                    ))]
-                })
-                .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None));
-        }
-
-        let config = match get_extension_by_name(&extension_name) {
-            Some(config) => config,
-            None => {
-                return Err(ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
+                    ),
+                )
+            }
+            ManageExtensionAction::Enable => {
+                if get_extension_by_name(&extension_name).is_none() {
+                    return Err(ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!(
+                            "Extension '{}' not found. Please check the extension name and try again.",
+                            extension_name
+                        ),
+                        None,
+                    ));
+                }
+                (
+                    ExtensionMutation::Enable {
+                        name: extension_name.clone(),
+                    },
                     format!(
-                        "Extension '{}' not found. Please check the extension name and try again.",
+                        "The extension '{}' has been installed successfully",
                         extension_name
                     ),
-                    None,
-                ));
+                )
             }
         };
-
-        extension_manager
-            .add_extension(config, None, None, None)
-            .await
-            .map(|_| {
-                vec![ContentBlock::text(format!(
-                    "The extension '{}' has been installed successfully",
-                    extension_name
-                ))]
-            })
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))
+        let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
+        mutation.attach(&mut result);
+        Ok(result)
     }
 
     async fn handle_list_resources(
         &self,
-        session_id: &str,
+        ctx: &ToolCallContext,
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                let params = arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                match extension_manager
-                    .list_resources(
-                        session_id,
-                        params,
-                        tokio_util::sync::CancellationToken::default(),
-                    )
-                    .await
-                {
-                    Ok(content) => Ok(content),
-                    Err(e) => Err(ExtensionManagerToolError::OperationFailed {
-                        message: format!("Failed to list resources: {}", e.message),
-                    }),
-                }
-            } else {
-                Err(ExtensionManagerToolError::ManagerUnavailable)
-            }
+        let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
+        let result = if let Some(lease) = ctx.extension_lease() {
+            lease
+                .list_resources(params, CancellationToken::default())
+                .await
         } else {
-            Err(ExtensionManagerToolError::ManagerUnavailable)
-        }
+            let manager = self
+                .context
+                .extension_manager
+                .as_ref()
+                .and_then(|manager| manager.upgrade())
+                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
+            manager
+                .list_resources(&ctx.session_id, params, CancellationToken::default())
+                .await
+        };
+        result.map_err(|error| ExtensionManagerToolError::OperationFailed {
+            message: format!("Failed to list resources: {}", error.message),
+        })
     }
 
     async fn handle_read_resource(
         &self,
-        session_id: &str,
+        ctx: &ToolCallContext,
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                let params = arguments
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                match extension_manager
-                    .read_resource_tool(
-                        session_id,
-                        params,
-                        tokio_util::sync::CancellationToken::default(),
-                    )
-                    .await
-                {
-                    Ok(content) => Ok(content),
-                    Err(e) => Err(ExtensionManagerToolError::OperationFailed {
-                        message: format!("Failed to read resource: {}", e.message),
-                    }),
-                }
-            } else {
-                Err(ExtensionManagerToolError::ManagerUnavailable)
-            }
+        let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
+        let result = if let Some(lease) = ctx.extension_lease() {
+            lease
+                .read_resource_tool(params, CancellationToken::default())
+                .await
         } else {
-            Err(ExtensionManagerToolError::ManagerUnavailable)
-        }
+            let manager = self
+                .context
+                .extension_manager
+                .as_ref()
+                .and_then(|manager| manager.upgrade())
+                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
+            manager
+                .read_resource_tool(&ctx.session_id, params, CancellationToken::default())
+                .await
+        };
+        result.map_err(|error| ExtensionManagerToolError::OperationFailed {
+            message: format!("Failed to read resource: {}", error.message),
+        })
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn get_tools(&self, include_manage_extensions: bool) -> Vec<Tool> {
+    fn get_tools(&self, include_manage_extensions: bool) -> Vec<Tool> {
         let mut tools = vec![Tool::new(
                 SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME.to_string(),
                 "Searches for additional extensions available to help complete tasks.
@@ -348,13 +320,10 @@ impl ExtensionManagerClient {
             );
         }
 
-        if let Some(weak_ref) = &self.context.extension_manager {
-            if let Some(extension_manager) = weak_ref.upgrade() {
-                if extension_manager.supports_resources().await {
-                    tools.extend([
-                        Tool::new(
-                            LIST_RESOURCES_TOOL_NAME.to_string(),
-                            indoc! {r#"
+        tools.extend([
+            Tool::new(
+                LIST_RESOURCES_TOOL_NAME.to_string(),
+                indoc! {r#"
             List resources from an extension(s).
 
             Resources allow extensions to share data that provide context to LLMs, such as
@@ -362,25 +331,25 @@ impl ExtensionManagerClient {
             in the provided extension, and returns a list for the user to browse. If no extension
             is provided, the tool will search all extensions for the resource.
         "#}
-                            .to_string(),
-                            Arc::new(
-                                serde_json::to_value(schema_for!(ListResourcesParams))
-                                    .expect("Failed to serialize schema")
-                                    .as_object()
-                                    .expect("Schema must be an object")
-                                    .clone(),
-                            ),
-                        )
-                        .annotate(ToolAnnotations::from_raw(
-                            Some("List resources".to_string()),
-                            Some(true),
-                            Some(false),
-                            Some(false),
-                            Some(false),
-                        )),
-                        Tool::new(
-                            READ_RESOURCE_TOOL_NAME.to_string(),
-                            indoc! {r#"
+                .to_string(),
+                Arc::new(
+                    serde_json::to_value(schema_for!(ListResourcesParams))
+                        .expect("Failed to serialize schema")
+                        .as_object()
+                        .expect("Schema must be an object")
+                        .clone(),
+                ),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("List resources".to_string()),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+            )),
+            Tool::new(
+                READ_RESOURCE_TOOL_NAME.to_string(),
+                indoc! {r#"
             Read a resource from a specific extension.
 
             Resources allow extensions to share data that provide context to LLMs, such as
@@ -389,26 +358,23 @@ impl ExtensionManagerClient {
             URI, call `list_resources` first — its output labels each resource with its
             extension.
         "#}
-                            .to_string(),
-                            Arc::new(
-                                serde_json::to_value(schema_for!(ReadResourceParams))
-                                    .expect("Failed to serialize schema")
-                                    .as_object()
-                                    .expect("Schema must be an object")
-                                    .clone(),
-                            ),
-                        )
-                        .annotate(ToolAnnotations::from_raw(
-                            Some("Read a resource".to_string()),
-                            Some(true),
-                            Some(false),
-                            Some(false),
-                            Some(false),
-                        )),
-                    ]);
-                }
-            }
-        }
+                .to_string(),
+                Arc::new(
+                    serde_json::to_value(schema_for!(ReadResourceParams))
+                        .expect("Failed to serialize schema")
+                        .as_object()
+                        .expect("Schema must be an object")
+                        .clone(),
+                ),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Read a resource".to_string()),
+                Some(true),
+                Some(false),
+                Some(false),
+                Some(false),
+            )),
+        ]);
 
         tools
     }
@@ -449,7 +415,7 @@ impl McpClientTrait for ExtensionManagerClient {
             .is_ok_and(|session| session.session_type != SessionType::SubAgent);
 
         Ok(ListToolsResult {
-            tools: self.get_tools(can_manage_extensions).await,
+            tools: self.get_tools(can_manage_extensions),
             next_cursor: None,
             meta: None,
             ..Default::default()
@@ -469,10 +435,15 @@ impl McpClientTrait for ExtensionManagerClient {
                 self.handle_search_available_extensions().await
             }
             MANAGE_EXTENSIONS_TOOL_NAME => {
-                self.handle_manage_extensions(session_id, arguments).await
+                return Ok(self
+                    .handle_manage_extensions(session_id, arguments)
+                    .await
+                    .unwrap_or_else(|error| {
+                        CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+                    }));
             }
-            LIST_RESOURCES_TOOL_NAME => self.handle_list_resources(session_id, arguments).await,
-            READ_RESOURCE_TOOL_NAME => self.handle_read_resource(session_id, arguments).await,
+            LIST_RESOURCES_TOOL_NAME => self.handle_list_resources(ctx, arguments).await,
+            READ_RESOURCE_TOOL_NAME => self.handle_read_resource(ctx, arguments).await,
             _ => Err(ExtensionManagerToolError::UnknownTool {
                 tool_name: name.to_string(),
             }),
@@ -572,6 +543,7 @@ mod tests {
     fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
             extension_manager: Some(Arc::downgrade(manager)),
+            provider: manager.get_provider().clone(),
             session_manager: manager.get_context().session_manager.clone(),
             scheduler: None,
             session: None,
@@ -626,7 +598,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn subagent_direct_calls_cannot_enable_or_disable_extensions() {
+    async fn manage_extensions_emits_a_mutation_and_refuses_subagents() {
         let temp_dir = tempfile::tempdir().unwrap();
         let manager = Arc::new(ExtensionManager::new_without_provider(
             temp_dir.path().to_path_buf(),
@@ -635,21 +607,34 @@ mod tests {
         let user_id = create_session(&manager, SessionType::User).await;
         let subagent_id = create_session(&manager, SessionType::SubAgent).await;
 
-        let enable = manage(&client, &subagent_id, "enable").await;
+        let mut enable = manage(&client, &subagent_id, "enable").await;
         assert!(enable.is_error.unwrap_or(false));
-        assert!(!manager.is_extension_enabled("developer").await);
+        assert_eq!(ExtensionMutation::take(&mut enable), None);
 
-        let user_enable = manage(&client, &user_id, "enable").await;
+        let mut user_enable = manage(&client, &user_id, "enable").await;
         assert!(!user_enable.is_error.unwrap_or(false));
-        assert!(manager.is_extension_enabled("developer").await);
+        assert_eq!(
+            ExtensionMutation::take(&mut user_enable),
+            Some(ExtensionMutation::Enable {
+                name: "developer".to_string()
+            })
+        );
+        assert!(
+            user_enable.meta.is_none(),
+            "the mutation is for the loop, not the model"
+        );
+        assert!(
+            !manager.is_extension_enabled("developer").await,
+            "the tool declares the change; the loop applies it"
+        );
 
-        let disable = manage(&client, &subagent_id, "disable").await;
-        assert!(disable.is_error.unwrap_or(false));
-        assert!(manager.is_extension_enabled("developer").await);
-
-        let user_disable = manage(&client, &user_id, "disable").await;
-        assert!(!user_disable.is_error.unwrap_or(false));
-        assert!(!manager.is_extension_enabled("developer").await);
+        let mut user_disable = manage(&client, &user_id, "disable").await;
+        assert_eq!(
+            ExtensionMutation::take(&mut user_disable),
+            Some(ExtensionMutation::Disable {
+                name: "developer".to_string()
+            })
+        );
     }
 
     #[tokio::test]

@@ -1343,6 +1343,7 @@ impl CliSession {
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
         let mut stream_error = None;
+        let mut failed_before_stop = false;
 
         use futures::StreamExt;
         loop {
@@ -1508,6 +1509,7 @@ impl CliSession {
                             if interactive || !is_stream_json_mode {
                                 handle_agent_error(&e, is_stream_json_mode);
                             }
+                            failed_before_stop = !cancel_token_clone.is_cancelled();
                             cancel_token_clone.cancel();
                             drop(stream);
                             if let Err(e) = self.handle_interrupted_messages(false).await {
@@ -1534,6 +1536,12 @@ impl CliSession {
                     break;
                 }
             }
+        }
+
+        if cancel_token_clone.is_cancelled() && !failed_before_stop {
+            self.agent
+                .cancel_foreground_subagents(&self.session_id)
+                .await;
         }
 
         let terminal_error = headless_run_error(

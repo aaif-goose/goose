@@ -2384,6 +2384,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chats werden geladen…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Erstellt"
   },
@@ -3827,9 +3830,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "In neuem Fenster öffnen"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Verschlüsselten Nostr-Link teilen"
-  },
   "sessions.cancel": {
     "defaultMessage": "Abbrechen"
   },
@@ -3869,21 +3869,6 @@
   "sessions.import": {
     "defaultMessage": "Sitzung importieren"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Link importieren"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Fügen Sie einen Goose-Nostr-Freigabelink ein, um die Sitzung abzurufen, zu entschlüsseln und zu importieren."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nostr-Sitzung importieren"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Wird importiert..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP-Sitzungen einschließen"
   },
@@ -3911,12 +3896,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Verlauf durchsuchen..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Jeder mit diesem Link kann die Sitzung abrufen und entschlüsseln. Behandeln Sie ihn wie ein Geheimnis."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Verschlüsselter Nostr-Freigabelink"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "In die Zwischenablage kopiert"
   },
@@ -3943,12 +3922,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sitzung erfolgreich importiert"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Verschlüsselter Nostr-Freigabelink erstellt"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr-Freigabelink konnte nicht erstellt werden: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Sitzungsbeschreibung konnte nicht aktualisiert werden: {error}"

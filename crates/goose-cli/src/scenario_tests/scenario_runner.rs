@@ -211,23 +211,6 @@ where
         GoosePlatform::GooseCli,
     );
     let agent = Agent::with_config(agent_config);
-    agent
-        .extension_manager
-        .add_client(
-            "weather_extension".to_string(),
-            ExtensionConfig::Builtin {
-                name: "".to_string(),
-                display_name: None,
-                description: "".to_string(),
-                timeout: None,
-                bundled: None,
-                available_tools: vec![],
-            },
-            Arc::new(mock_client),
-            None,
-        )
-        .await;
-
     let session = agent
         .config
         .session_manager
@@ -238,6 +221,22 @@ where
             GooseMode::default(),
         )
         .await?;
+    agent
+        .extension_manager
+        .add_client(
+            ExtensionConfig::Builtin {
+                name: "weather_extension".to_string(),
+                display_name: None,
+                description: "".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+            Some(session.working_dir.clone()),
+            Arc::new(mock_client),
+            None,
+        )
+        .await;
 
     let scenario_model_config =
         goose::model_config::model_config_from_user_config(&factory_name, config.model_name)?;

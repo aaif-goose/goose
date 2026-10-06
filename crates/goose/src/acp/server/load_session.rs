@@ -427,9 +427,9 @@ impl GooseAcpAgent {
             .internal_err_ctx("Failed to reload session")?;
 
         agent
-            .extension_manager
-            .update_working_dir(&session.working_dir)
-            .await;
+            .update_extension_working_dir(&session.id, &session.working_dir)
+            .await
+            .internal_err_ctx("Failed to update extension working directory")?;
 
         let (mode_state, config_options) = build_session_setup_config(
             &self.provider_inventory,
