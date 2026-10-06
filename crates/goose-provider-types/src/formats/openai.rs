@@ -1723,9 +1723,7 @@ pub fn create_request_for_model_with_options(
     format_options: OpenAiFormatOptions,
 ) -> anyhow::Result<Value, Error> {
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
-    let is_reasoning_model = model_config
-        .reasoning
-        .unwrap_or_else(|| is_openai_responses_model(&model_name));
+    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
     let reasoning_effort = if is_reasoning_model {
         model_config

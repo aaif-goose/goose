@@ -6,8 +6,7 @@ use crate::documents::{
 };
 use crate::errors::ProviderError;
 use crate::formats::openai::{
-    extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
-    sanitize_function_name,
+    extract_reasoning_effort, openai_reasoning_effort_for_thinking, sanitize_function_name,
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
@@ -655,9 +654,7 @@ pub fn create_responses_request_for_model(
     // All models routed here are responses-capable; temperature is rejected
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
-    let is_reasoning_model = model_config
-        .reasoning
-        .unwrap_or_else(|| is_openai_responses_model(&model_name));
+    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let reasoning_effort = if is_reasoning_model {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {

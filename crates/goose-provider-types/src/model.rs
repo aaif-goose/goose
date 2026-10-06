@@ -286,7 +286,16 @@ impl ModelConfig {
     }
 
     pub fn is_openai_reasoning_model(&self) -> bool {
-        is_openai_responses_model(&self.model_name)
+        self.openai_reasoning_for_model(&self.model_name)
+    }
+
+    pub fn openai_reasoning_for_model(&self, model_name: &str) -> bool {
+        self.reasoning
+            .or_else(|| {
+                crate::canonical::maybe_get_canonical_model("openai", model_name)
+                    .and_then(|model| model.reasoning)
+            })
+            .unwrap_or(false)
     }
 
     pub fn is_reasoning_model(&self) -> bool {
@@ -348,7 +357,9 @@ impl ModelConfig {
     }
 
     pub fn normalize_effort_suffix(&mut self) {
-        if !self.is_openai_reasoning_model() && !supports_xai_reasoning_effort(&self.model_name) {
+        if !is_openai_responses_model(&self.model_name)
+            && !supports_xai_reasoning_effort(&self.model_name)
+        {
             return;
         }
         let parts: Vec<&str> = self.model_name.split('-').collect();
@@ -961,41 +972,23 @@ mod tests {
         ];
 
         #[test]
-        fn bare_reasoning_models() {
+        fn uses_catalog_instead_of_model_family() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new("o1").is_openai_reasoning_model());
-            assert!(ModelConfig::new("o1-preview").is_openai_reasoning_model());
-            assert!(ModelConfig::new("o3").is_openai_reasoning_model());
             assert!(ModelConfig::new("o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("gpt-5").is_openai_reasoning_model());
-            assert!(ModelConfig::new("gpt-5-3-codex").is_openai_reasoning_model());
-        }
-
-        #[test]
-        fn goose_prefixed_reasoning_models() {
-            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new("goose-o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("goose-o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("goose-gpt-5").is_openai_reasoning_model());
-        }
-
-        #[test]
-        fn databricks_prefixed_reasoning_models() {
-            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(ModelConfig::new("databricks-o3-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("databricks-o4-mini").is_openai_reasoning_model());
-            assert!(ModelConfig::new("databricks-gpt-5").is_openai_reasoning_model());
-        }
-
-        #[test]
-        fn non_reasoning_models() {
-            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
-            assert!(!ModelConfig::new("claude-sonnet-4").is_openai_reasoning_model());
             assert!(!ModelConfig::new("gpt-4o").is_openai_reasoning_model());
-            assert!(!ModelConfig::new("databricks-claude-sonnet-4").is_openai_reasoning_model());
-            assert!(!ModelConfig::new("goose-claude-sonnet-4").is_openai_reasoning_model());
-            assert!(!ModelConfig::new("llama-3-70b").is_openai_reasoning_model());
+            assert!(!ModelConfig::new("gpt-5-unknown-deployment").is_openai_reasoning_model());
+            assert!(!ModelConfig::new("o99-unknown").is_openai_reasoning_model());
+        }
+
+        #[test]
+        fn explicit_reasoning_overrides_catalog_and_unknown_names() {
+            let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
+            let mut config = ModelConfig::new("o3-mini");
+            config.reasoning = Some(false);
+            assert!(!config.is_openai_reasoning_model());
+            config.model_name = "future-model".to_string();
+            config.reasoning = Some(true);
+            assert!(config.is_openai_reasoning_model());
         }
     }
 

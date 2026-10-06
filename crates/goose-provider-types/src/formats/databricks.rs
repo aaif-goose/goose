@@ -11,8 +11,8 @@ use crate::documents::{
     ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
 };
 use crate::formats::openai::{
-    extract_reasoning_effort, is_openai_responses_model, is_valid_function_name,
-    openai_reasoning_effort_for_thinking, sanitize_function_name, validate_tool_schemas,
+    extract_reasoning_effort, is_valid_function_name, openai_reasoning_effort_for_thinking,
+    sanitize_function_name, validate_tool_schemas,
 };
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::mcp_utils::extract_text_from_resource;
@@ -533,7 +533,7 @@ pub fn create_request_for_provider(
     image_format: &ImageFormat,
 ) -> anyhow::Result<Value, Error> {
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(&model_config.model_name);
-    let is_openai_reasoning_model = is_openai_responses_model(&model_name);
+    let is_openai_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let reasoning_effort = if is_openai_reasoning_model {
         model_config
             .thinking_effort()
