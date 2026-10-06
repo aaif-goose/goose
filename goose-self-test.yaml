@@ -246,7 +246,7 @@ prompt: |
 
   ### Multiple Delegates Test
   {% if parallel_tests == "true" %}
-  **Important**: Delegates run in serial, even when called in the same tool call message.
+  **Important**: Delegates called in the same tool call message run concurrently.
 
   Make these 3 delegate calls in a single message:
   1. `delegate(instructions: "Sleep 2 seconds, then create /tmp/sync_parallel_1.txt with timestamp from 'date +%H:%M:%S'")`
@@ -254,7 +254,7 @@ prompt: |
   3. `delegate(instructions: "Sleep 2 seconds, then create /tmp/sync_parallel_3.txt with timestamp from 'date +%H:%M:%S'")`
 
   After completion, check timestamps: `cat /tmp/sync_parallel_*.txt`
-  **Expected**: Timestamps should be ~6+ seconds apart (sequential execution).
+  **Expected**: Timestamps should be within ~5 seconds of each other (concurrent execution).
 
   Document the result to validate the execution behavior.
   {% endif %}
