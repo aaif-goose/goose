@@ -299,7 +299,7 @@ impl ModelConfig {
         }
         self.reasoning
             .or_else(|| canonical.and_then(|model| model.reasoning))
-            .unwrap_or(true)
+            .unwrap_or_else(|| is_openai_responses_model(model_name))
     }
 
     pub fn is_reasoning_model(&self) -> bool {
@@ -976,13 +976,13 @@ mod tests {
         ];
 
         #[test]
-        fn uses_catalog_and_defaults_unknown_models_to_reasoning() {
+        fn uses_catalog_with_reasoning_family_fallback() {
             let _guard = env_lock::lock_env(ENV_LOCK_KEYS);
             assert!(ModelConfig::new("o3-mini").is_openai_reasoning_model());
             assert!(!ModelConfig::new("gpt-4o").is_openai_reasoning_model());
             assert!(ModelConfig::new("gpt-5-unknown-deployment").is_openai_reasoning_model());
             assert!(ModelConfig::new("o99-unknown").is_openai_reasoning_model());
-            assert!(ModelConfig::new("future-model").is_openai_reasoning_model());
+            assert!(!ModelConfig::new("future-model").is_openai_reasoning_model());
         }
 
         #[test]

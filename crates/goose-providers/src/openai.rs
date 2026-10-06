@@ -278,8 +278,17 @@ impl OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let mut request_config = model_config.clone();
+        if self.native_openai && request_config.reasoning.is_none() {
+            let canonical = goose_provider_types::canonical::maybe_get_canonical_model(
+                "openai",
+                capability_model,
+            );
+            request_config.reasoning =
+                Some(canonical.and_then(|model| model.reasoning).unwrap_or(true));
+        }
         let mut payload = create_responses_request_for_model(
-            model_config,
+            &request_config,
             wire_model,
             capability_model,
             system,

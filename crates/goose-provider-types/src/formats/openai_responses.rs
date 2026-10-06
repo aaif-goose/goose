@@ -698,14 +698,25 @@ pub fn create_responses_request_for_model(
         "store": store,
     });
 
-    if reasoning_effort.is_some() || reasoning_mode.is_some() {
-        let mut reasoning = serde_json::Map::new();
+    let mut reasoning = model_config
+        .request_params
+        .as_ref()
+        .and_then(|params| params.get("reasoning"))
+        .map(|value| {
+            value
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow!("reasoning must be an object"))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    if !reasoning.is_empty() || reasoning_effort.is_some() || reasoning_mode.is_some() {
         if let Some(effort) = reasoning_effort {
-            reasoning.insert("effort".to_string(), json!(effort));
-            reasoning.insert("summary".to_string(), json!("auto"));
+            reasoning.entry("effort").or_insert_with(|| json!(effort));
+            reasoning.entry("summary").or_insert_with(|| json!("auto"));
         }
         if let Some(mode) = reasoning_mode {
-            reasoning.insert("mode".to_string(), json!(mode));
+            reasoning.entry("mode").or_insert_with(|| json!(mode));
         }
         payload
             .as_object_mut()
@@ -2215,6 +2226,71 @@ mod tests {
             result["max_output_tokens"],
             model_config.max_tokens.unwrap()
         );
+    }
+
+    #[test]
+    fn unknown_compatible_alias_preserves_temperature() {
+        let mut config = ModelConfig::new("private-model")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High);
+        config.temperature = Some(0.5);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert!(payload.get("reasoning").is_none());
+        assert_eq!(payload["temperature"], 0.5);
+    }
+
+    #[test]
+    fn native_reasoning_object_takes_precedence_over_aliases_and_thinking_effort() {
+        let config = ModelConfig::new("gpt-5.4")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::Low)
+            .with_merged_request_params(std::collections::HashMap::from([
+                ("reasoning_effort".to_string(), json!("medium")),
+                ("reasoning_mode".to_string(), json!("standard")),
+                (
+                    "reasoning".to_string(),
+                    json!({
+                        "effort": "high", "summary": "detailed", "mode": "pro"
+                    }),
+                ),
+            ]));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(
+            payload["reasoning"],
+            json!({
+                "effort": "high", "summary": "detailed", "mode": "pro"
+            })
+        );
+    }
+
+    #[test]
+    fn native_reasoning_object_merges_inferred_effort_without_losing_summary() {
+        let config = ModelConfig::new("gpt-5.4")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High)
+            .with_merged_request_params(std::collections::HashMap::from([(
+                "reasoning".to_string(),
+                json!({"summary": "detailed"}),
+            )]));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"]["effort"], "high");
+        assert_eq!(payload["reasoning"]["summary"], "detailed");
+    }
+
+    #[test]
+    fn native_reasoning_object_is_forwarded_without_inferred_effort() {
+        let config =
+            ModelConfig::new("gpt-4o").with_merged_request_params(std::collections::HashMap::from(
+                [("reasoning".to_string(), json!({"summary": "detailed"}))],
+            ));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"], json!({"summary": "detailed"}));
+    }
+
+    #[test]
+    fn native_reasoning_parameter_must_be_an_object() {
+        let config = ModelConfig::new("gpt-5.4").with_merged_request_params(
+            std::collections::HashMap::from([("reasoning".to_string(), json!("high"))]),
+        );
+        let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
+        assert!(error.to_string().contains("reasoning must be an object"));
     }
 
     #[test]
