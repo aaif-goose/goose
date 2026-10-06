@@ -232,7 +232,6 @@ where
                 bundled: None,
                 available_tools: vec![],
             },
-            Some(session.working_dir.clone()),
             Arc::new(mock_client),
             None,
         )

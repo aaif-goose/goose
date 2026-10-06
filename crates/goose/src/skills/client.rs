@@ -1,6 +1,5 @@
 use super::discover_skills_with_config;
 use super::loaded_skill_context_with_args;
-use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use crate::config::Config;
@@ -18,30 +17,24 @@ pub static EXTENSION_NAME: &str = "skills";
 
 pub struct SkillsClient {
     info: InitializeResult,
-    working_dir: PathBuf,
     exclude_builtin_skills: bool,
     config: &'static Config,
 }
 
-impl SkillsClient {
-    pub fn new(context: PlatformExtensionContext) -> anyhow::Result<Self> {
-        let working_dir = context
-            .session
-            .as_ref()
-            .map(|s| s.working_dir.clone())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
+impl Default for SkillsClient {
+    fn default() -> Self {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Skills"));
 
-        Ok(Self {
+        Self {
             info,
-            working_dir,
             exclude_builtin_skills: false,
             config: Config::global(),
-        })
+        }
     }
+}
 
+impl SkillsClient {
     /// Controls whether Goose's bundled skills are exposed by this client.
     /// Bundled skills are enabled by default.
     pub fn with_builtin_skills(mut self, enabled: bool) -> Self {
@@ -55,8 +48,8 @@ impl SkillsClient {
         self
     }
 
-    fn discover_skills(&self) -> Vec<SourceEntry> {
-        discover_skills_with_config(Some(&self.working_dir), self.config)
+    fn discover_skills(&self, working_dir: &Path) -> Vec<SourceEntry> {
+        discover_skills_with_config(Some(working_dir), self.config)
             .into_iter()
             .filter(|skill| {
                 !self.exclude_builtin_skills || skill.source_type != SourceType::BuiltinSkill
@@ -111,7 +104,7 @@ impl McpClientTrait for SkillsClient {
 
     async fn call_tool(
         &self,
-        _ctx: &ToolCallContext,
+        ctx: &ToolCallContext,
         name: &str,
         arguments: Option<JsonObject>,
         _cancellation_token: CancellationToken,
@@ -139,7 +132,11 @@ impl McpClientTrait for SkillsClient {
             .and_then(|args| args.get("args"))
             .and_then(|v| v.as_str());
 
-        let skills = self.discover_skills();
+        let working_dir = ctx
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let skills = self.discover_skills(&working_dir);
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
             return match loaded_skill_context_with_args(skill, args) {
@@ -243,8 +240,8 @@ impl McpClientTrait for SkillsClient {
         Some(&self.info)
     }
 
-    fn get_instructions(&self) -> Option<String> {
-        let sources = self.discover_skills();
+    async fn get_instructions(&self, _session_id: &str, working_dir: &Path) -> Option<String> {
+        let sources = self.discover_skills(working_dir);
         let mut skills: Vec<&SourceEntry> = sources
             .iter()
             .filter(|s| {
@@ -278,7 +275,6 @@ mod tests {
     use crate::config::Config;
     use std::collections::HashMap;
     use std::fs;
-    use std::sync::Arc;
     use tempfile::TempDir;
 
     fn write_plugin_skill(
@@ -326,21 +322,9 @@ mod tests {
                 )]),
             )
             .unwrap();
-        let session = Arc::new(crate::session::Session {
-            working_dir: project.to_path_buf(),
-            ..crate::session::Session::default()
-        });
-        SkillsClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
-            scheduler: None,
-            session: Some(session),
-            use_login_shell_path: false,
-        })
-        .unwrap()
-        .with_builtin_skills(false)
-        .with_config(config)
+        SkillsClient::default()
+            .with_builtin_skills(false)
+            .with_config(config)
     }
 
     fn result_text(result: &CallToolResult) -> &str {
@@ -364,10 +348,12 @@ mod tests {
         let client = test_client(project.path(), "disabled-plugin", false);
 
         assert!(client
-            .get_instructions()
+            .get_instructions("test", project.path())
+            .await
             .is_none_or(|instructions| !instructions.contains("disabled-plugin-skill")));
 
-        let ctx = ToolCallContext::new("test".to_string(), None, None);
+        let ctx =
+            ToolCallContext::new("test".to_string(), Some(project.path().to_path_buf()), None);
         let args = serde_json::from_value(serde_json::json!({
             "name": "disabled-plugin-skill"
         }))
@@ -404,13 +390,17 @@ mod tests {
         write_open_plugin_manifest(project.path(), "enabled-plugin");
         let client = test_client(project.path(), "enabled-plugin", true);
 
-        let instructions = client.get_instructions().unwrap();
+        let instructions = client
+            .get_instructions("test", project.path())
+            .await
+            .unwrap();
         assert!(instructions.contains("enabled-plugin-skill"));
         assert!(instructions.contains("Enabled plugin metadata"));
         assert!(instructions.contains("custom-plugin-skill"));
         assert!(instructions.contains("Custom plugin metadata"));
 
-        let ctx = ToolCallContext::new("test".to_string(), None, None);
+        let ctx =
+            ToolCallContext::new("test".to_string(), Some(project.path().to_path_buf()), None);
         let args = serde_json::from_value(serde_json::json!({
             "name": "custom-plugin-skill"
         }))
@@ -447,7 +437,8 @@ mod tests {
         std::os::unix::fs::symlink(&external_plugin, &plugin_link).unwrap();
         let client = test_client(project.path(), "symlinked-plugin", true);
 
-        let ctx = ToolCallContext::new("test".to_string(), None, None);
+        let ctx =
+            ToolCallContext::new("test".to_string(), Some(project.path().to_path_buf()), None);
         let args = serde_json::from_value(serde_json::json!({
             "name": "symlinked-skill/guide.md"
         }))
@@ -474,27 +465,18 @@ mod tests {
         fs::create_dir(skill_dir.join("nested")).unwrap();
         fs::write(skill_dir.join("nested/guide.md"), "Nested guidance.").unwrap();
 
-        let session = std::sync::Arc::new(crate::session::Session {
-            working_dir: temp_dir.path().to_path_buf(),
-            ..crate::session::Session::default()
-        });
-        let client = SkillsClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
-            scheduler: None,
-            session: Some(session),
-            use_login_shell_path: false,
-        })
-        .unwrap()
-        .with_builtin_skills(false);
+        let client = SkillsClient::default().with_builtin_skills(false);
 
         assert!(client
-            .discover_skills()
+            .discover_skills(temp_dir.path())
             .iter()
             .all(|skill| skill.source_type != SourceType::BuiltinSkill));
 
-        let ctx = ToolCallContext::new("test".to_string(), None, None);
+        let ctx = ToolCallContext::new(
+            "test".to_string(),
+            Some(temp_dir.path().to_path_buf()),
+            None,
+        );
         let args: JsonObject =
             serde_json::from_value(serde_json::json!({"name": "my-skill"})).unwrap();
         let result = client
@@ -528,15 +510,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_skill_not_found_returns_error() {
-        let client = SkillsClient::new(PlatformExtensionContext {
-            extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
-            session_manager: Arc::new(crate::session::SessionManager::instance()),
-            scheduler: None,
-            session: None,
-            use_login_shell_path: false,
-        })
-        .unwrap();
+        let client = SkillsClient::default();
 
         let ctx = ToolCallContext::new("test".to_string(), None, None);
         let args: JsonObject =
