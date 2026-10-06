@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
 use crate::recipe::Recipe;
+use crate::session::GoalState;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
 use super::final_output_tool::FinalOutputTool;
@@ -528,9 +529,9 @@ impl Agent {
         session_id: &str,
     ) -> Result<Option<Message>> {
         let session_manager = &self.config.session_manager;
+        let mut state = GoalState::of(&session_manager.get_session(session_id, false).await?);
         if params_str.is_empty() {
-            let current = session_manager.get_session(session_id, false).await?.goal;
-            let text = match current {
+            let text = match state.goal {
                 Some(goal) => format!("Current goal: {goal}"),
                 None => "No goal set. Use `/goal <description>` to set one.".to_string(),
             };
@@ -538,10 +539,9 @@ impl Agent {
         }
 
         if is_clear_goal_param(params_str) {
+            state.goal = None;
             session_manager
-                .update(session_id)
-                .goal(None)
-                .apply()
+                .set_extension_state(session_id, &state)
                 .await?;
             return Ok(Some(
                 Message::assistant().with_text("Goal cleared. The agent will finish normally."),
@@ -549,10 +549,9 @@ impl Agent {
         }
 
         let goal = params_str.to_string();
+        state.goal = Some(goal.clone());
         session_manager
-            .update(session_id)
-            .goal(Some(goal.clone()))
-            .apply()
+            .set_extension_state(session_id, &state)
             .await?;
         Ok(Some(Message::assistant().with_text(format!(
             "Goal set. The agent will verify this goal is met before finishing:\n\n> {goal}"
@@ -565,9 +564,9 @@ impl Agent {
         session_id: &str,
     ) -> Result<Option<Message>> {
         let session_manager = &self.config.session_manager;
+        let mut state = GoalState::of(&session_manager.get_session(session_id, false).await?);
         if params_str.is_empty() {
-            let current = session_manager.get_session(session_id, false).await?.grind;
-            let text = match current {
+            let text = match state.grind {
                 Some(goal) => format!("Current grind goal: {goal}"),
                 None => "No grind goal set. Use `/grind <description>` to set one.".to_string(),
             };
@@ -575,10 +574,9 @@ impl Agent {
         }
 
         if is_clear_goal_param(params_str) {
+            state.grind = None;
             session_manager
-                .update(session_id)
-                .grind(None)
-                .apply()
+                .set_extension_state(session_id, &state)
                 .await?;
             return Ok(Some(
                 Message::assistant().with_text("Grind cleared. The agent will finish normally."),
@@ -586,10 +584,9 @@ impl Agent {
         }
 
         let goal = params_str.to_string();
+        state.grind = Some(goal.clone());
         session_manager
-            .update(session_id)
-            .grind(Some(goal.clone()))
-            .apply()
+            .set_extension_state(session_id, &state)
             .await?;
         Ok(Some(Message::assistant().with_text(format!(
             "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {goal}"

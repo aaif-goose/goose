@@ -2,6 +2,8 @@ use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::providers::base::ProviderUsage;
 use crate::recipe::Recipe;
+use crate::session::ExtensionState;
+use anyhow::Result;
 use goose_agent::operation::{ConversationEffect, MachineEffect};
 
 pub enum GooseEffect {
@@ -11,9 +13,22 @@ pub enum GooseEffect {
         usage: Option<ProviderUsage>,
     },
     SetRecipe(Box<Option<Recipe>>),
-    SetGoal(Option<String>),
-    SetGrind(Option<String>),
+    SetExtensionState {
+        extension_name: &'static str,
+        version: &'static str,
+        value: serde_json::Value,
+    },
     RecordUsage(ProviderUsage),
+}
+
+impl GooseEffect {
+    pub fn extension_state<S: ExtensionState>(state: &S) -> Result<Self> {
+        Ok(GooseEffect::SetExtensionState {
+            extension_name: S::EXTENSION_NAME,
+            version: S::VERSION,
+            value: state.to_value()?,
+        })
+    }
 }
 
 impl MachineEffect for GooseEffect {

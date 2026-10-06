@@ -10,7 +10,7 @@ use crate::recipe::local_recipes::get_recipe_library_dir;
 use crate::recipe::validate_recipe::strip_unreferenced_parameters;
 use crate::recipe::Recipe;
 use crate::session::export_markdown::export_session_to_markdown;
-use crate::session::extension_data::ExtensionData;
+use crate::session::extension_data::{ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
@@ -105,10 +105,6 @@ pub struct Session {
     #[serde(default)]
     pub system_prompt_extras: IndexMap<String, String>,
     #[serde(default)]
-    pub goal: Option<String>,
-    #[serde(default)]
-    pub grind: Option<String>,
-    #[serde(default)]
     pub container: Option<Container>,
 }
 
@@ -184,8 +180,6 @@ pub struct SessionUpdateBuilder<'a> {
     parent_session_id: Option<Option<String>>,
     system_prompt_override: Option<Option<String>>,
     system_prompt_extras: Option<IndexMap<String, String>>,
-    goal: Option<Option<String>>,
-    grind: Option<Option<String>>,
     container: Option<Option<Container>>,
 }
 
@@ -226,8 +220,6 @@ impl<'a> SessionUpdateBuilder<'a> {
             parent_session_id: None,
             system_prompt_override: None,
             system_prompt_extras: None,
-            goal: None,
-            grind: None,
             container: None,
         }
     }
@@ -344,16 +336,6 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn system_prompt_extras(mut self, system_prompt_extras: IndexMap<String, String>) -> Self {
         self.system_prompt_extras = Some(system_prompt_extras);
-        self
-    }
-
-    pub fn goal(mut self, goal: Option<String>) -> Self {
-        self.goal = Some(goal);
-        self
-    }
-
-    pub fn grind(mut self, grind: Option<String>) -> Self {
-        self.grind = Some(grind);
         self
     }
 
@@ -759,6 +741,30 @@ impl SessionManager {
             .await
     }
 
+    pub async fn set_extension_state<S: ExtensionState>(
+        &self,
+        session_id: &str,
+        state: &S,
+    ) -> Result<()> {
+        self.set_extension_value(session_id, S::EXTENSION_NAME, S::VERSION, state.to_value()?)
+            .await
+    }
+
+    pub async fn set_extension_value(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        version: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        let mut extension_data = self.get_session(session_id, false).await?.extension_data;
+        extension_data.set_extension_state(extension_name, version, value);
+        self.update(session_id)
+            .extension_data(extension_data)
+            .apply()
+            .await
+    }
+
     pub async fn set_system_prompt_extra(
         &self,
         session_id: &str,
@@ -846,8 +852,6 @@ impl Default for Session {
             last_message_snippet: None,
             system_prompt_override: None,
             system_prompt_extras: IndexMap::new(),
-            goal: None,
-            grind: None,
             container: None,
         }
     }
@@ -996,8 +1000,6 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .transpose()
                 .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
                 .unwrap_or_default(),
-            goal: row.try_get("goal")?,
-            grind: row.try_get("grind")?,
             container: row
                 .try_get::<Option<String>, _>("container_id")?
                 .map(Container::new),
@@ -1164,8 +1166,6 @@ impl SessionStorage {
                 parent_session_id TEXT,
                 system_prompt_override TEXT,
                 system_prompt_extras_json TEXT,
-                goal TEXT,
-                grind TEXT,
                 container_id TEXT
             )
         "#,
@@ -1725,8 +1725,6 @@ impl SessionStorage {
                 for column in [
                     "system_prompt_override",
                     "system_prompt_extras_json",
-                    "goal",
-                    "grind",
                     "container_id",
                 ] {
                     let has_column = sqlx::query_scalar::<_, i32>(
@@ -1811,7 +1809,7 @@ impl SessionStorage {
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
                archived_at, project_id, parent_session_id,
-               system_prompt_override, system_prompt_extras_json, goal, grind, container_id
+               system_prompt_override, system_prompt_extras_json, container_id
         FROM sessions
         WHERE id = ?
     "#,
@@ -1899,8 +1897,6 @@ impl SessionStorage {
         add_update!(builder.parent_session_id, "parent_session_id");
         add_update!(builder.system_prompt_override, "system_prompt_override");
         add_update!(builder.system_prompt_extras, "system_prompt_extras_json");
-        add_update!(builder.goal, "goal");
-        add_update!(builder.grind, "grind");
         add_update!(builder.container, "container_id");
 
         if updates.is_empty() {
@@ -1986,12 +1982,6 @@ impl SessionStorage {
         }
         if let Some(system_prompt_extras) = builder.system_prompt_extras {
             q = q.bind(serde_json::to_string(&system_prompt_extras)?);
-        }
-        if let Some(goal) = builder.goal {
-            q = q.bind(goal);
-        }
-        if let Some(grind) = builder.grind {
-            q = q.bind(grind);
         }
         if let Some(container) = builder.container {
             q = q.bind(container.map(|container| container.id().to_string()));
@@ -2292,7 +2282,7 @@ impl SessionStorage {
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id, s.parent_session_id,
-                   s.system_prompt_override, s.system_prompt_extras_json, s.goal, s.grind, s.container_id,
+                   s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
                    {} as message_count,
                    MAX({}) as last_message_timestamp,
                    {} as sort_timestamp

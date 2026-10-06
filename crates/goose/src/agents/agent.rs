@@ -68,7 +68,7 @@ use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager, SessionNameUpdate};
+use crate::session::{GoalState, Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -3436,9 +3436,9 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None if self.has_pending_steers(&session_config.id).await => {}
-                        None if session.goal.is_some() && !goal_check_pending => {
+                        None if GoalState::of(&session).goal.is_some() && !goal_check_pending => {
                             goal_check_pending = true;
-                            let goal = session.goal.clone().unwrap();
+                            let goal = GoalState::of(&session).goal.unwrap();
                             let nudge = format!(
                                 "Before finishing, check whether the following goal has been fully met:\n\n\
                                  **Goal:** {goal}\n\n\
@@ -3455,8 +3455,8 @@ impl Agent {
                             );
                         }
 
-                        None if session.grind.is_some() => {
-                            let grind = session.grind.clone().unwrap();
+                        None if GoalState::of(&session).grind.is_some() => {
+                            let grind = GoalState::of(&session).grind.unwrap();
                             let nudge = format!(
                                 "Keep working. The grind goal is not yet complete:\n\n\
                                  **Goal:** {grind}\n\n\
@@ -3475,10 +3475,7 @@ impl Agent {
 
                         None => {
                             session_manager
-                                .update(&session_config.id)
-                                .goal(None)
-                                .grind(None)
-                                .apply()
+                                .set_extension_state(&session_config.id, &GoalState::default())
                                 .await?;
                             // Recipe retry logic owns the turn whenever a
                             // retry_config is present: it runs success checks,

@@ -14,7 +14,7 @@ use crate::agents::state_machine::{
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::Conversation;
-use crate::session::Session;
+use crate::session::{GoalState, Session};
 
 pub(super) const NUDGED: &str = "nudged";
 pub(super) const ATTEMPTS: &str = "attempts";
@@ -85,17 +85,11 @@ impl Operation<Session, GooseEffect> for RetryOperation {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let current = match command.command {
-            "goal" => &session.goal,
-            "grind" => &session.grind,
+        let mut state = GoalState::of(session);
+        let target = match command.command {
+            "goal" => &mut state.goal,
+            "grind" => &mut state.grind,
             _ => return not_applicable(),
-        };
-        let set_target = |value: Option<String>| {
-            if command.command == "goal" {
-                GooseEffect::SetGoal(value)
-            } else {
-                GooseEffect::SetGrind(value)
-            }
         };
         let label = if command.command == "goal" {
             "goal"
@@ -105,9 +99,8 @@ impl Operation<Session, GooseEffect> for RetryOperation {
         let params = command.params_str;
         let starts_turn = !params.is_empty() && !matches!(params, "off" | "clear" | "none");
 
-        let mut effects = Vec::new();
         let response = if params.is_empty() {
-            match current {
+            match target {
                 Some(value) => Message::assistant().with_text(format!("Current {label}: {value}")),
                 None => Message::assistant().with_text(format!(
                     "No {label} set. Use `/{command_name} <description>` to set one.",
@@ -115,7 +108,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 )),
             }
         } else if !starts_turn {
-            effects.push(set_target(None));
+            *target = None;
             let text = if command.command == "goal" {
                 "Goal cleared. The agent will finish normally."
             } else {
@@ -123,7 +116,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             };
             Message::assistant().with_text(text)
         } else {
-            effects.push(set_target(Some(params.to_string())));
+            *target = Some(params.to_string());
             let text = if command.command == "goal" {
                 format!(
                     "Goal set. The agent will verify this goal is met before finishing:\n\n> {params}"
@@ -149,7 +142,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
         emit.message(command_message).await;
         let response = emit.message(response).await;
 
-        effects.extend([
+        let mut effects = vec![
             ConversationEffect::SetMessageVisibility {
                 message_id,
                 user_visible: true,
@@ -157,7 +150,10 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             }
             .into(),
             response.into(),
-        ]);
+        ];
+        if !params.is_empty() {
+            effects.push(GooseEffect::extension_state(&state)?);
+        }
         if starts_turn {
             effects.push(
                 Message::user()
@@ -184,8 +180,9 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             return not_applicable();
         }
 
+        let state = GoalState::of(session);
         if !self.goal_was_nudged(messages) {
-            if let Some(goal) = &session.goal {
+            if let Some(goal) = &state.goal {
                 let nudge = format!(
                     "Before finishing, check whether the following goal has been fully met:\n\n\
                      **Goal:** {goal}\n\n\
@@ -204,7 +201,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             }
         }
 
-        if let Some(grind) = &session.grind {
+        if let Some(grind) = &state.grind {
             let nudge = format!(
                 "Keep working. The grind goal is not yet complete:\n\n\
                  **Goal:** {grind}\n\n\
@@ -221,8 +218,8 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             return applied([message.into()]);
         }
 
-        if session.goal.is_some() {
-            return applied([GooseEffect::SetGoal(None)]);
+        if state.goal.is_some() {
+            return applied([GooseEffect::extension_state(&GoalState::default())?]);
         }
 
         let Some(retry_config) = Self::retry_config(session) else {

@@ -101,13 +101,12 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .apply()
                         .await?;
                 }
-                GooseEffect::SetGoal(goal) => {
-                    self.update(&session.id).goal(goal.clone()).apply().await?;
-                }
-                GooseEffect::SetGrind(grind) => {
-                    self.update(&session.id)
-                        .grind(grind.clone())
-                        .apply()
+                GooseEffect::SetExtensionState {
+                    extension_name,
+                    version,
+                    value,
+                } => {
+                    self.set_extension_value(&session.id, extension_name, version, value.clone())
                         .await?;
                 }
                 GooseEffect::RecordUsage(provider_usage) => {

@@ -36,7 +36,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::{Session, SessionManager, SessionType};
+use crate::session::{GoalState, Session, SessionManager, SessionType};
 use crate::tool_inspection::ToolInspectionManager;
 use goose_providers::model::ModelConfig;
 
@@ -314,14 +314,14 @@ impl TestPipeline {
     }
 
     pub(super) async fn get_goal(&self) -> Option<String> {
-        self.session().await.unwrap().goal
+        GoalState::of(&self.session().await.unwrap()).goal
     }
 
     pub(super) async fn set_grind(&self, grind: Option<String>) {
+        let mut state = GoalState::of(&self.session().await.unwrap());
+        state.grind = grind;
         self.session_manager
-            .update(&self.session_id)
-            .grind(grind)
-            .apply()
+            .set_extension_state(&self.session_id, &state)
             .await
             .unwrap();
     }

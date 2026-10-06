@@ -2241,7 +2241,7 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
-        use goose::session::SessionManager;
+        use goose::session::{GoalState, SessionManager};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
@@ -2352,9 +2352,13 @@ mod tests {
                 )
                 .await?;
             session_manager
-                .update(&session.id)
-                .goal(Some("Ensure the sky is blue".to_string()))
-                .apply()
+                .set_extension_state(
+                    &session.id,
+                    &GoalState {
+                        goal: Some("Ensure the sky is blue".to_string()),
+                        grind: None,
+                    },
+                )
                 .await?;
 
             let session_config = SessionConfig {
@@ -2409,7 +2413,7 @@ mod tests {
 
             // Goal should be cleared after being met
             assert_eq!(
-                session_manager.get_session(&session.id, false).await?.goal,
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
                 None,
                 "Goal should be cleared after the agent finishes with it met"
             );
@@ -2500,7 +2504,7 @@ mod tests {
                 .unwrap();
             assert!(result.as_concat_text().contains("Goal set"));
             assert_eq!(
-                session_manager.get_session(&session.id, false).await?.goal,
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
                 Some("make all tests pass".to_string())
             );
 
@@ -2515,7 +2519,7 @@ mod tests {
                 .unwrap();
             assert!(result.as_concat_text().contains("cleared"));
             assert_eq!(
-                session_manager.get_session(&session.id, false).await?.goal,
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
                 None
             );
 
