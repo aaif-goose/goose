@@ -224,6 +224,7 @@ where
     agent
         .extension_manager
         .add_client(
+            &session.id,
             ExtensionConfig::Builtin {
                 name: "weather_extension".to_string(),
                 display_name: None,

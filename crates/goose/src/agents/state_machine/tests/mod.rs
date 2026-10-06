@@ -119,7 +119,10 @@ async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
         .await?;
     agent
         .extension_manager
-        .remove_extension(crate::agents::platform_extensions::developer::EXTENSION_NAME)
+        .remove_extension(
+            &pipeline.session_id,
+            crate::agents::platform_extensions::developer::EXTENSION_NAME,
+        )
         .await?;
 
     let result = pipeline.run(["/doctor"]).await?;
@@ -133,7 +136,10 @@ async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
     assert!(
         !agent
             .extension_manager
-            .is_extension_enabled(crate::agents::platform_extensions::developer::EXTENSION_NAME)
+            .is_extension_enabled(
+                &pipeline.session_id,
+                crate::agents::platform_extensions::developer::EXTENSION_NAME
+            )
             .await
     );
 

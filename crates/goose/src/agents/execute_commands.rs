@@ -695,7 +695,10 @@ mod tests {
         assert!(
             !agent
                 .extension_manager
-                .is_extension_enabled(crate::agents::platform_extensions::developer::EXTENSION_NAME)
+                .is_extension_enabled(
+                    "doctor-disabled-legacy-test",
+                    crate::agents::platform_extensions::developer::EXTENSION_NAME
+                )
                 .await
         );
     }

@@ -799,6 +799,7 @@ mod tests {
         ));
         manager
             .add_client(
+                "test-session",
                 ExtensionConfig::Builtin {
                     name: "visibility".to_string(),
                     description: "Visibility test tools".to_string(),
@@ -854,7 +855,7 @@ mod tests {
                 },
                 Some(session.working_dir.clone()),
                 None,
-                Some(&session.id),
+                &session.id,
             )
             .await
             .unwrap();
@@ -863,7 +864,10 @@ mod tests {
                 .current_lease(&session.id, Some(&session.working_dir))
                 .await,
         );
-        manager.remove_extension("extensionmanager").await.unwrap();
+        manager
+            .remove_extension(&session.id, "extensionmanager")
+            .await
+            .unwrap();
         let callback = create_tool_callback(
             ToolCallContext::new(
                 session.id.clone(),
@@ -885,9 +889,8 @@ mod tests {
         .unwrap();
 
         assert!(manager
-            .list_extensions()
+            .list_extensions(&session.id)
             .await
-            .unwrap()
             .contains(&"analyze".to_string()));
         let stored_session = manager
             .get_context()

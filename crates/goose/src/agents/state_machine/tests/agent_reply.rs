@@ -90,6 +90,7 @@ async fn agent_with_calculator() -> Result<(
     agent
         .extension_manager
         .add_client(
+            &session_id,
             calculator_config(),
             calculator.clone(),
             calculator.get_info().cloned(),
@@ -247,6 +248,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     agent
         .extension_manager
         .add_client(
+            &session_config.id,
             calculator_config(),
             replacement.clone(),
             replacement.get_info().cloned(),

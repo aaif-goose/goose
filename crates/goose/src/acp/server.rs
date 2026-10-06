@@ -1105,7 +1105,7 @@ impl GooseAcpAgent {
 
         if !agent
             .extension_manager
-            .is_extension_enabled("developer")
+            .is_extension_enabled(&session.id, "developer")
             .await
         {
             return;
@@ -1134,7 +1134,7 @@ impl GooseAcpAgent {
 
         let developer_config = agent
             .extension_manager
-            .get_extension_configs()
+            .get_extension_configs(&session.id)
             .await
             .into_iter()
             .find(|extension| extension.name() == "developer")
@@ -1142,7 +1142,7 @@ impl GooseAcpAgent {
 
         agent
             .extension_manager
-            .add_client(developer_config, client, info)
+            .add_client(&session.id, developer_config, client, info)
             .await;
     }
 

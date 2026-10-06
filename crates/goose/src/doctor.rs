@@ -18,7 +18,7 @@ Enable it for this session and run `/doctor` again:\n\
 - Desktop: select **Developer** in the session extension selector.";
 
 pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Result<Message> {
-    if let Some(message) = require_developer_extension(agent).await {
+    if let Some(message) = require_developer_extension(agent, session_id).await {
         return Ok(message);
     }
 
@@ -27,7 +27,7 @@ pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Resu
     }
 
     let info = SystemInfo::collect();
-    let extensions = agent.list_extensions().await;
+    let extensions = agent.list_extensions(session_id).await;
 
     let mut prompt = format!(
         "I ran /doctor because something seems off. Here's my system info:\n\n\
@@ -64,10 +64,13 @@ pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Resu
     Ok(Message::user().with_text(prompt))
 }
 
-async fn require_developer_extension(agent: &crate::agents::Agent) -> Option<Message> {
+async fn require_developer_extension(
+    agent: &crate::agents::Agent,
+    session_id: &str,
+) -> Option<Message> {
     let has_developer = agent
         .extension_manager
-        .get_extension_configs()
+        .get_extension_configs(session_id)
         .await
         .iter()
         .any(is_developer_platform_config);
@@ -322,12 +325,14 @@ mod tests {
                 },
                 None,
                 None,
-                Some(&session.id),
+                &session.id,
             )
             .await
             .expect("developer extension should load");
 
-        assert!(require_developer_extension(&agent).await.is_none());
+        assert!(require_developer_extension(&agent, &session.id)
+            .await
+            .is_none());
     }
 
     #[test]

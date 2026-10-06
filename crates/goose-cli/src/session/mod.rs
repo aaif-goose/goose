@@ -992,7 +992,7 @@ impl CliSession {
         )
         .await?;
 
-        let extensions = self.agent.get_extension_configs().await;
+        let extensions = self.agent.get_extension_configs(&self.session_id).await;
         let new_provider = match goose::providers::create(target_provider_name, extensions).await {
             Ok(p) => p,
             Err(e) => {
@@ -1123,13 +1123,14 @@ impl CliSession {
             }
         };
 
-        let extension_configs = self.agent.get_extension_configs().await;
+        let extension_configs = self.agent.get_extension_configs(&self.session_id).await;
 
         self.agent
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
         self.agent.discard_pending_steers(&self.session_id).await;
+        self.agent.extension_manager.release(&self.session_id).await;
 
         self.session_id = new_session_id;
         self.messages.clear();
@@ -1146,14 +1147,6 @@ impl CliSession {
 
         if !extension_configs.is_empty() {
             output::goose_mode_message("Restarting extensions for the new session...");
-        }
-
-        // MCP clients pin themselves to the first session id they see a request for, so
-        // extensions must be torn down and re-added under the new session id.
-        for name in self.agent.list_extensions().await {
-            if let Err(e) = self.agent.remove_extension(&name, &self.session_id).await {
-                output::render_extension_error(&name, &e.to_string());
-            }
         }
 
         let mut unavailable = Vec::new();

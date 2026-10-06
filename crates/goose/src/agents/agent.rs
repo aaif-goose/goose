@@ -1243,7 +1243,9 @@ impl Agent {
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
         self.persist_extension_configs(
             session_id,
-            self.extension_manager.get_extension_configs().await,
+            self.extension_manager
+                .get_extension_configs(session_id)
+                .await,
         )
         .await
     }
@@ -1321,7 +1323,7 @@ impl Agent {
 
                     if agent_ref
                         .extension_manager
-                        .is_extension_enabled(&name)
+                        .is_extension_enabled(&session_id_clone, &name)
                         .await
                     {
                         tracing::debug!("Extension {} already loaded, skipping", name);
@@ -1426,7 +1428,7 @@ impl Agent {
                 async move {
                     let name = config.name().to_string();
                     match ext_manager
-                        .add_extension(config, working_dir, container.as_ref(), Some(&sid))
+                        .add_extension(config, working_dir, container.as_ref(), &sid)
                         .await
                     {
                         Ok(_) => ExtensionLoadResult {
@@ -1475,7 +1477,7 @@ impl Agent {
 
         let container = self.container.lock().await;
         self.extension_manager
-            .add_extension(extension, working_dir, container.as_ref(), Some(session_id))
+            .add_extension(extension, working_dir, container.as_ref(), session_id)
             .await?;
 
         Ok(())
@@ -1541,7 +1543,9 @@ impl Agent {
             return Ok(false);
         }
 
-        self.extension_manager.remove_extension_by_key(key).await?;
+        self.extension_manager
+            .remove_extension_by_key(session_id, key)
+            .await?;
 
         // Persist extension state after successful removal
         self.persist_extension_state(session_id)
@@ -1554,15 +1558,14 @@ impl Agent {
         Ok(true)
     }
 
-    pub async fn list_extensions(&self) -> Vec<String> {
-        self.extension_manager
-            .list_extensions()
-            .await
-            .expect("Failed to list extensions")
+    pub async fn list_extensions(&self, session_id: &str) -> Vec<String> {
+        self.extension_manager.list_extensions(session_id).await
     }
 
-    pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extension_manager.get_extension_configs().await
+    pub async fn get_extension_configs(&self, session_id: &str) -> Vec<ExtensionConfig> {
+        self.extension_manager
+            .get_extension_configs(session_id)
+            .await
     }
 
     pub async fn submit_tool_confirmation(
@@ -4130,7 +4133,7 @@ mod tests {
     }
 
     struct RefreshingLeaseProvider {
-        manager: std::sync::Mutex<Option<Arc<ExtensionManager>>>,
+        manager: std::sync::Mutex<Option<(Arc<ExtensionManager>, String)>>,
         turn_contexts: std::sync::Mutex<Vec<String>>,
         call_count: AtomicUsize,
     }
@@ -4163,7 +4166,7 @@ mod tests {
             );
             let call = self.call_count.fetch_add(1, Ordering::SeqCst);
             let message = if call == 0 {
-                let manager = self
+                let (manager, session_id) = self
                     .manager
                     .lock()
                     .unwrap()
@@ -4171,6 +4174,7 @@ mod tests {
                     .expect("extension manager unavailable");
                 manager
                     .add_client(
+                        &session_id,
                         platform_extension("changing"),
                         Arc::new(LeaseValueClient("second")),
                         None,
@@ -4204,6 +4208,7 @@ mod tests {
         agent
             .extension_manager
             .add_client(
+                &session.id,
                 persisted_builtin("changing"),
                 Arc::new(LeaseValueClient("first")),
                 None,
@@ -4214,6 +4219,7 @@ mod tests {
         agent
             .extension_manager
             .add_client(
+                &session.id,
                 persisted_builtin("changing"),
                 Arc::new(LeaseValueClient("second")),
                 None,
@@ -4253,7 +4259,8 @@ mod tests {
             provider.clone(),
         )
         .await?;
-        *provider.manager.lock().unwrap() = Some(Arc::clone(&agent.extension_manager));
+        *provider.manager.lock().unwrap() =
+            Some((Arc::clone(&agent.extension_manager), session_id.clone()));
 
         let mut stream = agent
             .reply(
@@ -4302,6 +4309,7 @@ mod tests {
         agent
             .extension_manager
             .add_client(
+                &session_id,
                 persisted_builtin("changing"),
                 Arc::new(LeaseValueClient("value")),
                 None,
@@ -4352,9 +4360,8 @@ mod tests {
 
         assert!(agent
             .extension_manager
-            .list_extensions()
+            .list_extensions(&session.id)
             .await
-            .unwrap()
             .contains(&"analyze".to_string()));
         let stored_session = agent
             .config

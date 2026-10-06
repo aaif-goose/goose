@@ -303,7 +303,7 @@ impl TestPipeline {
                     extension,
                     Some(self.working_dir.clone()),
                     None,
-                    Some(&self.session_id),
+                    &self.session_id,
                 )
                 .await?;
         }
@@ -511,7 +511,7 @@ impl TestPipeline {
 
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {
         self.extension_manager
-            .remove_extension(name)
+            .remove_extension(&self.session_id, name)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -528,7 +528,7 @@ impl TestPipeline {
                 },
                 Some(self.working_dir.clone()),
                 None,
-                Some(&self.session_id),
+                &self.session_id,
             )
             .await
             .map_err(anyhow::Error::from)
@@ -870,6 +870,7 @@ async fn build_test_pipeline(
         if extension.name() == "calculator" {
             extension_manager
                 .add_client(
+                    &session_id,
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),
@@ -881,7 +882,7 @@ async fn build_test_pipeline(
                     extension,
                     Some(session.working_dir.clone()),
                     None,
-                    Some(&session_id),
+                    &session_id,
                 )
                 .await?;
         }

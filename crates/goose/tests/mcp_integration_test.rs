@@ -133,7 +133,7 @@ impl Fixture {
                 config.clone(),
                 Some(session.working_dir.clone()),
                 None,
-                Some(&session.id),
+                &session.id,
             )
             .await
             .unwrap();
@@ -504,7 +504,10 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     );
 
     // Removal is invisible to a held lease and visible to a fresh one.
-    fx.manager.remove_extension("todo").await.unwrap();
+    fx.manager
+        .remove_extension(&session.id, "todo")
+        .await
+        .unwrap();
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
     assert!(!tool_names(
         &fx.resolve(
@@ -918,7 +921,7 @@ async fn test_replayed_session(
     #[allow(clippy::redundant_closure_call)]
     let result = (async || -> Result<(), Box<dyn std::error::Error>> {
         extension_manager
-            .add_extension(extension_config, None, None, None)
+            .add_extension(extension_config, None, None, "test-session-id")
             .await?;
         let mut results = Vec::new();
         for tool_call in tool_calls {

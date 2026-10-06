@@ -141,7 +141,7 @@ mod tests {
                     },
                     None,
                     None,
-                    None,
+                    "test-session-id",
                 )
                 .await
                 .unwrap();
