@@ -10,7 +10,9 @@ impl GooseAcpAgent {
         let cancel_token = CancellationToken::new();
         let result = agent
             .extension_manager
-            .read_resource(session_id, &req.uri, &req.extension_name, cancel_token)
+            .current_lease(session_id, None)
+            .await
+            .read_resource(&req.uri, &req.extension_name, cancel_token)
             .await
             .internal_err()?;
         let result_json = serde_json::to_value(&result).internal_err()?;

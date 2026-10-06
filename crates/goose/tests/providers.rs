@@ -2,6 +2,7 @@ use anyhow::Result;
 use dotenvy::dotenv;
 use futures::StreamExt;
 use goose::acp::ACP_CURRENT_MODEL;
+use goose::agents::extension_manager::CallRequest;
 use goose::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, PromptManager, SessionConfig};
 use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -306,18 +307,13 @@ impl ProviderFixture {
         prompt: &str,
         model_config: Option<goose_providers::model::ModelConfig>,
     ) -> Result<Message> {
-        let tools = self
+        let lease = self
             .agent
             .extension_manager
-            .get_prefixed_tools(&self.session_id, None)
-            .await
-            .unwrap();
-
-        let info = self
-            .agent
-            .extension_manager
-            .get_extensions_info(std::path::Path::new("."))
+            .current_lease(&self.session_id, None)
             .await;
+        let tools = lease.tools().await;
+        let info = lease.instructions().await;
         let system = PromptManager::new()
             .builder()
             .with_extensions(info.into_iter())
@@ -363,7 +359,9 @@ impl ProviderFixture {
         let result = self
             .agent
             .extension_manager
-            .dispatch_tool_call(&ctx, params, CancellationToken::new())
+            .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+            .await
+            .call(params, CallRequest::from(&ctx), CancellationToken::new())
             .await
             .unwrap()
             .result

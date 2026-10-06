@@ -557,6 +557,14 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert!(load_leased_skill(&after_move)
         .await
         .contains("new workspace"));
+
+    // `session` still names the old directory; the add follows the stored one.
+    fx.add(&session, &stdio).await;
+    let re_added = fx
+        .resolve(&moved_session, std::slice::from_ref(&stdio))
+        .await;
+    let re_added_stdio = inspect_context(&re_added, "fixture_stdio__inspect_context").await;
+    assert_eq!(re_added_stdio.roots, after_stdio.roots);
     let retained_http = inspect_context(&before_move, "fixture_http__inspect_context").await;
     let retained_stdio = inspect_context(&before_move, "fixture_stdio__inspect_context").await;
     let old_root = url::Url::from_file_path(&session.working_dir)
@@ -928,7 +936,13 @@ async fn test_replayed_session(
                 Some("test-id".to_string()),
             );
             let result = extension_manager
-                .dispatch_tool_call(&ctx, tool_call, CancellationToken::default())
+                .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+                .await
+                .call(
+                    tool_call,
+                    CallRequest::from(&ctx),
+                    CancellationToken::default(),
+                )
                 .await;
 
             let tool_result = result?;

@@ -109,18 +109,16 @@ impl GooseAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        let ctx = crate::agents::ToolCallContext::new(
-            session_id.clone(),
-            Some(session.working_dir),
-            None,
-        )
-        .with_container(session.container);
+        let container = session.container;
         let tool_result = agent
             .extension_manager
-            .dispatch_app_tool_call(
-                &ctx,
+            .current_lease(session_id, Some(&session.working_dir))
+            .await
+            .call_for_app(
                 tool_call,
                 &req.extension_name,
+                crate::agents::extension_manager::CallRequest::default()
+                    .with_container(container.clone()),
                 CancellationToken::new(),
             )
             .await
@@ -128,7 +126,7 @@ impl GooseAcpAgent {
 
         let result = agent
             .extension_manager
-            .applying_mutation(tool_result, ctx.container().cloned(), session_id)
+            .applying_mutation(tool_result, container, session_id)
             .result
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;

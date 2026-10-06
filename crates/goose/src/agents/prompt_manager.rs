@@ -521,22 +521,24 @@ mod tests {
             provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: Some(scheduler),
-            session: Some(Arc::new(session)),
             use_login_shell_path: false,
         };
 
-        let mut extensions: Vec<ExtensionInfo> = PLATFORM_EXTENSIONS
-            .values()
-            .filter_map(|def| {
-                let client = (def.client_factory)(context.clone())?;
-                let instructions = client.get_instructions().unwrap_or_default();
-                let has_resources = client
-                    .get_info()
-                    .and_then(|i| i.capabilities.resources.as_ref())
-                    .is_some();
-                Some(ExtensionInfo::new(def.name, &instructions, has_resources))
-            })
-            .collect();
+        let mut extensions = Vec::new();
+        for def in PLATFORM_EXTENSIONS.values() {
+            let Some(client) = (def.client_factory)(context.clone()) else {
+                continue;
+            };
+            let instructions = client
+                .get_instructions(&session.id, &session.working_dir)
+                .await
+                .unwrap_or_default();
+            let has_resources = client
+                .get_info()
+                .and_then(|i| i.capabilities.resources.as_ref())
+                .is_some();
+            extensions.push(ExtensionInfo::new(def.name, &instructions, has_resources));
+        }
 
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
 
