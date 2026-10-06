@@ -255,7 +255,10 @@ impl CodexProvider {
         // Allow the stderr task to finish
         let _ = stderr_handle.await;
 
-        if !exit_status.success() && lines.is_empty() {
+        if !exit_status.success() {
+            if !lines.is_empty() {
+                self.parse_response(&lines)?;
+            }
             return Err(ProviderError::RequestFailed(format!(
                 "Codex command failed with exit code: {:?}",
                 exit_status.code()
@@ -380,7 +383,11 @@ impl CodexProvider {
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
                         }
                         "error" | "turn.failed" => {
-                            error_message = Self::extract_error(&parsed);
+                            error_message = Some(
+                                Self::extract_error(&parsed)
+                                    .or(error_message)
+                                    .unwrap_or_else(|| "Unknown Codex CLI error".to_string()),
+                            );
                         }
                         "message" | "assistant" => {
                             all_text_content.extend(Self::extract_legacy_text(&parsed));
@@ -392,21 +399,19 @@ impl CodexProvider {
         }
 
         if let Some(err) = error_message {
-            if all_text_content.is_empty() {
-                if err.contains("context window") || err.contains("context_length_exceeded") {
-                    return Err(ProviderError::ContextLengthExceeded(err));
-                }
-                if err.to_lowercase().contains("rate limit") {
-                    return Err(ProviderError::RateLimitExceeded {
-                        details: err,
-                        retry_delay: None,
-                    });
-                }
-                return Err(ProviderError::RequestFailed(format!(
-                    "Codex CLI error: {}",
-                    err
-                )));
+            if err.contains("context window") || err.contains("context_length_exceeded") {
+                return Err(ProviderError::ContextLengthExceeded(err));
             }
+            if err.to_lowercase().contains("rate limit") {
+                return Err(ProviderError::RateLimitExceeded {
+                    details: err,
+                    retry_delay: None,
+                });
+            }
+            return Err(ProviderError::RequestFailed(format!(
+                "Codex CLI error: {}",
+                err
+            )));
         }
 
         if all_text_content.is_empty() {
@@ -1155,6 +1160,85 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
         let lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         let result = provider.parse_response(&lines);
         assert_eq!(result.unwrap_err(), expected);
+
+        let mut partial_response = vec![
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"{\"findings\":[]}"}}"#.to_string(),
+        ];
+        partial_response.extend(lines);
+        partial_response.push(r#"{"type":"turn.failed"}"#.to_string());
+        assert_eq!(
+            provider.parse_response(&partial_response).unwrap_err(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_parse_response_failure_without_diagnostic() {
+        let provider = CodexProvider {
+            command: PathBuf::from("codex"),
+            name: "codex".to_string(),
+            skip_git_check: false,
+            mcp_config_overrides: Vec::new(),
+            mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+        };
+        let lines = vec![
+            r#"{"type":"item.completed","item":{"type":"agent_message","text":"partial answer"}}"#
+                .to_string(),
+            r#"{"type":"turn.failed"}"#.to_string(),
+        ];
+        assert_eq!(
+            provider.parse_response(&lines).unwrap_err(),
+            ProviderError::RequestFailed("Codex CLI error: Unknown Codex CLI error".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_complete_rejects_failed_cli_with_partial_output() {
+        for (event, exit_code, expected) in [
+            (
+                "",
+                1,
+                ProviderError::RequestFailed(
+                    "Codex command failed with exit code: Some(1)".to_string(),
+                ),
+            ),
+            (
+                r#"{"type":"turn.failed","error":{"message":"connection reset"}}"#,
+                0,
+                ProviderError::RequestFailed("Codex CLI error: connection reset".to_string()),
+            ),
+            (
+                r#"{"type":"turn.failed","error":{"message":"rate limit exceeded"}}"#,
+                1,
+                ProviderError::RateLimitExceeded {
+                    details: "rate limit exceeded".to_string(),
+                    retry_delay: None,
+                },
+            ),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let command = recording_cli(directory.path());
+            let mut script = fs::read_to_string(&command).unwrap();
+            script.push_str(&format!("printf '%s\\n' '{}'\nexit {}\n", event, exit_code));
+            fs::write(&command, script).unwrap();
+            let provider = CodexProvider {
+                command,
+                name: "codex".to_string(),
+                skip_git_check: false,
+                mcp_config_overrides: Vec::new(),
+                mode_by_session: tokio::sync::RwLock::new(HashMap::new()),
+            };
+            let result = provider
+                .complete(
+                    &ModelConfig::new(CODEX_DEFAULT_MODEL),
+                    "review this patch",
+                    &[Message::user().with_text("ordinary request")],
+                    &[],
+                )
+                .await;
+            assert_eq!(result.unwrap_err(), expected);
+        }
     }
 
     #[test]
