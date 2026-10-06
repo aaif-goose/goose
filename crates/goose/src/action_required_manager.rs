@@ -13,7 +13,7 @@ use crate::conversation::message::{Message, MessageContent};
 const ACTION_REQUIRED_STREAM_CAPACITY: usize = 8;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ElicitationOutcome {
+pub enum ElicitationOutcome {
     Accept(Value),
     Decline,
     Cancel,

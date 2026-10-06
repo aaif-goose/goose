@@ -37,6 +37,14 @@ The best place to contribute is the discussion between **Accepted / design** and
 
 Substantial contributors at any stage may be recognized as co-authors. The unit of contribution is taking a problem to a verified solution, not writing the patch.
 
+## LLM Provider Integrations
+
+If you run an LLM service that uses an OpenAI, Anthropic, or Ollama compatible API, the best way to support goose users is usually to publish a goose custom-provider JSON file with your own documentation. Users can download that file into their local `custom_providers` directory and select the provider without waiting for a goose release.
+
+See [Custom Provider configuration](documentation/docs/getting-started/providers.md#configure-custom-provider) for the JSON format and installation location. Include clear setup instructions for credentials, supported models, streaming support, and any custom headers your service requires. Do not include real API keys, tokens, tenant secrets, or other credentials in the JSON file.
+
+Issues opened for custom LLM providers will only occasionally be accepted by exception. The best way to support goose users is to provide a documented provider config that users can install themselves.
+
 ## From Issue to Pull Request
 
 Do not begin implementation or open a pull request until the issue has reached **Ready** on the Goose Issues board.

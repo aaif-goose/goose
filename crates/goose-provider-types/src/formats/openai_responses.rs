@@ -2097,8 +2097,16 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_request_gpt6_astra_off_uses_low_not_none() {
-        for model_name in ["gpt-6-astra", "data_workflow_tools.goose.goose-gpt-6-astra"] {
+    fn test_responses_request_always_on_gpt6_off_uses_low_not_none() {
+        for model_name in [
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-1-sol",
+            "goose-gpt-6-1-sol",
+            "catalog.schema.goose-gpt-6-1-sol",
+            "openrouter/openai/gpt-6-1-sol",
+        ] {
             let model_config = ModelConfig::new(model_name)
                 .with_thinking_effort(crate::thinking::ThinkingEffort::Off);
 

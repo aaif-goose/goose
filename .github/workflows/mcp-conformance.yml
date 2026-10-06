@@ -45,7 +45,6 @@ jobs:
           path: |
             target/debug/goose
             target/debug/mcp_conformance_driver
-          retention-days: 1
           if-no-files-found: error
 
   conformance:

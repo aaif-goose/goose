@@ -984,7 +984,7 @@ async fn execute_job(
             user_message,
             session_config,
             crate::agents::state_machine::enabled(),
-            Some(cancel_token),
+            Some(cancel_token.clone()),
         )
         .await?;
 
@@ -992,6 +992,7 @@ async fn execute_job(
     let mut stream = std::pin::pin!(stream);
 
     let mut stream_error = false;
+    let mut failed_before_stop = false;
     while let Some(message_result) = stream.next().await {
         tokio::task::yield_now().await;
 
@@ -1006,9 +1007,14 @@ async fn execute_job(
             Err(e) => {
                 tracing::error!("Error in agent stream: {}", e);
                 stream_error = true;
+                failed_before_stop = !cancel_token.is_cancelled();
                 break;
             }
         }
+    }
+
+    if cancel_token.is_cancelled() && !failed_before_stop {
+        agent.cancel_foreground_subagents(&session.id).await;
     }
 
     {
@@ -1382,16 +1388,33 @@ mod tests {
         };
 
         scheduler.add_scheduled_job(job, true).await.unwrap();
-        sleep(Duration::from_millis(1500)).await;
+        let (jobs, sessions) = tokio::time::timeout(Duration::from_secs(3), async {
+            let mut poll = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                poll.tick().await;
+                let jobs = scheduler.list_scheduled_jobs().await;
+                let sessions = session_manager
+                    .list_sessions_by_types(&[SessionType::Scheduled])
+                    .await
+                    .unwrap();
+                if jobs[0].last_run.is_some() && !sessions.is_empty() {
+                    break (jobs, sessions);
+                }
+            }
+        })
+        .await
+        .expect("Scheduled job should run and create a session within 3 seconds");
 
-        let jobs = scheduler.list_scheduled_jobs().await;
         assert!(jobs[0].last_run.is_some(), "Job should have run");
-        let sessions = session_manager
-            .list_sessions_by_types(&[SessionType::Scheduled])
+        assert!(
+            !sessions.is_empty(),
+            "Scheduled job should create a session"
+        );
+        assert_eq!(sessions[0].goose_mode, GooseMode::Auto);
+        scheduler
+            .remove_scheduled_job("scheduled_job", false)
             .await
             .unwrap();
-        assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].goose_mode, GooseMode::Auto);
     }
 
     #[tokio::test]

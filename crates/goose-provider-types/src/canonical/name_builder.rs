@@ -226,6 +226,10 @@ fn infer_provider_from_model(model: &str) -> Option<&'static str> {
         return Some("cohere");
     }
 
+    if model_lower.starts_with("glm-") {
+        return Some("zhipuai");
+    }
+
     None
 }
 
@@ -255,6 +259,7 @@ fn strip_common_prefixes(model: &str) -> String {
         "ministral-",
         "pixtral-",
         "devstral-",
+        "glm-",
     ];
 
     let mut earliest_pos = None;

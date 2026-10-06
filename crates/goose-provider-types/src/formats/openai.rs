@@ -3420,6 +3420,14 @@ mod tests {
             "gpt-6.1-sol@eu",
             "openai/gpt-6.1-sol-fast",
             "openai/gpt-6.1-sol-fast-high",
+            "gpt-6-1-sol",
+            "gpt-6-1-sol-high",
+            "goose-gpt-6-1-sol",
+            "catalog.schema.goose-gpt-6-1-sol",
+            "openrouter/openai/gpt-6-1-sol",
+            "gpt-6-1-sol@eu",
+            "openai/gpt-6-1-sol-fast-high",
+            "GOOSE-GPT-6-1-SOL",
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
@@ -3449,6 +3457,24 @@ mod tests {
             openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
             Some("low".to_string())
         );
+    }
+
+    #[test]
+    fn test_gpt6_1_sol_effort_matching_respects_model_boundaries() {
+        for model in [
+            "gpt-6.1-solstice",
+            "gpt-6-1-solstice",
+            "gpt-6.10-sol",
+            "gpt-6-10-sol",
+            "notgpt-6-1-sol",
+            "catalog.schema.notgpt-6-1-sol",
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("none".to_string()),
+                "{model} must not match GPT 6.1 Sol"
+            );
+        }
     }
 
     #[test]

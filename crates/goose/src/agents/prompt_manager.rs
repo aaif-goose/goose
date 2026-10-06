@@ -539,6 +539,7 @@ mod tests {
         .unwrap();
         let context = PlatformExtensionContext {
             extension_manager: None,
+            provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: Some(scheduler),
             session: Some(Arc::new(session)),
