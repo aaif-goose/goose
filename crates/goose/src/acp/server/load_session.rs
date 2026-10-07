@@ -275,7 +275,6 @@ impl GooseAcpAgent {
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
         let stream = match agent
             .resume_state_machine_turn(session_config, cancel_token.clone())

@@ -218,8 +218,17 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-1, Agent, "recovered from no choices");
 
     api.on("return an empty reply").reply("");
+    let calls_before = api.call_count();
     let result = pipeline.run(["return an empty reply"]).await?;
+    assert_eq!(api.call_count() - calls_before, 4);
     result.assert_message(-1, Agent, "model returned an empty response");
+
+    api.on("empty twice").reply("recovered after empty replies");
+    api.on("empty twice").reply("").times(2);
+    let calls_before = api.call_count();
+    let result = pipeline.run(["empty twice"]).await?;
+    assert_eq!(api.call_count() - calls_before, 3);
+    result.assert_message(-1, Agent, "recovered after empty replies");
 
     api.on("after empty reply")
         .reply("recovered from empty reply");

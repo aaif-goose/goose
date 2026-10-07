@@ -2299,7 +2299,6 @@ impl GooseAcpAgent {
             id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
 
         let stream = match agent

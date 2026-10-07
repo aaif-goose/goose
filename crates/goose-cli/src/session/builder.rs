@@ -883,7 +883,6 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session_config.scheduled_job_id.clone(),
         session_config.max_turns,
         edit_mode,
-        recipe.and_then(|r| r.retry.clone()),
         session_config.output_format.clone(),
         session_config.stats,
         session_config.interactive,

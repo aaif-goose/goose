@@ -559,7 +559,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -612,187 +611,6 @@ mod tests {
             } else {
                 panic!("Expected text content in last message");
             }
-            Ok(())
-        }
-    }
-
-    #[cfg(test)]
-    mod unparseable_tool_call_tests {
-        use super::*;
-        use async_trait::async_trait;
-        use goose::agents::{AgentConfig, SessionConfig};
-        use goose::config::permission::PermissionManager;
-        use goose::config::GooseMode;
-        use goose::conversation::message::{Message, MessageContent};
-        use goose::providers::base::{
-            stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
-        };
-        use goose::session::session_manager::SessionType;
-        use goose::session::SessionManager;
-        use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-        use goose_providers::errors::ProviderError;
-        use goose_providers::model::ModelConfig;
-        use rmcp::model::{ErrorCode, ErrorData, Tool};
-        use std::path::PathBuf;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use tempfile::TempDir;
-
-        /// First turn returns a tool request that failed to parse (mirroring what
-        /// the decoders emit for non-object arguments), subsequent turns return
-        /// plain text so the loop can finish.
-        struct UnparseableToolProvider {
-            call_count: AtomicUsize,
-        }
-
-        impl UnparseableToolProvider {
-            fn new() -> Self {
-                Self {
-                    call_count: AtomicUsize::new(0),
-                }
-            }
-        }
-
-        impl goose::providers::base::ProviderDescriptor for UnparseableToolProvider {
-            fn metadata() -> ProviderMetadata {
-                ProviderMetadata {
-                    name: "mock-unparseable".to_string(),
-                    display_name: "Mock Unparseable Provider".to_string(),
-                    description: "Mock provider for unparseable tool call tests".to_string(),
-                    default_model: "mock-model".to_string(),
-                    known_models: vec![],
-                    model_doc_link: "".to_string(),
-                    config_keys: vec![],
-                    setup_steps: vec![],
-                    setup: None,
-                    deprecated: None,
-                }
-            }
-        }
-
-        impl ProviderDef for UnparseableToolProvider {
-            type Provider = Self;
-
-            fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
-                _tls_config: Option<goose::providers::api_client::TlsConfig>,
-            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
-                Box::pin(async { Ok(Self::new()) })
-            }
-        }
-
-        #[async_trait]
-        impl Provider for UnparseableToolProvider {
-            async fn stream(
-                &self,
-                _model_config: &ModelConfig,
-                _system_prompt: &str,
-                _messages: &[Message],
-                _tools: &[Tool],
-            ) -> Result<MessageStream, ProviderError> {
-                let n = self.call_count.fetch_add(1, Ordering::SeqCst);
-                let message = if n == 0 {
-                    let error = ErrorData::new(
-                        ErrorCode::INVALID_PARAMS,
-                        "Tool arguments must be a JSON object".to_string(),
-                        None,
-                    );
-                    Message::assistant().with_tool_request("call_bad", Err(error))
-                } else {
-                    Message::assistant().with_text("Recovered after the bad tool call.")
-                };
-
-                let usage = ProviderUsage::new(
-                    "mock-model".to_string(),
-                    Usage::new(Some(10), Some(5), Some(15)),
-                );
-                Ok(stream_from_single_message(message, usage))
-            }
-
-            fn get_name(&self) -> &str {
-                "mock-unparseable"
-            }
-        }
-
-        /// An unparseable tool call should be fed back to the model as a tool
-        /// response error so it can retry, rather than terminating the run.
-        #[tokio::test]
-        async fn test_unparseable_tool_call_feeds_back_and_continues() -> Result<()> {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let agent = Agent::with_config(AgentConfig::new(
-                session_manager.clone(),
-                Arc::new(PermissionManager::new(data_dir)),
-                None,
-                GooseMode::default(),
-                true,
-                GoosePlatform::GooseCli,
-            ));
-            let provider = Arc::new(UnparseableToolProvider::new());
-
-            let session = session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "unparseable-tool-test".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-
-            agent
-                .update_provider(
-                    provider.clone(),
-                    ModelConfig::new("mock-model"),
-                    &session.id,
-                )
-                .await?;
-
-            let session_config = SessionConfig {
-                id: session.id,
-                schedule_id: None,
-                max_turns: Some(5),
-                retry_config: None,
-            };
-
-            let reply_stream = agent
-                .reply(Message::user().with_text("Hello"), session_config, None)
-                .await?;
-            tokio::pin!(reply_stream);
-
-            let mut saw_tool_response_error = false;
-            let mut saw_recovery_text = false;
-            while let Some(event) = reply_stream.next().await {
-                if let Ok(AgentEvent::Message(message)) = event {
-                    for content in &message.content {
-                        match content {
-                            MessageContent::ToolResponse(response)
-                                if response.id == "call_bad" && response.tool_result.is_err() =>
-                            {
-                                saw_tool_response_error = true;
-                            }
-                            MessageContent::Text(text)
-                                if text.text.contains("Recovered after the bad tool call") =>
-                            {
-                                saw_recovery_text = true;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
-            assert!(
-                saw_tool_response_error,
-                "expected an error tool response fed back to the model for the unparseable call"
-            );
-            assert!(
-                saw_recovery_text,
-                "expected the loop to continue to a second provider turn instead of terminating"
-            );
-            assert!(
-                provider.call_count.load(Ordering::SeqCst) >= 2,
-                "provider should have been called again after the bad tool call"
-            );
             Ok(())
         }
     }
@@ -966,7 +784,6 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -1323,7 +1140,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1377,7 +1193,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream2 = agent
@@ -1569,7 +1384,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1770,7 +1584,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -1935,7 +1748,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2084,7 +1896,6 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2291,7 +2102,6 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2370,7 +2180,6 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2421,7 +2230,6 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2485,7 +2293,6 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -2609,7 +2416,6 @@ mod tests {
                 id: session_id.to_string(),
                 schedule_id: None,
                 max_turns: Some(1),
-                retry_config: None,
             };
             let stream = agent
                 .reply(Message::user().with_text(text), session_config, None)
@@ -3020,7 +2826,6 @@ mod tests {
                         id: session_id.clone(),
                         schedule_id: None,
                         max_turns: Some(3),
-                        retry_config: None,
                     },
                     None,
                 )
@@ -3160,14 +2965,6 @@ mod tests {
                 }
             }
 
-            fn with_wrapped_empty_text(empty_count: usize) -> Self {
-                Self {
-                    call_count: AtomicUsize::new(0),
-                    empty_count,
-                    wrap_empty_text: true,
-                    manages_own_context: false,
-                }
-            }
         }
 
         impl FinalOutputRequestProvider {
@@ -3294,7 +3091,6 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(50),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -3335,80 +3131,6 @@ mod tests {
 
         fn is_empty_assistant(message: &Message) -> bool {
             message.role == rmcp::model::Role::Assistant && message.content.is_empty()
-        }
-
-        /// A transient empty response should be retried and recover, ultimately
-        /// delivering the real text response instead of stopping silently.
-        #[tokio::test]
-        async fn test_empty_turn_retries_then_recovers() -> Result<()> {
-            let provider = Arc::new(EmptyThenTextProvider::new(2));
-            let (messages, persisted) = run_reply(provider, "empty-retry-recover").await?;
-
-            let text = concat_text(&messages);
-            assert!(
-                text.contains("All done."),
-                "expected recovery to deliver the real response, got: {text:?}"
-            );
-            assert!(
-                !text.contains("empty response"),
-                "should not surface the empty-turn fallback when recovery succeeds: {text:?}"
-            );
-            assert!(
-                !persisted.iter().any(is_empty_assistant),
-                "retried empty turns must not be persisted: {persisted:?}"
-            );
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn test_wrapped_empty_text_retries_then_recovers() -> Result<()> {
-            let provider = Arc::new(EmptyThenTextProvider::with_wrapped_empty_text(1));
-            let (messages, persisted) = run_reply(provider, "wrapped-empty-retry").await?;
-
-            assert!(concat_text(&messages).contains("All done."));
-            assert!(!persisted.iter().any(|message| {
-                message.role == rmcp::model::Role::Assistant
-                    && matches!(message.content.as_slice(), [MessageContent::Text(text)] if text.text.is_empty())
-            }));
-            Ok(())
-        }
-
-        /// A provider that only ever returns empty responses must not hang
-        /// silently — after the retry budget it surfaces a visible message.
-        #[tokio::test]
-        async fn test_persistent_empty_turn_surfaces_message() -> Result<()> {
-            let provider = Arc::new(EmptyThenTextProvider::new(usize::MAX));
-            let (messages, persisted) = run_reply(provider, "empty-persistent").await?;
-
-            let text = concat_text(&messages);
-            assert!(
-                text.contains("empty response"),
-                "expected a visible empty-response message, got: {text:?}"
-            );
-
-            let last = messages.last().expect("expected at least one message");
-            assert!(
-                matches!(last.content.first(), Some(MessageContent::Text(_))),
-                "expected the final message to be visible text, got: {:?}",
-                last.content
-            );
-            assert!(
-                !persisted.iter().any(is_empty_assistant),
-                "empty assistant turn must not be persisted alongside the fallback: {persisted:?}"
-            );
-
-            let emitted_fallback_id = last
-                .id
-                .as_deref()
-                .expect("empty-turn fallback should be emitted with ID");
-            assert!(emitted_fallback_id.starts_with("msg_"));
-
-            let stored_fallback = persisted
-                .iter()
-                .find(|message| message.as_concat_text().contains("empty response"))
-                .expect("empty-turn fallback should be stored");
-            assert_eq!(stored_fallback.id.as_deref(), Some(emitted_fallback_id));
-            Ok(())
         }
 
         #[tokio::test]
@@ -3478,7 +3200,6 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(50),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -3523,128 +3244,6 @@ mod tests {
                 .find(|message| message.as_concat_text().contains("keep going"))
                 .expect("queued steer should be stored");
             assert_eq!(stored_steer.id.as_deref(), Some(emitted_steer_id.as_str()));
-            Ok(())
-        }
-
-        /// When a final-output tool is installed and the model stops without
-        /// calling it, the empty turn must yield the mandatory final-output nudge
-        /// — not the generic empty-response fallback — so structured-output
-        /// recipes are not abandoned without producing a result.
-        #[tokio::test]
-        async fn test_empty_turn_with_final_output_tool_nudges() -> Result<()> {
-            use goose::agents::final_output_tool::FINAL_OUTPUT_CONTINUATION_MESSAGE;
-            use goose::recipe::{Recipe, Response};
-
-            let agent = Agent::new();
-            let session = agent
-                .config
-                .session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "empty-final-output".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-            agent
-                .update_provider(
-                    Arc::new(EmptyThenTextProvider::new(usize::MAX)),
-                    ModelConfig::new("mock-model"),
-                    &session.id,
-                )
-                .await?;
-            agent
-                .config
-                .session_manager
-                .update(&session.id)
-                .recipe(Some(
-                    Recipe::builder()
-                        .title("Structured output")
-                        .description("Structured output")
-                        .prompt("Return structured output")
-                        .response(Response {
-                            json_schema: Some(serde_json::json!({
-                                "type": "object",
-                                "properties": { "result": { "type": "string" } }
-                            })),
-                        })
-                        .build()
-                        .expect("valid recipe"),
-                ))
-                .apply()
-                .await?;
-
-            let session_config = SessionConfig {
-                id: session.id.clone(),
-                schedule_id: None,
-                max_turns: Some(3),
-                retry_config: None,
-            };
-
-            let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
-                .await?;
-            tokio::pin!(reply_stream);
-
-            let mut messages = Vec::new();
-            let mut emitted_nudge_ids = Vec::new();
-            while let Some(event) = reply_stream.next().await {
-                if let AgentEvent::Message(m) = event? {
-                    if m.role == rmcp::model::Role::User
-                        && m.as_concat_text()
-                            .contains(FINAL_OUTPUT_CONTINUATION_MESSAGE)
-                    {
-                        emitted_nudge_ids.push(
-                            m.id.clone()
-                                .expect("Final-output nudge should be emitted with ID"),
-                        );
-                    }
-                    messages.push(m);
-                }
-            }
-
-            let text = concat_text(&messages);
-            assert!(
-                text.contains(FINAL_OUTPUT_CONTINUATION_MESSAGE),
-                "expected the final-output nudge, got: {text:?}"
-            );
-            assert!(
-                !text.contains("empty response"),
-                "empty-turn fallback must not pre-empt the final-output nudge: {text:?}"
-            );
-
-            assert!(
-                !emitted_nudge_ids.is_empty(),
-                "expected at least one emitted final-output nudge"
-            );
-            assert!(emitted_nudge_ids.iter().all(|id| id.starts_with("msg_")));
-
-            let reloaded = agent
-                .config
-                .session_manager
-                .get_session(&session.id, true)
-                .await?;
-            let conversation = reloaded
-                .conversation
-                .expect("Session should have a conversation");
-            let stored_nudge_ids = conversation
-                .messages()
-                .iter()
-                .filter(|message| {
-                    message.role == rmcp::model::Role::User
-                        && message
-                            .as_concat_text()
-                            .contains(FINAL_OUTPUT_CONTINUATION_MESSAGE)
-                })
-                .map(|message| {
-                    message
-                        .id
-                        .clone()
-                        .expect("Stored final-output nudge should have ID")
-                })
-                .collect::<Vec<_>>();
-
-            assert_eq!(stored_nudge_ids, emitted_nudge_ids);
             Ok(())
         }
 
@@ -3706,7 +3305,6 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(5),
-                retry_config: None,
             };
 
             let reply_stream = agent
@@ -3756,155 +3354,5 @@ mod tests {
             Ok(())
         }
 
-        /// A recipe with retry_config owns the turn: recipe retry logic runs
-        /// its success checks before the empty-turn fallback. When the check
-        /// already passes, an empty final turn is the successful end of the
-        /// recipe, not a generic empty-response error.
-        #[tokio::test]
-        async fn test_empty_turn_defers_to_recipe_retry() -> Result<()> {
-            use goose::agents::types::{RetryConfig, SuccessCheck};
-
-            let agent = Agent::new();
-            let session = agent
-                .config
-                .session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "empty-recipe-retry".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-            agent
-                .update_provider(
-                    Arc::new(EmptyThenTextProvider::new(usize::MAX)),
-                    ModelConfig::new("mock-model"),
-                    &session.id,
-                )
-                .await?;
-
-            let session_config = SessionConfig {
-                id: session.id,
-                schedule_id: None,
-                max_turns: Some(3),
-                retry_config: Some(RetryConfig {
-                    max_retries: 2,
-                    checks: vec![SuccessCheck::Shell {
-                        command: "true".to_string(),
-                    }],
-                    on_failure: None,
-                    timeout_seconds: Some(30),
-                    on_failure_timeout_seconds: None,
-                }),
-            };
-
-            let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
-                .await?;
-            tokio::pin!(reply_stream);
-
-            let mut messages = Vec::new();
-            while let Some(event) = reply_stream.next().await {
-                if let AgentEvent::Message(m) = event? {
-                    messages.push(m);
-                }
-            }
-
-            let text = concat_text(&messages);
-            assert!(
-                !text.contains("empty response"),
-                "recipe retry (passing check) must own the empty turn, not the fallback: {text:?}"
-            );
-            Ok(())
-        }
-
-        /// When a recipe exhausts its retries on empty turns, the max-attempts
-        /// failure message must be surfaced and persisted — not swallowed into a
-        /// silent stop.
-        #[tokio::test]
-        async fn test_recipe_max_retries_surfaces_failure() -> Result<()> {
-            use goose::agents::types::{RetryConfig, SuccessCheck};
-
-            let agent = Agent::new();
-            let session = agent
-                .config
-                .session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "recipe-max-retries".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-            let session_id = session.id.clone();
-            agent
-                .update_provider(
-                    Arc::new(EmptyThenTextProvider::new(usize::MAX)),
-                    ModelConfig::new("mock-model"),
-                    &session.id,
-                )
-                .await?;
-
-            let session_config = SessionConfig {
-                id: session.id,
-                schedule_id: None,
-                max_turns: Some(5),
-                retry_config: Some(RetryConfig {
-                    max_retries: 1,
-                    checks: vec![SuccessCheck::Shell {
-                        command: "false".to_string(),
-                    }],
-                    on_failure: None,
-                    timeout_seconds: Some(30),
-                    on_failure_timeout_seconds: None,
-                }),
-            };
-
-            let reply_stream = agent
-                .reply(Message::user().with_text("Hi"), session_config, None)
-                .await?;
-            tokio::pin!(reply_stream);
-
-            let mut messages = Vec::new();
-            while let Some(event) = reply_stream.next().await {
-                if let AgentEvent::Message(m) = event? {
-                    messages.push(m);
-                }
-            }
-
-            let text = concat_text(&messages);
-            assert!(
-                text.contains("Maximum retry attempts"),
-                "exhausted recipe retries must surface the failure message: {text:?}"
-            );
-            let emitted_failure = messages
-                .iter()
-                .find(|message| message.as_concat_text().contains("Maximum retry attempts"))
-                .expect("max-retry failure message should be emitted");
-            let emitted_failure_id = emitted_failure
-                .id
-                .as_deref()
-                .expect("max-retry failure message should be emitted with ID");
-            assert!(emitted_failure_id.starts_with("msg_"));
-
-            let persisted = agent
-                .config
-                .session_manager
-                .get_session(&session_id, true)
-                .await?
-                .conversation
-                .map(|c| c.messages().to_vec())
-                .unwrap_or_default();
-            assert!(
-                concat_text(&persisted).contains("Maximum retry attempts"),
-                "the max-retry failure message must be persisted: {persisted:?}"
-            );
-            let stored_failure = persisted
-                .iter()
-                .find(|message| message.as_concat_text().contains("Maximum retry attempts"))
-                .expect("max-retry failure message should be stored");
-            assert_eq!(stored_failure.id.as_deref(), Some(emitted_failure_id));
-            Ok(())
-        }
     }
 }

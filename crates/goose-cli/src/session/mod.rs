@@ -33,7 +33,6 @@ use goose::utils::safe_truncate;
 use anyhow::Result;
 use completion::GooseCompleter;
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
-use goose::agents::types::RetryConfig;
 use goose::agents::{
     context_management_unsupported_message, Agent, SessionConfig, COMPACT_TRIGGERS,
 };
@@ -241,7 +240,6 @@ pub struct CliSession {
     scheduled_job_id: Option<String>,
     max_turns: Option<u32>,
     edit_mode: Option<EditMode>,
-    retry_config: Option<RetryConfig>,
     output_format: String,
     stats: bool,
     /// Background extension loader; drained exclusively by
@@ -292,7 +290,6 @@ impl CliSession {
         scheduled_job_id: Option<String>,
         max_turns: Option<u32>,
         edit_mode: Option<EditMode>,
-        retry_config: Option<RetryConfig>,
         output_format: String,
         stats: bool,
         refresh_completions: bool,
@@ -330,7 +327,6 @@ impl CliSession {
             scheduled_job_id,
             max_turns,
             edit_mode,
-            retry_config,
             output_format,
             stats,
             extension_loading,
@@ -1303,7 +1299,6 @@ impl CliSession {
             id: self.session_id.clone(),
             schedule_id: self.scheduled_job_id.clone(),
             max_turns: self.max_turns,
-            retry_config: self.retry_config.clone(),
         };
         let user_message = self
             .messages
@@ -3224,7 +3219,6 @@ mod tests {
             Arc::new(agent),
             session.id,
             false,
-            None,
             None,
             None,
             None,

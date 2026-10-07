@@ -17,8 +17,8 @@ use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
-    Inference, InferenceInput, Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
+    InferenceInput, Operation, OperationResult,
 };
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -71,8 +71,21 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-const EMPTY_RESPONSE_MESSAGE: &str =
+pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
+const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
+const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
+const EMPTY_RESPONSE_NOTE: &str = "empty_response";
+
+/// The model's response stayed empty after retries. The fallback message is stored
+/// hidden so that operations owning the end of a turn (recipe retries, final output)
+/// can take over; when none does, it is revealed to the user.
+pub fn is_empty_response_marker(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .is_some()
+}
 const CANCELLED_TOOL_RESPONSE: &str = "Tool call was cancelled before execution";
 
 fn is_thinking(content: &MessageContent) -> bool {
@@ -425,6 +438,8 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
+            let mut empty_responses = 0;
+            let accumulator = loop {
             let stream = self
                 .provider
                 .stream(
@@ -529,12 +544,27 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     .iter()
                     .any(|message| message.metadata.output_token_limit_reached)
                 && accumulator.iter().all(is_empty_response);
-            if empty_response {
-                let message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
-                let message = emit.message(message).await;
-                usage_effects.push(E::from(message));
-                return yielded_with(usage_effects);
+            if !empty_response {
+                break accumulator;
             }
+            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
+                empty_responses += 1;
+                tracing::warn!(
+                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
+                );
+                continue;
+            }
+            let mut marker = Message::assistant()
+                .with_text(EMPTY_RESPONSE_MESSAGE)
+                .with_visibility(false, false);
+            marker.metadata.set_operation_note(
+                EMPTY_RESPONSE_NOTE_SCOPE,
+                EMPTY_RESPONSE_NOTE,
+                serde_json::Value::Bool(true),
+            );
+            usage_effects.push(E::from(marker));
+            return applied(usage_effects);
+            };
 
             if ends_with_successful_tool_response(conversation.messages())
                 && !accumulator

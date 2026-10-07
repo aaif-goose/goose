@@ -65,6 +65,7 @@ struct ApiRule {
     matcher: ApiMatcher,
     response: ApiResponse,
     gate: Option<ResponseGate>,
+    remaining: Option<usize>,
 }
 
 enum ApiMatcher {
@@ -240,6 +241,7 @@ impl DummyApi {
             matcher,
             response,
             gate: None,
+            remaining: None,
         });
         rules.len() - 1
     }
@@ -249,6 +251,7 @@ impl DummyApi {
             matcher,
             response,
             gate: Some(gate),
+            remaining: None,
         });
     }
 }
@@ -369,6 +372,11 @@ impl<'a> ApiRuleBuilder<'a> {
 }
 
 impl<'a> ConfiguredResponse<'a> {
+    pub(super) fn times(self, count: usize) -> Self {
+        self.api.state.rules.lock().unwrap()[self.rule].remaining = Some(count);
+        self
+    }
+
     pub(super) fn reply(self, text: impl Into<String>) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
         let ApiResponse::Mixed {
@@ -454,17 +462,23 @@ impl DummyApiState {
         let input = request_input(&body);
         let system = request_system(&body);
         let (response, gate) = {
-            let rules = self.rules.lock().unwrap();
+            let mut rules = self.rules.lock().unwrap();
             let rule = rules
-                .iter()
+                .iter_mut()
                 .rev()
-                .find(|rule| match &rule.matcher {
-                    ApiMatcher::InputContains(needle) => input.contains(needle),
-                    ApiMatcher::SystemContains(needle) => system.contains(needle),
+                .find(|rule| {
+                    rule.remaining != Some(0)
+                        && match &rule.matcher {
+                            ApiMatcher::InputContains(needle) => input.contains(needle),
+                            ApiMatcher::SystemContains(needle) => system.contains(needle),
+                        }
                 })
                 .unwrap_or_else(|| {
                     panic!("dummy API has no rule matching input {input:?}, system {system:?}")
                 });
+            if let Some(remaining) = &mut rule.remaining {
+                *remaining -= 1;
+            }
             (rule.response.clone(), rule.gate.clone())
         };
         if let Some(gate) = gate {

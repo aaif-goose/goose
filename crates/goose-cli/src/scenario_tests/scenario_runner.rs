@@ -255,7 +255,6 @@ where
         None,
         None,
         None,
-        None,
         "text".to_string(),
         false,
         false,

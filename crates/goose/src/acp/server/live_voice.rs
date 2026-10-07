@@ -249,7 +249,6 @@ impl GooseAcpAgent {
             id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
         let input_message =
             Message::user().with_text(format!("{LIVE_DELEGATION_INSTRUCTION}\n\n{input}"));

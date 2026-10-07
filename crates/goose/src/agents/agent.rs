@@ -27,8 +27,8 @@ use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, BangShellOperation,
-    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    CompactionOperation, DoctorOperation, Emitter, EmptyResponseOperation, EntryHookOperation,
+    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
     StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
@@ -235,10 +235,17 @@ pub struct Agent {
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
 }
 
-fn ensure_message_event_id(event: AgentEvent) -> AgentEvent {
+fn user_event(event: AgentEvent) -> Option<AgentEvent> {
     match event {
-        AgentEvent::Message(message) => AgentEvent::Message(message.with_generated_id_if_missing()),
-        other => other,
+        AgentEvent::Message(message) => {
+            let had_content = !message.content.is_empty();
+            let projected = message
+                .with_generated_id_if_missing()
+                .user_visible_content();
+            (!had_content || !projected.content.is_empty())
+                .then_some(AgentEvent::Message(projected))
+        }
+        other => Some(other),
     }
 }
 
@@ -1318,6 +1325,7 @@ impl Agent {
                 std::time::Duration::from_secs(retry_timeout),
                 std::time::Duration::from_secs(on_failure_timeout),
             )),
+            Arc::new(EmptyResponseOperation),
             Arc::new(StopHookOperation::new(
                 self.hook_manager.clone(),
                 stop_hook_block_cap,
@@ -1664,7 +1672,9 @@ impl Agent {
         let events = self
             .reply_with_state_machine(user_message, session_config, Some(cancel_token))
             .await?;
-        Ok(Box::pin(events.map_ok(ensure_message_event_id)))
+        Ok(Box::pin(events.try_filter_map(|event| async move {
+            Ok(user_event(event))
+        })))
     }
 
     #[instrument(
@@ -1697,11 +1707,11 @@ impl Agent {
         .await?;
         let events = crate::session_context::with_session_id_stream(Some(session_id), events);
 
-        // This is the single live-event identity boundary. Callers that intentionally stream
+        // This is the single live-event boundary. Callers that intentionally stream
         // multiple events for one logical message must assign their shared ID before this point.
         Ok(Box::pin(
             events
-                .map_ok(ensure_message_event_id)
+                .try_filter_map(|event| async move { Ok(user_event(event)) })
                 .instrument(reply_span),
         ))
     }
@@ -2329,7 +2339,6 @@ mod tests {
             id: session.id.clone(),
             schedule_id: None,
             max_turns: Some(1),
-            retry_config: None,
         };
 
         (agent, provider, session_config, temp_dir)
@@ -3205,15 +3214,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id,
             schedule_id: None,
             max_turns: Some(10),
-            retry_config: Some(crate::agents::types::RetryConfig {
-                max_retries: 3,
-                checks: vec![crate::agents::types::SuccessCheck::Shell {
-                    command: "false".to_string(),
-                }],
-                on_failure: None,
-                timeout_seconds: None,
-                on_failure_timeout_seconds: None,
-            }),
         };
 
         let reply_stream = agent
@@ -3295,7 +3295,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(10),
-            retry_config: None,
         };
         let reply_stream = agent
             .reply(Message::user().with_text(text), session_config, None)
@@ -3423,7 +3422,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id.clone(),
             schedule_id: None,
             max_turns: Some(10),
-            retry_config: None,
         };
         let user_only_content = MessageContent::Text(
             TextContent::new("user-only")
@@ -3454,7 +3452,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id.clone(),
             schedule_id: None,
             max_turns: Some(10),
-            retry_config: None,
         };
         let mut visible_stream = agent
             .reply(
@@ -3473,7 +3470,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id,
             schedule_id: None,
             max_turns: Some(10),
-            retry_config: None,
         };
         let mut final_stream = agent
             .reply(

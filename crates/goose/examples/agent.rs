@@ -51,7 +51,6 @@ async fn main() -> anyhow::Result<()> {
         id: session.id,
         schedule_id: None,
         max_turns: None,
-        retry_config: None,
     };
 
     let user_message = Message::user()
