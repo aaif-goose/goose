@@ -259,6 +259,39 @@ async fn a_context_error_compacts_and_the_session_survives_a_failed_retry() -> R
 }
 
 #[tokio::test]
+async fn a_context_error_compacts_and_the_retry_sets_the_usage() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("overflow once").context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("Your context was compacted")
+        .reply("recovered after compaction");
+
+    let recovered = pipeline.run(["overflow once"]).await?;
+    recovered.assert_message(-1, Agent, "recovered after compaction");
+    assert_eq!(recovered.history_replacements(), 1);
+
+    let calls = api.calls();
+    assert_eq!(calls.len(), 3);
+    let (summary, retry) = (&calls[1], &calls[2]);
+    let usage = &recovered.session.usage;
+    let output_tokens = "recovered after compaction".chars().count() as i32;
+    assert_eq!(usage.input_tokens, Some(retry.input_tokens()));
+    assert_eq!(usage.output_tokens, Some(output_tokens));
+    assert_eq!(
+        usage.total_tokens,
+        Some(retry.input_tokens() + output_tokens)
+    );
+    assert_eq!(
+        recovered.session.accumulated_usage.total_tokens,
+        Some(
+            summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
+        )
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn repeated_context_errors_stop_compacting() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("keep overflowing").context_limit_error("too long");
