@@ -2270,10 +2270,8 @@ impl Agent {
             .await
             .as_ref()
             .map(|provider| provider.get_name().to_string());
-        if let (Some(stored), Some(live)) = (&session.provider_name, &live_provider_name) {
-            if stored != live {
-                self.restore_provider_from_session(&session).await?;
-            }
+        if session.provider_name.is_some() && session.provider_name != live_provider_name {
+            self.restore_provider_from_session(&session).await?;
         }
 
         if use_state_machine {
