@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -185,7 +184,6 @@ pub struct Agent {
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
-    session_start_emitted: AtomicBool,
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
@@ -293,7 +291,6 @@ impl Agent {
                     use_login_shell_path,
                 )
             },
-            session_start_emitted: AtomicBool::new(false),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
             steer_queues: Mutex::new(HashMap::new()),
@@ -333,9 +330,6 @@ impl Agent {
         event: crate::hooks::HookEvent,
         session_id: &str,
     ) -> Vec<String> {
-        if event == crate::hooks::HookEvent::SessionStart {
-            self.session_start_emitted.store(true, Ordering::Release);
-        }
         if !self.hook_manager.has_hooks(event) {
             return Vec::new();
         }
@@ -971,12 +965,14 @@ impl Agent {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let operations: Vec<_> =
-            std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
-                as Arc<dyn Operation<Session, GooseEffect> + '_>)
-            .chain(std::iter::once(command_operation))
-            .chain(operations)
-            .collect();
+        let operations: Vec<_> = std::iter::once(Arc::new(EntryHookOperation::new(
+            self.hook_manager.clone(),
+            session_config.session_start_emitted,
+        ))
+            as Arc<dyn Operation<Session, GooseEffect> + '_>)
+        .chain(std::iter::once(command_operation))
+        .chain(operations)
+        .collect();
 
         let steps = operations
             .into_iter()
@@ -1825,6 +1821,7 @@ mod tests {
             id: session.id.clone(),
             schedule_id: None,
             max_turns: Some(1),
+            session_start_emitted: false,
         };
 
         (agent, provider, session_config, temp_dir)
@@ -2655,6 +2652,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id,
             schedule_id: None,
             max_turns: Some(10),
+            session_start_emitted: false,
         };
 
         let reply_stream = agent
@@ -2741,6 +2739,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(10),
+            session_start_emitted: false,
         };
         let reply_stream = agent
             .reply(Message::user().with_text(text), session_config, None)

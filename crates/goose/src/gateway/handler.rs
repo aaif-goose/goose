@@ -543,6 +543,7 @@ impl GatewayHandler {
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(max_turns),
+            session_start_emitted: false,
         };
 
         let mut stream = match agent

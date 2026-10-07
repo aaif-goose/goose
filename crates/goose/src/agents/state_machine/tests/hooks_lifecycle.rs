@@ -298,6 +298,15 @@ async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> 
     assert_eq!(session_start.invocations(), 1);
     assert_eq!(api.call_count(), 2);
 
+    let opened_by_client = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_hook_manager(opened_by_client.hook_manager())
+        .with_session_start_emitted();
+    api.on("first").reply("ok");
+    pipeline.run(["first"]).await?;
+    assert_eq!(opened_by_client.invocations(), 0);
+
     let prompt_submit = HookTestEnv::new("UserPromptSubmit", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(prompt_submit.hook_manager());

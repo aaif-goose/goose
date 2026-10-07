@@ -286,6 +286,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         id: session.id.clone(),
         schedule_id: None,
         max_turns: None,
+        session_start_emitted: false,
     };
 
     let reply_stream = agent.reply(user_message, session_config, None).await?;

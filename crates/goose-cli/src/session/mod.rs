@@ -247,6 +247,7 @@ pub struct CliSession {
     /// gate.
     extension_loading: Option<AbortOnDropHandle<Result<Vec<ExtensionFailure>>>>,
     loading_announced: bool,
+    session_start_emitted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -331,6 +332,7 @@ impl CliSession {
             stats,
             extension_loading,
             loading_announced: false,
+            session_start_emitted: false,
         }
     }
 
@@ -559,6 +561,7 @@ impl CliSession {
             .agent
             .emit_hook_with_banners(goose::hooks::HookEvent::SessionStart, &self.session_id)
             .await;
+        self.session_start_emitted = true;
         if !banners.is_empty() {
             output::display_banner(&banners);
         }
@@ -1132,6 +1135,7 @@ impl CliSession {
         self.agent.config.providers.release(&self.session_id);
 
         self.session_id = new_session_id;
+        self.session_start_emitted = false;
         self.messages.clear();
 
         let mode = self.agent.goose_mode(&self.session_id).await?;
@@ -1296,6 +1300,7 @@ impl CliSession {
             id: self.session_id.clone(),
             schedule_id: self.scheduled_job_id.clone(),
             max_turns: self.max_turns,
+            session_start_emitted: self.session_start_emitted,
         };
         let user_message = self
             .messages

@@ -187,6 +187,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let mut stream = agent
         .reply(
@@ -417,6 +418,7 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let mut stream = agent
         .reply(
@@ -485,6 +487,7 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let mut stream = agent
         .reply(
@@ -536,6 +539,7 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let mut stream = agent
         .reply(
@@ -599,6 +603,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let mut stream = agent
         .reply(
@@ -655,6 +660,7 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
         id: session_id.clone(),
         schedule_id: None,
         max_turns: Some(1),
+        session_start_emitted: false,
     };
     let stream = agent
         .reply_with_state_machine(
@@ -690,6 +696,7 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
+        session_start_emitted: false,
     };
     let stream = agent
         .reply(
@@ -737,6 +744,7 @@ async fn reply_messages(
                 id: session_id,
                 schedule_id: None,
                 max_turns: Some(2),
+                session_start_emitted: false,
             },
             Some(CancellationToken::new()),
         )

@@ -12,11 +12,15 @@ use crate::session::Session;
 
 pub struct EntryHookOperation {
     hook_manager: HookManager,
+    session_start_emitted: bool,
 }
 
 impl EntryHookOperation {
-    pub fn new(hook_manager: HookManager) -> Self {
-        Self { hook_manager }
+    pub fn new(hook_manager: HookManager, session_start_emitted: bool) -> Self {
+        Self {
+            hook_manager,
+            session_start_emitted,
+        }
     }
 }
 
@@ -43,11 +47,13 @@ impl Operation<Session, GooseEffect> for EntryHookOperation {
 
         let messages_before_kickoff =
             &conversation.messages()[..conversation.len() - messages.len()];
-        if !messages_before_kickoff.iter().any(|message| {
-            message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
-        }) {
+        if !self.session_start_emitted
+            && !messages_before_kickoff.iter().any(|message| {
+                message.role == rmcp::model::Role::User
+                    && message.is_user_visible()
+                    && !message.is_tool_response()
+            })
+        {
             self.hook_manager
                 .emit(
                     HookEvent::SessionStart,

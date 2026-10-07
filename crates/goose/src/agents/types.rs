@@ -70,6 +70,8 @@ pub struct SessionConfig {
     pub schedule_id: Option<String>,
     /// Maximum number of turns (iterations) allowed without user input
     pub max_turns: Option<u32>,
+    /// The client fired SessionStart itself when it opened the session, so turns must not.
+    pub session_start_emitted: bool,
 }
 
 #[cfg(test)]

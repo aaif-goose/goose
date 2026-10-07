@@ -556,6 +556,7 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(1),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -780,6 +781,7 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(1),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent.reply(user_message, session_config, None).await?;
@@ -1134,6 +1136,7 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1187,6 +1190,7 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
+                session_start_emitted: false,
             };
 
             let reply_stream2 = agent
@@ -1377,6 +1381,7 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1576,6 +1581,7 @@ mod tests {
                 id: session_id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1741,6 +1747,7 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1819,6 +1826,7 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1869,6 +1877,7 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -1932,6 +1941,7 @@ mod tests {
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(10),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -2055,6 +2065,7 @@ mod tests {
                 id: session_id.to_string(),
                 schedule_id: None,
                 max_turns: Some(1),
+                session_start_emitted: false,
             };
             let stream = agent
                 .reply(Message::user().with_text(text), session_config, None)
@@ -2462,6 +2473,7 @@ mod tests {
                         id: session_id.clone(),
                         schedule_id: None,
                         max_turns: Some(3),
+                        session_start_emitted: false,
                     },
                     None,
                 )
@@ -2726,6 +2738,7 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(50),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -2835,6 +2848,7 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(50),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
@@ -2939,6 +2953,7 @@ mod tests {
                 id: session.id,
                 schedule_id: None,
                 max_turns: Some(5),
+                session_start_emitted: false,
             };
 
             let reply_stream = agent
