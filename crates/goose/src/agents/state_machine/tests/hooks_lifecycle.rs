@@ -285,6 +285,28 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
 }
 
 #[tokio::test]
+async fn stop_hook_does_not_run_once_the_turn_is_stopped() -> Result<()> {
+    let env = HookTestEnv::new("Stop", LOG_AND_ALLOW_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
+    pipeline
+        .seed([
+            Message::user().with_text("hello"),
+            Message::assistant().with_text("done"),
+        ])
+        .await?;
+
+    pipeline.resume_cancelled().await?;
+    assert_eq!(env.invocations(), 0);
+
+    pipeline.resume().await?;
+    assert_eq!(env.invocations(), 1);
+    assert_eq!(api.call_count(), 0);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> {
     let session_start = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;

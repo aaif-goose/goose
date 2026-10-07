@@ -2826,6 +2826,10 @@ impl Agent {
                     session_manager.add_message(&session_config.id, &message).await?;
                     conversation.push(message);
 
+                    if is_token_cancelled(&cancel_token) {
+                        break;
+                    }
+
                     match self
                         .emit_stop_hook_blocking(&session_config.id, &last_assistant_text, &session.working_dir.to_string_lossy())
                         .await
@@ -5494,6 +5498,29 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
+    struct FinalOutputCallProvider;
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for FinalOutputCallProvider {
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            let call = rmcp::model::CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)
+                .with_arguments(rmcp::object!({ "result": "done" }));
+            let message = Message::assistant().with_tool_request("final-output-call", Ok(call));
+            let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+            Ok(stream_from_single_message(message, usage))
+        }
+
+        fn get_name(&self) -> &str {
+            "final-output-call"
+        }
+    }
+
     struct ChunkedTextProvider;
 
     #[async_trait::async_trait]
@@ -6162,9 +6189,39 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT)?;
         let (agent, session_id, _provider) = create_stop_hook_test_agent(&env, 1).await?;
 
-        for cancel_before_start in [true, false] {
+        #[derive(PartialEq)]
+        enum CancelAt {
+            Start,
+            FirstMessage,
+            FinalOutput,
+        }
+        const FINAL_OUTPUT: &str = r#"{"result":"done"}"#;
+
+        for cancel_at in [
+            CancelAt::Start,
+            CancelAt::FirstMessage,
+            CancelAt::FinalOutput,
+        ] {
+            if cancel_at == CancelAt::FinalOutput {
+                agent
+                    .update_provider(
+                        Arc::new(FinalOutputCallProvider),
+                        goose_providers::model::ModelConfig::new("mock-model"),
+                        &session_id,
+                    )
+                    .await?;
+                agent
+                    .add_final_output_tool(Response {
+                        json_schema: Some(serde_json::json!({
+                            "type": "object",
+                            "properties": { "result": { "type": "string" } },
+                            "required": ["result"]
+                        })),
+                    })
+                    .await?;
+            }
             let cancel_token = CancellationToken::new();
-            if cancel_before_start {
+            if cancel_at == CancelAt::Start {
                 cancel_token.cancel();
             }
             let session_config = SessionConfig {
@@ -6183,8 +6240,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 )
                 .await?;
             while let Some(event) = stream.next().await {
-                if let AgentEvent::Message(_) = event? {
-                    cancel_token.cancel();
+                if let AgentEvent::Message(message) = event? {
+                    if cancel_at != CancelAt::FinalOutput
+                        || message.as_concat_text() == FINAL_OUTPUT
+                    {
+                        cancel_token.cancel();
+                    }
                 }
             }
         }
