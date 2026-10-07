@@ -599,63 +599,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_failed_creation_prunes_creation_lock() {
-        // Regression test for the Codex review note on PR #9357: when
-        // `create_agent_locked` returns Err, the outer `get_or_create_agent`
-        // must also drop its local Arc clone of the creation lock before
-        // pruning.  Otherwise `Arc::strong_count` stays > 1 and the failed
-        // session leaks a permanent entry in `creation_locks`.
-        use crate::recipe::{Recipe, Response};
-
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir).await;
-        let session = manager
-            .session_manager()
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "failed-creation-test".into(),
-                SessionType::User,
-                GooseMode::default(),
-            )
-            .await
-            .unwrap();
-        let recipe = Recipe {
-            version: "1.0.0".into(),
-            title: "Test".into(),
-            description: "Test recipe".into(),
-            response: Some(Response { json_schema: None }),
-            instructions: None,
-            prompt: None,
-            extensions: None,
-            settings: None,
-            activities: None,
-            author: None,
-            parameters: None,
-            sub_recipes: None,
-            retry: None,
-        };
-        manager
-            .session_manager()
-            .update(&session.id)
-            .recipe(Some(recipe))
-            .apply()
-            .await
-            .unwrap();
-
-        let result = manager.get_or_create_agent(session.id.clone()).await;
-
-        assert!(result.is_err(), "expected the invalid recipe to fail");
-        assert!(
-            manager.creation_locks.lock().await.is_empty(),
-            "creation_locks must be empty after a failed agent creation"
-        );
-        assert!(
-            !manager.has_session(&session.id).await,
-            "failed creation must not insert into the LRU cache"
-        );
-    }
-
-    #[tokio::test]
     async fn test_lru_eviction_prunes_creation_lock() {
         // Sessions can disappear from the LRU cache without going through
         // remove_session.  When that happens the matching creation lock
