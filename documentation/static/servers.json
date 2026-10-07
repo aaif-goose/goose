@@ -426,6 +426,18 @@
     ]
   },
   {
+    "id": "maqami-travel",
+    "name": "MAQAMI Travel",
+    "description": "Search hotel rates and flights, then get a checkout link on book.maqami.co",
+    "url": "https://mcp.maqami.co/",
+    "link": "https://github.com/negm17111995/mcp-server",
+    "installation_notes": "Hosted remote server. No sign-in or API key. Searches and prices only; travellers pay on book.maqami.co.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "memory",
     "name": "Memory",
     "description": "Built-in memory system for persistent context and information storage",
