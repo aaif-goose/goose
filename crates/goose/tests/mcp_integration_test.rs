@@ -95,7 +95,7 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
         temp_dir.path().to_path_buf(),
     ));
     let manager = Arc::new(ExtensionManager::new(
-        Arc::new(tokio::sync::Mutex::new(None)),
+        Default::default(),
         session_manager.clone(),
         None,
         "extension-contract".to_string(),
@@ -905,7 +905,7 @@ async fn test_replayed_session(
         temp_dir.path().to_path_buf(),
     ));
     let extension_manager = Arc::new(ExtensionManager::new(
-        Arc::new(tokio::sync::Mutex::new(None)),
+        Default::default(),
         session_manager,
         None,
         GoosePlatform::GooseDesktop.to_string(),

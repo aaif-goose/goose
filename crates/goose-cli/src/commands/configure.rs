@@ -1819,10 +1819,8 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let extensions = extension_config.into_iter().collect::<Vec<_>>();
-    let new_provider = create(&provider_name, extensions).await?;
     agent
-        .update_provider(new_provider, model_config, &session.id)
+        .switch_provider(&session.id, &provider_name, model_config)
         .await?;
 
     let permission_manager = PermissionManager::instance();

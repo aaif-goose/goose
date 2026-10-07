@@ -382,21 +382,19 @@ pub async fn spawn_acp_server_in_process(
     write_global_test_config(&config_path, openai_base_url);
     let provider_factory = provider_factory.unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
-        Arc::new(
-            move |_provider_name, _extensions, _working_dir, _use_default_model| {
-                let base_url = base_url.clone();
-                Box::pin(async move {
-                    let api_client = ApiClient::new_with_tls(
-                        base_url,
-                        ApiAuthMethod::BearerToken("test-key".to_string()),
-                        None,
-                    )
-                    .unwrap();
-                    let provider: Arc<dyn Provider> = Arc::new(OpenAiProvider::new(api_client));
-                    Ok(provider)
-                })
-            },
-        )
+        Arc::new(move |_provider_name| {
+            let base_url = base_url.clone();
+            Box::pin(async move {
+                let api_client = ApiClient::new_with_tls(
+                    base_url,
+                    ApiAuthMethod::BearerToken("test-key".to_string()),
+                    None,
+                )
+                .unwrap();
+                let provider: Arc<dyn Provider> = Arc::new(OpenAiProvider::new(api_client));
+                Ok(provider)
+            })
+        })
     });
 
     let active_runs = Arc::new(goose::acp::server::ActiveRunRegistry::default());

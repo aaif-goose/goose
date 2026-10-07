@@ -1,7 +1,9 @@
 use crate::cli::StreamableHttpOptions;
 
 use super::output;
-use super::{derive_extension_name_from_command, split_extension_name_prefix, CliSession};
+use super::{
+    derive_extension_name_from_command, session_provider, split_extension_name_prefix, CliSession,
+};
 use console::style;
 use goose::agents::final_output_tool::FinalOutputTool;
 use goose::agents::{Agent, Container, ExtensionError};
@@ -9,7 +11,6 @@ use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::model_config::model_config_from_user_config;
-use goose::providers::create;
 use goose::recipe::Recipe;
 use goose::session::session_manager::SessionType;
 use goose::session::{EnabledExtensionsState, SessionManager};
@@ -715,9 +716,16 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                 process::exit(1);
             }
         };
+    if let Err(e) = agent
+        .persist_extension_configs(&session_id, extensions_for_provider.clone())
+        .await
+    {
+        output::render_error(&format!("Failed to save session extensions: {}", e));
+        process::exit(1);
+    }
 
     let (new_provider, effective_provider_name, effective_model_name, effective_model_config) =
-        match create(&resolved.provider_name, extensions_for_provider.clone()).await {
+        match session_provider(&agent, &session_id, &resolved.provider_name).await {
             Ok(provider) => (
                 provider,
                 resolved.provider_name.clone(),
@@ -758,7 +766,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                 if !session_config.interactive {
                     fallback_model_config = fallback_model_config.with_cache_ttl_clamped();
                 }
-                match create(&fallback_provider, extensions_for_provider.clone()).await {
+                match session_provider(&agent, &session_id, &fallback_provider).await {
                     Ok(provider) => (
                         provider,
                         fallback_provider,
@@ -804,7 +812,11 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     });
 
     agent
-        .update_provider(new_provider, effective_model_config, &session_id)
+        .switch_provider(
+            &session_id,
+            &effective_provider_name,
+            effective_model_config,
+        )
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to initialize agent: {}", e));
@@ -837,19 +849,11 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     // Extensions are loaded after session creation because we may change
     // directory when resuming.
     let agent_ptr = Arc::new(agent);
-    let loading_handle = match agent_ptr
-        .persist_extension_configs(&session_id, extensions_for_provider.clone())
-        .await
-    {
-        Ok(()) => AbortOnDropHandle::new(tokio::spawn({
-            let agent = agent_ptr.clone();
-            let sid = session_id.clone();
-            async move { load_extensions(agent, extensions_for_provider, &sid).await }
-        })),
-        Err(error) => AbortOnDropHandle::new(tokio::spawn(async move {
-            vec![ExtensionFailure { label: None, error }]
-        })),
-    };
+    let loading_handle = AbortOnDropHandle::new(tokio::spawn({
+        let agent = agent_ptr.clone();
+        let sid = session_id.clone();
+        async move { load_extensions(agent, extensions_for_provider, &sid).await }
+    }));
 
     let edit_mode = config
         .get_param::<String>("EDIT_MODE")

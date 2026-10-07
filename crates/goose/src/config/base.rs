@@ -14,6 +14,7 @@ use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -124,6 +125,7 @@ pub struct Config {
     secrets: SecretStorage,
     guard: Mutex<()>,
     secrets_cache: Arc<Mutex<Option<HashMap<String, Value>>>>,
+    generation: AtomicU64,
 }
 
 enum SecretStorage {
@@ -211,6 +213,7 @@ impl Default for Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         };
 
         let keyring_disabled = env::var("GOOSE_DISABLE_KEYRING").is_ok()
@@ -223,6 +226,7 @@ impl Default for Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         }
     }
 }
@@ -441,6 +445,7 @@ impl Config {
             secrets,
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -459,6 +464,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -473,6 +479,7 @@ impl Config {
             },
             guard: Mutex::new(()),
             secrets_cache: Arc::new(Mutex::new(None)),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -663,6 +670,7 @@ impl Config {
 
         // Atomically replace the original file
         std::fs::rename(&temp_path, &target_path)?;
+        self.generation.fetch_add(1, Ordering::Relaxed);
 
         Ok(())
     }
@@ -1186,6 +1194,12 @@ impl Config {
     pub fn invalidate_secrets_cache(&self) {
         let mut cache = self.secrets_cache.lock().unwrap();
         *cache = None;
+        self.generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Changes whenever this process writes config or secrets.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
     }
 
     /// Check if an error string indicates a keyring availability issue that should trigger fallback

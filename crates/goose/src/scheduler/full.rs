@@ -18,7 +18,6 @@ use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 #[cfg(feature = "telemetry")]
 use crate::posthog;
-use crate::providers::create;
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::validate_recipe::{
     recipe_file_format, validate_recipe_for_scheduling, SchedulerRecipeError,
@@ -895,9 +894,8 @@ async fn execute_job(
         agent.add_extension(ext.clone(), &session.id).await?;
     }
 
-    let agent_provider = create(&provider_name, extensions).await?;
     agent
-        .update_provider(agent_provider, model_config, &session.id)
+        .switch_provider(&session.id, &provider_name, model_config)
         .await?;
     agent
         .update_goose_mode(GooseMode::Auto, &session.id)

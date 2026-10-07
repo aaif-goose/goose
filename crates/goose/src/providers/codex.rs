@@ -637,6 +637,7 @@ impl goose_providers::base::ProviderDescriptor for CodexProvider {
 
 impl ProviderDef for CodexProvider {
     type Provider = Self;
+    const SESSION_BOUND: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

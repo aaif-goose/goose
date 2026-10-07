@@ -14,7 +14,7 @@ use goose::providers::base::Provider;
 use goose::providers::bedrock::BEDROCK_DEFAULT_MODEL;
 use goose::providers::claude_code::CLAUDE_CODE_DEFAULT_MODEL;
 use goose::providers::codex::CODEX_DEFAULT_MODEL;
-use goose::providers::create_with_named_model;
+use goose::providers::create;
 use goose::providers::google::GOOGLE_DEFAULT_MODEL;
 use goose::providers::litellm::LITELLM_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
@@ -241,7 +241,7 @@ impl ProviderFixture {
             available_tools: vec![],
         };
 
-        let provider = create_with_named_model(
+        let provider = create(
             &config.name.to_lowercase(),
             vec![mcp_extension.clone(), developer_extension.clone()],
         )

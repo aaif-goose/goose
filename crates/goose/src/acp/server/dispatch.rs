@@ -244,7 +244,7 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                             let session_agent =
                                                 agent_bg.get_session_agent(&session_id_bg.0).await?;
                                             let provider = session_agent
-                                                .provider()
+                                                .provider(&session_id_bg.0)
                                                 .await
                                                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                                             let provider_name = provider.get_name().to_string();

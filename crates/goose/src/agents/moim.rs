@@ -47,18 +47,24 @@ pub(super) async fn compute_compaction_info(
     let session_model_config = session
         .as_ref()
         .and_then(|session| session.model_config.clone());
-    let context_limit = if let Some(model_config) = session_model_config.as_ref() {
-        let provider = extension_manager.get_provider().lock().await.clone();
-        match provider {
-            Some(provider) => {
-                crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
-                    .await
-                    .ok()
+    let context_limit = match (session.as_ref(), session_model_config.as_ref()) {
+        (Some(session), Some(model_config)) => {
+            match extension_manager
+                .get_context()
+                .providers
+                .provider_for(session)
+                .await
+            {
+                Ok(provider) => crate::context_limit::get_context_limit(
+                    provider.as_ref(),
+                    &model_config.model_name,
+                )
+                .await
+                .ok(),
+                Err(_) => None,
             }
-            None => None,
         }
-    } else {
-        None
+        _ => None,
     };
     let total_tokens = session
         .as_ref()
@@ -91,18 +97,24 @@ pub async fn turn_context_message(
     let session_model_config = session
         .as_ref()
         .and_then(|session| session.model_config.clone());
-    let context_limit = if let Some(model_config) = session_model_config.as_ref() {
-        let provider = extension_manager.get_provider().lock().await.clone();
-        match provider {
-            Some(provider) => {
-                crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
-                    .await
-                    .ok()
+    let context_limit = match (session.as_ref(), session_model_config.as_ref()) {
+        (Some(session), Some(model_config)) => {
+            match extension_manager
+                .get_context()
+                .providers
+                .provider_for(session)
+                .await
+            {
+                Ok(provider) => crate::context_limit::get_context_limit(
+                    provider.as_ref(),
+                    &model_config.model_name,
+                )
+                .await
+                .ok(),
+                Err(_) => None,
             }
-            None => None,
         }
-    } else {
-        None
+        _ => None,
     };
     if should_skip_moim(context_limit) {
         return None;
@@ -278,7 +290,7 @@ mod tests {
 
     async fn session_and_manager() -> (String, ExtensionManager, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let em = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let em = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         let session = em
             .get_context()
             .session_manager

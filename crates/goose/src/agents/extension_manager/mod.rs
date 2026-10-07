@@ -19,11 +19,11 @@ use super::extension::{
     ExtensionConfig, ExtensionError, ExtensionResult, PlatformExtensionContext, PLATFORM_EXTENSIONS,
 };
 use super::tool_execution::ToolCallResult;
-use super::types::SharedProvider;
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
+use crate::agents::provider_manager::ProviderManager;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
@@ -289,7 +289,6 @@ pub struct ExtensionManager {
     mutation_lock: Mutex<()>,
     directory_lock: RwLock<()>,
     context: PlatformExtensionContext,
-    provider: SharedProvider,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
 }
@@ -502,7 +501,7 @@ impl ExtensionManager {
     }
 
     pub fn new(
-        provider: SharedProvider,
+        providers: Arc<ProviderManager>,
         session_manager: Arc<crate::session::SessionManager>,
         scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
         client_name: String,
@@ -515,21 +514,20 @@ impl ExtensionManager {
             directory_lock: RwLock::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
-                provider: provider.clone(),
+                providers,
                 session_manager,
                 scheduler,
                 use_login_shell_path,
             },
-            provider,
             client_name,
             capabilities,
         }
     }
 
-    pub fn new_without_provider(data_dir: std::path::PathBuf) -> Self {
+    pub fn with_data_dir(data_dir: std::path::PathBuf) -> Self {
         let session_manager = Arc::new(crate::session::SessionManager::new(data_dir));
         Self::new(
-            Arc::new(Mutex::new(None)),
+            Default::default(),
             session_manager,
             None,
             "goose-cli".to_string(),
@@ -545,10 +543,6 @@ impl ExtensionManager {
 
     pub fn get_context(&self) -> &PlatformExtensionContext {
         &self.context
-    }
-
-    pub fn get_provider(&self) -> &SharedProvider {
-        &self.provider
     }
 
     fn hydrate_mcp_apps(&self) -> bool {
@@ -1288,8 +1282,7 @@ mod tests {
 
     async fn dispatch_notification_methods(ctx: ToolCallContext) -> Vec<String> {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         extension_manager
             .add_mock_extension(
                 "notifications".to_string(),
@@ -1344,8 +1337,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_reuses_existing_notification_emitter() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         extension_manager
             .add_mock_extension(
                 "notifications".to_string(),
@@ -1485,8 +1477,7 @@ mod tests {
     #[tokio::test]
     async fn app_dispatch_rejects_colliding_flattened_name_from_sibling_owner() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         extension_manager
             .add_mock_extension(
                 "ext_a__ext_b".to_string(),
@@ -1593,8 +1584,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_leaves_out_an_extension_running_under_a_different_config() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         extension_manager
             .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
             .await;
@@ -1619,7 +1609,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let old_working_dir = tempfile::tempdir().unwrap();
         let new_working_dir = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
+        let manager = Arc::new(ExtensionManager::with_data_dir(
             data_dir.path().to_path_buf(),
         ));
         let session = manager
@@ -1681,7 +1671,7 @@ mod tests {
     async fn stale_working_dir_reconnect_does_not_restore_removed_extension() {
         let data_dir = tempfile::tempdir().unwrap();
         let new_working_dir = tempfile::tempdir().unwrap();
-        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+        let extension_manager = Arc::new(ExtensionManager::with_data_dir(
             data_dir.path().to_path_buf(),
         ));
         let config = ExtensionConfig::Platform {
@@ -1735,7 +1725,7 @@ mod tests {
     #[tokio::test]
     async fn extension_manager_tools_follow_resource_support() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+        let extension_manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
         extension_manager
@@ -1803,7 +1793,7 @@ mod tests {
     #[tokio::test]
     async fn extension_manager_resource_tools_use_the_calling_lease() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager = Arc::new(ExtensionManager::new_without_provider(
+        let extension_manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
         extension_manager
@@ -1894,8 +1884,7 @@ mod tests {
     #[tokio::test]
     async fn tool_list_changed_during_fetch_prevents_stale_cache() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let extension_manager =
-            ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+        let extension_manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
         let tools_client = Arc::new(BlockingToolsClient {
             calls: AtomicUsize::new(0),
             first_fetch_started: Semaphore::new(0),
@@ -1929,7 +1918,7 @@ mod tests {
     #[tokio::test]
     async fn successful_mutation_is_persisted_when_another_mutation_fails() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
+        let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
         let session = manager

@@ -33,7 +33,7 @@ pub(crate) async fn generate_tool_title(
     session_id: &str,
     tool_request: &ToolRequest,
 ) -> Option<String> {
-    let provider = agent.provider().await.ok()?;
+    let provider = agent.provider(session_id).await.ok()?;
     if provider.manages_own_context() {
         return None;
     }
@@ -72,7 +72,7 @@ pub(crate) async fn generate_tool_chain_summary(
         return None;
     }
 
-    let provider = agent.provider().await.ok()?;
+    let provider = agent.provider(session_id).await.ok()?;
     if provider.manages_own_context() {
         return None;
     }
