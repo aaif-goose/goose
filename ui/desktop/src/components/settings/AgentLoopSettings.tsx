@@ -368,6 +368,47 @@ export default function AgentLoopSettings() {
     await saveNumber('toolCallCutoff', 'GOOSE_TOOL_CALL_CUTOFF', 1, 100000);
   };
 
+  const autoEffortControls = (
+    <OperationRow
+      title={intl.formatMessage(i18n.autoEffortTitle)}
+      description={intl.formatMessage(i18n.autoEffortDescription)}
+      enabled={autoEffortEnabled}
+      onEnabledChange={handleAutoEffortToggle}
+    >
+      <div className="flex w-full max-w-xl flex-col gap-2">
+        <label className="text-xs text-text-secondary">
+          {intl.formatMessage(i18n.typesafeApiKeyLabel)}
+          {typesafeApiKeyConfigured && (
+            <span className="ml-2 text-green-600">
+              {intl.formatMessage(i18n.apiKeyConfigured)}
+            </span>
+          )}
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="password"
+            value={typesafeApiKey}
+            disabled={!autoEffortEnabled}
+            placeholder={intl.formatMessage(i18n.typesafeApiKeyPlaceholder)}
+            onChange={(event) => setTypesafeApiKey(event.target.value)}
+          />
+          <Button
+            size="sm"
+            disabled={!autoEffortEnabled || !typesafeApiKey.trim()}
+            onClick={saveTypesafeApiKey}
+          >
+            {intl.formatMessage(i18n.saveApiKey)}
+          </Button>
+          {typesafeApiKeyConfigured && (
+            <Button variant="outline" size="sm" onClick={removeTypesafeApiKey}>
+              {intl.formatMessage(i18n.removeApiKey)}
+            </Button>
+          )}
+        </div>
+      </div>
+    </OperationRow>
+  );
+
   return (
     <section className="pr-4">
       <Card className="rounded-xl">
@@ -396,44 +437,7 @@ export default function AgentLoopSettings() {
               onEnabledChange={handleSlashCommandsToggle}
             />
 
-            <OperationRow
-              title={intl.formatMessage(i18n.autoEffortTitle)}
-              description={intl.formatMessage(i18n.autoEffortDescription)}
-              enabled={autoEffortEnabled}
-              onEnabledChange={handleAutoEffortToggle}
-            >
-              <div className="flex w-full max-w-xl flex-col gap-2">
-                <label className="text-xs text-text-secondary">
-                  {intl.formatMessage(i18n.typesafeApiKeyLabel)}
-                  {typesafeApiKeyConfigured && (
-                    <span className="ml-2 text-green-600">
-                      {intl.formatMessage(i18n.apiKeyConfigured)}
-                    </span>
-                  )}
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    type="password"
-                    value={typesafeApiKey}
-                    disabled={!autoEffortEnabled}
-                    placeholder={intl.formatMessage(i18n.typesafeApiKeyPlaceholder)}
-                    onChange={(event) => setTypesafeApiKey(event.target.value)}
-                  />
-                  <Button
-                    size="sm"
-                    disabled={!autoEffortEnabled || !typesafeApiKey.trim()}
-                    onClick={saveTypesafeApiKey}
-                  >
-                    {intl.formatMessage(i18n.saveApiKey)}
-                  </Button>
-                  {typesafeApiKeyConfigured && (
-                    <Button variant="outline" size="sm" onClick={removeTypesafeApiKey}>
-                      {intl.formatMessage(i18n.removeApiKey)}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </OperationRow>
+            {autoEffortControls}
 
             <OperationRow
               title={intl.formatMessage(i18n.maxTurnsTitle)}
@@ -536,6 +540,7 @@ export default function AgentLoopSettings() {
             </OperationRow>
           </CardContent>
         )}
+        {!enabled && <CardContent className="px-4">{autoEffortControls}</CardContent>}
       </Card>
     </section>
   );

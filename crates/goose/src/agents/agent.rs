@@ -604,6 +604,7 @@ fn attach_operation_log(message: &mut Message, pending: &mut Option<String>) {
                     | MessageContent::ToolRequest(_)
                     | MessageContent::Thinking(_)
                     | MessageContent::Error(_)
+                    | MessageContent::SystemNotification(_)
             )
         });
     if message.role == rmcp::model::Role::Assistant && renderable {
@@ -3565,12 +3566,12 @@ impl Agent {
 
                             if compaction_attempts >= 2 {
                                 error!("Context limit exceeded after compaction - prompt too large");
-                                yield AgentEvent::Message(
-                                    Message::assistant().with_system_notification(
-                                        SystemNotificationType::InlineMessage,
-                                        "Unable to continue: Context limit still exceeded after compaction. Try using a shorter message, a model with a larger context window, or start a new session."
-                                    )
+                                let mut message = Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    "Unable to continue: Context limit still exceeded after compaction. Try using a shorter message, a model with a larger context window, or start a new session."
                                 );
+                                attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                                yield AgentEvent::Message(message);
                                 break;
                             }
 
@@ -3608,11 +3609,11 @@ impl Agent {
                                     #[cfg(feature = "telemetry")]
                                     crate::posthog::emit_error("compaction_failed", &e.to_string());
                                     error!("Compaction failed: {}", e);
-                                    yield AgentEvent::Message(
-                                        Message::assistant().with_text(
-                                            format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
-                                        )
+                                    let mut message = Message::assistant().with_text(
+                                        format!("Ran into this error trying to compact: {e}.\n\nPlease try again or create a new session")
                                     );
+                                    attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                                    yield AgentEvent::Message(message);
                                     break;
                                 }
                             }
@@ -3633,13 +3634,13 @@ impl Agent {
                                 "top_up_url": top_up_url,
                             });
 
-                            yield AgentEvent::Message(
-                                Message::assistant().with_system_notification_with_data(
-                                    SystemNotificationType::CreditsExhausted,
-                                    user_msg,
-                                    notification_data,
-                                )
+                            let mut message = Message::assistant().with_system_notification_with_data(
+                                SystemNotificationType::CreditsExhausted,
+                                user_msg,
+                                notification_data,
                             );
+                            attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                            yield AgentEvent::Message(message);
                             break;
                         }
                         Err(ref provider_err @ ProviderError::Refusal { ref details, ref category }) => {
@@ -3649,9 +3650,11 @@ impl Agent {
                             error!("Error: {}", provider_err);
 
                             let category = category.as_deref().map(|c| format!("\n\nCategory: {c}")).unwrap_or_default();
-                            yield AgentEvent::Message(Message::assistant().with_text(format!(
+                            let mut message = Message::assistant().with_text(format!(
                                 "The provider refused this request.\n\n{details}{category}\n\nPlease start a new session to continue — resending this conversation is likely to be refused again."
-                            )));
+                            ));
+                            attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                            yield AgentEvent::Message(message);
                             // A refusal is terminal: skip goal/grind nudges and
                             // recipe retry_config, which would resend the same
                             // refused conversation.
@@ -3663,11 +3666,13 @@ impl Agent {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
+                            let mut message = Message::from_provider_error(provider_err);
+                            attach_operation_log(&mut message, &mut pending_auto_effort_log);
                             let message = persist_and_push_message_with_id(
                                 &session_manager,
                                 &session_config.id,
                                 &mut conversation,
-                                Message::from_provider_error(provider_err),
+                                message,
                             )
                             .await?;
                             yield AgentEvent::Message(message);
@@ -3678,11 +3683,11 @@ impl Agent {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(
-                                Message::assistant().with_text(
-                                    format!("{provider_err}\n\nPlease resend your message to try again.")
-                                )
+                            let mut message = Message::assistant().with_text(
+                                format!("{provider_err}\n\nPlease resend your message to try again.")
                             );
+                            attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                            yield AgentEvent::Message(message);
                             break;
                         }
                         Err(ref provider_err) => {
@@ -4273,7 +4278,7 @@ mod tests {
     use goose_providers::thinking::{ThinkingEffortCapability, ThinkingEffortOption};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     #[test]
@@ -6025,6 +6030,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     #[derive(Debug, Default)]
     struct LegacyAutoEffortProvider {
         model_configs: std::sync::Mutex<Vec<goose_providers::model::ModelConfig>>,
+        refuse: AtomicBool,
     }
 
     #[async_trait::async_trait]
@@ -6040,6 +6046,14 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 .lock()
                 .unwrap()
                 .push(model_config.clone());
+            if self.refuse.load(Ordering::SeqCst) {
+                return Ok(Box::pin(futures::stream::once(async {
+                    Err(ProviderError::Refusal {
+                        details: "This request was declined.".to_string(),
+                        category: Some("test".to_string()),
+                    })
+                })));
+            }
             Ok(stream_from_single_message(
                 Message::assistant().with_text("selected effort applied"),
                 ProviderUsage::new("mock-model".to_string(), Usage::default()),
@@ -6081,6 +6095,24 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .and(path("/v1/systemone"))
             .and(body_partial_json(json!({"state": "fallback"})))
             .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&jev)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(body_partial_json(json!({"state": "refusal"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model": "jev-latest",
+                "answers": {
+                    "effort": {
+                        "type": "choice",
+                        "choice": "high",
+                        "confidence": 0.9,
+                        "probabilities": {"high": 0.9}
+                    }
+                },
+                "usage": {"input_tokens": 4, "output_tokens": 1}
+            })))
             .expect(1)
             .mount(&jev)
             .await;
@@ -6177,6 +6209,51 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             let configs = provider.model_configs.lock().unwrap();
             assert_eq!(configs.len(), 2);
             assert_eq!(configs[1].thinking_effort(), configured_effort);
+        }
+
+        provider.refuse.store(true, Ordering::SeqCst);
+        let refusal_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+            jev.uri(),
+            AuthMethod::NoAuth,
+            None,
+        )?);
+        *agent.auto_effort_override.lock().await = Some(AutoEffortOperation::new(
+            Arc::new(refusal_provider),
+            "test-effort-model".to_string(),
+            vec![ThinkingEffort::Low, ThinkingEffort::High],
+        ));
+        let mut refusal_stream = agent
+            .reply(
+                Message::user().with_text("refusal"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(1),
+                    retry_config: None,
+                },
+                false,
+                None,
+            )
+            .await?;
+        let mut refusal_response = None;
+        while let Some(event) = refusal_stream.next().await {
+            if let AgentEvent::Message(message) = event? {
+                if message.as_concat_text().contains("provider refused") {
+                    refusal_response = Some(message);
+                }
+            }
+        }
+        assert_eq!(
+            refusal_response
+                .expect("refusal response should be emitted")
+                .metadata
+                .operation_logs,
+            ["ops_auto_effort: thinking high"]
+        );
+        {
+            let configs = provider.model_configs.lock().unwrap();
+            assert_eq!(configs.len(), 3);
+            assert_eq!(configs[2].thinking_effort(), Some(ThinkingEffort::High));
         }
 
         let session = agent

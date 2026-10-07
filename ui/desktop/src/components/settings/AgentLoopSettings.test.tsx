@@ -44,4 +44,17 @@ describe('AgentLoopSettings', () => {
       expect(upsert).toHaveBeenCalledWith('GOOSE_AUTO_EFFORT_ENABLED', true, false)
     );
   });
+
+  it('shows automatic effort controls with the legacy loop', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue(true);
+
+    render(<AgentLoopSettings />, { wrapper: IntlTestWrapper });
+
+    await waitFor(() => expect(screen.getByRole('switch')).not.toBeChecked());
+    expect(
+      screen.getByRole('checkbox', { name: 'Enable Automatic thinking effort' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Configured')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove key' })).toBeInTheDocument();
+  });
 });
