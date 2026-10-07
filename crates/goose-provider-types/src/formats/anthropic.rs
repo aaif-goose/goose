@@ -49,7 +49,7 @@ macro_rules! string_enum {
     }
 }
 
-string_enum!(ThinkingType { Adaptive => "adaptive", Enabled => "enabled", Disabled => "disabled" });
+string_enum!(ThinkingType { BetweenTools => "between_tools", Adaptive => "adaptive", Enabled => "enabled", Disabled => "disabled" });
 string_enum!(CacheTtl { FiveMinutes => "5m", OneHour => "1h" });
 
 string_enum!(PrefixMismatchBehavior { DropBlock => "drop_block", Error => "error" });
@@ -242,6 +242,9 @@ fn resolved_reasoning(
     model_config: &ModelConfig,
     official: Option<&OfficialThinkingCapabilities>,
 ) -> Option<bool> {
+    if model_config.reasoning == Some(false) {
+        return Some(false);
+    }
     official
         .map(|official| official.adaptive || official.enabled)
         .or(model_config.reasoning)
@@ -264,6 +267,9 @@ fn thinking_type_with_mode(
         return ThinkingType::Disabled;
     }
     match mode {
+        Some(ThinkingMode::AdaptiveBetweenTools) if thinking_requested_off(model_config) => {
+            ThinkingType::BetweenTools
+        }
         Some(ThinkingMode::AlwaysOnAdaptive | ThinkingMode::AdaptiveBetweenTools) => {
             ThinkingType::Adaptive
         }
@@ -922,12 +928,9 @@ fn apply_thinking_config(
     let mode = resolved_thinking_mode(provider_name, &model_config.model_name, official);
     let reasoning = resolved_reasoning(provider_name, model_config, official);
     let thinking_type = thinking_type_with_mode(model_config, mode, reasoning);
-    let between_tools = thinking_type == ThinkingType::Adaptive
-        && mode == Some(ThinkingMode::AdaptiveBetweenTools)
-        && thinking_requested_off(model_config);
     match thinking_type {
         // Omitting output_config keeps the model's default effort, which accepts between_tools.
-        ThinkingType::Adaptive if between_tools => {
+        ThinkingType::BetweenTools => {
             obj.insert("thinking".to_string(), json!({"type": "between_tools"}));
         }
         ThinkingType::Adaptive => {
@@ -2558,6 +2561,16 @@ mod tests {
                 expected,
                 "{model} at {effort}"
             );
+        }
+    }
+
+    #[test]
+    fn test_official_capabilities_respect_explicit_reasoning_disable() {
+        for model in ["claude-sonnet-4-5", "claude-opus-4-6"] {
+            let mut config = cfg_with_effort(model, "high");
+            config.reasoning = Some(false);
+            let payload = thinking_payload(&config, official(true, true, Some(true)));
+            assert_eq!(payload["thinking"]["type"], "disabled");
         }
     }
 

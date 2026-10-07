@@ -34,6 +34,10 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
     let anthropic_config = bedrock_anthropic_model_config(model_config)?;
     let thinking_type = thinking_type_for_provider(ANTHROPIC_PROVIDER_NAME, &anthropic_config);
     let thinking = match thinking_type {
+        ThinkingType::BetweenTools => Document::Object(HashMap::from([(
+            "type".to_string(),
+            Document::String("between_tools".to_string()),
+        )])),
         ThinkingType::Adaptive => Document::Object(HashMap::from([(
             "type".to_string(),
             Document::String("adaptive".to_string()),
@@ -656,6 +660,26 @@ mod tests {
     use goose_test_support::TEST_IMAGE_B64;
     use rmcp::model::ImageContent;
     use serde_json::json;
+
+    #[test]
+    fn test_bedrock_sonnet_5_5_between_tools() {
+        for effort in [None, Some("off")] {
+            let mut config = ModelConfig::new("global.anthropic.claude-sonnet-5-5");
+            if let Some(effort) = effort {
+                config.request_params = Some(HashMap::from([(
+                    "thinking_effort".to_string(),
+                    json!(effort),
+                )]));
+            }
+            let fields = bedrock_anthropic_thinking_fields(&config).unwrap();
+            assert_eq!(
+                from_bedrock_json(&fields).unwrap(),
+                json!({
+                    "thinking": {"type": "between_tools"}
+                })
+            );
+        }
+    }
 
     #[test]
     fn test_bedrock_anthropic_thinking_fields_enabled() {
