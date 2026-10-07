@@ -149,7 +149,7 @@ fn classification_request(messages: &[crate::conversation::message::Message]) ->
         .unwrap_or_default()
 }
 
-pub(super) fn current_turn_effort(conversation: &Conversation) -> Option<ThinkingEffort> {
+pub(crate) fn current_turn_effort(conversation: &Conversation) -> Option<ThinkingEffort> {
     let decision = messages_since_kickoff(conversation)
         .ok()?
         .first()?

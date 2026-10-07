@@ -35,14 +35,15 @@ use crate::agents::provider_manager::ProviderManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    current_turn_effort, has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, AutoEffortOperation,
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
-    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
+    BangShellOperation, CompactionOperation, DoctorOperation, EffectHandler, Emitter,
+    EntryHookOperation, ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
+    Operation, OperationResult, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::types::{
@@ -177,6 +178,21 @@ pub(super) fn available_auto_efforts(
                 ];
             }
 
+            if provider_name == "chatgpt_codex" {
+                return AUTO_EFFORTS
+                    .into_iter()
+                    .filter(|effort| {
+                        applied_as_selected(
+                            effort,
+                            crate::providers::chatgpt_codex::reasoning_effort_for_thinking(
+                                &model_config.model_name,
+                                *effort,
+                            ),
+                        )
+                    })
+                    .collect();
+            }
+
             if model_config.is_openai_reasoning_model() {
                 return AUTO_EFFORTS
                     .into_iter()
@@ -251,6 +267,51 @@ pub(super) fn available_auto_efforts(
             .collect(),
         ThinkingEffortSupport::Unspecified | ThinkingEffortSupport::Unsupported => Vec::new(),
     }
+}
+
+fn auto_effort_operation(
+    provider: &dyn Provider,
+    model_config: &goose_providers::model::ModelConfig,
+) -> Option<AutoEffortOperation> {
+    let config = Config::global();
+    if !config
+        .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let efforts = available_auto_efforts(
+        provider.get_name(),
+        model_config,
+        provider.thinking_effort_support(),
+    );
+    if efforts.is_empty() {
+        return None;
+    }
+
+    let api_key = config
+        .get_secret::<String>("TYPESAFE_API_KEY")
+        .ok()?
+        .trim()
+        .to_string();
+    if api_key.is_empty() {
+        return None;
+    }
+
+    let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+    let api_client = ApiClient::with_timeout_and_tls(
+        TYPESAFE_DEFAULT_HOST.to_string(),
+        AuthMethod::BearerToken(api_key),
+        Duration::from_secs(2),
+        tls_config,
+    )
+    .ok()?;
+    Some(AutoEffortOperation::new(
+        Arc::new(TypeSafeProvider::new(api_client)),
+        TYPESAFE_DEFAULT_MODEL.to_string(),
+        efforts,
+    ))
 }
 
 fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> anyhow::Error {
@@ -461,6 +522,8 @@ pub struct Agent {
     session_start_emitted: AtomicBool,
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
+    #[cfg(test)]
+    auto_effort_override: Mutex<Option<AutoEffortOperation>>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
 }
 
@@ -527,6 +590,27 @@ fn project_message_for_user_event(message: &Message) -> Message {
 
 fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
+}
+
+fn attach_operation_log(message: &mut Message, pending: &mut Option<String>) {
+    let renderable = message.metadata.output_token_limit_reached
+        || message.content.iter().any(|content| {
+            matches!(
+                content,
+                MessageContent::Text(text) if !text.text.trim().is_empty()
+            ) || matches!(
+                content,
+                MessageContent::Image(_)
+                    | MessageContent::ToolRequest(_)
+                    | MessageContent::Thinking(_)
+                    | MessageContent::Error(_)
+            )
+        });
+    if message.role == rmcp::model::Role::Assistant && renderable {
+        if let Some(log) = pending.take() {
+            message.metadata.operation_logs.push(log);
+        }
+    }
 }
 
 fn attach_turn_usage(
@@ -648,8 +732,23 @@ impl Agent {
             session_start_emitted: AtomicBool::new(false),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
+            #[cfg(test)]
+            auto_effort_override: Mutex::new(None),
             steer_queues: Mutex::new(HashMap::new()),
         }
+    }
+
+    async fn auto_effort_for_turn(
+        &self,
+        provider: &dyn Provider,
+        model_config: &goose_providers::model::ModelConfig,
+    ) -> Option<AutoEffortOperation> {
+        #[cfg(test)]
+        if let Some(operation) = self.auto_effort_override.lock().await.take() {
+            return Some(operation);
+        }
+
+        auto_effort_operation(provider, model_config)
     }
 
     /// Emit a lifecycle hook event with no extra context. Useful for events
@@ -1915,47 +2014,7 @@ impl Agent {
             Arc::new(MaxTurnsOperation::new(max_turns)),
         ];
         operations.extend(remaining_operations);
-        let auto_effort = (|| {
-            let config = Config::global();
-            if !config
-                .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
-                .unwrap_or(false)
-            {
-                return None;
-            }
-
-            let efforts = available_auto_efforts(
-                provider.get_name(),
-                &model_config,
-                provider.thinking_effort_support(),
-            );
-            if efforts.is_empty() {
-                return None;
-            }
-
-            let api_key = config
-                .get_secret::<String>("TYPESAFE_API_KEY")
-                .ok()?
-                .trim()
-                .to_string();
-            if api_key.is_empty() {
-                return None;
-            }
-
-            let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
-            let api_client = ApiClient::with_timeout_and_tls(
-                TYPESAFE_DEFAULT_HOST.to_string(),
-                AuthMethod::BearerToken(api_key),
-                Duration::from_secs(2),
-                tls_config,
-            )
-            .ok()?;
-            Some(AutoEffortOperation::new(
-                Arc::new(TypeSafeProvider::new(api_client)),
-                TYPESAFE_DEFAULT_MODEL.to_string(),
-                efforts,
-            ))
-        })();
+        let auto_effort = auto_effort_operation(provider.as_ref(), &model_config);
         if let Some(auto_effort) = auto_effort {
             operations.push(Arc::new(auto_effort));
         }
@@ -2726,12 +2785,39 @@ impl Agent {
 
     async fn reply_internal(
         &self,
-        conversation: Conversation,
+        mut conversation: Conversation,
         session_config: SessionConfig,
-        session: Session,
+        mut session: Session,
         cancel_token: Option<CancellationToken>,
         reply_span: tracing::Span,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let session_manager = self.config.session_manager.clone();
+        let provider = self.provider(&session_config.id).await?;
+        let model_config = self
+            .effective_model_config_for_session(&session_config.id)
+            .await?;
+        if let Some(operation) = self
+            .auto_effort_for_turn(provider.as_ref(), &model_config)
+            .await
+        {
+            let (tx, _rx) = mpsc::channel(1);
+            let emit = Emitter::new(tx, cancel_token.clone().unwrap_or_default());
+            if let OperationResult::Applied(mut result) =
+                operation.run(&session, &conversation, &emit).await?
+            {
+                session_manager
+                    .apply_effects(&session, &mut result.effects, &emit)
+                    .await?;
+                session = session_manager
+                    .get_session(&session_config.id, true)
+                    .await?;
+                conversation = session
+                    .conversation
+                    .clone()
+                    .ok_or_else(|| anyhow!("Session {} has no conversation", session_config.id))?;
+            }
+        }
+
         let context = self.prepare_reply_context(&session, conversation).await?;
         let ReplyContext {
             session,
@@ -2753,6 +2839,23 @@ impl Agent {
         self.reset_retry_attempts().await;
 
         let provider = self.provider(&session_config.id).await?;
+        let automatic_effort = current_turn_effort(&conversation);
+        let model_config = match automatic_effort {
+            Some(effort) => model_config.with_thinking_effort(effort),
+            None => model_config,
+        };
+        let model_config = if automatic_effort.is_some()
+            && matches!(
+                provider.thinking_effort_support(),
+                ThinkingEffortSupport::Options(_)
+            ) {
+            model_config.with_merged_request_params(HashMap::from([(
+                crate::acp::AUTOMATIC_EFFORT_PARAM.to_string(),
+                Value::Bool(true),
+            )]))
+        } else {
+            model_config
+        };
         let provider_name = provider.get_name().to_string();
         let saved_provider_session_id =
             super::latest_provider_session_id(conversation.messages(), &provider_name);
@@ -2779,7 +2882,6 @@ impl Agent {
             resolved_model,
             provider_session_id,
         });
-        let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let provider = provider.clone();
@@ -2851,6 +2953,8 @@ impl Agent {
         }
         let inner = Box::pin(async_stream::try_stream! {
             let mut session = session;
+            let mut pending_auto_effort_log =
+                automatic_effort.map(|effort| format!("ops_auto_effort: thinking {effort}"));
             let mut turns_taken = 0u32;
             let max_turns = session_config.max_turns.unwrap_or_else(|| {
                 Config::global()
@@ -3096,7 +3200,8 @@ impl Agent {
                                 pending_turn_usage = Some(enriched);
                             }
 
-                            if let Some(response) = response {
+                            if let Some(mut response) = response {
+                                attach_operation_log(&mut response, &mut pending_auto_effort_log);
                                 provider_reached_output_token_limit |=
                                     response.metadata.output_token_limit_reached;
 
@@ -3128,13 +3233,15 @@ impl Agent {
                                     }
                                 });
 
-                                let (tool_requests, filtered_response) = self
+                                let (tool_requests, mut filtered_response) = self
                                     .categorize_tool_requests(
                                         &response,
                                         &tools,
                                         &toolshim_tools,
                                         surfaced_thinking_in_turn,
                                     );
+                                filtered_response.metadata.operation_logs =
+                                    response.metadata.operation_logs.clone();
 
                                 let filtered_response = if let Some(inference) = inference.as_ref() {
                                     filtered_response.with_inference(inference.clone())
@@ -3372,6 +3479,10 @@ impl Agent {
                                         } else {
                                             Message::assistant().with_generated_id()
                                         };
+                                    if index == 0 {
+                                        request_msg.metadata.operation_logs =
+                                            response.metadata.operation_logs.clone();
+                                    }
 
                                     let thinking = if index == 0 {
                                         &direct_thinking
@@ -3579,11 +3690,11 @@ impl Agent {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(
-                                Message::assistant().with_text(
-                                    format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error.")
-                                )
+                            let mut message = Message::assistant().with_text(
+                                format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error.")
                             );
+                            attach_operation_log(&mut message, &mut pending_auto_effort_log);
+                            yield AgentEvent::Message(message);
                             break;
                         }
                     }
@@ -3711,9 +3822,15 @@ impl Agent {
                                     } else {
                                         warn!("Provider returned an empty response after retries; ending turn");
                                         last_assistant_text = EMPTY_TURN_MESSAGE.to_string();
+                                        let mut message =
+                                            Message::assistant().with_text(EMPTY_TURN_MESSAGE);
+                                        attach_operation_log(
+                                            &mut message,
+                                            &mut pending_auto_effort_log,
+                                        );
                                         let message = push_message_with_id(
                                             &mut messages_to_add,
-                                            Message::assistant().with_text(EMPTY_TURN_MESSAGE),
+                                            message,
                                         );
                                         yield AgentEvent::Message(message);
                                         exit_chat = true;
@@ -4177,6 +4294,31 @@ mod tests {
         assert_eq!(
             available_auto_efforts("muse_code", &model, ThinkingEffortSupport::Unspecified),
             expected
+        );
+    }
+
+    #[test]
+    fn chatgpt_codex_auto_efforts_match_model_levels() {
+        assert_eq!(
+            available_auto_efforts(
+                "chatgpt_codex",
+                &goose_providers::model::ModelConfig::new("gpt-5.5"),
+                ThinkingEffortSupport::Unspecified,
+            ),
+            vec![
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]
+        );
+        assert_eq!(
+            available_auto_efforts(
+                "chatgpt_codex",
+                &goose_providers::model::ModelConfig::new("gpt-5.6"),
+                ThinkingEffortSupport::Unspecified,
+            ),
+            AUTO_EFFORTS
         );
     }
 
@@ -5878,6 +6020,198 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         Ok((agent, session.id))
+    }
+
+    #[derive(Debug, Default)]
+    struct LegacyAutoEffortProvider {
+        model_configs: std::sync::Mutex<Vec<goose_providers::model::ModelConfig>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for LegacyAutoEffortProvider {
+        async fn stream(
+            &self,
+            model_config: &goose_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.model_configs
+                .lock()
+                .unwrap()
+                .push(model_config.clone());
+            Ok(stream_from_single_message(
+                Message::assistant().with_text("selected effort applied"),
+                ProviderUsage::new("mock-model".to_string(), Usage::default()),
+            ))
+        }
+
+        fn get_name(&self) -> &str {
+            "legacy-auto-effort"
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_loop_selects_effort_once_and_logs_it() -> Result<()> {
+        use goose_providers::api_client::{ApiClient, AuthMethod};
+        use serde_json::json;
+        use wiremock::matchers::{body_partial_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let jev = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(body_partial_json(json!({"state": "legacy request"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model": "jev-latest",
+                "answers": {
+                    "effort": {
+                        "type": "choice",
+                        "choice": "high",
+                        "confidence": 0.9,
+                        "probabilities": {"high": 0.9}
+                    }
+                },
+                "usage": {"input_tokens": 4, "output_tokens": 1}
+            })))
+            .expect(1)
+            .mount(&jev)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(body_partial_json(json!({"state": "fallback"})))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(1)
+            .mount(&jev)
+            .await;
+
+        let provider = Arc::new(LegacyAutoEffortProvider::default());
+        let temp_dir = tempfile::tempdir()?;
+        let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+        let (agent, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        let configured_effort = Config::global().get_goose_thinking_effort();
+        let decision_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+            jev.uri(),
+            AuthMethod::NoAuth,
+            None,
+        )?);
+        *agent.auto_effort_override.lock().await = Some(AutoEffortOperation::new(
+            Arc::new(decision_provider),
+            "test-effort-model".to_string(),
+            vec![ThinkingEffort::Low, ThinkingEffort::High],
+        ));
+
+        let mut stream = agent
+            .reply(
+                Message::user().with_text("legacy request"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(1),
+                    retry_config: None,
+                },
+                false,
+                None,
+            )
+            .await?;
+        let mut messages = Vec::new();
+        while let Some(event) = stream.next().await {
+            if let AgentEvent::Message(message) = event? {
+                messages.push(message);
+            }
+        }
+
+        {
+            let configs = provider.model_configs.lock().unwrap();
+            assert_eq!(configs.len(), 1);
+            assert_eq!(configs[0].thinking_effort(), Some(ThinkingEffort::High));
+        }
+        let response = messages
+            .iter()
+            .find(|message| message.as_concat_text() == "selected effort applied")
+            .expect("provider response should be emitted");
+        assert_eq!(
+            response.metadata.operation_logs,
+            ["ops_auto_effort: thinking high"]
+        );
+
+        let fallback_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+            jev.uri(),
+            AuthMethod::NoAuth,
+            None,
+        )?);
+        *agent.auto_effort_override.lock().await = Some(AutoEffortOperation::new(
+            Arc::new(fallback_provider),
+            "test-effort-model".to_string(),
+            vec![ThinkingEffort::Low, ThinkingEffort::High],
+        ));
+        let mut fallback_stream = agent
+            .reply(
+                Message::user().with_text("fallback"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(1),
+                    retry_config: None,
+                },
+                false,
+                None,
+            )
+            .await?;
+        let mut fallback_response = None;
+        while let Some(event) = fallback_stream.next().await {
+            if let AgentEvent::Message(message) = event? {
+                if message.as_concat_text() == "selected effort applied" {
+                    fallback_response = Some(message);
+                }
+            }
+        }
+        assert!(fallback_response
+            .expect("fallback response should be emitted")
+            .metadata
+            .operation_logs
+            .is_empty());
+
+        {
+            let configs = provider.model_configs.lock().unwrap();
+            assert_eq!(configs.len(), 2);
+            assert_eq!(configs[1].thinking_effort(), configured_effort);
+        }
+
+        let session = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?;
+        assert!(session
+            .conversation
+            .as_ref()
+            .unwrap()
+            .messages()
+            .iter()
+            .any(|message| message
+                .metadata
+                .operation_note("auto_effort", "decision")
+                .is_some_and(|decision| decision["effort"] == "high")));
+        assert!(session
+            .conversation
+            .as_ref()
+            .unwrap()
+            .messages()
+            .iter()
+            .any(|message| message
+                .metadata
+                .operation_note("auto_effort", "decision")
+                .is_some_and(|decision| decision["effort"].is_null())));
+        assert_eq!(
+            session
+                .model_config
+                .and_then(|config| config.thinking_effort()),
+            None
+        );
+
+        Ok(())
     }
 
     struct TraceContentProvider;

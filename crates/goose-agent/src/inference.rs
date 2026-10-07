@@ -27,7 +27,6 @@ pub struct PreparedInferenceRequest {
     pub system_prompt: String,
     pub tools: Vec<rmcp::model::Tool>,
     pub additional_messages: Vec<Message>,
-    pub model_request_params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -43,6 +42,14 @@ pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
         conversation: &Conversation,
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest>;
+
+    async fn model_request_params(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+    ) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+        Ok(std::collections::HashMap::new())
+    }
 }
 
 pub struct IdentityInferenceRequestPreparer;
@@ -65,7 +72,6 @@ impl<S: MaybeSync> InferenceRequestPreparer<S> for IdentityInferenceRequestPrepa
                 .join("\n\n"),
             tools: input.tools,
             additional_messages: Vec::new(),
-            model_request_params: std::collections::HashMap::new(),
         })
     }
 }
@@ -136,8 +142,10 @@ fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
         || message.content.iter().any(|content| {
             matches!(
                 content,
-                MessageContent::Text(_)
-                    | MessageContent::Image(_)
+                MessageContent::Text(text) if !text.text.trim().is_empty()
+            ) || matches!(
+                content,
+                MessageContent::Image(_)
                     | MessageContent::ToolRequest(_)
                     | MessageContent::Thinking(_)
                     | MessageContent::Error(_)
@@ -456,10 +464,13 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 system_prompt,
                 tools,
                 additional_messages,
-                model_request_params,
             } = self
                 .request_preparer
                 .prepare(session, conversation, input)
+                .await?;
+            let model_request_params = self
+                .request_preparer
+                .model_request_params(session, conversation)
                 .await?;
             let model_config = if model_request_params.is_empty() {
                 model_config
@@ -652,6 +663,12 @@ mod tests {
         attach_operation_logs(&mut redacted, &mut logs);
 
         assert!(redacted.metadata.operation_logs.is_empty());
+        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
+
+        let mut whitespace = Message::assistant().with_text(" \n\t ");
+        attach_operation_logs(&mut whitespace, &mut logs);
+
+        assert!(whitespace.metadata.operation_logs.is_empty());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut error = Message::from_provider_error(&ProviderError::RequestFailed(

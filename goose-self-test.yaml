@@ -17,6 +17,7 @@ activities:
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
+  - Validate automatic effort enablement, fallback, and both agent loops
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, auto-effort, advanced"
 
   - key: test_depth
     input_type: string
@@ -417,8 +418,23 @@ prompt: |
   Log results to: {{ workspace_dir }}/phase3d_acp_effort.md
   {% endif %}
 
+  {% if test_phases == "all" or "auto-effort" in test_phases %}
+  ## 🧠 PHASE 3E: Automatic Thinking-Effort Testing
+
+  **Prerequisites**: Run this phase from a goose source checkout with the Rust and Node.js
+  toolchains available. Skip unavailable toolchains and record the reason.
+
+  1. Run `cargo test -p goose --features scheduler auto_effort_is_scoped_to_each_turn_and_reused_across_inferences --lib`.
+  2. Run `cargo test -p goose --features scheduler legacy_loop_selects_effort_once_and_logs_it --lib`.
+  3. Run `cd ui/desktop && pnpm test:run src/components/settings/AgentLoopSettings.test.tsx`.
+  4. Verify the tests cover enablement persistence, classifier failure fallback, per-turn effort
+     propagation in the state-machine and legacy loops, expanded slash commands, and operation logs.
+
+  Log results to: {{ workspace_dir }}/phase3e_auto_effort.md
+  {% endif %}
+
   {% if test_phases == "all" or "advanced" in test_phases %}
-  ## 🔭 PHASE 3E: GDK Observability Hook Testing
+  ## 🔭 PHASE 3F: GDK Observability Hook Testing
 
   **Prerequisites**: Run this phase from a goose source checkout with the Rust toolchain
   available. Skip this phase and record it as SKIPPED otherwise.

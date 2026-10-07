@@ -99,7 +99,19 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         .filter(|event| Some(event.as_concat_text()) != last)
         .into_iter()
         .collect();
-        let model_request_params = matches!(
+        Ok(PreparedInferenceRequest {
+            system_prompt,
+            tools,
+            additional_messages,
+        })
+    }
+
+    async fn model_request_params(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+    ) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+        Ok(matches!(
             self.provider.thinking_effort_support(),
             goose_providers::thinking::ThinkingEffortSupport::Options(_)
         )
@@ -111,12 +123,6 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
                 serde_json::Value::Bool(true),
             )])
         })
-        .unwrap_or_default();
-        Ok(PreparedInferenceRequest {
-            system_prompt,
-            tools,
-            additional_messages,
-            model_request_params,
-        })
+        .unwrap_or_default())
     }
 }

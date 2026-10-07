@@ -32,4 +32,16 @@ describe('AgentLoopSettings', () => {
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith('TYPESAFE_API_KEY', true));
   });
+
+  it('persists automatic effort enablement', async () => {
+    render(<AgentLoopSettings />, { wrapper: IntlTestWrapper });
+
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Enable Automatic thinking effort' })
+    );
+
+    await waitFor(() =>
+      expect(upsert).toHaveBeenCalledWith('GOOSE_AUTO_EFFORT_ENABLED', true, false)
+    );
+  });
 });
