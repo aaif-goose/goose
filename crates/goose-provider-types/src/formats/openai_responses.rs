@@ -698,19 +698,14 @@ pub fn create_responses_request_for_model(
         "store": store,
     });
 
-    let mut reasoning = model_config
+    let mut reasoning = native_request_object(model_config, "reasoning")?;
+    if model_config
         .request_params
         .as_ref()
-        .and_then(|params| params.get("reasoning"))
-        .map(|value| {
-            value
-                .as_object()
-                .cloned()
-                .ok_or_else(|| anyhow!("reasoning must be an object"))
-        })
-        .transpose()?
-        .unwrap_or_default();
-    if !reasoning.is_empty() || reasoning_effort.is_some() || reasoning_mode.is_some() {
+        .is_some_and(|params| params.contains_key("reasoning"))
+        || reasoning_effort.is_some()
+        || reasoning_mode.is_some()
+    {
         if let Some(effort) = reasoning_effort {
             reasoning.entry("effort").or_insert_with(|| json!(effort));
             reasoning.entry("summary").or_insert_with(|| json!("auto"));
@@ -782,6 +777,7 @@ pub fn create_responses_request_for_model(
     }
 
     if let Some(params) = params {
+        let mut text = native_request_object(model_config, "text")?;
         if let Some(response_format) = params.get("response_format") {
             let format = match response_format.get("type").and_then(Value::as_str) {
                 Some("json_object" | "text") => response_format.clone(),
@@ -800,7 +796,10 @@ pub fn create_responses_request_for_model(
                     ))
                 }
             };
-            payload["text"] = json!({ "format": format });
+            text.entry("format").or_insert(format);
+        }
+        if params.contains_key("text") || !text.is_empty() {
+            payload["text"] = Value::Object(text);
         }
         let object = payload.as_object_mut().unwrap();
         for (key, value) in params {
@@ -830,6 +829,24 @@ pub fn create_responses_request_for_model(
     }
 
     Ok(payload)
+}
+
+fn native_request_object(
+    model_config: &ModelConfig,
+    key: &str,
+) -> anyhow::Result<serde_json::Map<String, Value>> {
+    model_config
+        .request_params
+        .as_ref()
+        .and_then(|params| params.get(key))
+        .map(|value| {
+            value
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow!("{key} must be an object"))
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 fn sanitize_tool_arguments(value: Value) -> anyhow::Result<Value> {
@@ -2236,6 +2253,56 @@ mod tests {
         let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
         assert!(payload.get("reasoning").is_none());
         assert_eq!(payload["temperature"], 0.5);
+    }
+
+    #[test]
+    fn responses_request_composes_native_options_and_aliases() {
+        let cases = [
+            (
+                json!({"text": {"verbosity": "low"}}),
+                json!({"text": {"verbosity": "low"}}),
+            ),
+            (
+                json!({"text": {"verbosity": "low"}, "response_format": {"type": "json_object"}}),
+                json!({"text": {"verbosity": "low", "format": {"type": "json_object"}}}),
+            ),
+            (
+                json!({"text": {"format": {"type": "text"}}, "response_format": {"type": "json_object"}}),
+                json!({"text": {"format": {"type": "text"}}}),
+            ),
+            (
+                json!({"reasoning": {"effort": "high", "summary": "detailed"}, "reasoning_effort": "low"}),
+                json!({"reasoning": {"effort": "high", "summary": "detailed"}}),
+            ),
+            (
+                json!({"reasoning": {}, "text": {}}),
+                json!({"reasoning": {}, "text": {}}),
+            ),
+            (
+                json!({"top_p": 0.8, "metadata": {"experiment": "test"}, "stop": ["end"]}),
+                json!({"top_p": 0.8, "metadata": {"experiment": "test"}, "stop": ["end"]}),
+            ),
+        ];
+        for (params, expected) in cases {
+            let config = ModelConfig::new("gpt-4o")
+                .with_merged_request_params(serde_json::from_value(params).unwrap());
+            let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(&payload[key], value, "{key}");
+            }
+            for alias in ["reasoning_effort", "reasoning_mode", "response_format"] {
+                assert!(payload.get(alias).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn native_text_parameter_must_be_an_object() {
+        let config = ModelConfig::new("gpt-4o").with_merged_request_params(
+            std::collections::HashMap::from([("text".to_string(), json!("low"))]),
+        );
+        let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
+        assert!(error.to_string().contains("text must be an object"));
     }
 
     #[test]
