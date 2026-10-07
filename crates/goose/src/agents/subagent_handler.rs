@@ -28,8 +28,6 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
-pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
-
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
     pub max_turns: usize,
@@ -48,7 +46,6 @@ pub struct SubagentRunParams {
     pub return_last_only: bool,
     pub session_id: String,
     pub cancellation_token: Option<CancellationToken>,
-    pub on_message: Option<OnMessageCallback>,
     pub notification_tx: Option<tokio::sync::mpsc::UnboundedSender<ServerNotification>>,
 }
 
@@ -339,7 +336,6 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             task_config,
             session_id,
             cancellation_token,
-            on_message,
             notification_tx,
             ..
         } = params;
@@ -424,9 +420,6 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         while let Some(message_result) = stream.next().await {
             match message_result {
                 Ok(AgentEvent::Message(msg)) => {
-                    if let Some(ref callback) = on_message {
-                        callback(&msg);
-                    }
                     if let Some(ref tx) = notification_tx {
                         for content in &msg.content {
                             if let Some(notif) = create_tool_notification(content, &session_id) {

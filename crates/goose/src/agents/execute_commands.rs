@@ -157,7 +157,11 @@ impl Agent {
             "compact" => self.handle_compact_command(session_id).await,
             "clear" => self.handle_clear_command(session_id).await,
             "skills" => self.handle_skills_command(session_id).await,
-            "doctor" => Ok(Some(crate::doctor::run(self, session_id).await?)),
+            "doctor" => {
+                let session_manager = &self.config.session_manager;
+                let session = session_manager.get_session(session_id, false).await?;
+                Ok(Some(crate::doctor::run(session_manager, &session).await?))
+            }
             "status" => self.handle_status_command(session_id).await,
             "goal" => self.handle_goal_command(params_str).await,
             "grind" => self.handle_grind_command(params_str).await,
@@ -582,7 +586,9 @@ mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
     use crate::recipe::Response;
+    use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
     use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn parse_slash_command_splits_on_literal_space() {
@@ -680,10 +686,42 @@ mod tests {
     }
     #[tokio::test]
     async fn doctor_refuses_without_enabling_developer() {
-        let agent = Agent::new();
+        let data_dir = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            data_dir.path().to_path_buf(),
+        ));
+        let agent = Agent::with_config(crate::agents::AgentConfig::new(
+            Arc::clone(&session_manager),
+            Arc::new(crate::config::PermissionManager::new(
+                data_dir.path().to_path_buf(),
+            )),
+            None,
+            crate::config::GooseMode::default(),
+            false,
+            crate::agents::GoosePlatform::GooseCli,
+        ));
+        let session = session_manager
+            .create_session(
+                data_dir.path().to_path_buf(),
+                "doctor-test".to_string(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let mut extension_data = ExtensionData::default();
+        EnabledExtensionsState::new(Vec::new())
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        session_manager
+            .update(&session.id)
+            .extension_data(extension_data)
+            .apply()
+            .await
+            .unwrap();
 
         let response = agent
-            .execute_command("/doctor", "doctor-disabled-legacy-test")
+            .execute_command("/doctor", &session.id)
             .await
             .expect("doctor command should succeed")
             .expect("doctor command should return a message");
@@ -691,15 +729,6 @@ mod tests {
         assert_eq!(
             response.as_concat_text(),
             crate::doctor::DEVELOPER_EXTENSION_REQUIRED_MESSAGE
-        );
-        assert!(
-            !agent
-                .extension_manager
-                .is_extension_enabled(
-                    "doctor-disabled-legacy-test",
-                    crate::agents::platform_extensions::developer::EXTENSION_NAME
-                )
-                .await
         );
     }
 }

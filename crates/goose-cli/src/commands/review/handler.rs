@@ -41,7 +41,7 @@ pub struct ReviewOptions {
     pub quiet: bool,
     /// Disable the Rust-driven parallel orchestrator and fall back to the
     /// single-prompt path that asks the main agent to delegate checks via
-    /// `delegate(... async: true ...)`. Useful when comparing against the
+    /// `delegate(...)`. Useful when comparing against the
     /// in-process behavior or running on a model that handles dispatch
     /// reliably on its own. Checks with an explicit tool allowlist require
     /// the default orchestrator and are rejected on this path.

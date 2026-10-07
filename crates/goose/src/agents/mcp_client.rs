@@ -507,7 +507,7 @@ impl McpClient {
     pub(crate) async fn connect<T, E, A>(
         transport: T,
         ctx: ConnectContext,
-    ) -> Result<Self, ClientInitializeError>
+    ) -> Result<Self, Box<ClientInitializeError>>
     where
         T: IntoTransport<RoleClient, E, A>,
         E: std::error::Error + From<std::io::Error> + Send + Sync + 'static,

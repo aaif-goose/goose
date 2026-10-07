@@ -186,6 +186,7 @@ settings:
 #[tokio::test]
 async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_max_turns(2);
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -218,7 +219,7 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
         (
             "call_delegate",
             "delegate",
-            json!({ "instructions": "Find the answer" }),
+            json!({ "instructions": "Find the answer", "max_turns": 1 }),
         ),
         (
             "call_early_output",
@@ -276,6 +277,7 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
     exhausted.assert_message(-1, Error, "Maximum retry attempts (1) exceeded");
 
     let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_max_turns(2);
     api.on("compute the answer").reply("thinking about it");
     api.on(FINAL_OUTPUT_CONTINUATION_MESSAGE)
         .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "42" }));

@@ -8,7 +8,6 @@ pub mod chatrecall;
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
-pub mod orchestrator;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -183,20 +182,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Some(Box::new(developer::DeveloperClient::new(ctx).unwrap())),
-            },
-        );
-
-        map.insert(
-            orchestrator::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: orchestrator::EXTENSION_NAME,
-                display_name: "Orchestrator",
-                description:
-                    "Manage agent sessions: list, view, start, send messages, interrupt, and stop agents",
-                default_enabled: false,
-                unprefixed_tools: false,
-                hidden: true,
-                client_factory: |ctx| Some(Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap())),
             },
         );
 
