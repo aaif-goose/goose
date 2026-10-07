@@ -754,7 +754,7 @@ describe('RecipeFormFields', () => {
 
   describe('extractTemplateVariables', () => {
     it('should extract simple template variables', () => {
-      const content = 'Hello {{name}}, welcome to {{app}}!';
+      const content = 'Hello {{name}}, welcome to {{app}} in {{ recipe_dir }}!';
       const result = extractTemplateVariables(content);
       expect(result).toEqual(['name', 'app']);
     });

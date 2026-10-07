@@ -2241,7 +2241,7 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
-        use goose::session::SessionManager;
+        use goose::session::{GoalState, SessionManager};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
@@ -2351,9 +2351,15 @@ mod tests {
                     &session.id,
                 )
                 .await?;
-            agent
-                .set_goal(Some("Ensure the sky is blue".to_string()))
-                .await;
+            session_manager
+                .set_extension_state(
+                    &session.id,
+                    &GoalState {
+                        goal: Some("Ensure the sky is blue".to_string()),
+                        grind: None,
+                    },
+                )
+                .await?;
 
             let session_config = SessionConfig {
                 id: session.id.clone(),
@@ -2407,7 +2413,7 @@ mod tests {
 
             // Goal should be cleared after being met
             assert_eq!(
-                agent.get_goal().await,
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
                 None,
                 "Goal should be cleared after the agent finishes with it met"
             );
@@ -2498,7 +2504,7 @@ mod tests {
                 .unwrap();
             assert!(result.as_concat_text().contains("Goal set"));
             assert_eq!(
-                agent.get_goal().await,
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
                 Some("make all tests pass".to_string())
             );
 
@@ -2512,7 +2518,10 @@ mod tests {
                 .await?
                 .unwrap();
             assert!(result.as_concat_text().contains("cleared"));
-            assert_eq!(agent.get_goal().await, None);
+            assert_eq!(
+                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
+                None
+            );
 
             Ok(())
         }
@@ -3680,7 +3689,7 @@ mod tests {
 
         #[tokio::test]
         async fn legacy_structured_output_fails_before_provider_inference() -> Result<()> {
-            use goose::recipe::Response;
+            use goose::recipe::{Recipe, Response};
 
             let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", None::<&str>)]);
             let agent = Agent::new();
@@ -3703,12 +3712,24 @@ mod tests {
                 )
                 .await?;
             agent
-                .add_final_output_tool(Response {
-                    json_schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": { "result": { "type": "string" } }
-                    })),
-                })
+                .config
+                .session_manager
+                .update(&session.id)
+                .recipe(Some(
+                    Recipe::builder()
+                        .title("Structured output")
+                        .description("Structured output")
+                        .prompt("Return structured output")
+                        .response(Response {
+                            json_schema: Some(serde_json::json!({
+                                "type": "object",
+                                "properties": { "result": { "type": "string" } }
+                            })),
+                        })
+                        .build()
+                        .expect("valid recipe"),
+                ))
+                .apply()
                 .await?;
 
             let reply_stream = agent
@@ -3750,7 +3771,7 @@ mod tests {
         #[tokio::test]
         async fn test_empty_turn_with_final_output_tool_nudges() -> Result<()> {
             use goose::agents::final_output_tool::FINAL_OUTPUT_CONTINUATION_MESSAGE;
-            use goose::recipe::Response;
+            use goose::recipe::{Recipe, Response};
 
             let agent = Agent::new();
             let session = agent
@@ -3771,12 +3792,24 @@ mod tests {
                 )
                 .await?;
             agent
-                .add_final_output_tool(Response {
-                    json_schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": { "result": { "type": "string" } }
-                    })),
-                })
+                .config
+                .session_manager
+                .update(&session.id)
+                .recipe(Some(
+                    Recipe::builder()
+                        .title("Structured output")
+                        .description("Structured output")
+                        .prompt("Return structured output")
+                        .response(Response {
+                            json_schema: Some(serde_json::json!({
+                                "type": "object",
+                                "properties": { "result": { "type": "string" } }
+                            })),
+                        })
+                        .build()
+                        .expect("valid recipe"),
+                ))
+                .apply()
                 .await?;
 
             let session_config = SessionConfig {
@@ -3860,7 +3893,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_final_output_result_id_matches_persisted_message() -> Result<()> {
-            use goose::recipe::Response;
+            use goose::recipe::{Recipe, Response};
             use goose::session::SessionManager;
             use tempfile::TempDir;
 
@@ -3892,14 +3925,24 @@ mod tests {
                     &session.id,
                 )
                 .await?;
-            agent
-                .add_final_output_tool(Response {
-                    json_schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": { "result": { "type": "string" } },
-                        "required": ["result"]
-                    })),
-                })
+            session_manager
+                .update(&session.id)
+                .recipe(Some(
+                    Recipe::builder()
+                        .title("Structured output")
+                        .description("Structured output")
+                        .prompt("Return structured output")
+                        .response(Response {
+                            json_schema: Some(serde_json::json!({
+                                "type": "object",
+                                "properties": { "result": { "type": "string" } },
+                                "required": ["result"]
+                            })),
+                        })
+                        .build()
+                        .expect("valid recipe"),
+                ))
+                .apply()
                 .await?;
 
             let session_config = SessionConfig {

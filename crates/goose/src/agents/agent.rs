@@ -9,7 +9,6 @@ use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use goose_agent::inference::ends_with_successful_tool_response;
 use tracing_futures::Instrument;
 
-use super::container::Container;
 use super::final_output_tool::FinalOutputTool;
 use super::gen_ai_telemetry;
 use super::mcp_client::GooseMcpHostInfo;
@@ -33,6 +32,7 @@ use crate::agents::final_output_tool::{
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::retry::{RetryManager, RetryResult};
+use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, BangShellOperation,
@@ -63,13 +63,12 @@ use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
-use crate::recipe::Response;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager, SessionNameUpdate};
+use crate::session::{GoalState, Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -300,9 +299,6 @@ pub struct Agent {
     session_start_emitted: AtomicBool,
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
-    container: Mutex<Option<Container>>,
-    pub(super) goal: Mutex<Option<String>>,
-    pub(super) grind: Mutex<Option<String>>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
 }
 
@@ -490,9 +486,6 @@ impl Agent {
             session_start_emitted: AtomicBool::new(false),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
-            container: Mutex::new(None),
-            goal: Mutex::new(None),
-            grind: Mutex::new(None),
             steer_queues: Mutex::new(HashMap::new()),
         }
     }
@@ -1032,39 +1025,6 @@ impl Agent {
         }
     }
 
-    /// When set, all stdio extensions will be started via `docker exec` in the specified container.
-    pub async fn set_container(&self, container: Option<Container>) {
-        *self.container.lock().await = container.clone();
-    }
-
-    pub async fn container(&self) -> Option<Container> {
-        self.container.lock().await.clone()
-    }
-
-    pub async fn add_final_output_tool(&self, response: Response) -> Result<()> {
-        let mut final_output_tool = self.final_output_tool.lock().await;
-        let created_final_output_tool =
-            FinalOutputTool::try_new(response).map_err(anyhow::Error::msg)?;
-        let final_output_system_prompt = created_final_output_tool.system_prompt();
-        *final_output_tool = Some(created_final_output_tool);
-        self.extend_system_prompt("final_output".to_string(), final_output_system_prompt)
-            .await;
-        Ok(())
-    }
-
-    pub async fn apply_recipe_components(
-        &self,
-        response: Option<Response>,
-        include_final_output: bool,
-    ) -> Result<()> {
-        if include_final_output {
-            if let Some(response) = response {
-                self.add_final_output_tool(response).await?;
-            }
-        }
-        Ok(())
-    }
-
     pub async fn dispatch_tool_call(
         &self,
         tool_call: CallToolRequestParams,
@@ -1190,7 +1150,7 @@ impl Agent {
         }
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
-        let container = self.container.lock().await.clone();
+        let container = session.container.clone();
         let result = lease
             .call(
                 tool_call.clone(),
@@ -1384,19 +1344,18 @@ impl Agent {
         extensions: Vec<ExtensionConfig>,
         session_id: &str,
     ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
-        let working_dir = match self
+        let (working_dir, container) = match self
             .config
             .session_manager
             .get_session(session_id, false)
             .await
         {
-            Ok(session) => Some(session.working_dir),
+            Ok(session) => (Some(session.working_dir), session.container),
             Err(e) => {
                 warn!("Failed to get session for bulk load: {}", e);
-                None
+                (None, None)
             }
         };
-        let container = self.container.lock().await.clone();
 
         let extension_futures = extensions
             .into_iter()
@@ -1454,11 +1413,13 @@ impl Agent {
                     session_id, e
                 ))
             })?;
-        let working_dir = Some(session.working_dir);
-
-        let container = self.container.lock().await;
         self.extension_manager
-            .add_extension(extension, working_dir, container.as_ref(), Some(session_id))
+            .add_extension(
+                extension,
+                Some(session.working_dir),
+                session.container.as_ref(),
+                Some(session_id),
+            )
             .await?;
 
         Ok(())
@@ -1469,9 +1430,14 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> ExtensionResult<()> {
-        let container = self.container.lock().await;
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|e| crate::agents::extension::ExtensionError::SetupError(e.to_string()))?;
         self.extension_manager
-            .update_working_dir(working_dir, container.as_ref(), session_id)
+            .update_working_dir(working_dir, session.container.as_ref(), session_id)
             .await
     }
 
@@ -1496,7 +1462,13 @@ impl Agent {
         };
 
         if include_final_output {
-            if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
+            let final_output_tool = self
+                .config
+                .session_manager
+                .get_session(session_id, false)
+                .await
+                .and_then(|session| ops_recipe::final_output_tool(&session));
+            if let Ok(Some(final_output_tool)) = final_output_tool {
                 prefixed_tools.push(final_output_tool.tool());
             }
         }
@@ -1682,7 +1654,6 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let container = self.container.lock().await.clone();
         let max_turns = session_config.max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
@@ -1767,13 +1738,10 @@ impl Agent {
                 &self.current_goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
-                container,
                 Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
-                &self.goal,
-                &self.grind,
                 std::time::Duration::from_secs(retry_timeout),
                 std::time::Duration::from_secs(on_failure_timeout),
             )),
@@ -2407,7 +2375,10 @@ impl Agent {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Session {} has no conversation", session_config.id))?;
 
-        if self.final_output_tool.lock().await.is_some() {
+        let final_output_tool = ops_recipe::final_output_tool(&session)?;
+        let has_final_output_tool = final_output_tool.is_some();
+        *self.final_output_tool.lock().await = final_output_tool;
+        if has_final_output_tool {
             let provider = self.provider(&session_config.id).await?;
             if !provider.supports_builtin_tools() {
                 let provider_name = provider.get_name();
@@ -3437,9 +3408,9 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None if self.has_pending_steers(&session_config.id).await => {}
-                        None if self.goal.lock().await.is_some() && !goal_check_pending => {
+                        None if GoalState::of(&session).goal.is_some() && !goal_check_pending => {
                             goal_check_pending = true;
-                            let goal = self.goal.lock().await.clone().unwrap();
+                            let goal = GoalState::of(&session).goal.unwrap();
                             let nudge = format!(
                                 "Before finishing, check whether the following goal has been fully met:\n\n\
                                  **Goal:** {goal}\n\n\
@@ -3456,8 +3427,8 @@ impl Agent {
                             );
                         }
 
-                        None if self.grind.lock().await.is_some() => {
-                            let grind = self.grind.lock().await.clone().unwrap();
+                        None if GoalState::of(&session).grind.is_some() => {
+                            let grind = GoalState::of(&session).grind.unwrap();
                             let nudge = format!(
                                 "Keep working. The grind goal is not yet complete:\n\n\
                                  **Goal:** {grind}\n\n\
@@ -3475,8 +3446,9 @@ impl Agent {
                         }
 
                         None => {
-                            self.set_goal(None).await;
-                            self.set_grind(None).await;
+                            session_manager
+                                .set_extension_state(&session_config.id, &GoalState::default())
+                                .await?;
                             // Recipe retry logic owns the turn whenever a
                             // retry_config is present: it runs success checks,
                             // on_failure, and max_retries. Only when no recipe
@@ -3672,32 +3644,6 @@ impl Agent {
             drop(inference_lease);
         }.instrument(reply_stream_span));
         Ok(inner)
-    }
-
-    pub async fn extend_system_prompt(&self, key: String, instruction: String) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.add_system_prompt_extra(key, instruction);
-    }
-
-    pub async fn remove_system_prompt_extra(&self, key: &str) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.remove_system_prompt_extra(key);
-    }
-
-    pub async fn set_goal(&self, goal: Option<String>) {
-        *self.goal.lock().await = goal;
-    }
-
-    pub async fn get_goal(&self) -> Option<String> {
-        self.goal.lock().await.clone()
-    }
-
-    pub async fn set_grind(&self, goal: Option<String>) {
-        *self.grind.lock().await = goal;
-    }
-
-    pub async fn get_grind(&self) -> Option<String> {
-        self.grind.lock().await.clone()
     }
 
     /// Pins `provider` to the session instead of letting the provider manager
@@ -3931,17 +3877,6 @@ impl Agent {
         Ok(true)
     }
 
-    /// Override the system prompt with a custom template
-    pub async fn override_system_prompt(&self, template: String) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.set_system_prompt_override(template);
-    }
-
-    pub async fn clear_system_prompt_override(&self) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.clear_system_prompt_override();
-    }
-
     pub async fn list_extension_prompts(&self, session_id: &str) -> HashMap<String, Vec<Prompt>> {
         self.extension_manager
             .current_lease(session_id, None)
@@ -3983,7 +3918,6 @@ mod tests {
     use crate::providers::base::{
         stream_from_single_message, MessageStream, ModelInfo, PermissionRouting,
     };
-    use crate::recipe::Response;
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
@@ -6092,62 +6026,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     #[tokio::test]
-    async fn test_add_final_output_tool() -> Result<()> {
-        let agent = Agent::new();
-
-        let response = Response {
-            json_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                }
-            })),
-        };
-
-        agent.add_final_output_tool(response).await?;
-
-        let tools = agent.list_tools("test-session-id", None).await;
-        let final_output_tool = tools
-            .iter()
-            .find(|tool| tool.name == FINAL_OUTPUT_TOOL_NAME);
-
-        assert!(
-            final_output_tool.is_some(),
-            "Final output tool should be present after adding"
-        );
-
-        let prompt_manager = agent.prompt_manager.lock().await;
-        let system_prompt = prompt_manager
-            .builder()
-            .with_goose_mode(GooseMode::default())
-            .build();
-
-        let final_output_tool_ref = agent.final_output_tool.lock().await;
-        let final_output_tool_system_prompt =
-            final_output_tool_ref.as_ref().unwrap().system_prompt();
-        assert!(system_prompt.contains(&final_output_tool_system_prompt));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn boolean_final_output_schema_returns_error() {
-        let agent = Agent::new();
-
-        let error = agent
-            .apply_recipe_components(
-                Some(Response {
-                    json_schema: Some(serde_json::json!(true)),
-                }),
-                true,
-            )
-            .await
-            .unwrap_err();
-
-        assert_eq!(error.to_string(), "json_schema must be an object");
-        assert!(agent.final_output_tool.lock().await.is_none());
-    }
-
-    #[tokio::test]
     async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
         let agent = Agent::new();
 
@@ -6607,9 +6485,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 RECORD_POST_FAILURE_SCRIPT,
             ),
         ]);
-        // agent_with_hooks builds the agent through Agent::with_config, which
-        // leaves final_output_tool as None, so the tool is inactive here without
-        // any extra setup.
+        // agent_with_hooks creates a session without a recipe, so the tool is
+        // inactive here without any extra setup.
         let (agent, session, _data_dir) = agent_with_hooks(env.hook_manager()).await;
 
         let call = CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)

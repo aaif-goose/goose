@@ -57,7 +57,7 @@ impl CachedContextLimit {
         }
     }
 }
-pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-4o";
+pub const OPEN_AI_DEFAULT_MODEL: &str = "gpt-6.1-sol";
 
 pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
@@ -133,6 +133,7 @@ pub struct OpenAiProvider {
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
+    native_openai: bool,
     #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
 }
@@ -154,6 +155,7 @@ pub struct OpenAiProviderBuilder {
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
+    native_openai: bool,
 }
 
 impl OpenAiProviderBuilder {
@@ -170,6 +172,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            native_openai: false,
         }
     }
 
@@ -241,6 +244,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn native_openai(mut self, native_openai: bool) -> Self {
+        self.native_openai = native_openai;
+        self
+    }
+
     pub fn build(self) -> OpenAiProvider {
         OpenAiProvider {
             api_client: self.api_client,
@@ -254,6 +262,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             preserve_thinking_context: self.preserve_thinking_context,
+            native_openai: self.native_openai,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -269,8 +278,17 @@ impl OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let mut request_config = model_config.clone();
+        if self.native_openai && request_config.reasoning.is_none() {
+            let canonical = goose_provider_types::canonical::maybe_get_canonical_model(
+                "openai",
+                capability_model,
+            );
+            request_config.reasoning =
+                Some(canonical.and_then(|model| model.reasoning).unwrap_or(true));
+        }
         let mut payload = create_responses_request_for_model(
-            model_config,
+            &request_config,
             wire_model,
             capability_model,
             system,
@@ -353,6 +371,7 @@ impl OpenAiProvider {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -510,6 +529,10 @@ impl OpenAiProvider {
             return false;
         }
 
+        let base_path = Self::normalize_base_path(&self.base_path);
+        if self.native_openai && base_path == OPEN_AI_DEFAULT_BASE_PATH {
+            return true;
+        }
         Self::should_use_responses_api(model_name, &self.base_path)
     }
 
@@ -634,7 +657,7 @@ impl ProviderDescriptor for OpenAiProvider {
         ProviderMetadata::with_models(
             OPEN_AI_PROVIDER_NAME,
             "OpenAI",
-            "GPT-4 and other OpenAI models, including OpenAI compatible ones",
+            "OpenAI models, including OpenAI compatible ones",
             OPEN_AI_DEFAULT_MODEL,
             known_models_from_registry(OPEN_AI_PROVIDER_NAME),
             OPEN_AI_DOC_URL,
@@ -648,13 +671,7 @@ impl ProviderDescriptor for OpenAiProvider {
                     Some("https://api.openai.com"),
                     false,
                 ),
-                ConfigKey::new(
-                    "OPENAI_BASE_PATH",
-                    true,
-                    false,
-                    Some("v1/chat/completions"),
-                    false,
-                ),
+                ConfigKey::new("OPENAI_BASE_PATH", false, false, None, false),
                 ConfigKey::new("OPENAI_ORGANIZATION", false, false, None, false),
                 ConfigKey::new("OPENAI_PROJECT", false, false, None, false),
                 ConfigKey::new("OPENAI_CUSTOM_HEADERS", false, true, None, false),
@@ -1016,6 +1033,7 @@ mod tests {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1247,6 +1265,34 @@ mod tests {
 
         assert!(!provider.should_use_responses_api_for_provider("openai/gpt-5"));
         assert!(!provider.should_use_responses_api_for_provider("openai/o3"));
+    }
+
+    #[test]
+    fn native_openai_prefers_responses_without_changing_gateway_routing() {
+        let mut provider = make_provider("openai");
+        provider.native_openai = true;
+        for model in [
+            "gpt-4",
+            "gpt-4o",
+            "gpt-5-chat-latest",
+            "gpt-6-astra",
+            "future-model",
+        ] {
+            assert!(
+                provider.should_use_responses_api_for_provider(model),
+                "{model}"
+            );
+        }
+        provider.base_path = "chat/completions".to_string();
+        assert!(!provider.should_use_responses_api_for_provider("gpt-4o"));
+        provider.base_path = "v1/chat/completions".to_string();
+        assert!(provider.should_use_responses_api_for_provider("gpt-5.6-terra"));
+        assert!(provider.should_use_responses_api_for_provider("gpt-4o"));
+        provider.base_path = "v1/responses".to_string();
+        assert!(provider.should_use_responses_api_for_provider("gpt-4o"));
+        provider.base_path = "v1/chat/completions".to_string();
+        provider.native_openai = false;
+        assert!(!provider.should_use_responses_api_for_provider("gpt-4o"));
     }
 
     #[test]
@@ -1539,6 +1585,7 @@ mod tests {
             dynamic_models: Some(true),
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }

@@ -28,7 +28,6 @@ import {
   type Message,
   type UserInput,
 } from '../types/message';
-import { substituteParameters } from '../utils/parameterSubstitution';
 import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
@@ -254,17 +253,6 @@ export default function BaseChat({
 
   const recipe = session?.recipe as Recipe | null | undefined;
 
-  const resolvedInitialMessage = useMemo((): UserInput | undefined => {
-    if (!initialMessage) return undefined;
-    if (recipe?.prompt && session?.user_recipe_values) {
-      return {
-        ...initialMessage,
-        msg: substituteParameters(initialMessage.msg, session.user_recipe_values),
-      };
-    }
-    return initialMessage;
-  }, [initialMessage, recipe?.prompt, session?.user_recipe_values]);
-
   // noAutoSubmit only suppresses auto-submitting the initial prompt of a fresh session
   // (goose://new-session?prompt=...). Once the conversation has messages, later flows
   // such as forks or resumes should auto-submit normally.
@@ -276,7 +264,7 @@ export default function BaseChat({
     session,
     messages,
     chatState,
-    initialMessage: resolvedInitialMessage,
+    initialMessage,
     canAutoSubmit,
     handleSubmit,
   });
@@ -441,17 +429,11 @@ export default function BaseChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.name, setChat]);
 
-  // If we have a recipe prompt and user recipe values, substitute parameters
-  let recipePrompt = '';
-  if (messages.length === 0 && recipe?.prompt) {
-    recipePrompt = session?.user_recipe_values
-      ? substituteParameters(recipe.prompt, session.user_recipe_values)
-      : recipe.prompt;
-  }
+  const recipePrompt = messages.length === 0 ? (recipe?.prompt ?? '') : '';
 
   const initialPrompt =
-    noAutoSubmit && messages.length === 0 && resolvedInitialMessage?.msg
-      ? resolvedInitialMessage.msg
+    noAutoSubmit && messages.length === 0 && initialMessage?.msg
+      ? initialMessage.msg
       : recipePrompt;
 
   if (sessionLoadError) {
@@ -540,7 +522,6 @@ export default function BaseChat({
                   append={appendToChat}
                   activities={Array.isArray(recipe.activities) ? recipe.activities : null}
                   title={recipe.title}
-                  parameterValues={session?.user_recipe_values || {}}
                 />
               </div>
             )}

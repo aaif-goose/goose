@@ -148,6 +148,7 @@ pub async fn from_env(
         .project(project)
         .custom_headers(custom_headers)
         .preserve_thinking_context(!is_openai)
+        .native_openai(is_openai)
         .build();
 
     // TODO(jack): replace this

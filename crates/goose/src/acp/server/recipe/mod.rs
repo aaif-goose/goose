@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::Meta;
 use agent_client_protocol::{
@@ -20,7 +19,6 @@ use tokio::sync::oneshot;
 mod conversions;
 
 use super::{meta_string, GooseAcpAgent, ResultExt};
-use crate::agents::Agent;
 use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
 use crate::recipe::local_recipes::{self, get_recipe_library_dir};
 use crate::recipe::manifest::{
@@ -313,46 +311,41 @@ impl GooseAcpAgent {
         }
     }
 
-    pub(super) async fn apply_recipe(
+    /// ACP sessions created before the rendered recipe was stored hold the
+    /// template, which load and fork render once in place.
+    pub(super) async fn render_stored_recipe_template(
         &self,
-        agent: &Arc<Agent>,
-        recipe: &Recipe,
+        session: &mut Session,
     ) -> Result<(), agent_client_protocol::Error> {
-        agent
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await
-            .invalid_params_err()?;
-        if let Some(instructions) = recipe.instructions.clone() {
-            agent
-                .extend_system_prompt("recipe".to_string(), instructions)
-                .await;
-        }
-        Ok(())
-    }
-
-    pub(super) async fn apply_session_recipe(
-        &self,
-        agent: &Arc<Agent>,
-        session: &Session,
-    ) -> Result<(), agent_client_protocol::Error> {
-        let Some(recipe) = session.recipe.as_ref() else {
+        let Some(recipe) = &session.recipe else {
             return Ok(());
         };
-
-        if session.session_type == SessionType::Scheduled {
-            self.apply_recipe(agent, recipe).await?;
+        let yaml = recipe.to_yaml().internal_err()?;
+        if session.session_type == SessionType::Scheduled
+            || !(yaml.contains("{{") || yaml.contains("{%"))
+        {
             return Ok(());
         }
-
-        let recipe_dir = get_recipe_library_dir(true);
-        if let Some(rendered) = self.render_recipe(
+        let Some(rendered) = self.render_recipe(
             recipe,
-            &recipe_dir,
+            &get_recipe_library_dir(true),
             session.user_recipe_values.clone().unwrap_or_default(),
-        )? {
-            self.apply_recipe(agent, &rendered).await?;
-        }
-
+        )?
+        else {
+            return Ok(());
+        };
+        self.session_manager
+            .update(&session.id)
+            .recipe(Some(rendered))
+            .apply()
+            .await
+            .internal_err()?;
+        session.recipe = self
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .internal_err()?
+            .recipe;
         Ok(())
     }
 

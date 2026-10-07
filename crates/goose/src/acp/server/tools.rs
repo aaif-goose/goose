@@ -109,7 +109,7 @@ impl GooseAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        let container = agent.container().await;
+        let container = session.container;
         let tool_result = agent
             .extension_manager
             .current_lease(session_id, Some(&session.working_dir))
