@@ -930,7 +930,21 @@ fn apply_thinking_config(
     let official = options.official_thinking.as_ref();
     let mode = resolved_thinking_mode(provider_name, &model_config.model_name, official);
     let reasoning = resolved_reasoning(provider_name, model_config, official);
-    let thinking_type = thinking_type_with_mode(model_config, mode, reasoning);
+    let mut thinking_type = thinking_type_with_mode(model_config, mode, reasoning);
+    if thinking_type == ThinkingType::Disabled
+        && options.preserve_thinking_context
+        && !options.thinking_disabled
+        && (official.is_none() || reasoning == Some(true))
+    {
+        thinking_type = match mode {
+            Some(
+                ThinkingMode::Adaptive
+                | ThinkingMode::AlwaysOnAdaptive
+                | ThinkingMode::AdaptiveBetweenTools,
+            ) => ThinkingType::Adaptive,
+            Some(ThinkingMode::Enabled) | None => ThinkingType::Enabled,
+        };
+    }
     match thinking_type {
         // Omitting output_config keeps the model's default effort, which accepts between_tools.
         ThinkingType::BetweenTools => {
@@ -962,20 +976,6 @@ fn apply_thinking_config(
     }
 
     if options.preserve_thinking_context && !options.thinking_disabled {
-        if !obj.contains_key("thinking") {
-            let budget_tokens = thinking_budget_tokens(model_config)
-                .min(max_tokens.saturating_sub(MIN_ANSWER_TOKENS));
-            if budget_tokens >= MIN_ANSWER_TOKENS {
-                obj.insert(
-                    "thinking".to_string(),
-                    json!({
-                        "type": "enabled",
-                        "budget_tokens": budget_tokens
-                    }),
-                );
-            }
-        }
-
         // Z.AI requires this to preserve reasoning; Anthropic rejects it.
         if options.emit_clear_thinking {
             if let Some(thinking) = obj.get_mut("thinking").and_then(|t| t.as_object_mut()) {
@@ -2565,6 +2565,45 @@ mod tests {
                 "{model} at {effort}"
             );
         }
+    }
+
+    #[test]
+    fn test_preserve_thinking_context_respects_official_capabilities() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let cases = [
+            (official(true, false, Some(true)), None, Some("adaptive")),
+            (official(false, false, None), None, None),
+            (official(false, true, Some(true)), None, Some("enabled")),
+            (
+                official(true, false, Some(true)),
+                Some(false),
+                Some("disabled"),
+            ),
+        ];
+        for (options, reasoning, expected) in cases {
+            let mut config = cfg("unlisted-future-claude").with_merged_request_params(
+                std::collections::HashMap::from([(
+                    "preserve_thinking_context".to_string(),
+                    json!(true),
+                )]),
+            );
+            config.reasoning = reasoning;
+            let payload = thinking_payload(&config, options);
+            assert_eq!(payload["thinking"]["type"].as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn test_preserve_thinking_context_without_official_capabilities() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let config = cfg("unknown-compatible-model").with_merged_request_params(
+            std::collections::HashMap::from([(
+                "preserve_thinking_context".to_string(),
+                json!(true),
+            )]),
+        );
+        let payload = thinking_payload(&config, AnthropicFormatOptions::default());
+        assert_eq!(payload["thinking"]["type"], "enabled");
     }
 
     #[test]
