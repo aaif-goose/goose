@@ -27807,6 +27807,7 @@
     "family": "claude-haiku",
     "attachment": true,
     "reasoning": true,
+    "reasoning_budget_min": 1024,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-02-28",
@@ -27845,6 +27846,7 @@
       "medium",
       "high"
     ],
+    "reasoning_budget_min": 1024,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-05",
@@ -27884,6 +27886,7 @@
       "high",
       "max"
     ],
+    "reasoning_budget_min": 1024,
     "thinking_mode": "adaptive",
     "tool_call": true,
     "temperature": true,
@@ -28082,6 +28085,7 @@
     "family": "claude-sonnet",
     "attachment": true,
     "reasoning": true,
+    "reasoning_budget_min": 1024,
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-07-31",
@@ -28121,6 +28125,7 @@
       "high",
       "max"
     ],
+    "reasoning_budget_min": 1024,
     "thinking_mode": "adaptive",
     "tool_call": true,
     "temperature": true,
@@ -28203,6 +28208,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "adaptive_between_tools",
     "tool_call": true,
     "temperature": false,
     "knowledge": "2026-06",

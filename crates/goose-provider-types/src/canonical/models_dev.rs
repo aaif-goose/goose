@@ -40,6 +40,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AdaptiveBetweenTools),
         _ => None,
     }
 }
@@ -127,6 +128,18 @@ fn process_model(
                     .map(str::to_owned)
                     .collect()
             }),
+        reasoning_budget_min: model_data
+            .get("reasoning_options")
+            .and_then(Value::as_array)
+            .and_then(|options| {
+                options.iter().find(|option| {
+                    option.get("type").and_then(Value::as_str) == Some("budget_tokens")
+                })
+            })
+            .and_then(|option| option.get("min"))
+            .and_then(Value::as_i64)
+            .and_then(|min| i32::try_from(min).ok())
+            .filter(|min| *min > 0),
         thinking_mode: get_thinking_mode(&canonical_id, model_data),
         tool_call: model_data
             .get("tool_call")
@@ -210,6 +223,7 @@ mod tests {
                 attachment: None,
                 reasoning: None,
                 reasoning_efforts: None,
+                reasoning_budget_min: None,
                 thinking_mode: None,
                 tool_call: false,
                 temperature: None,
@@ -256,6 +270,18 @@ mod tests {
             registry.get("openai", "future").unwrap().reasoning_efforts,
             Some(vec!["low".to_string(), "max".to_string()])
         );
+    }
+
+    #[test]
+    fn parses_anthropic_effort_and_budget_options_independently() {
+        let json = r#"{"anthropic":{"models":{"hybrid":{"name":"Hybrid","reasoning_options":[{"type":"effort","values":["low","high"]},{"type":"budget_tokens","min":2048}]}}}}"#;
+        let registry = from_models_dev(json).unwrap();
+        let hybrid = registry.get("anthropic", "hybrid").unwrap();
+        assert_eq!(
+            hybrid.reasoning_efforts.as_deref(),
+            Some(["low".into(), "high".into()].as_slice())
+        );
+        assert_eq!(hybrid.reasoning_budget_min, Some(2048));
     }
 
     #[test]

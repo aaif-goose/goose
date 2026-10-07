@@ -105,6 +105,8 @@ pub enum ThinkingMode {
     Enabled,
     Adaptive,
     AlwaysOnAdaptive,
+    /// Rejects `disabled`; `between_tools` is the lowest setting and turns off up-front thinking.
+    AdaptiveBetweenTools,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,10 @@ pub struct CanonicalModel {
     /// Allowed values of the OpenAI-style reasoning effort parameter, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_efforts: Option<Vec<String>>,
+
+    /// Minimum thinking budget advertised by models.dev, when budget_tokens is supported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_budget_min: Option<i32>,
 
     /// Request shape to use when enabling thinking/reasoning.
     #[serde(skip_serializing_if = "Option::is_none")]

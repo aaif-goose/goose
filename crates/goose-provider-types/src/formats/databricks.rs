@@ -299,6 +299,13 @@ fn apply_claude_thinking_config(
     let obj = payload.as_object_mut().unwrap();
 
     match thinking_type_for_provider(provider_name, model_config) {
+        ThinkingType::BetweenTools => {
+            obj.insert("thinking".to_string(), json!({ "type": "between_tools" }));
+            obj.insert(
+                "max_completion_tokens".to_string(),
+                json!(model_config.max_output_tokens()),
+            );
+        }
         ThinkingType::Adaptive => {
             obj.insert("thinking".to_string(), json!({ "type": "adaptive" }));
             obj.insert(
@@ -678,6 +685,26 @@ mod document_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_sonnet_5_5_between_tools() {
+        for effort in [None, Some("off")] {
+            let mut config = crate::model::ModelConfig::new("claude-sonnet-5-5");
+            if let Some(effort) = effort {
+                config = config.with_merged_request_params(std::collections::HashMap::from([(
+                    "thinking_effort".to_string(),
+                    serde_json::json!(effort),
+                )]));
+            }
+            let mut payload = serde_json::json!({});
+            super::apply_claude_thinking_config(&mut payload, "anthropic", &config);
+            assert_eq!(
+                payload["thinking"],
+                serde_json::json!({"type": "between_tools"})
+            );
+            assert!(payload.get("output_config").is_none());
+        }
+    }
+
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use rmcp::model::CallToolResult;
