@@ -300,13 +300,6 @@ pub async fn cleanup_provider(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn create_with_named_model(
-    provider_name: &str,
-    extensions: Vec<ExtensionConfig>,
-) -> Result<Arc<dyn Provider>> {
-    create(provider_name, extensions).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
