@@ -3181,7 +3181,13 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let mut emitted_refusal_id = None;
         while let Some(event) = reply_stream.next().await {
             if let AgentEvent::Message(message) = event? {
-                if message.as_concat_text().contains("provider refused") {
+                if message.content.iter().any(|content| {
+                    content.as_error().is_some_and(|error| {
+                        error
+                            .message
+                            .contains("Please start a new session to continue")
+                    })
+                }) {
                     emitted_refusal_id = message.id;
                 }
             }
@@ -3364,83 +3370,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
         assert_eq!(env.hook_invocations(), 1);
         assert_eq!(provider.call_count(), 2);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn skipped_user_message_does_not_enter_empty_response_retry_loop() -> Result<()> {
-        use rmcp::model::{Annotations, Role, TextContent};
-
-        let env = SessionStartHookTestEnv::new()?;
-        let provider = Arc::new(CountingTextProvider::new());
-        let hook_manager = env.hook_manager();
-        let (agent, session_id) =
-            create_test_agent(env.data_dir(), hook_manager, provider.clone()).await?;
-        let session_config = SessionConfig {
-            id: session_id.clone(),
-            schedule_id: None,
-            max_turns: Some(10),
-        };
-        let user_only_content = MessageContent::Text(
-            TextContent::new("user-only")
-                .with_annotations(Annotations::default().with_audience(vec![Role::User])),
-        );
-
-        let mut stream = agent
-            .reply(
-                Message::user().with_content(user_only_content),
-                session_config,
-                None,
-            )
-            .await?;
-
-        assert!(stream.next().await.is_none());
-        assert_eq!(provider.call_count.load(Ordering::SeqCst), 0);
-        assert_eq!(env.hook_invocations(), 0);
-        let session = agent
-            .config
-            .session_manager
-            .get_session(&session_id, true)
-            .await?;
-        let conversation = session.conversation.unwrap();
-        assert_eq!(conversation.messages().len(), 1);
-        assert!(!conversation.messages()[0].is_agent_visible());
-
-        let visible_session_config = SessionConfig {
-            id: session_id.clone(),
-            schedule_id: None,
-            max_turns: Some(10),
-        };
-        let mut visible_stream = agent
-            .reply(
-                Message::user().with_text("agent-visible"),
-                visible_session_config,
-                None,
-            )
-            .await?;
-        while let Some(event) = visible_stream.next().await {
-            event?;
-        }
-        assert_eq!(provider.call_count.load(Ordering::SeqCst), 1);
-        assert_eq!(env.hook_invocations(), 1);
-
-        let final_session_config = SessionConfig {
-            id: session_id,
-            schedule_id: None,
-            max_turns: Some(10),
-        };
-        let mut final_stream = agent
-            .reply(
-                Message::user().with_text("second-agent-visible"),
-                final_session_config,
-                None,
-            )
-            .await?;
-        while let Some(event) = final_stream.next().await {
-            event?;
-        }
-        assert_eq!(provider.call_count.load(Ordering::SeqCst), 2);
-        assert_eq!(env.hook_invocations(), 1);
         Ok(())
     }
 

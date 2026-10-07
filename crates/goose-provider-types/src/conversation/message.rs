@@ -1275,6 +1275,17 @@ impl Message {
             ProviderError::ContextLengthExceeded(_) => {
                 format!("{err}\n\nThe conversation is too long for the model's context window.")
             }
+            ProviderError::Refusal { details, category } => {
+                let category = category
+                    .as_deref()
+                    .map(|category| format!("\n\nCategory: {category}"))
+                    .unwrap_or_default();
+                format!(
+                    "The provider refused this request.\n\n{details}{category}\n\n\
+                     Please start a new session to continue — resending this conversation \
+                     is likely to be refused again."
+                )
+            }
             _ => format!(
                 "Ran into this error: {err}.\n\n\
                  Please retry if you think this is a transient or recoverable error."

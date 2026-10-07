@@ -8,6 +8,7 @@ use crate::agents::AgentEvent;
 use crate::conversation::fix_conversation;
 use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
 use crate::conversation::Conversation;
+use rmcp::model::{Annotations, Role, TextContent};
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {
@@ -73,7 +74,7 @@ async fn provider_lifecycle() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .filter(|message| message.role == Role::Assistant)
         .all(|message| {
             message
                 .metadata
@@ -300,6 +301,18 @@ async fn provider_lifecycle() -> Result<()> {
     assert_eq!(api.call_count() - calls_before, 3);
     result.assert_message(-1, Agent, "recovered after empty replies");
 
+    let calls_before = api.call_count();
+    let user_only = Message::user().with_content(MessageContent::Text(
+        TextContent::new("only for the user")
+            .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+    ));
+    let result = pipeline.run_message(user_only).await?;
+    assert_eq!(api.call_count(), calls_before);
+    assert_eq!(
+        result.conversation().last().unwrap().as_concat_text(),
+        "only for the user"
+    );
+
     api.on("after empty reply")
         .reply("recovered from empty reply");
     let result = pipeline.run(["after empty reply"]).await?;
@@ -365,7 +378,7 @@ async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .expect("assistant response");
     assert_eq!(
         assistant
@@ -425,7 +438,7 @@ async fn requested_model_is_recorded_without_resolved_model() -> Result<()> {
         .conversation()
         .messages()
         .iter()
-        .find(|message| message.role == rmcp::model::Role::Assistant)
+        .find(|message| message.role == Role::Assistant)
         .and_then(|message| message.metadata.inference.as_ref())
         .expect("assistant inference metadata");
 
