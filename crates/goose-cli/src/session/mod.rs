@@ -3194,11 +3194,11 @@ mod tests {
         extension_loading: Option<AbortOnDropHandle<Vec<ExtensionFailure>>>,
         refresh_completions: bool,
     ) -> CliSession {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let data_dir = tempfile::TempDir::new().unwrap().keep();
+        let session_manager = SessionManager::new(data_dir.clone());
         let session = session_manager
             .create_session(
-                temp_dir.path().to_path_buf(),
+                data_dir.clone(),
                 "Loading gate test".to_string(),
                 goose::session::SessionType::User,
                 GooseMode::default(),
@@ -3208,9 +3208,7 @@ mod tests {
 
         let agent = goose::agents::Agent::with_config(goose::agents::AgentConfig::new(
             Arc::new(session_manager),
-            Arc::new(goose::config::PermissionManager::new(
-                temp_dir.path().to_path_buf(),
-            )),
+            Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
             None,
             GooseMode::default(),
             // Disable background session naming so the test agent starts no
