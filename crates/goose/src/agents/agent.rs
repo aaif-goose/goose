@@ -1722,7 +1722,6 @@ impl Agent {
 
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(steer_queue, self.hook_manager.clone())),
-            Arc::new(MaxTurnsOperation::new(max_turns)),
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
@@ -1744,7 +1743,7 @@ impl Agent {
                 &self.current_goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
@@ -1783,6 +1782,7 @@ impl Agent {
                 stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(MaxTurnsOperation::new(max_turns)),
         ];
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
@@ -3425,7 +3425,7 @@ impl Agent {
                             warn!("Final output tool has not been called yet. Continuing agent loop.");
                             let message = push_message_with_id(
                                 &mut messages_to_add,
-                                Message::user().with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE),
+                                Message::user().with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE).agent_only(),
                             );
                             yield AgentEvent::Message(message);
                         }

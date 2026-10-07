@@ -1146,7 +1146,7 @@ enum Command {
 
         /// Disable the Rust-driven parallel orchestrator and fall back to
         /// the single-prompt path that asks the main agent to delegate
-        /// each check via `delegate(... async: true ...)`. The default
+        /// each check via `delegate(...)`. The default
         /// orchestrator dispatches one `goose run` subprocess per check
         /// (capped at 4 concurrent), bounding wall-clock to the slowest
         /// single check rather than waiting on the model to issue

@@ -279,7 +279,9 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         }
 
         if ends_turn(messages) {
-            let message = Message::user().with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE);
+            let message = Message::user()
+                .with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE)
+                .agent_only();
             let message = emit.message(message).await;
             return applied([message.into()]);
         }

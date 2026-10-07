@@ -613,7 +613,7 @@ fn test_steer_session_adds_input_to_active_prompt() {
         // steer queued before the turn ends keeps the loop alive (it flips
         // `exit_chat` back to false), so a second provider request fires whose
         // body must now contain the steered text.
-        let openai = OpenAiFixture::new(
+        let openai = OpenAiFixture::with_response_delay(
             vec![
                 (
                     "start work".to_string(),
@@ -625,6 +625,7 @@ fn test_steer_session_adds_input_to_active_prompt() {
                 ),
             ],
             Arc::new(IgnoreSessionId),
+            Duration::from_millis(500),
         )
         .await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
