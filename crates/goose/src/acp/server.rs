@@ -2587,6 +2587,7 @@ impl GooseAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
 
+        agent.config.providers.release(session_id);
         agent
             .switch_provider(session_id, &resolved_provider_name, model_config)
             .await
