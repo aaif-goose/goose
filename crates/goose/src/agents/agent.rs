@@ -119,6 +119,12 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
+            if provider_name == "databricks_v2"
+                && model_config.model_name.to_lowercase().contains("gemini")
+            {
+                return Vec::new();
+            }
+
             if provider_name == goose_providers::ollama::OLLAMA_PROVIDER_NAME {
                 return AUTO_EFFORTS
                     .into_iter()
@@ -4291,6 +4297,19 @@ mod tests {
                 ThinkingEffort::Max,
             ]
         );
+    }
+
+    #[test]
+    fn databricks_v2_gemini_has_no_automatic_efforts() {
+        let model = goose_providers::model::ModelConfig::new("databricks-gemini-3-pro")
+            .with_canonical_limits("databricks_v2");
+
+        assert!(available_auto_efforts(
+            "databricks_v2",
+            &model,
+            ThinkingEffortSupport::Unspecified,
+        )
+        .is_empty());
     }
 
     #[test]
