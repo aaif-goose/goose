@@ -2874,15 +2874,24 @@ impl Agent {
                     break;
                 }
 
-                let mut stream = crate::agents::reply_parts::stream_response_from_provider(
-                    self.provider().await?,
-                    model_config.clone(),
-                    &session_config.id,
-                    &system_prompt,
-                    conversation.messages(),
-                    &tools,
-                    &toolshim_tools,
-                ).await?;
+                let provider = self.provider().await?;
+                let Some(stream) = run_unless_cancelled(
+                    &cancel_token,
+                    crate::agents::reply_parts::stream_response_from_provider(
+                        provider,
+                        model_config.clone(),
+                        &session_config.id,
+                        &system_prompt,
+                        conversation.messages(),
+                        &tools,
+                        &toolshim_tools,
+                    ),
+                )
+                .await
+                else {
+                    break;
+                };
+                let mut stream = stream?;
                 last_assistant_text.clear();
 
                 let current_turn_tool_count = conversation.messages().iter()

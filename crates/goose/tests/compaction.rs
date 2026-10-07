@@ -836,13 +836,20 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     Ok(())
 }
 
-struct StalledCompactionProvider {
-    compaction_started: Arc<tokio::sync::Notify>,
-    context_exceeded: bool,
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum StallAt {
+    AutoCompaction,
+    ContextErrorCompaction,
+    ModelReply,
+}
+
+struct StalledProvider {
+    stalled: Arc<tokio::sync::Notify>,
+    stall_at: StallAt,
 }
 
 #[async_trait]
-impl Provider for StalledCompactionProvider {
+impl Provider for StalledProvider {
     async fn stream(
         &self,
         _model_config: &ModelConfig,
@@ -850,16 +857,24 @@ impl Provider for StalledCompactionProvider {
         messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        if messages.iter().any(|message| {
-            message
-                .as_concat_text()
-                .to_lowercase()
-                .contains("summarize")
-        }) {
-            self.compaction_started.notify_one();
+        let stalls = match self.stall_at {
+            StallAt::ModelReply => messages
+                .last()
+                .is_some_and(|message| message.as_concat_text().starts_with("Tell me more")),
+            StallAt::AutoCompaction | StallAt::ContextErrorCompaction => {
+                messages.iter().any(|message| {
+                    message
+                        .as_concat_text()
+                        .to_lowercase()
+                        .contains("summarize")
+                })
+            }
+        };
+        if stalls {
+            self.stalled.notify_one();
             std::future::pending::<()>().await;
         }
-        if self.context_exceeded {
+        if self.stall_at == StallAt::ContextErrorCompaction {
             return Err(ProviderError::ContextLengthExceeded(
                 "Context limit exceeded".to_string(),
             ));
@@ -874,26 +889,30 @@ impl Provider for StalledCompactionProvider {
     }
 
     fn get_name(&self) -> &str {
-        "stalled-compaction"
+        "stalled"
     }
 }
 
 #[tokio::test]
-async fn legacy_stop_during_compaction_keeps_the_conversation() -> Result<()> {
-    for context_exceeded in [false, true] {
+async fn legacy_stop_while_waiting_on_the_provider_keeps_the_conversation() -> Result<()> {
+    for stall_at in [
+        StallAt::AutoCompaction,
+        StallAt::ContextErrorCompaction,
+        StallAt::ModelReply,
+    ] {
         let temp_dir = TempDir::new()?;
         let agent = Agent::new();
         let session = setup_test_session(
             &agent,
             &temp_dir,
-            "stop-during-compaction",
+            "stop-while-waiting",
             vec![
                 Message::user().with_text("Hello"),
                 Message::assistant().with_text("Hi there"),
             ],
         )
         .await?;
-        if !context_exceeded {
+        if stall_at == StallAt::AutoCompaction {
             agent
                 .config
                 .session_manager
@@ -902,10 +921,10 @@ async fn legacy_stop_during_compaction_keeps_the_conversation() -> Result<()> {
                 .apply()
                 .await?;
         }
-        let compaction_started = Arc::new(tokio::sync::Notify::new());
-        let provider = Arc::new(StalledCompactionProvider {
-            compaction_started: compaction_started.clone(),
-            context_exceeded,
+        let stalled = Arc::new(tokio::sync::Notify::new());
+        let provider = Arc::new(StalledProvider {
+            stalled: stalled.clone(),
+            stall_at,
         });
         agent
             .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
@@ -935,20 +954,18 @@ async fn legacy_stop_during_compaction_keeps_the_conversation() -> Result<()> {
             }
             anyhow::Ok(())
         };
-        let cancel_once_compacting = async {
-            compaction_started.notified().await;
+        let cancel_once_stalled = async {
+            stalled.notified().await;
             cancel.cancel();
         };
         let (read, ()) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            tokio::join!(read_to_end, cancel_once_compacting)
+            tokio::join!(read_to_end, cancel_once_stalled)
         })
         .await
-        .unwrap_or_else(|_| {
-            panic!("stream did not end after cancel (context_exceeded: {context_exceeded})")
-        });
+        .unwrap_or_else(|_| panic!("stream did not end after cancel ({stall_at:?})"));
         read?;
 
-        assert!(!history_replaced, "context_exceeded: {context_exceeded}");
+        assert!(!history_replaced, "{stall_at:?}");
         let conversation = agent
             .config
             .session_manager
@@ -961,7 +978,7 @@ async fn legacy_stop_during_compaction_keeps_the_conversation() -> Result<()> {
                 .messages()
                 .iter()
                 .any(|message| message.as_concat_text() == "Hi there" && message.is_agent_visible()),
-            "context_exceeded: {context_exceeded}"
+            "{stall_at:?}"
         );
     }
 

@@ -3,8 +3,8 @@ use goose_providers::conversation::token_usage::{ProviderUsage, Usage as Provide
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
-use super::dummy_api::{ProviderFeatures, ResponseGate};
-use super::pipeline::{self, test_pipeline, MessageKind::Agent, TestPipeline, TestRun};
+use super::dummy_api::ProviderFeatures;
+use super::pipeline::{self, test_pipeline, MessageKind::Agent};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
@@ -13,23 +13,6 @@ use crate::conversation::Conversation;
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
-
-async fn run_cancelled_while_held(
-    pipeline: &TestPipeline,
-    message: &str,
-    gate: ResponseGate,
-) -> Result<TestRun> {
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let run = pipeline.run_with_cancel(message, cancel.clone());
-    tokio::pin!(run);
-    tokio::select! {
-        () = gate.entered() => cancel.cancel(),
-        result = &mut run => panic!("run ended before the held request: {:?}", result.err()),
-    }
-    let stopped = tokio::time::timeout(std::time::Duration::from_secs(10), run).await;
-    gate.release();
-    stopped.expect("run waited for the held request after cancel")
-}
 
 #[tokio::test]
 async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
@@ -536,7 +519,7 @@ async fn stop_during_compaction_keeps_the_conversation() -> Result<()> {
         let calls_before = api.call_count();
         let gate = api.on(SUMMARIZE_HISTORY).hold_reply("summary");
 
-        let stopped = run_cancelled_while_held(&pipeline, message, gate).await?;
+        let stopped = pipeline.run_cancelled_while_held(message, gate).await?;
 
         assert_eq!(api.call_count(), calls_before + 1, "{message}");
         assert_eq!(stopped.history_replacements(), 0, "{message}");
@@ -596,7 +579,7 @@ async fn stop_during_tool_pair_compaction_keeps_the_pairs() -> Result<()> {
     let gate = api
         .on_system(SUMMARIZE_TOOL_PAIR)
         .hold_reply("summary of the pair");
-    let stopped = run_cancelled_while_held(&pipeline, "carry on", gate).await?;
+    let stopped = pipeline.run_cancelled_while_held("carry on", gate).await?;
 
     assert_eq!(api.call_count(), calls_before + 1);
     let messages = stopped.conversation().messages();

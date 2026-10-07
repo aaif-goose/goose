@@ -117,7 +117,7 @@ impl ResponseGate {
         tokio::task::spawn_blocking(move || {
             let (state, changed) = &*gate.state;
             let mut state = state.lock().unwrap();
-            while !state.entered {
+            while !state.entered && !state.released {
                 state = changed.wait(state).unwrap();
             }
         })

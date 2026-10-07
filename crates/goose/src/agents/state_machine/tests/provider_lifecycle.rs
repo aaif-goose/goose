@@ -353,3 +353,24 @@ async fn requested_model_is_recorded_without_resolved_model() -> Result<()> {
     assert_eq!(inference.resolved_model, None);
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_before_the_model_replies_saves_no_reply() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let gate = api.on("hello").hold_reply("held reply");
+
+    let stopped = pipeline.run_cancelled_while_held("hello", gate).await?;
+
+    assert_eq!(api.call_count(), 1);
+    assert!(!stopped
+        .conversation()
+        .messages()
+        .iter()
+        .any(|message| message.role == rmcp::model::Role::Assistant));
+
+    api.on("try again").reply("replied");
+    let resumed = pipeline.run(["try again"]).await?;
+    resumed.assert_message(-1, Agent, "replied");
+
+    Ok(())
+}

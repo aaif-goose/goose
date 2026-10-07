@@ -408,48 +408,55 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             }
             let mut usage_effects: Vec<E> = additional_messages.into_iter().map(E::from).collect();
 
-            let provider_name = self.provider.get_name();
-            if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
-                if let Err(error) = self.provider.resume(session_id).await {
-                    tracing::warn!(
-                        provider = provider_name,
-                        %error,
-                        "Could not resume provider session; continuing with a handoff"
-                    );
-                }
-            }
-
             let projected =
                 Conversation::new_unvalidated(messages_for_provider).agent_visible_messages();
             let (fixed, _) = fix_conversation(Conversation::new_unvalidated(projected));
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
-            let stream = self
-                .provider
-                .stream(
-                    &self.model_config,
-                    &system_prompt,
-                    conversation_for_provider.messages(),
-                    &tools,
-                )
-                .await;
+            let requested_model = self.model_config.model_name.clone();
+            let start_request = async {
+                let provider_name = self.provider.get_name();
+                if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
+                    if let Err(error) = self.provider.resume(session_id).await {
+                        tracing::warn!(
+                            provider = provider_name,
+                            %error,
+                            "Could not resume provider session; continuing with a handoff"
+                        );
+                    }
+                }
+                let stream = self
+                    .provider
+                    .stream(
+                        &self.model_config,
+                        &system_prompt,
+                        conversation_for_provider.messages(),
+                        &tools,
+                    )
+                    .await?;
+                let resolved_model = self
+                    .provider
+                    .fetch_model_info(&requested_model)
+                    .await
+                    .ok()
+                    .and_then(|model_info| model_info.resolved_model);
+                Ok::<_, ProviderError>((stream, resolved_model))
+            };
+            let started = tokio::select! {
+                biased;
+                _ = emit.cancelled() => return applied(usage_effects),
+                started = start_request => started,
+            };
 
-            let mut stream = match stream {
-                Ok(stream) => stream,
+            let (mut stream, resolved_model) = match started {
+                Ok(started) => started,
                 Err(err) => {
                     usage_effects.extend(self.error_outcome(&err, emit).await);
                     return applied(usage_effects);
                 }
             };
 
-            let requested_model = self.model_config.model_name.clone();
-            let resolved_model = self
-                .provider
-                .fetch_model_info(&requested_model)
-                .await
-                .ok()
-                .and_then(|model_info| model_info.resolved_model);
             let provider_session_id = self.provider.provider_session_id();
             let inference = Some(InferenceMetadata {
                 provider: self.provider.get_name().to_string(),

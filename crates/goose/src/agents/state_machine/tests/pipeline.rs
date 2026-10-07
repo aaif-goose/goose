@@ -8,7 +8,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::CalculatorExtension;
-use super::dummy_api::{DummyApi, ProviderFeatures};
+use super::dummy_api::{DummyApi, ProviderFeatures, ResponseGate};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::{
@@ -573,6 +573,28 @@ impl TestPipeline {
             events.push(event);
         }
         Ok(TestRun::new(session, events))
+    }
+
+    pub(super) async fn run_cancelled_while_held(
+        &self,
+        message: &str,
+        gate: ResponseGate,
+    ) -> Result<TestRun> {
+        let cancel = CancellationToken::new();
+        let run = self.run_with_cancel(message, cancel.clone());
+        tokio::pin!(run);
+        let stopped = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::select! {
+                () = gate.entered() => cancel.cancel(),
+                result = &mut run => {
+                    return Err(anyhow::anyhow!("run ended before the held request: {:?}", result.err()));
+                }
+            }
+            (&mut run).await
+        })
+        .await;
+        gate.release();
+        stopped.map_err(|_| anyhow::anyhow!("run did not stop within 10s of the held request"))?
     }
 
     pub(super) async fn run_with_elicitation(
