@@ -198,6 +198,76 @@ async fn provider_lifecycle() -> Result<()> {
     result.assert_message(-2, ToolResponse, "result: 6");
     result.assert_message(-1, Agent, "The total is 6.");
 
+    api.on("add one and two at once")
+        .reasoning("Both additions are independent.")
+        .reply("Adding both.")
+        .call(ADD, value(1))
+        .call(ADD, value(2));
+    api.on("Adding both.").reply("Both added.");
+    let result = pipeline.run(["add one and two at once"]).await?;
+    result.assert_message(-1, Agent, "Both added.");
+    let tool_turns: Vec<&Message> = result
+        .conversation()
+        .messages()
+        .iter()
+        .filter(|message| {
+            message
+                .content
+                .iter()
+                .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+        })
+        .collect();
+    let tool_turn = *tool_turns.last().unwrap();
+    assert!(
+        matches!(
+            tool_turn.content.as_slice(),
+            [
+                MessageContent::Thinking(_),
+                MessageContent::Text(_),
+                MessageContent::ToolRequest(_),
+                MessageContent::ToolRequest(_)
+            ]
+        ),
+        "parallel tool calls must share the reasoning's message: {:#?}",
+        tool_turn.content
+    );
+    let emitted_tool_turn = result
+        .events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::Message(message)
+                if message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::ToolRequest(_))) =>
+            {
+                Some(message)
+            }
+            _ => None,
+        })
+        .expect("emitted parallel tool calls");
+    assert_eq!(emitted_tool_turn.id, tool_turn.id);
+    assert!(result.events.iter().any(|event| matches!(
+        event,
+        AgentEvent::MessageUsage { message_id, .. } if message_id == &tool_turn.id
+    )));
+
+    let follow_up = api.calls().pop().unwrap();
+    let assistant_tool_calls: Vec<&serde_json::Value> = follow_up
+        .messages()
+        .iter()
+        .filter(|message| {
+            message["tool_calls"]
+                .as_array()
+                .is_some_and(|c| c.len() == 2)
+        })
+        .collect();
+    assert_eq!(assistant_tool_calls.len(), 1, "{:#?}", follow_up.messages());
+    assert_eq!(
+        assistant_tool_calls[0]["reasoning_content"],
+        "Both additions are independent."
+    );
+
     assert!(result.session.usage.total_tokens.is_none());
     assert!(result
         .session

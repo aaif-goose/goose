@@ -41,7 +41,7 @@ enum ApiResponse {
     Mixed {
         reasoning: String,
         text: Option<String>,
-        call: Option<ApiToolCall>,
+        calls: Vec<ApiToolCall>,
     },
     NoChoices,
     OutputLimit,
@@ -180,6 +180,12 @@ impl ApiCall {
             .map(|tool| &tool["function"]["parameters"])
     }
 
+    pub(super) fn messages(&self) -> &[Value] {
+        self.body["messages"]
+            .as_array()
+            .expect("OpenAI request messages")
+    }
+
     pub(super) fn input_has_image(&self, mime_type: &str, data: &str) -> bool {
         let expected = format!("data:{mime_type};base64,{data}");
         self.body["messages"]
@@ -291,7 +297,7 @@ impl<'a> ApiRuleBuilder<'a> {
         self.configured(ApiResponse::Mixed {
             reasoning: text.into(),
             text: None,
-            call: None,
+            calls: Vec::new(),
         })
     }
 
@@ -393,10 +399,10 @@ impl<'a> ConfiguredResponse<'a> {
 
     pub(super) fn call(self, name: impl Into<String>, arguments: Value) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
-        let ApiResponse::Mixed { call, .. } = &mut rules[self.rule].response else {
+        let ApiResponse::Mixed { calls, .. } = &mut rules[self.rule].response else {
             panic!("call can only follow reasoning");
         };
-        *call = Some(ApiToolCall {
+        calls.push(ApiToolCall {
             id: String::new(),
             name: name.into(),
             arguments: arguments.to_string(),
@@ -411,10 +417,10 @@ impl<'a> ConfiguredResponse<'a> {
         arguments: impl Into<String>,
     ) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
-        let ApiResponse::Mixed { call, .. } = &mut rules[self.rule].response else {
+        let ApiResponse::Mixed { calls, .. } = &mut rules[self.rule].response else {
             panic!("malformed_call can only follow reasoning");
         };
-        *call = Some(ApiToolCall {
+        calls.push(ApiToolCall {
             id: String::new(),
             name: name.into(),
             arguments: arguments.into(),
@@ -535,26 +541,24 @@ impl DummyApiState {
             ApiResponse::Mixed {
                 reasoning,
                 text,
-                mut call,
+                mut calls,
             } => {
-                if let Some(call) = &mut call {
+                let suffix = id.strip_prefix("chatcmpl-test-").unwrap();
+                for (index, call) in calls.iter_mut().enumerate() {
                     assert_tool_advertised(&body, &call.name);
-                    call.id = format!(
-                        "dummy-tool-call-{}",
-                        id.strip_prefix("chatcmpl-test-").unwrap()
-                    );
+                    call.id = format!("dummy-tool-call-{suffix}-{index}");
                 }
                 let output_tokens = reasoning.chars().count()
                     + text.as_deref().unwrap_or_default().chars().count()
-                    + call
-                        .as_ref()
+                    + calls
+                        .iter()
                         .map(|call| call.name.chars().count() + call.arguments.chars().count())
-                        .unwrap_or_default();
+                        .sum::<usize>();
                 sse_response(mixed_events(
                     &meta(output_tokens as i32),
                     &reasoning,
                     text.as_deref(),
-                    call.as_ref(),
+                    &calls,
                 ))
             }
             ApiResponse::NoChoices => sse_response(no_choices_events(&id, model)),
@@ -871,7 +875,7 @@ fn mixed_events(
     meta: &ResponseMeta,
     reasoning: &str,
     text: Option<&str>,
-    call: Option<&ApiToolCall>,
+    calls: &[ApiToolCall],
 ) -> String {
     let ResponseMeta { id, model, .. } = meta;
     let mut events = String::new();
@@ -907,14 +911,8 @@ fn mixed_events(
             );
         }
     }
-    if let Some(call) = call {
-        push_tool_call_events(
-            &mut events,
-            id,
-            model,
-            std::slice::from_ref(call),
-            Some(reasoning),
-        );
+    if !calls.is_empty() {
+        push_tool_call_events(&mut events, id, model, calls, Some(reasoning));
     } else {
         push_event(
             &mut events,
