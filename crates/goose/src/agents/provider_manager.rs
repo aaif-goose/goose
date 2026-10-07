@@ -73,15 +73,14 @@ impl ProviderManager {
     }
 
     async fn shared(&self, name: &str, entry: &ProviderEntry) -> Result<Arc<dyn Provider>> {
+        let generation = Config::global().generation();
         let mut shared = self.shared.lock().await;
-        if let Some((generation, provider)) = shared.get(name) {
-            if *generation == Config::global().generation() {
+        if let Some((cached_generation, provider)) = shared.get(name) {
+            if *cached_generation == generation {
                 return Ok(provider.clone());
             }
         }
         let provider = entry.create(Vec::new()).await?;
-        // Read after creating: building a provider can itself write config.
-        let generation = Config::global().generation();
         shared.insert(name.to_string(), (generation, provider.clone()));
         Ok(provider)
     }
