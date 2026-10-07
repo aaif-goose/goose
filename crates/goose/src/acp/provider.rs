@@ -2300,9 +2300,9 @@ pub(crate) fn map_effort_value(
 
     offered(value).or_else(|| {
         let synonyms: &[&str] = match value.to_lowercase().as_str() {
-            // Harnesses that always reason have no "off"; their default is the
-            // closest thing to not forcing an effort level.
-            "off" => &["default"],
+            // Harnesses that always reason have no "off"; their default or
+            // lightest level is the closest thing to not forcing an override.
+            "off" => &["default", "none", "disabled", "minimal", "low"],
             "max" => &["xhigh"],
             "xhigh" => &["max"],
             _ => &[],
@@ -3737,6 +3737,14 @@ mod tests {
     }
 
     #[test]
+    fn map_effort_value_uses_low_when_the_agent_has_no_default() {
+        assert_eq!(
+            map_effort_value(&effort_capability(&["low", "high"], "high"), "off"),
+            Some("low".to_string())
+        );
+    }
+
+    #[test]
     fn map_effort_value_prefers_max_when_agent_offers_it() {
         let capability = effort_capability(&["default", "max", "xhigh"], "default");
 
@@ -4031,6 +4039,28 @@ mod tests {
         assert_eq!(
             expect_set_config_option(&mut rx).await,
             ("effort".to_string(), "default".to_string())
+        );
+
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn apply_effort_if_changed_restores_low_without_a_default_option() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let (tx, mut rx) = mpsc::channel(1);
+        let provider =
+            test_provider_with_effort(tx, Some(effort_capability(&["low", "high"], "high")));
+
+        let handle = tokio::spawn(async move {
+            provider
+                .apply_effort_if_changed(&ModelConfig::new(ACP_CURRENT_MODEL))
+                .await
+                .unwrap();
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "low".to_string())
         );
 
         handle.await.unwrap();

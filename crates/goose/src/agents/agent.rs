@@ -107,7 +107,10 @@ pub(super) fn available_auto_efforts(
     support: ThinkingEffortSupport,
 ) -> Vec<ThinkingEffort> {
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
-        ThinkingEffort::Off => applied.as_deref() == Some("none"),
+        ThinkingEffort::Off => matches!(
+            applied.as_deref(),
+            Some("off" | "none" | "default" | "disabled")
+        ),
         ThinkingEffort::Low => applied.as_deref() == Some("low"),
         ThinkingEffort::Medium => applied.as_deref() == Some("medium"),
         ThinkingEffort::High => applied.as_deref() == Some("high"),
@@ -147,6 +150,15 @@ pub(super) fn available_auto_efforts(
                         )
                     })
                     .collect();
+            }
+
+            if matches!(provider_name, "meta" | "muse_code") {
+                return vec![
+                    ThinkingEffort::Low,
+                    ThinkingEffort::Medium,
+                    ThinkingEffort::High,
+                    ThinkingEffort::Max,
+                ];
             }
 
             if model_config.is_openai_reasoning_model() {
@@ -205,7 +217,10 @@ pub(super) fn available_auto_efforts(
         ThinkingEffortSupport::Options(capability) => AUTO_EFFORTS
             .into_iter()
             .filter(|effort| {
-                crate::acp::map_effort_value(&capability, &effort.to_string()).is_some()
+                applied_as_selected(
+                    effort,
+                    crate::acp::map_effort_value(&capability, &effort.to_string()),
+                )
             })
             .collect(),
         ThinkingEffortSupport::Unspecified | ThinkingEffortSupport::Unsupported => Vec::new(),
@@ -4211,10 +4226,56 @@ mod tests {
     };
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use goose_providers::thinking::{ThinkingEffortCapability, ThinkingEffortOption};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
+
+    #[test]
+    fn muse_auto_efforts_include_max() {
+        let mut model = goose_providers::model::ModelConfig::new("muse-spark-1.3");
+        model.reasoning = Some(true);
+        let expected = vec![
+            ThinkingEffort::Low,
+            ThinkingEffort::Medium,
+            ThinkingEffort::High,
+            ThinkingEffort::Max,
+        ];
+
+        assert_eq!(
+            available_auto_efforts("meta", &model, ThinkingEffortSupport::Unspecified),
+            expected
+        );
+        assert_eq!(
+            available_auto_efforts("muse_code", &model, ThinkingEffortSupport::Unspecified),
+            expected
+        );
+    }
+
+    #[test]
+    fn acp_auto_efforts_do_not_present_low_as_off() {
+        let capability = ThinkingEffortCapability {
+            option_id: "effort".to_string(),
+            values: ["low", "high"]
+                .into_iter()
+                .map(|value| ThinkingEffortOption {
+                    value: value.to_string(),
+                    label: value.to_string(),
+                })
+                .collect(),
+            current: Some("low".to_string()),
+        };
+
+        assert_eq!(
+            available_auto_efforts(
+                "claude-acp",
+                &goose_providers::model::ModelConfig::new("current"),
+                ThinkingEffortSupport::Options(capability),
+            ),
+            vec![ThinkingEffort::Low, ThinkingEffort::High]
+        );
+    }
 
     fn persisted_builtin(name: &str) -> ExtensionConfig {
         ExtensionConfig::Builtin {
