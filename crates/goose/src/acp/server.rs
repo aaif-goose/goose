@@ -2444,8 +2444,6 @@ impl GooseAcpAgent {
             .switch_provider(session_id, &provider_name, model_config)
             .await
             .internal_err_ctx("Failed to switch provider")?;
-        self.subscribe_thinking_effort_updates(session_id, &agent)
-            .await;
         Ok(())
     }
 
