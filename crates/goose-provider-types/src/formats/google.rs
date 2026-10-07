@@ -635,7 +635,7 @@ pub fn google_thinking_level_for_effort(
     match effort {
         ThinkingEffort::Off if model_name.starts_with("gemini-3.5") => Some("minimal"),
         ThinkingEffort::Off if model_name.starts_with("gemini-3.6") => Some("minimal"),
-        ThinkingEffort::Off => Some("none"),
+        ThinkingEffort::Off => None,
         ThinkingEffort::Low => Some("low"),
         ThinkingEffort::Medium if model_name.starts_with("gemini-3-pro") => Some("low"),
         ThinkingEffort::Medium => Some("medium"),

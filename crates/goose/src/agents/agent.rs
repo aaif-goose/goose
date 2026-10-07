@@ -116,6 +116,39 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
+            if provider_name == goose_providers::ollama::OLLAMA_PROVIDER_NAME {
+                return AUTO_EFFORTS
+                    .into_iter()
+                    .filter(|effort| {
+                        applied_as_selected(
+                            effort,
+                            Some(
+                                goose_providers::ollama::ollama_reasoning_effort_for_thinking(
+                                    *effort,
+                                )
+                                .to_string(),
+                            ),
+                        )
+                    })
+                    .collect();
+            }
+
+            if matches!(provider_name, "google" | "gemini_oauth" | "gcp_vertex_ai") {
+                return AUTO_EFFORTS
+                    .into_iter()
+                    .filter(|effort| {
+                        applied_as_selected(
+                            effort,
+                            goose_providers::formats::google::google_thinking_level_for_effort(
+                                &model_config.model_name,
+                                *effort,
+                            )
+                            .map(str::to_string),
+                        )
+                    })
+                    .collect();
+            }
+
             if model_config.is_openai_reasoning_model() {
                 return AUTO_EFFORTS
                     .into_iter()
@@ -156,22 +189,6 @@ pub(super) fn available_auto_efforts(
                     ThinkingEffort::High,
                     ThinkingEffort::Max,
                 ];
-            }
-
-            if matches!(provider_name, "google" | "gemini_oauth" | "gcp_vertex_ai") {
-                return AUTO_EFFORTS
-                    .into_iter()
-                    .filter(|effort| {
-                        applied_as_selected(
-                            effort,
-                            goose_providers::formats::google::google_thinking_level_for_effort(
-                                &model_config.model_name,
-                                *effort,
-                            )
-                            .map(str::to_string),
-                        )
-                    })
-                    .collect();
             }
 
             let always_on = goose_providers::canonical::maybe_get_canonical_model(

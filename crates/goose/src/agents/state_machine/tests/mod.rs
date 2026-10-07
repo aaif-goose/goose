@@ -278,9 +278,16 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             &ModelConfig::new("gemini-3-pro-preview"),
             ThinkingEffortSupport::Unspecified,
         ),
+        vec![ThinkingEffort::Low, ThinkingEffort::High]
+    );
+    let mut ollama_model = ModelConfig::new("gpt-oss:20b");
+    ollama_model.reasoning = Some(true);
+    assert_eq!(
+        available_auto_efforts("ollama", &ollama_model, ThinkingEffortSupport::Unspecified,),
         vec![
             ThinkingEffort::Off,
             ThinkingEffort::Low,
+            ThinkingEffort::Medium,
             ThinkingEffort::High,
         ]
     );

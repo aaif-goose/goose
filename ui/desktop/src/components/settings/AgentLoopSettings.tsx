@@ -277,7 +277,11 @@ export default function AgentLoopSettings() {
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
         setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
         setTypesafeApiKeyConfigured(
-          typeof typesafeApiKey === 'string' && typesafeApiKey.length > 0
+          typeof typesafeApiKey === 'object' &&
+            typesafeApiKey !== null &&
+            'maskedValue' in typesafeApiKey &&
+            typeof typesafeApiKey.maskedValue === 'string' &&
+            typesafeApiKey.maskedValue.length > 0
         );
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false

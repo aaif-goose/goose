@@ -29,6 +29,16 @@ use tokio_util::io::StreamReader;
 use url::Url;
 
 pub const OLLAMA_PROVIDER_NAME: &str = "ollama";
+
+pub fn ollama_reasoning_effort_for_thinking(effort: ThinkingEffort) -> &'static str {
+    match effort {
+        ThinkingEffort::Off => "none",
+        ThinkingEffort::Low => "low",
+        ThinkingEffort::Medium => "medium",
+        ThinkingEffort::High | ThinkingEffort::Max => "high",
+    }
+}
+
 pub const OLLAMA_HOST: &str = "localhost";
 pub const OLLAMA_TIMEOUT: u64 = 600;
 pub const OLLAMA_DEFAULT_PORT: u16 = 11434;
@@ -203,12 +213,11 @@ impl OllamaProvider {
     }
 
     async fn reasoning_effort(&self, model_config: &ModelConfig) -> Option<&'static str> {
-        let level = match model_config.thinking_effort()? {
-            ThinkingEffort::Off => return Some("none"),
-            ThinkingEffort::Low => "low",
-            ThinkingEffort::Medium => "medium",
-            ThinkingEffort::High | ThinkingEffort::Max => "high",
-        };
+        let effort = model_config.thinking_effort()?;
+        let level = ollama_reasoning_effort_for_thinking(effort);
+        if effort == ThinkingEffort::Off {
+            return Some(level);
+        }
         let supports_thinking = match self.model_capabilities(&model_config.model_name).await {
             Some(capabilities) => capabilities.thinking,
             None => model_config.is_reasoning_model(),
