@@ -227,9 +227,32 @@ function GooseMessage({
         )}
 
         {outputTokenLimitReached && (
-          <div className="mt-2 flex items-start gap-1.5 text-xs text-text-secondary">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-600 dark:text-yellow-400" />
-            <span>{outputTokenLimitNotice}</span>
+          <div className="mt-2 group">
+            <div className="flex items-start gap-1.5 text-xs text-text-secondary">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-600 dark:text-yellow-400" />
+              <span>{outputTokenLimitNotice}</span>
+            </div>
+            {isOutputTokenLimitFallback && (
+              <div className="relative flex items-center justify-between">
+                <div
+                  className={cn(
+                    'text-xs text-text-secondary pt-1',
+                    hasMessageDetails &&
+                      'transition-all duration-200 group-hover:-translate-y-4 group-hover:opacity-0'
+                  )}
+                >
+                  {!isStreaming && !hideTimestamp && timestamp}
+                </div>
+                {!isStreaming && hasMessageDetails && (
+                  <div className="pt-1 transition-all duration-200 opacity-0 group-hover:opacity-100 -translate-y-4 group-hover:translate-y-0">
+                    <MessageUsageStats
+                      usage={message.metadata.usage}
+                      operationLogs={message.metadata.operationLogs}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

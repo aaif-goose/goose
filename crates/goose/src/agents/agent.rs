@@ -219,6 +219,16 @@ pub(super) fn available_auto_efforts(
                 ];
             }
 
+            let model_name = model_config.model_name.to_lowercase();
+            let supports_generic_effort = match provider_name {
+                "anthropic" | "kimi_code" | "openrouter" => true,
+                "aws_bedrock" | "gcp_vertex_ai" | "databricks_v2" => model_name.contains("claude"),
+                _ => false,
+            };
+            if !supports_generic_effort {
+                return Vec::new();
+            }
+
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,
@@ -4310,6 +4320,17 @@ mod tests {
             ThinkingEffortSupport::Unspecified,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn snowflake_has_no_automatic_efforts_without_wire_support() {
+        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-5")
+            .with_canonical_limits("snowflake");
+
+        assert!(
+            available_auto_efforts("snowflake", &model, ThinkingEffortSupport::Unspecified,)
+                .is_empty()
+        );
     }
 
     #[test]

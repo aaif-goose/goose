@@ -34,4 +34,38 @@ describe('GooseMessage', () => {
     expect(screen.getByText('Thinking')).toBeInTheDocument();
     expect(screen.getByLabelText('ops_auto_effort: thinking high')).toBeInTheDocument();
   });
+
+  it('renders operation details for an empty output-limit fallback', () => {
+    const message: Message = {
+      content: [],
+      created: 1,
+      metadata: {
+        agentVisible: true,
+        fallbackContent: true,
+        operationLogs: ['ops_auto_effort: thinking high'],
+        outputTokenLimitReached: true,
+        userVisible: true,
+      },
+      role: 'assistant',
+    };
+
+    render(
+      <GooseMessage
+        sessionId="session"
+        message={message}
+        hideTimestamp={false}
+        toolStates={[]}
+        toolNotifications={[]}
+        toolConfirmationShownInline={false}
+        append={vi.fn()}
+        isStreaming={false}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(
+      screen.getByText("Response reached the model's output-token limit before returning content.")
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('ops_auto_effort: thinking high')).toBeInTheDocument();
+  });
 });
