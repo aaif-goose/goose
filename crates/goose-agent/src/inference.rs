@@ -130,7 +130,17 @@ fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
 }
 
 fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
-    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
+    let renderable = message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::Text(_)
+                | MessageContent::Image(_)
+                | MessageContent::ToolRequest(_)
+                | MessageContent::Thinking(_)
+                | MessageContent::RedactedThinking(_)
+        )
+    });
+    if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
         message.metadata.operation_logs = std::mem::take(logs);
     }
 }
@@ -612,6 +622,31 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn operation_logs_wait_for_renderable_assistant_content() {
+        let mut logs = vec!["ops_auto_effort: thinking high".to_string()];
+        let mut permission = Message::assistant().with_action_required(
+            "call",
+            "shell".to_string(),
+            serde_json::Map::new(),
+            None,
+        );
+
+        attach_operation_logs(&mut permission, &mut logs);
+
+        assert!(permission.metadata.operation_logs.is_empty());
+        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
+
+        let mut text = Message::assistant().with_text("Working on it");
+        attach_operation_logs(&mut text, &mut logs);
+
+        assert_eq!(
+            text.metadata.operation_logs,
+            ["ops_auto_effort: thinking high"]
+        );
+        assert!(logs.is_empty());
+    }
 
     #[test]
     fn provider_session_id_comes_only_from_latest_inference() {

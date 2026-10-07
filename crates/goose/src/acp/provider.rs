@@ -128,6 +128,7 @@ struct EffortReset {
     config_id: String,
     value: String,
     restored: bool,
+    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
 }
 
 impl EffortReset {
@@ -140,6 +141,7 @@ impl EffortReset {
         )
         .await?;
         self.restored = true;
+        self.guard.take();
         Ok(())
     }
 }
@@ -153,8 +155,10 @@ impl Drop for EffortReset {
         let session_id = self.session_id.clone();
         let config_id = self.config_id.clone();
         let value = self.value.clone();
+        let guard = self.guard.take();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn(async move {
+                let _guard = guard;
                 if let Err(error) =
                     send_set_config_option_request(&tx, session_id, config_id, value).await
                 {
@@ -313,6 +317,7 @@ impl Drop for HandoffContextClaimGuard {
 struct AcpEffortState {
     capability: Arc<Mutex<Option<ThinkingEffortCapability>>>,
     updates: watch::Sender<ThinkingEffortSupport>,
+    mutation_lock: Arc<TokioMutex<()>>,
 }
 
 impl AcpEffortState {
@@ -321,6 +326,7 @@ impl AcpEffortState {
         Self {
             capability: Arc::new(Mutex::new(None)),
             updates,
+            mutation_lock: Arc::new(TokioMutex::new(())),
         }
     }
 }
@@ -651,6 +657,7 @@ impl AcpProvider {
         &self,
         model_config: &ModelConfig,
     ) -> Result<Option<EffortReset>> {
+        let guard = self.effort.mutation_lock.clone().lock_owned().await;
         let Some(capability) = self.effort_capability()? else {
             return Ok(None);
         };
@@ -669,6 +676,7 @@ impl AcpProvider {
                 config_id: capability.option_id.clone(),
                 value,
                 restored: false,
+                guard: Some(guard),
             });
 
         self.set_effort_option("", &capability.option_id, mapped)
@@ -867,6 +875,7 @@ impl Provider for AcpProvider {
         let mapped = map_effort_value(&capability, value).ok_or_else(|| {
             ProviderError::InvalidValue(format!("Agent offers no thinking effort '{value}'"))
         })?;
+        let _guard = self.effort.mutation_lock.lock().await;
 
         self.set_effort_option(session_id, &capability.option_id, mapped)
             .await
@@ -4148,6 +4157,50 @@ mod tests {
         );
 
         handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropped_automatic_reset_finishes_before_the_next_effort_change() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let (tx, mut rx) = mpsc::channel(3);
+        let provider = Arc::new(test_provider_with_effort(
+            tx,
+            Some(effort_capability(&["low", "high"], "high")),
+        ));
+
+        let automatic_provider = provider.clone();
+        let automatic = tokio::spawn(async move {
+            let reset = automatic_provider
+                .apply_effort_if_changed(&automatic_model_with_effort("off"))
+                .await
+                .unwrap()
+                .expect("automatic override should retain the prior selection");
+            drop(reset);
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "low".to_string())
+        );
+        automatic.await.unwrap();
+
+        let next_provider = provider.clone();
+        let next = tokio::spawn(async move {
+            next_provider
+                .apply_effort_if_changed(&model_with_effort("low"))
+                .await
+                .unwrap();
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "high".to_string())
+        );
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "low".to_string())
+        );
+        next.await.unwrap();
     }
 
     fn test_acp_config(
