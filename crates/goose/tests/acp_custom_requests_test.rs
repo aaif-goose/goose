@@ -205,8 +205,7 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": session.session_id().0
             }),
         )
         .await
@@ -237,28 +236,11 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         .await
         .unwrap();
 
-        let legacy_loop = send_custom(
-            conn.cx(),
-            "_goose/unstable/session/live-voice/availability",
-            serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": false } }
-            }),
-        )
-        .await
-        .unwrap();
-        assert_eq!(legacy_loop["status"], "unavailable");
-        assert_eq!(
-            legacy_loop["message"],
-            "Live voice is unavailable while Use Legacy Agent Loop is enabled"
-        );
-
         let response = send_custom(
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": session.session_id().0
             }),
         )
         .await
@@ -270,8 +252,7 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": "not-loaded-on-this-connection",
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": "not-loaded-on-this-connection"
             }),
         )
         .await;

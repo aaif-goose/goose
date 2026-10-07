@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "访问"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "使用基于操作的代理循环。关闭后将使用旧版循环。"
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自动"
   },

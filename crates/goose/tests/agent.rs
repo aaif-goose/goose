@@ -428,38 +428,7 @@ mod tests {
     #[cfg(test)]
     mod retry_tests {
         use super::*;
-        use goose::agents::types::{RetryConfig, SuccessCheck};
-
-        #[tokio::test]
-        async fn test_retry_success_check_execution() -> Result<()> {
-            use goose::agents::retry::execute_success_checks;
-
-            let retry_config = RetryConfig {
-                max_retries: 3,
-                checks: vec![],
-                on_failure: None,
-                timeout_seconds: Some(30),
-                on_failure_timeout_seconds: Some(60),
-            };
-
-            let success_checks = vec![SuccessCheck::Shell {
-                command: "echo 'test'".to_string(),
-            }];
-
-            let result = execute_success_checks(&success_checks, &retry_config).await;
-            assert!(result.is_ok(), "Success check should pass");
-            assert!(result.unwrap(), "Command should succeed");
-
-            let fail_checks = vec![SuccessCheck::Shell {
-                command: "false".to_string(),
-            }];
-
-            let result = execute_success_checks(&fail_checks, &retry_config).await;
-            assert!(result.is_ok(), "Success check execution should not error");
-            assert!(!result.unwrap(), "Command should fail");
-
-            Ok(())
-        }
+        use goose::agents::types::RetryConfig;
 
         #[tokio::test]
         async fn test_retry_logic_with_validation_errors() -> Result<()> {
@@ -479,24 +448,6 @@ mod tests {
             assert!(validation_result
                 .unwrap_err()
                 .contains("max_retries must be greater than 0"));
-
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn test_retry_attempts_counter_reset() -> Result<()> {
-            let agent = Agent::new();
-
-            agent.reset_retry_attempts().await;
-            let initial_attempts = agent.get_retry_attempts().await;
-            assert_eq!(initial_attempts, 0);
-
-            let new_attempts = agent.increment_retry_attempts().await;
-            assert_eq!(new_attempts, 1);
-
-            agent.reset_retry_attempts().await;
-            let reset_attempts = agent.get_retry_attempts().await;
-            assert_eq!(reset_attempts, 0);
 
             Ok(())
         }
@@ -611,14 +562,7 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent
-                .reply(
-                    user_message,
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
-                .await?;
+            let reply_stream = agent.reply(user_message, session_config, None).await?;
             tokio::pin!(reply_stream);
 
             let mut responses = Vec::new();
@@ -811,12 +755,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hello"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hello"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -1030,14 +969,7 @@ mod tests {
                 retry_config: None,
             };
 
-            let reply_stream = agent
-                .reply(
-                    user_message,
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
-                .await?;
+            let reply_stream = agent.reply(user_message, session_config, None).await?;
             tokio::pin!(reply_stream);
 
             // Drain the stream
@@ -1398,7 +1330,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Do something then say hello"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1453,7 +1384,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Tell me more"),
                     session_config2,
-                    goose::agents::state_machine::enabled(),
                     Some(cancel_token),
                 )
                 .await?;
@@ -1646,7 +1576,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -1848,7 +1777,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use the test tool"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2014,7 +1942,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2164,7 +2091,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("Use both tools"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2369,12 +2295,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hello"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hello"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2453,12 +2374,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hello"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hello"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2473,54 +2389,6 @@ mod tests {
             assert_eq!(
                 call_count, 1,
                 "Without a goal, provider should be called exactly once, got {call_count}"
-            );
-
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn test_goal_command_set_and_clear() -> Result<()> {
-            let temp_dir = TempDir::new()?;
-            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-            let agent = create_agent_with_session_naming_disabled(session_manager.clone());
-
-            let session = session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "goal-cmd-test".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-
-            // No goal initially
-            let result = agent.execute_command("/goal", &session.id).await?.unwrap();
-            assert!(result.as_concat_text().contains("No goal set"));
-
-            // Set a goal
-            let result = agent
-                .execute_command("/goal make all tests pass", &session.id)
-                .await?
-                .unwrap();
-            assert!(result.as_concat_text().contains("Goal set"));
-            assert_eq!(
-                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
-                Some("make all tests pass".to_string())
-            );
-
-            // Query it
-            let result = agent.execute_command("/goal", &session.id).await?.unwrap();
-            assert!(result.as_concat_text().contains("make all tests pass"));
-
-            // Clear it
-            let result = agent
-                .execute_command("/goal off", &session.id)
-                .await?
-                .unwrap();
-            assert!(result.as_concat_text().contains("cleared"));
-            assert_eq!(
-                GoalState::of(&session_manager.get_session(&session.id, false).await?).goal,
-                None
             );
 
             Ok(())
@@ -2560,7 +2428,6 @@ mod tests {
                 .reply(
                     Message::user().with_text("/goal make all tests pass"),
                     session_config,
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -2622,12 +2489,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("/goal"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("/goal"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -2750,12 +2612,7 @@ mod tests {
                 retry_config: None,
             };
             let stream = agent
-                .reply(
-                    Message::user().with_text(text),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text(text), session_config, None)
                 .await?;
             tokio::pin!(stream);
             while let Some(event) = stream.next().await {
@@ -3165,7 +3022,6 @@ mod tests {
                         max_turns: Some(3),
                         retry_config: None,
                     },
-                    goose::agents::state_machine::enabled(),
                     None,
                 )
                 .await?;
@@ -3312,13 +3168,6 @@ mod tests {
                     manages_own_context: false,
                 }
             }
-
-            fn with_own_context() -> Self {
-                Self {
-                    manages_own_context: true,
-                    ..Self::new(usize::MAX)
-                }
-            }
         }
 
         impl FinalOutputRequestProvider {
@@ -3449,12 +3298,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3638,12 +3482,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
             let mut emitted_steer_id = None;
@@ -3684,83 +3523,6 @@ mod tests {
                 .find(|message| message.as_concat_text().contains("keep going"))
                 .expect("queued steer should be stored");
             assert_eq!(stored_steer.id.as_deref(), Some(emitted_steer_id.as_str()));
-            Ok(())
-        }
-
-        #[tokio::test]
-        async fn legacy_structured_output_fails_before_provider_inference() -> Result<()> {
-            use goose::recipe::{Recipe, Response};
-
-            let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", None::<&str>)]);
-            let agent = Agent::new();
-            let session = agent
-                .config
-                .session_manager
-                .create_session(
-                    PathBuf::default(),
-                    "unsupported-structured-output".to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await?;
-            let provider = Arc::new(EmptyThenTextProvider::with_own_context());
-            agent
-                .update_provider(
-                    provider.clone(),
-                    ModelConfig::new("mock-model"),
-                    &session.id,
-                )
-                .await?;
-            agent
-                .config
-                .session_manager
-                .update(&session.id)
-                .recipe(Some(
-                    Recipe::builder()
-                        .title("Structured output")
-                        .description("Structured output")
-                        .prompt("Return structured output")
-                        .response(Response {
-                            json_schema: Some(serde_json::json!({
-                                "type": "object",
-                                "properties": { "result": { "type": "string" } }
-                            })),
-                        })
-                        .build()
-                        .expect("valid recipe"),
-                ))
-                .apply()
-                .await?;
-
-            let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    SessionConfig {
-                        id: session.id,
-                        schedule_id: None,
-                        max_turns: Some(3),
-                        retry_config: None,
-                    },
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
-                .await?;
-            tokio::pin!(reply_stream);
-
-            let mut messages = Vec::new();
-            while let Some(event) = reply_stream.next().await {
-                if let AgentEvent::Message(message) = event? {
-                    messages.push(message);
-                }
-            }
-
-            let text = concat_text(&messages);
-            assert!(
-                text.contains("empty-then-text-mock") && text.contains("final_output"),
-                "expected the unsupported structured-output error, got: {text:?}"
-            );
-            assert_eq!(provider.call_count.load(Ordering::SeqCst), 0);
-
             Ok(())
         }
 
@@ -3820,12 +3582,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -3953,12 +3710,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -4047,12 +3799,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 
@@ -4114,12 +3861,7 @@ mod tests {
             };
 
             let reply_stream = agent
-                .reply(
-                    Message::user().with_text("Hi"),
-                    session_config,
-                    goose::agents::state_machine::enabled(),
-                    None,
-                )
+                .reply(Message::user().with_text("Hi"), session_config, None)
                 .await?;
             tokio::pin!(reply_stream);
 

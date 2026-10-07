@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Acesse"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Use o loop do agente baseado em operações. Desative-o para usar o loop legado."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
   },

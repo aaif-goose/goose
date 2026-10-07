@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Ziyaret edin"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "İşlem tabanlı ajan döngüsünü kullanır. Eski döngüyü kullanmak için kapatın."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatik"
   },

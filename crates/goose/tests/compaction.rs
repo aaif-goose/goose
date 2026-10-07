@@ -32,13 +32,6 @@ impl MockCompactionProvider {
         }
     }
 
-    fn context_owning() -> Self {
-        Self {
-            has_compacted: Arc::new(AtomicBool::new(false)),
-            manages_own_context: true,
-        }
-    }
-
     /// Calculate input tokens based on system prompt and messages
     /// Simulates realistic token counts for different scenarios
     fn calculate_input_tokens(&self, system_prompt: &str, messages: &[Message]) -> i32 {
@@ -253,58 +246,6 @@ async fn setup_test_session(
     Ok(session)
 }
 
-#[tokio::test]
-async fn context_owning_provider_rejects_clear_and_compact_without_changing_session() -> Result<()>
-{
-    let temp_dir = TempDir::new()?;
-    let agent = Agent::new();
-    let messages = vec![
-        Message::user().with_text("Remember this"),
-        Message::assistant().with_text("I will"),
-    ];
-    let session = setup_test_session(
-        &agent,
-        &temp_dir,
-        "context-owning-provider",
-        messages.clone(),
-    )
-    .await?;
-    let before = agent
-        .config
-        .session_manager
-        .get_session(&session.id, true)
-        .await?;
-    let conversation_before = before.conversation.unwrap();
-    let usage_before = before.usage;
-    let provider = Arc::new(MockCompactionProvider::context_owning());
-    agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
-        .await?;
-
-    for command in ["clear", "compact"] {
-        let error = agent
-            .execute_command(&format!("/{command}"), &session.id)
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "/{command} is not available for provider 'mock-compaction' because it manages its own conversation context"
-            )
-        );
-    }
-
-    let unchanged = agent
-        .config
-        .session_manager
-        .get_session(&session.id, true)
-        .await?;
-    assert_eq!(unchanged.conversation.unwrap(), conversation_before);
-    assert_eq!(unchanged.usage, usage_before);
-
-    Ok(())
-}
-
 /// Helper: Assert conversation has been compacted with proper message visibility
 fn assert_conversation_compacted(conversation: &Conversation) {
     let messages = conversation.messages();
@@ -407,94 +348,6 @@ fn assert_conversation_compacted(conversation: &Conversation) {
 }
 
 #[tokio::test]
-async fn test_manual_compaction_updates_token_counts_and_conversation() -> Result<()> {
-    let temp_dir = TempDir::new()?;
-    let agent = Agent::new();
-
-    // Setup session with initial messages
-    // Each message ~100 tokens, so 4 messages = ~400 tokens in conversation
-    let messages = vec![
-        Message::user().with_text("Hello, can you help me with something?"),
-        Message::assistant().with_text("Of course! What do you need help with?"),
-        Message::user().with_text("I need to understand how compaction works."),
-        Message::assistant()
-            .with_text("Compaction is a process that summarizes conversation history."),
-    ];
-
-    let session = setup_test_session(&agent, &temp_dir, "manual-compact-test", messages).await?;
-
-    // Setup mock provider
-    let provider = Arc::new(MockCompactionProvider::new());
-    agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
-        .await?;
-
-    // Execute manual compaction
-    let result = agent.execute_command("/compact", &session.id).await?;
-    assert!(result.is_some(), "Compaction should return a result");
-
-    // Verify token counts
-    let updated_session = agent
-        .config
-        .session_manager
-        .get_session(&session.id, true)
-        .await?;
-
-    // Expected token calculation for compaction:
-    // During compaction, the 4 messages are embedded in the system prompt template
-    // - Input: system prompt with embedded conversation + "Please summarize" message
-    // - Output: summary (200 tokens)
-    //
-    // From mock provider calculation:
-    // - System prompt (with 4 embedded messages): varies based on template + content
-    // - Single "summarize" message: 100 tokens
-    // - Total input observed: ~6100 tokens
-    //
-    // After compaction the baseline is the estimated retained conversation
-    // (summary + continuation), not the provider-reported output count
-    let input_after = updated_session
-        .usage
-        .input_tokens
-        .expect("Input tokens should be set after compaction");
-    assert!(
-        input_after > 0 && input_after < 200,
-        "Input tokens should be the estimated retained context (smaller than the mock's claimed 200 output tokens). Got: {}",
-        input_after
-    );
-    assert_eq!(
-        updated_session.usage.output_tokens, None,
-        "Output tokens should be None after compaction (no new assistant output)"
-    );
-    assert_eq!(
-        updated_session.usage.total_tokens,
-        Some(input_after),
-        "Total should equal input after compaction"
-    );
-
-    // Accumulated tokens increased by the compaction cost
-    // Initial: 1000
-    // Compaction input: ~6700 (system 6000 + compaction prompt + 4 messages;
-    // the mock derives input tokens from the rendered prompt length, so the
-    // band must absorb compaction.md wording changes)
-    // Compaction output: 200
-    let accumulated = updated_session.accumulated_usage.total_tokens.unwrap();
-    assert!(
-        (7300..=8600).contains(&accumulated),
-        "Accumulated should be ~7900 (1000 initial + ~6700 input + 200 output). Got: {}",
-        accumulated
-    );
-
-    // Verify conversation has been compacted
-    let compacted_conversation = updated_session
-        .conversation
-        .expect("Session should have conversation");
-
-    assert_conversation_compacted(&compacted_conversation);
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_auto_compaction_during_reply() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let agent = Agent::new();
@@ -537,14 +390,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         retry_config: None,
     };
 
-    let reply_stream = agent
-        .reply(
-            user_message,
-            session_config,
-            goose::agents::state_machine::enabled(),
-            None,
-        )
-        .await?;
+    let reply_stream = agent.reply(user_message, session_config, None).await?;
     tokio::pin!(reply_stream);
 
     // Track compaction and context size changes
@@ -701,7 +547,6 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
         .reply(
             Message::user().with_text("Tell me more"),
             session_config,
-            goose::agents::state_machine::enabled(),
             None,
         )
         .await?;

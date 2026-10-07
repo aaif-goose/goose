@@ -405,9 +405,7 @@ impl<'a> ToolExecutionOperation<'a> {
             let result = lease
                 .call(
                     tool_call.clone(),
-                    CallRequest::new(request_id.clone())
-                        .with_container(session.container.clone())
-                        .with_state_machine(),
+                    CallRequest::new(request_id.clone()).with_container(session.container.clone()),
                     cancellation_token,
                 )
                 .await;

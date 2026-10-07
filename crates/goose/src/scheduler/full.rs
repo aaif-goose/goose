@@ -978,12 +978,7 @@ async fn execute_job(
     };
 
     let stream = agent
-        .reply(
-            user_message,
-            session_config,
-            crate::agents::state_machine::enabled(),
-            Some(cancel_token.clone()),
-        )
+        .reply(user_message, session_config, Some(cancel_token.clone()))
         .await?;
 
     use futures::StreamExt;
