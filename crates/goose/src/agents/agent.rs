@@ -220,7 +220,6 @@ fn resolve_use_login_shell_path(explicit: Option<bool>, platform: &GoosePlatform
 /// The main goose Agent
 pub struct Agent {
     pub config: AgentConfig,
-    pub(super) current_goose_mode: Mutex<GooseMode>,
 
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) final_output_tool: Arc<Mutex<Option<FinalOutputTool>>>,
@@ -289,7 +288,6 @@ impl Agent {
         let providers = config.providers.clone();
 
         let goose_platform = config.goose_platform.clone();
-        let initial_mode = config.goose_mode;
         let explicit_mcp_host_info = config.mcp_host_info.clone();
         let mcpui = explicit_mcp_host_info
             .as_ref()
@@ -317,7 +315,6 @@ impl Agent {
         let is_subagent = config.is_subagent;
         Self {
             config,
-            current_goose_mode: Mutex::new(initial_mode),
             extension_manager: Arc::new(ExtensionManager::new(
                 providers.clone(),
                 session_manager,
@@ -1290,10 +1287,7 @@ impl Agent {
                 tool_call_cutoff,
                 tool_pair_compaction_enabled,
             )),
-            Arc::new(ToolApprovalOperation::new(
-                &self.current_goose_mode,
-                &self.tool_inspection_manager,
-            )),
+            Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
@@ -1315,7 +1309,6 @@ impl Agent {
                 self.hook_manager.clone(),
             )),
             Arc::new(ToolExecutionOperation::new(
-                &self.current_goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
@@ -1337,7 +1330,6 @@ impl Agent {
         let request_preparer = GooseInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
-            goose_mode: &self.current_goose_mode,
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit,
@@ -1862,7 +1854,6 @@ impl Agent {
                 .await
                 .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
         }
-        *self.current_goose_mode.lock().await = mode;
         self.config
             .session_manager
             .clone()
@@ -1873,8 +1864,13 @@ impl Agent {
             .context("Failed to persist goose_mode to session")
     }
 
-    pub async fn goose_mode(&self) -> GooseMode {
-        *self.current_goose_mode.lock().await
+    pub async fn goose_mode(&self, session_id: &str) -> Result<GooseMode> {
+        Ok(self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?
+            .goose_mode)
     }
 
     /// Apply a thinking-effort selection. `effort` is the raw option value: a
@@ -1955,8 +1951,6 @@ impl Agent {
                 }
             }
         }
-
-        *self.current_goose_mode.lock().await = session.goose_mode;
 
         if crate::providers::get_from_registry(&provider_name)
             .await

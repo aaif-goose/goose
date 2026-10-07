@@ -94,7 +94,6 @@ pub(super) struct TestPipeline {
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    goose_mode: TokioMutex<GooseMode>,
     prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
@@ -142,10 +141,7 @@ impl TestPipeline {
                 tool_call_cutoff,
                 !self.provider_features.manages_own_context,
             )),
-            Arc::new(ToolApprovalOperation::new(
-                &self.goose_mode,
-                &self.tool_inspection_manager,
-            )),
+            Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
@@ -161,7 +157,6 @@ impl TestPipeline {
                 self.hook_manager.clone(),
             )),
             Arc::new(ToolExecutionOperation::new(
-                &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
@@ -182,7 +177,6 @@ impl TestPipeline {
         let request_preparer = GooseInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
-            goose_mode: &self.goose_mode,
             prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit: self.model_config.context_limit(),
@@ -212,7 +206,6 @@ impl TestPipeline {
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
-        *self.goose_mode.lock().await = mode;
         self.session_manager
             .update(&self.session_id)
             .goose_mode(mode)
@@ -819,7 +812,6 @@ async fn build_test_pipeline(
         model_config,
         extension_manager,
         extension_lease: Arc::new(StdMutex::new(None)),
-        goose_mode: TokioMutex::new(session.goose_mode),
         prompt_manager: TokioMutex::new(PromptManager::new()),
         tool_inspection_manager,
         permission_manager,

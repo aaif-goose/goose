@@ -1134,11 +1134,8 @@ impl CliSession {
         self.session_id = new_session_id;
         self.messages.clear();
 
-        if let Err(e) = self
-            .agent
-            .update_goose_mode(self.agent.goose_mode().await, &self.session_id)
-            .await
-        {
+        let mode = self.agent.goose_mode(&self.session_id).await?;
+        if let Err(e) = self.agent.update_goose_mode(mode, &self.session_id).await {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
 
@@ -1174,8 +1171,7 @@ impl CliSession {
         let session_manager = &self.agent.config.session_manager;
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
-            create_successor_session(session_manager, &old_session, self.agent.goose_mode().await)
-                .await?;
+            create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
         self.agent.persist_extension_state(&new_session_id).await?;
         Ok(new_session_id)
     }

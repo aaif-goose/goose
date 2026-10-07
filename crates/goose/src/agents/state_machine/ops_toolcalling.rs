@@ -28,7 +28,6 @@ use crate::session::Session;
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
     "Tool approval expired because its extension lease is no longer available. Request the tool again.";
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
 
@@ -314,22 +313,19 @@ pub(super) fn with_post_tool_hooks(
     }
 }
 
-pub struct ToolExecutionOperation<'a> {
-    goose_mode: &'a Mutex<GooseMode>,
+pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
-impl<'a> ToolExecutionOperation<'a> {
+impl ToolExecutionOperation {
     pub fn new(
-        goose_mode: &'a Mutex<GooseMode>,
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
-            goose_mode,
             extension_manager,
             hook_manager,
             lease,
@@ -770,7 +766,7 @@ fn approval_denied(permission: Option<&crate::permission::Permission>) -> bool {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
+impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     fn name(&self) -> &'static str {
         "tool_execution"
     }
@@ -934,7 +930,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return not_applicable();
         }
 
-        if *self.goose_mode.lock().await == GooseMode::Chat {
+        if session.goose_mode == GooseMode::Chat {
             let mut response = Message::user();
             for (request, disposition) in &pending {
                 let result = match disposition {

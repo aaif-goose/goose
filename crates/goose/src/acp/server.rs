@@ -2453,7 +2453,10 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to resolve model config")?;
         let current_model = current_model_config.model_name.clone();
-        let goose_mode = agent.goose_mode().await;
+        let goose_mode = agent
+            .goose_mode(&session_id.0)
+            .await
+            .internal_err_ctx("Failed to read goose mode")?;
         let inventory = self
             .provider_inventory
             .entry_for_provider(&provider_name)

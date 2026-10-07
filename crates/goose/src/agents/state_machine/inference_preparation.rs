@@ -18,7 +18,6 @@ use tokio::sync::Mutex;
 pub struct GooseInferenceRequestPreparer<'a> {
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    pub(crate) goose_mode: &'a Mutex<GooseMode>,
     pub(crate) prompt_manager: &'a Mutex<PromptManager>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) context_limit: usize,
@@ -64,7 +63,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         #[cfg(not(feature = "code-mode"))]
         let code_execution_mode = false;
 
-        let goose_mode = *self.goose_mode.lock().await;
+        let goose_mode = session.goose_mode;
         if goose_mode == GooseMode::SmartApprove {
             self.tool_inspection_manager
                 .apply_tool_annotations(&input.tools);
