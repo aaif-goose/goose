@@ -20,7 +20,7 @@ uninlined_format_args = "allow"
 string_slice = "warn"
 
 [workspace.dependencies]
-rmcp = { version = "3.4.1", default-features = false, features = ["schemars"] }
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "4318addf36b462ae4918c27f035e538edf76ed7f", default-features = false, features = ["schemars"] }
 agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 agent-client-protocol-http = { version = "2.2.0", default-features = false }

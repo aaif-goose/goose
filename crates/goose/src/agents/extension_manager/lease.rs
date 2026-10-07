@@ -13,12 +13,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use base64::Engine;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
-    ServerNotification, Tool,
+    ServerNotification, SkillEntry, Tool,
 };
 use rmcp::service::ServiceError;
 use serde_json::Value;
@@ -521,6 +522,68 @@ impl ExtensionLease {
             }
         }
         Ok(resources)
+    }
+
+    pub async fn skills(&self) -> Vec<(String, SkillEntry)> {
+        let lists = futures::future::join_all(
+            self.extensions
+                .iter()
+                .map(|extension| extension.skills(&self.scope_id)),
+        )
+        .await;
+        self.extensions
+            .iter()
+            .zip(lists)
+            .flat_map(|(extension, skills)| {
+                skills
+                    .iter()
+                    .map(|skill| (extension.key.clone(), skill.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    pub async fn get_skill(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<SkillEntry, ErrorData> {
+        self.client(extension_name)?
+            .get_skill(&self.scope_id, uri, CancellationToken::default())
+            .await
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to get skill {uri} from {extension_name}, {error:?}"),
+                    None,
+                )
+            })
+    }
+
+    pub async fn read_skill(&self, extension_name: &str, uri: &str) -> Result<Vec<u8>, ErrorData> {
+        let result = self
+            .read_resource(uri, extension_name, CancellationToken::default())
+            .await?;
+        result
+            .contents
+            .into_iter()
+            .find_map(|content| match content {
+                ResourceContents::TextResourceContents { text, .. } => Some(Ok(text.into_bytes())),
+                ResourceContents::BlobResourceContents { blob, .. } => Some(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(blob)
+                        .map_err(|error| error.to_string()),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| Err("no content".to_string()))
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Could not read skill file {uri}: {error}"),
+                    None,
+                )
+            })
     }
 
     pub async fn instructions(&self) -> Vec<ExtensionInfo> {

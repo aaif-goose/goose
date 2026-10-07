@@ -1011,7 +1011,7 @@ pub fn list_sources_with_roots(
                     sources.push(check.to_source_entry(global));
                 }
             }
-            SourceType::Recipe | SourceType::Subrecipe => {
+            SourceType::Recipe | SourceType::Subrecipe | SourceType::McpSkill => {
                 return Err(Error::invalid_params()
                     .data(format!("Source type '{}' listing is not supported.", kind)));
             }

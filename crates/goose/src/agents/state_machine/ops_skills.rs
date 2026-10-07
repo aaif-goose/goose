@@ -59,14 +59,18 @@ fn skill_tool() -> Result<Tool> {
     ))
 }
 
-fn skill_instructions(working_dir: &Path) -> Option<String> {
-    let sources = crate::skills::discover_skills(Some(working_dir));
+async fn skill_instructions(working_dir: &Path, lease: Option<&ExtensionLease>) -> Option<String> {
+    let sources = crate::skills::mcp::with_mcp_skills(
+        crate::skills::discover_skills(Some(working_dir)),
+        lease,
+    )
+    .await;
     let mut skills: Vec<&SourceEntry> = sources
         .iter()
         .filter(|source| {
             matches!(
                 source.source_type,
-                SourceType::Skill | SourceType::BuiltinSkill
+                SourceType::Skill | SourceType::BuiltinSkill | SourceType::McpSkill
             )
         })
         .collect();
@@ -84,7 +88,11 @@ fn skill_instructions(working_dir: &Path) -> Option<String> {
     Some(instructions)
 }
 
-fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolResult {
+async fn execute_skill(
+    working_dir: &Path,
+    lease: &ExtensionLease,
+    arguments: Option<JsonObject>,
+) -> CallToolResult {
     let params = arguments
         .map(Value::Object)
         .ok_or_else(|| "Missing arguments".to_string())
@@ -98,7 +106,15 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
     };
     let skill_name = params.name.as_str();
     let args = params.args.as_deref();
-    let skills = crate::skills::discover_skills(Some(working_dir));
+    let skills = crate::skills::mcp::with_mcp_skills(
+        crate::skills::discover_skills(Some(working_dir)),
+        Some(lease),
+    )
+    .await;
+
+    if let Some(result) = crate::skills::mcp::load_skill(lease, &skills, skill_name).await {
+        return result;
+    }
 
     if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
         return match crate::skills::loaded_skill_context_with_args(skill, args) {
@@ -205,18 +221,19 @@ impl SkillOperation {
         }
     }
 
-    fn leased_session(&self, session: &Session) -> Option<Session> {
-        let lease = self
-            .extension_lease
+    fn lease(&self, session: &Session) -> Option<Arc<ExtensionLease>> {
+        self.extension_lease
             .lock()
             .expect("extension lease unavailable")
-            .clone()?;
-        if lease.scope_id() != session.id.as_str() {
-            return None;
-        }
+            .clone()
+            .filter(|lease| lease.scope_id() == session.id.as_str())
+    }
+
+    fn leased_session(&self, session: &Session) -> Option<(Session, Arc<ExtensionLease>)> {
+        let lease = self.lease(session)?;
         let mut session = session.clone();
         session.working_dir = lease.working_dir()?.to_path_buf();
-        Some(session)
+        Some((session, lease))
     }
 
     async fn command_response(
@@ -313,10 +330,13 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        Ok(skill_instructions(&session.working_dir)
-            .map(|instructions| ("skills".to_string(), instructions))
-            .into_iter()
-            .collect())
+        Ok(
+            skill_instructions(&session.working_dir, self.lease(session).as_deref())
+                .await
+                .map(|instructions| ("skills".to_string(), instructions))
+                .into_iter()
+                .collect(),
+        )
     }
 
     async fn run(
@@ -350,7 +370,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     )]))
                 }
                 ToolDisposition::Execute => {
-                    let Some(session) = leased_session.as_ref() else {
+                    let Some((session, lease)) = leased_session.as_ref() else {
                         response.add_tool_response_with_metadata(
                             request.id,
                             Ok(CallToolResult::error(vec![ContentBlock::text(
@@ -387,10 +407,13 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         // is ever applied.
                         Err(denial) => Err(denial),
                         Ok(()) => {
-                            let result = {
-                                let _entered = span.enter();
-                                execute_skill(&session.working_dir, tool_call.arguments.clone())
-                            };
+                            let result = execute_skill(
+                                &session.working_dir,
+                                lease,
+                                tool_call.arguments.clone(),
+                            )
+                            .instrument(span.clone())
+                            .await;
                             if result.is_error == Some(true) {
                                 span.record("error.type", "tool_error");
                             }

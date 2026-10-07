@@ -208,7 +208,12 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |_| Some(Box::new(crate::skills::SkillsClient::default())),
+                client_factory: |ctx| {
+                    Some(Box::new(
+                        crate::skills::SkillsClient::default()
+                            .with_extension_manager(ctx.extension_manager),
+                    ))
+                },
             },
         );
 
@@ -218,9 +223,9 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
 
 #[derive(Clone)]
 pub struct PlatformExtensionContext {
-    /// Sibling access for the two extensions that operate on the running set
-    /// (extension management, code mode). Everything else uses the fields
-    /// below.
+    /// Sibling access for the extensions that operate on the running set
+    /// (extension management, code mode, skills). Everything else uses the
+    /// fields below.
     pub extension_manager:
         Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
     pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,

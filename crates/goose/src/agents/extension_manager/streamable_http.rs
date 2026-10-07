@@ -704,6 +704,7 @@ mod tests {
             docker_container: None,
             action_required: Arc::new(ActionRequiredManager::new()),
             tools_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            skills_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 

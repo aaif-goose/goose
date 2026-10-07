@@ -1,5 +1,7 @@
 use super::discover_skills_with_config;
 use super::loaded_skill_context_with_args;
+use super::mcp::{load_skill, with_mcp_skills};
+use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use crate::config::Config;
@@ -10,6 +12,7 @@ use rmcp::model::{
     ServerCapabilities, ServerNotification, Tool,
 };
 use std::path::{Path, PathBuf};
+use std::sync::Weak;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -19,6 +22,7 @@ pub struct SkillsClient {
     info: InitializeResult,
     exclude_builtin_skills: bool,
     config: &'static Config,
+    extension_manager: Option<Weak<ExtensionManager>>,
 }
 
 impl Default for SkillsClient {
@@ -30,6 +34,7 @@ impl Default for SkillsClient {
             info,
             exclude_builtin_skills: false,
             config: Config::global(),
+            extension_manager: None,
         }
     }
 }
@@ -40,6 +45,19 @@ impl SkillsClient {
     pub fn with_builtin_skills(mut self, enabled: bool) -> Self {
         self.exclude_builtin_skills = !enabled;
         self
+    }
+
+    pub fn with_extension_manager(
+        mut self,
+        extension_manager: Option<Weak<ExtensionManager>>,
+    ) -> Self {
+        self.extension_manager = extension_manager;
+        self
+    }
+
+    async fn lease(&self, session_id: &str, working_dir: &Path) -> Option<ExtensionLease> {
+        let manager = self.extension_manager.as_ref()?.upgrade()?;
+        Some(manager.current_lease(session_id, Some(working_dir)).await)
     }
 
     #[cfg(test)]
@@ -136,7 +154,15 @@ impl McpClientTrait for SkillsClient {
             .working_dir
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        let skills = self.discover_skills(&working_dir);
+        let lease = ctx.extension_lease();
+        let skills =
+            with_mcp_skills(self.discover_skills(&working_dir), lease.map(AsRef::as_ref)).await;
+
+        if let Some(lease) = lease {
+            if let Some(result) = load_skill(lease, &skills, skill_name).await {
+                return Ok(result);
+            }
+        }
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
             return match loaded_skill_context_with_args(skill, args) {
@@ -240,12 +266,16 @@ impl McpClientTrait for SkillsClient {
         Some(&self.info)
     }
 
-    async fn get_instructions(&self, _session_id: &str, working_dir: &Path) -> Option<String> {
-        let sources = self.discover_skills(working_dir);
+    async fn get_instructions(&self, session_id: &str, working_dir: &Path) -> Option<String> {
+        let lease = self.lease(session_id, working_dir).await;
+        let sources = with_mcp_skills(self.discover_skills(working_dir), lease.as_ref()).await;
         let mut skills: Vec<&SourceEntry> = sources
             .iter()
             .filter(|s| {
-                s.source_type == SourceType::Skill || s.source_type == SourceType::BuiltinSkill
+                matches!(
+                    s.source_type,
+                    SourceType::Skill | SourceType::BuiltinSkill | SourceType::McpSkill
+                )
             })
             .collect();
         skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));

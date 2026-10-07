@@ -1635,7 +1635,8 @@ export const zSourceType = z.enum([
     'recipe',
     'subrecipe',
     'agent',
-    'project'
+    'project',
+    'mcpSkill'
 ]);
 
 /**

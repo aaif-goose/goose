@@ -15,7 +15,7 @@ use rmcp::{
         InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
         ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
-        ServerNotification, ServerResult,
+        ServerNotification, ServerResult, SkillEntry, SkillsListResult,
     },
     service::{
         ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
@@ -45,6 +45,7 @@ pub type BoxError = Box<dyn std::error::Error + Sync + Send>;
 pub type Error = rmcp::ServiceError;
 
 const MCP_APPS_UI_EXTENSION_ID: &str = "io.modelcontextprotocol/ui";
+const MCP_SKILLS_EXTENSION_ID: &str = "io.modelcontextprotocol/skills";
 const MCP_APPS_UI_MIME_TYPE: &str = "text/html;profile=mcp-app";
 
 fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
@@ -136,6 +137,32 @@ pub trait McpClientTrait: Send + Sync {
         mpsc::channel(1).1
     }
 
+    fn supports_skills(&self) -> bool {
+        self.get_info().is_some_and(|info| {
+            info.capabilities
+                .extensions
+                .as_ref()
+                .is_some_and(|extensions| extensions.contains_key(MCP_SKILLS_EXTENSION_ID))
+        })
+    }
+
+    async fn list_skills(
+        &self,
+        _session_id: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<SkillsListResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<SkillEntry, Error> {
+        Err(Error::TransportClosed)
+    }
+
     async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         None
     }
@@ -173,6 +200,7 @@ pub struct GooseClient {
     working_dir: PathBuf,
     action_required: Arc<ActionRequiredManager>,
     tools_version: Arc<AtomicU64>,
+    skills_version: Arc<AtomicU64>,
 }
 
 impl GooseClient {
@@ -183,6 +211,7 @@ impl GooseClient {
         working_dir: PathBuf,
         action_required: Arc<ActionRequiredManager>,
         tools_version: Arc<AtomicU64>,
+        skills_version: Arc<AtomicU64>,
     ) -> Self {
         GooseClient {
             notification_handlers: handlers,
@@ -193,6 +222,7 @@ impl GooseClient {
             working_dir,
             action_required,
             tools_version,
+            skills_version,
         }
     }
 
@@ -359,6 +389,13 @@ impl ClientHandler for GooseClient {
         self.handle_tool_list_changed();
     }
 
+    async fn on_resource_list_changed(
+        &self,
+        _context: rmcp::service::NotificationContext<RoleClient>,
+    ) {
+        self.skills_version.fetch_add(1, Ordering::SeqCst);
+    }
+
     #[expect(deprecated)]
     async fn on_logging_message(
         &self,
@@ -492,6 +529,7 @@ pub(crate) struct ConnectContext {
     pub docker_container: Option<String>,
     pub action_required: Arc<ActionRequiredManager>,
     pub tools_version: Arc<AtomicU64>,
+    pub skills_version: Arc<AtomicU64>,
 }
 
 /// The MCP client is the interface for MCP operations.
@@ -520,6 +558,7 @@ impl McpClient {
             docker_container,
             action_required,
             tools_version,
+            skills_version,
         } = ctx;
         let notification_subscribers =
             Arc::new(Mutex::new(Vec::<mpsc::Sender<ServerNotification>>::new()));
@@ -531,6 +570,7 @@ impl McpClient {
             working_dir,
             action_required,
             tools_version,
+            skills_version,
         );
         let client: rmcp::service::RunningService<rmcp::RoleClient, GooseClient> =
             if let Some(protocol_version) = capabilities.protocol_version {
@@ -885,6 +925,53 @@ impl McpClientTrait for McpClient {
         self.notification_subscribers.lock().await.push(tx);
         rx
     }
+
+    async fn list_skills(
+        &self,
+        session_id: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<SkillsListResult, Error> {
+        let client = self.client.lock().await.clone();
+        client.service().set_session_id(session_id).await;
+        let list = async {
+            let mut listed = SkillsListResult::new(Vec::new());
+            let mut cursor = None;
+            loop {
+                let page = client
+                    .skills_list(Some(PaginatedRequestParams::default().with_cursor(cursor)))
+                    .await?;
+                listed.skills.extend(page.skills);
+                listed.ttl_ms = match (listed.ttl_ms, page.ttl_ms) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    return Ok(listed);
+                }
+            }
+        };
+        tokio::select! {
+            result = list => result,
+            _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
+            _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
+        }
+    }
+
+    async fn get_skill(
+        &self,
+        session_id: &str,
+        uri: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<SkillEntry, Error> {
+        let client = self.client.lock().await.clone();
+        client.service().set_session_id(session_id).await;
+        tokio::select! {
+            result = client.skills_get(uri) => result.map(|result| result.skill),
+            _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
+            _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
+        }
+    }
 }
 
 /// Injects the given session_id and working_dir into Extensions._meta.
@@ -1030,6 +1117,7 @@ mod tests {
             capabilities,
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
+            Arc::new(AtomicU64::new(0)),
             Arc::new(AtomicU64::new(0)),
         )
     }
@@ -1233,6 +1321,7 @@ mod tests {
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
             Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
         );
 
         let info = ClientHandler::get_info(&client);
@@ -1267,6 +1356,7 @@ mod tests {
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
             Arc::new(AtomicU64::new(0)),
+            Arc::new(AtomicU64::new(0)),
         );
 
         let info = ClientHandler::get_info(&client);
@@ -1297,6 +1387,7 @@ mod tests {
             },
             std::env::current_dir().unwrap_or_default(),
             Arc::new(ActionRequiredManager::new()),
+            Arc::new(AtomicU64::new(0)),
             Arc::new(AtomicU64::new(0)),
         );
 

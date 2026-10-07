@@ -5,6 +5,7 @@
 mod arguments;
 mod builtin;
 pub mod client;
+pub mod mcp;
 mod supporting_files;
 
 pub use client::{SkillsClient, EXTENSION_NAME};

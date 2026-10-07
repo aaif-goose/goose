@@ -5033,7 +5033,8 @@
         "recipe",
         "subrecipe",
         "agent",
-        "project"
+        "project",
+        "mcpSkill"
       ],
       "description": "The type of source entity."
     },
