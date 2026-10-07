@@ -5203,7 +5203,6 @@ dependencies = [
  "cliclack",
  "comfy-table",
  "console",
- "dotenvy",
  "env-lock",
  "etcetera",
  "fs2",
