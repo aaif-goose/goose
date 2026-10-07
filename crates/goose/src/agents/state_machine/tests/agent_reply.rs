@@ -39,6 +39,7 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
     .with_request_builder(crate::session_context::session_id_request_builder());
     let provider: Arc<dyn Provider> = Arc::new(
         goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+            .base_path("chat/completions")
             .name("openai")
             .build(),
     );

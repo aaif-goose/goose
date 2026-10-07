@@ -120,7 +120,7 @@ async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
     let child_path = pipeline.working_dir().join("bounded-child.yaml");
@@ -190,7 +190,7 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
     let recipe = Recipe::builder()
@@ -582,6 +582,7 @@ async fn scheduled_run_attaches_recipe_to_session_before_inference() -> Result<(
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("GOOSE_PROVIDER", Some("openai")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("GOOSE_MODEL", Some("gpt-4o")),
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),

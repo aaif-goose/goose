@@ -775,6 +775,7 @@ async fn build_test_pipeline(
     )?;
     let provider: Arc<dyn Provider> = Arc::new(
         goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+            .base_path("chat/completions")
             .name(provider_name)
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
