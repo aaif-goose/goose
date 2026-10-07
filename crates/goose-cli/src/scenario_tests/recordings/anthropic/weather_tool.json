@@ -1,0 +1,673 @@
+{
+  "1b90ffd4b16eab7aef1c24e9b61f6b6cc6f0d9b04e8a4f4344454a45b0793284": {
+    "input": {
+      "system": "You are a general-purpose AI agent called goose, created by Block, the parent company of Square, CashApp, and Tidal.\ngoose is being developed as an open-source software project.\n\ngoose uses LLM providers with tool calling capability. You can be used with different language models (gpt-4o,\nclaude-sonnet-4, o1, llama-3.2, deepseek-r1, etc).\nThese models have varying knowledge cut-off dates depending on when they were trained, but typically it's between 5-10\nmonths prior to the current date.\n\n# Extensions\n\nExtensions allow other applications to provide context to goose. Extensions connect goose to different data sources and\ntools.\nYou are capable of dynamically plugging into new extensions and learning how to use them. You solve higher level\nproblems using the tools in these extensions, and can interact with multiple at once.\n\nIf the Extension Manager extension is enabled, you can use the search_available_extensions tool to discover additional\nextensions that can help with your task. To enable or disable extensions, use the manage_extensions tool with the\nextension_name. You should only enable extensions found from the search_available_extensions tool.\nIf Extension Manager is not available, you can only work with currently enabled extensions and cannot dynamically load\nnew ones.\n\nBecause you dynamically load extensions, your conversation history may refer\nto interactions with extensions that are not currently active. The currently\nactive extensions are below. Each of these extensions provides tools that are\nin your tool specification.\n\n\n## weather_extension\n\n\n\n\n\n\n# Response Guidelines\n\n- Use Markdown formatting for all responses.\n- Follow best practices for Markdown, including:\n    - Using headers for organization.\n    - Bullet points for lists.\n    - Links formatted correctly, either as linked text (e.g., [this is linked text](https://example.com)) or automatic\n      links using angle brackets (e.g., <http://example.com/>).\n- For code examples, use fenced code blocks by placing triple backticks (` ``` `) before and after the code. Include the\n  language identifier after the opening backticks (e.g., ` ```python `) to enable syntax highlighting.\n- Ensure clarity, conciseness, and proper formatting to enhance readability and usability.",
+      "messages": [
+        {
+          "id": "msg_20251211_27_0",
+          "role": "user",
+          "created": 1765495263,
+          "content": [
+            {
+              "type": "text",
+              "text": "tell me what the weather is in Berlin, Germany"
+            }
+          ],
+          "metadata": {
+            "userVisible": true,
+            "agentVisible": true
+          }
+        },
+        {
+          "id": "msg_9076da8a-a3b1-4cfc-b5d9-0ffc2a7879c9",
+          "role": "assistant",
+          "created": 1765495266,
+          "content": [
+            {
+              "type": "toolRequest",
+              "id": "toolu_01CDkt9pjh8oC9C1984uhvuG",
+              "toolCall": {
+                "status": "success",
+                "value": {
+                  "name": "weather_extension__get_weather",
+                  "arguments": {
+                    "location": "Berlin, Germany"
+                  }
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "userVisible": true,
+            "agentVisible": true
+          }
+        },
+        {
+          "id": "msg_d7b3db5e-0402-42a8-937c-2ccf68a3e4e0",
+          "role": "user",
+          "created": 1765495266,
+          "content": [
+            {
+              "type": "toolResponse",
+              "id": "toolu_01CDkt9pjh8oC9C1984uhvuG",
+              "toolResult": {
+                "status": "success",
+                "value": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "The weather in Berlin, Germany is cloudy and 18°C"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "metadata": {
+            "userVisible": true,
+            "agentVisible": true
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "dynamic_task__create_task",
+          "description": "Create tasks with instructions or prompt. For simple tasks, only include the instructions field. Extensions control: omit field = use all current extensions; empty array [] = no extensions; array with names = only those extensions. Specify extensions as shortnames (the prefixes for your tools). Specify return_last_only as true and have your subagent summarize its work in its last message to conserve your own context. Optional: title, description, extensions, settings, retry, response schema, activities. Arrays for multiple tasks.",
+          "inputSchema": {
+            "$defs": {
+              "TaskParameter": {
+                "description": "Parameters for a single task",
+                "properties": {
+                  "activities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "extensions": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parameters": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "prompt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "response": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "retry": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "return_last_only": {
+                    "description": "If true, return only the last message from the subagent (default: false, returns full conversation)",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "settings": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "execution_mode": {
+                "description": "How to execute multiple tasks (default: parallel for multiple tasks, sequential for single task)",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task_parameters": {
+                "description": "Array of tasks. Each task must have either 'instructions' OR 'prompt' field (at least one is required).",
+                "items": {
+                  "$ref": "#/$defs/TaskParameter"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "task_parameters"
+            ],
+            "title": "CreateDynamicTaskParams",
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Create Dynamic Tasks",
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "platform__manage_schedule",
+          "description": "Manage scheduled recipe execution for this goose instance.\n\nActions:\n- \"list\": List all scheduled jobs\n- \"create\": Create a new scheduled job from a recipe file\n- \"run_now\": Execute a scheduled job immediately  \n- \"pause\": Pause a scheduled job\n- \"unpause\": Resume a paused job\n- \"delete\": Remove a scheduled job\n- \"kill\": Terminate a currently running job\n- \"inspect\": Get details about a running job\n- \"sessions\": List execution history for a job\n- \"session_content\": Get the full content (messages) of a specific session\n",
+          "inputSchema": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "list",
+                  "create",
+                  "run_now",
+                  "pause",
+                  "unpause",
+                  "delete",
+                  "kill",
+                  "inspect",
+                  "sessions",
+                  "session_content"
+                ],
+                "type": "string"
+              },
+              "cron_expression": {
+                "description": "A cron expression for create action. Supports both 5-field (minute hour day month weekday) and 6-field (second minute hour day month weekday) formats. 5-field expressions are automatically converted to 6-field by prepending '0' for seconds.",
+                "type": "string"
+              },
+              "job_id": {
+                "description": "Job identifier for operations on existing jobs",
+                "type": "string"
+              },
+              "limit": {
+                "default": 50,
+                "description": "Limit for sessions list",
+                "type": "integer"
+              },
+              "recipe_path": {
+                "description": "Path to recipe file for create action",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Session identifier for session_content action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Manage scheduled recipes",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "subagent__execute_task",
+          "description": "Only use the subagent__execute_task tool when you execute sub recipe task or dynamic task.\n        EXECUTION STRATEGY DECISION:\n        1. If the tasks are created with execution_mode, use the execution_mode.\n        2. Execute tasks sequentially unless user explicitly requests parallel execution. PARALLEL: User uses keywords like 'parallel', 'simultaneously', 'at the same time', 'concurrently'\n\n        IMPLEMENTATION:\n        - Sequential execution: Call this tool multiple times, passing exactly ONE task per call\n        - Parallel execution: Call this tool once, passing an ARRAY of all tasks\n\n        EXAMPLES:\n        User Intent Based:\n        - User: 'get weather and tell me a joke' → Sequential (2 separate tool calls, 1 task each)\n        - User: 'get weather and joke in parallel' → Parallel (1 tool call with array of 2 tasks)\n        - User: 'run these simultaneously' → Parallel (1 tool call with task array)\n        - User: 'do task A then task B' → Sequential (2 separate tool calls)",
+          "inputSchema": {
+            "properties": {
+              "execution_mode": {
+                "default": "sequential",
+                "description": "Execution strategy for multiple tasks. Use 'sequential' (default) unless user explicitly requests parallel execution with words like 'parallel', 'simultaneously', 'at the same time', or 'concurrently'.",
+                "enum": [
+                  "sequential",
+                  "parallel"
+                ],
+                "type": "string"
+              },
+              "task_ids": {
+                "items": {
+                  "description": "Unique identifier for the task",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "task_ids"
+            ],
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Run tasks in parallel",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "weather_extension__get_weather",
+          "description": "Get the weather for a location",
+          "inputSchema": {
+            "properties": {
+              "location": {
+                "description": "The city and state, e.g. San Francisco, CA",
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "output": {
+      "message": {
+        "id": null,
+        "role": "assistant",
+        "created": 1765495269,
+        "content": [
+          {
+            "type": "text",
+            "text": "# Weather in Berlin, Germany\n\nThe current weather in Berlin, Germany is:\n- **Conditions**: Cloudy\n- **Temperature**: 18°C (64°F)\n\nIt's a mild day with overcast conditions in Berlin!"
+          }
+        ],
+        "metadata": {
+          "userVisible": true,
+          "agentVisible": true
+        }
+      },
+      "usage": {
+        "model": "claude-sonnet-4-20250514",
+        "usage": {
+          "input_tokens": 2406,
+          "output_tokens": 55,
+          "total_tokens": 2461
+        }
+      }
+    }
+  },
+  "8b1b8633232ca390cb3ff37a48daf74168b58f13e2943efcb17957129ee34d1a": {
+    "input": {
+      "system": "Reply with only a description in four words or less",
+      "messages": [
+        {
+          "id": null,
+          "role": "user",
+          "created": 1765495263,
+          "content": [
+            {
+              "type": "text",
+              "text": "Here are the first few user messages:\ntell me what the weather is in Berlin, Germany\n\nBased on the conversation so far, provide a concise description of this session in 4 words or less. This will be used for finding the session later in a UI with limited space - reply *ONLY* with the description"
+            }
+          ],
+          "metadata": {
+            "userVisible": true,
+            "agentVisible": true
+          }
+        }
+      ],
+      "tools": []
+    },
+    "output": {
+      "message": {
+        "id": null,
+        "role": "assistant",
+        "created": 1765495265,
+        "content": [
+          {
+            "type": "text",
+            "text": "Berlin weather inquiry"
+          }
+        ],
+        "metadata": {
+          "userVisible": true,
+          "agentVisible": true
+        }
+      },
+      "usage": {
+        "model": "claude-sonnet-4-20250514",
+        "usage": {
+          "input_tokens": 84,
+          "output_tokens": 6,
+          "total_tokens": 90
+        }
+      }
+    }
+  },
+  "1bc400a528c54b25f4f1f609481e98e44222b3deaf7eee2c9e640e6345c73861": {
+    "input": {
+      "system": "You are a general-purpose AI agent called goose, created by Block, the parent company of Square, CashApp, and Tidal.\ngoose is being developed as an open-source software project.\n\ngoose uses LLM providers with tool calling capability. You can be used with different language models (gpt-4o,\nclaude-sonnet-4, o1, llama-3.2, deepseek-r1, etc).\nThese models have varying knowledge cut-off dates depending on when they were trained, but typically it's between 5-10\nmonths prior to the current date.\n\n# Extensions\n\nExtensions allow other applications to provide context to goose. Extensions connect goose to different data sources and\ntools.\nYou are capable of dynamically plugging into new extensions and learning how to use them. You solve higher level\nproblems using the tools in these extensions, and can interact with multiple at once.\n\nIf the Extension Manager extension is enabled, you can use the search_available_extensions tool to discover additional\nextensions that can help with your task. To enable or disable extensions, use the manage_extensions tool with the\nextension_name. You should only enable extensions found from the search_available_extensions tool.\nIf Extension Manager is not available, you can only work with currently enabled extensions and cannot dynamically load\nnew ones.\n\nBecause you dynamically load extensions, your conversation history may refer\nto interactions with extensions that are not currently active. The currently\nactive extensions are below. Each of these extensions provides tools that are\nin your tool specification.\n\n\n## weather_extension\n\n\n\n\n\n\n# Response Guidelines\n\n- Use Markdown formatting for all responses.\n- Follow best practices for Markdown, including:\n    - Using headers for organization.\n    - Bullet points for lists.\n    - Links formatted correctly, either as linked text (e.g., [this is linked text](https://example.com)) or automatic\n      links using angle brackets (e.g., <http://example.com/>).\n- For code examples, use fenced code blocks by placing triple backticks (` ``` `) before and after the code. Include the\n  language identifier after the opening backticks (e.g., ` ```python `) to enable syntax highlighting.\n- Ensure clarity, conciseness, and proper formatting to enhance readability and usability.",
+      "messages": [
+        {
+          "id": "msg_20251211_27_0",
+          "role": "user",
+          "created": 1765495263,
+          "content": [
+            {
+              "type": "text",
+              "text": "tell me what the weather is in Berlin, Germany"
+            }
+          ],
+          "metadata": {
+            "userVisible": true,
+            "agentVisible": true
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "dynamic_task__create_task",
+          "description": "Create tasks with instructions or prompt. For simple tasks, only include the instructions field. Extensions control: omit field = use all current extensions; empty array [] = no extensions; array with names = only those extensions. Specify extensions as shortnames (the prefixes for your tools). Specify return_last_only as true and have your subagent summarize its work in its last message to conserve your own context. Optional: title, description, extensions, settings, retry, response schema, activities. Arrays for multiple tasks.",
+          "inputSchema": {
+            "$defs": {
+              "TaskParameter": {
+                "description": "Parameters for a single task",
+                "properties": {
+                  "activities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "extensions": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "instructions": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parameters": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "prompt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "response": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "retry": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "return_last_only": {
+                    "description": "If true, return only the last message from the subagent (default: false, returns full conversation)",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "settings": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "execution_mode": {
+                "description": "How to execute multiple tasks (default: parallel for multiple tasks, sequential for single task)",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "task_parameters": {
+                "description": "Array of tasks. Each task must have either 'instructions' OR 'prompt' field (at least one is required).",
+                "items": {
+                  "$ref": "#/$defs/TaskParameter"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "task_parameters"
+            ],
+            "title": "CreateDynamicTaskParams",
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Create Dynamic Tasks",
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "platform__manage_schedule",
+          "description": "Manage scheduled recipe execution for this goose instance.\n\nActions:\n- \"list\": List all scheduled jobs\n- \"create\": Create a new scheduled job from a recipe file\n- \"run_now\": Execute a scheduled job immediately  \n- \"pause\": Pause a scheduled job\n- \"unpause\": Resume a paused job\n- \"delete\": Remove a scheduled job\n- \"kill\": Terminate a currently running job\n- \"inspect\": Get details about a running job\n- \"sessions\": List execution history for a job\n- \"session_content\": Get the full content (messages) of a specific session\n",
+          "inputSchema": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "list",
+                  "create",
+                  "run_now",
+                  "pause",
+                  "unpause",
+                  "delete",
+                  "kill",
+                  "inspect",
+                  "sessions",
+                  "session_content"
+                ],
+                "type": "string"
+              },
+              "cron_expression": {
+                "description": "A cron expression for create action. Supports both 5-field (minute hour day month weekday) and 6-field (second minute hour day month weekday) formats. 5-field expressions are automatically converted to 6-field by prepending '0' for seconds.",
+                "type": "string"
+              },
+              "job_id": {
+                "description": "Job identifier for operations on existing jobs",
+                "type": "string"
+              },
+              "limit": {
+                "default": 50,
+                "description": "Limit for sessions list",
+                "type": "integer"
+              },
+              "recipe_path": {
+                "description": "Path to recipe file for create action",
+                "type": "string"
+              },
+              "session_id": {
+                "description": "Session identifier for session_content action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ],
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Manage scheduled recipes",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "subagent__execute_task",
+          "description": "Only use the subagent__execute_task tool when you execute sub recipe task or dynamic task.\n        EXECUTION STRATEGY DECISION:\n        1. If the tasks are created with execution_mode, use the execution_mode.\n        2. Execute tasks sequentially unless user explicitly requests parallel execution. PARALLEL: User uses keywords like 'parallel', 'simultaneously', 'at the same time', 'concurrently'\n\n        IMPLEMENTATION:\n        - Sequential execution: Call this tool multiple times, passing exactly ONE task per call\n        - Parallel execution: Call this tool once, passing an ARRAY of all tasks\n\n        EXAMPLES:\n        User Intent Based:\n        - User: 'get weather and tell me a joke' → Sequential (2 separate tool calls, 1 task each)\n        - User: 'get weather and joke in parallel' → Parallel (1 tool call with array of 2 tasks)\n        - User: 'run these simultaneously' → Parallel (1 tool call with task array)\n        - User: 'do task A then task B' → Sequential (2 separate tool calls)",
+          "inputSchema": {
+            "properties": {
+              "execution_mode": {
+                "default": "sequential",
+                "description": "Execution strategy for multiple tasks. Use 'sequential' (default) unless user explicitly requests parallel execution with words like 'parallel', 'simultaneously', 'at the same time', or 'concurrently'.",
+                "enum": [
+                  "sequential",
+                  "parallel"
+                ],
+                "type": "string"
+              },
+              "task_ids": {
+                "items": {
+                  "description": "Unique identifier for the task",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "task_ids"
+            ],
+            "type": "object"
+          },
+          "annotations": {
+            "title": "Run tasks in parallel",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+          }
+        },
+        {
+          "name": "weather_extension__get_weather",
+          "description": "Get the weather for a location",
+          "inputSchema": {
+            "properties": {
+              "location": {
+                "description": "The city and state, e.g. San Francisco, CA",
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "output": {
+      "message": {
+        "id": null,
+        "role": "assistant",
+        "created": 1765495266,
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll get the current weather information for Berlin, Germany for you."
+          },
+          {
+            "type": "toolRequest",
+            "id": "toolu_01CDkt9pjh8oC9C1984uhvuG",
+            "toolCall": {
+              "status": "success",
+              "value": {
+                "name": "weather_extension__get_weather",
+                "arguments": {
+                  "location": "Berlin, Germany"
+                }
+              }
+            }
+          }
+        ],
+        "metadata": {
+          "userVisible": true,
+          "agentVisible": true
+        }
+      },
+      "usage": {
+        "model": "claude-sonnet-4-20250514",
+        "usage": {
+          "input_tokens": 2320,
+          "output_tokens": 74,
+          "total_tokens": 2394
+        }
+      }
+    }
+  }
+}
