@@ -77,6 +77,7 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
         "gen_ai.operation.name" = "execute_tool",
         "gen_ai.tool.name" = %tool_name,
         "gen_ai.tool.call.id" = %tool_call_id,
+        "gen_ai.conversation.id" = %session_id,
         "gen_ai.tool.call.arguments" = tracing::field::Empty,
         "gen_ai.tool.call.result" = tracing::field::Empty,
         "error.type" = tracing::field::Empty,
