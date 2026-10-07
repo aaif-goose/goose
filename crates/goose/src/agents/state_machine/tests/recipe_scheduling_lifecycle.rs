@@ -120,7 +120,7 @@ async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
     let child_path = pipeline.working_dir().join("bounded-child.yaml");
@@ -186,11 +186,12 @@ settings:
 #[tokio::test]
 async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_max_turns(2);
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("v1/chat/completions")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
     let recipe = Recipe::builder()
@@ -218,7 +219,7 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
         (
             "call_delegate",
             "delegate",
-            json!({ "instructions": "Find the answer" }),
+            json!({ "instructions": "Find the answer", "max_turns": 1 }),
         ),
         (
             "call_early_output",
@@ -276,6 +277,7 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
     exhausted.assert_message(-1, Error, "Maximum retry attempts (1) exceeded");
 
     let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_max_turns(2);
     api.on("compute the answer").reply("thinking about it");
     api.on(FINAL_OUTPUT_CONTINUATION_MESSAGE)
         .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "42" }));
@@ -582,6 +584,7 @@ async fn scheduled_run_attaches_recipe_to_session_before_inference() -> Result<(
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("GOOSE_PROVIDER", Some("openai")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("GOOSE_MODEL", Some("gpt-4o")),
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
         ("OPENAI_HOST", Some(host.as_str())),

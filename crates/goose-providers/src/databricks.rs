@@ -190,10 +190,6 @@ impl DatabricksProvider {
         model_name.to_lowercase().contains("claude")
     }
 
-    fn is_reasoning_capable_model_name(model_name: &str) -> bool {
-        Self::is_claude_model(model_name) || is_openai_responses_model(model_name)
-    }
-
     fn resolve_vision_support(
         model_config: &ModelConfig,
         effective_model_name: &str,
@@ -292,8 +288,20 @@ impl DatabricksProvider {
 
         let reasoning = upstream_model_name
             .as_deref()
-            .map(Self::is_reasoning_capable_model_name)
-            .or_else(|| Some(Self::is_reasoning_capable_model_name(&name)));
+            .and_then(|model_name| {
+                goose_provider_types::canonical::maybe_get_canonical_model(
+                    DATABRICKS_PROVIDER_NAME,
+                    model_name,
+                )
+                .and_then(|model| model.reasoning)
+            })
+            .or_else(|| {
+                goose_provider_types::canonical::maybe_get_canonical_model(
+                    DATABRICKS_PROVIDER_NAME,
+                    &name,
+                )
+                .and_then(|model| model.reasoning)
+            });
 
         Some(DatabricksEndpointInfo {
             name,

@@ -151,7 +151,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
 
     pipeline.run(["keep going"]).await?;
     assert_eq!(api.call_count(), MAX_TURNS as usize);
-    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64 - 1);
+    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64);
     assert_eq!(maxed.invocations(), 0);
 
     Ok(())

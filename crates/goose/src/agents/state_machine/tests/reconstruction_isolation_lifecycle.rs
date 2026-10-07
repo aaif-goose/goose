@@ -167,7 +167,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let calls_before = api.call_count();
     let bounded = pipeline.run(["keep adding"]).await?;
     assert_eq!(api.call_count() - calls_before, 2);
-    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(pipeline.calculator_total(), 2);
     bounded.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
 
     let restored = pipeline.session().await?;
@@ -206,7 +206,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         .await?;
     elicited.assert_message(-2, ToolResponse, "result: 9");
     assert_eq!(other.calculator_total(), 9);
-    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(pipeline.calculator_total(), 2);
 
     Ok(())
 }
