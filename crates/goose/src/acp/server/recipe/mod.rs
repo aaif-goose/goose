@@ -320,8 +320,9 @@ impl GooseAcpAgent {
         let Some(recipe) = &session.recipe else {
             return Ok(());
         };
+        let yaml = recipe.to_yaml().internal_err()?;
         if session.session_type == SessionType::Scheduled
-            || recipe.parameters.as_ref().is_none_or(Vec::is_empty)
+            || !(yaml.contains("{{") || yaml.contains("{%"))
         {
             return Ok(());
         }
