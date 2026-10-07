@@ -137,7 +137,7 @@ fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
                 | MessageContent::Image(_)
                 | MessageContent::ToolRequest(_)
                 | MessageContent::Thinking(_)
-                | MessageContent::RedactedThinking(_)
+                | MessageContent::Error(_)
         )
     });
     if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
@@ -638,11 +638,20 @@ mod tests {
         assert!(permission.metadata.operation_logs.is_empty());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
-        let mut text = Message::assistant().with_text("Working on it");
-        attach_operation_logs(&mut text, &mut logs);
+        let mut redacted = Message::assistant()
+            .with_content(MessageContent::redacted_thinking("opaque reasoning"));
+        attach_operation_logs(&mut redacted, &mut logs);
+
+        assert!(redacted.metadata.operation_logs.is_empty());
+        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
+
+        let mut error = Message::from_provider_error(&ProviderError::RequestFailed(
+            "provider failed".to_string(),
+        ));
+        attach_operation_logs(&mut error, &mut logs);
 
         assert_eq!(
-            text.metadata.operation_logs,
+            error.metadata.operation_logs,
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());

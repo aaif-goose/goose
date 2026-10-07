@@ -136,7 +136,10 @@ pub(super) fn available_auto_efforts(
                     .collect();
             }
 
-            if matches!(provider_name, "google" | "gemini_oauth" | "gcp_vertex_ai") {
+            let google_model = model_config.model_name.to_lowercase().contains("gemini");
+            if matches!(provider_name, "google" | "gemini_oauth")
+                || provider_name == "gcp_vertex_ai" && google_model
+            {
                 if model_config
                     .model_name
                     .to_lowercase()
@@ -4271,6 +4274,23 @@ mod tests {
                 vec![ThinkingEffort::Off, ThinkingEffort::High]
             );
         }
+    }
+
+    #[test]
+    fn vertex_claude_auto_efforts_use_anthropic_controls() {
+        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-6")
+            .with_canonical_limits("gcp_vertex_ai");
+
+        assert_eq!(
+            available_auto_efforts("gcp_vertex_ai", &model, ThinkingEffortSupport::Unspecified,),
+            vec![
+                ThinkingEffort::Off,
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]
+        );
     }
 
     #[test]
