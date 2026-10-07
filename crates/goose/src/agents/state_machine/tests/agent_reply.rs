@@ -92,7 +92,6 @@ async fn agent_with_calculator() -> Result<(
         .extension_manager
         .add_client(
             calculator_config(),
-            Some(temp_dir.path().to_path_buf()),
             calculator.clone(),
             calculator.get_info().cloned(),
         )
@@ -346,7 +345,6 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .extension_manager
         .add_client(
             calculator_config(),
-            Some(new_working_dir.path().to_path_buf()),
             replacement.clone(),
             replacement.get_info().cloned(),
         )

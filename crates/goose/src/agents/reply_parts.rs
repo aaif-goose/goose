@@ -225,7 +225,7 @@ impl Agent {
 
         let tools = prepare_inference_tools(tools, code_execution_active);
 
-        let extensions_info = lease.instructions();
+        let extensions_info = lease.instructions().await;
         let model_config = self.effective_model_config_for_session(&session.id).await?;
 
         let goose_mode = *self.current_goose_mode.lock().await;

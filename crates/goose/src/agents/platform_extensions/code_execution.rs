@@ -77,26 +77,6 @@ impl CodeExecutionClient {
         })
     }
 
-    async fn load_callback_configs(
-        &self,
-        session_id: &str,
-        lease: Option<&ExtensionLease>,
-    ) -> Option<Vec<CallbackConfig>> {
-        let tools = match lease {
-            Some(lease) => lease.tools_excluding(EXTENSION_NAME).await,
-            None => self
-                .context
-                .extension_manager
-                .as_ref()
-                .and_then(|manager| manager.upgrade())?
-                .get_prefixed_tools_excluding(session_id, EXTENSION_NAME)
-                .await
-                .ok()?,
-        };
-
-        Some(Self::callback_configs(tools))
-    }
-
     fn callback_configs(tools: Vec<McpTool>) -> Vec<CallbackConfig> {
         let mut cfgs = vec![];
         for tool in tools {
@@ -124,15 +104,8 @@ impl CodeExecutionClient {
     }
 
     /// Get the cached CodeMode, rebuilding if callback configs have changed
-    async fn get_code_mode(
-        &self,
-        session_id: &str,
-        lease: Option<&ExtensionLease>,
-    ) -> Result<CodeMode, String> {
-        let cfgs = self
-            .load_callback_configs(session_id, lease)
-            .await
-            .ok_or("Failed to load callback configs")?;
+    async fn get_code_mode(&self, lease: &ExtensionLease) -> Result<CodeMode, String> {
+        let cfgs = Self::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         self.get_code_mode_for_configs(cfgs).await
     }
 
@@ -211,10 +184,9 @@ impl CodeExecutionClient {
     /// Handle the list_functions tool call
     async fn handle_list_functions(
         &self,
-        session_id: &str,
-        lease: Option<&ExtensionLease>,
+        lease: &ExtensionLease,
     ) -> Result<Vec<ContentBlock>, String> {
-        let code_mode = self.get_code_mode(session_id, lease).await?;
+        let code_mode = self.get_code_mode(lease).await?;
         let output = code_mode.list_functions();
 
         Ok(vec![ContentBlock::text(output.code)])
@@ -223,8 +195,7 @@ impl CodeExecutionClient {
     /// Handle the get_function_details tool call
     async fn handle_get_function_details(
         &self,
-        session_id: &str,
-        lease: Option<&ExtensionLease>,
+        lease: &ExtensionLease,
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, String> {
         let input: GetFunctionDetailsInput = arguments
@@ -233,7 +204,7 @@ impl CodeExecutionClient {
             .map_err(|e| format!("Failed to parse arguments: {e}"))?
             .ok_or("Missing arguments for get_function_details")?;
 
-        let code_mode = self.get_code_mode(session_id, lease).await?;
+        let code_mode = self.get_code_mode(lease).await?;
         let output = code_mode.get_function_details(input);
 
         Ok(vec![ContentBlock::text(output.code)])
@@ -242,8 +213,7 @@ impl CodeExecutionClient {
     /// Handle the execute bash tool call
     async fn handle_execute_bash(
         &self,
-        session_id: &str,
-        lease: Option<&ExtensionLease>,
+        lease: &ExtensionLease,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
     ) -> Result<Vec<ContentBlock>, String> {
@@ -253,7 +223,7 @@ impl CodeExecutionClient {
             .map_err(|e| format!("Failed to parse arguments: {e}"))?
             .ok_or("Missing arguments for execute_bash")?;
         let command = input.command;
-        let code_mode = self.get_code_mode(session_id, lease).await?;
+        let code_mode = self.get_code_mode(lease).await?;
 
         let dispatch_token = cancellation_token.child_token();
         let output = run_in_deno_runtime(
@@ -288,10 +258,7 @@ impl CodeExecutionClient {
             .map_err(|e| format!("Failed to parse arguments: {e}"))?
             .ok_or("Missing arguments for execute_typescript")?;
 
-        let session_id = &ctx.session_id;
-        let code_mode = self
-            .get_code_mode(session_id, ctx.extension_lease().map(AsRef::as_ref))
-            .await?;
+        let code_mode = self.get_code_mode(dispatching_lease(ctx)).await?;
         let dispatch_token = cancellation_token.child_token();
         let rt = tokio::runtime::Handle::current();
         let registry = self.build_callback_registry(ctx, &code_mode, dispatch_token.clone(), rt)?;
@@ -386,6 +353,11 @@ where
     .map_err(|e| format!("Execution task failed: {e}"))?
 }
 
+fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
+    ctx.extension_lease()
+        .expect("platform tool calls are dispatched through a lease")
+}
+
 fn create_tool_callback(
     ctx: ToolCallContext,
     full_name: String,
@@ -409,18 +381,9 @@ fn create_tool_callback(
             };
 
             let handle = rt.spawn(async move {
-                let dispatch_result = match ctx.extension_lease().cloned() {
-                    Some(lease) => {
-                        lease
-                            .call(tool_call, CallRequest::from(&ctx), cancellation_token)
-                            .await
-                    }
-                    None => {
-                        manager
-                            .dispatch_tool_call(&ctx, tool_call, cancellation_token)
-                            .await
-                    }
-                };
+                let dispatch_result = dispatching_lease(&ctx)
+                    .call(tool_call, CallRequest::from(&ctx), cancellation_token)
+                    .await;
                 match dispatch_result {
                     Ok(dispatch_result) => match manager
                         .applying_mutation(
@@ -598,16 +561,12 @@ impl McpClientTrait for CodeExecutionClient {
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
-        let session_id = &ctx.session_id;
-        let lease = ctx.extension_lease().map(AsRef::as_ref);
+        let lease = dispatching_lease(ctx);
         let result = match name {
-            "list_functions" => self.handle_list_functions(session_id, lease).await,
-            "get_function_details" => {
-                self.handle_get_function_details(session_id, lease, arguments)
-                    .await
-            }
+            "list_functions" => self.handle_list_functions(lease).await,
+            "get_function_details" => self.handle_get_function_details(lease, arguments).await,
             "execute_bash" => {
-                self.handle_execute_bash(session_id, lease, arguments, cancellation_token)
+                self.handle_execute_bash(lease, arguments, cancellation_token)
                     .await
             }
             "execute_typescript" => {
@@ -848,19 +807,14 @@ mod tests {
                     bundled: None,
                     available_tools: vec![],
                 },
-                None,
                 Arc::new(VisibilityClient),
                 None,
             )
             .await;
 
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
-        let client = CodeExecutionClient::new(context, ToolDisclosure::Catalog).unwrap();
-        let configs = client
-            .load_callback_configs("test-session", None)
-            .await
-            .unwrap();
+        let lease = manager.current_lease("test-session", None).await;
+        let configs =
+            CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
             .map(|config| config.name.as_str())
@@ -1197,7 +1151,6 @@ mod tests {
                     temp.path().join("sessions"),
                 )),
                 scheduler: None,
-                session: None,
                 use_login_shell_path: false,
             },
             ToolDisclosure::Filesystem,

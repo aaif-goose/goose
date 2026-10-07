@@ -27,7 +27,7 @@ use rmcp::{
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
@@ -91,18 +91,8 @@ pub trait McpClientTrait: Send + Sync {
 
     fn get_info(&self) -> Option<&InitializeResult>;
 
-    /// Return the extension's current instructions. The default reads from
-    /// `get_info()`, but platform extensions can override this to provide
-    /// dynamically computed instructions (e.g. freshly discovered skills).
-    fn get_instructions(&self) -> Option<String> {
+    async fn get_instructions(&self, _session_id: &str, _working_dir: &Path) -> Option<String> {
         self.get_info().and_then(|info| info.instructions.clone())
-    }
-
-    fn rebind_session(
-        &self,
-        _session: Arc<crate::session::Session>,
-    ) -> Option<Arc<dyn McpClientTrait>> {
-        None
     }
 
     async fn list_resources(
@@ -517,7 +507,7 @@ impl McpClient {
     pub(crate) async fn connect<T, E, A>(
         transport: T,
         ctx: ConnectContext,
-    ) -> Result<Self, ClientInitializeError>
+    ) -> Result<Self, Box<ClientInitializeError>>
     where
         T: IntoTransport<RoleClient, E, A>,
         E: std::error::Error + From<std::io::Error> + Send + Sync + 'static,
