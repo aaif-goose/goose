@@ -3,37 +3,15 @@ use async_trait::async_trait;
 use chrono::Utc;
 use std::sync::{Arc, OnceLock};
 
-use crate::agents::types::SharedProvider;
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
+use crate::providers::manager::ProviderManager;
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use crate::utils::safe_truncate;
 
 const DEFAULT_TOOLS: &[&str] = &["shell"];
-
-async fn resolve_model_config(
-    session_manager: &crate::session::SessionManager,
-    session_id: &str,
-) -> Result<goose_providers::model::ModelConfig> {
-    if !session_id.is_empty() {
-        if let Ok(session) = session_manager.get_session(session_id, false).await {
-            if let Some(model_config) = session.model_config {
-                return Ok(model_config);
-            }
-        }
-    }
-
-    let config = crate::config::Config::global();
-    let provider_name = config
-        .get_goose_provider()
-        .map_err(|_| anyhow::anyhow!("missing provider"))?;
-    let model_name = config
-        .get_goose_model()
-        .map_err(|_| anyhow::anyhow!("missing model"))?;
-    crate::model_config::model_config_from_user_config(&provider_name, &model_name)
-}
 
 const DEFAULT_RULES: &str = r#"BLOCK if the command:
 - Exfiltrates data (curl/wget posting to unknown URLs, piping secrets out)
@@ -71,7 +49,7 @@ struct AdversaryConfig {
 /// If the file is absent, this inspector is disabled.
 /// If the review fails, the inspector fails open (allows the tool call).
 pub struct AdversaryInspector {
-    provider: SharedProvider,
+    providers: Arc<ProviderManager>,
     session_manager: Arc<crate::session::SessionManager>,
     config: OnceLock<Option<AdversaryConfig>>,
     config_path: Option<std::path::PathBuf>,
@@ -79,11 +57,11 @@ pub struct AdversaryInspector {
 
 impl AdversaryInspector {
     pub fn new(
-        provider: SharedProvider,
+        providers: Arc<ProviderManager>,
         session_manager: Arc<crate::session::SessionManager>,
     ) -> Self {
         Self {
-            provider,
+            providers,
             session_manager,
             config: OnceLock::new(),
             config_path: None,
@@ -91,12 +69,12 @@ impl AdversaryInspector {
     }
 
     pub fn with_config_dir(
-        provider: SharedProvider,
+        providers: Arc<ProviderManager>,
         session_manager: Arc<crate::session::SessionManager>,
         config_dir: std::path::PathBuf,
     ) -> Self {
         Self {
-            provider,
+            providers,
             session_manager,
             config: OnceLock::new(),
             config_path: Some(config_dir.join("adversary.md")),
@@ -276,12 +254,12 @@ impl AdversaryInspector {
         recent_messages: &[String],
         rules: &str,
     ) -> Result<(bool, String)> {
-        let provider_guard = self.provider.lock().await;
-        let provider = match provider_guard.clone() {
-            Some(p) => p,
-            None => return Ok((true, "No provider available".to_string())),
+        let Ok(session) = self.session_manager.get_session(session_id, false).await else {
+            return Ok((true, "No provider available".to_string()));
         };
-        drop(provider_guard);
+        let Ok(provider) = self.providers.provider_for(&session).await else {
+            return Ok((true, "No provider available".to_string()));
+        };
 
         let history_section = if !recent_messages.is_empty() {
             let mut s = String::from("Recent user messages (oldest first):\n");
@@ -321,9 +299,7 @@ impl AdversaryInspector {
         )];
         let conversation = Conversation::new_unvalidated(check_messages);
 
-        let model_config = resolve_model_config(&self.session_manager, session_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("Could not resolve model config: {}", e))?;
+        let model_config = crate::providers::manager::model_config_for(&session)?;
         let (response, _usage) = crate::session_context::with_session_id(
             Some(session_id.to_string()),
             provider.complete(&model_config, system_prompt, conversation.messages(), &[]),
@@ -499,7 +475,6 @@ mod tests {
     use rmcp::model::CallToolRequestParams;
     use rmcp::object;
     use std::sync::Arc;
-    use tokio::sync::Mutex;
 
     #[test]
     fn test_parse_with_tools_frontmatter() {
@@ -683,12 +658,11 @@ mod tests {
     async fn test_disabled_when_no_adversary_md() {
         let tmp = tempfile::tempdir().unwrap();
 
-        let provider: SharedProvider = Arc::new(Mutex::new(None));
         let session_manager = Arc::new(crate::session::SessionManager::new(
             tmp.path().to_path_buf(),
         ));
         let inspector = AdversaryInspector::with_config_dir(
-            provider,
+            Default::default(),
             session_manager,
             tmp.path().to_path_buf(),
         );

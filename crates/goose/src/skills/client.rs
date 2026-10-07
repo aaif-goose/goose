@@ -332,7 +332,7 @@ mod tests {
         });
         SkillsClient::new(PlatformExtensionContext {
             extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
+            providers: Default::default(),
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             scheduler: None,
             session: Some(session),
@@ -480,7 +480,7 @@ mod tests {
         });
         let client = SkillsClient::new(PlatformExtensionContext {
             extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
+            providers: Default::default(),
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             scheduler: None,
             session: Some(session),
@@ -530,7 +530,7 @@ mod tests {
     async fn test_load_skill_not_found_returns_error() {
         let client = SkillsClient::new(PlatformExtensionContext {
             extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
+            providers: Default::default(),
             session_manager: Arc::new(crate::session::SessionManager::instance()),
             scheduler: None,
             session: None,

@@ -178,7 +178,7 @@ impl Agent {
     }
 
     async fn handle_compact_command(&self, session_id: &str) -> Result<Option<Message>> {
-        let provider = self.provider().await?;
+        let provider = self.provider(session_id).await?;
         if provider.manages_own_context() {
             return Err(anyhow!(context_management_unsupported_message(
                 "compact",
@@ -220,7 +220,7 @@ impl Agent {
     async fn handle_clear_command(&self, session_id: &str) -> Result<Option<Message>> {
         use crate::conversation::Conversation;
 
-        let provider = self.provider().await?;
+        let provider = self.provider(session_id).await?;
         if provider.manages_own_context() {
             return Err(anyhow!(context_management_unsupported_message(
                 "clear",
@@ -259,7 +259,7 @@ impl Agent {
     }
 
     async fn handle_status_command(&self, session_id: &str) -> Result<Option<Message>> {
-        let provider = self.provider().await?;
+        let provider = self.provider(session_id).await?;
         let model_config = self.model_config_for_session(session_id).await?;
         let context_limit =
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)

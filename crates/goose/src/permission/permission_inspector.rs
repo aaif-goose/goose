@@ -1,9 +1,9 @@
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
-use crate::agents::types::SharedProvider;
 use crate::config::permission::PermissionLevel;
 use crate::config::{GooseMode, PermissionManager};
 use crate::conversation::message::{Message, ToolRequest};
 use crate::permission::permission_judge::{detect_read_only_requests, PermissionCheckResult};
+use crate::providers::manager::ProviderManager;
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use std::sync::{Arc, RwLock};
 /// Permission Inspector that handles tool permission checking
 pub struct PermissionInspector {
     pub permission_manager: Arc<PermissionManager>,
-    provider: SharedProvider,
+    providers: Arc<ProviderManager>,
     session_manager: Arc<crate::session::SessionManager>,
     readonly_tools: RwLock<HashSet<String>>,
 }
@@ -36,12 +36,12 @@ fn cache_non_readonly_decision(
 impl PermissionInspector {
     pub fn new(
         permission_manager: Arc<PermissionManager>,
-        provider: SharedProvider,
+        providers: Arc<ProviderManager>,
         session_manager: Arc<crate::session::SessionManager>,
     ) -> Self {
         Self {
             permission_manager,
-            provider,
+            providers,
             session_manager,
             readonly_tools: RwLock::new(HashSet::new()),
         }
@@ -228,7 +228,11 @@ impl ToolInspector for PermissionInspector {
 
         // LLM-based read-only detection for deferred SmartApprove candidates
         if !llm_detect_candidates.is_empty() {
-            let detected_request_ids: HashSet<String> = match self.provider.lock().await.clone() {
+            let provider = match self.session_manager.get_session(session_id, false).await {
+                Ok(session) => self.providers.provider_for(&session).await.ok(),
+                Err(_) => None,
+            };
+            let detected_request_ids: HashSet<String> = match provider {
                 Some(provider) => detect_read_only_requests(
                     provider,
                     &self.session_manager,
@@ -276,7 +280,6 @@ mod tests {
     use rmcp::object;
     use std::sync::Arc;
     use test_case::test_case;
-    use tokio::sync::Mutex;
 
     async fn inspect_tool(
         mode: GooseMode,
@@ -295,7 +298,7 @@ mod tests {
             tempfile::tempdir().unwrap().keep(),
         ));
         let inspector =
-            PermissionInspector::new(Arc::clone(&pm), Arc::new(Mutex::new(None)), session_manager);
+            PermissionInspector::new(Arc::clone(&pm), Default::default(), session_manager);
         if smart_approved {
             *inspector.readonly_tools.write().unwrap() = ["tool".to_string()].into_iter().collect();
         }

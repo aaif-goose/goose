@@ -835,9 +835,7 @@ mod tests {
     #[tokio::test]
     async fn callback_configs_exclude_tools_hidden_from_model() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
-            temp.path().join("manager"),
-        ));
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         manager
             .add_client(
                 ExtensionConfig::Builtin {
@@ -875,9 +873,7 @@ mod tests {
     #[tokio::test]
     async fn callback_uses_lease_and_applies_extension_mutation() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
-            temp.path().join("manager"),
-        ));
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         let session = manager
             .get_context()
             .session_manager
@@ -1167,9 +1163,7 @@ mod tests {
     #[tokio::test]
     async fn moim_uses_the_supplied_tool_snapshot() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
-            temp.path().join("manager"),
-        ));
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         let mut context = manager.get_context().clone();
         context.extension_manager = Some(Arc::downgrade(&manager));
         let client = CodeExecutionClient::new(context, ToolDisclosure::Catalog).unwrap();
@@ -1192,7 +1186,7 @@ mod tests {
         let client = CodeExecutionClient::new(
             PlatformExtensionContext {
                 extension_manager: None,
-                provider: Arc::new(tokio::sync::Mutex::new(None)),
+                providers: Default::default(),
                 session_manager: Arc::new(crate::session::SessionManager::new(
                     temp.path().join("sessions"),
                 )),

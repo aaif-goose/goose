@@ -104,14 +104,6 @@ pub(crate) async fn from_foreground_subagent_session(
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
     let extensions = EnabledExtensionsState::from_value(saved_extensions)?.extensions;
 
-    let provider = crate::providers::create_with_working_dir(
-        provider_name,
-        extensions.clone(),
-        session.working_dir.clone(),
-    )
-    .await?;
-    provider.apply_model_selection(model_config).await?;
-
     let mut config = AgentConfig::new(
         session_manager,
         PermissionManager::instance(),
@@ -123,7 +115,9 @@ pub(crate) async fn from_foreground_subagent_session(
     .with_use_login_shell_path(use_login_shell_path);
     config.is_subagent = true;
     let agent = Agent::with_config(config);
-    *agent.provider.lock().await = Some(provider);
+    agent
+        .switch_provider(session_id, provider_name, model_config.clone())
+        .await?;
     for extension in extensions {
         let name = extension.name();
         if let Err(e) = agent.add_extension_inner(extension, session_id).await {

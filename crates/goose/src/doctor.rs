@@ -150,7 +150,7 @@ async fn save_and_set(
     let config = Config::global();
     crate::config::set_active_provider(config, provider.get_name(), &model_config.model_name)?;
     agent
-        .update_provider(provider, model_config, session_id)
+        .switch_provider(session_id, provider.get_name(), model_config)
         .await
 }
 

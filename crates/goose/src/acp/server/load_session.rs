@@ -416,7 +416,7 @@ impl GooseAcpAgent {
         self.register_acp_session(session_id_str.clone(), agent.clone())
             .await;
         let provider = agent
-            .provider()
+            .provider(&session.id)
             .await
             .internal_err_ctx("Failed to get provider while loading ACP session")?;
         resume_saved_provider_session(&provider, session.conversation.as_ref()).await;
@@ -434,7 +434,7 @@ impl GooseAcpAgent {
         let (mode_state, config_options) = build_session_setup_config(
             &self.provider_inventory,
             &session,
-            &agent_thinking_effort_support(&agent).await,
+            &agent_thinking_effort_support(&agent, &session.id).await,
         )
         .await?;
 

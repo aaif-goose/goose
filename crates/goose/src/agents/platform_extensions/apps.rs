@@ -262,19 +262,6 @@ impl AppsManagerClient {
             .result_with_platform_notification(result, EXTENSION_NAME, event_type, params)
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let provider = self
-            .context
-            .provider
-            .lock()
-            .await
-            .as_ref()
-            .ok_or("Provider not available")?
-            .clone();
-
-        Ok(provider)
-    }
-
     async fn effective_model_config(
         &self,
         session_id: &str,
@@ -320,7 +307,7 @@ impl AppsManagerClient {
         session_id: &str,
         prd: &str,
     ) -> Result<CreateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let existing_apps = self.list_stored_apps().unwrap_or_default();
         let existing_names = existing_apps.join(", ");
@@ -371,7 +358,7 @@ impl AppsManagerClient {
         existing_prd: &str,
         feedback: &str,
     ) -> Result<UpdateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let context: HashMap<&str, &str> = HashMap::new();
         let system_prompt = render_template("apps_iterate.md", &context)
@@ -828,7 +815,7 @@ mod tests {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
                 extension_manager: None,
-                provider: Arc::new(tokio::sync::Mutex::new(None)),
+                providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
                 session: None,

@@ -34,6 +34,7 @@ impl GooseAcpAgent {
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")?;
+        agent.config.providers.release(&session.id);
         agent
             .restore_provider_from_session(&session)
             .await

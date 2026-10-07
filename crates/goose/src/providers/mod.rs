@@ -56,6 +56,7 @@ pub mod kimicode;
 pub mod litellm;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
+pub mod manager;
 pub mod muse_code_def;
 pub mod nanogpt;
 pub mod oauth;

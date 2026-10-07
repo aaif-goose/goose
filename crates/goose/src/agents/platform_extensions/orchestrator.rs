@@ -2,14 +2,11 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
-use crate::config::{Config, ExtensionConfig, GooseMode};
+use crate::config::{Config, GooseMode};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::execution::manager::AgentManager;
-use crate::providers;
-use crate::providers::base::Provider;
-use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::session_manager::{Session, SessionType};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -127,16 +124,6 @@ impl OrchestratorClient {
             .map_err(|e| format!("Failed to get agent manager: {}", e))
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        self.context
-            .provider
-            .lock()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| "Provider not available".to_string())
-    }
-
     async fn parent_model_config(
         &self,
         provider_name: &str,
@@ -150,11 +137,6 @@ impl OrchestratorClient {
             .map_err(|_| "Could not resolve model config: missing model".to_string())?;
         crate::model_config::model_config_from_user_config(provider_name, &model_name)
             .map_err(|e| format!("Could not resolve model config: {e}"))
-    }
-
-    fn parent_extensions(&self) -> Vec<ExtensionConfig> {
-        let extension_data = self.context.session.as_ref().map(|s| &s.extension_data);
-        EnabledExtensionsState::extensions_or_default(extension_data, Config::global())
     }
 
     async fn handle_list_sessions(
@@ -329,7 +311,7 @@ impl OrchestratorClient {
         session_id: &str,
         messages: &[Message],
     ) -> Result<String, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let conversation_text = agent_visible_session_messages(&Conversation::new_unvalidated(
             messages.iter().cloned(),
@@ -426,14 +408,10 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to create agent: {}", e))?;
 
-        let parent_provider = self.get_provider().await?;
-        let extensions = self.parent_extensions();
+        let parent_provider = self.context.provider_for_session(session_id).await?;
         let model_config = self.parent_model_config(parent_provider.get_name()).await?;
-        let provider = providers::create(parent_provider.get_name(), extensions)
-            .await
-            .map_err(|e| format!("Failed to create provider for new agent: {}", e))?;
         agent
-            .update_provider(provider, model_config, &session.id)
+            .switch_provider(&session.id, parent_provider.get_name(), model_config)
             .await
             .map_err(|e| format!("Failed to set provider on new agent: {}", e))?;
 
@@ -514,18 +492,14 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to get agent for session '{}': {}", session_id, e))?;
 
-        if agent.provider().await.is_err() {
-            if let Ok(parent_provider) = self.get_provider().await {
-                let extensions = self.parent_extensions();
+        if agent.provider(&session_id).await.is_err() {
+            if let Ok(parent_provider) = self.context.provider_for_session(parent_session_id).await
+            {
                 let model_config = self.parent_model_config(parent_provider.get_name()).await?;
-                if let Ok(provider) =
-                    providers::create(parent_provider.get_name(), extensions).await
-                {
-                    agent
-                        .update_provider(provider, model_config, &session_id)
-                        .await
-                        .map_err(|e| format!("Failed to set provider: {}", e))?;
-                }
+                agent
+                    .switch_provider(&session_id, parent_provider.get_name(), model_config)
+                    .await
+                    .map_err(|e| format!("Failed to set provider: {}", e))?;
             }
         }
 
@@ -759,7 +733,7 @@ mod tests {
     ) -> OrchestratorClient {
         OrchestratorClient::new(PlatformExtensionContext {
             extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
+            providers: Default::default(),
             session_manager,
             scheduler: None,
             session: session.map(Arc::new),
