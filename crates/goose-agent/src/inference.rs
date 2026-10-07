@@ -130,16 +130,17 @@ fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
 }
 
 fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
-    let renderable = message.content.iter().any(|content| {
-        matches!(
-            content,
-            MessageContent::Text(_)
-                | MessageContent::Image(_)
-                | MessageContent::ToolRequest(_)
-                | MessageContent::Thinking(_)
-                | MessageContent::Error(_)
-        )
-    });
+    let renderable = message.metadata.output_token_limit_reached
+        || message.content.iter().any(|content| {
+            matches!(
+                content,
+                MessageContent::Text(_)
+                    | MessageContent::Image(_)
+                    | MessageContent::ToolRequest(_)
+                    | MessageContent::Thinking(_)
+                    | MessageContent::Error(_)
+            )
+        });
     if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
         message.metadata.operation_logs = std::mem::take(logs);
     }
@@ -652,6 +653,21 @@ mod tests {
 
         assert_eq!(
             error.metadata.operation_logs,
+            ["ops_auto_effort: thinking high"]
+        );
+        assert!(logs.is_empty());
+    }
+
+    #[test]
+    fn operation_logs_attach_to_empty_output_limit_markers() {
+        let mut logs = vec!["ops_auto_effort: thinking high".to_string()];
+        let mut message = Message::assistant();
+        message.metadata.output_token_limit_reached = true;
+
+        attach_operation_logs(&mut message, &mut logs);
+
+        assert_eq!(
+            message.metadata.operation_logs,
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());
