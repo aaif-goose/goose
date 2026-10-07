@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
@@ -275,15 +274,6 @@ pub async fn inventory_identity(name: &str) -> Result<super::inventory::Inventor
 pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
     let entry = get_from_registry(name).await?;
     entry.create(extensions).await
-}
-
-pub async fn create_with_working_dir(
-    name: &str,
-    extensions: Vec<ExtensionConfig>,
-    working_dir: PathBuf,
-) -> Result<Arc<dyn Provider>> {
-    let entry = get_from_registry(name).await?;
-    entry.create_with_working_dir(extensions, working_dir).await
 }
 
 pub async fn create_with_default_model(

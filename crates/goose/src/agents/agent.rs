@@ -31,6 +31,7 @@ use crate::agents::final_output_tool::{
     FINAL_OUTPUT_TOOL_NAME,
 };
 use crate::agents::prompt_manager::PromptManager;
+use crate::agents::provider_manager::ProviderManager;
 use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -62,7 +63,6 @@ use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
-use crate::providers::manager::ProviderManager;
 use crate::recipe::Response;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
@@ -1015,7 +1015,7 @@ impl Agent {
             .session_manager
             .get_session(session_id, false)
             .await?;
-        crate::providers::manager::model_config_for(&session)
+        crate::agents::provider_manager::model_config_for(&session)
     }
 
     pub(super) async fn effective_model_config_for_session(
@@ -3851,7 +3851,7 @@ impl Agent {
     /// back.
     pub async fn restore_provider_from_session(&self, session: &Session) -> Result<bool> {
         let config = Config::global();
-        let provider_name = crate::providers::manager::provider_name_for(session)?;
+        let provider_name = crate::agents::provider_manager::provider_name_for(session)?;
 
         let mut model_config = match session.model_config.clone() {
             Some(saved_config) => crate::model_config::with_rederived_cache_ttl(saved_config)

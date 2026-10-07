@@ -3,11 +3,11 @@ use async_trait::async_trait;
 use chrono::Utc;
 use std::sync::{Arc, OnceLock};
 
+use crate::agents::provider_manager::ProviderManager;
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
-use crate::providers::manager::ProviderManager;
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use crate::utils::safe_truncate;
 
@@ -299,7 +299,7 @@ impl AdversaryInspector {
         )];
         let conversation = Conversation::new_unvalidated(check_messages);
 
-        let model_config = crate::providers::manager::model_config_for(&session)?;
+        let model_config = crate::agents::provider_manager::model_config_for(&session)?;
         let (response, _usage) = crate::session_context::with_session_id(
             Some(session_id.to_string()),
             provider.complete(&model_config, system_prompt, conversation.messages(), &[]),

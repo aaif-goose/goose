@@ -5,9 +5,9 @@ use anyhow::{anyhow, Result};
 use goose_providers::model::ModelConfig;
 use tracing::warn;
 
-use super::base::Provider;
-use super::provider_registry::ProviderEntry;
 use crate::config::Config;
+use crate::providers::base::Provider;
+use crate::providers::provider_registry::ProviderEntry;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::Session;
 
@@ -32,7 +32,7 @@ impl ProviderManager {
             return Ok(provider.clone());
         }
 
-        let entry = super::get_from_registry(&name).await?;
+        let entry = crate::providers::get_from_registry(&name).await?;
         if !entry.session_bound() {
             let provider = self.shared(&name, &entry).await?;
             *slot = None;

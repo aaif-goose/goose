@@ -130,16 +130,8 @@ mod tool_calls;
 mod tool_notifications;
 mod tools;
 
-pub type AcpProviderFactory = Arc<
-    dyn Fn(
-            String,
-            Vec<ExtensionConfig>,
-            Option<PathBuf>,
-            bool,
-        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
-        + Send
-        + Sync,
->;
+pub type AcpProviderFactory =
+    Arc<dyn Fn(String) -> BoxFuture<'static, Result<Arc<dyn Provider>>> + Send + Sync>;
 
 const ACP_VISIBLE_SESSION_TYPES: [SessionType; 3] =
     [SessionType::User, SessionType::Scheduled, SessionType::Acp];
@@ -1007,20 +999,8 @@ impl GooseAcpAgent {
         Ok(Config::global())
     }
 
-    async fn create_provider(
-        &self,
-        provider_name: &str,
-        extensions: Vec<ExtensionConfig>,
-        working_dir: Option<PathBuf>,
-        use_default_model: bool,
-    ) -> Result<Arc<dyn Provider>> {
-        (self.provider_factory)(
-            provider_name.to_string(),
-            extensions,
-            working_dir,
-            use_default_model,
-        )
-        .await
+    async fn create_provider(&self, provider_name: &str) -> Result<Arc<dyn Provider>> {
+        (self.provider_factory)(provider_name.to_string()).await
     }
 
     /// Warm the provider model-list cache after session creation.
@@ -3655,11 +3635,9 @@ print(\"hello, world\")
         let root = tempfile::tempdir().unwrap();
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |_provider_name, _extensions, _working_dir, _use_default_model| {
-                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
-            },
-        );
+        let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
+            Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+        });
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
@@ -3788,11 +3766,9 @@ print(\"hello, world\")
         let root = tempfile::tempdir().unwrap();
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |_provider_name, _extensions, _working_dir, _use_default_model| {
-                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
-            },
-        );
+        let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
+            Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+        });
         let server = Arc::new(
             GooseAcpAgent::new(GooseAcpAgentOptions {
                 provider_factory,

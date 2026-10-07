@@ -56,7 +56,6 @@ pub mod kimicode;
 pub mod litellm;
 #[cfg(feature = "local-inference")]
 pub mod local_inference;
-pub mod manager;
 pub mod muse_code_def;
 pub mod nanogpt;
 pub mod oauth;
@@ -102,7 +101,6 @@ pub mod xai_oauth;
 
 pub use init::{
     cleanup_provider, create, create_with_default_model, create_with_named_model,
-    create_with_working_dir, get_from_registry, inventory_identity, providers,
-    refresh_custom_providers,
+    get_from_registry, inventory_identity, providers, refresh_custom_providers,
 };
 pub use retry::{retry_operation, RetryConfig};
