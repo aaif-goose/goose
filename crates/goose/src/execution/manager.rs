@@ -297,12 +297,11 @@ impl AgentManager {
         if let Some(token) = self.cancel_tokens.write().await.remove(session_id) {
             token.cancel();
         }
+        let removed = self.sessions.write().await.pop(session_id);
         self.agent_config.providers.release(session_id);
-        let mut sessions = self.sessions.write().await;
-        if sessions.pop(session_id).is_none() {
+        if removed.is_none() {
             return Ok(());
         }
-        drop(sessions);
         self.prune_creation_lock(session_id).await;
         info!("Removed session {}", session_id);
         Ok(())
