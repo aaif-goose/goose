@@ -834,9 +834,7 @@ mod tests {
     #[tokio::test]
     async fn callback_configs_leave_delegate_to_direct_tool_calls() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = Arc::new(ExtensionManager::new_without_provider(
-            temp.path().join("manager"),
-        ));
+        let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         let session = manager
             .get_context()
             .session_manager

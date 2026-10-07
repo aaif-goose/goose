@@ -2,11 +2,12 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
-use crate::config::GooseMode;
+use crate::config::{Config, GooseMode};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::execution::manager::AgentManager;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::session_manager::{Session, SessionType};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -381,6 +382,20 @@ impl OrchestratorClient {
             .create_session(path, name.clone(), SessionType::User, mode)
             .await
             .map_err(|e| format!("Failed to create session: {}", e))?;
+        let mut extension_data = session.extension_data.clone();
+        EnabledExtensionsState::new(EnabledExtensionsState::extensions_or_default(
+            Some(&caller.extension_data),
+            Config::global(),
+        ))
+        .to_extension_data(&mut extension_data)
+        .map_err(|e| format!("Failed to copy extensions to new session: {}", e))?;
+        self.context
+            .session_manager
+            .update(&session.id)
+            .extension_data(extension_data)
+            .apply()
+            .await
+            .map_err(|e| format!("Failed to copy extensions to new session: {}", e))?;
 
         let manager = self.get_agent_manager().await?;
         let agent = manager
