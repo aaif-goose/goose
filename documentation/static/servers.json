@@ -426,6 +426,18 @@
     ]
   },
   {
+    "id": "looot",
+    "name": "looot",
+    "description": "Find, price and run 2,500+ data endpoints from 90+ providers (work email, enrichment, SEO, social, web) from one prepaid balance",
+    "url": "https://api.looot.ai/mcp",
+    "link": "https://github.com/loootai/looot-mcp",
+    "installation_notes": "Remote server. Goose opens a browser sign-in to looot (OAuth) the first time; no key to paste.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "memory",
     "name": "Memory",
     "description": "Built-in memory system for persistent context and information storage",
