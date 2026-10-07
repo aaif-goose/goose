@@ -2797,6 +2797,25 @@ impl Agent {
         let model_config = self
             .effective_model_config_for_session(&session_config.id)
             .await?;
+        let provider_name = provider.get_name().to_string();
+        if let Some(saved_provider_session_id) =
+            super::latest_provider_session_id(conversation.messages(), &provider_name)
+        {
+            if let Err(error) = provider.resume(saved_provider_session_id).await {
+                warn!(
+                    provider = provider_name,
+                    %error,
+                    "Could not resume provider session; continuing with a handoff"
+                );
+            }
+        }
+        if let Err(error) = provider.apply_model_selection(&model_config).await {
+            warn!(
+                provider = provider_name,
+                %error,
+                "Could not apply model selection before selecting automatic effort"
+            );
+        }
         if let Some(operation) = self
             .auto_effort_for_turn(provider.as_ref(), &model_config)
             .await
@@ -2858,17 +2877,6 @@ impl Agent {
             model_config
         };
         let provider_name = provider.get_name().to_string();
-        let saved_provider_session_id =
-            super::latest_provider_session_id(conversation.messages(), &provider_name);
-        if let Some(saved_provider_session_id) = saved_provider_session_id {
-            if let Err(error) = provider.resume(saved_provider_session_id).await {
-                warn!(
-                    provider = provider_name,
-                    %error,
-                    "Could not resume provider session; continuing with a handoff"
-                );
-            }
-        }
 
         let requested_model = model_config.model_name.clone();
         let resolved_model = provider
@@ -6031,10 +6039,37 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     struct LegacyAutoEffortProvider {
         model_configs: std::sync::Mutex<Vec<goose_providers::model::ModelConfig>>,
         refuse: AtomicBool,
+        resumed: AtomicBool,
     }
 
     #[async_trait::async_trait]
     impl crate::providers::base::Provider for LegacyAutoEffortProvider {
+        fn provider_session_id(&self) -> Option<String> {
+            Some("saved-provider-session".to_string())
+        }
+
+        async fn resume(&self, _session_id: &str) -> Result<(), ProviderError> {
+            self.resumed.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn thinking_effort_support(&self) -> ThinkingEffortSupport {
+            if !self.resumed.load(Ordering::SeqCst) {
+                return ThinkingEffortSupport::Unsupported;
+            }
+            ThinkingEffortSupport::Options(ThinkingEffortCapability {
+                option_id: "effort".to_string(),
+                values: ["low", "high"]
+                    .into_iter()
+                    .map(|value| ThinkingEffortOption {
+                        value: value.to_string(),
+                        label: value.to_string(),
+                    })
+                    .collect(),
+                current: Some("low".to_string()),
+            })
+        }
+
         async fn stream(
             &self,
             model_config: &goose_providers::model::ModelConfig,
@@ -6122,6 +6157,21 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let (agent, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        agent
+            .config
+            .session_manager
+            .add_message(
+                &session_id,
+                &Message::assistant()
+                    .with_text("prior provider response")
+                    .with_inference(InferenceMetadata {
+                        provider: provider.get_name().to_string(),
+                        requested_model: "mock-model".to_string(),
+                        resolved_model: None,
+                        provider_session_id: Some("saved-provider-session".to_string()),
+                    }),
+            )
+            .await?;
         let configured_effort = Config::global().get_goose_thinking_effort();
         let decision_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
             jev.uri(),
@@ -6158,6 +6208,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             let configs = provider.model_configs.lock().unwrap();
             assert_eq!(configs.len(), 1);
             assert_eq!(configs[0].thinking_effort(), Some(ThinkingEffort::High));
+            assert_eq!(
+                configs[0].request_param::<bool>(crate::acp::AUTOMATIC_EFFORT_PARAM),
+                Some(true)
+            );
         }
         let response = messages
             .iter()

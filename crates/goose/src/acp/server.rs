@@ -46,7 +46,7 @@ use crate::utils::sanitize_unicode_tags;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
-    ConfigOptionUpdate, ContentBlock, Cost, CurrentModeUpdate, DeleteSessionRequest,
+    ConfigOptionUpdate, ContentBlock, ContentChunk, Cost, CurrentModeUpdate, DeleteSessionRequest,
     DeleteSessionResponse, EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest,
     ForkSessionResponse, ImageContent, Implementation, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
@@ -1453,12 +1453,21 @@ impl GooseAcpAgent {
                 cx.send_notification(SessionNotification::new(session_id.clone(), update))?;
             }
             MessageContent::SystemNotification(notification) => {
-                send_status_message_update(
-                    cx,
-                    self.supports_goose_custom_notifications(),
-                    session_id.0.as_ref(),
-                    notification,
-                )?;
+                if let Some(chunk) =
+                    operation_log_chunk_for_system_notification(message, notification)
+                {
+                    cx.send_notification(SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::AgentMessageChunk(chunk),
+                    ))?;
+                } else {
+                    send_status_message_update(
+                        cx,
+                        self.supports_goose_custom_notifications(),
+                        session_id.0.as_ref(),
+                        notification,
+                    )?;
+                }
             }
             MessageContent::Error(error) => {
                 let chunk = content_chunk_for_message(
@@ -1709,6 +1718,19 @@ fn send_status_message_update(
         }
     }
     Ok(())
+}
+
+fn operation_log_chunk_for_system_notification(
+    message: &Message,
+    notification: &SystemNotificationContent,
+) -> Option<ContentChunk> {
+    if message.metadata.operation_logs.is_empty() {
+        return None;
+    }
+    Some(content_chunk_for_message(
+        message,
+        ContentBlock::Text(TextContent::new(notification.msg.clone())),
+    ))
 }
 
 fn send_progress_message_update(
@@ -2143,6 +2165,17 @@ impl GooseAcpAgent {
                     populate_output_token_limit_content(&mut message);
                     for content_item in &message.content {
                         if let Some(error) = prompt_error_from_message_content(content_item) {
+                            if !message.metadata.operation_logs.is_empty() {
+                                self.handle_message_content(
+                                    content_item,
+                                    &message,
+                                    acp_session_id,
+                                    &target,
+                                    &tool_requests,
+                                    cx,
+                                )
+                                .await?;
+                            }
                             return Err(error);
                         }
 
@@ -3494,6 +3527,40 @@ print(\"hello, world\")
         });
 
         assert!(prompt_error_from_message_content(&content).is_none());
+    }
+
+    #[test]
+    fn system_notification_with_operation_log_becomes_message_chunk() {
+        let notification = SystemNotificationContent {
+            notification_type: SystemNotificationType::InlineMessage,
+            msg: "Unable to continue".to_string(),
+            data: None,
+        };
+        let mut message = Message::assistant().with_id("terminal-notification");
+        message
+            .metadata
+            .operation_logs
+            .push("ops_auto_effort: thinking high".to_string());
+
+        let chunk = operation_log_chunk_for_system_notification(&message, &notification)
+            .expect("operation log should be forwarded in a message chunk");
+
+        assert!(matches!(
+            &chunk.content,
+            ContentBlock::Text(text) if text.text == "Unable to continue"
+        ));
+        assert_eq!(
+            chunk.meta.as_ref().and_then(|meta| meta.get("goose")),
+            Some(&serde_json::json!({
+                "created": message.created,
+                "messageId": "terminal-notification",
+                "operationLogs": ["ops_auto_effort: thinking high"],
+            }))
+        );
+        assert!(
+            operation_log_chunk_for_system_notification(&Message::assistant(), &notification)
+                .is_none()
+        );
     }
 
     fn make_session_with_usage(usage: TokenUsage, accumulated_usage: TokenUsage) -> Session {
