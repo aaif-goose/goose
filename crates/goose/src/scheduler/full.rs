@@ -861,7 +861,6 @@ async fn execute_job(
         session_manager,
         PermissionManager::instance(),
         None,
-        GooseMode::Auto,
         true,
         GoosePlatform::GooseCli,
     ));

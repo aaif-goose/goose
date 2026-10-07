@@ -3195,7 +3195,6 @@ mod tests {
             Arc::new(session_manager),
             Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
             None,
-            GooseMode::default(),
             // Disable background session naming so the test agent starts no
             // provider-dependent tasks.
             true,

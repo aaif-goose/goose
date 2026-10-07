@@ -65,7 +65,6 @@ pub(crate) async fn from_foreground_subagent_session(
         session_manager,
         PermissionManager::instance(),
         None,
-        session.goose_mode,
         true,
         GoosePlatform::GooseCli,
     )

@@ -152,7 +152,6 @@ pub struct AgentConfig {
     pub session_manager: Arc<SessionManager>,
     pub permission_manager: Arc<PermissionManager>,
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
-    pub goose_mode: GooseMode,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
     pub mcp_host_info: Option<GooseMcpHostInfo>,
@@ -169,7 +168,6 @@ impl AgentConfig {
         session_manager: Arc<SessionManager>,
         permission_manager: Arc<PermissionManager>,
         scheduler_service: Option<Arc<dyn SchedulerTrait>>,
-        goose_mode: GooseMode,
         disable_session_naming: bool,
         goose_platform: GoosePlatform,
     ) -> Self {
@@ -177,7 +175,6 @@ impl AgentConfig {
             session_manager,
             permission_manager,
             scheduler_service,
-            goose_mode,
             disable_session_naming,
             goose_platform,
             mcp_host_info: None,
@@ -278,7 +275,6 @@ impl Agent {
             Arc::new(SessionManager::instance()),
             PermissionManager::instance(),
             None,
-            config.get_goose_mode().unwrap_or_default(),
             config.get_goose_disable_session_naming().unwrap_or(false),
             GoosePlatform::GooseCli,
         ))
@@ -2290,7 +2286,6 @@ mod tests {
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
             None,
-            GooseMode::default(),
             true,
             GoosePlatform::GooseCli,
         ));
@@ -2408,7 +2403,6 @@ mod tests {
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(data_path)),
             None,
-            GooseMode::default(),
             false,
             GoosePlatform::GooseCli,
         ));
@@ -3294,7 +3288,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             session_manager.clone(),
             permission_manager,
             None,
-            GooseMode::Auto,
             true,
             GoosePlatform::GooseCli,
         );
@@ -3723,7 +3716,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(data_path)),
             None,
-            GooseMode::default(),
             false,
             GoosePlatform::GooseCli,
         ));

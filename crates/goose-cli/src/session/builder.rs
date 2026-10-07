@@ -689,8 +689,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         process::exit(1);
     }
 
-    let session_id =
-        resolve_session_id(&session_config, &session_manager, agent.config.goose_mode).await;
+    let session_id = resolve_session_id(
+        &session_config,
+        &session_manager,
+        config.get_goose_mode().unwrap_or_default(),
+    )
+    .await;
 
     if session_config.container.is_some() {
         session_manager
@@ -824,7 +828,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         });
 
     agent
-        .update_goose_mode(agent.config.goose_mode, &session_id)
+        .update_goose_mode(config.get_goose_mode().unwrap_or_default(), &session_id)
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to set session mode: {}", e));

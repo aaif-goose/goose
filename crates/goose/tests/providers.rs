@@ -260,7 +260,6 @@ impl ProviderFixture {
             session_manager.clone(),
             permission_manager,
             None,
-            mode,
             true,
             GoosePlatform::GooseCli,
         ));

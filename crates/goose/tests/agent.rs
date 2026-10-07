@@ -20,7 +20,7 @@ mod tests {
         use goose::agents::ExtensionConfig;
         use goose::agents::{AgentConfig, ScheduleTool};
         use goose::config::permission::PermissionManager;
-        use goose::config::GooseMode;
+
         use goose::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
         use goose::scheduler_trait::SchedulerTrait;
         use goose::session::{Session, SessionManager};
@@ -247,7 +247,6 @@ mod tests {
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
-                GooseMode::Auto,
                 false,
                 GoosePlatform::GooseCli,
             );
@@ -291,7 +290,6 @@ mod tests {
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
-                GooseMode::Auto,
                 false,
                 GoosePlatform::GooseCli,
             );
@@ -349,7 +347,6 @@ mod tests {
                 session_manager,
                 permission_manager,
                 Some(mock_scheduler),
-                GooseMode::Auto,
                 false,
                 GoosePlatform::GooseCli,
             );
@@ -727,7 +724,6 @@ mod tests {
                 Arc::clone(&session_manager),
                 Arc::new(PermissionManager::new(temp_dir.path().join("config"))),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -911,7 +907,6 @@ mod tests {
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
-                GooseMode::default(),
                 false,
                 GoosePlatform::GooseCli,
             );
@@ -1106,7 +1101,6 @@ mod tests {
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
-                GooseMode::Auto,
                 true, // disable session naming so it doesn't consume a provider call
                 GoosePlatform::GooseCli,
             );
@@ -1359,7 +1353,6 @@ mod tests {
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             );
@@ -1559,7 +1552,6 @@ mod tests {
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             );
@@ -1706,7 +1698,6 @@ mod tests {
                 session_manager,
                 PermissionManager::instance(),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             );
@@ -2083,7 +2074,6 @@ mod tests {
                 session_manager.clone(),
                 PermissionManager::instance(),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             );
@@ -2172,7 +2162,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::default(),
                 false,
                 GoosePlatform::GooseDesktop,
             )));
@@ -2442,7 +2431,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -2906,7 +2894,6 @@ mod tests {
                 session_manager.clone(),
                 Arc::new(PermissionManager::new(temp_dir.path().join("config"))),
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));

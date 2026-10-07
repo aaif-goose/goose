@@ -951,7 +951,6 @@ impl GooseAcpAgent {
             Arc::clone(&session_manager),
             Arc::clone(&permission_manager),
             options.scheduler,
-            Config::global().get_goose_mode().unwrap_or_default(),
             options.disable_session_naming,
             options.goose_platform.clone(),
         );
@@ -3788,7 +3787,6 @@ print(\"hello, world\")
             server.session_manager.clone(),
             server.permission_manager.clone(),
             None,
-            GooseMode::Auto,
             true,
             GoosePlatform::GooseCli,
         )));

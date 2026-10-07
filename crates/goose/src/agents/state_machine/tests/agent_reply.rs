@@ -58,7 +58,6 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
         session_manager,
         Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
         None,
-        GooseMode::Auto,
         true,
         GoosePlatform::GooseCli,
     ));
