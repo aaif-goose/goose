@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::Result;
 use rmcp::model::ElicitationAction;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::CalculatorExtension;
@@ -15,7 +14,6 @@ use crate::agents::extension_manager::{
     ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::prompt_manager::PromptManager;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
     ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
@@ -94,7 +92,6 @@ pub(super) struct TestPipeline {
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
     hook_manager: HookManager,
@@ -177,7 +174,6 @@ impl TestPipeline {
         let request_preparer = GooseInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
-            prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit: self.model_config.context_limit(),
         };
@@ -812,7 +808,6 @@ async fn build_test_pipeline(
         model_config,
         extension_manager,
         extension_lease: Arc::new(StdMutex::new(None)),
-        prompt_manager: TokioMutex::new(PromptManager::new()),
         tool_inspection_manager,
         permission_manager,
         hook_manager: HookManager::default(),

@@ -16,7 +16,6 @@ use super::tool_confirmation_coordinator::{
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
-use crate::agents::prompt_manager::PromptManager;
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
@@ -182,7 +181,6 @@ pub struct Agent {
     pub config: AgentConfig,
 
     pub extension_manager: Arc<ExtensionManager>,
-    pub(super) prompt_manager: Mutex<PromptManager>,
     tool_confirmation_coordinator: ToolConfirmationCoordinator,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
@@ -281,7 +279,6 @@ impl Agent {
                 capabilities,
                 use_login_shell_path,
             )),
-            prompt_manager: Mutex::new(PromptManager::new()),
             tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
                 permission_manager,
@@ -960,7 +957,6 @@ impl Agent {
         let request_preparer = GooseInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
-            prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit,
         };

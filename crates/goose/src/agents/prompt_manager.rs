@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
-use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+use crate::hints::{get_context_filenames, load_hint_files};
 use crate::session::Session;
 use crate::{
     config::{Config, GooseMode},
@@ -16,9 +16,7 @@ use crate::{
 use std::path::Path;
 
 pub struct PromptManager {
-    subdirectory_hints: IndexMap<String, String>,
     current_date_timestamp: String,
-    subdirectory_hint_tracker: SubdirectoryHintTracker,
 }
 
 impl Default for PromptManager {
@@ -152,8 +150,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             "You are a general-purpose AI agent called goose, created by Block".to_string()
         });
 
-        let mut system_prompt_extras = self.manager.subdirectory_hints.clone();
-        system_prompt_extras.extend(self.prompt_extras);
+        let mut system_prompt_extras = self.prompt_extras;
 
         // Add hints if provided
         if let Some(hints) = self.hints {
@@ -188,48 +185,25 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
 impl PromptManager {
     pub fn new() -> Self {
         PromptManager {
-            subdirectory_hints: IndexMap::new(),
             // Use the fixed current date time so that prompt cache can be used.
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
             current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
-            subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
         }
     }
 
     #[cfg(test)]
     pub fn with_timestamp(dt: DateTime<Utc>) -> Self {
         PromptManager {
-            subdirectory_hints: IndexMap::new(),
             current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
-            subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
         }
-    }
-
-    pub fn record_tool_arguments(
-        &mut self,
-        arguments: &Option<serde_json::Map<String, serde_json::Value>>,
-        working_dir: &Path,
-    ) {
-        self.subdirectory_hint_tracker
-            .record_tool_arguments(arguments, working_dir);
-    }
-
-    pub fn load_subdirectory_hints(&mut self, working_dir: &Path) -> bool {
-        let new_hints = self.subdirectory_hint_tracker.load_new_hints(working_dir);
-        let has_new = !new_hints.is_empty();
-        for (key, content) in new_hints {
-            self.subdirectory_hints.insert(key, content);
-        }
-        has_new
     }
 
     pub fn build_system_prompt(
-        &mut self,
+        &self,
         session: &Session,
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        self.load_subdirectory_hints(&session.working_dir);
         self.builder()
             .with_session(session)
             .with_prompt_extras(prompt_parts)
@@ -325,7 +299,7 @@ mod tests {
 
     #[test]
     fn composed_prompt_uses_contributions_instead_of_the_extension_catalog() {
-        let mut manager = PromptManager::new();
+        let manager = PromptManager::new();
         let working_dir = tempfile::tempdir().unwrap();
 
         let session = Session {

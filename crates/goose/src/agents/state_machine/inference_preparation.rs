@@ -13,12 +13,10 @@ use goose_agent::operation::{messages_since_kickoff, InferenceInput};
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::Conversation;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::Mutex;
 
 pub struct GooseInferenceRequestPreparer<'a> {
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    pub(crate) prompt_manager: &'a Mutex<PromptManager>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
     pub(crate) context_limit: usize,
 }
@@ -70,11 +68,8 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         }
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
-        let system_prompt = self.prompt_manager.lock().await.build_system_prompt(
-            session,
-            input.prompt_parts,
-            goose_mode,
-        );
+        let system_prompt =
+            PromptManager::new().build_system_prompt(session, input.prompt_parts, goose_mode);
         let turn = messages_since_kickoff(conversation)?;
         let turn_start = turn
             .first()
