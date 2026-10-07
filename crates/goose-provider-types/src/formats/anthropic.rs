@@ -263,6 +263,9 @@ fn thinking_type_with_mode(
     mode: Option<ThinkingMode>,
     reasoning: Option<bool>,
 ) -> ThinkingType {
+    if mode == Some(ThinkingMode::AdaptiveBetweenTools) && reasoning == Some(false) {
+        return ThinkingType::BetweenTools;
+    }
     if reasoning != Some(true) {
         return ThinkingType::Disabled;
     }
