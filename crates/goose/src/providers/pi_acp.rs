@@ -88,6 +88,7 @@ impl PiAcpProvider {
 
 impl ProviderDef for PiAcpProvider {
     type Provider = AcpProvider;
+    const SESSION_BOUND: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

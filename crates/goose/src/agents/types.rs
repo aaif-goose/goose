@@ -1,9 +1,4 @@
-use crate::providers::base::Provider;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub type SharedProvider = Arc<Mutex<Option<Arc<dyn Provider>>>>;
 
 /// Default timeout for retry operations (5 minutes)
 pub const DEFAULT_RETRY_TIMEOUT_SECONDS: u64 = 300;

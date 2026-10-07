@@ -92,7 +92,7 @@ impl GooseAcpAgent {
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent).await,
+                &super::agent_thinking_effort_support(&agent, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)

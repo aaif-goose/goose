@@ -910,9 +910,10 @@ async fn build_test_pipeline(
     } else {
         provider
     };
-    let shared_provider = Arc::new(TokioMutex::new(Some(provider.clone())));
+    let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
+    providers.set_provider(&session.id, provider.clone()).await;
     let extension_manager = Arc::new(ExtensionManager::new(
-        shared_provider.clone(),
+        providers.clone(),
         session_manager.clone(),
         scheduler
             .clone()
@@ -931,7 +932,7 @@ async fn build_test_pipeline(
     tool_inspection_manager.add_inspector(Box::new(SecurityInspector::enabled()));
     tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
         permission_manager.clone(),
-        shared_provider,
+        providers,
         session_manager.clone(),
     )));
     let model_config = session
