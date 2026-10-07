@@ -213,9 +213,6 @@ async fn both_loops_keep_recipe_continuations_within_the_turn_budget() -> Result
             .build()
             .expect("valid recipe");
         agent
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await?;
-        agent
             .config
             .session_manager
             .update(&session_id)
