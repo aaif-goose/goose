@@ -835,3 +835,135 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
 
     Ok(())
 }
+
+struct StalledCompactionProvider {
+    compaction_started: Arc<tokio::sync::Notify>,
+    context_exceeded: bool,
+}
+
+#[async_trait]
+impl Provider for StalledCompactionProvider {
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        _system_prompt: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        if messages.iter().any(|message| {
+            message
+                .as_concat_text()
+                .to_lowercase()
+                .contains("summarize")
+        }) {
+            self.compaction_started.notify_one();
+            std::future::pending::<()>().await;
+        }
+        if self.context_exceeded {
+            return Err(ProviderError::ContextLengthExceeded(
+                "Context limit exceeded".to_string(),
+            ));
+        }
+        Ok(stream_from_single_message(
+            Message::assistant().with_text("This is a mock response."),
+            ProviderUsage::new(
+                "mock-model".to_string(),
+                Usage::new(Some(10), Some(10), Some(20)),
+            ),
+        ))
+    }
+
+    fn get_name(&self) -> &str {
+        "stalled-compaction"
+    }
+}
+
+#[tokio::test]
+async fn legacy_stop_during_compaction_keeps_the_conversation() -> Result<()> {
+    for context_exceeded in [false, true] {
+        let temp_dir = TempDir::new()?;
+        let agent = Agent::new();
+        let session = setup_test_session(
+            &agent,
+            &temp_dir,
+            "stop-during-compaction",
+            vec![
+                Message::user().with_text("Hello"),
+                Message::assistant().with_text("Hi there"),
+            ],
+        )
+        .await?;
+        if !context_exceeded {
+            agent
+                .config
+                .session_manager
+                .update(&session.id)
+                .usage(Usage::new(Some(10_000_000), Some(0), Some(10_000_000)))
+                .apply()
+                .await?;
+        }
+        let compaction_started = Arc::new(tokio::sync::Notify::new());
+        let provider = Arc::new(StalledCompactionProvider {
+            compaction_started: compaction_started.clone(),
+            context_exceeded,
+        });
+        agent
+            .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+            .await?;
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let stream = agent
+            .reply(
+                Message::user().with_text("Tell me more"),
+                SessionConfig {
+                    id: session.id.clone(),
+                    schedule_id: None,
+                    max_turns: None,
+                    retry_config: None,
+                },
+                false,
+                Some(cancel.clone()),
+            )
+            .await?;
+        tokio::pin!(stream);
+        let mut history_replaced = false;
+        let read_to_end = async {
+            while let Some(event) = stream.next().await {
+                if matches!(event?, AgentEvent::HistoryReplaced(_)) {
+                    history_replaced = true;
+                }
+            }
+            anyhow::Ok(())
+        };
+        let cancel_once_compacting = async {
+            compaction_started.notified().await;
+            cancel.cancel();
+        };
+        let (read, ()) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            tokio::join!(read_to_end, cancel_once_compacting)
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!("stream did not end after cancel (context_exceeded: {context_exceeded})")
+        });
+        read?;
+
+        assert!(!history_replaced, "context_exceeded: {context_exceeded}");
+        let conversation = agent
+            .config
+            .session_manager
+            .get_session(&session.id, true)
+            .await?
+            .conversation
+            .unwrap_or_default();
+        assert!(
+            conversation
+                .messages()
+                .iter()
+                .any(|message| message.as_concat_text() == "Hi there" && message.is_agent_visible()),
+            "context_exceeded: {context_exceeded}"
+        );
+    }
+
+    Ok(())
+}

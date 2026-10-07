@@ -932,7 +932,7 @@ impl SummonClient {
             task_config,
             return_last_only: true,
             session_id: subagent_session.id,
-            cancellation_token: Some(cancellation_token),
+            cancellation_token: Some(cancellation_token.clone()),
             notification_tx: None,
         };
         let result =
@@ -949,16 +949,7 @@ impl SummonClient {
             serde_json::Value::String(subagent_session_id),
         );
 
-        match result {
-            Ok(text) => {
-                Ok(CallToolResult::success(vec![ContentBlock::text(text)]).with_meta(Some(meta)))
-            }
-            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "Delegation failed: {}",
-                e
-            ))])
-            .with_meta(Some(meta))),
-        }
+        Ok(delegate_result(result, cancellation_token.is_cancelled()).with_meta(Some(meta)))
     }
 
     async fn handle_foreground_delegate(
@@ -1618,6 +1609,21 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
     Ok(canonical)
 }
 
+fn delegate_result(result: Result<String>, cancelled: bool) -> CallToolResult {
+    if cancelled {
+        return CallToolResult::error(vec![ContentBlock::text(
+            "Subagent was cancelled before it finished.",
+        )]);
+    }
+    match result {
+        Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
+        Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
+            "Delegation failed: {}",
+            e
+        ))]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1897,6 +1903,31 @@ You review code."#;
                 .and_then(|value| value.as_str()),
             Some("sonnet")
         );
+    }
+
+    #[test]
+    fn test_delegate_result_reports_cancelled_subagent_as_error() {
+        let text_of = |result: &CallToolResult| {
+            result.content[0]
+                .as_text()
+                .map(|text| text.text.clone())
+                .unwrap()
+        };
+
+        let cancelled = delegate_result(Ok("No text content in last message".into()), true);
+        assert_eq!(cancelled.is_error, Some(true));
+        assert_eq!(
+            text_of(&cancelled),
+            "Subagent was cancelled before it finished."
+        );
+
+        let finished = delegate_result(Ok("done".into()), false);
+        assert_eq!(finished.is_error, Some(false));
+        assert_eq!(text_of(&finished), "done");
+
+        let failed = delegate_result(Err(anyhow::anyhow!("boom")), false);
+        assert_eq!(failed.is_error, Some(true));
+        assert_eq!(text_of(&failed), "Delegation failed: boom");
     }
 
     #[test]

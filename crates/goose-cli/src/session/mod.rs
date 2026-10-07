@@ -1390,25 +1390,27 @@ impl CliSession {
                                     )
                                     .await?;
                                 if cancelled_by_user {
-                                    let mut response_message = Message::user();
-                                    response_message.content.push(MessageContent::tool_response(
-                                        confirmation_request.id,
-                                        Err(ErrorData {
-                                            code: ErrorCode::INVALID_REQUEST,
-                                            message: std::borrow::Cow::from(
-                                                "Tool call cancelled by user",
-                                            ),
-                                            data: None,
-                                        }),
-                                    ));
-                                    self.agent
-                                        .config
-                                        .session_manager
-                                        .add_message(&self.session_id, &response_message)
-                                        .await?;
-                                    self.messages.push(response_message);
                                     cancel_token_clone.cancel();
-                                    drop(stream);
+                                    drain_stopped_run(&mut stream, &mut self.messages).await;
+                                    if !has_tool_response(&self.messages, &confirmation_request.id) {
+                                        let mut response_message = Message::user();
+                                        response_message.content.push(MessageContent::tool_response(
+                                            confirmation_request.id,
+                                            Err(ErrorData {
+                                                code: ErrorCode::INVALID_REQUEST,
+                                                message: std::borrow::Cow::from(
+                                                    "Tool call cancelled by user",
+                                                ),
+                                                data: None,
+                                            }),
+                                        ));
+                                        self.agent
+                                            .config
+                                            .session_manager
+                                            .add_message(&self.session_id, &response_message)
+                                            .await?;
+                                        self.messages.push(response_message);
+                                    }
                                     break;
                                 }
                             } else if let Some((elicitation_id, elicitation_message, schema)) = find_elicitation_request(&message) {
@@ -1457,14 +1459,14 @@ impl CliSession {
                                         let _ = self.agent.reply(response_message, session_config.clone(), goose::agents::state_machine::enabled(), Some(cancel_token.clone())).await?;
                                         if should_cancel {
                                             cancel_token_clone.cancel();
-                                            drop(stream);
+                                            drain_stopped_run(&mut stream, &mut self.messages).await;
                                             break;
                                         }
                                     }
                                     Err(e) => {
                                         output::render_error(&format!("Failed to collect input: {}", e));
                                         cancel_token_clone.cancel();
-                                        drop(stream);
+                                        drain_stopped_run(&mut stream, &mut self.messages).await;
                                         break;
                                     }
                                 }
@@ -1529,6 +1531,7 @@ impl CliSession {
                     }
                 }
                 _ = cancel_token_clone.cancelled() => {
+                    drain_stopped_run(&mut stream, &mut self.messages).await;
                     drop(stream);
                     if let Err(e) = self.handle_interrupted_messages(true).await {
                         eprintln!("Error handling interruption: {}", e);
@@ -2049,6 +2052,42 @@ async fn create_successor_session(
     builder.apply().await?;
 
     Ok(new_session.id)
+}
+
+async fn drain_stopped_run(
+    stream: &mut (impl futures::Stream<Item = Result<AgentEvent>> + Unpin),
+    messages: &mut Conversation,
+) {
+    use futures::StreamExt;
+    let interrupted_again = ctrl_c();
+    tokio::pin!(interrupted_again);
+    loop {
+        let event = tokio::select! {
+            event = stream.next() => event,
+            Ok(()) = &mut interrupted_again => return,
+        };
+        let Some(event) = event else {
+            return;
+        };
+        match event {
+            Ok(AgentEvent::Message(message))
+                if find_tool_confirmation(&message).is_none()
+                    && find_elicitation_request(&message).is_none() =>
+            {
+                messages.push(message);
+            }
+            Ok(AgentEvent::HistoryReplaced(conversation)) => *messages = conversation,
+            _ => {}
+        }
+    }
+}
+
+fn has_tool_response(messages: &Conversation, request_id: &str) -> bool {
+    messages.iter().any(|message| {
+        message.content.iter().any(
+            |content| matches!(content, MessageContent::ToolResponse(response) if response.id == request_id),
+        )
+    })
 }
 
 fn message_has_text(message: &Message) -> bool {

@@ -175,16 +175,23 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        let result = match compact_messages(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            conversation,
-            true,
-        )
-        .instrument(span.clone())
-        .await
-        {
+        let Some(compaction) = emit
+            .cancel_token()
+            .run_until_cancelled(
+                compact_messages(
+                    self.provider.as_ref(),
+                    &self.model_config,
+                    &session.id,
+                    conversation,
+                    true,
+                )
+                .instrument(span.clone()),
+            )
+            .await
+        else {
+            return not_applicable();
+        };
+        let result = match compaction {
             Ok(result) => result,
             Err(error) => {
                 span.record("error.type", "compaction_error");
@@ -310,16 +317,23 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        match compact_messages(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            conversation,
-            false,
-        )
-        .instrument(span.clone())
-        .await
-        {
+        let Some(compaction) = emit
+            .cancel_token()
+            .run_until_cancelled(
+                compact_messages(
+                    self.provider.as_ref(),
+                    &self.model_config,
+                    &session.id,
+                    conversation,
+                    false,
+                )
+                .instrument(span.clone()),
+            )
+            .await
+        else {
+            return not_applicable();
+        };
+        match compaction {
             Ok(result) => {
                 let compacted = result.conversation;
                 let usage = result.usage;

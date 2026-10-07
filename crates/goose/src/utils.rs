@@ -66,6 +66,16 @@ pub fn is_token_cancelled(cancellation_token: &Option<CancellationToken>) -> boo
         .is_some_and(|t| t.is_cancelled())
 }
 
+pub async fn run_unless_cancelled<F: std::future::Future>(
+    cancellation_token: &Option<CancellationToken>,
+    future: F,
+) -> Option<F::Output> {
+    match cancellation_token {
+        Some(token) => token.run_until_cancelled(future).await,
+        None => Some(future.await),
+    }
+}
+
 pub fn split_command_args(input: &str) -> anyhow::Result<Vec<String>> {
     let mut parts = Vec::new();
     let mut current = String::new();

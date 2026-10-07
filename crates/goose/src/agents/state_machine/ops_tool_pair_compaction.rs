@@ -51,7 +51,7 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
         &self,
         session: &Session,
         conversation: &Conversation,
-        _emit: &Emitter,
+        emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         if !self.enabled {
             return not_applicable();
@@ -123,16 +123,23 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
                 &session.id,
                 "tool_pair_compaction",
             );
-            let summary = match summarize_tool_call(
-                self.provider.as_ref(),
-                &self.model_config,
-                &session.id,
-                conversation,
-                &tool_id,
-            )
-            .instrument(span.clone())
-            .await
-            {
+            let Some(summary) = emit
+                .cancel_token()
+                .run_until_cancelled(
+                    summarize_tool_call(
+                        self.provider.as_ref(),
+                        &self.model_config,
+                        &session.id,
+                        conversation,
+                        &tool_id,
+                    )
+                    .instrument(span.clone()),
+                )
+                .await
+            else {
+                break;
+            };
+            let summary = match summary {
                 Ok(summary) => summary,
                 Err(e) => {
                     span.record("error.type", "tool_pair_compaction_error");

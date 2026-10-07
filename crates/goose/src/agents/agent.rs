@@ -72,7 +72,7 @@ use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
-use crate::utils::is_token_cancelled;
+use crate::utils::{is_token_cancelled, run_unless_cancelled};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -2526,15 +2526,22 @@ impl Agent {
                 );
 
                 let compact_model_config = self.model_config_for_session(&session_config.id).await?;
-                match compact_messages(
-                    self.provider().await?.as_ref(),
-                    &compact_model_config,
-                    &session_config.id,
-                    &conversation_to_compact,
-                    false,
+                let provider = self.provider().await?;
+                let Some(compaction) = run_unless_cancelled(
+                    &cancel_token,
+                    compact_messages(
+                        provider.as_ref(),
+                        &compact_model_config,
+                        &session_config.id,
+                        &conversation_to_compact,
+                        false,
+                    ),
                 )
                 .await
-                {
+                else {
+                    return;
+                };
+                match compaction {
                     Ok(compaction) => {
                         let compacted_conversation = compaction.conversation;
                         session_manager.replace_conversation(&session_config.id, &compacted_conversation).await?;
@@ -3322,15 +3329,22 @@ impl Agent {
                                 )
                             );
 
-                            match compact_messages(
-                                self.provider().await?.as_ref(),
-                                &model_config,
-                                &session_config.id,
-                                &conversation,
-                                false,
+                            let provider = self.provider().await?;
+                            let Some(compaction) = run_unless_cancelled(
+                                &cancel_token,
+                                compact_messages(
+                                    provider.as_ref(),
+                                    &model_config,
+                                    &session_config.id,
+                                    &conversation,
+                                    false,
+                                ),
                             )
                             .await
-                            {
+                            else {
+                                break;
+                            };
+                            match compaction {
                                 Ok(compaction) => {
                                     session_manager.replace_conversation(&session_config.id, &compaction.conversation).await?;
                                     self.update_session_metrics(&session_config.id, session_config.schedule_id.clone(), &compaction.usage, Some(compaction.retained_context_tokens)).await?;
@@ -3666,7 +3680,7 @@ impl Agent {
                     exit_chat = false;
                 }
 
-                if exit_chat {
+                if exit_chat && !is_token_cancelled(&cancel_token) {
                     match self
                         .emit_stop_hook_blocking(&session_config.id, &last_assistant_text, &session.working_dir.to_string_lossy())
                         .await
@@ -3715,7 +3729,7 @@ impl Agent {
             gen_ai_telemetry::record_usage(&tracing::Span::current(), &turn_total_usage);
             gen_ai_telemetry::record_usage(&reply_span, &turn_total_usage);
 
-            if !stop_hook_handled_for_exit {
+            if !stop_hook_handled_for_exit && !is_token_cancelled(&cancel_token) {
                 self.emit_stop_hook(&session_config.id, &last_assistant_text, &session.working_dir.to_string_lossy()).await;
             }
             drop(inference_lease);
@@ -6131,6 +6145,45 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             "non-consecutive Stop hook blocks should not trip the cap warning"
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stop_hook_does_not_run_for_a_cancelled_legacy_turn() -> Result<()> {
+        let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT)?;
+        let (agent, session_id, _provider) = create_stop_hook_test_agent(&env, 1).await?;
+
+        for cancel_before_start in [true, false] {
+            let cancel_token = CancellationToken::new();
+            if cancel_before_start {
+                cancel_token.cancel();
+            }
+            let session_config = SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(10),
+                retry_config: None,
+            };
+
+            let mut stream = agent
+                .reply(
+                    Message::user().with_text("hello"),
+                    session_config,
+                    false,
+                    Some(cancel_token.clone()),
+                )
+                .await?;
+            while let Some(event) = stream.next().await {
+                if let AgentEvent::Message(_) = event? {
+                    cancel_token.cancel();
+                }
+            }
+        }
+
+        assert!(
+            env.stop_payload().is_err(),
+            "the Stop hook should not run when the turn was cancelled"
+        );
         Ok(())
     }
 

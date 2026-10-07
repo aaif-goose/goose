@@ -3,8 +3,8 @@ use goose_providers::conversation::token_usage::{ProviderUsage, Usage as Provide
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
-use super::dummy_api::ProviderFeatures;
-use super::pipeline::{self, test_pipeline, MessageKind::Agent};
+use super::dummy_api::{ProviderFeatures, ResponseGate};
+use super::pipeline::{self, test_pipeline, MessageKind::Agent, TestPipeline, TestRun};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
@@ -13,6 +13,23 @@ use crate::conversation::Conversation;
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
+
+async fn run_cancelled_while_held(
+    pipeline: &TestPipeline,
+    message: &str,
+    gate: ResponseGate,
+) -> Result<TestRun> {
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let run = pipeline.run_with_cancel(message, cancel.clone());
+    tokio::pin!(run);
+    tokio::select! {
+        () = gate.entered() => cancel.cancel(),
+        result = &mut run => panic!("run ended before the held request: {:?}", result.err()),
+    }
+    let stopped = tokio::time::timeout(std::time::Duration::from_secs(10), run).await;
+    gate.release();
+    stopped.expect("run waited for the held request after cancel")
+}
 
 #[tokio::test]
 async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
@@ -498,6 +515,101 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
         .agent_visible_messages()
         .iter()
         .any(|message| message.as_concat_text().contains(&large_result)));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_during_compaction_keeps_the_conversation() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("fill the context").reply("filled");
+    pipeline.run(["fill the context"]).await?;
+    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i32;
+
+    for message in ["continue", "/compact"] {
+        let total_tokens = if message == "/compact" {
+            100
+        } else {
+            filled_usage
+        };
+        pipeline.set_total_tokens(total_tokens).await;
+        let calls_before = api.call_count();
+        let gate = api.on(SUMMARIZE_HISTORY).hold_reply("summary");
+
+        let stopped = run_cancelled_while_held(&pipeline, message, gate).await?;
+
+        assert_eq!(api.call_count(), calls_before + 1, "{message}");
+        assert_eq!(stopped.history_replacements(), 0, "{message}");
+        assert!(
+            stopped
+                .conversation()
+                .messages()
+                .iter()
+                .any(|message| message.as_concat_text() == "filled" && message.is_agent_visible()),
+            "{message}"
+        );
+        assert!(
+            !stopped
+                .conversation()
+                .messages()
+                .iter()
+                .any(|message| message.as_concat_text().contains("Compaction complete")),
+            "{message}"
+        );
+    }
+
+    pipeline.set_total_tokens(filled_usage).await;
+    api.on("Your context was compacted")
+        .reply("continued after compaction");
+    let resumed = pipeline.run(["continue again"]).await?;
+    assert_eq!(resumed.history_replacements(), 1);
+    resumed.assert_message(-1, Agent, "continued after compaction");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_during_tool_pair_compaction_keeps_the_pairs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let cutoff = compute_tool_call_cutoff(pipeline.context_limit(), pipeline::COMPACTION_THRESHOLD);
+    let boundary = cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE;
+
+    api.on("do a lot of work").call(ADD, value(1));
+    api.on("result:").call(ADD, value(1));
+    api.on(format!("result: {}", boundary - 1))
+        .reply("first batch done");
+    api.on("reach the boundary").call(ADD, value(1));
+    api.on(format!("result: {boundary}"))
+        .reply("at the boundary");
+    api.on("cross the boundary").call(ADD, value(1));
+    api.on(format!("result: {}", boundary + 1))
+        .reply("all work done");
+    pipeline
+        .run([
+            "do a lot of work",
+            "reach the boundary",
+            "cross the boundary",
+        ])
+        .await?;
+
+    let calls_before = api.call_count();
+    let gate = api
+        .on_system(SUMMARIZE_TOOL_PAIR)
+        .hold_reply("summary of the pair");
+    let stopped = run_cancelled_while_held(&pipeline, "carry on", gate).await?;
+
+    assert_eq!(api.call_count(), calls_before + 1);
+    let messages = stopped.conversation().messages();
+    assert!(!messages
+        .iter()
+        .any(|message| message.as_concat_text() == "summary of the pair"));
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| message.is_agent_visible() && message.is_tool_call())
+            .count(),
+        boundary + 1
+    );
 
     Ok(())
 }
