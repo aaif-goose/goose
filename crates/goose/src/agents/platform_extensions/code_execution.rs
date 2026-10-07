@@ -1,6 +1,6 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
-    get_tool_owner, get_tool_resource_uri, CallRequest, ExtensionLease,
+    get_tool_owner, get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
 };
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::reply_parts::is_tool_visible_to_model;
@@ -80,7 +80,10 @@ impl CodeExecutionClient {
     fn callback_configs(tools: Vec<McpTool>) -> Vec<CallbackConfig> {
         let mut cfgs = vec![];
         for tool in tools {
-            if get_tool_resource_uri(&tool).is_some() || !is_tool_visible_to_model(&tool) {
+            if get_tool_resource_uri(&tool).is_some()
+                || !is_tool_visible_to_model(&tool)
+                || is_summon_delegate(&tool)
+            {
                 continue;
             }
 
@@ -280,6 +283,10 @@ impl CodeExecutionClient {
 
         Ok(vec![ContentBlock::text(output.markdown())])
     }
+}
+
+fn is_summon_delegate(tool: &McpTool) -> bool {
+    tool.name == "delegate" && is_tool_owned_by_extension(tool, super::summon::EXTENSION_NAME)
 }
 
 fn execution_timeout() -> Duration {
@@ -822,6 +829,51 @@ mod tests {
         assert!(names.contains(&"model_visible"));
         assert!(names.contains(&"ordinary"));
         assert!(configs.iter().all(|config| config.output_schema.is_none()));
+    }
+
+    #[tokio::test]
+    async fn callback_configs_leave_delegate_to_direct_tool_calls() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::new_without_provider(
+            temp.path().join("manager"),
+        ));
+        let session = manager
+            .get_context()
+            .session_manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "code-mode-delegate".to_string(),
+                crate::session::session_manager::SessionType::Hidden,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_extension(
+                ExtensionConfig::Platform {
+                    name: super::super::summon::EXTENSION_NAME.to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
+                Some(session.working_dir.clone()),
+                None,
+                Some(&session.id),
+            )
+            .await
+            .unwrap();
+
+        let lease = manager.current_lease(&session.id, None).await;
+        let configs =
+            CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
+        let names = configs
+            .iter()
+            .map(|config| config.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"load"));
+        assert!(!names.contains(&"delegate"));
     }
 
     #[tokio::test]
