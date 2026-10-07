@@ -7,7 +7,7 @@ import { Events } from "discord.js";
 import { registerCommands } from "./.discraft/commands/index";
 import { registerEvents } from "./.discraft/events/index";
 import client from "./clients/discord";
-import { logger } from "./utils/logger";
+import { errorDetails, logger } from "./utils/logger";
 
 logger.start("Starting bot...");
 
@@ -17,8 +17,7 @@ registerEvents(client)
     logger.verbose("Events registered in main process.");
   })
   .catch((err) => {
-    logger.error("Error registering events.");
-    logger.verbose(err);
+    logger.error("Error registering events", errorDetails(err));
   })
   .finally(() => {
     client.on(Events.ClientReady, async () => {
@@ -26,26 +25,23 @@ registerEvents(client)
       try {
         await registerCommands(client);
       } catch (err) {
-        logger.error("Error registering commands.");
-        logger.verbose(err);
+        logger.error("Error registering commands", errorDetails(err));
       }
     });
     client.login(process.env.DISCORD_TOKEN).catch((err) => {
       logger.error(
         "Client login failed, make sure your token is set correctly.",
+        errorDetails(err),
       );
-      logger.verbose(err);
     });
   });
 
 process.on("uncaughtException", (err) => {
-  logger.error("Uncaught exception.");
-  logger.verbose(err);
+  logger.error("Uncaught exception", errorDetails(err));
 });
 
 process.on("unhandledRejection", (err) => {
-  logger.error("Unhandled rejection.");
-  logger.verbose(err);
+  logger.error("Unhandled rejection", errorDetails(err));
 });
 
 process.on("SIGINT", async () => {
@@ -55,8 +51,7 @@ process.on("SIGINT", async () => {
     await client.destroy();
     logger.success("Client closed.");
   } catch (err) {
-    logger.error("Error while shutting down client.");
-    logger.verbose(err);
+    logger.error("Error while shutting down client", errorDetails(err));
   }
   logger.info("Exiting...");
   process.exit(0);
