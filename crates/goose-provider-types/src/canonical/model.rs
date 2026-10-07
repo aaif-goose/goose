@@ -105,6 +105,8 @@ pub enum ThinkingMode {
     Enabled,
     Adaptive,
     AlwaysOnAdaptive,
+    /// Rejects `disabled`; `between_tools` is the lowest setting and turns off up-front thinking.
+    AdaptiveBetweenTools,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

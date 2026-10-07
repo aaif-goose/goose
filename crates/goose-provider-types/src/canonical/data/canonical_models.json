@@ -28208,6 +28208,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "adaptive_between_tools",
     "tool_call": true,
     "temperature": false,
     "knowledge": "2026-06",

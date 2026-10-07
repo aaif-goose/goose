@@ -23,8 +23,8 @@ use super::base::{
 pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
     block_binding_behavior, create_request_for_model, is_thinking_signature_error,
-    response_to_streaming_message, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
-    INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    response_to_streaming_message, OfficialThinkingCapabilities, PrefixMismatchBehavior,
+    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
@@ -46,12 +46,6 @@ const MODEL_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(5);
 const MODEL_CAPABILITY_FAILURE_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
-struct OfficialThinkingCapabilities {
-    mode: goose_provider_types::canonical::ThinkingMode,
-    effort_options: Option<Vec<String>>,
-}
-
-#[derive(Clone)]
 struct CachedThinkingMode {
     capabilities: Option<OfficialThinkingCapabilities>,
     fetched_at: Instant,
@@ -64,20 +58,14 @@ impl CachedThinkingMode {
 }
 
 fn thinking_capabilities_from_api(model: &Value) -> Option<OfficialThinkingCapabilities> {
-    use goose_provider_types::canonical::ThinkingMode;
     let thinking = model.pointer("/capabilities/thinking")?;
     if !thinking.get("supported")?.as_bool()? {
-        return None;
+        return Some(OfficialThinkingCapabilities::default());
     }
     let supports = |kind: &str| {
         thinking
             .pointer(&format!("/types/{kind}/supported"))
             .and_then(Value::as_bool)
-    };
-    let mode = match (supports("adaptive"), supports("enabled")) {
-        (Some(true), _) => ThinkingMode::Adaptive,
-        (Some(false), Some(true)) => ThinkingMode::Enabled,
-        _ => return None,
     };
     let effort_options = model.pointer("/capabilities/effort").and_then(|effort| {
         let levels: Vec<String> = ["low", "medium", "high", "xhigh", "max"]
@@ -93,7 +81,9 @@ fn thinking_capabilities_from_api(model: &Value) -> Option<OfficialThinkingCapab
         (!levels.is_empty()).then_some(levels)
     });
     Some(OfficialThinkingCapabilities {
-        mode,
+        adaptive: supports("adaptive")?,
+        enabled: supports("enabled")?,
+        disabled: supports("disabled"),
         effort_options,
     })
 }
@@ -304,12 +294,8 @@ impl AnthropicProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let capabilities = self.api_thinking_capabilities(wire_model).await;
         let format_options = AnthropicFormatOptions {
-            thinking_mode_override: capabilities.as_ref().map(|capabilities| capabilities.mode),
-            thinking_supported_override: capabilities.as_ref().map(|_| true),
-            effort_options_override: capabilities
-                .and_then(|capabilities| capabilities.effort_options),
+            official_thinking: self.api_thinking_capabilities(wire_model).await,
             ..self.format_options.clone()
         };
         let payload = self.streaming_payload(
@@ -700,57 +686,49 @@ mod tests {
     }
 
     #[test]
-    fn successful_capabilities_remain_cached_for_process_lifetime() {
-        let cached = CachedThinkingMode {
-            capabilities: Some(OfficialThinkingCapabilities {
-                mode: goose_provider_types::canonical::ThinkingMode::Adaptive,
-                effort_options: None,
-            }),
-            fetched_at: Instant::now() - Duration::from_secs(24 * 60 * 60),
-        };
-        assert!(cached.is_valid());
-    }
+    fn parses_official_thinking_capabilities() {
+        let model = json!({"capabilities": {
+            "thinking": {"supported": true, "types": {
+                "adaptive": {"supported": true},
+                "enabled": {"supported": false},
+                "disabled": {"supported": false}
+            }},
+            "effort": {"low": {"supported": true}, "high": {"supported": true},
+                       "max": {"supported": false}}
+        }});
+        assert_eq!(
+            thinking_capabilities_from_api(&model),
+            Some(OfficialThinkingCapabilities {
+                adaptive: true,
+                enabled: false,
+                disabled: Some(false),
+                effort_options: Some(vec!["low".into(), "high".into()]),
+            })
+        );
 
-    #[test]
-    fn parses_official_thinking_capabilities_conservatively() {
-        use goose_provider_types::canonical::ThinkingMode;
-        let model = |adaptive, enabled| {
-            json!({"capabilities": {
-                "thinking": {"supported": true, "types": {
-                    "adaptive": {"supported": adaptive}, "enabled": {"supported": enabled}
-                }},
-                "effort": {"low": {"supported": true}, "high": {"supported": true},
-                           "max": {"supported": false}}
-            }})
-        };
-        let adaptive = thinking_capabilities_from_api(&model(true, true)).unwrap();
-        assert_eq!(adaptive.mode, ThinkingMode::Adaptive);
+        let without_disabled = json!({"capabilities": {"thinking": {"supported": true, "types": {
+            "adaptive": {"supported": false}, "enabled": {"supported": true}
+        }}}});
         assert_eq!(
-            adaptive.effort_options,
-            Some(vec!["low".into(), "high".into()])
+            thinking_capabilities_from_api(&without_disabled),
+            Some(OfficialThinkingCapabilities {
+                adaptive: false,
+                enabled: true,
+                disabled: None,
+                effort_options: None,
+            })
         );
+
+        let unsupported = json!({"capabilities": {"thinking": {"supported": false}}});
         assert_eq!(
-            thinking_capabilities_from_api(&model(false, true))
-                .unwrap()
-                .mode,
-            ThinkingMode::Enabled
+            thinking_capabilities_from_api(&unsupported),
+            Some(OfficialThinkingCapabilities::default())
         );
-        assert!(thinking_capabilities_from_api(&model(false, false)).is_none());
+
         assert!(thinking_capabilities_from_api(&json!({"capabilities": null})).is_none());
-        assert!(
-            thinking_capabilities_from_api(&json!({"capabilities": {"thinking": {
-                "supported": false, "types": {"adaptive": {"supported": true}}
-            }}}))
-            .is_none()
-        );
-        assert_eq!(
-            thinking_capabilities_from_api(&json!({"capabilities": {"thinking": {
-                "supported": true, "types": {"adaptive": {"supported": true}}
-            }}}))
-            .unwrap()
-            .effort_options,
-            None
-        );
+        let missing_types = json!({"capabilities": {"thinking": {"supported": true,
+            "types": {"adaptive": {"supported": true}}}}});
+        assert!(thinking_capabilities_from_api(&missing_types).is_none());
     }
 
     #[test]

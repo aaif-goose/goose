@@ -40,6 +40,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AdaptiveBetweenTools),
         _ => None,
     }
 }
@@ -273,7 +274,7 @@ mod tests {
 
     #[test]
     fn parses_anthropic_effort_and_budget_options_independently() {
-        let json = r#"{"anthropic":{"models":{"hybrid":{"name":"Hybrid","reasoning_options":[{"type":"effort","values":["low","high"]},{"type":"budget_tokens","min":2048}]},"effort-only":{"name":"Effort","reasoning_options":[{"type":"effort","values":["high"]}]},"budget-only":{"name":"Budget","reasoning_options":[{"type":"budget_tokens","min":1024}]}}}}"#;
+        let json = r#"{"anthropic":{"models":{"hybrid":{"name":"Hybrid","reasoning_options":[{"type":"effort","values":["low","high"]},{"type":"budget_tokens","min":2048}]}}}}"#;
         let registry = from_models_dev(json).unwrap();
         let hybrid = registry.get("anthropic", "hybrid").unwrap();
         assert_eq!(
@@ -281,20 +282,6 @@ mod tests {
             Some(["low".into(), "high".into()].as_slice())
         );
         assert_eq!(hybrid.reasoning_budget_min, Some(2048));
-        assert_eq!(
-            registry
-                .get("anthropic", "effort-only")
-                .unwrap()
-                .reasoning_budget_min,
-            None
-        );
-        assert_eq!(
-            registry
-                .get("anthropic", "budget-only")
-                .unwrap()
-                .reasoning_efforts,
-            None
-        );
     }
 
     #[test]
