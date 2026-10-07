@@ -15,7 +15,7 @@ describe('AgentLoopSettings', () => {
     vi.clearAllMocks();
     vi.mocked(window.electron.getSetting).mockResolvedValue(false);
     read.mockImplementation((key: string) => {
-      if (key === 'GOOSE_AUTO_EFFORT_ENABLED') return Promise.resolve(true);
+      if (key === 'GOOSE_AUTO_EFFORT_ENABLED') return Promise.resolve(false);
       if (key === 'TYPESAFE_API_KEY') return Promise.resolve({ maskedValue: '********' });
       return Promise.resolve(null);
     });

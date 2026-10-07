@@ -427,12 +427,7 @@ export default function AgentLoopSettings() {
                     {intl.formatMessage(i18n.saveApiKey)}
                   </Button>
                   {typesafeApiKeyConfigured && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!autoEffortEnabled}
-                      onClick={removeTypesafeApiKey}
-                    >
+                    <Button variant="outline" size="sm" onClick={removeTypesafeApiKey}>
                       {intl.formatMessage(i18n.removeApiKey)}
                     </Button>
                   )}
