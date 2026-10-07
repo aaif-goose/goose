@@ -84,6 +84,42 @@ impl ContextLimitResolver {
             .map(|canonical| canonical.limit.context)
             .unwrap_or(DEFAULT_CONTEXT_LIMIT)
     }
+
+    /// Resolve a limit reported by the provider itself (consumer override,
+    /// configured entry, or live discovery). Returns `None` when none apply,
+    /// so callers can prefer their own fallback over the canonical/default
+    /// chain and reliably tell "the provider reports nothing" apart from a
+    /// value that merely matches the global default.
+    pub async fn resolve_provider_reported<F, Fut>(
+        &self,
+        model: &str,
+        override_limit: Option<usize>,
+        discover: F,
+    ) -> Option<usize>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Option<usize>, ProviderError>>,
+    {
+        if let Some(limit) = override_limit {
+            return Some(limit);
+        }
+        if let Some(limit) = self.configured_limit(model) {
+            return Some(limit);
+        }
+        match discover().await {
+            Ok(Some(limit)) if limit > 0 => Some(limit),
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(
+                    provider = self.provider_name,
+                    model,
+                    %error,
+                    "Context-limit discovery failed; no reported limit"
+                );
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +226,63 @@ mod tests {
                 .resolve("unknown-model", None, || async { Ok(None) })
                 .await,
             DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[tokio::test]
+    async fn reported_resolution_preserves_discovered_default_value() {
+        let resolver = ContextLimitResolver::new("custom_lemonade");
+
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("gpt-5", None, || async {
+                    Ok(Some(DEFAULT_CONTEXT_LIMIT))
+                })
+                .await,
+            Some(DEFAULT_CONTEXT_LIMIT)
+        );
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("gpt-5", None, || async { Ok(None) })
+                .await,
+            None
+        );
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("gpt-5", None, || async { Ok(Some(0)) })
+                .await,
+            None
+        );
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("gpt-5", Some(32_000), || async { Ok(None) })
+                .await,
+            Some(32_000)
+        );
+    }
+
+    #[tokio::test]
+    async fn reported_resolution_ignores_canonical_and_configured_fallbacks() {
+        let resolver = ContextLimitResolver::new("anthropic")
+            .with_configured_limits([("configured".to_string(), 64_000)]);
+
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("claude-sonnet-4-5", None, || async { Ok(None) })
+                .await,
+            None
+        );
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("configured", None, || async { Ok(None) })
+                .await,
+            Some(64_000)
+        );
+        assert_eq!(
+            resolver
+                .resolve_provider_reported("unknown", None, || async { Ok(None) })
+                .await,
+            None
         );
     }
 }
