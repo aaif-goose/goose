@@ -234,32 +234,7 @@ async fn text_that_looks_like_a_context_error_does_not_compact() -> Result<()> {
 }
 
 #[tokio::test]
-async fn a_context_error_compacts_and_the_session_survives_a_failed_retry() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    api.on("real error").context_limit_error("too long");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
-    api.on("Your context was compacted")
-        .server_error("provider unavailable");
-
-    let failed_after_compaction = pipeline.run(["real error"]).await?;
-    assert_eq!(failed_after_compaction.history_replacements(), 1);
-    assert_eq!(
-        failed_after_compaction
-            .conversation()
-            .last()
-            .and_then(Message::error_kind),
-        Some(MessageErrorKind::Other)
-    );
-
-    api.on("try again").reply("recovered on the next turn");
-    let recovered = pipeline.run(["try again"]).await?;
-    recovered.assert_message(-1, Agent, "recovered on the next turn");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_context_error_compacts_and_the_retry_sets_the_usage() -> Result<()> {
+async fn context_errors_compact_and_retry() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("overflow once").context_limit_error("too long");
     api.on(SUMMARIZE_HISTORY).reply("summary");
@@ -287,6 +262,26 @@ async fn a_context_error_compacts_and_the_retry_sets_the_usage() -> Result<()> {
             summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
         )
     );
+
+    api.on("Your context was compacted")
+        .server_error("provider unavailable");
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("real error")
+        .context_limit_error("too long")
+        .times(1);
+    let failed_after_compaction = pipeline.run(["real error"]).await?;
+    assert_eq!(failed_after_compaction.history_replacements(), 1);
+    assert_eq!(
+        failed_after_compaction
+            .conversation()
+            .last()
+            .and_then(Message::error_kind),
+        Some(MessageErrorKind::Other)
+    );
+
+    api.on("try again").reply("recovered on the next turn");
+    let recovered = pipeline.run(["try again"]).await?;
+    recovered.assert_message(-1, Agent, "recovered on the next turn");
 
     Ok(())
 }
