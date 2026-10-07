@@ -1841,28 +1841,31 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_sonnet_5_5_always_on_adaptive_thinking() -> Result<()> {
+    fn test_create_request_claude_5_5_always_on_adaptive_thinking() -> Result<()> {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
         let messages = vec![Message::user().with_text("Hello")];
-        for effort in [
-            None,
-            Some("off"),
-            Some("low"),
-            Some("medium"),
-            Some("high"),
-            Some("xhigh"),
-            Some("max"),
-        ] {
-            let config = match effort {
-                Some(effort) => cfg_with_effort("claude-sonnet-5-5", effort),
-                None => cfg("claude-sonnet-5-5"),
-            };
-            let payload = create_request_with_default_options(&config, "system", &messages, &[])?;
-            assert_eq!(
-                payload["thinking"]["type"], "adaptive",
-                "effort: {effort:?}"
-            );
-            assert!(payload["thinking"].get("budget_tokens").is_none());
+        for model in ["claude-sonnet-5-5", "claude-haiku-5-5"] {
+            for effort in [
+                None,
+                Some("off"),
+                Some("low"),
+                Some("medium"),
+                Some("high"),
+                Some("xhigh"),
+                Some("max"),
+            ] {
+                let config = match effort {
+                    Some(effort) => cfg_with_effort(model, effort),
+                    None => cfg(model),
+                };
+                let payload =
+                    create_request_with_default_options(&config, "system", &messages, &[])?;
+                assert_eq!(
+                    payload["thinking"]["type"], "adaptive",
+                    "model: {model}, effort: {effort:?}"
+                );
+                assert!(payload["thinking"].get("budget_tokens").is_none());
+            }
         }
         Ok(())
     }

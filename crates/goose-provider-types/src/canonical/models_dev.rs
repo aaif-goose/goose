@@ -41,6 +41,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "anthropic/claude-haiku-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         _ => None,
     }
 }
@@ -260,16 +261,18 @@ mod tests {
     }
 
     #[test]
-    fn infers_sonnet_5_5_always_on_adaptive_thinking() {
-        let json = r#"{"anthropic":{"models":{"claude-sonnet-5-5":{"name":"Claude Sonnet 5.5"}}}}"#;
-        let registry = from_models_dev(json).unwrap();
-        assert_eq!(
-            registry
-                .get("anthropic", "claude-sonnet-5.5")
-                .unwrap()
-                .thinking_mode,
-            Some(ThinkingMode::AlwaysOnAdaptive)
-        );
+    fn infers_claude_5_5_always_on_adaptive_thinking() {
+        for family in ["sonnet", "haiku"] {
+            let model_id = format!("claude-{family}-5.5");
+            let json = serde_json::json!({
+                "anthropic": {"models": {&model_id: {"name": format!("Claude {family} 5.5")}}}
+            });
+            let registry = from_models_dev(&json.to_string()).unwrap();
+            assert_eq!(
+                registry.get("anthropic", &model_id).unwrap().thinking_mode,
+                Some(ThinkingMode::AlwaysOnAdaptive)
+            );
+        }
     }
 
     #[test]
