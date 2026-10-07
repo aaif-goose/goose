@@ -61,7 +61,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new(tls_config).with_providers(|registry| {
         use super::inventory::registrations;
 
-        registry.register_with_inventory::<AmpAcpProvider>(
+        registry.register_acp_with_inventory::<AmpAcpProvider>(
             false,
             Some(registrations::amp_acp_inventory()),
         );
@@ -83,16 +83,16 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::chatgpt_codex_inventory()),
         );
-        registry.register_with_inventory::<ClaudeAcpProvider>(
+        registry.register_acp_with_inventory::<ClaudeAcpProvider>(
             false,
             Some(registrations::claude_acp_inventory()),
         );
         registry.register::<ClaudeCodeProvider>(true);
-        registry.register_with_inventory::<CodexAcpProvider>(
+        registry.register_acp_with_inventory::<CodexAcpProvider>(
             false,
             Some(registrations::codex_acp_inventory()),
         );
-        registry.register_with_inventory::<CopilotAcpProvider>(
+        registry.register_acp_with_inventory::<CopilotAcpProvider>(
             false,
             Some(registrations::copilot_acp_inventory()),
         );
@@ -170,7 +170,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
                     .is_ok()
             })),
         );
-        registry.register_with_inventory::<PiAcpProvider>(
+        registry.register_acp_with_inventory::<PiAcpProvider>(
             false,
             Some(registrations::pi_acp_inventory()),
         );

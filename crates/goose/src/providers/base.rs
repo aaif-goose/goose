@@ -63,3 +63,37 @@ pub trait ProviderDef: ProviderDescriptor + Send + Sync {
         Self::from_env(extensions, tls_config)
     }
 }
+
+/// Defines ACP construction independently of standard provider construction.
+///
+/// The registry still bridges ACP instances to `Arc<dyn Provider>` temporarily;
+/// this trait separates definitions, not the runtime provider interfaces.
+pub trait AcpProviderDef: ProviderDescriptor + Send + Sync {
+    fn from_env(
+        extensions: Vec<ExtensionConfig>,
+        tls_config: Option<TlsConfig>,
+    ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>>
+    where
+        Self: Sized;
+
+    fn from_env_with_working_dir(
+        extensions: Vec<ExtensionConfig>,
+        _working_dir: PathBuf,
+        tls_config: Option<TlsConfig>,
+    ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>>
+    where
+        Self: Sized,
+    {
+        Self::from_env(extensions, tls_config)
+    }
+
+    fn from_env_with_default_model(
+        extensions: Vec<ExtensionConfig>,
+        tls_config: Option<TlsConfig>,
+    ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>>
+    where
+        Self: Sized,
+    {
+        Self::from_env(extensions, tls_config)
+    }
+}

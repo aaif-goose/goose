@@ -1,5 +1,7 @@
 use super::api_client::TlsConfig;
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::base::{
+    AcpProviderDef, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType,
+};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -160,6 +162,53 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
                 session_bound: F::SESSION_BOUND,
+            },
+        );
+    }
+
+    pub fn register_acp_with_inventory<F>(
+        &mut self,
+        preferred: bool,
+        inventory_registration: Option<InventoryRegistration>,
+    ) where
+        F: AcpProviderDef + 'static,
+    {
+        let metadata = F::metadata();
+        let name = metadata.name.clone();
+
+        let inventory = InventoryResolvers::for_metadata(&metadata, inventory_registration);
+
+        self.entries.insert(
+            name,
+            ProviderEntry {
+                metadata,
+                constructor: Arc::new(|extensions, working_dir, tls_config, use_default_model| {
+                    Box::pin(async move {
+                        let provider = if use_default_model {
+                            F::from_env_with_default_model(extensions, tls_config).await?
+                        } else if let Some(working_dir) = working_dir {
+                            F::from_env_with_working_dir(extensions, working_dir, tls_config)
+                                .await?
+                        } else {
+                            F::from_env(extensions, tls_config).await?
+                        };
+                        // Transitional bridge: ACP definitions are separate, but registry
+                        // consumers still require the standard Provider runtime interface.
+                        Ok(Arc::new(provider) as Arc<dyn Provider>)
+                    })
+                }),
+                inventory_identity: inventory.identity,
+                inventory_configured: inventory.configured,
+                cleanup: None,
+                provider_type: if preferred {
+                    ProviderType::Preferred
+                } else {
+                    ProviderType::Builtin
+                },
+                supports_inventory_refresh: inventory.supports_refresh,
+                tls_config: self.tls_config.clone(),
+                toolshim: false,
+                session_bound: true,
             },
         );
     }
@@ -374,6 +423,107 @@ mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
     use crate::providers::openai_def::OpenAiProviderDef;
+
+    struct TestAcpDef;
+
+    impl super::super::base::ProviderDescriptor for TestAcpDef {
+        fn metadata() -> ProviderMetadata {
+            ProviderMetadata::new(
+                "test-acp",
+                "Test ACP",
+                "Test",
+                "default",
+                vec![],
+                "",
+                vec![],
+            )
+        }
+    }
+
+    impl AcpProviderDef for TestAcpDef {
+        fn from_env(
+            extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                anyhow::bail!("from_env")
+            })
+        }
+
+        fn from_env_with_working_dir(
+            extensions: Vec<ExtensionConfig>,
+            working_dir: PathBuf,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                assert_eq!(working_dir, PathBuf::from("test-workspace"));
+                anyhow::bail!("working_dir")
+            })
+        }
+
+        fn from_env_with_default_model(
+            extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                anyhow::bail!("default_model")
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn acp_registration_preserves_inventory_and_constructor_dispatch() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register_acp_with_inventory::<TestAcpDef>(
+            true,
+            Some(
+                InventoryRegistration::new(true, || {
+                    Ok(InventoryIdentityInput::new("test-acp", "test-family"))
+                })
+                .with_configured(|| false),
+            ),
+        );
+        let entry = &registry.entries["test-acp"];
+        assert_eq!(entry.metadata().name, "test-acp");
+        assert!(entry.session_bound());
+        assert_eq!(entry.provider_type(), ProviderType::Preferred);
+        assert!(entry.supports_inventory_refresh());
+        assert!(!entry.inventory_configured());
+        assert_eq!(
+            entry.inventory_identity().unwrap().provider_family,
+            "test-family"
+        );
+        assert_eq!(
+            entry.create(vec![]).await.err().unwrap().to_string(),
+            "from_env"
+        );
+        assert_eq!(
+            entry
+                .create_with_working_dir(vec![], PathBuf::from("test-workspace"))
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "working_dir"
+        );
+        assert_eq!(
+            entry
+                .create_with_default_model(vec![])
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "default_model"
+        );
+
+        registry.register_acp_with_inventory::<TestAcpDef>(false, None);
+        let entry = &registry.entries["test-acp"];
+        assert_eq!(entry.provider_type(), ProviderType::Builtin);
+        assert!(!entry.supports_inventory_refresh());
+    }
 
     fn test_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {
