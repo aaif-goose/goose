@@ -60,9 +60,9 @@ pub use goose_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
 pub use goose_agent::operation::{
-    applied, ends_turn, last_effective_role, messages_since_kickoff, not_applicable,
-    trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference, InferenceInput,
-    MachineEffect, Operation, OperationResult, SlashCommand, StepResult,
+    applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
+    not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
+    InferenceInput, MachineEffect, Operation, OperationResult, SlashCommand, StepResult,
 };
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,

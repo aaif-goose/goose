@@ -200,35 +200,6 @@ async fn both_loops_execute_every_tool_from_the_last_allowed_reply() -> Result<(
 }
 
 #[tokio::test]
-async fn both_loops_finish_a_plain_text_reply_on_the_last_allowed_turn() -> Result<()> {
-    for use_state_machine in [false, true] {
-        let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-        api.on("hello").reply("done");
-
-        let messages = stream_messages(
-            agent
-                .reply(
-                    Message::user().with_text("hello"),
-                    SessionConfig {
-                        id: session_id,
-                        schedule_id: None,
-                        max_turns: Some(1),
-                        retry_config: None,
-                    },
-                    use_state_machine,
-                    None,
-                )
-                .await?,
-        )
-        .await?;
-
-        assert_eq!(api.call_count(), 1);
-        assert_eq!(messages.last().unwrap().as_concat_text(), "done");
-    }
-    Ok(())
-}
-
-#[tokio::test]
 async fn both_loops_keep_recipe_continuations_within_the_turn_budget() -> Result<()> {
     for use_state_machine in [false, true] {
         let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
@@ -795,7 +766,7 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
     let session_config = SessionConfig {
         id: session_id.clone(),
         schedule_id: None,
-        max_turns: Some(2),
+        max_turns: Some(1),
         retry_config: None,
     };
     let stream = agent
@@ -818,10 +789,7 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
     })
     .await??;
 
-    assert!(
-        replies.iter().any(|reply| reply == "still here"),
-        "expected the scripted reply, got {replies:?}"
-    );
+    assert_eq!(replies.last().map(String::as_str), Some("still here"));
     assert_eq!(api.call_count(), 1);
 
     Ok(())

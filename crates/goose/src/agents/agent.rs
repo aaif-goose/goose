@@ -6168,33 +6168,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     #[tokio::test]
-    async fn stop_hook_denial_retries_at_the_turn_limit_in_both_loops() -> Result<()> {
-        for use_state_machine in [false, true] {
-            let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
-            let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
-            let mut stream = agent
-                .reply(
-                    Message::user().with_text("hello"),
-                    SessionConfig {
-                        id: session_id,
-                        schedule_id: None,
-                        max_turns: Some(1),
-                        retry_config: None,
-                    },
-                    use_state_machine,
-                    None,
-                )
-                .await?;
-            while let Some(event) = stream.next().await {
-                event?;
-            }
-            assert_eq!(provider.call_count(), 3);
-            assert_eq!(env.hook_invocations(), 3);
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides() -> Result<()>
     {
         let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;

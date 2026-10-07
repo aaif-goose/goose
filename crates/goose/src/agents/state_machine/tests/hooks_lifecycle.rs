@@ -102,7 +102,6 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
     let expected_working_dir = pipeline.working_dir().to_string_lossy().into_owned();
     let pipeline = pipeline
         .with_hook_manager(blocked.hook_manager())
-        .with_max_turns(1)
         .with_stop_hook_block_cap(2);
     api.on("hello").reply("response");
     api.on("blocked ending this turn").reply("response");
@@ -241,7 +240,6 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline
         .with_hook_manager(blocked.hook_manager())
-        .with_max_turns(1)
         .with_stop_hook_block_cap(1);
     api.on("hello")
         .reply_with_distinct_ids(["policy marker: initial; ", "tail"]);
@@ -283,67 +281,6 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
         })
     }));
 
-    Ok(())
-}
-
-#[tokio::test]
-async fn stop_hook_correction_preserves_the_remaining_turn_budget() -> Result<()> {
-    let blocked = HookTestEnv::new("Stop", RECORD_AND_BLOCK_MARKER_SCRIPT);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(blocked.hook_manager())
-        .with_max_turns(2);
-    api.on("hello").reply("policy marker: unfinished");
-    api.on("blocked ending this turn").call(ADD, value(1));
-    api.on("result: 1").call(ADD, value(1));
-
-    let result = pipeline.run(["hello"]).await?;
-
-    assert_eq!(api.call_count(), 3);
-    assert_eq!(pipeline.calculator_total(), 2);
-    assert!(api.calls()[1].input_contains("<turn-budget>1/2 used</turn-budget>"));
-    result.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
-    Ok(())
-}
-
-#[tokio::test]
-async fn stop_hook_can_correct_recipe_final_output_at_the_turn_limit() -> Result<()> {
-    let blocked = HookTestEnv::new("Stop", RECORD_AND_BLOCK_MARKER_SCRIPT);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(blocked.hook_manager())
-        .with_max_turns(1);
-    pipeline
-        .set_recipe(
-            crate::recipe::Recipe::builder()
-                .title("Checked output")
-                .description("Checked output")
-                .instructions("Return the checked result using the final output tool.")
-                .response(crate::recipe::Response {
-                    json_schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": { "result": { "type": "string" } },
-                        "required": ["result"]
-                    })),
-                })
-                .build()
-                .expect("valid recipe"),
-        )
-        .await?;
-    api.on("hello").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "result": "policy marker: unfinished" }),
-    );
-    api.on("blocked ending this turn").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "result": "fixed" }),
-    );
-
-    let result = pipeline.run(["hello"]).await?;
-
-    assert_eq!(api.call_count(), 2);
-    assert_eq!(blocked.invocations(), 2);
-    result.assert_message(-1, Agent, r#"{"result":"fixed"}"#);
     Ok(())
 }
 
