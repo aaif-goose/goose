@@ -106,9 +106,14 @@ impl AnthropicFormatOptions {
             ),
             Some(ThinkingMode::AlwaysOnAdaptive | ThinkingMode::AdaptiveBetweenTools)
         );
-        let thinking_disabled = !cannot_disable
-            && (model_config.reasoning == Some(false)
-                || model_config.thinking_effort() == Some(ThinkingEffort::Off));
+        let thinking_unsupported = self
+            .official_thinking
+            .as_ref()
+            .is_some_and(|caps| !caps.adaptive && !caps.enabled);
+        let thinking_disabled = thinking_unsupported
+            || (!cannot_disable
+                && (model_config.reasoning == Some(false)
+                    || model_config.thinking_effort() == Some(ThinkingEffort::Off)));
         let emit_clear_thinking = model_config
             .request_param::<bool>("emit_clear_thinking")
             .unwrap_or(self.emit_clear_thinking);
