@@ -2712,7 +2712,10 @@ impl SessionStorage {
             .accumulated_cost(import.accumulated_cost)
             .schedule_id(import.schedule_id)
             .recipe(import.recipe)
-            .user_recipe_values(import.user_recipe_values);
+            .user_recipe_values(import.user_recipe_values)
+            .system_prompt_override(import.system_prompt_override)
+            .system_prompt_extras(import.system_prompt_extras)
+            .container(import.container);
 
         if import.user_set_name {
             builder = builder.user_provided_name(import.name.clone());
@@ -4609,7 +4612,12 @@ mod tests {
         sm.update(&original.id)
             .usage(usage)
             .accumulated_usage(accumulated_usage)
+            .system_prompt_override(Some("custom prompt".to_string()))
+            .container(Some(Container::new("container-1")))
             .apply()
+            .await
+            .unwrap();
+        sm.set_system_prompt_extra(&original.id, "extra", Some("extra text".to_string()))
             .await
             .unwrap();
 
@@ -4648,6 +4656,12 @@ mod tests {
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.message_count, 2);
+        assert_eq!(
+            imported.system_prompt_override.as_deref(),
+            Some("custom prompt")
+        );
+        assert_eq!(imported.system_prompt_extras["extra"], "extra text");
+        assert_eq!(imported.container, Some(Container::new("container-1")));
 
         let conversation = imported.conversation.unwrap();
         assert_eq!(conversation.messages().len(), 2);
