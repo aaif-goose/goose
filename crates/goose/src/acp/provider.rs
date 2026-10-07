@@ -243,6 +243,7 @@ impl Drop for HandoffContextClaimGuard {
 #[derive(Clone)]
 struct AcpEffortState {
     capability: Arc<Mutex<Option<ThinkingEffortCapability>>>,
+    fallback: Arc<Mutex<Option<String>>>,
     updates: watch::Sender<ThinkingEffortSupport>,
 }
 
@@ -251,6 +252,7 @@ impl AcpEffortState {
         let (updates, _) = watch::channel(ThinkingEffortSupport::Unsupported);
         Self {
             capability: Arc::new(Mutex::new(None)),
+            fallback: Arc::new(Mutex::new(None)),
             updates,
         }
     }
@@ -540,6 +542,15 @@ impl AcpProvider {
         self.send_set_config_option("", config_id, model_name.to_string())
             .await?;
 
+        let fallback = self
+            .effort_capability()?
+            .and_then(|capability| capability.current);
+        *self
+            .effort
+            .fallback
+            .lock()
+            .map_err(|_| anyhow::anyhow!("effort fallback lock poisoned"))? = fallback;
+
         let mut applied = self
             .applied_model
             .lock()
@@ -586,21 +597,51 @@ impl AcpProvider {
     }
 
     /// Forward the session's thinking effort to the agent when it differs from
-    /// the agent's mirrored current value. A recreated provider (model switch,
-    /// provider switch, session reload) starts from the agent's own default, so
-    /// the value has to be re-applied rather than assumed. It comes from
-    /// `resolve_effort_value`, the same resolver the config menu advertises
-    /// from, so the selection ACP clients see is the one that gets sent.
+    /// the agent's mirrored current value. When no configured value remains,
+    /// restore the value that was active before goose changed it.
     async fn apply_effort_if_changed(&self, model_config: &ModelConfig) -> Result<()> {
         let Some(capability) = self.effort_capability()? else {
             return Ok(());
         };
-        let Some(mapped) = resolve_effort_value(&capability, model_config) else {
-            return Ok(());
+        let (mapped, restoring) = match resolve_effort_value(&capability, model_config) {
+            Some(mapped) => {
+                let mut fallback = self
+                    .effort
+                    .fallback
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("effort fallback lock poisoned"))?;
+                if fallback.is_none() {
+                    *fallback = capability.current.clone();
+                }
+                (mapped, false)
+            }
+            None => {
+                let fallback = self
+                    .effort
+                    .fallback
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("effort fallback lock poisoned"))?
+                    .clone();
+                let Some(mapped) = fallback
+                    .as_deref()
+                    .and_then(|value| map_effort_value(&capability, value))
+                else {
+                    return Ok(());
+                };
+                (mapped, true)
+            }
         };
 
         self.set_effort_option("", &capability.option_id, mapped)
-            .await
+            .await?;
+        if restoring {
+            *self
+                .effort
+                .fallback
+                .lock()
+                .map_err(|_| anyhow::anyhow!("effort fallback lock poisoned"))? = None;
+        }
+        Ok(())
     }
 
     async fn prompt(
@@ -2271,6 +2312,9 @@ fn replace_effort_state(
     effort: &AcpEffortState,
     capability: Option<ThinkingEffortCapability>,
 ) -> Option<ThinkingEffortCapability> {
+    if capability.is_none() {
+        *effort.fallback.lock().unwrap() = None;
+    }
     let mut state = effort.capability.lock().unwrap();
     let previous = std::mem::replace(&mut *state, capability.clone());
     publish_effort_support(
@@ -3466,7 +3510,7 @@ mod tests {
         capability: Option<ThinkingEffortCapability>,
     ) -> AcpProvider {
         let (provider, _) = test_provider_with_tx(Some(tx));
-        *provider.effort.capability.lock().unwrap() = capability;
+        replace_effort_state(&provider.effort, capability);
         provider
     }
 
@@ -4013,6 +4057,42 @@ mod tests {
             .unwrap();
 
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn apply_effort_if_changed_restores_the_value_before_an_override() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let (tx, mut rx) = mpsc::channel(1);
+        let provider =
+            test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
+        let effort = provider.effort.clone();
+
+        let handle = tokio::spawn(async move {
+            provider
+                .apply_effort_if_changed(&model_with_effort("high"))
+                .await
+                .unwrap();
+            replace_effort_state(
+                &provider.effort,
+                Some(effort_capability(&["default", "high"], "high")),
+            );
+            provider
+                .apply_effort_if_changed(&ModelConfig::new(ACP_CURRENT_MODEL))
+                .await
+                .unwrap();
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "high".to_string())
+        );
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "default".to_string())
+        );
+
+        handle.await.unwrap();
+        assert!(effort.fallback.lock().unwrap().is_none());
     }
 
     fn test_acp_config(
