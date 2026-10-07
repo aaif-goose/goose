@@ -594,6 +594,7 @@ impl AcpProvider {
         if model_name == ACP_CURRENT_MODEL {
             return Ok(());
         }
+        let _guard = self.effort.mutation_lock.lock().await;
 
         {
             let applied = self
@@ -4201,6 +4202,50 @@ mod tests {
             ("effort".to_string(), "low".to_string())
         );
         next.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropped_automatic_reset_finishes_before_a_model_change() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let (tx, mut rx) = mpsc::channel(3);
+        let provider = test_provider_with_model_option(tx, Some("old-model".to_string()));
+        *provider.effort.capability.lock().unwrap() =
+            Some(effort_capability(&["low", "high"], "high"));
+        let provider = Arc::new(provider);
+
+        let automatic_provider = provider.clone();
+        let automatic = tokio::spawn(async move {
+            let reset = automatic_provider
+                .apply_effort_if_changed(&automatic_model_with_effort("off"))
+                .await
+                .unwrap()
+                .expect("automatic override should retain the prior selection");
+            drop(reset);
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "low".to_string())
+        );
+        automatic.await.unwrap();
+
+        let model_provider = provider.clone();
+        let model = tokio::spawn(async move {
+            model_provider
+                .apply_model_if_changed("new-model")
+                .await
+                .unwrap();
+        });
+
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("effort".to_string(), "high".to_string())
+        );
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("model".to_string(), "new-model".to_string())
+        );
+        model.await.unwrap();
     }
 
     fn test_acp_config(
