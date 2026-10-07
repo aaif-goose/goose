@@ -195,6 +195,16 @@ impl AnthropicProviderBuilder {
 }
 
 impl AnthropicProvider {
+    async fn thinking_capabilities(
+        &self,
+        model_name: &str,
+    ) -> Option<OfficialThinkingCapabilities> {
+        match &self.format_options.official_thinking {
+            Some(capabilities) => Some(capabilities.clone()),
+            None => self.api_thinking_capabilities(model_name).await,
+        }
+    }
+
     async fn api_thinking_capabilities(
         &self,
         model_name: &str,
@@ -295,7 +305,7 @@ impl AnthropicProvider {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let format_options = AnthropicFormatOptions {
-            official_thinking: self.api_thinking_capabilities(wire_model).await,
+            official_thinking: self.thinking_capabilities(wire_model).await,
             ..self.format_options.clone()
         };
         let payload = self.streaming_payload(
