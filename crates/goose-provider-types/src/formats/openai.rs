@@ -1722,14 +1722,8 @@ pub fn create_request_for_model_with_options(
     for_streaming: bool,
     format_options: OpenAiFormatOptions,
 ) -> anyhow::Result<Value, Error> {
-    if model_config.model_name.starts_with("o1-mini") {
-        return Err(anyhow!(
-            "o1-mini model is not currently supported since goose uses tool calling and o1-mini does not support it. Please use o1 or o3 models instead."
-        ));
-    }
-
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
-    let is_reasoning_model = is_openai_responses_model(&model_name);
+    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
     let reasoning_effort = if is_reasoning_model {
         model_config
@@ -1905,11 +1899,14 @@ pub fn openai_reasoning_effort_for_thinking(
     model_name: &str,
     effort: ThinkingEffort,
 ) -> Option<String> {
-    let supported = openai_reasoning_efforts_for_model(model_name);
+    let catalog = crate::canonical::maybe_get_canonical_model("openai", model_name);
+    let catalog_efforts = catalog
+        .as_ref()
+        .and_then(|model| model.reasoning_efforts.as_deref());
 
     let preferred: &[&str] = match effort {
-        ThinkingEffort::Off => &["none", "low"],
-        ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+        ThinkingEffort::Off => &["none", "minimal", "low"],
+        ThinkingEffort::Low => &["low", "minimal", "medium", "high", "xhigh"],
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
         ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],
@@ -1917,45 +1914,17 @@ pub fn openai_reasoning_effort_for_thinking(
 
     preferred
         .iter()
-        .find(|level| supported.contains(level))
+        .find(|level| match catalog_efforts {
+            Some(values) => values.iter().any(|value| value == **level),
+            None => openai_reasoning_efforts_for_model(model_name).contains(level),
+        })
         .map(|level| (*level).to_string())
 }
 
-pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
-    let normalized = model_name.to_ascii_lowercase();
-
-    if normalized.contains("gpt-5") || normalized.contains("gpt-6") {
-        if normalized.contains("-pro") || normalized.contains("/pro") {
-            &["high"]
-        } else if normalized.contains("gpt-6") {
-            // GPT-6 Astra and GPT-6.1 Sol require reasoning; GPT-6 Sol and Luna may disable it.
-            let is_gpt_6_1_sol = ["gpt-6.1-sol", "gpt-6-1-sol"].iter().any(|needle| {
-                normalized.match_indices(needle).any(|(index, name)| {
-                    let (prefix, rest) = normalized.split_at(index);
-                    let (_, suffix) = rest.split_at(name.len());
-                    (prefix.is_empty() || prefix.ends_with(['/', '.', '-']))
-                        && (suffix.is_empty() || suffix.starts_with(['-', '@']))
-                })
-            });
-            if normalized.contains("astra") || is_gpt_6_1_sol {
-                &["low", "medium", "high", "xhigh", "max"]
-            } else {
-                &["none", "low", "medium", "high", "xhigh", "max"]
-            }
-        } else if normalized.contains("gpt-5.4")
-            || normalized.contains("gpt-5-4")
-            || normalized.contains("gpt-5.5")
-            || normalized.contains("gpt-5-5")
-            || normalized.contains("gpt-5.6")
-            || normalized.contains("gpt-5-6")
-        {
-            &["none", "low", "medium", "high", "xhigh"]
-        } else {
-            &["low", "medium", "high"]
-        }
-    } else {
-        &["low", "medium", "high"]
-    }
+pub(crate) fn openai_reasoning_efforts_for_model(_model_name: &str) -> &'static [&'static str] {
+    // For aliases without catalog effort options, send only widely supported
+    // levels. Catalog entries override this fallback, including `none` and `max`.
+    &["low", "medium", "high"]
 }
 
 const MAX_FUNCTION_NAME_LENGTH: usize = 128;
@@ -3382,7 +3351,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_gpt56_max_effort_uses_xhigh() -> anyhow::Result<()> {
+    fn test_create_request_gpt56_max_effort_uses_max() -> anyhow::Result<()> {
         let model_config = test_model_config("gpt-5.6-luna")
             .with_max_tokens(Some(1024))
             .with_thinking_effort(ThinkingEffort::Max);
@@ -3396,7 +3365,7 @@ mod tests {
         )?;
         let obj = request.as_object().unwrap();
 
-        assert_eq!(obj.get("reasoning_effort"), Some(&json!("xhigh")));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("max")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
@@ -3414,8 +3383,11 @@ mod tests {
                 Some("max".to_string())
             );
             assert_eq!(
-                openai_reasoning_efforts_for_model(model),
-                &["none", "low", "medium", "high", "xhigh", "max"]
+                crate::canonical::maybe_get_canonical_model("openai", model)
+                    .unwrap()
+                    .reasoning_efforts
+                    .unwrap(),
+                ["none", "low", "medium", "high", "xhigh", "max"]
             );
             assert!(
                 is_openai_responses_model(model),
@@ -3429,7 +3401,7 @@ mod tests {
         );
         assert_eq!(
             openai_reasoning_effort_for_thinking("gpt-5.6-sol", ThinkingEffort::Max),
-            Some("xhigh".to_string())
+            Some("max".to_string())
         );
     }
 
@@ -3481,7 +3453,7 @@ mod tests {
         );
         assert_eq!(
             openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
-            Some("low".to_string())
+            Some("minimal".to_string())
         );
     }
 
@@ -3497,8 +3469,8 @@ mod tests {
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
-                Some("none".to_string()),
-                "{model} must not match GPT 6.1 Sol"
+                Some("low".to_string()),
+                "{model} must use the unknown-model fallback"
             );
         }
     }
@@ -3518,7 +3490,7 @@ mod tests {
         )?;
         let obj = request.as_object().unwrap();
 
-        assert_eq!(obj.get("reasoning_effort"), Some(&json!("high")));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("xhigh")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())

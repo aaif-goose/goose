@@ -101,6 +101,14 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         .apply()
                         .await?;
                 }
+                GooseEffect::SetExtensionState {
+                    extension_name,
+                    version,
+                    value,
+                } => {
+                    self.set_extension_value(&session.id, extension_name, version, value.clone())
+                        .await?;
+                }
                 GooseEffect::RecordUsage(provider_usage) => {
                     usage::record(self, session, provider_usage, false).await?;
                 }

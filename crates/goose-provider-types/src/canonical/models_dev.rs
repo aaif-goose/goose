@@ -110,6 +110,23 @@ fn process_model(
         family: get_string(model_data, "family"),
         attachment: model_data.get("attachment").and_then(|v| v.as_bool()),
         reasoning: model_data.get("reasoning").and_then(|v| v.as_bool()),
+        reasoning_efforts: model_data
+            .get("reasoning_options")
+            .and_then(|v| v.as_array())
+            .and_then(|options| {
+                options
+                    .iter()
+                    .find(|option| option.get("type").and_then(Value::as_str) == Some("effort"))
+            })
+            .and_then(|option| option.get("values"))
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
         thinking_mode: get_thinking_mode(&canonical_id, model_data),
         tool_call: model_data
             .get("tool_call")
@@ -192,6 +209,7 @@ mod tests {
                 family: None,
                 attachment: None,
                 reasoning: None,
+                reasoning_efforts: None,
                 thinking_mode: None,
                 tool_call: false,
                 temperature: None,
@@ -227,6 +245,16 @@ mod tests {
         assert_eq!(
             variants[pick_winning_variant(&variants)].0,
             "claude-haiku-4-5"
+        );
+    }
+
+    #[test]
+    fn parses_effort_options_without_confusing_other_reasoning_options() {
+        let json = r#"{"openai":{"models":{"future":{"name":"Future","reasoning":true,"reasoning_options":[{"type":"budget","values":[100]},{"type":"effort","values":["low","max"]}]}}}}"#;
+        let registry = from_models_dev(json).unwrap();
+        assert_eq!(
+            registry.get("openai", "future").unwrap().reasoning_efforts,
+            Some(vec!["low".to_string(), "max".to_string()])
         );
     }
 

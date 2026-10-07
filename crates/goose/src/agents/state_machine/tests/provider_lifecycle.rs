@@ -11,7 +11,7 @@ use crate::conversation::Conversation;
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {
-    let (mut pipeline, api) = test_pipeline_with(ProviderFeatures {
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         reports_usage: false,
         preserves_thinking: true,
         resolved_model: Some("resolved-test-model"),
@@ -19,8 +19,9 @@ async fn provider_lifecycle() -> Result<()> {
     })
     .await?;
     pipeline
-        .set_system_prompt_override("CUSTOM_SYSTEM_PROMPT")
+        .set_system_prompt_override(Some("CUSTOM_SYSTEM_PROMPT"))
         .await;
+    let mut pipeline = pipeline.reconstruct().await?;
 
     api.on("inspect this image and add one")
         .reasoning("I should inspect the image before calculating.")
@@ -248,7 +249,7 @@ async fn provider_lifecycle() -> Result<()> {
         .iter()
         .all(|call| call.system_contains("CUSTOM_SYSTEM_PROMPT")));
 
-    pipeline.clear_system_prompt_override().await;
+    pipeline.set_system_prompt_override(None).await;
     pipeline = pipeline.with_model("gpt-4.1").await;
     api.on("use the standard prompt")
         .reply("The standard prompt is active.");

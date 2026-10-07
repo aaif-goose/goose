@@ -6,8 +6,10 @@ use anyhow::{anyhow, Result};
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
 use crate::recipe::Recipe;
+use crate::session::GoalState;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
+use super::final_output_tool::FinalOutputTool;
 use super::Agent;
 
 pub fn slash_commands_enabled() -> bool {
@@ -163,8 +165,8 @@ impl Agent {
                 Ok(Some(crate::doctor::run(session_manager, &session).await?))
             }
             "status" => self.handle_status_command(session_id).await,
-            "goal" => self.handle_goal_command(params_str).await,
-            "grind" => self.handle_grind_command(params_str).await,
+            "goal" => self.handle_goal_command(params_str, session_id).await,
+            "grind" => self.handle_grind_command(params_str, session_id).await,
             _ => {
                 if let Some(message) = self
                     .handle_recipe_command(command, params_str, session_id)
@@ -490,10 +492,7 @@ impl Agent {
         prompt: String,
         session_id: &str,
     ) -> Result<Option<Message>> {
-        if let Err(error) = self
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await
-        {
+        if let Some(Err(error)) = recipe.response.clone().map(FinalOutputTool::try_new) {
             return Ok(Some(
                 Message::assistant().with_text(format!("Recipe /{command} is not valid: {error}")),
             ));
@@ -528,10 +527,15 @@ impl Agent {
         }
     }
 
-    async fn handle_goal_command(&self, params_str: &str) -> Result<Option<Message>> {
+    async fn handle_goal_command(
+        &self,
+        params_str: &str,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        let session_manager = &self.config.session_manager;
+        let mut state = GoalState::of(&session_manager.get_session(session_id, false).await?);
         if params_str.is_empty() {
-            let current = self.get_goal().await;
-            let text = match current {
+            let text = match state.goal {
                 Some(goal) => format!("Current goal: {goal}"),
                 None => "No goal set. Use `/goal <description>` to set one.".to_string(),
             };
@@ -539,23 +543,34 @@ impl Agent {
         }
 
         if is_clear_goal_param(params_str) {
-            self.set_goal(None).await;
+            state.goal = None;
+            session_manager
+                .set_extension_state(session_id, &state)
+                .await?;
             return Ok(Some(
                 Message::assistant().with_text("Goal cleared. The agent will finish normally."),
             ));
         }
 
         let goal = params_str.to_string();
-        self.set_goal(Some(goal.clone())).await;
+        state.goal = Some(goal.clone());
+        session_manager
+            .set_extension_state(session_id, &state)
+            .await?;
         Ok(Some(Message::assistant().with_text(format!(
             "Goal set. The agent will verify this goal is met before finishing:\n\n> {goal}"
         ))))
     }
 
-    async fn handle_grind_command(&self, params_str: &str) -> Result<Option<Message>> {
+    async fn handle_grind_command(
+        &self,
+        params_str: &str,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        let session_manager = &self.config.session_manager;
+        let mut state = GoalState::of(&session_manager.get_session(session_id, false).await?);
         if params_str.is_empty() {
-            let current = self.get_grind().await;
-            let text = match current {
+            let text = match state.grind {
                 Some(goal) => format!("Current grind goal: {goal}"),
                 None => "No grind goal set. Use `/grind <description>` to set one.".to_string(),
             };
@@ -563,14 +578,20 @@ impl Agent {
         }
 
         if is_clear_goal_param(params_str) {
-            self.set_grind(None).await;
+            state.grind = None;
+            session_manager
+                .set_extension_state(session_id, &state)
+                .await?;
             return Ok(Some(
                 Message::assistant().with_text("Grind cleared. The agent will finish normally."),
             ));
         }
 
         let goal = params_str.to_string();
-        self.set_grind(Some(goal.clone())).await;
+        state.grind = Some(goal.clone());
+        session_manager
+            .set_extension_state(session_id, &state)
+            .await?;
         Ok(Some(Message::assistant().with_text(format!(
             "Grind goal set. The agent will keep working until max_turns is reached:\n\n> {goal}"
         ))))
@@ -682,7 +703,6 @@ mod tests {
         assert!(response
             .as_concat_text()
             .contains("Recipe /invalid-rendered-schema is not valid"));
-        assert!(agent.final_output_tool.lock().await.is_none());
     }
     #[tokio::test]
     async fn doctor_refuses_without_enabling_developer() {
