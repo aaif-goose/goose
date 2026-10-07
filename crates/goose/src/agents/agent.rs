@@ -158,6 +158,22 @@ pub(super) fn available_auto_efforts(
                 ];
             }
 
+            if matches!(provider_name, "google" | "gemini_oauth" | "gcp_vertex_ai") {
+                return AUTO_EFFORTS
+                    .into_iter()
+                    .filter(|effort| {
+                        applied_as_selected(
+                            effort,
+                            goose_providers::formats::google::google_thinking_level_for_effort(
+                                &model_config.model_name,
+                                *effort,
+                            )
+                            .map(str::to_string),
+                        )
+                    })
+                    .collect();
+            }
+
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,

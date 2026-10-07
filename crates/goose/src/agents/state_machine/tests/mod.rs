@@ -272,6 +272,18 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             ThinkingEffort::Max,
         ]
     );
+    assert_eq!(
+        available_auto_efforts(
+            "google",
+            &ModelConfig::new("gemini-3-pro-preview"),
+            ThinkingEffortSupport::Unspecified,
+        ),
+        vec![
+            ThinkingEffort::Off,
+            ThinkingEffort::Low,
+            ThinkingEffort::High,
+        ]
+    );
     let pipeline = pipeline
         .with_model_config(
             ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
