@@ -19058,8 +19058,8 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.72,
-      "output": 0.72
+      "input": 0.07,
+      "output": 0.16
     },
     "limit": {
       "context": 34096,
@@ -20673,6 +20673,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/anthropic.claude-opus-4.1-20250805-v1:0",
     "name": "Claude Opus 4.1",
     "family": "claude-opus",
@@ -21257,6 +21297,46 @@
     "limit": {
       "context": 200000,
       "output": 64000
+    }
+  },
+  {
+    "id": "amazon-bedrock/au.anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5 (AU)",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.11,
+      "output": 0.55,
+      "cache_read": 0.011,
+      "cache_write": 0.1375
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -21902,6 +21982,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/eu.anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5 (EU)",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.11,
+      "output": 0.55,
+      "cache_read": 0.011,
+      "cache_write": 0.1375
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/eu.anthropic.claude-opus-4.5-20251101-v1:0",
     "name": "Claude Opus 4.5 (EU)",
     "family": "claude-opus",
@@ -22502,6 +22622,46 @@
     "limit": {
       "context": 200000,
       "output": 64000
+    }
+  },
+  {
+    "id": "amazon-bedrock/global.anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5 (Global)",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -23311,6 +23471,42 @@
     }
   },
   {
+    "id": "amazon-bedrock/global.zai.glm-5.3",
+    "name": "GLM-5.3 (Global)",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-08-14",
+    "last_updated": "2026-08-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.68,
+      "output": 5.28,
+      "cache_read": 0.312,
+      "cache_write": 2.1
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/google.gemma-3-12b-it",
     "name": "Gemma 3 12B IT",
     "family": "gemma",
@@ -23768,6 +23964,46 @@
     "limit": {
       "context": 200000,
       "output": 64000
+    }
+  },
+  {
+    "id": "amazon-bedrock/jp.anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5 (JP)",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.11,
+      "output": 0.55,
+      "cache_read": 0.011,
+      "cache_write": 0.1375
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -25823,6 +26059,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/us.anthropic.claude-haiku-5.5",
+    "name": "Claude Haiku 5.5 (US)",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.11,
+      "output": 0.55,
+      "cache_read": 0.011,
+      "cache_write": 0.1375
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/us.anthropic.claude-opus-4.1-20250805-v1:0",
     "name": "Claude Opus 4.1 (US)",
     "family": "claude-opus",
@@ -26923,6 +27199,42 @@
     }
   },
   {
+    "id": "amazon-bedrock/us.zai.glm-5.3",
+    "name": "GLM-5.3 (US)",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-08-14",
+    "last_updated": "2026-08-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.848,
+      "output": 5.808,
+      "cache_read": 0.3432,
+      "cache_write": 2.31
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/writer.palmyra-x4-v1:0",
     "name": "Palmyra X4",
     "family": "palmyra",
@@ -27835,6 +28147,46 @@
     }
   },
   {
+    "id": "anthropic/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "anthropic/claude-opus-4.5",
     "name": "Claude Opus 4.5 (latest)",
     "family": "claude-opus",
@@ -28223,7 +28575,7 @@
     "cost": {
       "input": 2.0,
       "output": 10.0,
-      "cache_read": 0.2,
+      "cache_read": 0.1,
       "cache_write": 2.5
     },
     "limit": {
@@ -30114,6 +30466,46 @@
     "limit": {
       "context": 200000,
       "output": 64000
+    }
+  },
+  {
+    "id": "azure-cognitive-services/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -33004,6 +33396,46 @@
     }
   },
   {
+    "id": "azure/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "azure/claude-mythos-5",
     "name": "Claude Mythos 5",
     "family": "claude-mythos",
@@ -35316,13 +35748,47 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.25,
+      "input": 2.0,
       "output": 6.0,
       "cache_read": 0.5
     },
     "limit": {
       "context": 200000,
       "output": 128000
+    }
+  },
+  {
+    "id": "azure/grok-4.7",
+    "name": "Grok 4.7",
+    "family": "grok",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2026-05",
+    "release_date": "2026-09-21",
+    "last_updated": "2026-09-21",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {},
+    "limit": {
+      "context": 500000,
+      "output": 500000
     }
   },
   {
@@ -37247,7 +37713,7 @@
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-08-26",
-    "last_updated": "2026-09-01",
+    "last_updated": "2026-09-30",
     "modalities": {
       "input": [
         "text",
@@ -37264,7 +37730,7 @@
       "output": 0.58
     },
     "limit": {
-      "context": 524288,
+      "context": 1048576,
       "output": 16384
     }
   },
@@ -39874,6 +40340,46 @@
     }
   },
   {
+    "id": "cloudflare-ai-gateway/anthropic/claude-sonnet-5.5",
+    "name": "Claude Sonnet 5.5",
+    "family": "claude-sonnet",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-09-28",
+    "last_updated": "2026-09-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.2,
+      "cache_write": 2.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "cloudflare-ai-gateway/deepseek/deepseek-v4-pro",
     "name": "DeepSeek V4 Pro",
     "family": "deepseek-thinking",
@@ -40712,6 +41218,47 @@
       "input": 2.0,
       "output": 10.0,
       "cache_read": 0.2,
+      "cache_write": 2.5
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "cloudflare-ai-gateway/openai/gpt-6.1-sol",
+    "name": "GPT-6.1 Sol",
+    "family": "gpt-sol",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-04-30",
+    "release_date": "2026-09-29",
+    "last_updated": "2026-09-29",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.1,
       "cache_write": 2.5
     },
     "limit": {
@@ -42486,43 +43033,6 @@
     }
   },
   {
-    "id": "coralbricks/glm-5.3-flash-fp4",
-    "name": "GLM 5.3 Flash FP4",
-    "family": "glm-flash",
-    "attachment": true,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "low",
-      "high",
-      "max"
-    ],
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-08-26",
-    "last_updated": "2026-08-26",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "video"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.15,
-      "output": 0.5,
-      "cache_read": 0.0,
-      "cache_write": 0.23
-    },
-    "limit": {
-      "context": 1048576,
-      "output": 131072
-    }
-  },
-  {
     "id": "coralbricks/glm-5.3-fp4",
     "name": "GLM 5.3 FP4",
     "family": "glm",
@@ -43004,14 +43514,51 @@
     }
   },
   {
+    "id": "cortecs/claude-sonnet-5.5",
+    "name": "Claude Sonnet 5.5",
+    "family": "claude-sonnet",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-09-28",
+    "last_updated": "2026-09-28",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.25,
+      "output": 11.249,
+      "cache_read": 0.225,
+      "cache_write": 2.813
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "cortecs/codestral",
-    "name": "Codestral 2508",
-    "family": "mistral",
+    "name": "Codestral 25.08",
+    "family": "codestral",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03",
     "release_date": "2025-07-30",
     "last_updated": "2025-07-30",
     "modalities": {
@@ -43022,7 +43569,7 @@
         "text"
       ]
     },
-    "open_weights": true,
+    "open_weights": false,
     "cost": {
       "input": 0.368,
       "output": 1.103,
@@ -44912,6 +45459,40 @@
     "limit": {
       "context": 256000,
       "output": 256000
+    }
+  },
+  {
+    "id": "cortecs/mistral-large-4.0",
+    "name": "Mistral Large 4",
+    "family": "mistral-large",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.765,
+      "output": 2.351,
+      "cache_read": 0.079
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 262144
     }
   },
   {
@@ -61202,8 +61783,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.33807,
-      "output": 0.45076
+      "input": 0.33531,
+      "output": 0.44708
     },
     "limit": {
       "context": 100000,
@@ -61231,8 +61812,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.732485,
-      "output": 0.732485
+      "input": 0.726505,
+      "output": 0.726505
     },
     "limit": {
       "context": 128000,
@@ -61264,8 +61845,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.169035,
-      "output": 0.732485
+      "input": 0.167655,
+      "output": 0.726505
     },
     "limit": {
       "context": 131072,
@@ -61420,24 +62001,24 @@
   },
   {
     "id": "edenai/mistral/codestral",
-    "name": "Codestral (latest)",
+    "name": "Codestral 25.08",
     "family": "codestral",
-    "attachment": false,
+    "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2024-05-29",
-    "last_updated": "2025-01-04",
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "pdf"
       ],
       "output": [
         "text"
       ]
     },
-    "open_weights": true,
+    "open_weights": false,
     "cost": {
       "input": 0.3,
       "output": 0.9,
@@ -61445,7 +62026,7 @@
     },
     "limit": {
       "context": 256000,
-      "output": 4096
+      "output": 8192
     }
   },
   {
@@ -61514,6 +62095,10 @@
     "family": "magistral-medium",
     "attachment": true,
     "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-06",
@@ -64462,9 +65047,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.45076,
-      "output": 0.90152,
-      "cache_read": 0.090152
+      "input": 0.44708,
+      "output": 0.89416,
+      "cache_read": 0.089416
     },
     "limit": {
       "context": 256000,
@@ -64526,8 +65111,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.169035,
-      "output": 0.67614
+      "input": 0.167655,
+      "output": 0.67062
     },
     "limit": {
       "context": 128000,
@@ -64555,8 +65140,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.01421,
-      "output": 1.01421
+      "input": 1.005931,
+      "output": 1.005931
     },
     "limit": {
       "context": 128000,
@@ -76269,6 +76854,46 @@
     }
   },
   {
+    "id": "google-vertex-anthropic/claude-haiku-5.5@default",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "google-vertex-anthropic/claude-opus-4",
     "name": "Claude Opus 4",
     "family": "claude-opus",
@@ -76867,6 +77492,46 @@
     "limit": {
       "context": 200000,
       "output": 64000
+    }
+  },
+  {
+    "id": "google-vertex/claude-haiku-5.5@default",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -97781,6 +98446,46 @@
     }
   },
   {
+    "id": "kilo/anthropic/claude-haiku-5.5",
+    "name": "Anthropic: Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "kilo/anthropic/claude-opus-4.1",
     "name": "Claude Opus 4.1 (latest)",
     "family": "claude-opus",
@@ -100795,35 +101500,6 @@
     }
   },
   {
-    "id": "kilo/kwaipilot/kat-coder-pro-v2.5",
-    "name": "Kwaipilot: KAT-Coder-Pro V2.5",
-    "family": "kat-coder",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-07-10",
-    "last_updated": "2026-07-10",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.74,
-      "output": 2.96,
-      "cache_read": 0.15
-    },
-    "limit": {
-      "context": 262144,
-      "output": 235929
-    }
-  },
-  {
     "id": "kilo/liquid/lfm-2.5-2.6b:free",
     "name": "LiquidAI: LFM2.5-2.6B (free)",
     "family": "liquid",
@@ -101690,14 +102366,14 @@
   },
   {
     "id": "kilo/mistralai/codestral",
-    "name": "Mistral: Codestral 2508",
+    "name": "Codestral 25.08",
     "family": "codestral",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "release_date": "2025-08-01",
-    "last_updated": "2025-08-01",
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
     "modalities": {
       "input": [
         "text",
@@ -102362,9 +103038,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.95,
-      "output": 4.0,
-      "cache_read": 0.16
+      "input": 0.465,
+      "output": 2.45,
+      "cache_read": 0.0975
     },
     "limit": {
       "context": 262144,
@@ -102681,12 +103357,11 @@
     "open_weights": true,
     "cost": {
       "input": 0.05,
-      "output": 0.2,
-      "cache_read": 0.03
+      "output": 0.2
     },
     "limit": {
       "context": 262144,
-      "output": 235929
+      "output": 32768
     }
   },
   {
@@ -102953,7 +103628,7 @@
     },
     "limit": {
       "context": 262144,
-      "output": 32768
+      "output": 131072
     }
   },
   {
@@ -105954,8 +106629,8 @@
       "output": 0.52
     },
     "limit": {
-      "context": 262144,
-      "output": 235929
+      "context": 128000,
+      "output": 32000
     }
   },
   {
@@ -106639,7 +107314,7 @@
     },
     "limit": {
       "context": 262144,
-      "output": 32768
+      "output": 235929
     }
   },
   {
@@ -106844,7 +107519,7 @@
     },
     "limit": {
       "context": 262144,
-      "output": 262140
+      "output": 65536
     }
   },
   {
@@ -107124,7 +107799,7 @@
       "cache_write": 2.5
     },
     "limit": {
-      "context": 1000000,
+      "context": 1048576,
       "output": 131072
     }
   },
@@ -108293,7 +108968,7 @@
     },
     "limit": {
       "context": 524288,
-      "output": 262144
+      "output": 471859
     }
   },
   {
@@ -109367,8 +110042,8 @@
       "cache_read": 0.26
     },
     "limit": {
-      "context": 202752,
-      "output": 131072
+      "context": 200000,
+      "output": 128000
     }
   },
   {
@@ -109627,7 +110302,11 @@
     "reasoning": true,
     "reasoning_efforts": [
       "none",
-      "high"
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ],
     "tool_call": true,
     "temperature": true,
@@ -109645,14 +110324,14 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.0,
-      "output": 5.0,
-      "cache_read": 0.1,
-      "cache_write": 1.25
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
     },
     "limit": {
-      "context": 200000,
-      "output": 64000
+      "context": 1000000,
+      "output": 128000
     }
   },
   {
@@ -109761,9 +110440,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.038,
-      "output": 0.57,
-      "cache_read": 0.01
+      "input": 0.045,
+      "output": 1.2,
+      "cache_read": 0.03
     },
     "limit": {
       "context": 1048576,
@@ -109796,9 +110475,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.2514,
+      "input": 0.2885,
       "output": 4.2,
-      "cache_read": 0.25
+      "cache_read": 0.29
     },
     "limit": {
       "context": 1048576,
@@ -109831,9 +110510,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0123,
+      "input": 0.018,
       "output": 1.28,
-      "cache_read": 0.0123
+      "cache_read": 0.018
     },
     "limit": {
       "context": 1048576,
@@ -109946,9 +110625,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.69,
-      "output": 15.0,
-      "cache_read": 0.23
+      "input": 0.49,
+      "output": 13.0,
+      "cache_read": 0.45
     },
     "limit": {
       "context": 1048576,
@@ -110213,9 +110892,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.03,
-      "output": 12.0,
-      "cache_read": 0.03
+      "input": 0.063,
+      "output": 6.3,
+      "cache_read": 0.0585
     },
     "limit": {
       "context": 1048576,
@@ -110249,13 +110928,13 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.03058,
-      "output": 0.6875,
-      "cache_read": 0.02013
+      "input": 0.04,
+      "output": 0.5,
+      "cache_read": 0.025
     },
     "limit": {
       "context": 1048576,
-      "output": 943718
+      "output": 131072
     }
   },
   {
@@ -120510,6 +121189,39 @@
     }
   },
   {
+    "id": "llmgateway-providers/novita/ling-3.1-flash",
+    "name": "Ling 3.1 Flash (NovitaAI)",
+    "family": "ling",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "release_date": "2026-09-29",
+    "last_updated": "2026-09-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
+    }
+  },
+  {
     "id": "llmgateway-providers/novita/llama-3-70b-instruct",
     "name": "Llama 3 70B Instruct (NovitaAI)",
     "family": "llama",
@@ -123488,6 +124200,35 @@
       "input": 1.4,
       "output": 4.4,
       "cache_read": 0.26
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway-providers/scx-ai-gp/glm-5.3-fast",
+    "name": "GLM 5.3 Fast (SCX.ai)",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "temperature": true,
+    "release_date": "2026-08-14",
+    "last_updated": "2026-08-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 2.8,
+      "output": 8.8,
+      "cache_read": 0.56
     },
     "limit": {
       "context": 1000000,
@@ -128527,6 +129268,35 @@
     }
   },
   {
+    "id": "llmgateway/glm-5.3-fast",
+    "name": "GLM-5.3",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-08-14",
+    "last_updated": "2026-08-14",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 2.8,
+      "output": 8.8,
+      "cache_read": 0.56
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 131072
+    }
+  },
+  {
     "id": "llmgateway/glm-5.3-flash",
     "name": "GLM-5.3-Flash",
     "family": "glm-flash",
@@ -130848,6 +131618,39 @@
     "limit": {
       "context": 131072,
       "output": 131072
+    }
+  },
+  {
+    "id": "llmgateway/ling-3.1-flash",
+    "name": "Ling 3.1 Flash",
+    "family": "ling",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "release_date": "2026-09-29",
+    "last_updated": "2026-09-29",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 32768
     }
   },
   {
@@ -138223,7 +139026,7 @@
     "cost": {
       "input": 0.6,
       "output": 2.4,
-      "cache_read": 0.06,
+      "cache_read": 0.03,
       "cache_write": 0.375
     },
     "limit": {
@@ -139667,9 +140470,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 5.0,
-      "output": 30.0,
-      "cache_read": 0.5,
+      "input": 4.0,
+      "output": 20.0,
+      "cache_read": 0.4,
       "cache_write": 5.0
     },
     "limit": {
@@ -140161,7 +140964,8 @@
     "cost": {
       "input": 0.022,
       "output": 0.216,
-      "cache_read": 0.0044
+      "cache_read": 0.0044,
+      "cache_write": 0.0275
     },
     "limit": {
       "context": 1000000,
@@ -140191,7 +140995,8 @@
     "cost": {
       "input": 0.115,
       "output": 0.287,
-      "cache_read": 0.023
+      "cache_read": 0.023,
+      "cache_write": 0.14375
     },
     "limit": {
       "context": 1000000,
@@ -140367,7 +141172,8 @@
     "cost": {
       "input": 0.144,
       "output": 0.574,
-      "cache_read": 0.0288
+      "cache_read": 0.0288,
+      "cache_write": 0.18
     },
     "limit": {
       "context": 1000000,
@@ -140427,7 +141233,8 @@
     "cost": {
       "input": 0.574,
       "output": 2.294,
-      "cache_read": 0.1148
+      "cache_read": 0.1148,
+      "cache_write": 0.7175
     },
     "limit": {
       "context": 1000000,
@@ -140457,7 +141264,8 @@
     "cost": {
       "input": 0.359,
       "output": 1.434,
-      "cache_read": 0.0718
+      "cache_read": 0.0718,
+      "cache_write": 0.44875
     },
     "limit": {
       "context": 262144,
@@ -140609,7 +141417,8 @@
     "cost": {
       "input": 0.143,
       "output": 1.434,
-      "cache_read": 0.0286
+      "cache_read": 0.0286,
+      "cache_write": 0.17875
     },
     "limit": {
       "context": 262144,
@@ -140783,7 +141592,8 @@
     "cost": {
       "input": 0.029,
       "output": 0.287,
-      "cache_read": 0.0058
+      "cache_read": 0.0029,
+      "cache_write": 0.03625
     },
     "limit": {
       "context": 1000000,
@@ -140813,7 +141623,8 @@
     "cost": {
       "input": 0.115,
       "output": 0.688,
-      "cache_read": 0.023
+      "cache_read": 0.0115,
+      "cache_write": 0.14375
     },
     "limit": {
       "context": 1000000,
@@ -140900,7 +141711,8 @@
     "cost": {
       "input": 0.165,
       "output": 0.99,
-      "cache_read": 0.033
+      "cache_read": 0.0165,
+      "cache_write": 0.20625
     },
     "limit": {
       "context": 1000000,
@@ -140959,7 +141771,8 @@
     "cost": {
       "input": 0.276,
       "output": 1.651,
-      "cache_read": 0.0552
+      "cache_read": 0.0276,
+      "cache_write": 0.345
     },
     "limit": {
       "context": 1000000,
@@ -140988,7 +141801,8 @@
     "cost": {
       "input": 0.825,
       "output": 2.4755,
-      "cache_read": 0.165
+      "cache_read": 0.165,
+      "cache_write": 1.03125
     },
     "limit": {
       "context": 1000000,
@@ -141105,7 +141919,8 @@
     "cost": {
       "input": 2.0,
       "output": 6.0,
-      "cache_read": 0.25
+      "cache_read": 0.25,
+      "cache_write": 2.5
     },
     "limit": {
       "context": 1000000,
@@ -143120,7 +143935,7 @@
     "cost": {
       "input": 0.6,
       "output": 2.4,
-      "cache_read": 0.06,
+      "cache_read": 0.03,
       "cache_write": 0.375
     },
     "limit": {
@@ -143221,15 +144036,14 @@
   },
   {
     "id": "mistralai/codestral",
-    "name": "Codestral (latest)",
+    "name": "Codestral 25.08",
     "family": "codestral",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2024-05-29",
-    "last_updated": "2025-01-04",
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
     "modalities": {
       "input": [
         "text"
@@ -143238,7 +144052,7 @@
         "text"
       ]
     },
-    "open_weights": true,
+    "open_weights": false,
     "cost": {
       "input": 0.3,
       "output": 0.9,
@@ -143246,7 +144060,7 @@
     },
     "limit": {
       "context": 256000,
-      "output": 4096
+      "output": 8192
     }
   },
   {
@@ -143337,6 +144151,40 @@
     }
   },
   {
+    "id": "mistralai/glm-5.2",
+    "name": "GLM-5.2",
+    "family": "glm",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-06-13",
+    "last_updated": "2026-06-13",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 1.4,
+      "output": 4.4,
+      "cache_read": 0.14
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 131072
+    }
+  },
+  {
     "id": "mistralai/labs-devstral-small",
     "name": "Devstral Small 2",
     "family": "devstral",
@@ -143367,45 +144215,19 @@
     }
   },
   {
-    "id": "mistralai/magistral-medium",
-    "name": "Magistral Medium (latest)",
-    "family": "magistral-medium",
-    "attachment": false,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-06",
-    "release_date": "2025-03-17",
-    "last_updated": "2025-03-20",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 2.0,
-      "output": 5.0
-    },
-    "limit": {
-      "context": 128000,
-      "output": 16384
-    }
-  },
-  {
-    "id": "mistralai/ministral-3b",
-    "name": "Ministral 3B (latest)",
-    "family": "ministral",
+    "id": "mistralai/labs-leanstral-1.5-1",
+    "name": "Leanstral 1.5",
+    "family": "leanstral",
     "attachment": true,
-    "reasoning": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2024-10-01",
-    "last_updated": "2024-10-04",
+    "release_date": "2026-06-30",
+    "last_updated": "2026-06-30",
     "modalities": {
       "input": [
         "text",
@@ -143417,25 +144239,88 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.04,
-      "output": 0.04
+      "input": 0.0,
+      "output": 0.0
     },
     "limit": {
-      "context": 131072,
+      "context": 262144,
       "output": 128000
     }
   },
   {
-    "id": "mistralai/ministral-8b",
-    "name": "Ministral 8B (latest)",
+    "id": "mistralai/magistral-medium",
+    "name": "Magistral Medium (latest)",
+    "family": "magistral-medium",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-06",
+    "release_date": "2025-03-17",
+    "last_updated": "2025-03-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 2.0,
+      "output": 5.0
+    },
+    "limit": {
+      "context": 262144,
+      "output": 16384
+    }
+  },
+  {
+    "id": "mistralai/ministral-14b",
+    "name": "Ministral 3 14B",
     "family": "ministral",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2024-10",
-    "release_date": "2024-10-01",
-    "last_updated": "2024-10-04",
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 0.2,
+      "cache_read": 0.02
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "mistralai/ministral-3b",
+    "name": "Ministral 3 3B",
+    "family": "ministral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
     "modalities": {
       "input": [
         "text",
@@ -143448,11 +144333,42 @@
     "open_weights": true,
     "cost": {
       "input": 0.1,
-      "output": 0.1
+      "output": 0.1,
+      "cache_read": 0.01
+    },
+    "limit": {
+      "context": 131072,
+      "output": 262144
+    }
+  },
+  {
+    "id": "mistralai/ministral-8b",
+    "name": "Ministral 3 8B",
+    "family": "ministral",
+    "attachment": true,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-12-02",
+    "last_updated": "2025-12-02",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.15,
+      "output": 0.15,
+      "cache_read": 0.015
     },
     "limit": {
       "context": 262144,
-      "output": 128000
+      "output": 262144
     }
   },
   {
@@ -143874,7 +144790,7 @@
   },
   {
     "id": "mistralai/voxtral-small",
-    "name": "Voxtral Small (latest)",
+    "name": "Voxtral Small",
     "family": "voxtral",
     "attachment": true,
     "reasoning": false,
@@ -143894,7 +144810,7 @@
     "open_weights": true,
     "cost": {
       "input": 0.1,
-      "output": 0.3
+      "output": 0.4
     },
     "limit": {
       "context": 32768,
@@ -145436,7 +146352,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.0
     },
     "limit": {
       "context": 1048576,
@@ -145568,7 +146485,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.0
     },
     "limit": {
       "context": 1048576,
@@ -148986,6 +149904,44 @@
     }
   },
   {
+    "id": "nano-gpt/anthropic/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "nano-gpt/anthropic/claude-opus",
     "name": "Claude Opus Latest",
     "family": "claude-opus",
@@ -151326,6 +152282,42 @@
     }
   },
   {
+    "id": "nano-gpt/deepseek/deepseek-v4-flash-0423:thinking",
+    "name": "DeepSeek V4 Flash 0423 (Thinking)",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-23",
+    "last_updated": "2026-04-23",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.14,
+      "output": 0.28,
+      "cache_read": 0.03
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 384000
+    }
+  },
+  {
     "id": "nano-gpt/deepseek/deepseek-v4-flash-0731:thinking",
     "name": "DeepSeek V4 Flash 0731 (Thinking)",
     "family": "deepseek-flash",
@@ -151694,62 +152686,6 @@
     }
   },
   {
-    "id": "nano-gpt/doubao-seed-1.6-250615",
-    "name": "Doubao Seed 1.6",
-    "family": "seed",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": false,
-    "release_date": "2024-01-01",
-    "last_updated": "2025-06-15",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.204,
-      "output": 0.51,
-      "cache_read": 0.102
-    },
-    "limit": {
-      "context": 256000,
-      "output": 16384
-    }
-  },
-  {
-    "id": "nano-gpt/doubao-seed-1.6-flash-250615",
-    "name": "Doubao Seed 1.6 Flash",
-    "family": "seed",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": false,
-    "release_date": "2024-01-01",
-    "last_updated": "2025-06-15",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.0374,
-      "output": 0.374,
-      "cache_read": 0.0187
-    },
-    "limit": {
-      "context": 256000,
-      "output": 16384
-    }
-  },
-  {
     "id": "nano-gpt/doubao-seed-2.0-code-preview-260215",
     "name": "Doubao Seed 2.0 Code Preview",
     "family": "seed",
@@ -151945,35 +152881,6 @@
     "limit": {
       "context": 119000,
       "output": 64000
-    }
-  },
-  {
-    "id": "nano-gpt/ernie-x1.1-preview",
-    "name": "ERNIE X1.1",
-    "family": "ernie",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": false,
-    "release_date": "2025-09-10",
-    "last_updated": "2025-09-10",
-    "modalities": {
-      "input": [
-        "text",
-        "pdf"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.15,
-      "output": 0.6,
-      "cache_read": 0.075
-    },
-    "limit": {
-      "context": 64000,
-      "output": 8192
     }
   },
   {
@@ -153326,7 +154233,7 @@
     },
     "limit": {
       "context": 1000000,
-      "output": 4096
+      "output": 4095
     }
   },
   {
@@ -155729,7 +156636,7 @@
     "cost": {
       "input": 0.33,
       "output": 1.32,
-      "cache_read": 0.165
+      "cache_read": 0.03
     },
     "limit": {
       "context": 200000,
@@ -155945,8 +156852,9 @@
     "attachment": false,
     "reasoning": false,
     "tool_call": false,
-    "release_date": "2025-08-01",
-    "last_updated": "2025-08-01",
+    "temperature": true,
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
     "modalities": {
       "input": [
         "text"
@@ -181465,6 +182373,40 @@
     }
   },
   {
+    "id": "ollama-cloud/mistral-large-4",
+    "name": "Mistral Large 4",
+    "family": "mistral-large",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.36,
+      "output": 4.18,
+      "cache_read": 0.14
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 262144
+    }
+  },
+  {
     "id": "ollama-cloud/nemotron-3-nano:30b",
     "name": "nemotron-3-nano:30b",
     "family": "nemotron",
@@ -183335,6 +184277,46 @@
     }
   },
   {
+    "id": "opencode-go/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "opencode-go/deepseek-v4-flash",
     "name": "DeepSeek V4 Flash",
     "family": "deepseek-flash",
@@ -184685,6 +185667,46 @@
     }
   },
   {
+    "id": "opencode/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "opencode/claude-opus-4.1",
     "name": "Claude Opus 4.1",
     "family": "claude-opus",
@@ -185312,6 +186334,37 @@
     "limit": {
       "context": 1000000,
       "output": 384000
+    }
+  },
+  {
+    "id": "opencode/exo-free",
+    "name": "Exo Free",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 131072
     }
   },
   {
@@ -187938,6 +188991,40 @@
     }
   },
   {
+    "id": "opencode/mistral-large-4",
+    "name": "Mistral Large 4",
+    "family": "mistral-large",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.68,
+      "output": 2.09,
+      "cache_read": 0.07
+    },
+    "limit": {
+      "context": 524288,
+      "output": 262144
+    }
+  },
+  {
     "id": "opencode/muse-spark-1.2",
     "name": "Muse Spark 1.2",
     "family": "muse",
@@ -190312,9 +191399,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0242,
+      "input": 0.03,
       "output": 1.28,
-      "cache_read": 0.0242
+      "cache_read": 0.03
     },
     "limit": {
       "context": 1048576,
@@ -191412,9 +192499,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0765,
-      "output": 0.255,
-      "cache_read": 0.0425
+      "input": 0.09,
+      "output": 0.3,
+      "cache_read": 0.05
     },
     "limit": {
       "context": 262144,
@@ -191931,35 +193018,6 @@
     "limit": {
       "context": 128000,
       "output": 8192
-    }
-  },
-  {
-    "id": "openrouter/kwaipilot/kat-coder-pro-v2.5",
-    "name": "KAT-Coder-Pro V2.5",
-    "family": "kat-coder",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-07-10",
-    "last_updated": "2026-07-10",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.74,
-      "output": 2.96,
-      "cache_read": 0.15
-    },
-    "limit": {
-      "context": 262144,
-      "output": 235929
     }
   },
   {
@@ -192813,15 +193871,14 @@
   },
   {
     "id": "openrouter/mistralai/codestral",
-    "name": "Codestral 2508",
+    "name": "Codestral 25.08",
     "family": "codestral",
     "attachment": true,
     "reasoning": false,
     "tool_call": true,
     "temperature": true,
-    "knowledge": "2025-03-31",
-    "release_date": "2025-08-01",
-    "last_updated": "2025-08-01",
+    "release_date": "2025-07-30",
+    "last_updated": "2025-07-30",
     "modalities": {
       "input": [
         "text",
@@ -193483,9 +194540,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.95,
-      "output": 4.0,
-      "cache_read": 0.16
+      "input": 0.465,
+      "output": 2.45,
+      "cache_read": 0.0975
     },
     "limit": {
       "context": 262144,
@@ -193550,9 +194607,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.69,
+      "input": 0.5,
       "output": 15.0,
-      "cache_read": 0.23
+      "cache_read": 0.43
     },
     "limit": {
       "context": 1048576,
@@ -193793,12 +194850,11 @@
     "open_weights": true,
     "cost": {
       "input": 0.05,
-      "output": 0.2,
-      "cache_read": 0.03
+      "output": 0.2
     },
     "limit": {
       "context": 262144,
-      "output": 235929
+      "output": 32768
     }
   },
   {
@@ -194039,13 +195095,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.06,
-      "output": 0.16,
-      "cache_read": 0.03
+      "input": 0.049,
+      "output": 0.14,
+      "cache_read": 0.0245
     },
     "limit": {
       "context": 262144,
-      "output": 32768
+      "output": 131072
     }
   },
   {
@@ -196980,12 +198036,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1,
-      "output": 0.3
+      "input": 0.04815,
+      "output": 0.19305
     },
     "limit": {
       "context": 262144,
-      "output": 235929
+      "output": 32000
     }
   },
   {
@@ -197634,13 +198690,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.08,
-      "output": 0.75,
-      "cache_read": 0.04
+      "input": 0.15,
+      "output": 1.0,
+      "cache_read": 0.05
     },
     "limit": {
       "context": 262144,
-      "output": 32768
+      "output": 235929
     }
   },
   {
@@ -197818,13 +198874,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.32,
-      "output": 3.25,
+      "input": 0.3,
+      "output": 2.0,
       "cache_read": 0.03
     },
     "limit": {
       "context": 262144,
-      "output": 262140
+      "output": 65536
     }
   },
   {
@@ -198995,13 +200051,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.95,
+      "input": 1.0,
       "output": 4.05,
-      "cache_read": 0.16
+      "cache_read": 0.17
     },
     "limit": {
       "context": 524288,
-      "output": 262144
+      "output": 471859
     }
   },
   {
@@ -200044,13 +201100,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.4,
-      "output": 4.4,
-      "cache_read": 0.26
+      "input": 0.966,
+      "output": 3.036,
+      "cache_read": 0.1794
     },
     "limit": {
       "context": 204800,
-      "output": 131072
+      "output": 128000
     }
   },
   {
@@ -200077,9 +201133,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.152,
-      "output": 12.0,
-      "cache_read": 0.15
+      "input": 0.171,
+      "output": 7.2,
+      "cache_read": 0.162
     },
     "limit": {
       "context": 1048576,
@@ -200112,7 +201168,7 @@
     "open_weights": true,
     "cost": {
       "input": 0.07,
-      "output": 2.1,
+      "output": 7.0,
       "cache_read": 0.065
     },
     "limit": {
@@ -200433,13 +201489,13 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.038,
-      "output": 0.57,
-      "cache_read": 0.01
+      "input": 0.049,
+      "output": 1.2,
+      "cache_read": 0.03
     },
     "limit": {
       "context": 1048576,
-      "output": 943718
+      "output": 393216
     }
   },
   {
@@ -200467,9 +201523,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.2514,
+      "input": 0.2917,
       "output": 4.2,
-      "cache_read": 0.25
+      "cache_read": 0.29
     },
     "limit": {
       "context": 1048576,
@@ -200501,9 +201557,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0123,
+      "input": 0.018,
       "output": 1.28,
-      "cache_read": 0.0123
+      "cache_read": 0.018
     },
     "limit": {
       "context": 1048576,
@@ -200617,9 +201673,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.69,
-      "output": 15.0,
-      "cache_read": 0.23
+      "input": 0.49,
+      "output": 13.0,
+      "cache_read": 0.45
     },
     "limit": {
       "context": 1048576,
@@ -200888,9 +201944,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.03,
-      "output": 12.0,
-      "cache_read": 0.03
+      "input": 0.063,
+      "output": 6.3,
+      "cache_read": 0.0585
     },
     "limit": {
       "context": 1048576,
@@ -200924,13 +201980,13 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.03058,
-      "output": 0.6875,
-      "cache_read": 0.02013
+      "input": 0.04,
+      "output": 0.5,
+      "cache_read": 0.025
     },
     "limit": {
       "context": 1048576,
-      "output": 943718
+      "output": 131072
     }
   },
   {
@@ -224559,6 +225615,7 @@
   {
     "id": "requesty/leanstral-1.5",
     "name": "leanstral-1-5",
+    "family": "leanstral",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
@@ -224585,6 +225642,7 @@
   {
     "id": "requesty/leanstral-1.5@eu",
     "name": "leanstral-1-5@eu",
+    "family": "leanstral",
     "attachment": false,
     "reasoning": false,
     "tool_call": true,
@@ -225006,7 +226064,14 @@
     "name": "Mistral Large 4",
     "family": "mistral-large",
     "attachment": true,
-    "reasoning": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-06",
@@ -225027,8 +226092,8 @@
       "cache_read": 0.07
     },
     "limit": {
-      "context": 1000000,
-      "output": 1000000
+      "context": 524288,
+      "output": 524288
     }
   },
   {
@@ -225036,7 +226101,14 @@
     "name": "Mistral Large 4 (EU)",
     "family": "mistral-large",
     "attachment": true,
-    "reasoning": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-06",
@@ -225057,8 +226129,8 @@
       "cache_read": 0.07
     },
     "limit": {
-      "context": 1000000,
-      "output": 1000000
+      "context": 524288,
+      "output": 524288
     }
   },
   {
@@ -249173,6 +250245,45 @@
     }
   },
   {
+    "id": "vercel/anthropic/claude-haiku-5.5",
+    "name": "Claude Haiku 5.5",
+    "family": "claude-haiku",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.01,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "vercel/anthropic/claude-opus-4",
     "name": "Claude Opus 4",
     "family": "claude-opus",
@@ -258731,6 +259842,38 @@
     }
   },
   {
+    "id": "vercel/stealth/glyph-cluster",
+    "name": "Glyph Cluster",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "release_date": "2026-10-07",
+    "last_updated": "2026-10-07",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 256000,
+      "output": 256000
+    }
+  },
+  {
     "id": "vercel/stepfun/step-3.5-flash",
     "name": "StepFun 3.5 Flash",
     "attachment": false,
@@ -259054,6 +260197,75 @@
     "limit": {
       "context": 1000000,
       "output": 1000000
+    }
+  },
+  {
+    "id": "vercel/topaz/proteus",
+    "name": "Proteus",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "video"
+      ]
+    },
+    "open_weights": false,
+    "cost": {},
+    "limit": {
+      "context": 0,
+      "output": 0
+    }
+  },
+  {
+    "id": "vercel/topaz/starlight-precise-2.6",
+    "name": "Starlight Precise 2.6",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "video"
+      ]
+    },
+    "open_weights": false,
+    "cost": {},
+    "limit": {
+      "context": 0,
+      "output": 0
+    }
+  },
+  {
+    "id": "vercel/topaz/wonder-3.5",
+    "name": "Wonder 3.5",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": false,
+    "release_date": "2026-10-06",
+    "last_updated": "2026-10-06",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ]
+    },
+    "open_weights": false,
+    "cost": {},
+    "limit": {
+      "context": 0,
+      "output": 0
     }
   },
   {
