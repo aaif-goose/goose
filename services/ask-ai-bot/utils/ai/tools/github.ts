@@ -32,6 +32,9 @@ export interface GitHubComment {
   author: string;
   createdAt: string;
   body: string;
+  authorAssociation: string;
+  url: string;
+  truncated: boolean;
 }
 
 export async function searchGitHub(
@@ -55,7 +58,7 @@ export async function searchGitHub(
     per_page: limit,
   });
 
-  return response.data.items.map((item: any) => ({
+  return response.data.items.map((item) => ({
     number: item.number,
     title: item.title,
     state: item.state,
@@ -63,7 +66,7 @@ export async function searchGitHub(
     author: item.user?.login ?? "unknown",
     createdAt: item.created_at,
     updatedAt: item.updated_at,
-    labels: item.labels.map((l: any) =>
+    labels: item.labels.map((l) =>
       typeof l === "string" ? l : (l.name ?? ""),
     ),
     body: item.body ?? "",
@@ -81,7 +84,7 @@ export async function getGitHubItem(number: number): Promise<GitHubItem> {
     issue_number: number,
   });
 
-  const item: any = response.data;
+  const item = response.data;
   return {
     number: item.number,
     title: item.title,
@@ -90,7 +93,7 @@ export async function getGitHubItem(number: number): Promise<GitHubItem> {
     author: item.user?.login ?? "unknown",
     createdAt: item.created_at,
     updatedAt: item.updated_at,
-    labels: item.labels.map((l: any) =>
+    labels: item.labels.map((l) =>
       typeof l === "string" ? l : (l.name ?? ""),
     ),
     body: item.body ?? "",
@@ -101,32 +104,55 @@ export async function getGitHubItem(number: number): Promise<GitHubItem> {
 
 export async function getGitHubItemComments(
   number: number,
-  limit: number = 30,
+  limit = 10,
 ): Promise<GitHubComment[]> {
   const api = getOctokit();
-  const perPage = Math.min(limit, 100);
-  const comments: GitHubComment[] = [];
-
-  for (let page = 1; comments.length < limit; page++) {
-    const response = await api.rest.issues.listComments({
-      owner: REPO_OWNER,
-      repo: REPO_NAME,
-      issue_number: number,
-      per_page: perPage,
-      page,
-    });
-
-    if (response.data.length === 0) break;
-
-    for (const comment of response.data) {
-      comments.push({
-        author: comment.user?.login ?? "unknown",
-        createdAt: comment.created_at,
-        body: comment.body ?? "",
-      });
-      if (comments.length >= limit) break;
-    }
+  const params = {
+    owner: REPO_OWNER,
+    repo: REPO_NAME,
+    issue_number: number,
+    per_page: 100,
+  };
+  const first = await api.rest.issues.listComments(params);
+  const lastLink = first.headers.link?.match(/<([^>]+)>;\s*rel="last"/)?.[1];
+  const lastPage = lastLink
+    ? Number(new URL(lastLink).searchParams.get("page"))
+    : 1;
+  const last =
+    lastPage > 1
+      ? await api.rest.issues.listComments({ ...params, page: lastPage })
+      : first;
+  let comments = last.data;
+  if (lastPage > 1 && comments.length < limit) {
+    const previous =
+      lastPage === 2
+        ? first
+        : await api.rest.issues.listComments({ ...params, page: lastPage - 1 });
+    comments = [...previous.data, ...comments];
   }
+  return comments.slice(-limit).map((comment) => ({
+    author: comment.user?.login ?? "unknown",
+    authorAssociation: comment.author_association,
+    createdAt: comment.created_at,
+    body: comment.body?.slice(0, 2000) ?? "",
+    truncated: (comment.body?.length ?? 0) > 2000,
+    url: comment.html_url,
+  }));
+}
 
-  return comments;
+export async function getGitHubRelease(tag?: string) {
+  const api = getOctokit();
+  const params = { owner: REPO_OWNER, repo: REPO_NAME };
+  const { data } = tag
+    ? await api.rest.repos.getReleaseByTag({ ...params, tag })
+    : await api.rest.repos.getLatestRelease(params);
+  return {
+    tag: data.tag_name,
+    name: data.name,
+    publishedAt: data.published_at,
+    prerelease: data.prerelease,
+    url: data.html_url,
+    body: data.body?.slice(0, 12000) ?? "",
+    truncated: (data.body?.length ?? 0) > 12000,
+  };
 }

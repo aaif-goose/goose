@@ -1140,13 +1140,10 @@ impl GooseAcpAgent {
             .find(|extension| extension.name() == "developer")
             .unwrap_or_else(|| builtin_to_extension_config("developer"));
 
-        if let Err(error) = agent
+        agent
             .extension_manager
-            .add_session_client(developer_config, &session.id, client, info)
-            .await
-        {
-            warn!(%error, "Failed to install ACP developer client");
-        }
+            .add_client(developer_config, client, info)
+            .await;
     }
 
     async fn prepare_acp_session_agent(

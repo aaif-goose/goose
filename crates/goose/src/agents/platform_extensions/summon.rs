@@ -93,6 +93,14 @@ pub struct DelegateParams {
     pub r#async: bool,
 }
 
+struct SubagentConfig {
+    provider_name: String,
+    model_config: goose_providers::model::ModelConfig,
+    extensions: Vec<crate::config::ExtensionConfig>,
+    working_dir: PathBuf,
+    max_turns: usize,
+}
+
 pub struct BackgroundTask {
     pub id: String,
     pub description: String,
@@ -448,55 +456,12 @@ fn build_instructions_with_context(context: &str, instructions: &str) -> String 
     result
 }
 
-fn build_subagent_instructions(session: Option<&crate::session::Session>) -> String {
-    let Some(session) = session else {
-        return String::new();
-    };
-
-    // filter the sources down to what we want even though currently that is what we get
-    let mut sources: Vec<SourceEntry> = discover_filesystem_sources(&session.working_dir)
-        .into_iter()
-        .filter(|s| {
-            matches!(
-                s.source_type,
-                SourceType::Agent | SourceType::Recipe | SourceType::Subrecipe
-            )
-        })
-        .collect();
-
-    // If the session is started from a recipe, also use the subrecipes for
-    // that recipe as delegate targets
-    if let Some(recipe) = session.recipe.as_ref() {
-        if let Some(subs) = recipe.sub_recipes.as_ref() {
-            let mut seen: std::collections::HashSet<String> =
-                sources.iter().map(|s| s.name.clone()).collect();
-            for sr in subs {
-                if !seen.insert(sr.name.clone()) {
-                    continue;
-                }
-                sources.push(SourceEntry {
-                    source_type: SourceType::Subrecipe,
-                    name: sr.name.clone(),
-                    description: sr.description.clone().unwrap_or_default(),
-                    content: String::new(),
-                    path: sr.path.clone(),
-                    global: false,
-                    writable: false,
-                    supporting_files: Vec::new(),
-                    properties: std::collections::HashMap::new(),
-                });
-            }
-        }
-    }
-
+fn build_subagent_instructions(sources: &[SourceEntry]) -> String {
     if sources.is_empty() {
         return String::new();
     }
 
-    sources.sort_by(|a, b| (&a.source_type, &a.name).cmp(&(&b.source_type, &b.name)));
-    let subagents: Vec<&SourceEntry> = sources.iter().collect();
-
-    let names = subagents
+    let names = sources
         .iter()
         .map(|s| s.name.as_str())
         .collect::<Vec<_>>()
@@ -510,7 +475,7 @@ fn build_subagent_instructions(session: Option<&crate::session::Session>) -> Str
     );
 
     let mut current_kind: Option<SourceType> = None;
-    for s in &subagents {
+    for s in sources {
         if current_kind != Some(s.source_type) {
             out.push_str(&format!("\n{}:", kind_plural(s.source_type)));
             current_kind = Some(s.source_type);
@@ -579,9 +544,9 @@ fn is_session_id(s: &str) -> bool {
 pub struct SummonClient {
     info: InitializeResult,
     context: PlatformExtensionContext,
-    source_cache: Arc<Mutex<Option<CachedSources>>>,
-    background_tasks: Arc<BackgroundTasks>,
-    completed_tasks: Arc<Mutex<HashMap<String, CompletedTask>>>,
+    source_cache: Mutex<Option<CachedSources>>,
+    background_tasks: BackgroundTasks,
+    completed_tasks: Mutex<HashMap<String, CompletedTask>>,
 }
 
 type CachedSources = (Instant, PathBuf, Vec<SourceEntry>);
@@ -614,34 +579,23 @@ impl SummonClient {
         Ok(Self {
             info,
             context,
-            source_cache: Arc::new(Mutex::new(None)),
-            background_tasks: Arc::new(BackgroundTasks(Mutex::new(HashMap::new()))),
-            completed_tasks: Arc::new(Mutex::new(HashMap::new())),
+            source_cache: Mutex::new(None),
+            background_tasks: BackgroundTasks(Mutex::new(HashMap::new())),
+            completed_tasks: Mutex::new(HashMap::new()),
         })
-    }
-
-    fn rebound(&self, session: Arc<crate::session::Session>) -> Self {
-        let mut context = self.context.clone();
-        context.session = Some(session);
-        Self {
-            info: self.info.clone(),
-            context,
-            source_cache: Arc::clone(&self.source_cache),
-            background_tasks: Arc::clone(&self.background_tasks),
-            completed_tasks: Arc::clone(&self.completed_tasks),
-        }
     }
 
     async fn create_subagent_session(
         &self,
-        task_config: &TaskConfig,
+        working_dir: &Path,
+        parent_session_id: &str,
         name: String,
     ) -> Result<crate::session::Session, String> {
         let session = self
             .context
             .session_manager
             .create_session(
-                task_config.parent_working_dir.clone(),
+                working_dir.to_path_buf(),
                 name,
                 SessionType::SubAgent,
                 GooseMode::Auto,
@@ -649,11 +603,11 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;
 
-        if !task_config.parent_session_id.is_empty() {
+        if !parent_session_id.is_empty() {
             self.context
                 .session_manager
                 .update(&session.id)
-                .parent_session_id(Some(task_config.parent_session_id.clone()))
+                .parent_session_id(Some(parent_session_id.to_string()))
                 .apply()
                 .await
                 .map_err(|e| format!("Failed to link subagent to parent session: {}", e))?;
@@ -823,12 +777,6 @@ impl SummonClient {
     fn working_dir(&self, ctx: &ToolCallContext) -> PathBuf {
         ctx.working_dir
             .clone()
-            .or_else(|| {
-                self.context
-                    .session
-                    .as_ref()
-                    .map(|session| session.working_dir.clone())
-            })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 
@@ -1387,26 +1335,23 @@ impl SummonClient {
 
         self.validate_delegate_params(&params)?;
 
-        let mut session = match self
+        let mut session = self
             .context
-            .session
-            .as_deref()
-            .filter(|session| session.id == session_id)
-        {
-            Some(session) => session.clone(),
-            None => self
-                .context
-                .session_manager
-                .get_session(session_id, false)
-                .await
-                .map_err(|e| format!("Failed to get session: {}", e))?,
-        };
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|e| format!("Failed to get session: {}", e))?;
         session.working_dir = working_dir.to_path_buf();
 
         if session.session_type == SessionType::SubAgent {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
+        // TODO: When retiring the legacy loop, remove the async parameter and background-task
+        // options/guidance in create_delegate_tool and create_load_tool. In
+        // build_subagent_instructions, remove only the "For long-running work" sentence.
+        // Keep the remaining guidance.
+        // Context: https://github.com/aaif-goose/goose/pull/12632
         if from_state_machine {
             return self.handle_foreground_delegate(params, &session).await;
         }
@@ -1447,7 +1392,11 @@ impl SummonClient {
         agent_config.is_subagent = true;
 
         let subagent_session = self
-            .create_subagent_session(&task_config, "Delegated task".to_string())
+            .create_subagent_session(
+                &task_config.parent_working_dir,
+                &task_config.parent_session_id,
+                "Delegated task".to_string(),
+            )
             .await?;
 
         let subagent_session_id = subagent_session.id.clone();
@@ -1498,22 +1447,20 @@ impl SummonClient {
         let mut recipe = self
             .build_delegate_recipe(&params, &parent.id, &parent.working_dir)
             .await?;
-        let task_config = self
-            .build_task_config(&params, &recipe, parent)
+        let subagent_config = self
+            .resolve_subagent_config(&params, &recipe, parent)
             .await
-            .map_err(|e| format!("Failed to build task config: {e}"))?;
-        crate::providers::get_from_registry(task_config.provider.get_name())
+            .map_err(|e| format!("Failed to resolve subagent config: {e}"))?;
+        crate::providers::get_from_registry(&subagent_config.provider_name)
             .await
             .map_err(|_| {
                 format!(
                     "Provider '{}' cannot be reconstructed for a foreground subagent",
-                    task_config.provider.get_name()
+                    subagent_config.provider_name
                 )
             })?;
 
-        let max_turns = task_config
-            .max_turns
-            .expect("TaskConfig always sets max_turns");
+        let max_turns = subagent_config.max_turns;
         recipe
             .settings
             .get_or_insert(Settings {
@@ -1541,12 +1488,16 @@ impl SummonClient {
             .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
 
         let mut extension_data = ExtensionData::default();
-        EnabledExtensionsState::new(task_config.extensions.clone())
+        EnabledExtensionsState::new(subagent_config.extensions)
             .to_extension_data(&mut extension_data)
             .map_err(|e| format!("Failed to save delegate extensions: {e}"))?;
 
         let child = self
-            .create_subagent_session(&task_config, "Delegated task".to_string())
+            .create_subagent_session(
+                &subagent_config.working_dir,
+                &parent.id,
+                "Delegated task".to_string(),
+            )
             .await?;
         let task = recipe
             .prompt
@@ -1556,8 +1507,8 @@ impl SummonClient {
             .session_manager
             .update(&child.id)
             .recipe(Some(recipe))
-            .provider_name(task_config.provider.get_name())
-            .model_config(task_config.model_config)
+            .provider_name(&subagent_config.provider_name)
+            .model_config(subagent_config.model_config)
             .extension_data(extension_data)
             .apply()
             .await
@@ -1760,7 +1711,7 @@ impl SummonClient {
             .and_then(serde_json::Value::as_str)
             .map(str::to_string);
 
-        // max_turns is set later in build_task_config so it can incorporate params.max_turns
+        // max_turns is set later in resolve_subagent_config so it can incorporate params.max_turns
         // with the correct priority ordering; setting it here would cause it to be overridden
         // by the parent session's recipe instead.
         let settings = model.map(|m| Settings {
@@ -1795,6 +1746,37 @@ impl SummonClient {
         recipe: &Recipe,
         session: &crate::session::Session,
     ) -> Result<TaskConfig, anyhow::Error> {
+        let config = self
+            .resolve_subagent_config(params, recipe, session)
+            .await?;
+        let provider = match providers::get_from_registry(&config.provider_name).await {
+            Ok(entry) => entry.create(config.extensions.clone()).await?,
+            Err(error) => match self.context.providers.provider_for(session).await {
+                Ok(provider)
+                    if provider.get_name() == config.provider_name
+                        && !provider.manages_own_context() =>
+                {
+                    provider
+                }
+                _ => return Err(error),
+            },
+        };
+        Ok(TaskConfig {
+            provider,
+            model_config: config.model_config,
+            parent_session_id: session.id.clone(),
+            parent_working_dir: config.working_dir,
+            extensions: config.extensions,
+            max_turns: Some(config.max_turns),
+        })
+    }
+
+    async fn resolve_subagent_config(
+        &self,
+        params: &DelegateParams,
+        recipe: &Recipe,
+        session: &Session,
+    ) -> Result<SubagentConfig> {
         let mut extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
             Config::global(),
@@ -1821,8 +1803,8 @@ impl SummonClient {
             }
         }
 
-        let (provider, model_config) = self
-            .resolve_provider(params, recipe, session, &extensions)
+        let (provider_name, model_config) = self
+            .resolve_provider_config(params, recipe, session)
             .await?;
 
         let max_turns = params
@@ -1843,16 +1825,13 @@ impl SummonClient {
             None => session.working_dir.clone(),
         };
 
-        let task_config = TaskConfig::new(
-            provider,
-            model_config,
-            &session.id,
-            &effective_working_dir,
+        Ok(SubagentConfig {
+            provider_name,
+            model_config: model_config.with_cache_ttl_clamped(),
             extensions,
-        )
-        .with_max_turns(Some(max_turns));
-
-        Ok(task_config)
+            working_dir: effective_working_dir,
+            max_turns,
+        })
     }
 
     fn resolve_model_config(
@@ -1949,19 +1928,12 @@ impl SummonClient {
         Ok(model_config)
     }
 
-    async fn resolve_provider(
+    async fn resolve_provider_config(
         &self,
         params: &DelegateParams,
         recipe: &Recipe,
         session: &crate::session::Session,
-        extensions: &[crate::config::ExtensionConfig],
-    ) -> Result<
-        (
-            Arc<dyn crate::providers::base::Provider>,
-            goose_providers::model::ModelConfig,
-        ),
-        anyhow::Error,
-    > {
+    ) -> Result<(String, goose_providers::model::ModelConfig)> {
         let env_provider = std::env::var("GOOSE_SUBAGENT_PROVIDER").ok();
         let provider_name = recipe
             .settings
@@ -1989,18 +1961,7 @@ impl SummonClient {
             &provider_name,
             provider_default_model,
         )?;
-        let provider = match provider_entry {
-            Ok(entry) => entry.create(extensions.to_vec()).await?,
-            Err(error) => match self.context.providers.provider_for(session).await {
-                Ok(provider)
-                    if provider.get_name() == provider_name && !provider.manages_own_context() =>
-                {
-                    provider
-                }
-                _ => return Err(error),
-            },
-        };
-        Ok((provider, model_config))
+        Ok((provider_name, model_config))
     }
 
     fn resolve_max_turns(&self, session: &crate::session::Session) -> usize {
@@ -2200,7 +2161,11 @@ impl SummonClient {
         agent_config.is_subagent = true;
 
         let subagent_session = self
-            .create_subagent_session(&task_config, description.clone())
+            .create_subagent_session(
+                &task_config.parent_working_dir,
+                &task_config.parent_session_id,
+                description.clone(),
+            )
             .await?;
 
         let task_id = subagent_session.id.clone();
@@ -2352,20 +2317,10 @@ impl McpClientTrait for SummonClient {
         Some(&self.info)
     }
 
-    fn get_instructions(&self) -> Option<String> {
-        let instructions = build_subagent_instructions(self.context.session.as_deref());
-        if instructions.is_empty() {
-            None
-        } else {
-            Some(instructions)
-        }
-    }
-
-    fn rebind_session(
-        &self,
-        session: Arc<crate::session::Session>,
-    ) -> Option<Arc<dyn McpClientTrait>> {
-        Some(Arc::new(self.rebound(session)))
+    async fn get_instructions(&self, session_id: &str, working_dir: &Path) -> Option<String> {
+        let sources = self.get_sources(session_id, working_dir).await;
+        let instructions = build_subagent_instructions(&sources);
+        (!instructions.is_empty()).then_some(instructions)
     }
 
     async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
@@ -2491,7 +2446,6 @@ mod tests {
             providers: Default::default(),
             session_manager,
             scheduler: None,
-            session: None,
             use_login_shell_path: false,
         }
     }
@@ -2520,7 +2474,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn foreground_delegate_persists_child_and_scheduling_marker() {
+    #[serial]
+    async fn foreground_delegate_persists_child_without_creating_provider() {
         let temp_dir = TempDir::new().unwrap();
         let child_dir = temp_dir.path().join("child");
         fs::create_dir(&child_dir).unwrap();
@@ -2534,6 +2489,15 @@ mod tests {
                 SessionType::User,
                 GooseMode::Auto,
             )
+            .await
+            .unwrap();
+        manager
+            .update(&parent.id)
+            .provider_name("openai")
+            .model_config(
+                goose_providers::model::ModelConfig::new("test-model").with_cache_ttl("1h"),
+            )
+            .apply()
             .await
             .unwrap();
         let client =
@@ -2551,17 +2515,22 @@ mod tests {
         .unwrap()
         .clone();
 
-        let result = client
-            .handle_delegate(
-                &parent.id,
-                temp_dir.path(),
-                Some(args),
-                CancellationToken::new(),
-                None,
-                true,
-            )
-            .await
-            .unwrap();
+        let result = {
+            let _env =
+                env_lock::lock_env([("OPENAI_HOST", None), ("OPENAI_BASE_URL", Some("http://"))]);
+            assert!(providers::create("openai", Vec::new()).await.is_err());
+            client
+                .handle_delegate(
+                    &parent.id,
+                    temp_dir.path(),
+                    Some(args),
+                    CancellationToken::new(),
+                    None,
+                    true,
+                )
+                .await
+                .unwrap()
+        };
         let meta = result.meta.as_ref().unwrap();
         assert_eq!(
             meta.0.get("foreground_subagent"),
@@ -2585,6 +2554,10 @@ mod tests {
         assert_eq!(
             child.model_config.as_ref().unwrap().model_name,
             "test-model"
+        );
+        assert_eq!(
+            child.model_config.as_ref().unwrap().cache_ttl().as_deref(),
+            Some("5m")
         );
         let recipe = child.recipe.as_ref().unwrap();
         assert_eq!(recipe.settings.as_ref().unwrap().max_turns, Some(3));
@@ -2642,8 +2615,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebound_client_refreshes_instructions_and_preserves_task_state() {
-        let data_dir = TempDir::new().unwrap();
+    async fn instructions_follow_the_calling_working_dir() {
         let old_working_dir = TempDir::new().unwrap();
         let new_working_dir = TempDir::new().unwrap();
         for (working_dir, name) in [
@@ -2658,43 +2630,19 @@ mod tests {
             )
             .unwrap();
         }
-        let session_manager = Arc::new(crate::session::SessionManager::new(
-            data_dir.path().to_path_buf(),
-        ));
-        let old_session = session_manager
-            .create_session(
-                old_working_dir.path().to_path_buf(),
-                "old".to_string(),
-                SessionType::Hidden,
-                GooseMode::Auto,
-            )
+        let client = SummonClient::new(create_test_context()).unwrap();
+
+        let old = client
+            .get_instructions("session", old_working_dir.path())
             .await
             .unwrap();
-        let new_session = session_manager
-            .create_session(
-                new_working_dir.path().to_path_buf(),
-                "new".to_string(),
-                SessionType::Hidden,
-                GooseMode::Auto,
-            )
+        let new = client
+            .get_instructions("session", new_working_dir.path())
             .await
             .unwrap();
-        let mut context = create_test_context_with_session_manager(session_manager);
-        context.session = Some(Arc::new(old_session));
-        let client = SummonClient::new(context).unwrap();
 
-        let rebound = client.rebound(Arc::new(new_session));
-
-        assert!(client.get_instructions().unwrap().contains("old-agent"));
-        assert!(rebound.get_instructions().unwrap().contains("new-agent"));
-        assert!(Arc::ptr_eq(
-            &client.background_tasks,
-            &rebound.background_tasks
-        ));
-        assert!(Arc::ptr_eq(
-            &client.completed_tasks,
-            &rebound.completed_tasks
-        ));
+        assert!(old.contains("old-agent") && !old.contains("new-agent"));
+        assert!(new.contains("new-agent") && !new.contains("old-agent"));
     }
 
     #[tokio::test]
@@ -2726,9 +2674,10 @@ mod tests {
             )
             .await
             .unwrap();
-        let mut context = create_test_context_with_session_manager(Arc::clone(&session_manager));
-        context.session = Some(Arc::new(session.clone()));
-        let client = SummonClient::new(context).unwrap();
+        let client = SummonClient::new(create_test_context_with_session_manager(Arc::clone(
+            &session_manager,
+        )))
+        .unwrap();
         session_manager
             .update(&session.id)
             .working_dir(new_working_dir.path().to_path_buf())
@@ -2759,23 +2708,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shared_background_tasks_are_cancelled_after_all_clients_drop() {
-        let data_dir = TempDir::new().unwrap();
-        let session_manager = Arc::new(crate::session::SessionManager::new(
-            data_dir.path().to_path_buf(),
-        ));
-        let session = session_manager
-            .create_session(
-                data_dir.path().to_path_buf(),
-                "rebound".to_string(),
-                SessionType::Hidden,
-                GooseMode::Auto,
-            )
-            .await
-            .unwrap();
-        let client =
-            SummonClient::new(create_test_context_with_session_manager(session_manager)).unwrap();
-        let rebound = client.rebound(Arc::new(session));
+    async fn background_tasks_are_cancelled_when_the_client_drops() {
+        let client = SummonClient::new(create_test_context()).unwrap();
         let cancellation_token = CancellationToken::new();
         let task_token = cancellation_token.clone();
         let handle = tokio::spawn(async move {
@@ -2797,12 +2731,7 @@ mod tests {
             },
         );
 
-        let (first, second) = tokio::join!(
-            tokio::spawn(async move { drop(client) }),
-            tokio::spawn(async move { drop(rebound) })
-        );
-        first.unwrap();
-        second.unwrap();
+        drop(client);
 
         assert!(cancellation_token.is_cancelled());
     }
@@ -3418,7 +3347,7 @@ You review code."#;
 
     #[tokio::test]
     #[serial]
-    async fn test_resolve_provider_reuses_unregistered_parent_provider() {
+    async fn test_legacy_reuses_unregistered_provider_but_foreground_rejects_it() {
         let temp_dir = TempDir::new().unwrap();
         let parent_provider: Arc<dyn crate::providers::base::Provider> = Arc::new(
             crate::providers::testprovider::TestProvider::new_replaying(
@@ -3433,6 +3362,7 @@ You review code."#;
             id: "unregistered-parent".to_string(),
             provider_name: Some(parent_provider.get_name().to_string()),
             model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            working_dir: temp_dir.path().to_path_buf(),
             ..Default::default()
         };
         providers
@@ -3440,19 +3370,27 @@ You review code."#;
             .await;
 
         let params = DelegateParams {
+            instructions: Some("Review the change".to_string()),
+            extensions: Some(Vec::new()),
             provider: Some(parent_provider.get_name().to_string()),
             model: Some("test-model".to_string()),
             ..Default::default()
         };
-        let (resolved_provider, _) = client
-            .resolve_provider(&params, &empty_recipe(), &session, &[])
+        let task_config = client
+            .build_task_config(&params, &empty_recipe(), &session)
             .await
             .unwrap();
 
-        assert!(Arc::ptr_eq(&parent_provider, &resolved_provider));
+        assert!(Arc::ptr_eq(&parent_provider, &task_config.provider));
+        let error = client
+            .handle_foreground_delegate(params, &session)
+            .await
+            .unwrap_err();
+        assert!(error.contains("cannot be reconstructed for a foreground subagent"));
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_build_task_config_recreates_registered_parent_provider() {
         let temp_dir = TempDir::new().unwrap();
         let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
@@ -3687,7 +3625,7 @@ You review code."#;
 
     #[tokio::test]
     #[serial]
-    async fn test_resolve_provider_recipe_overrides_env_var() {
+    async fn test_resolve_provider_config_recipe_overrides_env_var() {
         let _env = env_lock::lock_env([
             ("GOOSE_CONTEXT_LIMIT", None::<&str>),
             ("GOOSE_MAX_TOKENS", None::<&str>),
@@ -3704,18 +3642,16 @@ You review code."#;
             temperature: None,
             max_turns: None,
         });
-        let (resolved_provider, _) = client
-            .resolve_provider(
+        let (provider_name, _) = client
+            .resolve_provider_config(
                 &DelegateParams::default(),
                 &recipe,
                 &session_with(parent_config()),
-                &[],
             )
             .await
-            .expect("resolve_provider");
+            .expect("resolve_provider_config");
         assert_eq!(
-            resolved_provider.get_name(),
-            PROVIDER,
+            provider_name, PROVIDER,
             "recipe settings.goose_provider must take priority over GOOSE_SUBAGENT_PROVIDER"
         );
     }
@@ -3741,9 +3677,9 @@ You review code."#;
         });
         let session = crate::session::Session::default();
         let (_, result) = client
-            .resolve_provider(&DelegateParams::default(), &recipe, &session, &[])
+            .resolve_provider_config(&DelegateParams::default(), &recipe, &session)
             .await
-            .expect("resolve_provider");
+            .expect("resolve_provider_config");
 
         assert_ne!(
             result.model_name, "gpt-5.2",
@@ -3772,9 +3708,9 @@ You review code."#;
             .clone();
         let session = crate::session::Session::default();
         let (_, result) = client
-            .resolve_provider(&params, &empty_recipe(), &session, &[])
+            .resolve_provider_config(&params, &empty_recipe(), &session)
             .await
-            .expect("resolve_provider");
+            .expect("resolve_provider_config");
 
         assert_eq!(result.model_name, default_model);
     }
@@ -3797,14 +3733,9 @@ You review code."#;
             ..Default::default()
         };
         let (_, result) = client
-            .resolve_provider(
-                &params,
-                &empty_recipe(),
-                &session_with(parent_config()),
-                &[],
-            )
+            .resolve_provider_config(&params, &empty_recipe(), &session_with(parent_config()))
             .await
-            .expect("resolve_provider");
+            .expect("resolve_provider_config");
 
         assert_eq!(result.model_name, OVERRIDE_MODEL);
     }

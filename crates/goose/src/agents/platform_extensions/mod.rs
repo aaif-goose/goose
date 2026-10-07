@@ -19,7 +19,6 @@ pub mod tom;
 use std::collections::HashMap;
 
 use crate::agents::mcp_client::McpClientTrait;
-use crate::session::Session;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -224,9 +223,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| {
-                    Some(Box::new(crate::skills::SkillsClient::new(ctx).unwrap()))
-                },
+                client_factory: |_| Some(Box::new(crate::skills::SkillsClient::default())),
             },
         );
 
@@ -244,7 +241,6 @@ pub struct PlatformExtensionContext {
     pub providers: std::sync::Arc<crate::providers::manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
-    pub session: Option<std::sync::Arc<Session>>,
     pub use_login_shell_path: bool,
 }
 

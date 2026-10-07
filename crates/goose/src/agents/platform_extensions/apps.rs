@@ -818,7 +818,6 @@ mod tests {
                 providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
-                session: None,
                 use_login_shell_path: false,
             },
             apps_dir,

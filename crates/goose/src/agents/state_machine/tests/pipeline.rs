@@ -872,7 +872,6 @@ async fn build_test_pipeline(
             extension_manager
                 .add_client(
                     extension,
-                    Some(session.working_dir.clone()),
                     calculator.clone(),
                     calculator.get_info().cloned(),
                 )

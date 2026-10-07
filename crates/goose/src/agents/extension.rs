@@ -21,11 +21,11 @@ pub use crate::agents::platform_extensions::{
 pub struct ProcessExit {
     stderr: String,
     #[source]
-    source: ClientInitializeError,
+    source: Box<ClientInitializeError>,
 }
 
 impl ProcessExit {
-    pub fn new<T>(stderr: T, source: ClientInitializeError) -> Self
+    pub fn new<T>(stderr: T, source: Box<ClientInitializeError>) -> Self
     where
         T: Into<String>,
     {
@@ -49,7 +49,7 @@ pub enum ExtensionError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("failed to initialize MCP client: {0}")]
-    InitializeError(#[source] Box<ClientInitializeError>),
+    InitializeError(#[from] Box<ClientInitializeError>),
     #[error("{0}")]
     ProcessExit(#[source] Box<ProcessExit>),
 }

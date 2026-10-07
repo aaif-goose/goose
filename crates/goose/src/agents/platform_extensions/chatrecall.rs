@@ -111,9 +111,14 @@ impl ChatRecallClient {
         Ok(Self { info, context })
     }
 
-    fn search_session_types(&self) -> Vec<SessionType> {
-        match self.context.session.as_ref().map(|s| s.session_type) {
-            Some(SessionType::Acp) => vec![SessionType::Acp],
+    async fn search_session_types(&self, current_session_id: &str) -> Vec<SessionType> {
+        let current = self
+            .context
+            .session_manager
+            .get_session(current_session_id, false)
+            .await;
+        match current.map(|s| s.session_type) {
+            Ok(SessionType::Acp) => vec![SessionType::Acp],
             _ => vec![SessionType::User, SessionType::Scheduled],
         }
     }
@@ -205,7 +210,7 @@ impl ChatRecallClient {
                     after_date,
                     before_date,
                     exclude_session_id,
-                    self.search_session_types(),
+                    self.search_session_types(current_session_id).await,
                 )
                 .await
             {
@@ -444,7 +449,6 @@ mod tests {
             providers: Default::default(),
             session_manager,
             scheduler: None,
-            session: Some(Arc::new(current_session.clone())),
             use_login_shell_path: false,
         })
         .unwrap();

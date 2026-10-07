@@ -8,7 +8,9 @@ pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, ThinkingMo
 pub use name_builder::{
     canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
 };
-pub use registry::{load_cached_catalog, refresh_remote_catalog, CanonicalModelRegistry};
+pub use registry::{
+    fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelMapping {

@@ -2,7 +2,7 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
-use crate::config::{Config, GooseMode};
+use crate::config::GooseMode;
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
@@ -122,21 +122,6 @@ impl OrchestratorClient {
         AgentManager::instance()
             .await
             .map_err(|e| format!("Failed to get agent manager: {}", e))
-    }
-
-    async fn parent_model_config(
-        &self,
-        provider_name: &str,
-    ) -> Result<goose_providers::model::ModelConfig, String> {
-        if let Some(session) = self.context.session.as_ref() {
-            return self.context.model_config_for_session(&session.id).await;
-        }
-
-        let model_name = Config::global()
-            .get_goose_model()
-            .map_err(|_| "Could not resolve model config: missing model".to_string())?;
-        crate::model_config::model_config_from_user_config(provider_name, &model_name)
-            .map_err(|e| format!("Could not resolve model config: {e}"))
     }
 
     async fn handle_list_sessions(
@@ -331,7 +316,7 @@ impl OrchestratorClient {
             conversation_text
         ));
 
-        let model_config = self.parent_model_config(provider.get_name()).await?;
+        let model_config = self.context.model_config_for_session(session_id).await?;
         let (response, _usage) = crate::model_config::complete_one_shot(
             provider.as_ref(),
             &model_config,
@@ -363,6 +348,7 @@ impl OrchestratorClient {
         arguments: Option<JsonObject>,
     ) -> Result<CallToolResult, String> {
         self.authorize_start_agent(session_id).await?;
+        let caller = self.caller_session(session_id).await?;
 
         let args = arguments.ok_or("Missing arguments")?;
         let working_dir = extract_string(&args, "working_dir")?;
@@ -376,13 +362,7 @@ impl OrchestratorClient {
         let path = if raw_path.is_absolute() {
             raw_path
         } else {
-            let base = self
-                .context
-                .session
-                .as_ref()
-                .map(|s| s.working_dir.clone())
-                .unwrap_or_else(|| PathBuf::from("."));
-            base.join(&raw_path)
+            caller.working_dir.join(&raw_path)
         };
 
         let path = path
@@ -409,7 +389,7 @@ impl OrchestratorClient {
             .map_err(|e| format!("Failed to create agent: {}", e))?;
 
         let parent_provider = self.context.provider_for_session(session_id).await?;
-        let model_config = self.parent_model_config(parent_provider.get_name()).await?;
+        let model_config = self.context.model_config_for_session(session_id).await?;
         agent
             .switch_provider(&session.id, parent_provider.get_name(), model_config)
             .await
@@ -495,7 +475,10 @@ impl OrchestratorClient {
         if agent.provider(&session_id).await.is_err() {
             if let Ok(parent_provider) = self.context.provider_for_session(parent_session_id).await
             {
-                let model_config = self.parent_model_config(parent_provider.get_name()).await?;
+                let model_config = self
+                    .context
+                    .model_config_for_session(parent_session_id)
+                    .await?;
                 agent
                     .switch_provider(&session_id, parent_provider.get_name(), model_config)
                     .await
@@ -727,16 +710,12 @@ mod tests {
     use crate::session::SessionManager;
     use rmcp::model::{Annotations, Role, TextContent};
 
-    fn client_for(
-        session_manager: Arc<SessionManager>,
-        session: Option<crate::session::Session>,
-    ) -> OrchestratorClient {
+    fn client_for(session_manager: Arc<SessionManager>) -> OrchestratorClient {
         OrchestratorClient::new(PlatformExtensionContext {
             extension_manager: None,
             providers: Default::default(),
             session_manager,
             scheduler: None,
-            session: session.map(Arc::new),
             use_login_shell_path: false,
         })
         .unwrap()
@@ -838,7 +817,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let subagent =
             create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
-        let client = client_for(Arc::clone(&session_manager), Some(subagent.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         let result = start_agent(&client, &subagent.id, temp_dir.path()).await;
 
@@ -857,7 +836,7 @@ mod tests {
         let user = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
         let subagent =
             create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
-        let client = client_for(Arc::clone(&session_manager), Some(user.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         assert!(client.authorize_start_agent(&user.id).await.is_ok());
         let user_tools = client
@@ -888,7 +867,7 @@ mod tests {
     async fn unknown_caller_cannot_persist_user_session() {
         let temp_dir = tempfile::tempdir().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let client = client_for(Arc::clone(&session_manager), None);
+        let client = client_for(Arc::clone(&session_manager));
 
         let result = start_agent(&client, "missing-session", temp_dir.path()).await;
 
@@ -906,7 +885,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let user = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
         let subagent = create_subagent_session(&session_manager, temp_dir.path(), &user.id).await;
-        let client = client_for(Arc::clone(&session_manager), Some(subagent.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         let error = client
             .handle_send_message(
@@ -938,7 +917,7 @@ mod tests {
         let parent = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
         let caller = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
         let target = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
-        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         assert!(client
             .authorize_send_message(&caller.id, &target.id)
@@ -958,7 +937,7 @@ mod tests {
             create_subagent_session(&session_manager, temp_dir.path(), &caller_parent.id).await;
         let target =
             create_subagent_session(&session_manager, temp_dir.path(), &target_parent.id).await;
-        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         let error = client
             .handle_send_message(
@@ -991,7 +970,7 @@ mod tests {
         let caller = create_subagent_session(&session_manager, temp_dir.path(), &parent.id).await;
         let descendant =
             create_subagent_session(&session_manager, temp_dir.path(), &caller.id).await;
-        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         let error = client
             .authorize_send_message(&caller.id, &descendant.id)
@@ -1010,7 +989,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let caller = create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
         let target = create_session(&session_manager, temp_dir.path(), SessionType::SubAgent).await;
-        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         let error = client
             .authorize_send_message(&caller.id, &target.id)
@@ -1029,7 +1008,7 @@ mod tests {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let caller = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
         let target = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
-        let client = client_for(Arc::clone(&session_manager), Some(caller.clone()));
+        let client = client_for(Arc::clone(&session_manager));
 
         assert!(client
             .authorize_send_message(&caller.id, &target.id)
@@ -1042,7 +1021,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let target = create_session(&session_manager, temp_dir.path(), SessionType::User).await;
-        let client = client_for(Arc::clone(&session_manager), None);
+        let client = client_for(Arc::clone(&session_manager));
 
         let error = client
             .authorize_send_message("missing-session", &target.id)

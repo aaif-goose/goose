@@ -26,6 +26,10 @@ fn inline_notice(text: String) -> Message {
     Message::assistant().with_system_notification(SystemNotificationType::InlineMessage, text)
 }
 
+fn subagent_label(subagent_id: &str) -> String {
+    format!("Subagent {subagent_id}")
+}
+
 fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
     let snippet = task
         .map(|task| {
@@ -100,24 +104,22 @@ async fn subagent_result_message(
     others_waiting: bool,
     emit: &Emitter,
 ) -> GooseEffect {
+    let label = subagent_label(subagent_id);
     let (notice, text) = match outcome {
         SubagentOutcome::Completed(output) => (
             if others_waiting {
-                format!(
-                    "Subagent {subagent_id} completed\n\n{}",
-                    readable_output(&output)
-                )
+                format!("{label} completed\n\n{}", readable_output(&output))
             } else {
-                format!("Subagent {subagent_id} completed")
+                format!("{label} completed")
             },
-            format!("Subagent {subagent_id} completed: {output}"),
+            format!("{label} completed: {output}"),
         ),
         SubagentOutcome::Failed(reason) => (
             format!(
-                "Subagent {subagent_id} failed: {}",
+                "{label} failed: {}",
                 reason.lines().next().unwrap_or_default()
             ),
-            format!("Subagent {subagent_id} failed: {reason}"),
+            format!("{label} failed: {reason}"),
         ),
     };
     emit.message(inline_notice(notice)).await;
@@ -137,7 +139,8 @@ pub(crate) fn subagent_cancelled_message(messages: &[Message]) -> Option<Message
         .iter()
         .map(|subagent_id| {
             format!(
-                "Subagent {subagent_id} was cancelled before it finished and will not run again."
+                "{} was cancelled before it finished and will not run again.",
+                subagent_label(subagent_id)
             )
         })
         .collect::<Vec<_>>()
