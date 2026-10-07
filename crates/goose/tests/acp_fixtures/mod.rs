@@ -226,7 +226,6 @@ impl OpenAiFixture {
         Self::with_response_delay(exchanges, expected_session_id, Duration::ZERO).await
     }
 
-    /// Like `new`, but each matched completion is held for `delay`, keeping the run active.
     pub async fn with_response_delay(
         exchanges: Vec<(String, &'static str)>,
         expected_session_id: Arc<dyn ExpectedSessionId>,

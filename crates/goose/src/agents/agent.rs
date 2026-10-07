@@ -2260,7 +2260,11 @@ impl Agent {
             }
         }
 
-        // Doctor repairs the provider by writing it to the session, not to this agent.
+        // Doctor repairs the provider by writing it to the session, not to this agent, and must
+        // run even when restoring the session's provider is what fails.
+        let is_doctor =
+            crate::agents::execute_commands::parse_slash_command(&message_text_for_trace)
+                .is_some_and(|parsed| parsed.command == "doctor");
         let session = session_manager
             .get_session(&session_config.id, false)
             .await?;
@@ -2270,7 +2274,10 @@ impl Agent {
             .await
             .as_ref()
             .map(|provider| provider.get_name().to_string());
-        if session.provider_name.is_some() && session.provider_name != live_provider_name {
+        if !is_doctor
+            && session.provider_name.is_some()
+            && session.provider_name != live_provider_name
+        {
             self.restore_provider_from_session(&session).await?;
         }
 
