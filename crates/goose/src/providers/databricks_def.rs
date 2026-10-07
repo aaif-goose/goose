@@ -9,7 +9,7 @@ use goose_providers::databricks_auth::{
 };
 use std::sync::Arc;
 
-use crate::config::{Config, ConfigError, ExtensionConfig};
+use crate::config::{Config, ConfigError};
 use crate::providers::base::ProviderDef;
 
 pub struct DatabricksProviderDef;
@@ -42,10 +42,7 @@ impl ProviderDescriptor for DatabricksProviderDef {
 impl ProviderDef for DatabricksProviderDef {
     type Provider = DatabricksProvider;
 
-    fn from_env(
-        _extensions: Vec<ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }

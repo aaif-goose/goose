@@ -18,7 +18,8 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use super::base::{
-    ConfigKey, MessageStream, PermissionRouting, Provider, ProviderDef, ProviderMetadata,
+    ConfigKey, MessageStream, PermissionRouting, Provider, ProviderMetadata,
+    SessionBoundProviderDef,
 };
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
@@ -638,9 +639,8 @@ impl goose_providers::base::ProviderDescriptor for ClaudeCodeProvider {
     }
 }
 
-impl ProviderDef for ClaudeCodeProvider {
+impl SessionBoundProviderDef for ClaudeCodeProvider {
     type Provider = Self;
-    const SESSION_BOUND: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

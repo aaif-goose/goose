@@ -87,7 +87,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::claude_acp_inventory()),
         );
-        registry.register::<ClaudeCodeProvider>(true);
+        registry.register_session_bound::<ClaudeCodeProvider>(true);
         registry.register_acp_with_inventory::<CodexAcpProvider>(
             false,
             Some(registrations::codex_acp_inventory()),
@@ -96,7 +96,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::copilot_acp_inventory()),
         );
-        registry.register::<CodexProvider>(true);
+        registry.register_session_bound::<CodexProvider>(true);
         registry.register_with_inventory::<CursorAgentProvider>(
             false,
             Some(registrations::refresh_only()),
@@ -113,7 +113,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::refresh_only()),
         );
-        registry.register::<GeminiCliProvider>(false);
+        registry.register_session_bound::<GeminiCliProvider>(false);
         registry.register_with_inventory::<GeminiOAuthProvider>(
             false,
             Some(registrations::gemini_oauth_inventory()),

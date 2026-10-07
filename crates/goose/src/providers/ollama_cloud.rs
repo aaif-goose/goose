@@ -270,10 +270,7 @@ impl ProviderDescriptor for OllamaCloudProvider {
 impl ProviderDef for OllamaCloudProvider {
     type Provider = Self;
 
-    fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
-        _tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(_tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async {
             anyhow::bail!(
                 "Ollama Cloud must be configured as a declarative provider. \

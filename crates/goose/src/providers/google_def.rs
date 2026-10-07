@@ -4,7 +4,7 @@ use goose_providers::api_client::TlsConfig;
 use goose_providers::base::{ProviderDescriptor, ProviderMetadata};
 use goose_providers::google::{GoogleProvider, GOOGLE_API_HOST};
 
-use crate::config::{Config, ExtensionConfig};
+use crate::config::Config;
 use crate::providers::base::ProviderDef;
 
 pub struct GoogleProviderDef;
@@ -23,10 +23,7 @@ impl ProviderDescriptor for GoogleProviderDef {
 impl ProviderDef for GoogleProviderDef {
     type Provider = GoogleProvider;
 
-    fn from_env(
-        _extensions: Vec<ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }

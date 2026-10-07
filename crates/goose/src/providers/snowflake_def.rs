@@ -3,7 +3,7 @@ use futures::future::BoxFuture;
 use goose_providers::base::ProviderDescriptor;
 use goose_providers::snowflake::SnowflakeProvider;
 
-use crate::config::{Config, ConfigError, ExtensionConfig};
+use crate::config::{Config, ConfigError};
 use crate::providers::api_client::TlsConfig;
 use crate::providers::base::{ProviderDef, ProviderMetadata};
 
@@ -36,10 +36,7 @@ impl ProviderDescriptor for SnowflakeProviderDef {
 impl ProviderDef for SnowflakeProviderDef {
     type Provider = SnowflakeProvider;
 
-    fn from_env(
-        _extensions: Vec<ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }
