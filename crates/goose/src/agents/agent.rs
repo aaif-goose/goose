@@ -1978,6 +1978,7 @@ impl Agent {
             operations.push(Arc::new(auto_effort));
         }
         let request_preparer = GooseInferenceRequestPreparer {
+            provider: provider.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             goose_mode: &self.current_goose_mode,

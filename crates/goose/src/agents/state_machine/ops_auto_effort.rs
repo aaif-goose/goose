@@ -132,7 +132,7 @@ fn classification_request(messages: &[crate::conversation::message::Message]) ->
     let kickoff = &messages[0];
     let kickoff_text = kickoff.as_concat_text();
     if crate::agents::execute_commands::parse_slash_command(&kickoff_text)
-        .is_some_and(|command| command.command == "doctor")
+        .is_some_and(|command| matches!(command.command, "doctor" | "prompt"))
     {
         return kickoff_text;
     }
@@ -246,5 +246,22 @@ mod tests {
         ];
 
         assert_eq!(classification_request(&messages), "/doctor");
+    }
+
+    #[test]
+    fn prompt_classifies_the_typed_command_instead_of_extension_content() {
+        let messages = vec![
+            Message::user()
+                .with_text("/prompt private-context topic=rust")
+                .with_visibility(true, false),
+            Message::user()
+                .with_text("extension content containing a credential")
+                .with_visibility(false, true),
+        ];
+
+        assert_eq!(
+            classification_request(&messages),
+            "/prompt private-context topic=rust"
+        );
     }
 }

@@ -27,6 +27,7 @@ pub struct PreparedInferenceRequest {
     pub system_prompt: String,
     pub tools: Vec<rmcp::model::Tool>,
     pub additional_messages: Vec<Message>,
+    pub model_request_params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -64,6 +65,7 @@ impl<S: MaybeSync> InferenceRequestPreparer<S> for IdentityInferenceRequestPrepa
                 .join("\n\n"),
             tools: input.tools,
             additional_messages: Vec::new(),
+            model_request_params: std::collections::HashMap::new(),
         })
     }
 }
@@ -454,10 +456,16 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 system_prompt,
                 tools,
                 additional_messages,
+                model_request_params,
             } = self
                 .request_preparer
                 .prepare(session, conversation, input)
                 .await?;
+            let model_config = if model_request_params.is_empty() {
+                model_config
+            } else {
+                model_config.with_merged_request_params(model_request_params)
+            };
 
             for message in &additional_messages {
                 messages_for_provider.push(message.clone());

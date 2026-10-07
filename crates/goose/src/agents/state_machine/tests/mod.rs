@@ -1,8 +1,9 @@
 use anyhow::Result;
 
 use self::calculator_extension::{value, ADD};
+use self::dummy_api::ProviderFeatures;
 use self::pipeline::MessageKind::{Agent, ToolCall};
-use self::pipeline::{test_pipeline, MAX_TURNS};
+use self::pipeline::{test_pipeline, test_pipeline_with, MAX_TURNS};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
@@ -171,7 +172,11 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     use crate::agents::agent::available_auto_efforts;
     use crate::agents::state_machine::AutoEffortOperation;
 
-    let (pipeline, api) = test_pipeline().await?;
+    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
+        thinking_effort_options: true,
+        ..ProviderFeatures::default()
+    })
+    .await?;
     let skill_dir = pipeline
         .working_dir()
         .join(".agents/skills/auto-effort-review");
@@ -355,6 +360,10 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             Some(ThinkingEffort::Off),
             Some(ThinkingEffort::Low),
         ]
+    );
+    assert_eq!(
+        pipeline.recorded_automatic_efforts(),
+        [true, true, true, true, false]
     );
 
     let decisions: Vec<_> = conversation

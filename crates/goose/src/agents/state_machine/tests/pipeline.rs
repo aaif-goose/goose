@@ -61,6 +61,10 @@ impl Provider for RecordingProvider {
         self.inner.provider_session_id()
     }
 
+    fn thinking_effort_support(&self) -> goose_providers::thinking::ThinkingEffortSupport {
+        self.inner.thinking_effort_support()
+    }
+
     async fn resume(&self, session_id: &str) -> Result<(), goose_providers::errors::ProviderError> {
         self.inner.resume(session_id).await
     }
@@ -101,6 +105,29 @@ impl Provider for RecordingProvider {
 impl Provider for FeatureProvider {
     fn get_name(&self) -> &str {
         self.inner.get_name()
+    }
+
+    fn thinking_effort_support(&self) -> goose_providers::thinking::ThinkingEffortSupport {
+        if self.features.thinking_effort_options {
+            goose_providers::thinking::ThinkingEffortSupport::Options(
+                goose_providers::thinking::ThinkingEffortCapability {
+                    option_id: "effort".to_string(),
+                    values: vec![
+                        goose_providers::thinking::ThinkingEffortOption {
+                            value: "default".to_string(),
+                            label: "Default".to_string(),
+                        },
+                        goose_providers::thinking::ThinkingEffortOption {
+                            value: "high".to_string(),
+                            label: "High".to_string(),
+                        },
+                    ],
+                    current: Some("default".to_string()),
+                },
+            )
+        } else {
+            self.inner.thinking_effort_support()
+        }
     }
 
     async fn stream(
@@ -235,6 +262,7 @@ impl TestPipeline {
         operations.extend(remaining_operations);
         operations.extend(self.extra_operations.clone());
         let request_preparer = GooseInferenceRequestPreparer {
+            provider: provider.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             goose_mode: &self.goose_mode,
@@ -343,6 +371,21 @@ impl TestPipeline {
             .unwrap()
             .iter()
             .map(ModelConfig::thinking_effort)
+            .collect()
+    }
+
+    pub(super) fn recorded_automatic_efforts(&self) -> Vec<bool> {
+        self.recorded_model_configs
+            .as_ref()
+            .expect("model config recording was not enabled")
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|config| {
+                config
+                    .request_param::<bool>(crate::acp::AUTOMATIC_EFFORT_PARAM)
+                    .unwrap_or(false)
+            })
             .collect()
     }
 
@@ -856,15 +899,17 @@ async fn build_test_pipeline(
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
     );
-    let provider: Arc<dyn Provider> =
-        if provider_features.resolved_model.is_some() || provider_features.manages_own_context {
-            Arc::new(FeatureProvider {
-                inner: provider,
-                features: provider_features,
-            })
-        } else {
-            provider
-        };
+    let provider: Arc<dyn Provider> = if provider_features.resolved_model.is_some()
+        || provider_features.manages_own_context
+        || provider_features.thinking_effort_options
+    {
+        Arc::new(FeatureProvider {
+            inner: provider,
+            features: provider_features,
+        })
+    } else {
+        provider
+    };
     let shared_provider = Arc::new(TokioMutex::new(Some(provider.clone())));
     let extension_manager = Arc::new(ExtensionManager::new(
         shared_provider.clone(),

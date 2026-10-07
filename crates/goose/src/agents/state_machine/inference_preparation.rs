@@ -10,12 +10,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
 use goose_agent::operation::{messages_since_kickoff, InferenceInput};
+use goose_providers::base::Provider;
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::Conversation;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 
 pub struct GooseInferenceRequestPreparer<'a> {
+    pub(crate) provider: Arc<dyn Provider>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     pub(crate) goose_mode: &'a Mutex<GooseMode>,
@@ -97,10 +99,24 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         .filter(|event| Some(event.as_concat_text()) != last)
         .into_iter()
         .collect();
+        let model_request_params = matches!(
+            self.provider.thinking_effort_support(),
+            goose_providers::thinking::ThinkingEffortSupport::Options(_)
+        )
+        .then(|| super::ops_auto_effort::current_turn_effort(conversation))
+        .flatten()
+        .map(|_| {
+            std::collections::HashMap::from([(
+                crate::acp::AUTOMATIC_EFFORT_PARAM.to_string(),
+                serde_json::Value::Bool(true),
+            )])
+        })
+        .unwrap_or_default();
         Ok(PreparedInferenceRequest {
             system_prompt,
             tools,
             additional_messages,
+            model_request_params,
         })
     }
 }
