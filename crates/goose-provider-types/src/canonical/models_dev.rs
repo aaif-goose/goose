@@ -40,6 +40,7 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         _ => None,
     }
 }
@@ -255,6 +256,19 @@ mod tests {
         assert_eq!(
             registry.get("openai", "future").unwrap().reasoning_efforts,
             Some(vec!["low".to_string(), "max".to_string()])
+        );
+    }
+
+    #[test]
+    fn infers_sonnet_5_5_always_on_adaptive_thinking() {
+        let json = r#"{"anthropic":{"models":{"claude-sonnet-5-5":{"name":"Claude Sonnet 5.5"}}}}"#;
+        let registry = from_models_dev(json).unwrap();
+        assert_eq!(
+            registry
+                .get("anthropic", "claude-sonnet-5.5")
+                .unwrap()
+                .thinking_mode,
+            Some(ThinkingMode::AlwaysOnAdaptive)
         );
     }
 

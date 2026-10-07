@@ -28203,6 +28203,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "always_on_adaptive",
     "tool_call": true,
     "temperature": false,
     "knowledge": "2026-06",
