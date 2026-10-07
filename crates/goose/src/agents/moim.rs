@@ -221,6 +221,7 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::extension_manager::ExtensionSet;
     use crate::agents::mcp_client::McpClientTrait;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
@@ -334,21 +335,11 @@ mod tests {
     #[tokio::test]
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        em.add_client(
-            moim_extension(),
-            None,
-            Arc::new(MoimClient("old context")),
-            None,
-        )
-        .await;
+        em.add_client(moim_extension(), Arc::new(MoimClient("old context")), None)
+            .await;
         let lease = em.current_lease(&session_id, None).await;
-        em.add_client(
-            moim_extension(),
-            None,
-            Arc::new(MoimClient("new context")),
-            None,
-        )
-        .await;
+        em.add_client(moim_extension(), Arc::new(MoimClient("new context")), None)
+            .await;
 
         let message =
             turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
@@ -365,7 +356,7 @@ mod tests {
         let (session_id, em, _tmp) = session_and_manager().await;
         let leased_working_dir = PathBuf::from("/leased/dir");
         let lease = em
-            .current_lease(&session_id, Some(&leased_working_dir))
+            .resolve(&ExtensionSet::new(&session_id, Some(leased_working_dir), vec![]).unwrap())
             .await;
 
         let message =

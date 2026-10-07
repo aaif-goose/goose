@@ -297,7 +297,6 @@ mod tests {
             provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager: Arc::new(SessionManager::new(data_dir)),
             scheduler: None,
-            session: None,
             use_login_shell_path: false,
         }
     }

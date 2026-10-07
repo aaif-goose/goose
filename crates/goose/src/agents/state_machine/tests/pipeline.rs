@@ -126,7 +126,6 @@ impl TestPipeline {
                 self.steer_queue.clone(),
                 self.hook_manager.clone(),
             )),
-            Arc::new(MaxTurnsOperation::new(self.max_turns)),
             Arc::new(BangShellOperation::new()),
         ];
         if !self.provider_features.manages_own_context {
@@ -149,7 +148,7 @@ impl TestPipeline {
                 &self.goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
@@ -182,6 +181,7 @@ impl TestPipeline {
                 self.stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(MaxTurnsOperation::new(self.max_turns)),
         ];
         operations.extend(remaining_operations);
         let request_preparer = GooseInferenceRequestPreparer {
@@ -366,6 +366,7 @@ impl TestPipeline {
         )
         .await?
         .with_hook_manager(self.hook_manager.clone())
+        .with_max_turns(self.max_turns)
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
         *pipeline.goal.lock().await = goal;
@@ -775,6 +776,7 @@ async fn build_test_pipeline(
     )?;
     let provider: Arc<dyn Provider> = Arc::new(
         goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+            .base_path("chat/completions")
             .name(provider_name)
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
@@ -871,7 +873,6 @@ async fn build_test_pipeline(
             extension_manager
                 .add_client(
                     extension,
-                    Some(session.working_dir.clone()),
                     calculator.clone(),
                     calculator.get_info().cloned(),
                 )

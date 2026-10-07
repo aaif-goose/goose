@@ -281,7 +281,6 @@ mod tests {
             provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager: Arc::new(SessionManager::new(std::env::temp_dir())),
             scheduler: None,
-            session: None,
             use_login_shell_path: false,
         }
     }

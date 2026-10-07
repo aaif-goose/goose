@@ -1,7 +1,7 @@
 //! Deterministic, Rust-driven orchestration for `goose review`.
 //!
 //! The default in-process review path lets the LLM decide whether to
-//! dispatch each check as a real subagent (`delegate(... async: true)`)
+//! dispatch each check as a real subagent (`delegate(...)`)
 //! or to inline the work itself. That decision is non-deterministic and
 //! is the dominant source of variance we see between runs (16s in the
 //! best case, 60s+ when the model dispatches everything as a separate

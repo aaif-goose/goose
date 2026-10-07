@@ -201,7 +201,7 @@ impl DummyApi {
         });
         let responder = state.clone();
         Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
+            .and(path("/chat/completions"))
             .respond_with(move |request: &Request| responder.respond(request))
             .mount(&server)
             .await;
@@ -600,7 +600,7 @@ fn request_input(body: &Value) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|message| message["role"] != "system")
+        .filter(|message| message["role"] != "system" && message["role"] != "developer")
     {
         collect_strings(message, &mut values);
     }
@@ -613,7 +613,7 @@ fn request_system(body: &Value) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|message| message["role"] == "system")
+        .filter(|message| message["role"] == "system" || message["role"] == "developer")
     {
         collect_strings(message, &mut values);
     }
