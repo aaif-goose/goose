@@ -137,6 +137,13 @@ pub(super) fn available_auto_efforts(
             }
 
             if matches!(provider_name, "google" | "gemini_oauth" | "gcp_vertex_ai") {
+                if model_config
+                    .model_name
+                    .to_lowercase()
+                    .starts_with("gemini-2.5-flash")
+                {
+                    return vec![ThinkingEffort::Off, ThinkingEffort::High];
+                }
                 return AUTO_EFFORTS
                     .into_iter()
                     .filter(|effort| {
@@ -4251,6 +4258,19 @@ mod tests {
             available_auto_efforts("muse_code", &model, ThinkingEffortSupport::Unspecified),
             expected
         );
+    }
+
+    #[test]
+    fn gemini_25_flash_auto_efforts_match_budget_controls() {
+        let mut model = goose_providers::model::ModelConfig::new("gemini-2.5-flash");
+        model.reasoning = Some(true);
+
+        for provider in ["google", "gemini_oauth", "gcp_vertex_ai"] {
+            assert_eq!(
+                available_auto_efforts(provider, &model, ThinkingEffortSupport::Unspecified),
+                vec![ThinkingEffort::Off, ThinkingEffort::High]
+            );
+        }
     }
 
     #[test]
