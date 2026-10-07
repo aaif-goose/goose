@@ -29,6 +29,7 @@ documentation/.cache-loader/
 # Environment and config files
 .env
 .env.*
+services/ask-ai-bot/.data/
 *.log
 
 # CI/CD

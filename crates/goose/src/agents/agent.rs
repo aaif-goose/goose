@@ -10,7 +10,6 @@ use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use goose_agent::inference::ends_with_successful_tool_response;
 use tracing_futures::Instrument;
 
-use super::container::Container;
 use super::final_output_tool::FinalOutputTool;
 use super::gen_ai_telemetry;
 use super::mcp_client::GooseMcpHostInfo;
@@ -33,16 +32,18 @@ use crate::agents::final_output_tool::{
 };
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::retry::{RetryManager, RetryResult};
+use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, AutoEffortOperation, BangShellOperation,
-    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
-    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
-    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
-    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
-    SteerQueue, Step, StopHookOperation, ToolApprovalOperation, ToolExecutionOperation,
-    ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
+    persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, AutoEffortOperation,
+    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
+    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
+    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
+use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::types::{
     SessionConfig, SharedProvider, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS,
     DEFAULT_RETRY_TIMEOUT_SECONDS,
@@ -63,13 +64,12 @@ use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
-use crate::recipe::Response;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
-use crate::session::{Session, SessionManager, SessionNameUpdate};
+use crate::session::{GoalState, Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
@@ -386,9 +386,6 @@ pub struct Agent {
     session_start_emitted: AtomicBool,
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
-    container: Mutex<Option<Container>>,
-    pub(super) goal: Mutex<Option<String>>,
-    pub(super) grind: Mutex<Option<String>>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
 }
 
@@ -577,9 +574,6 @@ impl Agent {
             session_start_emitted: AtomicBool::new(false),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
-            container: Mutex::new(None),
-            goal: Mutex::new(None),
-            grind: Mutex::new(None),
             steer_queues: Mutex::new(HashMap::new()),
         }
     }
@@ -1138,39 +1132,6 @@ impl Agent {
         }
     }
 
-    /// When set, all stdio extensions will be started via `docker exec` in the specified container.
-    pub async fn set_container(&self, container: Option<Container>) {
-        *self.container.lock().await = container.clone();
-    }
-
-    pub async fn container(&self) -> Option<Container> {
-        self.container.lock().await.clone()
-    }
-
-    pub async fn add_final_output_tool(&self, response: Response) -> Result<()> {
-        let mut final_output_tool = self.final_output_tool.lock().await;
-        let created_final_output_tool =
-            FinalOutputTool::try_new(response).map_err(anyhow::Error::msg)?;
-        let final_output_system_prompt = created_final_output_tool.system_prompt();
-        *final_output_tool = Some(created_final_output_tool);
-        self.extend_system_prompt("final_output".to_string(), final_output_system_prompt)
-            .await;
-        Ok(())
-    }
-
-    pub async fn apply_recipe_components(
-        &self,
-        response: Option<Response>,
-        include_final_output: bool,
-    ) -> Result<()> {
-        if include_final_output {
-            if let Some(response) = response {
-                self.add_final_output_tool(response).await?;
-            }
-        }
-        Ok(())
-    }
-
     pub async fn dispatch_tool_call(
         &self,
         tool_call: CallToolRequestParams,
@@ -1296,7 +1257,7 @@ impl Agent {
         }
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
-        let container = self.container.lock().await.clone();
+        let container = session.container.clone();
         let result = lease
             .call(
                 tool_call.clone(),
@@ -1488,19 +1449,18 @@ impl Agent {
         extensions: Vec<ExtensionConfig>,
         session_id: &str,
     ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
-        let working_dir = match self
+        let (working_dir, container) = match self
             .config
             .session_manager
             .get_session(session_id, false)
             .await
         {
-            Ok(session) => Some(session.working_dir),
+            Ok(session) => (Some(session.working_dir), session.container),
             Err(e) => {
                 warn!("Failed to get session for bulk load: {}", e);
-                None
+                (None, None)
             }
         };
-        let container = self.container.lock().await.clone();
 
         let extension_futures = extensions
             .into_iter()
@@ -1542,7 +1502,7 @@ impl Agent {
         Ok(results)
     }
 
-    async fn add_extension_inner(
+    pub(super) async fn add_extension_inner(
         &self,
         extension: ExtensionConfig,
         session_id: &str,
@@ -1558,11 +1518,13 @@ impl Agent {
                     session_id, e
                 ))
             })?;
-        let working_dir = Some(session.working_dir);
-
-        let container = self.container.lock().await;
         self.extension_manager
-            .add_extension(extension, working_dir, container.as_ref(), Some(session_id))
+            .add_extension(
+                extension,
+                Some(session.working_dir),
+                session.container.as_ref(),
+                Some(session_id),
+            )
             .await?;
 
         Ok(())
@@ -1573,9 +1535,14 @@ impl Agent {
         session_id: &str,
         working_dir: &std::path::Path,
     ) -> ExtensionResult<()> {
-        let container = self.container.lock().await;
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|e| crate::agents::extension::ExtensionError::SetupError(e.to_string()))?;
         self.extension_manager
-            .update_working_dir(working_dir, container.as_ref(), session_id)
+            .update_working_dir(working_dir, session.container.as_ref(), session_id)
             .await
     }
 
@@ -1586,21 +1553,27 @@ impl Agent {
     ) -> Arc<ExtensionLease> {
         Arc::new(
             self.extension_manager
-                .current_session_lease(session_id, working_dir)
+                .current_lease(session_id, Some(working_dir))
                 .await,
         )
     }
 
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
         let include_final_output = extension_name.is_none();
-        let mut prefixed_tools = self
-            .extension_manager
-            .get_prefixed_tools(session_id, extension_name)
-            .await
-            .unwrap_or_default();
+        let lease = self.extension_manager.current_lease(session_id, None).await;
+        let mut prefixed_tools = match extension_name {
+            Some(name) => lease.tools_for(&name).await,
+            None => lease.tools().await,
+        };
 
         if include_final_output {
-            if let Some(final_output_tool) = self.final_output_tool.lock().await.as_ref() {
+            let final_output_tool = self
+                .config
+                .session_manager
+                .get_session(session_id, false)
+                .await
+                .and_then(|session| ops_recipe::final_output_tool(&session));
+            if let Ok(Some(final_output_tool)) = final_output_tool {
                 prefixed_tools.push(final_output_tool.tool());
             }
         }
@@ -1787,7 +1760,6 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let container = self.container.lock().await.clone();
         let max_turns = session_config.max_turns.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_MAX_TURNS")
@@ -1827,7 +1799,6 @@ impl Agent {
 
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(steer_queue, self.hook_manager.clone())),
-            Arc::new(MaxTurnsOperation::new(max_turns)),
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
@@ -1849,11 +1820,21 @@ impl Agent {
                 &self.current_goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
+            )),
+            // Before RecipeOperation: a `delegate` response only means the subagent
+            // started, so a final output from the same batch must not be shown until
+            // the subagents have run.
+            Arc::new(ForegroundSubagentOperation::new(
+                ForegroundSubagentRunner::new(
+                    self.config.session_manager.clone(),
+                    self.config.resolve_use_login_shell_path(),
+                ),
+                cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
@@ -1863,13 +1844,10 @@ impl Agent {
                 &self.current_goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
-                container,
                 Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
-                &self.goal,
-                &self.grind,
                 std::time::Duration::from_secs(retry_timeout),
                 std::time::Duration::from_secs(on_failure_timeout),
             )),
@@ -1878,6 +1856,7 @@ impl Agent {
                 stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(MaxTurnsOperation::new(max_turns)),
         ];
         operations.extend(remaining_operations);
         let auto_effort = (|| {
@@ -2057,6 +2036,29 @@ impl Agent {
             .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
     }
 
+    pub async fn cancel_foreground_subagents(&self, session_id: &str) {
+        if let Err(error) = self.record_cancelled_subagents(session_id).await {
+            error!(
+                session_id,
+                ?error,
+                "Failed to record cancelled foreground subagents"
+            );
+        }
+    }
+
+    async fn record_cancelled_subagents(&self, session_id: &str) -> Result<()> {
+        let session_manager = &self.config.session_manager;
+        let session = session_manager.get_session(session_id, true).await?;
+        let Some(message) = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| subagent_cancelled_message(conversation.messages()))
+        else {
+            return Ok(());
+        };
+        session_manager.add_message(session_id, &message).await
+    }
+
     async fn resume_state_machine_turn_inner(
         self: &Arc<Self>,
         session_config: SessionConfig,
@@ -2183,7 +2185,7 @@ impl Agent {
         })
     }
 
-    async fn stream_state_machine_session(
+    pub(super) async fn stream_state_machine_session(
         &self,
         session_config: SessionConfig,
         cancel: CancellationToken,
@@ -2383,6 +2385,27 @@ impl Agent {
             }
         }
 
+        // Doctor repairs the provider by writing it to the session, not to this agent, and must
+        // run even when restoring the session's provider is what fails.
+        let is_doctor =
+            crate::agents::execute_commands::parse_slash_command(&message_text_for_trace)
+                .is_some_and(|parsed| parsed.command == "doctor");
+        let session = session_manager
+            .get_session(&session_config.id, false)
+            .await?;
+        let live_provider_name = self
+            .provider
+            .lock()
+            .await
+            .as_ref()
+            .map(|provider| provider.get_name().to_string());
+        if !is_doctor
+            && session.provider_name.is_some()
+            && session.provider_name != live_provider_name
+        {
+            self.restore_provider_from_session(&session).await?;
+        }
+
         if use_state_machine {
             tracing::info!("dispatching reply via experimental state machine");
             return self
@@ -2558,7 +2581,10 @@ impl Agent {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Session {} has no conversation", session_config.id))?;
 
-        if self.final_output_tool.lock().await.is_some() {
+        let final_output_tool = ops_recipe::final_output_tool(&session)?;
+        let has_final_output_tool = final_output_tool.is_some();
+        *self.final_output_tool.lock().await = final_output_tool;
+        if has_final_output_tool {
             let provider = self.provider().await?;
             if !provider.supports_builtin_tools() {
                 let provider_name = provider.get_name();
@@ -3576,7 +3602,7 @@ impl Agent {
                             warn!("Final output tool has not been called yet. Continuing agent loop.");
                             let message = push_message_with_id(
                                 &mut messages_to_add,
-                                Message::user().with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE),
+                                Message::user().with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE).agent_only(),
                             );
                             yield AgentEvent::Message(message);
                         }
@@ -3588,9 +3614,9 @@ impl Agent {
                             // continue from last user message after recovery compact
                         }
                         None if self.has_pending_steers(&session_config.id).await => {}
-                        None if self.goal.lock().await.is_some() && !goal_check_pending => {
+                        None if GoalState::of(&session).goal.is_some() && !goal_check_pending => {
                             goal_check_pending = true;
-                            let goal = self.goal.lock().await.clone().unwrap();
+                            let goal = GoalState::of(&session).goal.unwrap();
                             let nudge = format!(
                                 "Before finishing, check whether the following goal has been fully met:\n\n\
                                  **Goal:** {goal}\n\n\
@@ -3607,8 +3633,8 @@ impl Agent {
                             );
                         }
 
-                        None if self.grind.lock().await.is_some() => {
-                            let grind = self.grind.lock().await.clone().unwrap();
+                        None if GoalState::of(&session).grind.is_some() => {
+                            let grind = GoalState::of(&session).grind.unwrap();
                             let nudge = format!(
                                 "Keep working. The grind goal is not yet complete:\n\n\
                                  **Goal:** {grind}\n\n\
@@ -3626,8 +3652,9 @@ impl Agent {
                         }
 
                         None => {
-                            self.set_goal(None).await;
-                            self.set_grind(None).await;
+                            session_manager
+                                .set_extension_state(&session_config.id, &GoalState::default())
+                                .await?;
                             // Recipe retry logic owns the turn whenever a
                             // retry_config is present: it runs success checks,
                             // on_failure, and max_retries. Only when no recipe
@@ -3824,32 +3851,6 @@ impl Agent {
             drop(inference_lease);
         }.instrument(reply_stream_span));
         Ok(inner)
-    }
-
-    pub async fn extend_system_prompt(&self, key: String, instruction: String) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.add_system_prompt_extra(key, instruction);
-    }
-
-    pub async fn remove_system_prompt_extra(&self, key: &str) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.remove_system_prompt_extra(key);
-    }
-
-    pub async fn set_goal(&self, goal: Option<String>) {
-        *self.goal.lock().await = goal;
-    }
-
-    pub async fn get_goal(&self) -> Option<String> {
-        self.goal.lock().await.clone()
-    }
-
-    pub async fn set_grind(&self, goal: Option<String>) {
-        *self.grind.lock().await = goal;
-    }
-
-    pub async fn get_grind(&self) -> Option<String> {
-        self.grind.lock().await.clone()
     }
 
     pub async fn update_provider(
@@ -4134,22 +4135,12 @@ impl Agent {
         Ok(provider_changed)
     }
 
-    /// Override the system prompt with a custom template
-    pub async fn override_system_prompt(&self, template: String) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.set_system_prompt_override(template);
-    }
-
-    pub async fn clear_system_prompt_override(&self) {
-        let mut prompt_manager = self.prompt_manager.lock().await;
-        prompt_manager.clear_system_prompt_override();
-    }
-
     pub async fn list_extension_prompts(&self, session_id: &str) -> HashMap<String, Vec<Prompt>> {
         self.extension_manager
-            .list_prompts(session_id, CancellationToken::default())
+            .current_lease(session_id, None)
             .await
-            .expect("Failed to list prompts")
+            .list_prompts(CancellationToken::default())
+            .await
     }
 
     pub async fn get_prompt(
@@ -4158,29 +4149,17 @@ impl Agent {
         name: &str,
         arguments: Value,
     ) -> Result<GetPromptResult> {
-        // First find which extension has this prompt
-        let prompts = self
-            .extension_manager
-            .list_prompts(session_id, CancellationToken::default())
-            .await
-            .map_err(|e| anyhow!("Failed to list prompts: {}", e))?;
+        let lease = self.extension_manager.current_lease(session_id, None).await;
+        let prompts = lease.list_prompts(CancellationToken::default()).await;
 
         if let Some(extension) = prompts
             .iter()
             .find(|(_, prompt_list)| prompt_list.iter().any(|p| p.name == name))
             .map(|(extension, _)| extension)
         {
-            return self
-                .extension_manager
-                .get_prompt(
-                    session_id,
-                    extension,
-                    name,
-                    arguments,
-                    CancellationToken::default(),
-                )
-                .await
-                .map_err(|e| anyhow!("Failed to get prompt: {}", e));
+            return lease
+                .get_prompt(extension, name, arguments, CancellationToken::default())
+                .await;
         }
 
         Err(anyhow!("Prompt '{}' not found", name))
@@ -4197,7 +4176,6 @@ mod tests {
     use crate::providers::base::{
         stream_from_single_message, MessageStream, ModelInfo, PermissionRouting,
     };
-    use crate::recipe::Response;
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
@@ -4270,87 +4248,6 @@ mod tests {
         call_count: AtomicUsize,
     }
 
-    struct MovingDirectoryProvider {
-        manager: std::sync::Mutex<Option<Arc<ExtensionManager>>>,
-        session_id: std::sync::Mutex<Option<String>>,
-        new_working_dir: PathBuf,
-        tool_lists: std::sync::Mutex<Vec<Vec<String>>>,
-        call_count: AtomicUsize,
-    }
-
-    impl MovingDirectoryProvider {
-        fn new(new_working_dir: PathBuf) -> Self {
-            Self {
-                manager: std::sync::Mutex::new(None),
-                session_id: std::sync::Mutex::new(None),
-                new_working_dir,
-                tool_lists: std::sync::Mutex::new(Vec::new()),
-                call_count: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl crate::providers::base::Provider for MovingDirectoryProvider {
-        async fn stream(
-            &self,
-            _model_config: &goose_providers::model::ModelConfig,
-            _system_prompt: &str,
-            _messages: &[Message],
-            tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
-            self.tool_lists
-                .lock()
-                .unwrap()
-                .push(tools.iter().map(|tool| tool.name.to_string()).collect());
-            let call = self.call_count.fetch_add(1, Ordering::SeqCst);
-            let message = if call == 0 {
-                let manager = self
-                    .manager
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .expect("extension manager unavailable");
-                let session_id = self
-                    .session_id
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .expect("session unavailable");
-                manager
-                    .get_context()
-                    .session_manager
-                    .update(&session_id)
-                    .working_dir(self.new_working_dir.clone())
-                    .apply()
-                    .await
-                    .unwrap();
-                manager
-                    .update_working_dir(&self.new_working_dir, None, &session_id)
-                    .await
-                    .unwrap();
-                Message::assistant().with_tool_request(
-                    "move-directory",
-                    Ok(CallToolRequestParams::new("changing__value")),
-                )
-            } else {
-                Message::assistant().with_text("done")
-            };
-            Ok(stream_from_single_message(
-                message,
-                ProviderUsage::new("mock-model".to_string(), Usage::default()),
-            ))
-        }
-
-        fn get_name(&self) -> &str {
-            "moving-directory"
-        }
-
-        async fn get_context_limit(&self, _model: &str, _override_limit: Option<usize>) -> usize {
-            100_000
-        }
-    }
-
     impl RefreshingLeaseProvider {
         fn new() -> Self {
             Self {
@@ -4388,7 +4285,6 @@ mod tests {
                 manager
                     .add_client(
                         platform_extension("changing"),
-                        Some(PathBuf::default()),
                         Arc::new(LeaseValueClient("second")),
                         None,
                     )
@@ -4422,7 +4318,6 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
-                Some(session.working_dir.clone()),
                 Arc::new(LeaseValueClient("first")),
                 None,
             )
@@ -4433,7 +4328,6 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
-                Some(session.working_dir.clone()),
                 Arc::new(LeaseValueClient("second")),
                 None,
             )
@@ -4499,58 +4393,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_inference_refreshes_the_session_directory() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let new_working_dir = temp_dir.path().join("moved");
-        std::fs::create_dir(&new_working_dir)?;
-        let provider = Arc::new(MovingDirectoryProvider::new(new_working_dir));
-        let (agent, session_id) = create_test_agent(
-            temp_dir.path().join("data"),
-            crate::hooks::HookManager::from_plugins_for_test(vec![]),
-            provider.clone(),
-        )
-        .await?;
-        let session = agent
-            .config
-            .session_manager
-            .get_session(&session_id, false)
-            .await?;
-        agent
-            .extension_manager
-            .add_client(
-                persisted_builtin("changing"),
-                Some(session.working_dir),
-                Arc::new(LeaseValueClient("value")),
-                None,
-            )
-            .await;
-        *provider.manager.lock().unwrap() = Some(Arc::clone(&agent.extension_manager));
-        *provider.session_id.lock().unwrap() = Some(session_id.clone());
-
-        let mut stream = agent
-            .reply(
-                Message::user().with_text("move the directory"),
-                SessionConfig {
-                    id: session_id,
-                    schedule_id: None,
-                    max_turns: Some(100),
-                    retry_config: None,
-                },
-                false,
-                None,
-            )
-            .await?;
-        while let Some(event) = stream.next().await {
-            event?;
-        }
-
-        let tool_lists = provider.tool_lists.lock().unwrap();
-        assert_eq!(tool_lists.len(), 2);
-        assert!(tool_lists[1].iter().any(|tool| tool == "changing__value"));
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn inference_context_uses_the_lease_session_snapshot() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let new_working_dir = temp_dir.path().join("moved");
@@ -4574,7 +4416,6 @@ mod tests {
             .extension_manager
             .add_client(
                 persisted_builtin("changing"),
-                Some(stale_session.working_dir.clone()),
                 Arc::new(LeaseValueClient("value")),
                 None,
             )
@@ -6434,62 +6275,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     #[tokio::test]
-    async fn test_add_final_output_tool() -> Result<()> {
-        let agent = Agent::new();
-
-        let response = Response {
-            json_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "result": {"type": "string"}
-                }
-            })),
-        };
-
-        agent.add_final_output_tool(response).await?;
-
-        let tools = agent.list_tools("test-session-id", None).await;
-        let final_output_tool = tools
-            .iter()
-            .find(|tool| tool.name == FINAL_OUTPUT_TOOL_NAME);
-
-        assert!(
-            final_output_tool.is_some(),
-            "Final output tool should be present after adding"
-        );
-
-        let prompt_manager = agent.prompt_manager.lock().await;
-        let system_prompt = prompt_manager
-            .builder()
-            .with_goose_mode(GooseMode::default())
-            .build();
-
-        let final_output_tool_ref = agent.final_output_tool.lock().await;
-        let final_output_tool_system_prompt =
-            final_output_tool_ref.as_ref().unwrap().system_prompt();
-        assert!(system_prompt.contains(&final_output_tool_system_prompt));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn boolean_final_output_schema_returns_error() {
-        let agent = Agent::new();
-
-        let error = agent
-            .apply_recipe_components(
-                Some(Response {
-                    json_schema: Some(serde_json::json!(true)),
-                }),
-                true,
-            )
-            .await
-            .unwrap_err();
-
-        assert_eq!(error.to_string(), "json_schema must be an object");
-        assert!(agent.final_output_tool.lock().await.is_none());
-    }
-
-    #[tokio::test]
     async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
         let agent = Agent::new();
 
@@ -6949,9 +6734,8 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 RECORD_POST_FAILURE_SCRIPT,
             ),
         ]);
-        // agent_with_hooks builds the agent through Agent::with_config, which
-        // leaves final_output_tool as None, so the tool is inactive here without
-        // any extra setup.
+        // agent_with_hooks creates a session without a recipe, so the tool is
+        // inactive here without any extra setup.
         let (agent, session, _data_dir) = agent_with_hooks(env.hook_manager()).await;
 
         let call = CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)

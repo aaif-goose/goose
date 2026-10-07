@@ -18,12 +18,13 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
-    ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
+    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
+    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
     ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
 };
+use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::AgentEvent;
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
@@ -35,7 +36,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::{Session, SessionManager, SessionType};
+use crate::session::{GoalState, Session, SessionManager, SessionType};
 use crate::tool_inspection::ToolInspectionManager;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
@@ -151,8 +152,6 @@ pub(super) struct TestPipeline {
     permission_manager: Arc<PermissionManager>,
     hook_manager: HookManager,
     stop_hook_block_cap: u32,
-    goal: TokioMutex<Option<String>>,
-    grind: TokioMutex<Option<String>>,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
     working_dir: std::path::PathBuf,
@@ -179,7 +178,6 @@ impl TestPipeline {
                 self.steer_queue.clone(),
                 self.hook_manager.clone(),
             )),
-            Arc::new(MaxTurnsOperation::new(self.max_turns)),
             Arc::new(BangShellOperation::new()),
         ];
         if !self.provider_features.manages_own_context {
@@ -202,11 +200,15 @@ impl TestPipeline {
                 &self.goose_mode,
                 &self.tool_inspection_manager,
             )),
-            Arc::new(DoctorOperation),
+            Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
+            )),
+            Arc::new(ForegroundSubagentOperation::new(
+                ForegroundSubagentRunner::new(self.session_manager.clone(), false),
+                cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
@@ -216,13 +218,10 @@ impl TestPipeline {
                 &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
-                None,
                 Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
-                &self.goal,
-                &self.grind,
                 std::time::Duration::from_secs(1),
                 std::time::Duration::from_secs(1),
             )),
@@ -231,6 +230,7 @@ impl TestPipeline {
                 self.stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(MaxTurnsOperation::new(self.max_turns)),
         ];
         operations.extend(remaining_operations);
         operations.extend(self.extra_operations.clone());
@@ -398,11 +398,16 @@ impl TestPipeline {
     }
 
     pub(super) async fn get_goal(&self) -> Option<String> {
-        self.goal.lock().await.clone()
+        GoalState::of(&self.session().await.unwrap()).goal
     }
 
     pub(super) async fn set_grind(&self, grind: Option<String>) {
-        *self.grind.lock().await = grind;
+        let mut state = GoalState::of(&self.session().await.unwrap());
+        state.grind = grind;
+        self.session_manager
+            .set_extension_state(&self.session_id, &state)
+            .await
+            .unwrap();
     }
 
     pub(super) async fn session(&self) -> Result<Session> {
@@ -433,8 +438,6 @@ impl TestPipeline {
 
     pub(super) async fn reconstruct(&self) -> Result<Self> {
         let session = self.session().await?;
-        let goal = self.goal.lock().await.clone();
-        let grind = self.grind.lock().await.clone();
         let mut pipeline = build_test_pipeline(
             self.session_manager.clone(),
             self.api.clone(),
@@ -445,10 +448,9 @@ impl TestPipeline {
         )
         .await?
         .with_hook_manager(self.hook_manager.clone())
+        .with_max_turns(self.max_turns)
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
-        *pipeline.goal.lock().await = goal;
-        *pipeline.grind.lock().await = grind;
         Ok(pipeline)
     }
 
@@ -743,18 +745,13 @@ impl TestPipeline {
         Ok(TestRun::new(self.session().await?, events))
     }
 
-    pub(super) async fn set_system_prompt_override(&self, prompt: impl Into<String>) {
-        self.prompt_manager
-            .lock()
+    pub(super) async fn set_system_prompt_override(&self, prompt: Option<&str>) {
+        self.session_manager
+            .update(&self.session_id)
+            .system_prompt_override(prompt.map(str::to_string))
+            .apply()
             .await
-            .set_system_prompt_override(prompt.into());
-    }
-
-    pub(super) async fn clear_system_prompt_override(&self) {
-        self.prompt_manager
-            .lock()
-            .await
-            .clear_system_prompt_override();
+            .unwrap();
     }
 }
 
@@ -854,6 +851,7 @@ async fn build_test_pipeline(
     )?;
     let provider: Arc<dyn Provider> = Arc::new(
         goose_providers::openai::OpenAiProviderBuilder::new(api_client)
+            .base_path("chat/completions")
             .name(provider_name)
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
@@ -910,8 +908,6 @@ async fn build_test_pipeline(
         permission_manager,
         hook_manager: HookManager::default(),
         stop_hook_block_cap: 3,
-        goal: TokioMutex::new(None),
-        grind: TokioMutex::new(None),
         calculator: calculator.clone(),
         session_id: session.id.clone(),
         working_dir: session.working_dir.clone(),
@@ -952,7 +948,6 @@ async fn build_test_pipeline(
             extension_manager
                 .add_client(
                     extension,
-                    Some(session.working_dir.clone()),
                     calculator.clone(),
                     calculator.get_info().cloned(),
                 )

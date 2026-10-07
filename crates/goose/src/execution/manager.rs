@@ -226,11 +226,6 @@ impl AgentManager {
                 }
             }
             extension_results = agent.load_extensions_from_session(&session).await;
-            if let Some(recipe) = &session.recipe {
-                agent
-                    .apply_recipe_components(recipe.response.clone(), true)
-                    .await?;
-            }
         }
 
         if agent.provider().await.is_err() {

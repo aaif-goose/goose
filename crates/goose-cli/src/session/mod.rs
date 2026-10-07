@@ -1133,8 +1133,6 @@ impl CliSession {
 
         self.session_id = new_session_id;
         self.messages.clear();
-        self.agent.set_goal(None).await;
-        self.agent.set_grind(None).await;
 
         if let Err(e) = self
             .agent
@@ -1343,6 +1341,7 @@ impl CliSession {
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
         let mut stream_error = None;
+        let mut failed_before_stop = false;
 
         use futures::StreamExt;
         loop {
@@ -1508,6 +1507,7 @@ impl CliSession {
                             if interactive || !is_stream_json_mode {
                                 handle_agent_error(&e, is_stream_json_mode);
                             }
+                            failed_before_stop = !cancel_token_clone.is_cancelled();
                             cancel_token_clone.cancel();
                             drop(stream);
                             if let Err(e) = self.handle_interrupted_messages(false).await {
@@ -1534,6 +1534,12 @@ impl CliSession {
                     break;
                 }
             }
+        }
+
+        if cancel_token_clone.is_cancelled() && !failed_before_stop {
+            self.agent
+                .cancel_foreground_subagents(&self.session_id)
+                .await;
         }
 
         let terminal_error = headless_run_error(
@@ -2026,7 +2032,10 @@ async fn create_successor_session(
     let mut builder = session_manager
         .update(&new_session.id)
         .recipe(old_session.recipe.clone())
-        .user_recipe_values(old_session.user_recipe_values.clone());
+        .user_recipe_values(old_session.user_recipe_values.clone())
+        .system_prompt_override(old_session.system_prompt_override.clone())
+        .system_prompt_extras(old_session.system_prompt_extras.clone())
+        .container(old_session.container.clone());
 
     if let Some(provider_name) = old_session.provider_name.clone() {
         builder = builder.provider_name(provider_name);

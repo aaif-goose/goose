@@ -1339,11 +1339,8 @@ pub fn openai_provider(
         api_client = api_client.with_query(query_params);
     }
 
-    // For the real OpenAI API, model-based routing is correct — Responses-family
-    // models should go to /v1/responses. For custom hosts, always keep chat
-    // completions: a server may include `/v1` in its URL without implementing
-    // the Responses endpoint, and the versionless path still matches the
-    // `is_chat_completions_path()` check below.
+    // Keep custom hosts on Chat Completions: a server may include `/v1`
+    // without supporting Responses.
     let base_path = if is_openai {
         if has_v1 {
             OPEN_AI_DEFAULT_BASE_PATH.to_string()
@@ -1356,6 +1353,7 @@ pub fn openai_provider(
 
     let provider = OpenAiProviderBuilder::new(api_client)
         .base_path(base_path)
+        .native_openai(is_openai)
         .preserve_thinking_context(!is_openai)
         .build();
 

@@ -1,23 +1,20 @@
 //! Compacts conversation history when it is too large for the configured context window.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tracing_futures::Instrument;
 
+use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
-use crate::agents::state_machine::ops_recipe::RecipeOperation;
 use crate::agents::state_machine::{
-    applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error, yielded,
-    yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
-    SlashCommand,
+    applied, awaits_tool_responses, last_effective_role, messages_since_kickoff, not_applicable,
+    trailing_error, yielded, yielded_with, ConversationEffect, Emitter, GooseEffect, Operation,
+    OperationResult, SlashCommand,
 };
 use crate::context_mgmt::{compact_messages, count_context_tokens};
-use crate::conversation::message::{
-    Message, MessageContent, MessageErrorKind, SystemNotificationType,
-};
+use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
 use crate::session::Session;
@@ -46,22 +43,6 @@ fn compaction_part(
         "<compaction>~{}k tokens remaining</compaction>",
         compaction_at.saturating_sub(total_tokens) / 1000
     ))
-}
-
-/// Several operations answer parts of one tool batch in separate messages, so a
-/// tool tail alone does not mean the batch is complete.
-fn awaits_tool_responses(messages: &[Message]) -> bool {
-    let answered: HashSet<&str> = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect();
-    messages
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .any(|request| {
-            !request.was_executed_externally() && !answered.contains(request.id.as_str())
-        })
 }
 
 /// Reported usage stops at the inference that requested the tools, so the
@@ -285,7 +266,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             if tail == EffectiveRole::Assistant
                 || awaits_tool_responses(messages)
                 || (tail == EffectiveRole::Tool
-                    && RecipeOperation::successful_final_output(messages).is_some())
+                    && FinalOutputTool::successful_output(messages).is_some())
             {
                 return not_applicable();
             }

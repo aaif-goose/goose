@@ -16,8 +16,9 @@ use std::sync::Arc;
 use futures::stream;
 use futures::{FutureExt, Stream};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, ListResourcesResult,
-    ReadResourceResult, ResourceContents, ServerNotification, Tool,
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
+    ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
+    ServerNotification, Tool,
 };
 use rmcp::service::ServiceError;
 use serde_json::Value;
@@ -341,26 +342,123 @@ impl ExtensionLease {
             })
     }
 
-    pub async fn list_resources_result_from_extension(
-        &self,
-        extension_name: &str,
-        cancellation_token: CancellationToken,
-    ) -> Result<ListResourcesResult, ErrorData> {
+    fn client(&self, extension_name: &str) -> Result<&Arc<dyn McpClientTrait>, ErrorData> {
         let key = name_to_key(extension_name);
-        let client = self
-            .extensions
+        self.extensions
             .iter()
             .find(|extension| extension.key == key)
-            .map(|extension| Arc::clone(&extension.client))
+            .map(|extension| &extension.client)
             .ok_or_else(|| {
                 ErrorData::new(
                     ErrorCode::INVALID_PARAMS,
                     format!("Extension {extension_name} is not valid"),
                     None,
                 )
-            })?;
+            })
+    }
 
-        client
+    pub async fn list_tools_from_extension(
+        &self,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, ErrorData> {
+        self.client(extension_name)?
+            .list_tools(&self.scope_id, None, cancellation_token)
+            .await
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to list tools for {extension_name}, {error:?}"),
+                    None,
+                )
+            })
+    }
+
+    pub async fn list_prompts_from_extension(
+        &self,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<Vec<Prompt>, ErrorData> {
+        self.client(extension_name)?
+            .list_prompts(&self.scope_id, None, cancellation_token)
+            .await
+            .map(|result| result.prompts)
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("Unable to list prompts for {extension_name}, {error:?}"),
+                    None,
+                )
+            })
+    }
+
+    pub async fn list_prompts(
+        &self,
+        cancellation_token: CancellationToken,
+    ) -> HashMap<String, Vec<Prompt>> {
+        let results = futures::future::join_all(self.extensions.iter().map(|extension| {
+            let token = cancellation_token.clone();
+            async move {
+                (
+                    extension.key.clone(),
+                    self.list_prompts_from_extension(&extension.key, token)
+                        .await,
+                )
+            }
+        }))
+        .await;
+        let mut prompts = HashMap::new();
+        for (key, result) in results {
+            match result {
+                Ok(listed) => {
+                    prompts.insert(key, listed);
+                }
+                Err(error) => tracing::debug!(?error, "failed to list prompts"),
+            }
+        }
+        prompts
+    }
+
+    pub async fn get_prompt(
+        &self,
+        extension_name: &str,
+        name: &str,
+        arguments: Value,
+        cancellation_token: CancellationToken,
+    ) -> anyhow::Result<GetPromptResult> {
+        self.client(extension_name)?
+            .get_prompt(&self.scope_id, name, arguments, cancellation_token)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get prompt: {}", e))
+    }
+
+    pub async fn ui_resources(&self) -> Vec<(String, Resource)> {
+        let mut ui_resources = Vec::new();
+        for extension in &self.extensions {
+            match extension
+                .client
+                .list_resources(&self.scope_id, None, CancellationToken::default())
+                .await
+            {
+                Ok(listed) => ui_resources.extend(
+                    listed
+                        .resources
+                        .into_iter()
+                        .filter(|resource| resource.uri.starts_with("ui://"))
+                        .map(|resource| (extension.key.clone(), resource)),
+                ),
+                Err(error) => warn!(extension = %extension.key, ?error, "failed to list resources"),
+            }
+        }
+        ui_resources
+    }
+
+    pub async fn list_resources_result_from_extension(
+        &self,
+        extension_name: &str,
+        cancellation_token: CancellationToken,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        self.client(extension_name)?
             .list_resources(&self.scope_id, None, cancellation_token)
             .await
             .map_err(|error| {
@@ -425,23 +523,26 @@ impl ExtensionLease {
         Ok(resources)
     }
 
-    pub fn instructions(&self) -> Vec<ExtensionInfo> {
+    pub async fn instructions(&self) -> Vec<ExtensionInfo> {
         let working_dir = self
             .working_dir
-            .as_deref()
-            .unwrap_or(std::path::Path::new("."))
-            .to_string_lossy();
-        self.extensions
-            .iter()
-            .map(|extension| {
-                let instructions = extension.client.get_instructions().unwrap_or_default();
-                ExtensionInfo::new(
-                    &extension.key,
-                    &instructions.replace("{{WORKING_DIR}}", &working_dir),
-                    extension.supports_resources(),
-                )
-            })
-            .collect()
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let placeholder = working_dir.to_string_lossy();
+        let mut infos = Vec::new();
+        for extension in &self.extensions {
+            let instructions = extension
+                .client
+                .get_instructions(&self.scope_id, &working_dir)
+                .await
+                .unwrap_or_default();
+            infos.push(ExtensionInfo::new(
+                &extension.key,
+                &instructions.replace("{{WORKING_DIR}}", &placeholder),
+                extension.supports_resources(),
+            ));
+        }
+        infos
     }
 
     pub async fn moim(&self) -> Vec<String> {
@@ -561,6 +662,7 @@ impl ExtensionLease {
             tool_call_id,
             notification_emitter,
             container,
+            from_state_machine,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -576,6 +678,7 @@ impl ExtensionLease {
         )
         .with_container(container)
         .with_extension_lease(Arc::new(self.clone()));
+        call_context.from_state_machine = from_state_machine;
         if let Some(emitter) = emitter {
             call_context = call_context.with_notification_emitter(emitter);
         }
@@ -667,19 +770,24 @@ pub struct CallRequest {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
     pub(crate) container: Option<Container>,
+    pub(crate) from_state_machine: bool,
 }
 
 impl CallRequest {
     pub fn new(tool_call_id: impl Into<String>) -> Self {
         Self {
             tool_call_id: Some(tool_call_id.into()),
-            notification_emitter: None,
-            container: None,
+            ..Default::default()
         }
     }
 
     pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
         self.container = container;
+        self
+    }
+
+    pub(crate) fn with_state_machine(mut self) -> Self {
+        self.from_state_machine = true;
         self
     }
 }
@@ -690,6 +798,7 @@ impl From<&ToolCallContext> for CallRequest {
             tool_call_id: ctx.tool_call_request_id.clone(),
             notification_emitter: ctx.notification_emitter().cloned(),
             container: ctx.container().cloned(),
+            from_state_machine: ctx.from_state_machine,
         }
     }
 }

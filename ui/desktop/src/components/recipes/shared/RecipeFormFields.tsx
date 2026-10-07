@@ -115,6 +115,8 @@ interface RecipeFormFieldsProps {
   onJsonSchemaChange?: (value: string) => void;
 }
 
+const BUILT_IN_RECIPE_DIR_PARAM = 'recipe_dir';
+
 export const extractTemplateVariables = (content: string): string[] => {
   const templateVarRegex = /\{\{(.*?)\}\}/g;
   const variables: string[] = [];
@@ -123,7 +125,7 @@ export const extractTemplateVariables = (content: string): string[] => {
   while ((match = templateVarRegex.exec(content)) !== null) {
     const variable = match[1].trim();
 
-    if (variable && !variables.includes(variable)) {
+    if (variable && variable !== BUILT_IN_RECIPE_DIR_PARAM && !variables.includes(variable)) {
       // Filter out complex variables that aren't valid parameter names
       // This matches the backend logic in filter_complex_variables()
       const validVarRegex = /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*$/;

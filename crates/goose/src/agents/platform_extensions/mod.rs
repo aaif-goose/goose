@@ -8,7 +8,6 @@ pub mod chatrecall;
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
-pub mod orchestrator;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -19,7 +18,6 @@ pub mod tom;
 use std::collections::HashMap;
 
 use crate::agents::mcp_client::McpClientTrait;
-use crate::session::Session;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -188,20 +186,6 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
         );
 
         map.insert(
-            orchestrator::EXTENSION_NAME,
-            PlatformExtensionDef {
-                name: orchestrator::EXTENSION_NAME,
-                display_name: "Orchestrator",
-                description:
-                    "Manage agent sessions: list, view, start, send messages, interrupt, and stop agents",
-                default_enabled: false,
-                unprefixed_tools: false,
-                hidden: true,
-                client_factory: |ctx| Some(Box::new(orchestrator::OrchestratorClient::new(ctx).unwrap())),
-            },
-        );
-
-        map.insert(
             tom::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: tom::EXTENSION_NAME,
@@ -224,9 +208,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| {
-                    Some(Box::new(crate::skills::SkillsClient::new(ctx).unwrap()))
-                },
+                client_factory: |_| Some(Box::new(crate::skills::SkillsClient::default())),
             },
         );
 
@@ -244,7 +226,6 @@ pub struct PlatformExtensionContext {
     pub provider: crate::agents::types::SharedProvider,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
-    pub session: Option<std::sync::Arc<Session>>,
     pub use_login_shell_path: bool,
 }
 

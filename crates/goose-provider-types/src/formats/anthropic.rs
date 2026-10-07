@@ -136,6 +136,13 @@ impl AnthropicFormatOptions {
     }
 }
 
+pub fn is_reserved_request_param_key(key: &str) -> bool {
+    matches!(
+        key,
+        "messages" | "model" | "stream" | "max_tokens" | "system" | "tools"
+    )
+}
+
 pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -> bool {
     let Some(current_model) = current_model else {
         return false;

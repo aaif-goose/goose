@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::agents::{extension::ExtensionInfo, moim};
 use crate::hints::load_hints::build_gitignore;
 use crate::hints::{get_context_filenames, load_hint_files, SubdirectoryHintTracker};
+use crate::session::Session;
 use crate::{
     config::{Config, GooseMode},
     prompt_template,
@@ -15,8 +16,7 @@ use crate::{
 use std::path::Path;
 
 pub struct PromptManager {
-    system_prompt_override: Option<String>,
-    system_prompt_extras: IndexMap<String, String>,
+    subdirectory_hints: IndexMap<String, String>,
     current_date_timestamp: String,
     subdirectory_hint_tracker: SubdirectoryHintTracker,
 }
@@ -43,6 +43,7 @@ struct SystemPromptContext {
 pub struct SystemPromptBuilder<'a, M> {
     manager: &'a M,
 
+    system_prompt_override: Option<String>,
     extensions_info: Vec<ExtensionInfo>,
     prompt_extras: IndexMap<String, String>,
     subagents_enabled: bool,
@@ -53,6 +54,13 @@ pub struct SystemPromptBuilder<'a, M> {
 }
 
 impl<'a> SystemPromptBuilder<'a, PromptManager> {
+    pub fn with_session(mut self, session: &Session) -> Self {
+        self.system_prompt_override = session.system_prompt_override.clone();
+        self.prompt_extras
+            .extend(session.system_prompt_extras.clone());
+        self
+    }
+
     pub fn with_extension(mut self, extension: ExtensionInfo) -> Self {
         self.extensions_info.push(extension);
         self
@@ -134,7 +142,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             moim_system_prompt_block: moim::system_prompt_block(),
         };
 
-        let base_prompt = if let Some(override_prompt) = &self.manager.system_prompt_override {
+        let base_prompt = if let Some(override_prompt) = &self.system_prompt_override {
             let sanitized_override_prompt = sanitize_unicode_tags(override_prompt);
             prompt_template::render_string(&sanitized_override_prompt, &context)
         } else {
@@ -144,7 +152,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             "You are a general-purpose AI agent called goose, created by Block".to_string()
         });
 
-        let mut system_prompt_extras = self.manager.system_prompt_extras.clone();
+        let mut system_prompt_extras = self.manager.subdirectory_hints.clone();
         system_prompt_extras.extend(self.prompt_extras);
 
         // Add hints if provided
@@ -180,8 +188,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
 impl PromptManager {
     pub fn new() -> Self {
         PromptManager {
-            system_prompt_override: None,
-            system_prompt_extras: IndexMap::new(),
+            subdirectory_hints: IndexMap::new(),
             // Use the fixed current date time so that prompt cache can be used.
             // Filtering to an hour to balance user time accuracy and multi session prompt cache hits.
             current_date_timestamp: Utc::now().format("%Y-%m-%d %H:00 %:z").to_string(),
@@ -192,21 +199,10 @@ impl PromptManager {
     #[cfg(test)]
     pub fn with_timestamp(dt: DateTime<Utc>) -> Self {
         PromptManager {
-            system_prompt_override: None,
-            system_prompt_extras: IndexMap::new(),
+            subdirectory_hints: IndexMap::new(),
             current_date_timestamp: dt.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
             subdirectory_hint_tracker: SubdirectoryHintTracker::new(),
         }
-    }
-
-    /// Add an additional instruction to the system prompt with a key
-    /// Using the same key will replace the previous instruction
-    pub fn add_system_prompt_extra(&mut self, key: String, instruction: String) {
-        self.system_prompt_extras.insert(key, instruction);
-    }
-
-    pub fn remove_system_prompt_extra(&mut self, key: &str) {
-        self.system_prompt_extras.shift_remove(key);
     }
 
     pub fn record_tool_arguments(
@@ -222,39 +218,32 @@ impl PromptManager {
         let new_hints = self.subdirectory_hint_tracker.load_new_hints(working_dir);
         let has_new = !new_hints.is_empty();
         for (key, content) in new_hints {
-            self.system_prompt_extras.insert(key, content);
+            self.subdirectory_hints.insert(key, content);
         }
         has_new
     }
 
     pub fn build_system_prompt(
         &mut self,
-        working_dir: &Path,
+        session: &Session,
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
     ) -> String {
-        self.load_subdirectory_hints(working_dir);
+        self.load_subdirectory_hints(&session.working_dir);
         self.builder()
+            .with_session(session)
             .with_prompt_extras(prompt_parts)
-            .with_hints(working_dir)
+            .with_hints(&session.working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
             .build()
-    }
-
-    /// Override the system prompt with custom text
-    pub fn set_system_prompt_override(&mut self, template: String) {
-        self.system_prompt_override = Some(template);
-    }
-
-    pub fn clear_system_prompt_override(&mut self) {
-        self.system_prompt_override = None;
     }
 
     pub fn builder<'a>(&'a self) -> SystemPromptBuilder<'a, Self> {
         SystemPromptBuilder {
             manager: self,
 
+            system_prompt_override: None,
             extensions_info: vec![],
             prompt_extras: IndexMap::new(),
             subagents_enabled: false,
@@ -272,13 +261,20 @@ mod tests {
 
     use super::*;
 
+    fn session_with_override(system_prompt_override: &str) -> Session {
+        Session {
+            system_prompt_override: Some(system_prompt_override.to_string()),
+            ..Session::default()
+        }
+    }
+
     #[test]
     fn test_build_system_prompt_sanitizes_override() {
-        let mut manager = PromptManager::new();
-        let malicious_override = "System prompt\u{E0041}\u{E0042}\u{E0043}with hidden text";
-        manager.set_system_prompt_override(malicious_override.to_string());
+        let manager = PromptManager::new();
+        let session =
+            session_with_override("System prompt\u{E0041}\u{E0042}\u{E0043}with hidden text");
 
-        let result = manager.builder().build();
+        let result = manager.builder().with_session(&session).build();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -289,22 +285,22 @@ mod tests {
 
     #[test]
     fn test_current_date_time_includes_timezone() {
-        let mut manager =
-            PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
-        manager.set_system_prompt_override("It is currently {{current_date_time}}".to_string());
+        let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+        let session = session_with_override("It is currently {{current_date_time}}");
 
-        let result = manager.builder().build();
+        let result = manager.builder().with_session(&session).build();
 
         assert_eq!(result, "It is currently 1970-01-01 00:00:00 +00:00");
     }
 
     #[test]
     fn test_build_system_prompt_sanitizes_extras() {
-        let mut manager = PromptManager::new();
         let malicious_extra = "Extra instruction\u{E0041}\u{E0042}\u{E0043}hidden";
-        manager.add_system_prompt_extra("test".to_string(), malicious_extra.to_string());
 
-        let result = manager.builder().build();
+        let result = PromptManager::new()
+            .builder()
+            .with_prompt_extras([("test".to_string(), malicious_extra.to_string())])
+            .build();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -332,8 +328,13 @@ mod tests {
         let mut manager = PromptManager::new();
         let working_dir = tempfile::tempdir().unwrap();
 
+        let session = Session {
+            working_dir: working_dir.path().to_path_buf(),
+            ..Session::default()
+        };
+
         let prompt = manager.build_system_prompt(
-            working_dir.path(),
+            &session,
             vec![(
                 "extensions".to_string(),
                 "# Extensions\n\n## developer".to_string(),
@@ -384,17 +385,17 @@ mod tests {
 
     #[test]
     fn test_build_system_prompt_sanitizes_multiple_extras() {
-        let mut manager = PromptManager::new();
-        manager
-            .add_system_prompt_extra("test1".to_string(), "First\u{E0041}instruction".to_string());
-        manager.add_system_prompt_extra(
-            "test2".to_string(),
-            "Second\u{E0042}instruction".to_string(),
-        );
-        manager
-            .add_system_prompt_extra("test3".to_string(), "Third\u{E0043}instruction".to_string());
-
-        let result = manager.builder().build();
+        let result = PromptManager::new()
+            .builder()
+            .with_prompt_extras([
+                ("test1".to_string(), "First\u{E0041}instruction".to_string()),
+                (
+                    "test2".to_string(),
+                    "Second\u{E0042}instruction".to_string(),
+                ),
+                ("test3".to_string(), "Third\u{E0043}instruction".to_string()),
+            ])
+            .build();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -405,35 +406,13 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_system_prompt_extra() {
-        let mut manager = PromptManager::new();
-        manager.add_system_prompt_extra("agent".to_string(), "Agent instruction".to_string());
-        manager.add_system_prompt_extra("project".to_string(), "Project instruction".to_string());
-
-        manager.remove_system_prompt_extra("agent");
-        let result = manager.builder().build();
-
-        assert!(!result.contains("Agent instruction"));
-        assert!(result.contains("Project instruction"));
-    }
-
-    #[test]
-    fn test_clear_system_prompt_override() {
-        let mut manager = PromptManager::new();
-        manager.set_system_prompt_override("Replacement prompt".to_string());
-        assert!(manager.builder().build().contains("Replacement prompt"));
-
-        manager.clear_system_prompt_override();
-        assert!(!manager.builder().build().contains("Replacement prompt"));
-    }
-
-    #[test]
     fn test_build_system_prompt_preserves_legitimate_unicode_in_extras() {
-        let mut manager = PromptManager::new();
         let legitimate_unicode = "Instruction with 世界 and 🌍 emojis";
-        manager.add_system_prompt_extra("test".to_string(), legitimate_unicode.to_string());
 
-        let result = manager.builder().build();
+        let result = PromptManager::new()
+            .builder()
+            .with_prompt_extras([("test".to_string(), legitimate_unicode.to_string())])
+            .build();
 
         assert!(result.contains("世界"));
         assert!(result.contains("🌍"));
@@ -542,22 +521,24 @@ mod tests {
             provider: Arc::new(tokio::sync::Mutex::new(None)),
             session_manager,
             scheduler: Some(scheduler),
-            session: Some(Arc::new(session)),
             use_login_shell_path: false,
         };
 
-        let mut extensions: Vec<ExtensionInfo> = PLATFORM_EXTENSIONS
-            .values()
-            .filter_map(|def| {
-                let client = (def.client_factory)(context.clone())?;
-                let instructions = client.get_instructions().unwrap_or_default();
-                let has_resources = client
-                    .get_info()
-                    .and_then(|i| i.capabilities.resources.as_ref())
-                    .is_some();
-                Some(ExtensionInfo::new(def.name, &instructions, has_resources))
-            })
-            .collect();
+        let mut extensions = Vec::new();
+        for def in PLATFORM_EXTENSIONS.values() {
+            let Some(client) = (def.client_factory)(context.clone()) else {
+                continue;
+            };
+            let instructions = client
+                .get_instructions(&session.id, &session.working_dir)
+                .await
+                .unwrap_or_default();
+            let has_resources = client
+                .get_info()
+                .and_then(|i| i.capabilities.resources.as_ref())
+                .is_some();
+            extensions.push(ExtensionInfo::new(def.name, &instructions, has_resources));
+        }
 
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
 

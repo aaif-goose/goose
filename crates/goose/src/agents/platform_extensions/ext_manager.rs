@@ -28,9 +28,6 @@ pub enum ExtensionManagerToolError {
     #[error("Unknown tool: {tool_name}")]
     UnknownTool { tool_name: String },
 
-    #[error("Extension manager not available")]
-    ManagerUnavailable,
-
     #[error("Missing required parameter: {param_name}")]
     MissingParameter { param_name: String },
 
@@ -105,23 +102,15 @@ impl ExtensionManagerClient {
         Ok(Self { info, context })
     }
 
-    async fn handle_search_available_extensions(
-        &self,
-    ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
-        let enabled = extension_manager.list_extensions().await.map_err(|e| {
-            ExtensionManagerToolError::OperationFailed {
-                message: format!("Failed to search available extensions: {}", e),
-            }
-        })?;
-        Ok(vec![ContentBlock::text(search_available_extensions(
-            &enabled,
-        ))])
+    fn handle_search_available_extensions(ctx: &ToolCallContext) -> Vec<ContentBlock> {
+        let enabled: Vec<String> = ctx
+            .extension_lease()
+            .expect("platform tool calls are dispatched through a lease")
+            .configs()
+            .iter()
+            .map(ExtensionConfig::key)
+            .collect();
+        vec![ContentBlock::text(search_available_extensions(&enabled))]
     }
 
     async fn handle_manage_extensions(
@@ -221,21 +210,11 @@ impl ExtensionManagerClient {
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
-        let result = if let Some(lease) = ctx.extension_lease() {
-            lease
-                .list_resources(params, CancellationToken::default())
-                .await
-        } else {
-            let manager = self
-                .context
-                .extension_manager
-                .as_ref()
-                .and_then(|manager| manager.upgrade())
-                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
-            manager
-                .list_resources(&ctx.session_id, params, CancellationToken::default())
-                .await
-        };
+        let result = ctx
+            .extension_lease()
+            .expect("platform tool calls are dispatched through a lease")
+            .list_resources(params, CancellationToken::default())
+            .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {
             message: format!("Failed to list resources: {}", error.message),
         })
@@ -247,21 +226,11 @@ impl ExtensionManagerClient {
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, ExtensionManagerToolError> {
         let params = arguments.map(serde_json::Value::Object).unwrap_or_default();
-        let result = if let Some(lease) = ctx.extension_lease() {
-            lease
-                .read_resource_tool(params, CancellationToken::default())
-                .await
-        } else {
-            let manager = self
-                .context
-                .extension_manager
-                .as_ref()
-                .and_then(|manager| manager.upgrade())
-                .ok_or(ExtensionManagerToolError::ManagerUnavailable)?;
-            manager
-                .read_resource_tool(&ctx.session_id, params, CancellationToken::default())
-                .await
-        };
+        let result = ctx
+            .extension_lease()
+            .expect("platform tool calls are dispatched through a lease")
+            .read_resource_tool(params, CancellationToken::default())
+            .await;
         result.map_err(|error| ExtensionManagerToolError::OperationFailed {
             message: format!("Failed to read resource: {}", error.message),
         })
@@ -432,7 +401,7 @@ impl McpClientTrait for ExtensionManagerClient {
         let session_id = &ctx.session_id;
         let result = match name {
             SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME => {
-                self.handle_search_available_extensions().await
+                Ok(Self::handle_search_available_extensions(ctx))
             }
             MANAGE_EXTENSIONS_TOOL_NAME => {
                 return Ok(self
@@ -542,11 +511,10 @@ mod tests {
 
     fn client_for(manager: &Arc<ExtensionManager>) -> ExtensionManagerClient {
         ExtensionManagerClient::new(PlatformExtensionContext {
-            extension_manager: Some(Arc::downgrade(manager)),
+            extension_manager: None,
             provider: manager.get_provider().clone(),
             session_manager: manager.get_context().session_manager.clone(),
             scheduler: None,
-            session: None,
             use_login_shell_path: false,
         })
         .unwrap()

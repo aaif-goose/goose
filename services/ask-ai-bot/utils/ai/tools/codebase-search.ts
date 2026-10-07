@@ -1,6 +1,7 @@
 import fs from "fs";
+import { readdir, readFile } from "fs/promises";
 import path from "path";
-import { logger } from "../../logger";
+import { getCodebaseDir } from "../source";
 
 export interface CodeSearchResult {
   filePath: string;
@@ -39,10 +40,6 @@ const IGNORED_DIRS = new Set([
   "coverage",
 ]);
 
-function getCodebaseDir(): string {
-  return process.env.CODEBASE_PATH || path.join(process.cwd(), "../..");
-}
-
 function getSearchableDirs(): { name: string; path: string }[] {
   const base = path.resolve(getCodebaseDir());
   return [
@@ -77,18 +74,18 @@ function getContextLines(
   return contextLines.join("\n");
 }
 
-function searchInFile(
+async function searchInFile(
   filePath: string,
   pattern: RegExp,
   baseDir: string,
-): CodeSearchResult[] {
+): Promise<CodeSearchResult[]> {
   const results: CodeSearchResult[] = [];
 
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
+    const content = await readFile(filePath, "utf-8");
     const lines = content.split("\n");
 
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = 0; i < lines.length && results.length < 3; i++) {
       if (pattern.test(lines[i])) {
         const relativePath = path.relative(baseDir, filePath);
         results.push({
@@ -97,6 +94,7 @@ function searchInFile(
           content: lines[i].trim(),
           context: getContextLines(lines, i),
         });
+        i += 4;
       }
     }
   } catch {
@@ -106,83 +104,88 @@ function searchInFile(
   return results;
 }
 
-function walkAndSearch(
+async function walkAndSearch(
   dir: string,
   pattern: RegExp,
   baseDir: string,
   results: CodeSearchResult[],
   maxResults: number,
-): void {
+): Promise<void> {
   if (results.length >= maxResults) return;
 
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const entries = await readdir(dir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      if (results.length >= maxResults) return;
+  for (const entry of entries) {
+    if (results.length >= maxResults) return;
 
-      if (entry.isDirectory()) {
-        if (shouldSkipDir(entry.name)) continue;
-        walkAndSearch(
-          path.join(dir, entry.name),
-          pattern,
-          baseDir,
-          results,
-          maxResults,
-        );
-      } else if (isSourceFile(entry.name)) {
-        const fileResults = searchInFile(
-          path.join(dir, entry.name),
-          pattern,
-          baseDir,
-        );
-        for (const result of fileResults) {
-          if (results.length >= maxResults) return;
-          results.push(result);
-        }
+    if (entry.isDirectory()) {
+      if (shouldSkipDir(entry.name)) continue;
+      await walkAndSearch(
+        path.join(dir, entry.name),
+        pattern,
+        baseDir,
+        results,
+        maxResults,
+      );
+    } else if (entry.isFile() && isSourceFile(entry.name)) {
+      const fileResults = await searchInFile(
+        path.join(dir, entry.name),
+        pattern,
+        baseDir,
+      );
+      for (const result of fileResults) {
+        if (results.length >= maxResults) return;
+        results.push(result);
       }
     }
-  } catch (error) {
-    logger.error(`Error walking directory ${dir}:`, error);
   }
 }
 
-export function searchCodebase(
+export async function searchCodebase(
   query: string,
   limit: number = 20,
   scope?: string,
-): CodeSearchResult[] {
-  const searchDirs = getSearchableDirs();
-  const allResults: CodeSearchResult[] = [];
-
-  let pattern: RegExp;
-  try {
-    pattern = new RegExp(query, "i");
-  } catch {
-    pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-  }
-
-  for (const dir of searchDirs) {
-    if (scope && dir.name !== scope) continue;
-
-    if (!fs.existsSync(dir.path)) {
-      logger.warn(`Codebase directory not found: ${dir.path}`);
-      continue;
-    }
-
-    walkAndSearch(
-      dir.path,
-      pattern,
-      path.resolve(getCodebaseDir()),
-      allResults,
-      limit,
-    );
-  }
-
-  logger.verbose(
-    `Code search for "${query}" returned ${allResults.length} results`,
+  directory?: string,
+  regex = false,
+): Promise<CodeSearchResult[]> {
+  const base = getCodebaseDir();
+  let searchDirs = getSearchableDirs().filter(
+    (dir) => !scope || dir.name === scope,
   );
-  return allResults;
+  if (directory) {
+    const target = path.resolve(base, directory);
+    if (
+      !searchDirs.some(
+        (dir) => target === dir.path || target.startsWith(dir.path + path.sep),
+      )
+    )
+      throw new Error(
+        "Search directory must be within the selected ui/ or crates/ scope.",
+      );
+    searchDirs = [{ name: directory, path: target }];
+  }
+  const pattern = new RegExp(
+    regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "i",
+  );
+  const groups = await Promise.all(
+    searchDirs.map(async (dir) => {
+      const results: CodeSearchResult[] = [];
+      await walkAndSearch(dir.path, pattern, base, results, limit);
+      return results;
+    }),
+  );
+  const results: CodeSearchResult[] = [];
+  for (
+    let i = 0;
+    results.length < limit && groups.some((group) => i < group.length);
+    i++
+  ) {
+    for (const group of groups) {
+      if (group[i] && results.length < limit) results.push(group[i]);
+    }
+  }
+  return results;
 }
 
 export function listCodebaseFiles(
@@ -191,7 +194,7 @@ export function listCodebaseFiles(
   const baseDir = path.resolve(getCodebaseDir());
   const targetDir = path.resolve(path.join(baseDir, directory));
 
-  if (!targetDir.startsWith(baseDir + "/")) {
+  if (targetDir !== baseDir && !targetDir.startsWith(baseDir + "/")) {
     throw new Error("Invalid path - directory traversal not allowed");
   }
 
