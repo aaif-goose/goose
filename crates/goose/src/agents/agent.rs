@@ -1776,6 +1776,8 @@ impl Agent {
             .await
     }
 
+    /// Pins `provider` to the session instead of letting the provider manager
+    /// build one.
     pub async fn update_provider(
         &self,
         provider: Arc<dyn Provider>,
@@ -2551,6 +2553,89 @@ mod tests {
             agent_visible_message_text(&message),
             "/goal visible objective"
         );
+    }
+
+    struct ActionRequiredProvider {
+        handled: tokio::sync::Mutex<Vec<(String, PermissionConfirmation)>>,
+    }
+
+    impl ActionRequiredProvider {
+        fn new() -> Self {
+            Self {
+                handled: tokio::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl std::fmt::Debug for ActionRequiredProvider {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("ActionRequiredProvider").finish()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for ActionRequiredProvider {
+        fn get_name(&self) -> &str {
+            "test-action-required"
+        }
+        async fn stream(
+            &self,
+            _: &goose_providers::model::ModelConfig,
+            _: &str,
+            _: &[crate::conversation::message::Message],
+            _: &[rmcp::model::Tool],
+        ) -> Result<crate::providers::base::MessageStream, ProviderError> {
+            unimplemented!()
+        }
+        fn permission_routing(&self) -> PermissionRouting {
+            PermissionRouting::ActionRequired
+        }
+        async fn handle_permission_confirmation(
+            &self,
+            request_id: &str,
+            confirmation: &PermissionConfirmation,
+        ) -> bool {
+            self.handled
+                .lock()
+                .await
+                .push((request_id.to_string(), confirmation.clone()));
+            request_id == "known"
+        }
+    }
+
+    #[tokio::test]
+    async fn test_submit_tool_confirmation_routes_to_provider() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let provider = Arc::new(ActionRequiredProvider::new());
+        agent
+            .update_provider(
+                provider.clone(),
+                goose_providers::model::ModelConfig::new("test-model"),
+                &session.id,
+            )
+            .await
+            .unwrap();
+
+        agent
+            .submit_tool_confirmation(
+                &session.id,
+                "known",
+                crate::permission::Permission::AllowOnce,
+            )
+            .await
+            .unwrap();
+        assert_eq!(provider.handled.lock().await.len(), 1);
+
+        let error = agent
+            .submit_tool_confirmation(
+                &session.id,
+                "unknown",
+                crate::permission::Permission::DenyOnce,
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown or stale"));
+        assert_eq!(provider.handled.lock().await.len(), 2);
     }
 
     enum EffortOutcome {

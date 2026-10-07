@@ -2430,8 +2430,6 @@ impl GooseAcpAgent {
             .switch_provider(session_id, &provider_name, model_config)
             .await
             .internal_err_ctx("Failed to switch provider")?;
-        self.subscribe_thinking_effort_updates(session_id, &agent)
-            .await;
         Ok(())
     }
 
@@ -2573,6 +2571,7 @@ impl GooseAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
 
+        agent.config.providers.release(session_id);
         agent
             .switch_provider(session_id, &resolved_provider_name, model_config)
             .await

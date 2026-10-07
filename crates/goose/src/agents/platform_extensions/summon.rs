@@ -1466,6 +1466,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::MessageContent;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -1488,6 +1489,139 @@ mod tests {
             scheduler: None,
             use_login_shell_path: false,
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn foreground_delegate_persists_child_without_creating_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let child_dir = temp_dir.path().join("child");
+        fs::create_dir(&child_dir).unwrap();
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Parent".to_string(),
+                SessionType::User,
+                GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .update(&parent.id)
+            .provider_name("openai")
+            .model_config(
+                goose_providers::model::ModelConfig::new("test-model").with_cache_ttl("1h"),
+            )
+            .apply()
+            .await
+            .unwrap();
+        let client =
+            SummonClient::new(create_test_context_with_session_manager(manager.clone())).unwrap();
+        let args = serde_json::json!({
+            "instructions": "Review the change",
+            "provider": "openai",
+            "model": "test-model",
+            "extensions": [],
+            "working_dir": "child",
+            "max_turns": 3
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let result = {
+            let _env =
+                env_lock::lock_env([("OPENAI_HOST", None), ("OPENAI_BASE_URL", Some("http://"))]);
+            assert!(providers::create("openai", Vec::new()).await.is_err());
+            client
+                .handle_delegate(&parent.id, temp_dir.path(), Some(args))
+                .await
+                .unwrap()
+        };
+        let meta = result.meta.as_ref().unwrap();
+        assert_eq!(
+            meta.0.get("foreground_subagent"),
+            Some(&serde_json::json!(true))
+        );
+        let child_id = meta.0["subagent_session_id"].as_str().unwrap().to_string();
+
+        manager
+            .add_message(
+                &parent.id,
+                &Message::user().with_tool_response("delegate-call", Ok(result)),
+            )
+            .await
+            .unwrap();
+        let reloaded = crate::session::SessionManager::new(temp_dir.path().to_path_buf());
+        let child = reloaded.get_session(&child_id, true).await.unwrap();
+        assert_eq!(child.session_type, SessionType::SubAgent);
+        assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(child.working_dir, child_dir.canonicalize().unwrap());
+        assert_eq!(child.provider_name.as_deref(), Some("openai"));
+        assert_eq!(
+            child.model_config.as_ref().unwrap().model_name,
+            "test-model"
+        );
+        assert_eq!(
+            child.model_config.as_ref().unwrap().cache_ttl().as_deref(),
+            Some("5m")
+        );
+        let recipe = child.recipe.as_ref().unwrap();
+        assert_eq!(recipe.settings.as_ref().unwrap().max_turns, Some(3));
+        assert_eq!(
+            recipe
+                .response
+                .as_ref()
+                .unwrap()
+                .json_schema
+                .as_ref()
+                .unwrap()["required"],
+            serde_json::json!(["summary"])
+        );
+        assert!(
+            EnabledExtensionsState::from_extension_data(&child.extension_data)
+                .unwrap()
+                .extensions
+                .is_empty()
+        );
+        assert!(child.conversation.as_ref().unwrap().iter().any(|message| {
+            message.content.iter().any(|content| {
+                matches!(content,
+                MessageContent::Text(text) if text.text.contains("Review the change"))
+            })
+        }));
+
+        let parent = reloaded.get_session(&parent.id, true).await.unwrap();
+        assert!(parent.conversation.as_ref().unwrap().iter().any(|message| {
+            message.content.iter().any(|content| {
+                matches!(content,
+                    MessageContent::ToolResponse(response)
+                        if response.tool_result.as_ref().is_ok_and(|result|
+                            result.meta.as_ref().is_some_and(|meta|
+                                meta.0.get("foreground_subagent") == Some(&serde_json::json!(true))
+                                    && meta.0.get("subagent_session_id").and_then(serde_json::Value::as_str)
+                                        == Some(child_id.as_str())
+                            )
+                        )
+                )
+            })
+        }));
+
+        let (reloaded_agent, _) =
+            crate::agents::subagent_handler::from_foreground_subagent_session(
+                Arc::new(reloaded),
+                &child,
+                false,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            reloaded_agent.provider(&child.id).await.unwrap().get_name(),
+            "openai"
+        );
     }
 
     #[tokio::test]
