@@ -866,13 +866,9 @@ mod tests {
             .await
             .unwrap();
 
-        let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
-        let client = CodeExecutionClient::new(context, ToolDisclosure::Catalog).unwrap();
-        let configs = client
-            .load_callback_configs(&session.id, None)
-            .await
-            .unwrap();
+        let lease = manager.current_lease(&session.id, None).await;
+        let configs =
+            CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
             .iter()
             .map(|config| config.name.as_str())
