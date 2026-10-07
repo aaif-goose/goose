@@ -1132,6 +1132,7 @@ impl CliSession {
             .await;
 
         self.agent.discard_pending_steers(&self.session_id).await;
+        self.agent.config.providers.release(&self.session_id);
 
         self.session_id = new_session_id;
         self.messages.clear();
