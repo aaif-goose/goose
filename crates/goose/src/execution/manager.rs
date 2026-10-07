@@ -239,13 +239,15 @@ impl AgentManager {
         // key so we can also drop its creation lock below, otherwise the
         // `creation_locks` HashMap would grow without bound in long-lived
         // processes that churn through many sessions.
-        let evicted = sessions
-            .push(session_id.to_string(), agent.clone())
-            .map(|(k, _)| k);
+        let evicted = sessions.push(session_id.to_string(), agent.clone());
         drop(sessions);
 
-        if let Some(evicted_id) = evicted {
-            self.agent_config.providers.release(&evicted_id);
+        if let Some((evicted_id, evicted_agent)) = evicted {
+            // A run may still hold the evicted agent; its session-bound
+            // provider has to outlive that run.
+            if Arc::strong_count(&evicted_agent) == 1 {
+                self.agent_config.providers.release(&evicted_id);
+            }
             self.prune_creation_lock(&evicted_id).await;
         }
 
