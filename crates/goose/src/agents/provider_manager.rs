@@ -14,9 +14,6 @@ use crate::session::Session;
 type SessionSlot = Arc<tokio::sync::Mutex<Option<Arc<dyn Provider>>>>;
 type SharedProviders = HashMap<String, (u64, Arc<dyn Provider>)>;
 
-/// Hands out the provider a session should talk to. Providers that can serve
-/// any session are built once and shared; session-bound providers are built
-/// per session and kept until the session switches provider or is released.
 #[derive(Default)]
 pub struct ProviderManager {
     shared: tokio::sync::Mutex<SharedProviders>,
@@ -58,8 +55,6 @@ impl ProviderManager {
         Ok(provider)
     }
 
-    /// Pins `provider` to the session until the session switches to another
-    /// provider name or is released.
     pub async fn set_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
         *self.slot(session_id).lock().await = Some(provider);
     }
