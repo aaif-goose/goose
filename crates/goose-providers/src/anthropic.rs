@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -22,9 +23,10 @@ use super::base::{
 };
 pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
-    block_binding_behavior, create_request_for_model, is_thinking_signature_error,
-    response_to_streaming_message, OfficialThinkingCapabilities, PrefixMismatchBehavior,
-    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    block_binding_behavior, create_request_for_model, is_reserved_request_param_key,
+    is_thinking_signature_error, response_to_streaming_message, OfficialThinkingCapabilities,
+    PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD,
+    THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
@@ -274,7 +276,20 @@ impl AnthropicProvider {
             format_options,
         )?;
         payload["stream"] = Value::Bool(true);
+        if let Some(params) = self
+            .declared_model(&model_config.model_name)
+            .and_then(|m| m.request_params.as_ref())
+        {
+            apply_declared_request_params(&mut payload, params);
+        }
         Ok(payload)
+    }
+
+    fn declared_model(&self, model_name: &str) -> Option<&ModelInfo> {
+        self.custom_models
+            .as_ref()?
+            .iter()
+            .find(|m| m.name == model_name)
     }
 
     async fn post_messages(
@@ -574,6 +589,17 @@ fn beta_header_value(
         features.push(THINKING_BINDING_CONTROLS_BETA.to_string());
     }
     (!features.is_empty()).then(|| features.join(","))
+}
+
+fn apply_declared_request_params(payload: &mut Value, params: &HashMap<String, Value>) {
+    let Some(object) = payload.as_object_mut() else {
+        return;
+    };
+    for (key, value) in params {
+        if !is_reserved_request_param_key(key) {
+            object.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 fn format_options_for_provider(
@@ -1041,5 +1067,31 @@ mod tests {
                 .all(|model| !model.name.contains('.')),
             "Anthropic picker ids must be dashed wire names, not dotted catalog names"
         );
+    }
+
+    #[test]
+    fn apply_declared_request_params_skips_reserved_keys() {
+        let mut payload = json!({
+            "model": "claude-sonnet-4-5",
+            "stream": true,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8096,
+        });
+
+        let params = HashMap::from([
+            ("output_config".to_string(), json!({"effort": "low"})),
+            ("model".to_string(), json!("hijacked")),
+            ("stream".to_string(), json!(false)),
+            ("messages".to_string(), json!([])),
+            ("max_tokens".to_string(), json!(1)),
+        ]);
+
+        apply_declared_request_params(&mut payload, &params);
+
+        assert_eq!(payload["output_config"], json!({"effort": "low"}));
+        assert_eq!(payload["model"], json!("claude-sonnet-4-5"));
+        assert_eq!(payload["stream"], json!(true));
+        assert_eq!(payload["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["max_tokens"], json!(8096));
     }
 }
