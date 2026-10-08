@@ -1130,7 +1130,9 @@ impl CliSession {
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
-        self.agent.release_session(&self.session_id).await;
+        self.agent.discard_pending_steers(&self.session_id).await;
+        self.agent.extension_manager.release(&self.session_id).await;
+        self.agent.config.providers.release(&self.session_id);
 
         self.session_id = new_session_id;
         self.session_start_emitted = false;
