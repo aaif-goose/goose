@@ -50975,7 +50975,7 @@
     "id": "digitalocean/minimax-m2.5",
     "name": "MiniMax M2.5 (Public Preview)",
     "family": "minimax-m2.5",
-    "attachment": true,
+    "attachment": false,
     "reasoning": true,
     "tool_call": true,
     "temperature": true,
@@ -50984,8 +50984,7 @@
     "last_updated": "2026-04-16",
     "modalities": {
       "input": [
-        "text",
-        "image"
+        "text"
       ],
       "output": [
         "text"
@@ -56773,8 +56772,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.33531,
-      "output": 0.44708
+      "input": 0.33558,
+      "output": 0.44744
     },
     "limit": {
       "context": 100000,
@@ -56802,8 +56801,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.726505,
-      "output": 0.726505
+      "input": 0.72709,
+      "output": 0.72709
     },
     "limit": {
       "context": 128000,
@@ -56830,8 +56829,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.167655,
-      "output": 0.726505
+      "input": 0.16779,
+      "output": 0.72709
     },
     "limit": {
       "context": 131072,
@@ -59720,9 +59719,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.44708,
-      "output": 0.89416,
-      "cache_read": 0.089416
+      "input": 0.44744,
+      "output": 0.89488,
+      "cache_read": 0.089488
     },
     "limit": {
       "context": 256000,
@@ -59779,8 +59778,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.167655,
-      "output": 0.67062
+      "input": 0.16779,
+      "output": 0.67116
     },
     "limit": {
       "context": 128000,
@@ -59808,8 +59807,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.005931,
-      "output": 1.005931
+      "input": 1.00674,
+      "output": 1.00674
     },
     "limit": {
       "context": 128000,
@@ -91050,35 +91049,6 @@
     }
   },
   {
-    "id": "kilo/baidu/ernie-4.5-vl-424b-a47b",
-    "name": "Baidu: ERNIE 4.5 VL 424B A47B  (retires Oct 8)",
-    "family": "ernie",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": false,
-    "temperature": true,
-    "release_date": "2025-06-30",
-    "last_updated": "2025-06-30",
-    "modalities": {
-      "input": [
-        "image",
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.42,
-      "output": 1.25
-    },
-    "limit": {
-      "context": 123000,
-      "output": 16000
-    }
-  },
-  {
     "id": "kilo/bytedance-seed/seed-1.6",
     "name": "ByteDance Seed: Seed 1.6",
     "family": "seed",
@@ -91741,9 +91711,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.44,
-      "output": 1.32,
-      "cache_read": 0.028
+      "input": 0.2156,
+      "output": 0.6468,
+      "cache_read": 0.00686
     },
     "limit": {
       "context": 1048576,
@@ -93025,8 +92995,8 @@
     }
   },
   {
-    "id": "kilo/inclusionai/ling-3.0-flash-sante:free",
-    "name": "inclusionAI: Ling 3.0 Flash Sante (free)",
+    "id": "kilo/inclusionai/ling-3.0-flash-sante",
+    "name": "inclusionAI: Ling 3.0 Flash Sante",
     "family": "ling",
     "attachment": false,
     "reasoning": true,
@@ -93044,8 +93014,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0,
-      "output": 0.0
+      "input": 0.075,
+      "output": 0.22,
+      "cache_read": 0.015
     },
     "limit": {
       "context": 262144,
@@ -94299,7 +94270,7 @@
   },
   {
     "id": "kilo/mistralai/mistral-large-4.0",
-    "name": "Mistral: Mistral Large 4",
+    "name": "Mistral: Mistral Large 4 (50% off)",
     "family": "mistral-large",
     "attachment": true,
     "reasoning": true,
@@ -94318,9 +94289,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.36,
-      "output": 4.18,
-      "cache_read": 0.14
+      "input": 0.68,
+      "output": 2.09,
+      "cache_read": 0.07
     },
     "limit": {
       "context": 1048576,
@@ -94767,9 +94738,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.441,
+      "input": 0.4375,
       "output": 2.45,
-      "cache_read": 0.1224
+      "cache_read": 0.1211
     },
     "limit": {
       "context": 262144,
@@ -95123,7 +95094,7 @@
     },
     "limit": {
       "context": 262144,
-      "output": 16384
+      "output": 235929
     }
   },
   {
@@ -97963,8 +97934,8 @@
       "output": 0.52
     },
     "limit": {
-      "context": 128000,
-      "output": 32000
+      "context": 262144,
+      "output": 235929
     }
   },
   {
@@ -98284,8 +98255,8 @@
       "output": 0.78
     },
     "limit": {
-      "context": 131072,
-      "output": 32768
+      "context": 262144,
+      "output": 16384
     }
   },
   {
@@ -99469,7 +99440,7 @@
     "family": "llama",
     "attachment": false,
     "reasoning": false,
-    "tool_call": true,
+    "tool_call": false,
     "temperature": true,
     "release_date": "2024-08-28",
     "last_updated": "2024-08-28",
@@ -99766,36 +99737,6 @@
     }
   },
   {
-    "id": "kilo/stepfun/step-3.7-flash:free",
-    "name": "StepFun: Step 3.7 Flash (free)",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2026-03-01",
-    "release_date": "2026-05-29",
-    "last_updated": "2026-05-29",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.0,
-      "output": 0.0,
-      "cache_read": 0.0
-    },
-    "limit": {
-      "context": 262144,
-      "output": 262144
-    }
-  },
-  {
     "id": "kilo/stepfun/step-5-preview",
     "name": "Step 5 Preview",
     "attachment": true,
@@ -99819,6 +99760,36 @@
       "input": 1.0,
       "output": 2.7,
       "cache_read": 0.05
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 64000
+    }
+  },
+  {
+    "id": "kilo/stepfun/step-5-preview-free",
+    "name": "StepFun: Step 5 Preview (free)",
+    "family": "step",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2025-08-26",
+    "last_updated": "2025-08-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0
     },
     "limit": {
       "context": 1000000,
@@ -99957,9 +99928,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.132,
-      "output": 0.528,
-      "cache_read": 0.033
+      "input": 0.0825,
+      "output": 0.33,
+      "cache_read": 0.020625
     },
     "limit": {
       "context": 262144,
@@ -100015,9 +99986,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.834,
-      "output": 2.501,
-      "cache_read": 0.042
+      "input": 0.7506,
+      "output": 2.2509,
+      "cache_read": 0.0378
     },
     "limit": {
       "context": 1048576,
@@ -101406,7 +101377,7 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0356,
+      "input": 0.0283,
       "output": 1.0,
       "cache_read": 0.01
     },
@@ -101435,9 +101406,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.108,
+      "input": 0.1271,
       "output": 8.0,
-      "cache_read": 0.081
+      "cache_read": 0.0953
     },
     "limit": {
       "context": 1048576,
@@ -101464,9 +101435,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0137,
+      "input": 0.0104,
       "output": 1.28,
-      "cache_read": 0.0137
+      "cache_read": 0.0104
     },
     "limit": {
       "context": 1048576,
@@ -101563,7 +101534,7 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.45,
+      "input": 0.61,
       "output": 13.0,
       "cache_read": 0.45
     },
@@ -101782,9 +101753,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.036,
+      "input": 0.06,
       "output": 12.0,
-      "cache_read": 0.0335
+      "cache_read": 0.0558
     },
     "limit": {
       "context": 1048576,
@@ -101814,7 +101785,7 @@
     "open_weights": false,
     "cost": {
       "input": 0.032,
-      "output": 3.669545,
+      "output": 3.916611,
       "cache_read": 0.02
     },
     "limit": {
@@ -124636,16 +124607,18 @@
     "id": "merge-gateway/anthropic/claude-haiku-5.5",
     "name": "Claude Haiku 5.5",
     "family": "claude-haiku",
-    "attachment": false,
+    "attachment": true,
     "reasoning": true,
-    "tool_call": false,
+    "tool_call": true,
     "temperature": false,
     "knowledge": "2026-06",
     "release_date": "2026-10-07",
     "last_updated": "2026-10-07",
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image",
+        "pdf"
       ],
       "output": [
         "text"
@@ -125084,7 +125057,7 @@
     "cost": {
       "input": 2.0,
       "output": 10.0,
-      "cache_read": 0.2,
+      "cache_read": 0.1,
       "cache_write": 2.5
     },
     "limit": {
@@ -170190,6 +170163,35 @@
     }
   },
   {
+    "id": "opencode-go/step-5-preview-free",
+    "name": "Step 5 Preview Free",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-09-16",
+    "last_updated": "2026-09-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 65536
+    }
+  },
+  {
     "id": "opencode/big-pickle",
     "name": "Big Pickle",
     "family": "big-pickle",
@@ -173859,6 +173861,35 @@
     }
   },
   {
+    "id": "opencode/step-5-preview-free",
+    "name": "Step 5 Preview Free",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "release_date": "2026-09-16",
+    "last_updated": "2026-09-20",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0,
+      "cache_read": 0.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 65536
+    }
+  },
+  {
     "id": "opencode/trinity-large-preview-free",
     "name": "Trinity Large Preview",
     "family": "trinity",
@@ -174936,36 +174967,6 @@
     }
   },
   {
-    "id": "openrouter/baidu/ernie-4.5-vl-424b-a47b",
-    "name": "ERNIE 4.5 VL 424B A47B ",
-    "family": "ernie",
-    "attachment": true,
-    "reasoning": true,
-    "tool_call": false,
-    "temperature": true,
-    "knowledge": "2025-03-31",
-    "release_date": "2025-06-30",
-    "last_updated": "2025-06-30",
-    "modalities": {
-      "input": [
-        "image",
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.42,
-      "output": 1.25
-    },
-    "limit": {
-      "context": 123000,
-      "output": 16000
-    }
-  },
-  {
     "id": "openrouter/bytedance-seed/seed-1.6",
     "name": "Seed 1.6",
     "family": "seed",
@@ -175605,9 +175606,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0228,
+      "input": 0.0057,
       "output": 1.28,
-      "cache_read": 0.0228
+      "cache_read": 0.0057
     },
     "limit": {
       "context": 1048576,
@@ -175696,7 +175697,7 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0356,
+      "input": 0.0283,
       "output": 1.0,
       "cache_read": 0.01
     },
@@ -176976,8 +176977,8 @@
     }
   },
   {
-    "id": "openrouter/inclusionai/ling-3.0-flash-sante:free",
-    "name": "Ling 3.0 Flash Sante (free)",
+    "id": "openrouter/inclusionai/ling-3.0-flash-sante",
+    "name": "Ling 3.0 Flash Sante",
     "family": "ling",
     "attachment": false,
     "reasoning": true,
@@ -176995,8 +176996,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0,
-      "output": 0.0
+      "input": 0.042,
+      "output": 0.1232,
+      "cache_read": 0.0084
     },
     "limit": {
       "context": 262144,
@@ -178582,9 +178584,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.441,
+      "input": 0.4375,
       "output": 2.45,
-      "cache_read": 0.1224
+      "cache_read": 0.1211
     },
     "limit": {
       "context": 262144,
@@ -178935,12 +178937,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.085,
-      "output": 0.4
+      "input": 0.08,
+      "output": 0.45
     },
     "limit": {
       "context": 262144,
-      "output": 16384
+      "output": 235929
     }
   },
   {
@@ -181794,12 +181796,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.04815,
-      "output": 0.19305
+      "input": 0.1,
+      "output": 0.3
     },
     "limit": {
       "context": 262144,
-      "output": 32000
+      "output": 235929
     }
   },
   {
@@ -182120,12 +182122,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.15,
-      "output": 1.5
+      "input": 0.09,
+      "output": 1.1
     },
     "limit": {
       "context": 262144,
-      "output": 32768
+      "output": 16384
     }
   },
   {
@@ -182631,8 +182633,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.45,
-      "output": 2.7
+      "input": 0.3,
+      "output": 2.0,
+      "cache_read": 0.03
     },
     "limit": {
       "context": 262144,
@@ -183317,7 +183320,7 @@
     "family": "llama",
     "attachment": false,
     "reasoning": false,
-    "tool_call": true,
+    "tool_call": false,
     "temperature": true,
     "knowledge": "2023-12-31",
     "release_date": "2024-08-28",
@@ -183591,9 +183594,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.132,
-      "output": 0.528,
-      "cache_read": 0.033
+      "input": 0.0825,
+      "output": 0.33,
+      "cache_read": 0.020625
     },
     "limit": {
       "context": 262144,
@@ -183649,9 +183652,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.834,
-      "output": 2.501,
-      "cache_read": 0.042
+      "input": 0.7506,
+      "output": 2.2509,
+      "cache_read": 0.0378
     },
     "limit": {
       "context": 1048576,
@@ -184795,8 +184798,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.049,
-      "output": 3.39,
+      "input": 0.095,
+      "output": 4.2,
       "cache_read": 0.048
     },
     "limit": {
@@ -185076,7 +185079,7 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0356,
+      "input": 0.0283,
       "output": 1.0,
       "cache_read": 0.01
     },
@@ -185105,9 +185108,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.108,
+      "input": 0.1271,
       "output": 8.0,
-      "cache_read": 0.081
+      "cache_read": 0.0953
     },
     "limit": {
       "context": 1048576,
@@ -185134,9 +185137,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0137,
-      "output": 1.28,
-      "cache_read": 0.0137
+      "input": 0.01096,
+      "output": 0.610116,
+      "cache_read": 0.01096
     },
     "limit": {
       "context": 1048576,
@@ -185235,7 +185238,7 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.45,
+      "input": 0.61,
       "output": 13.0,
       "cache_read": 0.45
     },
@@ -185458,9 +185461,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.036,
+      "input": 0.06,
       "output": 12.0,
-      "cache_read": 0.0335
+      "cache_read": 0.0558
     },
     "limit": {
       "context": 1048576,
@@ -185490,7 +185493,7 @@
     "open_weights": false,
     "cost": {
       "input": 0.032,
-      "output": 3.669545,
+      "output": 4.35179,
       "cache_read": 0.02
     },
     "limit": {
