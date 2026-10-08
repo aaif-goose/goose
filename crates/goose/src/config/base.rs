@@ -1249,6 +1249,12 @@ impl Config {
         service: &str,
         fallback_values: Option<&HashMap<String, Value>>,
     ) -> Result<T, ConfigError> {
+        if cfg!(feature = "test-keyring-guard") {
+            return Err(ConfigError::KeyringError(
+                "keyring access is disabled in test builds".to_string(),
+            ));
+        }
+
         // Try to get the keyring entry and perform the operation
         let entry = match Self::get_keyring_entry(service) {
             Ok(entry) => entry,
