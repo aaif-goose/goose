@@ -443,7 +443,7 @@ fn custom_provider_config_to_dto(
             .iter()
             .map(|model| model.name.clone())
             .collect(),
-        supports_streaming: config.supports_streaming,
+        supports_streaming: config.supports_streaming.unwrap_or(true),
         headers: config.headers.clone().unwrap_or_default(),
         requires_auth: config.requires_auth,
         catalog_provider_id: config.catalog_provider_id.clone(),

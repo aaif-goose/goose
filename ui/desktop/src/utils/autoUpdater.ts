@@ -326,11 +326,7 @@ export function registerUpdateIpcHandlers() {
 }
 
 // Configure auto-updater
-export function setupAutoUpdater(tray?: Tray) {
-  if (tray) {
-    trayRef = tray;
-  }
-
+export function setupAutoUpdater() {
   log.info('Setting up auto-updater...');
   log.info(`Current app version: ${app.getVersion()}`);
   log.info(`Platform: ${process.platform}, Arch: ${process.arch}`);
@@ -486,7 +482,11 @@ export function setupAutoUpdater(tray?: Tray) {
 
                 if (!autoDownloadDisabled) {
                   log.info('Auto-downloading update via GitHub fallback on startup...');
-                  await githubAutoDownload(result.downloadUrl!, result.latestVersion!, 'on startup');
+                  await githubAutoDownload(
+                    result.downloadUrl!,
+                    result.latestVersion!,
+                    'on startup'
+                  );
                 } else {
                   log.info('Auto-download disabled — skipping GitHub fallback download on startup');
                 }

@@ -315,18 +315,16 @@ export default function ToolCallWithResponse({
 
 interface ToolCallExpandableProps {
   label: string | React.ReactNode;
-  isStartExpanded?: boolean;
+  isStartExpanded: boolean;
   isForceExpand?: boolean;
   children: React.ReactNode;
-  className?: string;
 }
 
 function ToolCallExpandable({
   label,
-  isStartExpanded = false,
+  isStartExpanded,
   isForceExpand,
   children,
-  className = '',
 }: ToolCallExpandableProps) {
   const [isExpandedState, setIsExpanded] = React.useState<boolean | null>(null);
   const isExpanded = isExpandedState === null ? isStartExpanded : isExpandedState;
@@ -336,7 +334,7 @@ function ToolCallExpandable({
   }, [isForceExpand]);
 
   return (
-    <div className={className}>
+    <div>
       <Button
         onClick={toggleExpand}
         className="group w-full flex justify-between items-center pr-2 transition-colors rounded-none"
@@ -1082,7 +1080,7 @@ function ToolLogsView({
 }: {
   logs: string[];
   working: boolean;
-  isStartExpanded?: boolean;
+  isStartExpanded: boolean;
 }) {
   const intl = useIntl();
   const boxRef = useRef<HTMLDivElement>(null);

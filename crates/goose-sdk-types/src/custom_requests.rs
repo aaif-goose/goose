@@ -1235,8 +1235,7 @@ pub struct CustomProviderConfigDto {
     pub api_url: String,
     #[serde(default)]
     pub models: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supports_streaming: Option<bool>,
+    pub supports_streaming: bool,
     #[serde(default)]
     pub headers: HashMap<String, String>,
     pub requires_auth: bool,
@@ -1261,8 +1260,7 @@ pub struct CustomProviderUpsertDto {
     pub api_key: Option<String>,
     #[serde(default)]
     pub models: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub supports_streaming: Option<bool>,
+    pub supports_streaming: bool,
     #[serde(default)]
     pub headers: HashMap<String, String>,
     pub requires_auth: bool,

@@ -421,9 +421,7 @@ pub fn from_declarative_config(
         api_client = api_client.with_headers(header_map)?;
     }
 
-    let supports_streaming = config.supports_streaming.unwrap_or(true);
-
-    if !supports_streaming {
+    if !config.supports_streaming.unwrap_or(true) {
         return Err(anyhow::anyhow!(
             "Ollama provider does not support non-streaming mode. All Ollama models support streaming. \
             Please remove 'supports_streaming: false' from your provider configuration."

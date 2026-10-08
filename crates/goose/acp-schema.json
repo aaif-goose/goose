@@ -2375,10 +2375,7 @@
           "default": []
         },
         "supportsStreaming": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "headers": {
           "type": "object",
@@ -2416,6 +2413,7 @@
         "engine",
         "displayName",
         "apiUrl",
+        "supportsStreaming",
         "requiresAuth",
         "toolshim"
       ],
@@ -2567,10 +2565,7 @@
           "default": []
         },
         "supportsStreaming": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "headers": {
           "type": "object",
@@ -2615,6 +2610,7 @@
         "engine",
         "displayName",
         "apiUrl",
+        "supportsStreaming",
         "requiresAuth",
         "toolshim",
         "apiKeySet",
@@ -2650,10 +2646,7 @@
           "default": []
         },
         "supportsStreaming": {
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "headers": {
           "type": "object",
@@ -2692,6 +2685,7 @@
         "engine",
         "displayName",
         "apiUrl",
+        "supportsStreaming",
         "requiresAuth",
         "toolshim"
       ],

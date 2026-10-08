@@ -2332,7 +2332,7 @@ fn add_provider() -> anyhow::Result<()> {
         api_url,
         api_key: requires_auth.then_some(api_key),
         models,
-        supports_streaming: Some(supports_streaming),
+        supports_streaming,
         headers,
         requires_auth,
         catalog_provider_id: None,

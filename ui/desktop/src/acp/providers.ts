@@ -86,9 +86,9 @@ function updateRequestToCreate(
     apiUrl: request.api_url,
     apiKey: request.api_key || null,
     models: request.models,
-    supportsStreaming: request.supports_streaming ?? null,
+    supportsStreaming: request.supports_streaming,
     headers: request.headers ?? undefined,
-    requiresAuth: request.requires_auth ?? true,
+    requiresAuth: request.requires_auth,
     catalogProviderId: request.catalog_provider_id ?? null,
     basePath: request.base_path ?? null,
     toolshim: request.toolshim,
@@ -324,9 +324,9 @@ export async function acpReadDefaults(): Promise<{
   };
 }
 
-export async function acpSaveDefaults(providerId: string, modelId?: string | null): Promise<void> {
+export async function acpSaveDefaults(providerId: string, modelId: string | null): Promise<void> {
   const client = await getAcpClient();
-  await client.goose.defaultsSave_unstable({ providerId, modelId: modelId ?? null });
+  await client.goose.defaultsSave_unstable({ providerId, modelId });
 }
 
 export async function acpClearDefaults(): Promise<void> {

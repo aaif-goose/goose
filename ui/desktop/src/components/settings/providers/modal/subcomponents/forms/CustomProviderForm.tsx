@@ -251,7 +251,7 @@ interface CustomProviderFormProps {
   onDelete?: () => Promise<void>;
   isActiveProvider?: boolean;
   initialData: UpdateCustomProviderRequest | null;
-  isEditable?: boolean;
+  isEditable: boolean;
 }
 
 export default function CustomProviderForm({
@@ -313,9 +313,9 @@ export default function CustomProviderForm({
       setApiUrl(initialData.api_url);
       setBasePath(initialData.base_path ?? '');
       setModels(initialData.models.join(', '));
-      setSupportsStreaming(initialData.supports_streaming ?? true);
+      setSupportsStreaming(initialData.supports_streaming);
       setToolshim(initialData.toolshim);
-      setRequiresAuth(initialData.requires_auth ?? true);
+      setRequiresAuth(initialData.requires_auth);
 
       if (initialData.headers) {
         const headerList = Object.entries(initialData.headers).map(([key, value]) => ({
@@ -453,7 +453,7 @@ export default function CustomProviderForm({
     const errors: Record<string, string> = {};
     if (!displayName) errors.displayName = intl.formatMessage(i18n.displayNameRequired);
     if (!apiUrl) errors.apiUrl = intl.formatMessage(i18n.apiUrlRequired);
-    const existingHadAuth = initialData && (initialData.requires_auth ?? true);
+    const existingHadAuth = initialData && initialData.requires_auth;
     if (requiresAuth && !apiKey && !existingHadAuth)
       errors.apiKey = intl.formatMessage(i18n.apiKeyRequired);
     if (!models) errors.models = intl.formatMessage(i18n.modelsRequired);
@@ -577,7 +577,7 @@ export default function CustomProviderForm({
   if (step === 'catalog') {
     return (
       <div className="mt-4">
-        <ProviderCatalogPicker onSelect={handleTemplateSelect} onCancel={handleCancel} embedded />
+        <ProviderCatalogPicker onSelect={handleTemplateSelect} />
         <div className="flex justify-between pt-4">
           <Button type="button" variant="ghost" onClick={handleBackToChoice}>
             {intl.formatMessage(i18n.back)}
