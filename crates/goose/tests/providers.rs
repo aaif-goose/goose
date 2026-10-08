@@ -582,7 +582,6 @@ impl ProviderFixture {
             id: self.session_id.clone(),
             schedule_id: None,
             max_turns: Some(5),
-            session_start_emitted: false,
         };
 
         let mut stream = self.agent.reply(message, session_config, None).await?;

@@ -325,17 +325,25 @@ impl Agent {
             .await;
     }
 
-    pub async fn emit_hook_with_banners(
-        &self,
-        event: crate::hooks::HookEvent,
-        session_id: &str,
-    ) -> Vec<String> {
+    /// Fires `SessionStart` for a client opening the session and returns the hooks'
+    /// banners, which the client shows before the first prompt.
+    pub async fn emit_session_start(&self, session_id: &str) -> Result<Vec<String>> {
+        let event = crate::hooks::HookEvent::SessionStart;
         if !self.hook_manager.has_hooks(event) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        self.hook_manager
+        let banners = self
+            .hook_manager
             .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
-            .await
+            .await;
+        self.config
+            .session_manager
+            .add_message(
+                session_id,
+                &crate::agents::state_machine::session_start_message(&banners),
+            )
+            .await?;
+        Ok(banners)
     }
 
     pub async fn steer(&self, session_id: &str, message: Message) {
@@ -965,14 +973,12 @@ impl Agent {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let operations: Vec<_> = std::iter::once(Arc::new(EntryHookOperation::new(
-            self.hook_manager.clone(),
-            session_config.session_start_emitted,
-        ))
-            as Arc<dyn Operation<Session, GooseEffect> + '_>)
-        .chain(std::iter::once(command_operation))
-        .chain(operations)
-        .collect();
+        let operations: Vec<_> =
+            std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
+                as Arc<dyn Operation<Session, GooseEffect> + '_>)
+            .chain(std::iter::once(command_operation))
+            .chain(operations)
+            .collect();
 
         let steps = operations
             .into_iter()
@@ -1821,7 +1827,6 @@ mod tests {
             id: session.id.clone(),
             schedule_id: None,
             max_turns: Some(1),
-            session_start_emitted: false,
         };
 
         (agent, provider, session_config, temp_dir)
@@ -2652,7 +2657,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id,
             schedule_id: None,
             max_turns: Some(10),
-            session_start_emitted: false,
         };
 
         let reply_stream = agent
@@ -2739,7 +2743,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(10),
-            session_start_emitted: false,
         };
         let reply_stream = agent
             .reply(Message::user().with_text(text), session_config, None)

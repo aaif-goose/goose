@@ -10,24 +10,44 @@ use crate::conversation::Conversation;
 use crate::hooks::{HookContext, HookEvent, HookManager};
 use crate::session::Session;
 
+const OPERATION_NAME: &str = "entry_hook";
+const SESSION_START_NOTE: &str = "session_start";
+
+/// Records that a client fired `SessionStart` when it opened the session, so the first
+/// turn does not fire it again. Hidden from the user when the hooks printed no banner.
+pub(crate) fn session_start_message(banners: &[String]) -> Message {
+    let mut message = Message::assistant();
+    if !banners.is_empty() {
+        message = message.with_text(banners.join("\n"));
+    }
+    let mut message = message.with_visibility(!banners.is_empty(), false);
+    message
+        .metadata
+        .set_operation_note(OPERATION_NAME, SESSION_START_NOTE, true.into());
+    message
+}
+
+fn is_session_start_message(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(OPERATION_NAME, SESSION_START_NOTE)
+        .is_some()
+}
+
 pub struct EntryHookOperation {
     hook_manager: HookManager,
-    session_start_emitted: bool,
 }
 
 impl EntryHookOperation {
-    pub fn new(hook_manager: HookManager, session_start_emitted: bool) -> Self {
-        Self {
-            hook_manager,
-            session_start_emitted,
-        }
+    pub fn new(hook_manager: HookManager) -> Self {
+        Self { hook_manager }
     }
 }
 
 #[async_trait]
 impl Operation<Session, GooseEffect> for EntryHookOperation {
     fn name(&self) -> &'static str {
-        "entry_hook"
+        OPERATION_NAME
     }
 
     async fn run(
@@ -47,13 +67,12 @@ impl Operation<Session, GooseEffect> for EntryHookOperation {
 
         let messages_before_kickoff =
             &conversation.messages()[..conversation.len() - messages.len()];
-        if !self.session_start_emitted
-            && !messages_before_kickoff.iter().any(|message| {
-                message.role == rmcp::model::Role::User
+        if !messages_before_kickoff.iter().any(|message| {
+            is_session_start_message(message)
+                || (message.role == rmcp::model::Role::User
                     && message.is_user_visible()
-                    && !message.is_tool_response()
-            })
-        {
+                    && !message.is_tool_response())
+        }) {
             self.hook_manager
                 .emit(
                     HookEvent::SessionStart,

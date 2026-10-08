@@ -973,7 +973,6 @@ async fn execute_job(
         id: session.id.clone(),
         schedule_id: Some(job.id.clone()),
         max_turns: None,
-        session_start_emitted: false,
     };
 
     let stream = agent
