@@ -369,7 +369,6 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     scopes: Mutex<HashMap<String, IndexMap<String, Arc<ExtensionSlot>>>>,
-    start_lock: Mutex<()>,
     context: PlatformExtensionContext,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
@@ -594,7 +593,6 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
-            start_lock: Mutex::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -650,6 +648,23 @@ impl ExtensionManager {
         )
     }
 
+    fn new_slot(
+        self: &Arc<Self>,
+        scope_id: &str,
+        config: &ExtensionConfig,
+        working_dir: Option<&Path>,
+        container: Option<&Container>,
+    ) -> ExtensionSlot {
+        ExtensionSlot {
+            key: config.key(),
+            config: config.clone(),
+            placement: Placement::for_config(config, working_dir, container),
+            scope_id: scope_id.to_string(),
+            manager: Arc::downgrade(self),
+            runtime: OnceCell::new(),
+        }
+    }
+
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
         let slots = {
             let mut scopes = self.scopes.lock().await;
@@ -667,18 +682,12 @@ impl ExtensionManager {
                         })
                         .cloned()
                         .unwrap_or_else(|| {
-                            Arc::new(ExtensionSlot {
-                                key: key.clone(),
-                                config: config.clone(),
-                                placement: Placement::for_config(
-                                    config,
-                                    set.working_dir.as_deref(),
-                                    set.container.as_ref(),
-                                ),
-                                scope_id: set.scope_id().to_string(),
-                                manager: Arc::downgrade(self),
-                                runtime: OnceCell::new(),
-                            })
+                            Arc::new(self.new_slot(
+                                set.scope_id(),
+                                config,
+                                set.working_dir.as_deref(),
+                                set.container.as_ref(),
+                            ))
                         });
                     (key, slot)
                 })
@@ -890,51 +899,39 @@ impl ExtensionManager {
 
     /// Start the extension and select it for the session. It is started here
     /// rather than on the next lease so a failure reaches whoever asked, and
-    /// the selection is only changed when it starts.
+    /// the selection is only changed when it starts. A concurrent enable of
+    /// the same config waits on the same start.
     pub async fn enable(
         self: &Arc<Self>,
         session_id: &str,
         config: ExtensionConfig,
     ) -> ExtensionResult<()> {
-        let _guard = self.start_lock.lock().await;
         let session = self.session(session_id).await?;
-        let existing = self
-            .scopes
-            .lock()
-            .await
-            .get(session_id)
-            .and_then(|slots| slots.get(&config.key()))
-            .filter(|slot| {
+        let slot = {
+            let mut scopes = self.scopes.lock().await;
+            let slots = scopes.entry(session_id.to_string()).or_default();
+            let reusable = slots.get(&config.key()).filter(|slot| {
                 slot.config == config
                     && slot.serves(Some(&session.working_dir), session.container.as_ref())
-            })
-            .cloned();
-        if let Some(slot) = existing {
-            if !matches!(slot.runtime().await, Runtime::Failed(_)) {
-                return self.select(session_id, config).await;
+                    && !matches!(slot.runtime.get(), Some(Runtime::Failed(_)))
+            });
+            match reusable {
+                Some(slot) => Arc::clone(slot),
+                None => {
+                    let slot = Arc::new(self.new_slot(
+                        session_id,
+                        &config,
+                        Some(&session.working_dir),
+                        session.container.as_ref(),
+                    ));
+                    slots.insert(config.key(), Arc::clone(&slot));
+                    slot
+                }
             }
-        }
-        let placement = Placement::for_config(
-            &config,
-            Some(&session.working_dir),
-            session.container.as_ref(),
-        );
-        let runtime = match self.start(&config, placement.as_ref(), session_id).await? {
-            Some(extension) => Runtime::Running(Arc::new(extension)),
-            None => Runtime::Declined,
         };
-        self.install(
-            session_id,
-            ExtensionSlot {
-                key: config.key(),
-                config: config.clone(),
-                placement,
-                scope_id: session_id.to_string(),
-                manager: Arc::downgrade(self),
-                runtime: OnceCell::new_with(Some(runtime)),
-            },
-        )
-        .await;
+        if let Runtime::Failed(error) = slot.runtime().await {
+            return Err(ExtensionError::StartFailed(error.clone()));
+        }
         self.select(session_id, config).await
     }
 
@@ -1678,6 +1675,13 @@ mod tests {
         serve_fixture(read, write);
     }
 
+    static ENABLED_FIXTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+    fn serve_enabled_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        ENABLED_FIXTURE_STARTS.fetch_add(1, Ordering::SeqCst);
+        serve_fixture(read, write);
+    }
+
     /// A real MCP server that runs in-process, so starting it reads no
     /// secrets; an HTTP server would look up OAuth credentials in the keyring.
     fn fixture_config(
@@ -1840,6 +1844,27 @@ mod tests {
         }
 
         assert_eq!(COUNTED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_enables_start_an_extension_once() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        let session = session_selecting(&manager, temp_dir.path(), vec![]).await;
+        let config = fixture_config("enabled_fixture", serve_enabled_fixture);
+
+        let enables =
+            futures::future::join_all((0..10).map(|_| manager.enable(&session.id, config.clone())))
+                .await;
+
+        assert!(enables.iter().all(Result::is_ok));
+        assert_eq!(ENABLED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            manager.list_extensions(&session.id).await.unwrap(),
+            vec!["enabled_fixture"]
+        );
     }
 
     #[tokio::test]
