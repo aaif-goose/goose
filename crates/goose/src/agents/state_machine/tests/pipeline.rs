@@ -952,6 +952,27 @@ impl TestRun {
         Self { session, events }
     }
 
+    /// Ids of the last history a client was told to swap in, and of what was stored.
+    pub(super) fn replaced_and_stored_ids(&self) -> (Vec<String>, Vec<String>) {
+        let ids = |conversation: &Conversation| {
+            conversation
+                .messages()
+                .iter()
+                .map(|message| message.id.clone().unwrap())
+                .collect()
+        };
+        let replaced = self
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                AgentEvent::HistoryReplaced(conversation) => Some(conversation),
+                _ => None,
+            })
+            .expect("history replaced");
+        (ids(replaced), ids(self.conversation()))
+    }
+
     pub(super) fn conversation(&self) -> &Conversation {
         self.session
             .conversation
