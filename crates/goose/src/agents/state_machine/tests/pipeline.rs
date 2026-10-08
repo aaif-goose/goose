@@ -539,19 +539,7 @@ impl TestPipeline {
     pub(super) async fn resume_cancelled(&self) -> Result<TestRun> {
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let emit = Emitter::new(tx, cancel);
-        self.start_turn().await?;
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
-        drop(emit);
-        let mut events = Vec::new();
-        while let Some(event) = rx.recv().await {
-            events.push(event);
-        }
-        Ok(TestRun::new(session, events))
+        self.run_turn(cancel).await
     }
 
     pub(super) async fn run_with_cancel(
@@ -563,13 +551,21 @@ impl TestPipeline {
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
+        self.run_turn(cancel).await
+    }
+
+    async fn run_turn(&self, cancel: CancellationToken) -> Result<TestRun> {
         let machine = self.machine(cancel.clone());
         let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
-        self.start_turn().await?;
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
+        let session = crate::agents::state_machine::session::run(
+            &machine,
+            self.session_manager.as_ref(),
+            &self.hook_manager,
+            &self.session_id,
+            &emit,
+        )
+        .await?;
         drop(emit);
         let mut events = Vec::new();
         while let Some(event) = rx.recv().await {

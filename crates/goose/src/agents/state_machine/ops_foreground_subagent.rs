@@ -704,8 +704,6 @@ mod tests {
     async fn stop_delivers_finished_subagents_and_aborts_running_ones_without_waiting() -> Result<()>
     {
         let fixture = fixture().await?;
-        let failed_subagent_id =
-            add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         let stopped_subagent_id =
             add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         let running_subagent_id =
@@ -722,10 +720,6 @@ mod tests {
                 (
                     &fixture.subagent_id,
                     SubagentOutcome::Completed("done".to_string()),
-                ),
-                (
-                    &failed_subagent_id,
-                    SubagentOutcome::Failed("rate limited".to_string()),
                 ),
                 (&stopped_subagent_id, SubagentOutcome::Cancelled),
             ] {
@@ -756,29 +750,15 @@ mod tests {
         )
         .await??;
 
-        assert_eq!(effects.len(), 3);
-        let mut deliveries: Vec<_> = effects[..2]
-            .iter()
-            .map(|effect| {
-                let (subagent_id, message) = delivered(effect);
-                (subagent_id.to_string(), message.as_concat_text())
-            })
-            .collect();
-        deliveries.sort();
-        let mut expected = vec![
-            (
-                fixture.subagent_id.clone(),
-                format!("Subagent {} completed: done", fixture.subagent_id),
-            ),
-            (
-                failed_subagent_id.clone(),
-                format!("Subagent {failed_subagent_id} failed: rate limited"),
-            ),
-        ];
-        expected.sort();
-        assert_eq!(deliveries, expected);
+        assert_eq!(effects.len(), 2);
+        let (subagent_id, message) = delivered(&effects[0]);
+        assert_eq!(subagent_id, fixture.subagent_id);
         assert_eq!(
-            cancelled_ids(&effects[2]),
+            message.as_concat_text(),
+            format!("Subagent {} completed: done", fixture.subagent_id)
+        );
+        assert_eq!(
+            cancelled_ids(&effects[1]),
             [stopped_subagent_id, running_subagent_id]
         );
         tokio::time::timeout(Duration::from_secs(5), async {

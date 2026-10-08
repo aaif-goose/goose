@@ -1178,14 +1178,10 @@ impl Agent {
                     }
                 }
 
-                let resume = match turn_guard
+                let resume = turn_guard
                     .state()
                     .wait_for_all_confirmation_answers(&cancel)
-                    .await
-                {
-                    Err(_) if cancel.is_cancelled() => true,
-                    answer => answer?,
-                };
+                    .await;
                 if !resume {
                     turn_guard.state().clear_confirmations();
                     return;

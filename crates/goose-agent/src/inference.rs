@@ -200,20 +200,11 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     }
 }
 
+#[derive(Default)]
 struct InferenceOutput {
     accumulator: Conversation,
     additional_messages: Vec<Message>,
     usage: Vec<ProviderUsage>,
-}
-
-impl Default for InferenceOutput {
-    fn default() -> Self {
-        Self {
-            accumulator: Conversation::empty(),
-            additional_messages: Vec::new(),
-            usage: Vec::new(),
-        }
-    }
 }
 
 pub struct InferenceRunner<'a, S, E> {
@@ -444,6 +435,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 ends_with_successful_tool_response(conversation.messages());
             let mut empty_responses = 0;
             let empty_output = loop {
+            let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
                 .stream(
@@ -482,7 +474,9 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
-                    self.output().usage.push(usage);
+                    let mut output = self.output();
+                    output.usage.truncate(attempt_start);
+                    output.usage.push(usage);
                 }
                 if let Some(mut chunk) = msg_opt {
                     if let Some(inference) = &inference {

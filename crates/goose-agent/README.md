@@ -49,11 +49,12 @@ remember that it already did something, it records that on the message itself vi
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference
-preparation. It then calls every operation's `cancel` once, in pipeline order,
-saves the returned effects, reloads the session, and answers every tool request
-since kickoff that still has no response with "Tool call was interrupted before
-completing". Callers driving `step` and `apply` themselves must call `finalize`
-on exit.
+preparation. It then saves the interrupted step's `cancel` effects, answers every
+tool request since kickoff that still has no response with "Tool call was
+interrupted before completing", and finally calls `cancel` on the remaining
+operations in pipeline order. Every operation's `cancel` runs once, and the
+session is reloaded after each save. Callers driving `step` and `apply`
+themselves must call `finalize` on exit.
 
 An operation implements `cancel` only when it holds received output across a
 later await, or owns work that must finish. Keep that output in the operation,

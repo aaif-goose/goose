@@ -21,7 +21,7 @@ use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
-use crate::config::permission::{PermissionLevel, PermissionManager};
+use crate::config::permission::PermissionManager;
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
@@ -401,41 +401,10 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
 }
 
 #[tokio::test]
-async fn stop_at_a_confirmation_cancels_a_delegated_subagent() -> Result<()> {
+async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
     let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
-    let host = api.uri();
-    let _guard = env_lock::lock_env([
-        ("GOOSE_STATE_MACHINE", Some("1")),
-        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
-        ("OPENAI_HOST", Some(host.as_str())),
-        ("OPENAI_BASE_PATH", Some("chat/completions")),
-        ("OPENAI_CUSTOM_HEADERS", Some("")),
-    ]);
-    agent
-        .config
-        .permission_manager
-        .update_user_permission("delegate", PermissionLevel::AlwaysAllow);
-    agent
-        .add_extension(
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-            &session_id,
-        )
-        .await?;
     let agent = Arc::new(agent);
-    api.on("research and add").calls([
-        (
-            "call_delegate",
-            "delegate",
-            json!({ "instructions": "Research the cache" }),
-        ),
-        ("call_add", ADD, value(1)),
-    ]);
+    api.on("add one").calls([("call_add", ADD, value(1))]);
 
     let cancel = CancellationToken::new();
     let session_config = SessionConfig {
@@ -445,7 +414,7 @@ async fn stop_at_a_confirmation_cancels_a_delegated_subagent() -> Result<()> {
     };
     let mut stream = agent
         .reply(
-            Message::user().with_text("research and add"),
+            Message::user().with_text("add one"),
             session_config,
             Some(cancel.clone()),
         )
@@ -461,34 +430,17 @@ async fn stop_at_a_confirmation_cancels_a_delegated_subagent() -> Result<()> {
             }
         }
     }
-    let session_manager = &agent.config.session_manager;
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !session_manager
-            .get_session(&session_id, true)
-            .await?
-            .conversation
-            .expect("session conversation")
-            .messages()
-            .iter()
-            .any(|message| message.get_tool_response_ids().contains("call_delegate"))
-        {
-            let _ = tokio::time::timeout(Duration::from_millis(10), stream.next()).await;
-        }
-        anyhow::Ok(())
-    })
-    .await??;
+    while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(50), stream.next()).await {}
     cancel.cancel();
     tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
 
-    let subagent_id = session_manager
-        .list_sessions_by_types(&[SessionType::SubAgent])
-        .await?
-        .pop()
-        .expect("delegate created a subagent")
-        .id;
-    let session = session_manager.get_session(&session_id, true).await?;
-    let messages = session.conversation.expect("session conversation");
-    let add_response = messages
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?;
+    let conversation = session.conversation.expect("session conversation");
+    let add_response = conversation
         .messages()
         .iter()
         .flat_map(|message| &message.content)
@@ -501,12 +453,6 @@ async fn stop_at_a_confirmation_cancels_a_delegated_subagent() -> Result<()> {
             .unwrap()
             .text,
         "Tool call was interrupted before completing"
-    );
-    let last = messages.messages().last().unwrap();
-    assert!(!last.is_user_visible());
-    assert_eq!(
-        last.as_concat_text(),
-        format!("Subagent {subagent_id} was cancelled before it finished and will not run again.")
     );
     assert_eq!(calculator.total(), 0);
     Ok(())

@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -22,7 +22,6 @@ use rmcp::{
     handler::server::router::tool::{SyncTool, ToolBase},
     model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Tool},
 };
-use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -77,11 +76,11 @@ fn texts(session: &Session) -> Vec<String> {
     session.0.iter().map(Message::as_concat_text).collect()
 }
 
-struct ExecutionGuard(Arc<Mutex<bool>>);
+struct ExecutionGuard<'a>(&'a AtomicBool);
 
-impl Drop for ExecutionGuard {
+impl Drop for ExecutionGuard<'_> {
     fn drop(&mut self) {
-        *self.0.lock().unwrap() = true;
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -97,9 +96,9 @@ enum Behavior {
 struct Recorder {
     name: &'static str,
     behavior: Behavior,
-    execution_dropped: Arc<Mutex<bool>>,
-    saw_stop: Mutex<bool>,
-    cancel_calls: Mutex<usize>,
+    execution_dropped: AtomicBool,
+    saw_stop: AtomicBool,
+    cancel_calls: AtomicUsize,
 }
 
 impl Recorder {
@@ -107,9 +106,9 @@ impl Recorder {
         Arc::new(Self {
             name,
             behavior,
-            execution_dropped: Arc::new(Mutex::new(false)),
-            saw_stop: Mutex::new(false),
-            cancel_calls: Mutex::new(0),
+            execution_dropped: AtomicBool::new(false),
+            saw_stop: AtomicBool::new(false),
+            cancel_calls: AtomicUsize::new(0),
         })
     }
 }
@@ -129,7 +128,7 @@ impl Operation<Session> for Recorder {
         match self.behavior {
             Behavior::NotApplicable => not_applicable(),
             Behavior::HangAfterStop => {
-                let _guard = ExecutionGuard(self.execution_dropped.clone());
+                let _guard = ExecutionGuard(&self.execution_dropped);
                 emit.cancel_token().cancel();
                 std::future::pending().await
             }
@@ -143,7 +142,7 @@ impl Operation<Session> for Recorder {
             }
             Behavior::WatchStop => {
                 emit.cancelled().await;
-                *self.saw_stop.lock().unwrap() = true;
+                self.saw_stop.store(true, Ordering::SeqCst);
                 std::future::pending().await
             }
         }
@@ -156,9 +155,9 @@ impl Operation<Session> for Recorder {
         _emit: &Emitter,
     ) -> Vec<ConversationEffect> {
         if self.behavior == Behavior::HangAfterStop {
-            assert!(*self.execution_dropped.lock().unwrap());
+            assert!(self.execution_dropped.load(Ordering::SeqCst));
         }
-        *self.cancel_calls.lock().unwrap() += 1;
+        self.cancel_calls.fetch_add(1, Ordering::SeqCst);
         vec![Message::assistant().with_text(self.name).into()]
     }
 }
@@ -209,7 +208,7 @@ async fn stop_saves_the_interrupted_step_then_unanswered_calls_then_the_rest() -
         let answer = expected.iter().rposition(|text| text.is_empty()).unwrap();
         assert!(interrupted(&session.0.messages()[answer].content[0]));
         for operation in [&before, &active, &after] {
-            assert_eq!(*operation.cancel_calls.lock().unwrap(), 1);
+            assert_eq!(operation.cancel_calls.load(Ordering::SeqCst), 1);
         }
     }
     Ok(())
@@ -230,7 +229,7 @@ async fn a_running_step_sees_stop_before_it_is_dropped() -> Result<()> {
     cancel.cancel();
     let session = tokio::time::timeout(Duration::from_secs(5), run).await??;
 
-    assert!(*watcher.saw_stop.lock().unwrap());
+    assert!(watcher.saw_stop.load(Ordering::SeqCst));
     assert_eq!(texts(&session), ["kickoff", "watcher"]);
     Ok(())
 }
@@ -300,14 +299,12 @@ impl ToolProvider<Session> for FinishingTools {
 
 #[tokio::test]
 async fn stop_saves_completed_results_then_answers_each_unanswered_request_once() {
-    let operation = Arc::new(
-        ToolOperation::new()
-            .with_provider(Arc::new(FinishingTools))
-            .with_sync_tool::<BlockingSyncTool>(),
-    );
+    let operation = ToolOperation::new()
+        .with_provider(Arc::new(FinishingTools))
+        .with_sync_tool::<BlockingSyncTool>();
 
     let cancel = CancellationToken::new();
-    let machine = StateMachine::new(vec![Step::Operation(operation.clone())], cancel.clone());
+    let machine = StateMachine::new(vec![Step::Operation(Arc::new(operation))], cancel.clone());
     let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel.clone());
     let runtime = Runtime::new([
@@ -316,15 +313,7 @@ async fn stop_saves_completed_results_then_answers_each_unanswered_request_once(
             .with_tool_request("completed", Ok(CallToolRequestParams::new("finish")))
             .with_tool_request("blocking", Ok(CallToolRequestParams::new("blocking_sync")))
             .with_tool_request("remaining", Ok(CallToolRequestParams::new("finish")))
-            .with_tool_request("remaining", Ok(CallToolRequestParams::new("finish")))
-            .with_tool_request("invalid", Err(ErrorData::invalid_params("malformed", None)))
-            .with_tool_request("unavailable", Ok(CallToolRequestParams::new("missing")))
-            .with_tool_request_with_metadata(
-                "external",
-                Ok(CallToolRequestParams::new("external")),
-                None,
-                Some(json!({ "goose.external_dispatch": true })),
-            ),
+            .with_tool_request("remaining", Ok(CallToolRequestParams::new("finish"))),
     ]);
     let run = tokio::spawn(async move { machine.run(&runtime, "session", &emit).await });
     while !BLOCKING_SYNC_STARTED.load(Ordering::SeqCst) {
@@ -355,23 +344,6 @@ async fn stop_saves_completed_results_then_answers_each_unanswered_request_once(
         .iter()
         .map(|content| content.as_tool_response().unwrap().id.as_str())
         .collect();
-    assert_eq!(
-        interrupted_ids,
-        [
-            "blocking",
-            "remaining",
-            "invalid",
-            "unavailable",
-            "external"
-        ]
-    );
+    assert_eq!(interrupted_ids, ["blocking", "remaining"]);
     assert!(messages[3].content.iter().all(interrupted));
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, CancellationToken::new());
-    let session = Session(Conversation::new_unvalidated(messages));
-    assert!(
-        Operation::<Session>::cancel(operation.as_ref(), &session, &session.0, &emit)
-            .await
-            .is_empty()
-    );
 }

@@ -90,7 +90,7 @@ impl SessionToolConfirmationState {
     pub(super) async fn wait_for_all_confirmation_answers(
         &self,
         cancel: &CancellationToken,
-    ) -> Result<bool> {
+    ) -> bool {
         loop {
             let answer_received = self.confirmation_answered.notified();
             tokio::pin!(answer_received);
@@ -110,12 +110,12 @@ impl SessionToolConfirmationState {
                 )
             };
             if let Some(has_state_machine_answer) = completed {
-                return Ok(has_state_machine_answer);
+                return has_state_machine_answer;
             }
 
             tokio::select! {
                 _ = answer_received => {}
-                _ = cancel.cancelled() => return Err(anyhow!("state-machine turn cancelled")),
+                _ = cancel.cancelled() => return true,
             }
         }
     }
@@ -227,8 +227,7 @@ mod tests {
 
         let has_state_machine_answer = session
             .wait_for_all_confirmation_answers(&CancellationToken::new())
-            .await
-            .unwrap();
+            .await;
 
         assert!(has_state_machine_answer);
     }
