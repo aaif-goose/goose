@@ -861,7 +861,6 @@ async fn execute_job(
         session_manager,
         PermissionManager::instance(),
         None,
-        GooseMode::Auto,
         true,
         GoosePlatform::GooseCli,
     ));
@@ -974,16 +973,10 @@ async fn execute_job(
         id: session.id.clone(),
         schedule_id: Some(job.id.clone()),
         max_turns: None,
-        retry_config: None,
     };
 
     let stream = agent
-        .reply(
-            user_message,
-            session_config,
-            crate::agents::state_machine::enabled(),
-            Some(cancel_token.clone()),
-        )
+        .reply(user_message, session_config, Some(cancel_token.clone()))
         .await?;
 
     use futures::StreamExt;

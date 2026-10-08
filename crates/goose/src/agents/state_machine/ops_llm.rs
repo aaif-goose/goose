@@ -72,10 +72,12 @@ fn enrich_unclaimed_tool_errors(messages: &[Message], tools: &[rmcp::model::Tool
     messages
 }
 
-fn canonicalize_tool_request_names(
-    message: &mut Message,
-    advertised_tools: &[(String, Option<String>)],
-) {
+fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model::Tool]) {
+    let tool_owners = advertised_tools
+        .iter()
+        .map(|tool| (tool.name.as_ref(), get_tool_owner(tool)))
+        .collect::<Vec<_>>();
+
     for content in &mut message.content {
         let goose_providers::conversation::message::MessageContent::ToolRequest(request) = content
         else {
@@ -84,15 +86,45 @@ fn canonicalize_tool_request_names(
         let Ok(tool_call) = &mut request.tool_call else {
             continue;
         };
-        let Some(recovered) = recover_mangled_tool_name(
-            &tool_call.name,
-            advertised_tools
-                .iter()
-                .map(|(name, owner)| (name.as_str(), owner.as_deref())),
-        ) else {
+        if !advertised_tools
+            .iter()
+            .any(|tool| tool.name == tool_call.name)
+        {
+            if let Some(recovered) = recover_mangled_tool_name(
+                &tool_call.name,
+                tool_owners
+                    .iter()
+                    .map(|(name, owner)| (*name, owner.as_deref())),
+            ) {
+                tool_call.name = recovered.into();
+            }
+        }
+
+        let Some(tool) = advertised_tools
+            .iter()
+            .find(|tool| tool.name == tool_call.name)
+        else {
             continue;
         };
-        tool_call.name = recovered.into();
+        let schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+        tool_call.arguments =
+            crate::agents::reply_parts::coerce_tool_arguments(tool_call.arguments.clone(), &schema);
+
+        let Some(meta) = &tool.meta else {
+            continue;
+        };
+        let Ok(serde_json::Value::Object(meta)) = serde_json::to_value(meta) else {
+            continue;
+        };
+        match request.tool_meta.as_mut() {
+            Some(serde_json::Value::Object(existing)) => {
+                for (key, value) in meta {
+                    existing.entry(key).or_insert(value);
+                }
+            }
+            None => request.tool_meta = Some(serde_json::Value::Object(meta)),
+            Some(_) => {}
+        }
     }
 }
 
@@ -124,19 +156,19 @@ impl Provider for GooseInferenceProvider {
                 system.to_string(),
                 model_config,
             );
-        let advertised_tool_descriptors = tools
+        let advertised_tools = tools
             .iter()
             .chain(toolshim_tools.iter())
-            .map(|tool| (tool.name.to_string(), get_tool_owner(tool)))
+            .cloned()
             .collect::<Vec<_>>();
-        let mut advertised_tools = advertised_tool_descriptors
+        let mut advertised_tool_names = advertised_tools
             .iter()
-            .map(|(name, _)| name.clone())
+            .map(|tool| tool.name.to_string())
             .collect::<Vec<_>>();
-        advertised_tools.sort_unstable();
-        advertised_tools.dedup();
+        advertised_tool_names.sort_unstable();
+        advertised_tool_names.dedup();
         let advertised_tools_note = serde_json::Value::Array(
-            advertised_tools
+            advertised_tool_names
                 .into_iter()
                 .map(serde_json::Value::String)
                 .collect(),
@@ -155,7 +187,7 @@ impl Provider for GooseInferenceProvider {
         Ok(Box::pin(stream.map(move |result| {
             result.map(|(message, usage)| {
                 let message = message.map(|mut message| {
-                    canonicalize_tool_request_names(&mut message, &advertised_tool_descriptors);
+                    prepare_tool_requests(&mut message, &advertised_tools);
                     if message.role == rmcp::model::Role::Assistant {
                         message.metadata.set_operation_note(
                             LLM_OPERATION_NAME,
@@ -182,17 +214,19 @@ impl Provider for GooseInferenceProvider {
 #[cfg(test)]
 mod canonicalization_tests {
     use super::*;
-    use rmcp::model::CallToolRequestParams;
+    use rmcp::{model::CallToolRequestParams, object};
 
     fn request(name: &str) -> Message {
         Message::assistant()
             .with_tool_request("request", Ok(CallToolRequestParams::new(name.to_string())))
     }
 
+    fn tool_request(message: &Message) -> &goose_providers::conversation::message::ToolRequest {
+        message.content[0].as_tool_request().unwrap()
+    }
+
     fn tool_name(message: &Message) -> &str {
-        message.content[0]
-            .as_tool_request()
-            .unwrap()
+        tool_request(message)
             .tool_call
             .as_ref()
             .unwrap()
@@ -202,37 +236,131 @@ mod canonicalization_tests {
 
     #[test]
     fn canonicalizes_mangled_names_against_advertised_tools() {
-        let advertised = vec![("developer__shell".to_string(), None)];
+        let advertised = vec![rmcp::model::Tool::new(
+            "developer__shell",
+            "run a shell command",
+            object!({ "type": "object" }),
+        )];
         let mut message = request("developer.shell");
 
-        canonicalize_tool_request_names(&mut message, &advertised);
+        prepare_tool_requests(&mut message, &advertised);
 
         assert_eq!(tool_name(&message), "developer__shell");
     }
 
     #[test]
     fn canonicalizes_owner_qualified_unprefixed_tool_aliases() {
-        let advertised = vec![("shell".to_string(), Some("developer".to_string()))];
+        let advertised = vec![rmcp::model::Tool::new(
+            "shell",
+            "run a shell command",
+            object!({ "type": "object" }),
+        )
+        .with_meta(rmcp::model::MetaObject(object!({
+            "goose_extension": "developer"
+        })))];
         let mut message = request("developer.shell");
 
-        canonicalize_tool_request_names(&mut message, &advertised);
+        prepare_tool_requests(&mut message, &advertised);
 
         assert_eq!(tool_name(&message), "shell");
 
         let mut message = request("developer__shell");
 
-        canonicalize_tool_request_names(&mut message, &advertised);
+        prepare_tool_requests(&mut message, &advertised);
 
         assert_eq!(tool_name(&message), "shell");
     }
 
     #[test]
     fn leaves_unrecoverable_names_unmodified() {
-        let advertised = vec![("developer__shell".to_string(), None)];
+        let advertised = vec![rmcp::model::Tool::new(
+            "developer__shell",
+            "run a shell command",
+            object!({ "type": "object" }),
+        )];
         let mut message = request("developer.shell!");
 
-        canonicalize_tool_request_names(&mut message, &advertised);
+        prepare_tool_requests(&mut message, &advertised);
 
         assert_eq!(tool_name(&message), "developer.shell!");
+    }
+
+    #[test]
+    fn coerces_arguments_and_merges_tool_metadata() {
+        use crate::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
+
+        let advertised = vec![rmcp::model::Tool::new(
+            "set_enabled",
+            "set a flag",
+            object!({
+                "type": "object",
+                "properties": {
+                    "count": { "type": "integer" },
+                    "enabled": { "type": "boolean" }
+                }
+            }),
+        )
+        .with_meta(rmcp::model::MetaObject(object!({
+            "ui": { "visibility": ["model"] }
+        })))];
+        let mut message = Message::assistant().with_tool_request_with_metadata(
+            "request",
+            Ok(
+                CallToolRequestParams::new("set_enabled").with_arguments(object!({
+                    "count": "4",
+                    "enabled": "true"
+                })),
+            ),
+            None,
+            Some(serde_json::json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
+        );
+
+        prepare_tool_requests(&mut message, &advertised);
+
+        let request = tool_request(&message);
+        let arguments = request
+            .tool_call
+            .as_ref()
+            .unwrap()
+            .arguments
+            .as_ref()
+            .unwrap();
+        assert_eq!(arguments["count"], 4);
+        assert_eq!(arguments["enabled"], true);
+        assert!(request.was_executed_externally());
+        assert_eq!(
+            request.tool_meta.as_ref().unwrap()["ui"]["visibility"][0],
+            "model"
+        );
+    }
+
+    #[test]
+    fn preserves_arguments_for_map_schemas() {
+        let advertised = vec![rmcp::model::Tool::new(
+            "add_values",
+            "add named values",
+            object!({
+                "type": "object",
+                "additionalProperties": { "type": "integer" }
+            }),
+        )];
+        let mut message = Message::assistant().with_tool_request(
+            "request",
+            Ok(CallToolRequestParams::new("add_values")
+                .with_arguments(object!({ "left": 2, "right": 3 }))),
+        );
+
+        prepare_tool_requests(&mut message, &advertised);
+
+        assert_eq!(
+            tool_request(&message)
+                .tool_call
+                .as_ref()
+                .unwrap()
+                .arguments
+                .as_ref()
+                .unwrap(),
+            &object!({ "left": 2, "right": 3 })
+        );
     }
 }

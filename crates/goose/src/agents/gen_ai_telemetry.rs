@@ -114,24 +114,6 @@ pub(super) fn agent_name(session: &Session) -> &str {
         .map_or("goose", |recipe| recipe.title.as_str())
 }
 
-pub(super) fn tool_result_json(result: &ToolResult<CallToolResult>) -> String {
-    match result {
-        Ok(result) if result.is_error != Some(true) => json!({
-            "status": "success",
-            "value": result,
-        }),
-        Ok(result) => json!({
-            "status": "error",
-            "value": result,
-        }),
-        Err(error) => json!({
-            "status": "error",
-            "error": error.to_string(),
-        }),
-    }
-    .to_string()
-}
-
 pub(super) fn successful_tool_result_json(result: &ToolResult<CallToolResult>) -> Option<String> {
     match result {
         Ok(result) if result.is_error != Some(true) => {

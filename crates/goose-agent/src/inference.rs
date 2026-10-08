@@ -17,8 +17,8 @@ use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
-    Inference, InferenceInput, Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
+    InferenceInput, Operation, OperationResult,
 };
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -71,8 +71,21 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-const EMPTY_RESPONSE_MESSAGE: &str =
+pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
+const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
+const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
+const EMPTY_RESPONSE_NOTE: &str = "empty_response";
+
+/// The model's response stayed empty after retries. The fallback message is stored
+/// hidden so that operations owning the end of a turn (recipe retries, final output)
+/// can take over; when none does, it is revealed to the user.
+pub fn is_empty_response_marker(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .is_some()
+}
 
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
@@ -190,7 +203,7 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
 struct InferenceOutput {
     accumulator: Conversation,
     additional_messages: Vec<Message>,
-    usage: Option<ProviderUsage>,
+    usage: Vec<ProviderUsage>,
 }
 
 impl Default for InferenceOutput {
@@ -198,7 +211,7 @@ impl Default for InferenceOutput {
         Self {
             accumulator: Conversation::empty(),
             additional_messages: Vec::new(),
-            usage: None,
+            usage: Vec::new(),
         }
     }
 }
@@ -326,9 +339,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
             .into_iter()
             .map(E::from)
             .collect();
-        if let Some(usage) = output.usage {
-            effects.push(E::record_usage(usage));
-        }
+        effects.extend(output.usage.into_iter().map(E::record_usage));
         effects.extend(output.accumulator.into_iter().map(E::from));
         effects
     }
@@ -429,6 +440,10 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
+            let successful_tool_response =
+                ends_with_successful_tool_response(conversation.messages());
+            let mut empty_responses = 0;
+            let empty_output = loop {
             let stream = self
                 .provider
                 .stream(
@@ -467,7 +482,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
-                    self.output().usage = Some(usage);
+                    self.output().usage.push(usage);
                 }
                 if let Some(mut chunk) = msg_opt {
                     if let Some(inference) = &inference {
@@ -496,14 +511,28 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     .any(|message| message.metadata.output_token_limit_reached)
                     && output.accumulator.iter().all(is_empty_response)
             };
-            let successful_tool_response =
-                ends_with_successful_tool_response(conversation.messages());
-            if empty_output && !successful_tool_response && !emit.cancel_token().is_cancelled() {
-                self.output().accumulator.clear();
-                self.emit_message(Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE), emit)
-                    .await;
-                return yielded_with(self.take_output());
+            if !empty_output || successful_tool_response || emit.cancel_token().is_cancelled() {
+                break empty_output;
             }
+            self.output().accumulator.clear();
+            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
+                empty_responses += 1;
+                tracing::warn!(
+                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
+                );
+                continue;
+            }
+            let mut marker = Message::assistant()
+                .with_text(EMPTY_RESPONSE_MESSAGE)
+                .with_visibility(false, false);
+            marker.metadata.set_operation_note(
+                EMPTY_RESPONSE_NOTE_SCOPE,
+                EMPTY_RESPONSE_NOTE,
+                serde_json::Value::Bool(true),
+            );
+            self.output().accumulator.push(marker);
+            return applied(self.take_output());
+            };
 
             if empty_output && successful_tool_response {
                 let message = {

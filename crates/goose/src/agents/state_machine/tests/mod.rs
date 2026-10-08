@@ -102,6 +102,50 @@ async fn state_machine_trace_retains_content_with_capture() -> Result<()> {
     Ok(())
 }
 
+async fn capture_tool_span_fields(
+    capture_setting: Option<&'static str>,
+) -> Result<(serde_json::Map<String, serde_json::Value>, String)> {
+    use crate::agents::gen_ai_telemetry::{
+        test_support::SpanFieldCapture, CAPTURE_MESSAGE_CONTENT_ENV,
+    };
+    use goose_test_support::otel::clear_otel_env;
+
+    let _env = match capture_setting {
+        Some(value) => clear_otel_env(&[(CAPTURE_MESSAGE_CONTENT_ENV, value)]),
+        None => clear_otel_env(&[]),
+    };
+    let capture = SpanFieldCapture::new("execute_tool");
+    let _subscriber = capture.clone().set_default();
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("add the secret").calls([(
+        "call-secret",
+        ADD,
+        serde_json::json!({ "value": 1, "note": "tool-input-super-secret-token" }),
+    )]);
+    api.on("result: 1").reply("done");
+
+    pipeline.run(["add the secret"]).await?;
+    Ok((capture.fields(), pipeline.session_id.clone()))
+}
+
+#[tokio::test]
+async fn tool_span_records_gen_ai_attributes_and_gates_arguments() -> Result<()> {
+    for capture_setting in [None, Some("false")] {
+        let (fields, session_id) = capture_tool_span_fields(capture_setting).await?;
+        assert!(!serde_json::to_string(&fields)?.contains("tool-input-super-secret-token"));
+        assert_eq!(fields["gen_ai.operation.name"], "execute_tool");
+        assert_eq!(fields["gen_ai.tool.name"], ADD);
+        assert_eq!(fields["gen_ai.tool.call.id"], "call-secret");
+        assert_eq!(fields["gen_ai.conversation.id"], session_id.as_str());
+    }
+
+    let (fields, _) = capture_tool_span_fields(Some("true")).await?;
+    let arguments: serde_json::Value =
+        serde_json::from_str(fields["gen_ai.tool.call.arguments"].as_str().unwrap())?;
+    assert_eq!(arguments["note"], "tool-input-super-secret-token");
+    Ok(())
+}
+
 #[tokio::test]
 async fn bang_shell_requests_the_shell_tool() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -282,6 +326,21 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
         .expect("persisted user message");
     assert!(command.is_user_visible());
     assert!(command.is_agent_visible());
+
+    pipeline
+        .set_goal(Some("finish the migration".to_string()))
+        .await;
+    let shown = pipeline.run(["/goal"]).await?;
+    shown.assert_message(-1, Agent, "Current goal: finish the migration");
+    assert_eq!(
+        pipeline.get_goal().await.as_deref(),
+        Some("finish the migration")
+    );
+
+    let cleared = pipeline.run(["/goal clear"]).await?;
+    cleared.assert_message(-1, Agent, "Goal cleared");
+    assert!(pipeline.get_goal().await.is_none());
+    assert_eq!(api.call_count(), 1);
 
     Ok(())
 }

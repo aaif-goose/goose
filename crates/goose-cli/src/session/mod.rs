@@ -33,7 +33,6 @@ use goose::utils::safe_truncate;
 use anyhow::Result;
 use completion::GooseCompleter;
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
-use goose::agents::types::RetryConfig;
 use goose::agents::{
     context_management_unsupported_message, Agent, SessionConfig, COMPACT_TRIGGERS,
 };
@@ -241,7 +240,6 @@ pub struct CliSession {
     scheduled_job_id: Option<String>,
     max_turns: Option<u32>,
     edit_mode: Option<EditMode>,
-    retry_config: Option<RetryConfig>,
     output_format: String,
     stats: bool,
     /// Background extension loader; drained exclusively by
@@ -292,7 +290,6 @@ impl CliSession {
         scheduled_job_id: Option<String>,
         max_turns: Option<u32>,
         edit_mode: Option<EditMode>,
-        retry_config: Option<RetryConfig>,
         output_format: String,
         stats: bool,
         refresh_completions: bool,
@@ -330,7 +327,6 @@ impl CliSession {
             scheduled_job_id,
             max_turns,
             edit_mode,
-            retry_config,
             output_format,
             stats,
             extension_loading,
@@ -559,10 +555,7 @@ impl CliSession {
 
     /// Start an interactive session, optionally with an initial message
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
-        let banners = self
-            .agent
-            .emit_hook_with_banners(goose::hooks::HookEvent::SessionStart, &self.session_id)
-            .await;
+        let banners = self.agent.emit_session_start(&self.session_id).await?;
         if !banners.is_empty() {
             output::display_banner(&banners);
         }
@@ -1125,36 +1118,26 @@ impl CliSession {
             }
         };
 
-        let extension_configs = self.agent.get_extension_configs().await;
+        let extension_configs = self.agent.get_extension_configs(&self.session_id).await;
 
         self.agent
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
         self.agent.discard_pending_steers(&self.session_id).await;
+        self.agent.extension_manager.release(&self.session_id).await;
         self.agent.config.providers.release(&self.session_id);
 
         self.session_id = new_session_id;
         self.messages.clear();
 
-        if let Err(e) = self
-            .agent
-            .update_goose_mode(self.agent.goose_mode().await, &self.session_id)
-            .await
-        {
+        let mode = self.agent.goose_mode(&self.session_id).await?;
+        if let Err(e) = self.agent.update_goose_mode(mode, &self.session_id).await {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
 
         if !extension_configs.is_empty() {
             output::goose_mode_message("Restarting extensions for the new session...");
-        }
-
-        // MCP clients pin themselves to the first session id they see a request for, so
-        // extensions must be torn down and re-added under the new session id.
-        for name in self.agent.list_extensions().await {
-            if let Err(e) = self.agent.remove_extension(&name, &self.session_id).await {
-                output::render_extension_error(&name, &e.to_string());
-            }
         }
 
         let mut unavailable = Vec::new();
@@ -1185,8 +1168,7 @@ impl CliSession {
         let session_manager = &self.agent.config.session_manager;
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
-            create_successor_session(session_manager, &old_session, self.agent.goose_mode().await)
-                .await?;
+            create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
         self.agent.persist_extension_state(&new_session_id).await?;
         Ok(new_session_id)
     }
@@ -1311,7 +1293,6 @@ impl CliSession {
             id: self.session_id.clone(),
             schedule_id: self.scheduled_job_id.clone(),
             max_turns: self.max_turns,
-            retry_config: self.retry_config.clone(),
         };
         let user_message = self
             .messages
@@ -1330,7 +1311,6 @@ impl CliSession {
             .reply(
                 user_message.clone(),
                 session_config.clone(),
-                goose::agents::state_machine::enabled(),
                 Some(cancel_token.clone()),
             )
             .await?;
@@ -1456,7 +1436,7 @@ impl CliSession {
                                         self.messages.push(response_message.clone());
                                         // Elicitation responses return an empty stream - the response
                                         // unblocks the waiting tool call via ActionRequiredManager
-                                        let _ = self.agent.reply(response_message, session_config.clone(), goose::agents::state_machine::enabled(), Some(cancel_token.clone())).await?;
+                                        let _ = self.agent.reply(response_message, session_config.clone(), Some(cancel_token.clone())).await?;
                                         if should_cancel {
                                             cancel_token_clone.cancel();
                                             drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
@@ -3245,7 +3225,6 @@ mod tests {
             Arc::new(session_manager),
             Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
             None,
-            GooseMode::default(),
             // Disable background session naming so the test agent starts no
             // provider-dependent tasks.
             true,
@@ -3264,7 +3243,6 @@ mod tests {
             Arc::new(agent),
             session.id,
             false,
-            None,
             None,
             None,
             None,

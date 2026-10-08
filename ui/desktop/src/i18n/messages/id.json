@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Kunjungi"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Gunakan loop agen berbasis operasi. Matikan untuk menggunakan loop lama."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatis"
   },

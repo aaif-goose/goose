@@ -88,7 +88,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         *self.drained.lock().unwrap() = drained.clone();
         for message in drained {
             let context = HookContext::new(HookEvent::UserPromptSubmit, &session.id)
-                .with_message(message.as_concat_text());
+                .with_message(message.agent_visible_content().as_concat_text());
             self.hook_manager
                 .emit(HookEvent::UserPromptSubmit, context)
                 .await;

@@ -405,7 +405,7 @@
     "env": [
       "CORAL_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "cortecs",
@@ -416,7 +416,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 103
+    "model_count": 105
   },
   {
     "id": "crof",
@@ -549,7 +549,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 294
+    "model_count": 295
   },
   {
     "id": "empiriolabs",
@@ -968,7 +968,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 215
+    "model_count": 217
   },
   {
     "id": "llmgateway-providers",
@@ -979,7 +979,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 442
+    "model_count": 444
   },
   {
     "id": "llmtech",
@@ -1376,7 +1376,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 24
+    "model_count": 25
   },
   {
     "id": "opencode",
@@ -1387,7 +1387,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 116
+    "model_count": 119
   },
   {
     "id": "opencode-go",
@@ -1398,7 +1398,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 34
+    "model_count": 35
   },
   {
     "id": "openreason",

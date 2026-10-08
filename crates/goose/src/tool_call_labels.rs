@@ -484,7 +484,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -558,7 +557,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -714,7 +712,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -759,7 +756,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));
@@ -804,7 +800,6 @@ mod tests {
                 session_manager.clone(),
                 permission_manager,
                 None,
-                GooseMode::Auto,
                 true,
                 GoosePlatform::GooseCli,
             ));

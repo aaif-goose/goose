@@ -543,16 +543,10 @@ impl GatewayHandler {
             id: session_id.to_string(),
             schedule_id: None,
             max_turns: Some(max_turns),
-            retry_config: None,
         };
 
         let mut stream = match agent
-            .reply(
-                user_message,
-                session_config,
-                crate::agents::state_machine::enabled(),
-                Some(cancel_for_reply),
-            )
+            .reply(user_message, session_config, Some(cancel_for_reply))
             .await
         {
             Ok(s) => s,

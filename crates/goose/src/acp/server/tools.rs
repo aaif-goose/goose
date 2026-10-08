@@ -12,7 +12,10 @@ impl GooseAcpAgent {
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let goose_mode = agent.goose_mode().await;
+        let goose_mode = agent
+            .goose_mode(session_id)
+            .await
+            .internal_err_ctx("Failed to read goose mode")?;
         let permission_manager = self.permission_manager();
 
         let mut tools: Vec<ToolListItem> = agent
@@ -95,11 +98,6 @@ impl GooseAcpAgent {
             params
         };
 
-        if agent.goose_mode().await != GooseMode::Auto {
-            return Err(agent_client_protocol::Error::invalid_params()
-                .data("app tool calls require auto mode"));
-        }
-
         let session = self
             .session_manager
             .get_session(session_id, false)
@@ -108,6 +106,10 @@ impl GooseAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        if session.goose_mode != GooseMode::Auto {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("app tool calls require auto mode"));
+        }
 
         let container = session.container;
         let tool_result = agent

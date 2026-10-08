@@ -305,6 +305,77 @@ async fn recipe_retry_and_final_output_run_to_completion() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
+    let shows_empty_fallback = |conversation: &crate::conversation::Conversation| {
+        conversation.iter().any(|message| {
+            message.is_user_visible() && message.as_concat_text().contains("empty response")
+        })
+    };
+    let retry = |check: &str| RetryConfig {
+        max_retries: 1,
+        checks: vec![SuccessCheck::Shell {
+            command: check.to_string(),
+        }],
+        on_failure: None,
+        timeout_seconds: None,
+        on_failure_timeout_seconds: None,
+    };
+
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("compute the answer").reply("");
+    api.on(FINAL_OUTPUT_CONTINUATION_MESSAGE)
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "42" }));
+    let recipe = Recipe::builder()
+        .title("Structured output")
+        .description("Return structured output")
+        .instructions("Compute the answer")
+        .response(Response {
+            json_schema: Some(json!({
+                "type": "object",
+                "properties": { "result": { "type": "string" } },
+                "required": ["result"]
+            })),
+        })
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    let nudged = pipeline.run(["compute the answer"]).await?;
+    nudged.assert_message(-1, Agent, r#"{"result":"42"}"#);
+    assert!(!shows_empty_fallback(nudged.conversation()));
+
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("check the work").reply("");
+    let recipe = Recipe::builder()
+        .title("passing retry")
+        .description("passing retry")
+        .prompt("check the work")
+        .retry(retry("true"))
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    let passed = pipeline.run(["check the work"]).await?;
+    assert!(!shows_empty_fallback(passed.conversation()));
+
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("never succeed").reply("");
+    let recipe = Recipe::builder()
+        .title("failing retry")
+        .description("failing retry")
+        .prompt("never succeed")
+        .retry(retry("exit 1"))
+        .build()
+        .expect("valid recipe");
+    pipeline.set_recipe(recipe).await?;
+    let (_pipeline, exhausted, _) = pipeline
+        .run_reconstructing_each_step("never succeed")
+        .await?;
+    exhausted.assert_message(-1, Error, "Maximum retry attempts (1) exceeded");
+    assert!(!shows_empty_fallback(exhausted.conversation()));
+
+    Ok(())
+}
+
 #[cfg(feature = "code-mode")]
 #[tokio::test]
 async fn unadvertised_final_output_is_neither_approved_nor_executed() -> Result<()> {

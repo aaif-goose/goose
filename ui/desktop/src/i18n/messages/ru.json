@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Перейдите на"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Использовать цикл агента на основе операций. Отключите, чтобы использовать прежний цикл."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
   },

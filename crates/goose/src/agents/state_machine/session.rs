@@ -116,7 +116,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
             }
         }
 
-        for effect in effects {
+        for (index, effect) in effects.iter().enumerate() {
             match effect {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
                     if contains_tool_confirmation_request(message) {
@@ -141,8 +141,11 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     conversation,
                 ))
                 | GooseEffect::CompactConversation { conversation, .. } => {
-                    emit.emit(AgentEvent::HistoryReplaced(conversation.clone()))
-                        .await;
+                    emit.emit(AgentEvent::HistoryReplaced(replaced_history(
+                        conversation,
+                        &effects[index + 1..],
+                    )))
+                    .await;
                 }
                 GooseEffect::RecordUsage(usage) => {
                     emit.emit(AgentEvent::Usage(usage.clone())).await
@@ -187,6 +190,31 @@ impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
     }
 }
 
+/// Clients swap in the replaced history, so it includes what the same batch appends
+/// after the replacement; those messages were already shown live and would otherwise
+/// vanish (a `/clear` would leave nothing).
+fn replaced_history(replacement: &Conversation, later_effects: &[GooseEffect]) -> Conversation {
+    let mut messages = replacement.messages().clone();
+    messages.extend(
+        later_effects
+            .iter()
+            .take_while(|effect| {
+                !matches!(
+                    effect,
+                    GooseEffect::Conversation(ConversationEffect::ReplaceConversation(_))
+                        | GooseEffect::CompactConversation { .. }
+                )
+            })
+            .filter_map(|effect| match effect {
+                GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
+                    Some(message.clone())
+                }
+                _ => None,
+            }),
+    );
+    Conversation::new_unvalidated(messages)
+}
+
 impl EffectUsage<GooseEffect> for SessionManager {
     fn usage(
         &self,
@@ -200,6 +228,30 @@ impl EffectUsage<GooseEffect> for SessionManager {
             _ => None,
         }
     }
+}
+
+const ENTRY_HOOK_NOTE_SCOPE: &str = "entry_hook";
+const SESSION_START_NOTE: &str = "session_start";
+
+/// Records that a client fired `SessionStart` when it opened the session, so the first
+/// turn does not fire it again. Hidden from the user when the hooks printed no banner.
+pub(crate) fn session_start_message(banners: &[String]) -> Message {
+    let mut message = Message::assistant();
+    if !banners.is_empty() {
+        message = message.with_text(banners.join("\n"));
+    }
+    let mut message = message.with_visibility(!banners.is_empty(), false);
+    message
+        .metadata
+        .set_operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE, true.into());
+    message
+}
+
+fn is_session_start_message(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE)
+        .is_some()
 }
 
 pub(crate) async fn run_turn_start_hooks(
@@ -221,9 +273,10 @@ pub(crate) async fn run_turn_start_hooks(
     let working_dir = session.working_dir.to_string_lossy().to_string();
     let messages_before_kickoff = &conversation.messages()[..conversation.len() - messages.len()];
     if !messages_before_kickoff.iter().any(|message| {
-        message.role == rmcp::model::Role::User
-            && message.is_user_visible()
-            && !message.is_tool_response()
+        is_session_start_message(message)
+            || (message.role == rmcp::model::Role::User
+                && message.is_user_visible()
+                && !message.is_tool_response())
     }) {
         hook_manager
             .emit(
@@ -236,7 +289,7 @@ pub(crate) async fn run_turn_start_hooks(
 
     let prompt = messages
         .first()
-        .map(Message::as_concat_text)
+        .map(|message| message.agent_visible_content().as_concat_text())
         .unwrap_or_default();
     if !prompt.is_empty() {
         hook_manager

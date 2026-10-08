@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Usa el bucle del agente basado en operaciones. Desactívalo para usar el bucle heredado."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
   },

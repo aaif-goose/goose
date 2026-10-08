@@ -34,47 +34,6 @@ pub fn system_prompt_block() -> Option<String> {
     }
 }
 
-pub(super) async fn compute_compaction_info(
-    session_id: &str,
-    extension_manager: &ExtensionManager,
-) -> Option<String> {
-    let session = extension_manager
-        .get_context()
-        .session_manager
-        .get_session(session_id, false)
-        .await
-        .ok();
-    let session_model_config = session
-        .as_ref()
-        .and_then(|session| session.model_config.clone());
-    let context_limit = match (session.as_ref(), session_model_config.as_ref()) {
-        (Some(session), Some(model_config)) => {
-            match extension_manager
-                .get_context()
-                .providers
-                .provider_for(session)
-                .await
-            {
-                Ok(provider) => crate::context_limit::get_context_limit(
-                    provider.as_ref(),
-                    &model_config.model_name,
-                )
-                .await
-                .ok(),
-                Err(_) => None,
-            }
-        }
-        _ => None,
-    };
-    let total_tokens = session
-        .as_ref()
-        .and_then(|session| session.usage.total_tokens);
-    let compaction_threshold = crate::config::Config::global()
-        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-        .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD);
-    compaction_remaining_line(total_tokens, context_limit, compaction_threshold)
-}
-
 pub async fn turn_context_message(
     session_id: &str,
     extension_manager: &ExtensionManager,
@@ -194,29 +153,6 @@ fn escape_xml_text(value: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
-}
-
-fn compaction_remaining_line(
-    total_tokens: Option<i32>,
-    context_limit: Option<usize>,
-    threshold: f64,
-) -> Option<String> {
-    let total_tokens = total_tokens?;
-    let context_limit = context_limit?;
-
-    if total_tokens <= 0 || context_limit == 0 || threshold <= 0.0 || threshold >= 1.0 {
-        return None;
-    }
-
-    let compaction_at = (context_limit as f64 * threshold) as i32;
-    if compaction_at <= 0 || (total_tokens as f64 / compaction_at as f64) < 0.5 {
-        return None;
-    }
-
-    Some(format!(
-        "~{}k tokens remaining",
-        compaction_at.saturating_sub(total_tokens) / 1000
-    ))
 }
 
 fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
@@ -347,11 +283,21 @@ mod tests {
     #[tokio::test]
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        em.add_client(moim_extension(), Arc::new(MoimClient("old context")), None)
-            .await;
+        em.add_client(
+            &session_id,
+            moim_extension(),
+            Arc::new(MoimClient("old context")),
+            None,
+        )
+        .await;
         let lease = em.current_lease(&session_id, None).await;
-        em.add_client(moim_extension(), Arc::new(MoimClient("new context")), None)
-            .await;
+        em.add_client(
+            &session_id,
+            moim_extension(),
+            Arc::new(MoimClient("new context")),
+            None,
+        )
+        .await;
 
         let message =
             turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)

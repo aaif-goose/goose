@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Usa il ciclo agente basato sulle operazioni. Disattivalo per usare il ciclo legacy."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatico"
   },
