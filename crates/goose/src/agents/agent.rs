@@ -108,6 +108,7 @@ pub(super) fn available_auto_efforts(
     support: ThinkingEffortSupport,
     thinking_effort_provider: Option<&str>,
 ) -> Vec<ThinkingEffort> {
+    let provider_name = thinking_effort_provider.unwrap_or(provider_name);
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
         ThinkingEffort::Off => matches!(
             applied.as_deref(),
@@ -254,7 +255,7 @@ pub(super) fn available_auto_efforts(
             }
 
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
-                thinking_effort_provider.unwrap_or(provider_name),
+                provider_name,
                 &model_config.model_name,
             )
             .and_then(|model| model.thinking_mode)
@@ -3867,10 +3868,14 @@ impl Agent {
                                         exit_chat = true;
                                     }
                                 }
-                                Ok(RetryResult::MaxAttemptsReached(message)) => {
+                                Ok(RetryResult::MaxAttemptsReached(mut message)) => {
                                     // Surface and persist the failure message
                                     // through the normal path so recipes don't
                                     // exit silently when retries are exhausted.
+                                    attach_operation_log(
+                                        &mut message,
+                                        &mut pending_auto_effort_log,
+                                    );
                                     let message =
                                         push_message_with_id(&mut messages_to_add, *message);
                                     last_assistant_text = message.as_concat_text();
@@ -6125,6 +6130,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     struct LegacyAutoEffortProvider {
         model_configs: std::sync::Mutex<Vec<goose_providers::model::ModelConfig>>,
         refuse: AtomicBool,
+        non_renderable: AtomicBool,
         resumed: AtomicBool,
     }
 
@@ -6175,6 +6181,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                     })
                 })));
             }
+            if self.non_renderable.load(Ordering::SeqCst) {
+                return Ok(stream_from_single_message(
+                    Message::assistant().with_redacted_thinking("redacted"),
+                    ProviderUsage::new("mock-model".to_string(), Usage::default()),
+                ));
+            }
             Ok(stream_from_single_message(
                 Message::assistant().with_text("selected effort applied"),
                 ProviderUsage::new("mock-model".to_string(), Usage::default()),
@@ -6222,6 +6234,24 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         Mock::given(method("POST"))
             .and(path("/v1/systemone"))
             .and(body_partial_json(json!({"state": "refusal"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model": "jev-latest",
+                "answers": {
+                    "effort": {
+                        "type": "choice",
+                        "choice": "high",
+                        "confidence": 0.9,
+                        "probabilities": {"high": 0.9}
+                    }
+                },
+                "usage": {"input_tokens": 4, "output_tokens": 1}
+            })))
+            .expect(1)
+            .mount(&jev)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(body_partial_json(json!({"state": "retry exhaustion"})))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "model": "jev-latest",
                 "answers": {
@@ -6395,6 +6425,55 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             assert_eq!(configs.len(), 3);
             assert_eq!(configs[2].thinking_effort(), Some(ThinkingEffort::High));
         }
+
+        provider.refuse.store(false, Ordering::SeqCst);
+        provider.non_renderable.store(true, Ordering::SeqCst);
+        let retry_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+            jev.uri(),
+            AuthMethod::NoAuth,
+            None,
+        )?);
+        *agent.auto_effort_override.lock().await = Some(AutoEffortOperation::new(
+            Arc::new(retry_provider),
+            "test-effort-model".to_string(),
+            vec![ThinkingEffort::Low, ThinkingEffort::High],
+        ));
+        let mut retry_stream = agent
+            .reply(
+                Message::user().with_text("retry exhaustion"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    schedule_id: None,
+                    max_turns: Some(10),
+                    retry_config: Some(crate::agents::types::RetryConfig {
+                        max_retries: 1,
+                        checks: vec![crate::agents::types::SuccessCheck::Shell {
+                            command: "false".to_string(),
+                        }],
+                        on_failure: None,
+                        timeout_seconds: None,
+                        on_failure_timeout_seconds: None,
+                    }),
+                },
+                false,
+                None,
+            )
+            .await?;
+        let mut exhausted_response = None;
+        while let Some(event) = retry_stream.next().await {
+            if let AgentEvent::Message(message) = event? {
+                if message.as_concat_text().contains("Maximum retry attempts") {
+                    exhausted_response = Some(message);
+                }
+            }
+        }
+        assert_eq!(
+            exhausted_response
+                .expect("retry exhaustion should be emitted")
+                .metadata
+                .operation_logs(),
+            ["ops_auto_effort: thinking high"]
+        );
 
         let session = agent
             .config

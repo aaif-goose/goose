@@ -293,10 +293,10 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     ollama_model.reasoning = Some(true);
     assert_eq!(
         available_auto_efforts(
-            "ollama",
+            "custom-ollama",
             &ollama_model,
             ThinkingEffortSupport::Unspecified,
-            None,
+            Some("ollama"),
         ),
         vec![
             ThinkingEffort::Off,
