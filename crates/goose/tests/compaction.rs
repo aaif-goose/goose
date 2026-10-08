@@ -375,8 +375,9 @@ fn assert_conversation_compacted(conversation: &Conversation) {
         }
     }
 
-    // The projected replay of the preserved user message is agent-only. Any
-    // ordinary messages appended after it should remain visible to both sides.
+    // The preserved user message and any ordinary messages appended after compaction
+    // should remain visible to both sides. Only agent-injected continuation content
+    // (summary, continuation assistant turn, turn-context events) is agent-only.
     let continuation_end = summary_index + 2;
     for (idx, msg) in messages.iter().enumerate() {
         if idx >= continuation_end {
@@ -390,15 +391,10 @@ fn assert_conversation_compacted(conversation: &Conversation) {
                     !msg.is_user_visible(),
                     "Carried turn-context event should be user-invisible"
                 );
-            } else if idx == continuation_end && matches!(msg.role, rmcp::model::Role::User) {
-                assert!(
-                    !msg.is_user_visible(),
-                    "Projected preserved user message should be user-invisible"
-                );
             } else {
                 assert!(
                     msg.is_user_visible(),
-                    "Ordinary message after compaction at index {} should be user visible",
+                    "Message after compaction at index {} should be user visible",
                     idx
                 );
             }

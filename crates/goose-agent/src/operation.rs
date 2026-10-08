@@ -24,12 +24,16 @@ pub struct SlashCommand<'a> {
 
 pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]> {
     let messages = conversation.messages();
+    let is_kickoff = |msg: &Message| {
+        msg.role == rmcp::model::Role::User && !msg.is_tool_response()
+    };
     let start = messages
         .iter()
-        .rposition(|message| {
-            message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
+        .rposition(|msg| is_kickoff(msg) && msg.is_user_visible())
+        .or_else(|| {
+            messages
+                .iter()
+                .rposition(|msg| is_kickoff(msg) && msg.is_agent_visible())
         })
         .ok_or_else(|| anyhow!("state machine conversation has no kickoff message"))?;
     Ok(&messages[start..])

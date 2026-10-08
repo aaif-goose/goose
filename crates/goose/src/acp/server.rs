@@ -2214,6 +2214,19 @@ impl GooseAcpAgent {
                         warn!(session_id, ?error, "Failed to send mid-turn usage update");
                     }
                 }
+                Ok(crate::agents::AgentEvent::HistoryReplaced(_)) => {
+                    if self.supports_goose_custom_notifications() {
+                        cx.send_notification(GooseSessionNotification {
+                            session_id: session_id.to_string(),
+                            update: GooseSessionUpdate::StatusMessage(StatusMessageUpdate {
+                                status: StatusMessage::Notice {
+                                    message: "Context compacted — earlier messages archived"
+                                        .to_string(),
+                                },
+                            }),
+                        })?;
+                    }
+                }
                 Ok(_) => {}
                 Err(error) => {
                     return Err(agent_client_protocol::Error::internal_error()

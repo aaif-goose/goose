@@ -112,7 +112,7 @@ pub async fn compact_messages(
                 .into_iter()
                 .filter(|content| matches!(content, MessageContent::Text(_)))
                 .fold(
-                    Message::user().with_metadata(MessageMetadata::agent_only()),
+                    Message::user(),
                     Message::with_content,
                 );
             Some((idx, preserved))
