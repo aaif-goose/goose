@@ -60,7 +60,7 @@ export type UpdateCustomProviderRequest = {
   headers?: Record<string, string> | null;
   models: string[];
   preserves_thinking?: boolean | null;
-  requires_auth?: boolean;
-  supports_streaming?: boolean | null;
+  requires_auth: boolean;
+  supports_streaming: boolean;
   toolshim: boolean;
 };

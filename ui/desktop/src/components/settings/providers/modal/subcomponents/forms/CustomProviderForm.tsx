@@ -251,7 +251,7 @@ interface CustomProviderFormProps {
   onDelete?: () => Promise<void>;
   isActiveProvider?: boolean;
   initialData: UpdateCustomProviderRequest | null;
-  isEditable?: boolean;
+  isEditable: boolean;
 }
 
 export default function CustomProviderForm({

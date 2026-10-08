@@ -16,7 +16,6 @@ const alertIcons: Record<AlertType, React.ReactNode> = {
 interface AlertBoxProps {
   alert: Alert;
   className?: string;
-  compactButtonEnabled?: boolean;
 }
 
 const i18n = defineMessages({

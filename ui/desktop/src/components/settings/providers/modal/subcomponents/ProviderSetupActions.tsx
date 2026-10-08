@@ -44,14 +44,14 @@ const i18n = defineMessages({
 interface ProviderSetupActionsProps {
   onCancel: () => void;
   onSubmit: (e: SyntheticEvent) => void;
-  onDelete?: () => void;
-  showDeleteConfirmation?: boolean;
-  onConfirmDelete?: () => void;
-  onCancelDelete?: () => void;
-  canDelete?: boolean;
-  providerName?: string;
-  primaryParameters?: ConfigKey[];
-  isActiveProvider?: boolean; // Made optional with default false
+  onDelete: () => void;
+  showDeleteConfirmation: boolean;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+  canDelete: boolean;
+  providerName: string;
+  primaryParameters: ConfigKey[];
+  isActiveProvider: boolean;
 }
 
 /**
@@ -68,7 +68,7 @@ export default function ProviderSetupActions({
   canDelete,
   providerName,
   primaryParameters,
-  isActiveProvider = false, // Default value provided
+  isActiveProvider,
 }: ProviderSetupActionsProps) {
   const intl = useIntl();
 

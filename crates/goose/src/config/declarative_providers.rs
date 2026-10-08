@@ -341,7 +341,9 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             },
             session_id_header_override: existing_config.session_id_header_override,
             timeout_seconds: existing_config.timeout_seconds,
-            supports_streaming: params.supports_streaming,
+            supports_streaming: params
+                .supports_streaming
+                .or(existing_config.supports_streaming),
             requires_auth: params.requires_auth,
             catalog_provider_id: params.catalog_provider_id,
             base_path: params.base_path,
@@ -794,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_provider_update_preserves_model_metadata() {
+    fn custom_provider_update_preserves_existing_values() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
@@ -810,7 +812,7 @@ mod tests {
             api_url: "https://example.invalid/v1".to_string(),
             api_key: None,
             models: vec![model],
-            supports_streaming: Some(true),
+            supports_streaming: Some(false),
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -828,7 +830,7 @@ mod tests {
             api_url: created.base_url.clone(),
             api_key: None,
             models: vec![ModelInfo::new("large-model").with_context_limit(2_097_152)],
-            supports_streaming: Some(true),
+            supports_streaming: None,
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -840,6 +842,7 @@ mod tests {
         .unwrap();
 
         let loaded = load_provider(&created.name).unwrap();
+        assert_eq!(loaded.config.supports_streaming, Some(false));
         let model = &loaded.config.models[0];
         assert_eq!(model.context_limit, Some(2_097_152));
         assert_eq!(model.input_token_cost, Some(0.000002));

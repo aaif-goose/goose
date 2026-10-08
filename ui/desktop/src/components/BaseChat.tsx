@@ -67,7 +67,6 @@ interface BaseChatProps {
   customChatInputProps?: Record<string, unknown>;
   customMainLayoutProps?: Record<string, unknown>;
   contentClassName?: string;
-  disableSearch?: boolean;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
