@@ -6,3 +6,4 @@ pub mod openai;
 pub mod openai_responses;
 
 pub mod snowflake;
+pub mod schema;
