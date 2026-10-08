@@ -499,6 +499,17 @@ impl TestPipeline {
         self.permission_manager.update_user_permission(tool, level);
     }
 
+    pub(super) async fn leased_extensions(&self) -> Result<Vec<String>> {
+        Ok(self
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .configs()
+            .iter()
+            .map(ExtensionConfig::key)
+            .collect())
+    }
+
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {
         self.extension_manager
             .disable(&self.session_id, name)

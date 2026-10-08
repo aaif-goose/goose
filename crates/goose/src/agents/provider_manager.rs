@@ -55,6 +55,16 @@ impl ProviderManager {
         Ok(provider)
     }
 
+    /// The provider already serving the session, if any; never builds one.
+    pub async fn pinned(&self, session: &Session) -> Option<Arc<dyn Provider>> {
+        let name = provider_name_for(session).ok()?;
+        self.slot(&session.id)
+            .lock()
+            .await
+            .clone()
+            .filter(|provider| provider.get_name() == name)
+    }
+
     pub async fn set_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
         *self.slot(session_id).lock().await = Some(provider);
     }

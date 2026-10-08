@@ -736,11 +736,16 @@ impl ExtensionManager {
     }
 
     async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
-        let provider_runs_tool_loop = match provider_name_for(session) {
-            Ok(name) => crate::providers::get_from_registry(&name)
-                .await
-                .is_ok_and(|entry| entry.runs_own_tool_loop()),
-            Err(_) => false,
+        // A pinned provider may not be in the registry at all, so it answers
+        // for itself when there is one.
+        let provider_runs_tool_loop = match self.context.providers.pinned(session).await {
+            Some(provider) => provider.manages_own_context(),
+            None => match provider_name_for(session) {
+                Ok(name) => crate::providers::get_from_registry(&name)
+                    .await
+                    .is_ok_and(|entry| entry.runs_own_tool_loop()),
+                Err(_) => false,
+            },
         };
         let extensions = selection(session)
             .into_iter()

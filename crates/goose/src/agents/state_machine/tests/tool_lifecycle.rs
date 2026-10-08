@@ -512,3 +512,31 @@ async fn stale_orphaned_tool_request_is_not_executed() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn a_pinned_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_goose() -> Result<()>
+{
+    let (pipeline, _api) =
+        super::pipeline::test_pipeline_with(super::dummy_api::ProviderFeatures {
+            manages_own_context: true,
+            ..Default::default()
+        })
+        .await?;
+    pipeline
+        .session_manager
+        .update_enabled_extensions(&pipeline.session_id, |selected| {
+            selected.push(crate::agents::extension::ExtensionConfig::stdio(
+                "remote",
+                "missing-binary",
+                "",
+                5_u64,
+            ))
+        })
+        .await?;
+
+    let leased = pipeline.leased_extensions().await?;
+
+    assert!(leased.contains(&"calculator".to_string()));
+    assert!(!leased.contains(&"remote".to_string()));
+    Ok(())
+}
