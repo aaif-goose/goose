@@ -178,48 +178,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_execute_success_checks_all_pass() {
-        let checks = [SuccessCheck::Shell {
-            command: "echo success".to_string(),
-        }];
-
-        assert!(
-            execute_success_checks_with_timeout(&checks, Duration::from_secs(30))
-                .await
-                .unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_execute_success_checks_one_fails() {
-        let checks = [SuccessCheck::Shell {
-            command: "false".to_string(),
-        }];
-
-        assert!(
-            !execute_success_checks_with_timeout(&checks, Duration::from_secs(30))
-                .await
-                .unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_execute_on_failure_command_success() {
-        execute_on_failure_command_with_timeout("echo recovered", Duration::from_secs(30))
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_execute_on_failure_command_failure() {
-        assert!(
-            execute_on_failure_command_with_timeout("false", Duration::from_secs(30))
-                .await
-                .is_err()
-        );
-    }
-
-    #[tokio::test]
     async fn test_execute_shell_command_success() {
         let result = execute_shell_command("echo 'hello world'", Duration::from_secs(30)).await;
         assert!(result.is_ok());

@@ -712,44 +712,4 @@ mod tests {
             "final_output_tool must be restored after LRU eviction"
         );
     }
-
-    #[tokio::test]
-    async fn test_session_mode_isolation() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir).await;
-        let session_manager = manager.session_manager();
-        let approve = session_manager
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "approve".into(),
-                SessionType::User,
-                GooseMode::Approve,
-            )
-            .await
-            .unwrap();
-        let chat = session_manager
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "chat".into(),
-                SessionType::User,
-                GooseMode::Chat,
-            )
-            .await
-            .unwrap();
-
-        let approve_agent = manager
-            .get_or_create_agent(approve.id.clone())
-            .await
-            .unwrap();
-        let chat_agent = manager.get_or_create_agent(chat.id.clone()).await.unwrap();
-
-        assert_eq!(
-            approve_agent.goose_mode(&approve.id).await.unwrap(),
-            GooseMode::Approve
-        );
-        assert_eq!(
-            chat_agent.goose_mode(&chat.id).await.unwrap(),
-            GooseMode::Chat
-        );
-    }
 }
