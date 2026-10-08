@@ -72,9 +72,11 @@ use crate::session::{GoalState, Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use crate::utils::is_token_cancelled;
+use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ElicitationAction, ErrorCode, ErrorData,
     GetPromptResult, Prompt, Tool,
@@ -94,6 +96,40 @@ const EMPTY_TURN_MESSAGE: &str =
 fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> anyhow::Error {
     let message = format!("{context}: {error}");
     error.context(message)
+}
+
+fn context_relevance_operation(
+    config: &Config,
+    context_limit: usize,
+    compaction_threshold: f64,
+) -> Option<super::state_machine::ContextRelevanceOperation> {
+    if !config
+        .get_param::<bool>("GOOSE_CONTEXT_RELEVANCE_SHADOW")
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let key = config
+        .get_secret::<String>("TYPESAFE_API_KEY")
+        .ok()?
+        .trim()
+        .to_string();
+    if key.is_empty() {
+        return None;
+    }
+    let tls = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+    let client = ApiClient::with_timeout_and_tls(
+        TYPESAFE_DEFAULT_HOST.to_string(),
+        AuthMethod::BearerToken(key),
+        super::state_machine::ContextRelevanceOperation::timeout(),
+        tls,
+    )
+    .ok()?;
+    Some(super::state_machine::ContextRelevanceOperation::new(
+        Arc::new(TypeSafeProvider::new(client)),
+        context_limit,
+        compaction_threshold,
+    ))
 }
 
 fn normalize_legacy_provider_thinking_effort(
@@ -1696,6 +1732,11 @@ impl Agent {
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
+            if let Some(operation) =
+                context_relevance_operation(Config::global(), context_limit, compaction_threshold)
+            {
+                operations.push(Arc::new(operation));
+            }
             operations.push(Arc::new(CompactionOperation::new(
                 provider.clone(),
                 model_config.clone(),
@@ -3924,6 +3965,23 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
+
+    #[test]
+    fn context_relevance_requires_both_opt_in_and_a_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        assert!(context_relevance_operation(&config, 10, 0.3).is_none());
+        config
+            .set_param("GOOSE_CONTEXT_RELEVANCE_SHADOW", true)
+            .unwrap();
+        assert!(context_relevance_operation(&config, 10, 0.3).is_none());
+        config.set_secret("TYPESAFE_API_KEY", &"test-key").unwrap();
+        assert!(context_relevance_operation(&config, 10, 0.3).is_some());
+    }
 
     fn persisted_builtin(name: &str) -> ExtensionConfig {
         ExtensionConfig::Builtin {

@@ -11,6 +11,7 @@ use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, Exte
 mod agent_reply;
 mod calculator_extension;
 mod compaction_lifecycle;
+mod context_relevance;
 mod dummy_api;
 mod hooks_lifecycle;
 mod pipeline;
