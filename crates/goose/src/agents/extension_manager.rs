@@ -1570,10 +1570,12 @@ impl ExtensionManager {
                             "Starting builtin extension inside Docker container"
                         );
                         let command = Command::new("docker").configure(|command| {
-                            command.arg("exec").arg("-i").arg("-e").arg(format!(
-                                "GOOSE_MODEL={}",
-                                session_model_name.as_deref().unwrap_or_default()
-                            ));
+                            // `command.env` only affects the docker CLI process; the
+                            // `-e` flags are what reach the container.
+                            command.arg("exec").arg("-i");
+                            if let Some(model_name) = session_model_name.as_deref() {
+                                command.arg("-e").arg(format!("GOOSE_MODEL={model_name}"));
+                            }
                             command
                                 .arg(container_id)
                                 .arg("goose")
@@ -1652,13 +1654,10 @@ impl ExtensionManager {
                         for (key, value) in &all_envs {
                             command.arg("-e").arg(format!("{}={}", key, value));
                         }
-                        command
-                            .arg("-e")
-                            .arg(format!(
-                                "GOOSE_MODEL={}",
-                                session_model_name.as_deref().unwrap_or_default()
-                            ))
-                            .arg(container_id);
+                        if let Some(model_name) = session_model_name.as_deref() {
+                            command.arg("-e").arg(format!("GOOSE_MODEL={model_name}"));
+                        }
+                        command.arg(container_id);
                         command.arg(cmd);
                         command.args(args);
                     })
@@ -2376,7 +2375,7 @@ impl ExtensionManager {
             ctx.working_dir.clone(),
             ctx.tool_call_request_id.clone(),
         );
-        let owned_ctx = match ctx.model_name.clone() {
+        let owned_ctx = match ctx.model_name() {
             Some(model_name) => owned_ctx.with_model_name(model_name),
             None => owned_ctx,
         };
