@@ -37,7 +37,7 @@ impl ToolCallNotificationEmitter {
 pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
-    pub model_name: Option<String>,
+    model_name: Option<String>,
     pub tool_call_request_id: Option<String>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
@@ -67,6 +67,10 @@ impl ToolCallContext {
             Some(model_config) => self.with_model_name(model_config.model_name.clone()),
             None => self,
         }
+    }
+
+    pub fn model_name(&self) -> Option<&str> {
+        self.model_name.as_deref()
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {

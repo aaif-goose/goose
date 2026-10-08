@@ -217,7 +217,7 @@ impl McpClientTrait for DeveloperClient {
                         params,
                         working_dir,
                         Some(&ctx.session_id),
-                        ctx.model_name.as_deref(),
+                        ctx.model_name(),
                         ctx.notification_emitter().cloned(),
                         cancel_token,
                     )
