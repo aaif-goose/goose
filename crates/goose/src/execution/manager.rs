@@ -321,14 +321,15 @@ impl AgentManager {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    use goose_test_support::McpFixture;
+    use goose_test_support::mcp::McpFixtureServer;
+    use rmcp::ServiceExt;
     use tokio::sync::Barrier;
 
-    use crate::agents::extension::{Envs, ExtensionConfig};
+    use crate::agents::extension::ExtensionConfig;
     use crate::agents::{AgentConfig, GoosePlatform};
     use crate::config::permission::PermissionManager;
     use crate::config::GooseMode;
@@ -416,11 +417,24 @@ mod tests {
         manager.remove_session_if_loaded(&session).await.unwrap();
     }
 
+    static FIXTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+    fn serve_counted_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        FIXTURE_STARTS.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(async move {
+            let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+            let _ = running.waiting().await;
+        });
+    }
+
     #[tokio::test]
     async fn concurrent_session_creation_initializes_extensions_once() {
         let temp_dir = TempDir::new().unwrap();
         let manager = Arc::new(create_test_manager(&temp_dir).await);
-        let mcp = McpFixture::new().await;
+        crate::builtin_extension::register_builtin_extension(
+            "agent_manager_fixture",
+            serve_counted_fixture,
+        );
         let session = manager
             .session_manager()
             .create_session(
@@ -431,19 +445,12 @@ mod tests {
             )
             .await
             .unwrap();
-        let extension = ExtensionConfig::StreamableHttp {
-            name: "mcp-fixture".to_string(),
-            description: "MCP fixture".to_string(),
-            uri: mcp.url.clone(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::new(),
-            timeout: Some(30),
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
+        let extension = ExtensionConfig::Builtin {
+            name: "agent_manager_fixture".to_string(),
+            display_name: None,
+            description: String::new(),
+            timeout: None,
+            bundled: None,
             available_tools: vec![],
         };
         let mut extension_data = session.extension_data.clone();
@@ -494,9 +501,7 @@ mod tests {
             );
         }
         assert_eq!(manager.session_count().await, 1);
-        // One discover from one extension start; a second initialization
-        // would have been a second request.
-        assert_eq!(mcp.request_count(), 1);
+        assert_eq!(FIXTURE_STARTS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

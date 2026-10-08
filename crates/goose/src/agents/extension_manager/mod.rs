@@ -1119,8 +1119,9 @@ mod tests {
 
     use super::super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
     use futures::StreamExt;
-    use goose_test_support::McpFixture;
+    use goose_test_support::mcp::McpFixtureServer;
     use rmcp::model::{CallToolRequestParams, GetPromptResult, Resource};
+    use rmcp::ServiceExt;
     use std::sync::atomic::AtomicUsize;
     use tokio::sync::{mpsc, Semaphore};
 
@@ -1705,20 +1706,41 @@ mod tests {
             .is_some_and(|error| error.contains("Unknown extension")));
     }
 
-    fn fixture_config(mcp: &McpFixture) -> ExtensionConfig {
-        ExtensionConfig::StreamableHttp {
-            name: "mcp-fixture".to_string(),
-            description: "MCP fixture".to_string(),
-            uri: mcp.url.clone(),
+    fn serve_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        tokio::spawn(async move {
+            let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+            let _ = running.waiting().await;
+        });
+    }
+
+    static COUNTED_FIXTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+    fn serve_counted_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        COUNTED_FIXTURE_STARTS.fetch_add(1, Ordering::SeqCst);
+        serve_fixture(read, write);
+    }
+
+    /// A real MCP server that runs in-process, so starting it reads no
+    /// secrets; an HTTP server would look up OAuth credentials in the keyring.
+    fn fixture_config(
+        name: &'static str,
+        spawn: crate::builtin_extension::SpawnServerFn,
+    ) -> ExtensionConfig {
+        crate::builtin_extension::register_builtin_extension(name, spawn);
+        builtin_config(name, vec![])
+    }
+
+    fn missing_stdio(name: &str, temp_dir: &Path) -> ExtensionConfig {
+        ExtensionConfig::Stdio {
+            name: name.to_string(),
+            description: String::new(),
+            cmd: temp_dir.join("missing-binary").display().to_string(),
+            args: vec![],
             envs: Default::default(),
             env_keys: vec![],
-            headers: HashMap::new(),
-            timeout: Some(30),
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
+            timeout: Some(5),
+            cwd: None,
+            bundled: None,
             available_tools: vec![],
         }
     }
@@ -1754,16 +1776,16 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
-        let session =
-            session_selecting(&manager, temp_dir.path(), vec![fixture_config(&mcp)]).await;
-        assert_eq!(mcp.request_count(), 0);
+        let session = session_selecting(
+            &manager,
+            temp_dir.path(),
+            vec![fixture_config("fixture", serve_fixture)],
+        )
+        .await;
 
         let tools = manager.current_lease(&session.id, None).await.tools().await;
 
-        assert!(tools
-            .iter()
-            .any(|tool| tool.name == "mcp-fixture__app_card"));
+        assert!(tools.iter().any(|tool| tool.name == "fixture__app_card"));
     }
 
     #[tokio::test]
@@ -1772,9 +1794,12 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
-        let session =
-            session_selecting(&manager, temp_dir.path(), vec![fixture_config(&mcp)]).await;
+        let session = session_selecting(
+            &manager,
+            temp_dir.path(),
+            vec![fixture_config("counted_fixture", serve_counted_fixture)],
+        )
+        .await;
 
         let callers = 20;
         let barrier = Arc::new(tokio::sync::Barrier::new(callers));
@@ -1791,9 +1816,7 @@ mod tests {
             assert!(results.unwrap()[0].success);
         }
 
-        // One discover from one start; a second start would have been a
-        // second request.
-        assert_eq!(mcp.request_count(), 1);
+        assert_eq!(COUNTED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -1802,12 +1825,15 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
-        let session =
-            session_selecting(&manager, temp_dir.path(), vec![fixture_config(&mcp)]).await;
+        let session = session_selecting(
+            &manager,
+            temp_dir.path(),
+            vec![fixture_config("fixture", serve_fixture)],
+        )
+        .await;
         let before = manager.current_lease(&session.id, None).await;
 
-        assert!(manager.disable(&session.id, "mcp-fixture").await.unwrap());
+        assert!(manager.disable(&session.id, "fixture").await.unwrap());
         let after = manager.current_lease(&session.id, None).await;
 
         assert!(after.tools().await.is_empty());
@@ -1815,7 +1841,7 @@ mod tests {
             .tools()
             .await
             .iter()
-            .any(|tool| tool.name == "mcp-fixture__app_card"));
+            .any(|tool| tool.name == "fixture__app_card"));
     }
 
     #[tokio::test]
@@ -1824,7 +1850,6 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
         let todo = ExtensionConfig::Platform {
             name: "todo".to_string(),
             display_name: None,
@@ -1832,8 +1857,12 @@ mod tests {
             bundled: None,
             available_tools: vec![],
         };
-        let session =
-            session_selecting(&manager, temp_dir.path(), vec![todo, fixture_config(&mcp)]).await;
+        let session = session_selecting(
+            &manager,
+            temp_dir.path(),
+            vec![todo, missing_stdio("stdio", temp_dir.path())],
+        )
+        .await;
         manager
             .get_context()
             .session_manager
@@ -1854,7 +1883,6 @@ mod tests {
             vec!["todo"]
         );
         assert!(lease.start().await.iter().all(|result| result.success));
-        assert_eq!(mcp.request_count(), 0);
     }
 
     #[tokio::test]
@@ -1863,23 +1891,13 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
-        let broken = ExtensionConfig::Stdio {
-            name: "broken".to_string(),
-            description: String::new(),
-            cmd: temp_dir.path().join("missing-binary").display().to_string(),
-            args: vec![],
-            envs: Default::default(),
-            env_keys: vec![],
-            timeout: Some(5),
-            cwd: None,
-            bundled: None,
-            available_tools: vec![],
-        };
         let session = session_selecting(
             &manager,
             temp_dir.path(),
-            vec![broken, fixture_config(&mcp)],
+            vec![
+                missing_stdio("broken", temp_dir.path()),
+                fixture_config("fixture", serve_fixture),
+            ],
         )
         .await;
 
@@ -1891,13 +1909,13 @@ mod tests {
                 .iter()
                 .map(|result| (result.name.as_str(), result.success))
                 .collect::<Vec<_>>(),
-            vec![("broken", false), ("mcp-fixture", true)]
+            vec![("broken", false), ("fixture", true)]
         );
         assert!(lease
             .tools()
             .await
             .iter()
-            .all(|tool| get_tool_owner(tool).as_deref() == Some("mcp-fixture")));
+            .all(|tool| get_tool_owner(tool).as_deref() == Some("fixture")));
     }
 
     #[tokio::test]
@@ -1907,7 +1925,6 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let mcp = McpFixture::new().await;
         let developer = ExtensionConfig::Platform {
             name: "developer".to_string(),
             display_name: None,
@@ -1918,7 +1935,7 @@ mod tests {
         let session = session_selecting(
             &manager,
             temp_dir.path(),
-            vec![developer, fixture_config(&mcp)],
+            vec![developer, fixture_config("fixture", serve_fixture)],
         )
         .await;
         manager
@@ -1949,7 +1966,7 @@ mod tests {
                 "{key} was restarted"
             );
         }
-        assert!(!Arc::ptr_eq(&before["mcp-fixture"], &after["mcp-fixture"]));
+        assert!(!Arc::ptr_eq(&before["fixture"], &after["fixture"]));
         assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
         assert!(lease.start().await.iter().all(|result| result.success));
     }
