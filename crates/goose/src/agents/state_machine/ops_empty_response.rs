@@ -6,7 +6,7 @@ use goose_agent::inference::is_empty_response_marker;
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::{
-    messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter, Operation,
+    applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
     OperationResult,
 };
 use crate::conversation::Conversation;
@@ -28,7 +28,7 @@ impl Operation<Session, GooseEffect> for EmptyResponseOperation {
     ) -> Result<OperationResult<GooseEffect>> {
         let Some(fallback) = messages_since_kickoff(conversation)?
             .last()
-            .filter(|message| is_empty_response_marker(message))
+            .filter(|message| is_empty_response_marker(message) && !message.is_user_visible())
         else {
             return not_applicable();
         };
@@ -46,7 +46,7 @@ impl Operation<Session, GooseEffect> for EmptyResponseOperation {
             .ok_or_else(|| anyhow!("Persisted empty-response fallback has no id"))?;
         emit.message(fallback.clone().with_visibility(true, true))
             .await;
-        yielded_with([ConversationEffect::SetMessageVisibility {
+        applied([ConversationEffect::SetMessageVisibility {
             message_id,
             user_visible: true,
             agent_visible: true,
