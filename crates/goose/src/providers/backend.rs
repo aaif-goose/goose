@@ -5,8 +5,9 @@ use goose_providers::model::ModelConfig;
 
 use crate::acp::AcpProvider;
 use crate::config::GooseMode;
+use crate::permission::PermissionConfirmation;
 
-use super::base::Provider;
+use super::base::{PermissionRouting, Provider};
 
 /// Application-level backend identity, retained independently of registry names.
 #[derive(Clone)]
@@ -29,6 +30,46 @@ impl ProviderBackend {
         match self {
             Self::Standard(provider) => provider.get_name(),
             Self::Acp(provider) => provider.name(),
+        }
+    }
+
+    pub async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
+        match self {
+            Self::Standard(provider) => provider.resume(session_id).await,
+            Self::Acp(provider) => provider.resume(session_id).await,
+        }
+    }
+
+    pub fn session_id(&self) -> Option<String> {
+        match self {
+            Self::Standard(provider) => provider.provider_session_id(),
+            Self::Acp(provider) => Some(provider.session_id()),
+        }
+    }
+
+    pub fn permission_routing(&self) -> PermissionRouting {
+        match self {
+            Self::Standard(provider) => provider.permission_routing(),
+            Self::Acp(_) => PermissionRouting::ActionRequired,
+        }
+    }
+
+    pub async fn handle_permission_confirmation(
+        &self,
+        request_id: &str,
+        confirmation: &PermissionConfirmation,
+    ) -> bool {
+        match self {
+            Self::Standard(provider) => {
+                provider
+                    .handle_permission_confirmation(request_id, confirmation)
+                    .await
+            }
+            Self::Acp(provider) => {
+                provider
+                    .handle_permission_confirmation(request_id, confirmation)
+                    .await
+            }
         }
     }
 

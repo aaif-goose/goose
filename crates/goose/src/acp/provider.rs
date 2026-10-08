@@ -1,10 +1,10 @@
 use agent_client_protocol::schema::v1::{
-    Annotations as AcpAnnotations, ClientCapabilities, CloseSessionRequest, ContentBlock,
-    ContentChunk, EnvVariable, HttpHeader, ImageContent, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp, McpServerStdio,
-    NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, Role as AcpRole, SessionConfigKind,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    Annotations as AcpAnnotations, CancelNotification, ClientCapabilities, CloseSessionRequest,
+    ContentBlock, ContentChunk, EnvVariable, HttpHeader, ImageContent, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, McpCapabilities, McpServer, McpServerHttp,
+    McpServerStdio, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, Role as AcpRole,
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification, SessionUpdate,
     SetSessionConfigOptionRequest, SetSessionModeRequest, SetSessionModeResponse, StopReason,
     TextContent, ToolCallContent, ToolCallStatus, ToolKind,
@@ -29,7 +29,7 @@ use std::sync::{
 use std::thread::JoinHandle;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot, watch, Mutex as TokioMutex};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 
 use crate::acp::handoff::{build_handoff_context_memo, memo_token_budget, prompt_token_cost};
@@ -162,6 +162,139 @@ enum AcpUpdate {
     Error(agent_client_protocol::Error),
 }
 
+struct PendingPermissionGuard {
+    pending: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionConfirmation>>>>,
+    request_id: String,
+    response_tx: Option<oneshot::Sender<RequestPermissionResponse>>,
+}
+
+impl Drop for PendingPermissionGuard {
+    fn drop(&mut self) {
+        self.pending.lock().unwrap().remove(&self.request_id);
+        if let Some(tx) = self.response_tx.take() {
+            let _ = tx.send(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) enum AcpTestUpdate {
+    Text(String),
+    ToolStart { id: String, name: String },
+    ToolComplete { id: String },
+    Permission { id: String },
+    Complete,
+    Error(agent_client_protocol::Error),
+    WaitForCancellation,
+}
+
+#[cfg(test)]
+fn test_permission_request(id: String) -> RequestPermissionRequest {
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, PermissionOptionKind, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+    };
+    RequestPermissionRequest::new(
+        "test-session",
+        ToolCallUpdate::new(ToolCallId::new(id), ToolCallUpdateFields::default()),
+        vec![
+            PermissionOption::new("allow", "Allow", PermissionOptionKind::AllowOnce),
+            PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
+        ],
+    )
+}
+
+#[cfg(test)]
+impl AcpProvider {
+    pub(crate) fn new_test_script(
+        script: Vec<Vec<AcpTestUpdate>>,
+        mode: GooseMode,
+    ) -> (Self, Arc<Mutex<Vec<Vec<ContentBlock>>>>) {
+        let (tx, mut rx) = mpsc::channel(16);
+        let (provider, _) = tests::test_provider_with_tx(Some(tx));
+        *provider.goose_mode.lock().unwrap() = mode;
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let prompts = captured.clone();
+        tokio::spawn(async move {
+            let mut script = script.into_iter();
+            while let Some(request) = rx.recv().await {
+                match request {
+                    ClientRequest::Prompt {
+                        content,
+                        response_tx,
+                        ..
+                    } => {
+                        prompts.lock().unwrap().push(content);
+                        let updates = script.next().expect("unexpected ACP test prompt");
+                        for update in updates {
+                            let update = match update {
+                                AcpTestUpdate::Text(text) => {
+                                    AcpUpdate::Text(TextContent::new(text))
+                                }
+                                AcpTestUpdate::ToolStart { id, name } => AcpUpdate::ToolCallStart {
+                                    id,
+                                    name,
+                                    kind: ToolKind::Other,
+                                    raw_input: None,
+                                },
+                                AcpTestUpdate::ToolComplete { id } => AcpUpdate::ToolCallComplete {
+                                    id,
+                                    raw_output: None,
+                                    content: None,
+                                    is_error: false,
+                                },
+                                AcpTestUpdate::Permission { id } => {
+                                    let (tx, rx) = oneshot::channel();
+                                    if response_tx
+                                        .send(AcpUpdate::PermissionRequest {
+                                            request: Box::new(test_permission_request(id)),
+                                            response_tx: tx,
+                                        })
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                    let _ = rx.await;
+                                    continue;
+                                }
+                                AcpTestUpdate::Complete => AcpUpdate::Complete(
+                                    StopReason::EndTurn,
+                                    Some(AcpUsage::new(3, 1, 2)),
+                                ),
+                                AcpTestUpdate::Error(error) => AcpUpdate::Error(error),
+                                AcpTestUpdate::WaitForCancellation => {
+                                    response_tx.closed().await;
+                                    break;
+                                }
+                            };
+                            if response_tx.send(update).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    ClientRequest::SetMode { response_tx, .. }
+                    | ClientRequest::SetConfigOption { response_tx, .. } => {
+                        let _ = response_tx.send(Ok(()));
+                    }
+                    ClientRequest::NewSession { response_tx } => {
+                        let _ = response_tx.send(Ok(NewSessionResponse::new("test-session")));
+                    }
+                    ClientRequest::LoadSession {
+                        session_id,
+                        response_tx,
+                    } => {
+                        let _ = response_tx.send(Ok(NewSessionResponse::new(session_id)));
+                    }
+                    ClientRequest::CloseSession { .. } => {}
+                }
+            }
+        });
+        (provider, captured)
+    }
+}
+
 /// Whether dropping the handoff memo could plausibly change the outcome. An agent that
 /// rejected the very first update has told us nothing except that it disliked the prompt,
 /// and the memo is the only part we added — but a spent account or a missing credential
@@ -278,8 +411,7 @@ pub struct AcpProvider {
 
     session: Mutex<AcpSession>,
 
-    pending_confirmations:
-        Arc<TokioMutex<HashMap<String, oneshot::Sender<PermissionConfirmation>>>>,
+    pending_confirmations: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionConfirmation>>>>,
     pending_tool_updates: Arc<Mutex<HashMap<String, AccumulatedToolCall>>>,
     /// True after the first ACP prompt completes with the handoff context committed.
     /// Failed or abandoned first prompts reset this so the next prompt can retry it.
@@ -531,7 +663,7 @@ impl AcpProvider {
             goose_mode: goose_mode_shared,
             mode_mapping,
             session: Mutex::new(session),
-            pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
+            pending_confirmations: Arc::new(Mutex::new(HashMap::new())),
             pending_tool_updates,
             handoff_context_sent: Arc::new(AtomicBool::new(false)),
             context_size,
@@ -739,33 +871,22 @@ impl AcpProvider {
             }
         };
 
-        let context_limit = crate::context_limit::get_context_limit(self, &model_config.model_name)
-            .await
-            .ok()?;
+        let override_limit = Config::global().get_goose_context_limit().ok()?;
+        let context_limit = self
+            .get_context_limit(&model_config.model_name, override_limit)
+            .await;
         let budget = memo_token_budget(context_limit, prompt_token_cost(current_prompt, &counter));
 
         build_handoff_context_memo(&messages[..last_user_index], budget, &counter)
     }
 }
 
-fn fresh_text_run() -> (String, i64) {
-    (
-        uuid::Uuid::new_v4().to_string(),
-        chrono::Utc::now().timestamp(),
-    )
-}
-
-#[async_trait::async_trait]
-impl Provider for AcpProvider {
-    fn get_name(&self) -> &str {
-        self.name()
+impl AcpProvider {
+    pub fn session_id(&self) -> String {
+        self.acp_session_id().to_string()
     }
 
-    fn provider_session_id(&self) -> Option<String> {
-        Some(self.acp_session_id().to_string())
-    }
-
-    async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
+    pub async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
         if self.acp_session_id().0.as_ref() == session_id {
             return Ok(());
         }
@@ -788,8 +909,8 @@ impl Provider for AcpProvider {
         Ok(())
     }
 
-    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        goose_providers::context_limit::ContextLimitResolver::new(self.get_name())
+    pub async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        goose_providers::context_limit::ContextLimitResolver::new(self.name())
             .resolve(model, override_limit, || async {
                 let size = self.context_size.load(Ordering::Relaxed);
                 Ok((size > 0).then_some(size as usize))
@@ -797,46 +918,16 @@ impl Provider for AcpProvider {
             .await
     }
 
-    async fn update_mode(&self, _session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
-        AcpProvider::update_mode(self, mode).await
+    pub fn subscribe_thinking_effort_support(&self) -> watch::Receiver<ThinkingEffortSupport> {
+        self.effort.updates.subscribe()
     }
 
-    fn thinking_effort_support(&self) -> ThinkingEffortSupport {
-        AcpProvider::thinking_effort_support(self)
-    }
-
-    fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
-        Some(self.effort.updates.subscribe())
-    }
-
-    async fn set_thinking_effort(
-        &self,
-        _session_id: &str,
-        value: &str,
-    ) -> Result<bool, ProviderError> {
-        AcpProvider::set_thinking_effort(self, value)
-            .await
-            .map(|()| true)
-    }
-
-    async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
-        AcpProvider::apply_model_selection(self, model_config).await
-    }
-
-    fn permission_routing(&self) -> PermissionRouting {
-        PermissionRouting::ActionRequired
-    }
-
-    fn manages_own_context(&self) -> bool {
-        true
-    }
-
-    async fn handle_permission_confirmation(
+    pub async fn handle_permission_confirmation(
         &self,
         request_id: &str,
         confirmation: &PermissionConfirmation,
     ) -> bool {
-        let mut pending = self.pending_confirmations.lock().await;
+        let mut pending = self.pending_confirmations.lock().unwrap();
         if let Some(tx) = pending.remove(request_id) {
             let _ = tx.send(confirmation.clone());
             return true;
@@ -844,12 +935,10 @@ impl Provider for AcpProvider {
         false
     }
 
-    async fn stream(
+    pub async fn prompt_messages(
         &self,
         model_config: &ModelConfig,
-        _system: &str,
         messages: &[Message],
-        _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let session_id = self.acp_session_id();
 
@@ -1048,8 +1137,14 @@ impl Provider for AcpProvider {
 
                         pending_confirmations
                             .lock()
-                            .await
+                            .unwrap()
                             .insert(request_id.clone(), tx);
+
+                        let mut permission_guard = PendingPermissionGuard {
+                            pending: pending_confirmations.clone(),
+                            request_id: request_id.clone(),
+                            response_tx: Some(response_tx),
+                        };
 
                         if let Some(action_required) = build_action_required_message(&request) {
                             yield (Some(action_required), None);
@@ -1060,13 +1155,14 @@ impl Provider for AcpProvider {
                             permission: Permission::Cancel,
                         });
 
-                        pending_confirmations.lock().await.remove(&request_id);
+                        pending_confirmations.lock().unwrap().remove(&request_id);
 
                         let decision = PermissionDecision::from(confirmation.permission);
                         if decision.should_record_rejection() {
                             rejected_tool_calls.insert(request.tool_call.tool_call_id.0.to_string());
                         }
-                        let _ = response_tx.send(map_permission_response(&request, decision));
+                        let _ = permission_guard.response_tx.take().unwrap()
+                            .send(map_permission_response(&request, decision));
                     }
                     AcpUpdate::Complete(reason, usage) => {
                         // Prefer retrying context over silently losing it. A harness may have
@@ -1124,6 +1220,84 @@ impl Provider for AcpProvider {
                 }
             }
         }))
+    }
+}
+
+fn fresh_text_run() -> (String, i64) {
+    (
+        uuid::Uuid::new_v4().to_string(),
+        chrono::Utc::now().timestamp(),
+    )
+}
+
+#[async_trait::async_trait]
+impl Provider for AcpProvider {
+    fn get_name(&self) -> &str {
+        self.name()
+    }
+
+    fn provider_session_id(&self) -> Option<String> {
+        Some(self.session_id())
+    }
+
+    async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
+        AcpProvider::resume(self, session_id).await
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        AcpProvider::get_context_limit(self, model, override_limit).await
+    }
+
+    async fn update_mode(&self, _session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
+        AcpProvider::update_mode(self, mode).await
+    }
+
+    fn thinking_effort_support(&self) -> ThinkingEffortSupport {
+        AcpProvider::thinking_effort_support(self)
+    }
+
+    fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
+        Some(AcpProvider::subscribe_thinking_effort_support(self))
+    }
+
+    async fn set_thinking_effort(
+        &self,
+        _session_id: &str,
+        value: &str,
+    ) -> Result<bool, ProviderError> {
+        AcpProvider::set_thinking_effort(self, value)
+            .await
+            .map(|()| true)
+    }
+
+    async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
+        AcpProvider::apply_model_selection(self, model_config).await
+    }
+
+    fn permission_routing(&self) -> PermissionRouting {
+        PermissionRouting::ActionRequired
+    }
+
+    fn manages_own_context(&self) -> bool {
+        true
+    }
+
+    async fn handle_permission_confirmation(
+        &self,
+        request_id: &str,
+        confirmation: &PermissionConfirmation,
+    ) -> bool {
+        AcpProvider::handle_permission_confirmation(self, request_id, confirmation).await
+    }
+
+    async fn stream(
+        &self,
+        model_config: &ModelConfig,
+        _system: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        self.prompt_messages(model_config, messages).await
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
@@ -1726,10 +1900,20 @@ async fn handle_requests(
             } => {
                 *prompt_response_tx.lock().unwrap() = Some(response_tx.clone());
 
-                let response: Result<PromptResponse, _> = cx
-                    .send_request(PromptRequest::new(session_id, content))
-                    .block_task()
-                    .await;
+                let prompt = cx
+                    .send_request(PromptRequest::new(session_id.clone(), content))
+                    .block_task();
+                tokio::pin!(prompt);
+                // Keep the old update sink until the cancelled prompt terminates, so late
+                // notifications cannot leak into a subsequently queued prompt.
+                let response: Result<PromptResponse, _> = tokio::select! {
+                    biased;
+                    _ = response_tx.closed() => {
+                        cx.send_notification(CancelNotification::new(session_id))?;
+                        prompt.await
+                    }
+                    response = &mut prompt => response,
+                };
 
                 match response {
                     Ok(r) => {
@@ -2538,7 +2722,7 @@ mod tests {
         test_provider_with_tx(None)
     }
 
-    fn test_provider_with_tx(
+    pub(super) fn test_provider_with_tx(
         tx: Option<mpsc::Sender<ClientRequest>>,
     ) -> (AcpProvider, ModelConfig) {
         (
@@ -2550,7 +2734,7 @@ mod tests {
                     id: SessionId::new("test-session"),
                     response: NewSessionResponse::new("test-session"),
                 }),
-                pending_confirmations: Arc::new(TokioMutex::new(HashMap::new())),
+                pending_confirmations: Arc::new(Mutex::new(HashMap::new())),
                 pending_tool_updates: Arc::new(Mutex::new(HashMap::new())),
                 handoff_context_sent: Arc::new(AtomicBool::new(false)),
                 context_size: Arc::new(AtomicU64::new(0)),
@@ -2563,6 +2747,61 @@ mod tests {
             },
             ModelConfig::new("test-model"),
         )
+    }
+
+    #[tokio::test]
+    async fn dropping_permission_stream_removes_pending_request_and_cancels_response() {
+        use futures::StreamExt;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let (provider, model) = test_provider_with_tx(Some(tx));
+        *provider.goose_mode.lock().unwrap() = GooseMode::Approve;
+        let (cancelled_tx, cancelled_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let Some(ClientRequest::Prompt { response_tx, .. }) = rx.recv().await else {
+                panic!("expected prompt");
+            };
+            let (permission_tx, permission_rx) = oneshot::channel();
+            response_tx
+                .send(AcpUpdate::PermissionRequest {
+                    request: Box::new(test_permission_request("tool-1".into())),
+                    response_tx: permission_tx,
+                })
+                .await
+                .unwrap();
+            let response = permission_rx.await.unwrap();
+            cancelled_tx.send(response).unwrap();
+            response_tx.closed().await;
+        });
+
+        let mut stream = provider
+            .prompt_messages(&model, &[Message::user().with_text("run tool")])
+            .await
+            .unwrap();
+        assert!(stream.next().await.unwrap().is_ok());
+        assert!(provider
+            .pending_confirmations
+            .lock()
+            .unwrap()
+            .contains_key("tool-1"));
+        drop(stream);
+        assert!(provider.pending_confirmations.lock().unwrap().is_empty());
+        assert!(matches!(
+            cancelled_rx.await.unwrap().outcome,
+            RequestPermissionOutcome::Cancelled
+        ));
+        assert!(
+            !provider
+                .handle_permission_confirmation(
+                    "tool-1",
+                    &PermissionConfirmation {
+                        principal_type: PrincipalType::Tool,
+                        permission: Permission::AllowOnce,
+                    }
+                )
+                .await
+        );
+        server.await.unwrap();
     }
 
     #[tokio::test]
@@ -2919,6 +3158,64 @@ mod tests {
         let claim = provider.claim_handoff_context(&messages);
         assert!(!claim.first_prompt);
         assert!(!claim.include_context);
+    }
+
+    #[tokio::test]
+    async fn protocol_apis_and_provider_delegates_agree() {
+        use futures::StreamExt;
+
+        let (provider, model) = test_provider();
+        assert_eq!(provider.session_id(), "test-session");
+        assert_eq!(
+            Provider::provider_session_id(&provider),
+            Some(provider.session_id())
+        );
+        provider.resume("test-session").await.unwrap();
+        Provider::resume(&provider, "test-session").await.unwrap();
+        assert_eq!(
+            provider
+                .get_context_limit(&model.model_name, Some(1234))
+                .await,
+            Provider::get_context_limit(&provider, &model.model_name, Some(1234)).await
+        );
+        assert_eq!(
+            *provider.subscribe_thinking_effort_support().borrow(),
+            *Provider::subscribe_thinking_effort_support(&provider)
+                .unwrap()
+                .borrow()
+        );
+        let confirmation = PermissionConfirmation {
+            principal_type: PrincipalType::Tool,
+            permission: Permission::Cancel,
+        };
+        for via_trait in [false, true] {
+            let (tx, rx) = oneshot::channel();
+            provider
+                .pending_confirmations
+                .lock()
+                .unwrap()
+                .insert("request".into(), tx);
+            let handled = if via_trait {
+                Provider::handle_permission_confirmation(&provider, "request", &confirmation).await
+            } else {
+                provider
+                    .handle_permission_confirmation("request", &confirmation)
+                    .await
+            };
+            assert!(handled);
+            assert_eq!(rx.await.unwrap().permission, Permission::Cancel);
+        }
+        assert!(
+            !provider
+                .handle_permission_confirmation("missing", &confirmation)
+                .await
+        );
+        let mut protocol_stream = provider.prompt_messages(&model, &[]).await.unwrap();
+        let mut trait_stream = Provider::stream(&provider, &model, "ignored", &[], &[])
+            .await
+            .unwrap();
+        assert!(protocol_stream.next().await.is_none());
+        assert!(trait_stream.next().await.is_none());
     }
 
     #[tokio::test]

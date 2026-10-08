@@ -7,6 +7,7 @@
 
 mod effects;
 mod inference_preparation;
+mod ops_acp;
 mod ops_bang_shell;
 mod ops_compaction;
 mod ops_doctor;
@@ -28,6 +29,7 @@ mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod ops_unknown_tool;
 mod session;
+mod without_inference_preparation;
 pub(crate) use session::run as run_goose;
 mod tool_confirmation;
 mod usage;
@@ -70,6 +72,7 @@ pub(crate) use tool_confirmation::{
 };
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
+pub(super) use ops_acp::AcpInferenceRunner;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
@@ -90,6 +93,7 @@ pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
+pub(super) use without_inference_preparation::WithoutInferencePreparation;
 
 pub fn enabled() -> bool {
     std::env::var("GOOSE_STATE_MACHINE")

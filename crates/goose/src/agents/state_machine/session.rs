@@ -118,7 +118,12 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         for effect in effects {
             match effect {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
-                    if contains_tool_confirmation_request(message) {
+                    if contains_tool_confirmation_request(message)
+                        && message
+                            .metadata
+                            .operation_note("llm", "acp_live_permission")
+                            .is_none()
+                    {
                         // Responses can arrive immediately, so publish only after the persistence pass.
                         emit.emit(AgentEvent::Message(message.clone())).await;
                     }
