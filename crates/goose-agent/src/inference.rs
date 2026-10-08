@@ -130,18 +130,7 @@ fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
 }
 
 fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
-    let renderable = message.metadata.output_token_limit_reached
-        || message.content.iter().any(|content| {
-            matches!(
-                content,
-                MessageContent::Text(_)
-                    | MessageContent::Image(_)
-                    | MessageContent::ToolRequest(_)
-                    | MessageContent::Thinking(_)
-                    | MessageContent::Error(_)
-            )
-        });
-    if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
+    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
         message.metadata.operation_logs = std::mem::take(logs);
     }
 }
@@ -623,55 +612,6 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn operation_logs_wait_for_renderable_assistant_content() {
-        let mut logs = vec!["ops_auto_effort: thinking high".to_string()];
-        let mut permission = Message::assistant().with_action_required(
-            "call",
-            "shell".to_string(),
-            serde_json::Map::new(),
-            None,
-        );
-
-        attach_operation_logs(&mut permission, &mut logs);
-
-        assert!(permission.metadata.operation_logs.is_empty());
-        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
-
-        let mut redacted = Message::assistant()
-            .with_content(MessageContent::redacted_thinking("opaque reasoning"));
-        attach_operation_logs(&mut redacted, &mut logs);
-
-        assert!(redacted.metadata.operation_logs.is_empty());
-        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
-
-        let mut error = Message::from_provider_error(&ProviderError::RequestFailed(
-            "provider failed".to_string(),
-        ));
-        attach_operation_logs(&mut error, &mut logs);
-
-        assert_eq!(
-            error.metadata.operation_logs,
-            ["ops_auto_effort: thinking high"]
-        );
-        assert!(logs.is_empty());
-    }
-
-    #[test]
-    fn operation_logs_attach_to_empty_output_limit_markers() {
-        let mut logs = vec!["ops_auto_effort: thinking high".to_string()];
-        let mut message = Message::assistant();
-        message.metadata.output_token_limit_reached = true;
-
-        attach_operation_logs(&mut message, &mut logs);
-
-        assert_eq!(
-            message.metadata.operation_logs,
-            ["ops_auto_effort: thinking high"]
-        );
-        assert!(logs.is_empty());
-    }
 
     #[test]
     fn provider_session_id_comes_only_from_latest_inference() {

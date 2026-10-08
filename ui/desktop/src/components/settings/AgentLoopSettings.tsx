@@ -277,11 +277,7 @@ export default function AgentLoopSettings() {
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
         setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
         setTypesafeApiKeyConfigured(
-          typeof typesafeApiKey === 'object' &&
-            typesafeApiKey !== null &&
-            'maskedValue' in typesafeApiKey &&
-            typeof typesafeApiKey.maskedValue === 'string' &&
-            typesafeApiKey.maskedValue.length > 0
+          typeof typesafeApiKey === 'string' && typesafeApiKey.length > 0
         );
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
@@ -427,7 +423,12 @@ export default function AgentLoopSettings() {
                     {intl.formatMessage(i18n.saveApiKey)}
                   </Button>
                   {typesafeApiKeyConfigured && (
-                    <Button variant="outline" size="sm" onClick={removeTypesafeApiKey}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!autoEffortEnabled}
+                      onClick={removeTypesafeApiKey}
+                    >
                       {intl.formatMessage(i18n.removeApiKey)}
                     </Button>
                   )}

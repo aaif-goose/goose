@@ -623,26 +623,6 @@ enum ThinkingLevel {
     High,
 }
 
-pub fn google_thinking_level_for_effort(
-    model_name: &str,
-    effort: ThinkingEffort,
-) -> Option<&'static str> {
-    let model_name = model_name.to_lowercase();
-    if !model_name.starts_with("gemini-3") {
-        return None;
-    }
-
-    match effort {
-        ThinkingEffort::Off if model_name.starts_with("gemini-3.5") => Some("minimal"),
-        ThinkingEffort::Off if model_name.starts_with("gemini-3.6") => Some("minimal"),
-        ThinkingEffort::Off => None,
-        ThinkingEffort::Low => Some("low"),
-        ThinkingEffort::Medium if model_name.starts_with("gemini-3-pro") => Some("low"),
-        ThinkingEffort::Medium => Some("medium"),
-        ThinkingEffort::High | ThinkingEffort::Max => Some("high"),
-    }
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ThinkingConfig {
@@ -708,11 +688,11 @@ fn get_thinking_config(
         if effort == ThinkingEffort::Off {
             return None;
         }
-        let thinking_level = match google_thinking_level_for_effort(&model_name, effort) {
-            Some("low") => ThinkingLevel::Low,
-            Some("medium") => ThinkingLevel::Medium,
-            Some("high") => ThinkingLevel::High,
-            _ => return None,
+        let thinking_level = match effort {
+            ThinkingEffort::Off | ThinkingEffort::Low => ThinkingLevel::Low,
+            ThinkingEffort::Medium if model_name.starts_with("gemini-3-pro") => ThinkingLevel::Low,
+            ThinkingEffort::Medium => ThinkingLevel::Medium,
+            ThinkingEffort::High | ThinkingEffort::Max => ThinkingLevel::High,
         };
 
         Some(ThinkingConfig {

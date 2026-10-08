@@ -104,79 +104,6 @@ enum ClientRequest {
     },
 }
 
-async fn send_set_config_option_request(
-    tx: &mpsc::Sender<ClientRequest>,
-    session_id: SessionId,
-    config_id: String,
-    value: String,
-) -> Result<()> {
-    let (response_tx, response_rx) = oneshot::channel();
-    tx.send(ClientRequest::SetConfigOption {
-        session_id,
-        config_id,
-        value,
-        response_tx,
-    })
-    .await
-    .context("ACP client is unavailable")?;
-    response_rx.await.context("ACP request cancelled")?
-}
-
-struct EffortReset {
-    tx: mpsc::Sender<ClientRequest>,
-    session_id: SessionId,
-    config_id: String,
-    value: String,
-    restored: bool,
-    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
-}
-
-impl EffortReset {
-    async fn restore(&mut self) -> Result<()> {
-        send_set_config_option_request(
-            &self.tx,
-            self.session_id.clone(),
-            self.config_id.clone(),
-            self.value.clone(),
-        )
-        .await?;
-        self.restored = true;
-        self.guard.take();
-        Ok(())
-    }
-}
-
-impl Drop for EffortReset {
-    fn drop(&mut self) {
-        if self.restored {
-            return;
-        }
-        let tx = self.tx.clone();
-        let session_id = self.session_id.clone();
-        let config_id = self.config_id.clone();
-        let value = self.value.clone();
-        let guard = self.guard.take();
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(async move {
-                let _guard = guard;
-                if let Err(error) =
-                    send_set_config_option_request(&tx, session_id, config_id, value).await
-                {
-                    tracing::error!(%error, "Failed to restore ACP effort after automatic selection");
-                }
-            });
-        }
-    }
-}
-
-async fn restore_automatic_effort(reset: &mut Option<EffortReset>) {
-    if let Some(reset) = reset {
-        if let Err(error) = reset.restore().await {
-            tracing::error!(%error, "Failed to restore ACP effort after automatic selection");
-        }
-    }
-}
-
 // tokio I/O handles can't move between runtimes, so the child process must be
 // spawned inside the OS thread. This closure lets start() share all other logic.
 type ClientLoopFn = Box<
@@ -317,7 +244,6 @@ impl Drop for HandoffContextClaimGuard {
 struct AcpEffortState {
     capability: Arc<Mutex<Option<ThinkingEffortCapability>>>,
     updates: watch::Sender<ThinkingEffortSupport>,
-    mutation_lock: Arc<TokioMutex<()>>,
 }
 
 impl AcpEffortState {
@@ -326,7 +252,6 @@ impl AcpEffortState {
         Self {
             capability: Arc::new(Mutex::new(None)),
             updates,
-            mutation_lock: Arc::new(TokioMutex::new(())),
         }
     }
 }
@@ -574,13 +499,20 @@ impl AcpProvider {
         config_id: String,
         value: String,
     ) -> Result<()> {
-        send_set_config_option_request(
-            self.tx.as_ref().unwrap(),
-            self.acp_session_id(),
-            config_id,
-            value,
-        )
-        .await
+        let session_id = self.acp_session_id();
+        let (response_tx, response_rx) = oneshot::channel();
+        self.tx
+            .as_ref()
+            .unwrap()
+            .send(ClientRequest::SetConfigOption {
+                session_id,
+                config_id,
+                value,
+                response_tx,
+            })
+            .await
+            .context("ACP client is unavailable")?;
+        response_rx.await.context("ACP request cancelled")?
     }
 
     /// Re-apply the model selection config option when the active session model
@@ -594,7 +526,6 @@ impl AcpProvider {
         if model_name == ACP_CURRENT_MODEL {
             return Ok(());
         }
-        let _guard = self.effort.mutation_lock.lock().await;
 
         {
             let applied = self
@@ -654,35 +585,22 @@ impl AcpProvider {
             .await
     }
 
-    async fn apply_effort_if_changed(
-        &self,
-        model_config: &ModelConfig,
-    ) -> Result<Option<EffortReset>> {
-        let guard = self.effort.mutation_lock.clone().lock_owned().await;
+    /// Forward the session's thinking effort to the agent when it differs from
+    /// the agent's mirrored current value. A recreated provider (model switch,
+    /// provider switch, session reload) starts from the agent's own default, so
+    /// the value has to be re-applied rather than assumed. It comes from
+    /// `resolve_effort_value`, the same resolver the config menu advertises
+    /// from, so the selection ACP clients see is the one that gets sent.
+    async fn apply_effort_if_changed(&self, model_config: &ModelConfig) -> Result<()> {
         let Some(capability) = self.effort_capability()? else {
-            return Ok(None);
+            return Ok(());
         };
         let Some(mapped) = resolve_effort_value(&capability, model_config) else {
-            return Ok(None);
+            return Ok(());
         };
-        let reset = model_config
-            .request_param::<bool>(crate::acp::AUTOMATIC_EFFORT_PARAM)
-            .unwrap_or(false)
-            .then(|| capability.current.clone())
-            .flatten()
-            .filter(|current| current != &mapped)
-            .map(|value| EffortReset {
-                tx: self.tx.as_ref().unwrap().clone(),
-                session_id: self.acp_session_id(),
-                config_id: capability.option_id.clone(),
-                value,
-                restored: false,
-                guard: Some(guard),
-            });
 
         self.set_effort_option("", &capability.option_id, mapped)
-            .await?;
-        Ok(reset)
+            .await
     }
 
     async fn prompt(
@@ -876,7 +794,6 @@ impl Provider for AcpProvider {
         let mapped = map_effort_value(&capability, value).ok_or_else(|| {
             ProviderError::InvalidValue(format!("Agent offers no thinking effort '{value}'"))
         })?;
-        let _guard = self.effort.mutation_lock.lock().await;
 
         self.set_effort_option(session_id, &capability.option_id, mapped)
             .await
@@ -928,8 +845,7 @@ impl Provider for AcpProvider {
                 ProviderError::RequestFailed(format!("Failed to set ACP model option: {e}"))
             })?;
 
-        let mut effort_reset = self
-            .apply_effort_if_changed(model_config)
+        self.apply_effort_if_changed(model_config)
             .await
             .map_err(|e| {
                 ProviderError::RequestFailed(format!("Failed to set ACP effort option: {e}"))
@@ -1158,7 +1074,6 @@ impl Provider for AcpProvider {
                             );
                             yield (None, Some(provider_usage));
                         }
-                        restore_automatic_effort(&mut effort_reset).await;
                         break;
                     }
                     AcpUpdate::Error(e) => {
@@ -1190,7 +1105,6 @@ impl Provider for AcpProvider {
                         // Reset before yielding so an immediate retry can include the handoff even
                         // while the failed stream value is still alive.
                         handoff_claim_guard.rollback();
-                        restore_automatic_effort(&mut effort_reset).await;
                         Err(error)?;
                     }
                 }
@@ -2387,9 +2301,9 @@ pub(crate) fn map_effort_value(
 
     offered(value).or_else(|| {
         let synonyms: &[&str] = match value.to_lowercase().as_str() {
-            // Harnesses that always reason have no "off"; their default or
-            // lightest level is the closest thing to not forcing an override.
-            "off" => &["default", "none", "disabled", "minimal", "low"],
+            // Harnesses that always reason have no "off"; their default is the
+            // closest thing to not forcing an effort level.
+            "off" => &["default"],
             "max" => &["xhigh"],
             "xhigh" => &["max"],
             _ => &[],
@@ -3563,13 +3477,6 @@ mod tests {
         )]))
     }
 
-    fn automatic_model_with_effort(value: &str) -> ModelConfig {
-        model_with_effort(value).with_merged_request_params(HashMap::from([(
-            crate::acp::AUTOMATIC_EFFORT_PARAM.to_string(),
-            serde_json::Value::Bool(true),
-        )]))
-    }
-
     async fn expect_set_config_option(rx: &mut mpsc::Receiver<ClientRequest>) -> (String, String) {
         match rx.recv().await.expect("expected a SetConfigOption request") {
             ClientRequest::SetConfigOption {
@@ -3828,14 +3735,6 @@ mod tests {
             &effort_capability(&["default", "low", "high", "xhigh"], "default"),
             value,
         )
-    }
-
-    #[test]
-    fn map_effort_value_uses_low_when_the_agent_has_no_default() {
-        assert_eq!(
-            map_effort_value(&effort_capability(&["low", "high"], "high"), "off"),
-            Some("low".to_string())
-        );
     }
 
     #[test]
@@ -4114,138 +4013,6 @@ mod tests {
             .unwrap();
 
         assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn apply_effort_if_changed_preserves_agent_selection_without_an_override() {
-        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-        let (tx, mut rx) = mpsc::channel(2);
-        let provider =
-            test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "high")));
-
-        let reset = provider
-            .apply_effort_if_changed(&ModelConfig::new(ACP_CURRENT_MODEL))
-            .await
-            .unwrap();
-
-        assert!(reset.is_none());
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn automatic_effort_restores_the_agent_selection_after_the_override() {
-        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-        let (tx, mut rx) = mpsc::channel(2);
-        let provider =
-            test_provider_with_effort(tx, Some(effort_capability(&["low", "high"], "high")));
-
-        let handle = tokio::spawn(async move {
-            let mut reset = provider
-                .apply_effort_if_changed(&automatic_model_with_effort("off"))
-                .await
-                .unwrap()
-                .expect("automatic override should retain the prior selection");
-            reset.restore().await.unwrap();
-        });
-
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "low".to_string())
-        );
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "high".to_string())
-        );
-
-        handle.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn dropped_automatic_reset_finishes_before_the_next_effort_change() {
-        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-        let (tx, mut rx) = mpsc::channel(3);
-        let provider = Arc::new(test_provider_with_effort(
-            tx,
-            Some(effort_capability(&["low", "high"], "high")),
-        ));
-
-        let automatic_provider = provider.clone();
-        let automatic = tokio::spawn(async move {
-            let reset = automatic_provider
-                .apply_effort_if_changed(&automatic_model_with_effort("off"))
-                .await
-                .unwrap()
-                .expect("automatic override should retain the prior selection");
-            drop(reset);
-        });
-
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "low".to_string())
-        );
-        automatic.await.unwrap();
-
-        let next_provider = provider.clone();
-        let next = tokio::spawn(async move {
-            next_provider
-                .apply_effort_if_changed(&model_with_effort("low"))
-                .await
-                .unwrap();
-        });
-
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "high".to_string())
-        );
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "low".to_string())
-        );
-        next.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn dropped_automatic_reset_finishes_before_a_model_change() {
-        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-        let (tx, mut rx) = mpsc::channel(3);
-        let provider = test_provider_with_model_option(tx, Some("old-model".to_string()));
-        *provider.effort.capability.lock().unwrap() =
-            Some(effort_capability(&["low", "high"], "high"));
-        let provider = Arc::new(provider);
-
-        let automatic_provider = provider.clone();
-        let automatic = tokio::spawn(async move {
-            let reset = automatic_provider
-                .apply_effort_if_changed(&automatic_model_with_effort("off"))
-                .await
-                .unwrap()
-                .expect("automatic override should retain the prior selection");
-            drop(reset);
-        });
-
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "low".to_string())
-        );
-        automatic.await.unwrap();
-
-        let model_provider = provider.clone();
-        let model = tokio::spawn(async move {
-            model_provider
-                .apply_model_if_changed("new-model")
-                .await
-                .unwrap();
-        });
-
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("effort".to_string(), "high".to_string())
-        );
-        assert_eq!(
-            expect_set_config_option(&mut rx).await,
-            ("model".to_string(), "new-model".to_string())
-        );
-        model.await.unwrap();
     }
 
     fn test_acp_config(

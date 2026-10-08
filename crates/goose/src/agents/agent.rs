@@ -107,10 +107,7 @@ pub(super) fn available_auto_efforts(
     support: ThinkingEffortSupport,
 ) -> Vec<ThinkingEffort> {
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
-        ThinkingEffort::Off => matches!(
-            applied.as_deref(),
-            Some("off" | "none" | "default" | "disabled")
-        ),
+        ThinkingEffort::Off => applied.as_deref() == Some("none"),
         ThinkingEffort::Low => applied.as_deref() == Some("low"),
         ThinkingEffort::Medium => applied.as_deref() == Some("medium"),
         ThinkingEffort::High => applied.as_deref() == Some("high"),
@@ -119,64 +116,6 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
-            if provider_name == "databricks_v2"
-                && model_config.model_name.to_lowercase().contains("gemini")
-            {
-                return Vec::new();
-            }
-
-            if provider_name == goose_providers::ollama::OLLAMA_PROVIDER_NAME {
-                return AUTO_EFFORTS
-                    .into_iter()
-                    .filter(|effort| {
-                        applied_as_selected(
-                            effort,
-                            Some(
-                                goose_providers::ollama::ollama_reasoning_effort_for_thinking(
-                                    *effort,
-                                )
-                                .to_string(),
-                            ),
-                        )
-                    })
-                    .collect();
-            }
-
-            let google_model = model_config.model_name.to_lowercase().contains("gemini");
-            if matches!(provider_name, "google" | "gemini_oauth")
-                || provider_name == "gcp_vertex_ai" && google_model
-            {
-                if model_config
-                    .model_name
-                    .to_lowercase()
-                    .starts_with("gemini-2.5-flash")
-                {
-                    return vec![ThinkingEffort::Off, ThinkingEffort::High];
-                }
-                return AUTO_EFFORTS
-                    .into_iter()
-                    .filter(|effort| {
-                        applied_as_selected(
-                            effort,
-                            goose_providers::formats::google::google_thinking_level_for_effort(
-                                &model_config.model_name,
-                                *effort,
-                            )
-                            .map(str::to_string),
-                        )
-                    })
-                    .collect();
-            }
-
-            if matches!(provider_name, "meta" | "muse_code") {
-                return vec![
-                    ThinkingEffort::Low,
-                    ThinkingEffort::Medium,
-                    ThinkingEffort::High,
-                    ThinkingEffort::Max,
-                ];
-            }
-
             if model_config.is_openai_reasoning_model() {
                 return AUTO_EFFORTS
                     .into_iter()
@@ -219,16 +158,6 @@ pub(super) fn available_auto_efforts(
                 ];
             }
 
-            let model_name = model_config.model_name.to_lowercase();
-            let supports_generic_effort = match provider_name {
-                "anthropic" | "kimi_code" | "openrouter" => true,
-                "aws_bedrock" | "gcp_vertex_ai" | "databricks_v2" => model_name.contains("claude"),
-                _ => false,
-            };
-            if !supports_generic_effort {
-                return Vec::new();
-            }
-
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,
@@ -243,10 +172,7 @@ pub(super) fn available_auto_efforts(
         ThinkingEffortSupport::Options(capability) => AUTO_EFFORTS
             .into_iter()
             .filter(|effort| {
-                applied_as_selected(
-                    effort,
-                    crate::acp::map_effort_value(&capability, &effort.to_string()),
-                )
+                crate::acp::map_effort_value(&capability, &effort.to_string()).is_some()
             })
             .collect(),
         ThinkingEffortSupport::Unspecified | ThinkingEffortSupport::Unsupported => Vec::new(),
@@ -4152,110 +4078,10 @@ mod tests {
     };
     use crate::session::session_manager::SessionType;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-    use goose_providers::thinking::{ThinkingEffortCapability, ThinkingEffortOption};
     use rmcp::model::{Annotations, Role, TextContent, Tool};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
-
-    #[test]
-    fn muse_auto_efforts_include_max() {
-        let mut model = goose_providers::model::ModelConfig::new("muse-spark-1.3");
-        model.reasoning = Some(true);
-        let expected = vec![
-            ThinkingEffort::Low,
-            ThinkingEffort::Medium,
-            ThinkingEffort::High,
-            ThinkingEffort::Max,
-        ];
-
-        assert_eq!(
-            available_auto_efforts("meta", &model, ThinkingEffortSupport::Unspecified),
-            expected
-        );
-        assert_eq!(
-            available_auto_efforts("muse_code", &model, ThinkingEffortSupport::Unspecified),
-            expected
-        );
-    }
-
-    #[test]
-    fn gemini_25_flash_auto_efforts_match_budget_controls() {
-        let mut model = goose_providers::model::ModelConfig::new("gemini-2.5-flash");
-        model.reasoning = Some(true);
-
-        for provider in ["google", "gemini_oauth", "gcp_vertex_ai"] {
-            assert_eq!(
-                available_auto_efforts(provider, &model, ThinkingEffortSupport::Unspecified),
-                vec![ThinkingEffort::Off, ThinkingEffort::High]
-            );
-        }
-    }
-
-    #[test]
-    fn vertex_claude_auto_efforts_use_anthropic_controls() {
-        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-6")
-            .with_canonical_limits("gcp_vertex_ai");
-
-        assert_eq!(
-            available_auto_efforts("gcp_vertex_ai", &model, ThinkingEffortSupport::Unspecified,),
-            vec![
-                ThinkingEffort::Off,
-                ThinkingEffort::Low,
-                ThinkingEffort::Medium,
-                ThinkingEffort::High,
-                ThinkingEffort::Max,
-            ]
-        );
-    }
-
-    #[test]
-    fn databricks_v2_gemini_has_no_automatic_efforts() {
-        let model = goose_providers::model::ModelConfig::new("databricks-gemini-3-pro")
-            .with_canonical_limits("databricks_v2");
-
-        assert!(available_auto_efforts(
-            "databricks_v2",
-            &model,
-            ThinkingEffortSupport::Unspecified,
-        )
-        .is_empty());
-    }
-
-    #[test]
-    fn snowflake_has_no_automatic_efforts_without_wire_support() {
-        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-5")
-            .with_canonical_limits("snowflake");
-
-        assert!(
-            available_auto_efforts("snowflake", &model, ThinkingEffortSupport::Unspecified,)
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn acp_auto_efforts_do_not_present_low_as_off() {
-        let capability = ThinkingEffortCapability {
-            option_id: "effort".to_string(),
-            values: ["low", "high"]
-                .into_iter()
-                .map(|value| ThinkingEffortOption {
-                    value: value.to_string(),
-                    label: value.to_string(),
-                })
-                .collect(),
-            current: Some("low".to_string()),
-        };
-
-        assert_eq!(
-            available_auto_efforts(
-                "claude-acp",
-                &goose_providers::model::ModelConfig::new("current"),
-                ThinkingEffortSupport::Options(capability),
-            ),
-            vec![ThinkingEffort::Low, ThinkingEffort::High]
-        );
-    }
 
     fn persisted_builtin(name: &str) -> ExtensionConfig {
         ExtensionConfig::Builtin {
