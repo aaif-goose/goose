@@ -272,6 +272,19 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             ThinkingEffort::Max,
         ]
     );
+    for (provider, model) in [
+        ("snowflake", "openai-gpt-5"),
+        ("snowflake", "claude-sonnet-4-5"),
+        ("zhipu", "glm-5.3"),
+        ("ollama", "qwen3"),
+    ] {
+        assert!(available_auto_efforts(
+            provider,
+            &ModelConfig::new(model),
+            ThinkingEffortSupport::Unspecified,
+        )
+        .is_empty());
+    }
     let pipeline = pipeline
         .with_model_config(
             ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)

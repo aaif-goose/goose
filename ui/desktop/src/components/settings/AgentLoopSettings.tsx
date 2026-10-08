@@ -5,6 +5,7 @@ import { Input } from '../ui/input';
 import { Switch } from '../ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { defineMessages, useIntl } from '../../i18n';
+import { hasConfiguredSecret } from '../../acp/config';
 
 const i18n = defineMessages({
   title: {
@@ -276,9 +277,7 @@ export default function AgentLoopSettings() {
         setEnabled(!useLegacyAgentLoop);
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
         setAutoEffortEnabled(typeof autoEffort === 'boolean' ? autoEffort : false);
-        setTypesafeApiKeyConfigured(
-          typeof typesafeApiKey === 'string' && typesafeApiKey.length > 0
-        );
+        setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
         );

@@ -115,49 +115,27 @@ pub(super) fn available_auto_efforts(
     };
 
     match support {
-        ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
-            if model_config.is_openai_reasoning_model() {
-                return AUTO_EFFORTS
-                    .into_iter()
-                    .filter(|effort| {
-                        applied_as_selected(
-                            effort,
-                            goose_providers::formats::openai::openai_reasoning_effort_for_thinking(
-                                &model_config.model_name,
-                                *effort,
-                            ),
-                        )
-                    })
-                    .collect();
-            }
-
-            if goose_providers::formats::openai::supports_xai_reasoning_effort(
-                &model_config.model_name,
-            ) {
-                return AUTO_EFFORTS
-                    .into_iter()
-                    .filter(|effort| {
-                        applied_as_selected(
-                            effort,
-                            goose_providers::formats::openai::xai_reasoning_effort_for_thinking(
-                                &model_config.model_name,
-                                *effort,
-                            ),
-                        )
-                    })
-                    .collect();
-            }
-
-            if model_config.is_glm_5_3_reasoning_model()
-                || model_config.is_kimi_k3_reasoning_model()
-            {
-                return vec![
-                    ThinkingEffort::Low,
-                    ThinkingEffort::High,
-                    ThinkingEffort::Max,
-                ];
-            }
-
+        ThinkingEffortSupport::Unspecified
+            if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME
+                && model_config.is_openai_reasoning_model() =>
+        {
+            AUTO_EFFORTS
+                .into_iter()
+                .filter(|effort| {
+                    applied_as_selected(
+                        effort,
+                        goose_providers::formats::openai::openai_reasoning_effort_for_thinking(
+                            &model_config.model_name,
+                            *effort,
+                        ),
+                    )
+                })
+                .collect()
+        }
+        ThinkingEffortSupport::Unspecified
+            if provider_name == goose_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
+                && model_config.is_reasoning_model() =>
+        {
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
                 provider_name,
                 &model_config.model_name,
