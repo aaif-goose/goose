@@ -115,7 +115,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
             }
         }
 
-        for effect in effects {
+        for (index, effect) in effects.iter().enumerate() {
             match effect {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
                     if contains_tool_confirmation_request(message)
@@ -145,8 +145,11 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     conversation,
                 ))
                 | GooseEffect::CompactConversation { conversation, .. } => {
-                    emit.emit(AgentEvent::HistoryReplaced(conversation.clone()))
-                        .await;
+                    emit.emit(AgentEvent::HistoryReplaced(replaced_history(
+                        conversation,
+                        &effects[index + 1..],
+                    )))
+                    .await;
                 }
                 GooseEffect::RecordUsage(usage) => {
                     emit.emit(AgentEvent::Usage(usage.clone())).await
@@ -156,6 +159,31 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         }
         Ok(())
     }
+}
+
+/// Clients swap in the replaced history, so it includes what the same batch appends
+/// after the replacement; those messages were already shown live and would otherwise
+/// vanish (a `/clear` would leave nothing).
+fn replaced_history(replacement: &Conversation, later_effects: &[GooseEffect]) -> Conversation {
+    let mut messages = replacement.messages().clone();
+    messages.extend(
+        later_effects
+            .iter()
+            .take_while(|effect| {
+                !matches!(
+                    effect,
+                    GooseEffect::Conversation(ConversationEffect::ReplaceConversation(_))
+                        | GooseEffect::CompactConversation { .. }
+                )
+            })
+            .filter_map(|effect| match effect {
+                GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
+                    Some(message.clone())
+                }
+                _ => None,
+            }),
+    );
+    Conversation::new_unvalidated(messages)
 }
 
 impl EffectUsage<GooseEffect> for SessionManager {

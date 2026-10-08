@@ -1508,7 +1508,6 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         std::sync::Arc::new(SessionManager::instance()),
         goose::config::permission::PermissionManager::instance(),
         None,
-        config.get_goose_mode().unwrap_or_default(),
         true,
         GoosePlatform::GooseCli,
     );
@@ -1557,7 +1556,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
             std::env::current_dir()?,
             "MCP Probe".to_string(),
             goose::session::session_manager::SessionType::Hidden,
-            agent.config.goose_mode,
+            config.get_goose_mode().unwrap_or_default(),
         )
         .await?;
     let session_id = session.id.as_str();

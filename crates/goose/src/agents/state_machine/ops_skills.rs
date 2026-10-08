@@ -366,8 +366,7 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
                     // `load_skill` is executed here rather than by
                     // ToolExecutionOperation, which is registered after this one.
-                    // Run the same hook lifecycle it would have run, so the state
-                    // machine and the legacy loop agree on what a skill load emits.
+                    // Run the same hook lifecycle it would have run there.
                     let tool_input = tool_call
                         .arguments
                         .as_ref()

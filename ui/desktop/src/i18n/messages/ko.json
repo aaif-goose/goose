@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "방문하여"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "작업 기반 에이전트 루프를 사용합니다. 기존 루프를 사용하려면 끄세요."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "자동"
   },

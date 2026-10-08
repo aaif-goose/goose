@@ -19,22 +19,16 @@ use crate::session::Session;
 use crate::tool_inspection::{
     get_security_finding_id_from_results, InspectionAction, ToolInspectionManager,
 };
-use tokio::sync::Mutex;
 
 pub const TOOL_EXECUTABLE_KEY: &str = "goose.executable";
 
 pub struct ToolApprovalOperation<'a> {
-    goose_mode: &'a Mutex<GooseMode>,
     tool_inspection_manager: &'a ToolInspectionManager,
 }
 
 impl<'a> ToolApprovalOperation<'a> {
-    pub fn new(
-        goose_mode: &'a Mutex<GooseMode>,
-        tool_inspection_manager: &'a ToolInspectionManager,
-    ) -> Self {
+    pub fn new(tool_inspection_manager: &'a ToolInspectionManager) -> Self {
         Self {
-            goose_mode,
             tool_inspection_manager,
         }
     }
@@ -52,7 +46,7 @@ impl Operation<Session, GooseEffect> for ToolApprovalOperation<'_> {
         conversation: &Conversation,
         _emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let goose_mode = *self.goose_mode.lock().await;
+        let goose_mode = session.goose_mode;
         if goose_mode == GooseMode::Chat {
             return not_applicable();
         }

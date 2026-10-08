@@ -17,8 +17,8 @@ use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
 use crate::operation::{
-    applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
-    Inference, InferenceInput, Operation, OperationResult,
+    applied, messages_since_kickoff, not_applicable, trailing_error, Emitter, Inference,
+    InferenceInput, Operation, OperationResult,
 };
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -71,8 +71,21 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
     fn record_usage(usage: ProviderUsage) -> Self;
 }
 
-const EMPTY_RESPONSE_MESSAGE: &str =
+pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
+const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
+const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
+const EMPTY_RESPONSE_NOTE: &str = "empty_response";
+
+/// The model's response stayed empty after retries. The fallback message is stored
+/// hidden so that operations owning the end of a turn (recipe retries, final output)
+/// can take over; when none does, it is revealed to the user.
+pub fn is_empty_response_marker(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .is_some()
+}
 const CANCELLED_TOOL_RESPONSE: &str = "Tool call was cancelled before execution";
 
 fn is_thinking(content: &MessageContent) -> bool {
@@ -380,12 +393,25 @@ pub async fn consume_inference_stream(
 }
 
 impl InferenceResponse {
-    /// Produce persistence effects and determine whether inference yields to the client.
+    fn is_unexpected_empty_response(&self, conversation: &Conversation, emit: &Emitter) -> bool {
+        self.error.is_none()
+            && !self.cancelled
+            && !emit.cancel_token().is_cancelled()
+            && !ends_with_successful_tool_response(conversation.messages())
+            && !self
+                .messages
+                .iter()
+                .any(|message| message.metadata.output_token_limit_reached)
+            && self.messages.iter().all(is_empty_response)
+    }
+
+    /// Produce persistence effects, leaving empty responses for end-of-turn operations.
     pub async fn finish<E: InferenceEffect>(
         self,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
+        let empty_response = self.is_unexpected_empty_response(conversation, emit);
         let Self {
             mut messages,
             usage,
@@ -413,18 +439,17 @@ impl InferenceResponse {
             }
         }
 
-        let empty_response = !cancelled
-            && !emit.cancel_token().is_cancelled()
-            && !ends_with_successful_tool_response(conversation.messages())
-            && !messages
-                .iter()
-                .any(|message| message.metadata.output_token_limit_reached)
-            && messages.iter().all(is_empty_response);
         if empty_response {
-            let message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
-            let message = emit.message(message).await;
-            usage_effects.push(E::from(message));
-            return yielded_with(usage_effects);
+            let mut marker = Message::assistant()
+                .with_text(EMPTY_RESPONSE_MESSAGE)
+                .with_visibility(false, false);
+            marker.metadata.set_operation_note(
+                EMPTY_RESPONSE_NOTE_SCOPE,
+                EMPTY_RESPONSE_NOTE,
+                serde_json::Value::Bool(true),
+            );
+            usage_effects.push(E::from(marker));
+            return applied(usage_effects);
         }
 
         if ends_with_successful_tool_response(conversation.messages())
@@ -576,40 +601,56 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
-            let stream = self
-                .provider
-                .stream(
-                    &self.model_config,
-                    &system_prompt,
-                    conversation_for_provider.messages(),
-                    &tools,
-                )
-                .await;
+            let mut empty_responses = 0;
+            let response = loop {
+                let stream = self
+                    .provider
+                    .stream(
+                        &self.model_config,
+                        &system_prompt,
+                        conversation_for_provider.messages(),
+                        &tools,
+                    )
+                    .await;
 
-            let stream = match stream {
-                Ok(stream) => stream,
-                Err(err) => {
-                    usage_effects.extend(inference_error(&err, emit).await);
-                    return applied(usage_effects);
+                let stream = match stream {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        usage_effects.extend(inference_error(&err, emit).await);
+                        return applied(usage_effects);
+                    }
+                };
+
+                let requested_model = self.model_config.model_name.clone();
+                let resolved_model = self
+                    .provider
+                    .fetch_model_info(&requested_model)
+                    .await
+                    .ok()
+                    .and_then(|model_info| model_info.resolved_model);
+                let provider_session_id = self.provider.provider_session_id();
+                let inference = InferenceMetadata {
+                    provider: self.provider.get_name().to_string(),
+                    requested_model,
+                    resolved_model,
+                    provider_session_id,
+                };
+
+                let mut response = consume_inference_stream(stream, inference, emit).await;
+                if !response.is_unexpected_empty_response(conversation, emit)
+                    || empty_responses == MAX_EMPTY_RESPONSE_RETRIES
+                {
+                    break response;
                 }
+                if let Some(usage) = response.usage.take() {
+                    usage_effects.push(E::record_usage(usage));
+                }
+                empty_responses += 1;
+                tracing::warn!(
+                    "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
+                );
             };
 
-            let requested_model = self.model_config.model_name.clone();
-            let resolved_model = self
-                .provider
-                .fetch_model_info(&requested_model)
-                .await
-                .ok()
-                .and_then(|model_info| model_info.resolved_model);
-            let provider_session_id = self.provider.provider_session_id();
-            let inference = InferenceMetadata {
-                provider: self.provider.get_name().to_string(),
-                requested_model,
-                resolved_model,
-                provider_session_id,
-            };
-
-            let response = consume_inference_stream(stream, inference, emit).await;
             let mut result = response.finish::<E>(conversation, emit).await?;
             if let OperationResult::Applied(step) = &mut result {
                 usage_effects.append(&mut step.effects);
@@ -740,7 +781,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shared_empty_response_yields_but_successful_tool_completion_is_silent() {
+    async fn shared_empty_response_is_hidden_but_successful_tool_completion_is_silent() {
         let (emit, _events) = test_emitter();
         let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
         let response =
@@ -752,9 +793,9 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        assert!(step.yield_to_client);
+        assert!(!step.yield_to_client);
         assert!(
-            matches!(&step.effects[..], [TestEffect::Message(message)] if !is_empty_response(message))
+            matches!(&step.effects[..], [TestEffect::Message(message)] if is_empty_response_marker(message) && !message.is_user_visible() && !message.is_agent_visible())
         );
 
         let conversation = Conversation::new_unvalidated([
@@ -775,6 +816,136 @@ mod tests {
         assert!(
             matches!(&step.effects[..], [TestEffect::Message(message)] if message.content.is_empty() && !message.is_user_visible() && message.is_agent_visible())
         );
+    }
+
+    struct EmptyResponseProvider {
+        calls: std::sync::atomic::AtomicUsize,
+        empty_attempts: usize,
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Provider for EmptyResponseProvider {
+        fn get_name(&self) -> &str {
+            "empty-response-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> std::result::Result<MessageStream, ProviderError> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let text = if call < self.empty_attempts {
+                ""
+            } else {
+                "recovered"
+            };
+            Ok(Box::pin(futures::stream::iter([Ok((
+                Some(Message::assistant().with_text(text)),
+                Some(ProviderUsage::new("model".into(), Default::default())),
+            ))])))
+        }
+    }
+
+    #[tokio::test]
+    async fn runner_retries_empty_responses_and_keeps_usage_on_recovery() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: 2,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, _events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert!(!step.yield_to_client);
+        assert!(matches!(
+            &step.effects[..],
+            [TestEffect::Usage(_), TestEffect::Usage(_), TestEffect::Usage(_), TestEffect::Message(message)]
+                if message.as_concat_text() == "recovered" && !is_empty_response_marker(message)
+        ));
+    }
+
+    #[tokio::test]
+    async fn runner_exhausts_empty_response_retries_with_a_hidden_marker() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: usize::MAX,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, mut events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            provider.calls.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_RETRIES + 1
+        );
+        assert!(!step.yield_to_client);
+        assert_eq!(
+            step.effects
+                .iter()
+                .filter(|effect| matches!(effect, TestEffect::Usage(_)))
+                .count(),
+            MAX_EMPTY_RESPONSE_RETRIES + 1
+        );
+        assert!(matches!(
+            step.effects.last(),
+            Some(TestEffect::Message(message))
+                if is_empty_response_marker(message)
+                    && !message.is_user_visible()
+                    && !message.is_agent_visible()
+                    && message.as_concat_text() == EMPTY_RESPONSE_MESSAGE
+        ));
+        while let Ok(event) = events.try_recv() {
+            if let crate::events::AgentEvent::Message(message) = event {
+                assert!(!is_empty_response_marker(&message));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn runner_does_not_retry_empty_successful_tool_completion() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: usize::MAX,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, _events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("hi"),
+            Message::assistant()
+                .with_tool_request("done", Ok(rmcp::model::CallToolRequestParams::new("tool"))),
+            Message::user()
+                .with_tool_response("done", Ok(rmcp::model::CallToolResult::success(vec![]))),
+        ]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(matches!(
+            &step.effects[..],
+            [TestEffect::Usage(_), TestEffect::Message(message)]
+                if message.content.is_empty() && !message.is_user_visible() && message.is_agent_visible()
+        ));
     }
 
     #[test]

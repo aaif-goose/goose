@@ -20,14 +20,21 @@ async fn basic_tool_calling() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("The total is 1");
+    api.on("add a numeric string")
+        .call(ADD, json!({ "value": "4" }));
+    api.on("result: 5").reply("The total is 5");
     api.on("hello").reply("hi there!");
 
-    let result = pipeline.run(["add one", "hello"]).await?;
+    let result = pipeline
+        .run(["add one", "add a numeric string", "hello"])
+        .await?;
 
     result.assert_message(2, ToolResponse, "");
     result.assert_message(3, Agent, "The total is 1");
+    result.assert_message(6, ToolResponse, "result: 5");
+    result.assert_message(7, Agent, "The total is 5");
     result.assert_message(-1, Agent, "hi there!");
-    assert_eq!(api.call_count(), 3);
+    assert_eq!(api.call_count(), 5);
     Ok(())
 }
 

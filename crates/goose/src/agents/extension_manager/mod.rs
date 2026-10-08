@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -284,7 +285,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
-    extensions: Mutex<IndexMap<String, Arc<Extension>>>,
+    scopes: Mutex<HashMap<String, IndexMap<String, Arc<Extension>>>>,
     mutation_lock: Mutex<()>,
     directory_lock: RwLock<()>,
     context: PlatformExtensionContext,
@@ -508,7 +509,7 @@ impl ExtensionManager {
         use_login_shell_path: bool,
     ) -> Self {
         Self {
-            extensions: Mutex::new(IndexMap::new()),
+            scopes: Mutex::new(HashMap::new()),
             mutation_lock: Mutex::new(()),
             directory_lock: RwLock::new(()),
             context: PlatformExtensionContext {
@@ -556,11 +557,12 @@ impl ExtensionManager {
     pub async fn resolve(&self, set: &ExtensionSet) -> ExtensionLease {
         let _guard = self.directory_lock.read().await;
         let members = {
-            let extensions = self.extensions.lock().await;
+            let scopes = self.scopes.lock().await;
+            let extensions = scopes.get(set.scope_id());
             set.extensions()
                 .iter()
                 .filter_map(|config| {
-                    let running = extensions.get(&config.key())?;
+                    let running = extensions?.get(&config.key())?;
                     if running.config != *config || !running.serves(set.working_dir.as_deref()) {
                         warn!(
                             extension = %config.key(),
@@ -620,10 +622,12 @@ impl ExtensionManager {
         working_dir: Option<&Path>,
     ) -> ExtensionLease {
         let mut extensions = self
-            .extensions
+            .scopes
             .lock()
             .await
-            .values()
+            .get(session_id)
+            .into_iter()
+            .flat_map(IndexMap::values)
             .filter(|extension| extension.serves(working_dir))
             .cloned()
             .collect::<Vec<_>>();
@@ -637,26 +641,22 @@ impl ExtensionManager {
         )
     }
 
-    /// Add an extension with an optional working directory.
-    /// If working_dir is None, falls back to current_dir.
     pub async fn add_extension(
         self: &Arc<Self>,
         config: ExtensionConfig,
-        working_dir: Option<PathBuf>,
+        fallback_working_dir: Option<PathBuf>,
         container: Option<&Container>,
-        session_id: Option<&str>,
+        session_id: &str,
     ) -> ExtensionResult<()> {
         let _guard = self.directory_lock.read().await;
-        let working_dir = match session_id {
-            Some(session_id) => Some(
-                self.context
-                    .session_manager
-                    .get_session(session_id, false)
-                    .await
-                    .map_err(|error| ExtensionError::SetupError(error.to_string()))?
-                    .working_dir,
-            ),
-            None => working_dir,
+        let working_dir = match self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await
+        {
+            Ok(session) => Some(session.working_dir),
+            Err(_) => fallback_working_dir,
         };
         self.add_extension_if_current(config, working_dir, container, session_id, None)
             .await
@@ -667,7 +667,7 @@ impl ExtensionManager {
         config: ExtensionConfig,
         working_dir: Option<PathBuf>,
         container: Option<&Container>,
-        session_id: Option<&str>,
+        session_id: &str,
         expected: Option<&Arc<Extension>>,
     ) -> ExtensionResult<()> {
         let sanitized_name = config.key();
@@ -688,7 +688,13 @@ impl ExtensionManager {
             _ => working_dir.clone().unwrap_or_default(),
         };
 
-        if let Some(existing) = self.extensions.lock().await.get(&sanitized_name) {
+        if let Some(existing) = self
+            .scopes
+            .lock()
+            .await
+            .get(session_id)
+            .and_then(|extensions| extensions.get(&sanitized_name))
+        {
             if existing.config == config
                 && existing.resolved_config == resolved_config
                 && existing.working_dir == working_dir
@@ -769,9 +775,7 @@ impl ExtensionManager {
                 ..
             } => {
                 let mut envs = envs.get_env();
-                if let Some(sid) = session_id {
-                    envs.insert("AGENT_SESSION_ID".to_string(), sid.to_string());
-                }
+                envs.insert("AGENT_SESSION_ID".to_string(), session_id.to_string());
                 Box::new(
                     stdio::connect(
                         cmd,
@@ -787,7 +791,8 @@ impl ExtensionManager {
 
         let server_info = client.get_info().cloned();
 
-        let mut extensions = self.extensions.lock().await;
+        let mut scopes = self.scopes.lock().await;
+        let extensions = scopes.entry(session_id.to_string()).or_default();
         if expected.is_some_and(|expected| {
             !extensions
                 .get(&sanitized_name)
@@ -808,7 +813,7 @@ impl ExtensionManager {
                 tools: Mutex::new(None),
             }),
         );
-        Self::invalidate_extension_manager_tools(&extensions);
+        Self::invalidate_extension_manager_tools(extensions);
         Ok(())
     }
 
@@ -835,15 +840,15 @@ impl ExtensionManager {
                     config,
                     Some(session.working_dir.clone()),
                     container,
-                    Some(session_id),
+                    session_id,
                     None,
                 )
                 .await
             }
-            ExtensionMutation::Disable { name } => self.remove_extension(&name).await,
+            ExtensionMutation::Disable { name } => self.remove_extension(session_id, &name).await,
         }?;
 
-        EnabledExtensionsState::new(self.get_extension_configs().await)
+        EnabledExtensionsState::new(self.get_extension_configs(session_id).await)
             .to_extension_data(&mut session.extension_data)
             .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
         self.context
@@ -886,12 +891,14 @@ impl ExtensionManager {
 
     pub async fn add_client(
         &self,
+        session_id: &str,
         config: ExtensionConfig,
         client: McpClientBox,
         info: Option<ServerConfig>,
     ) {
         let key = config.key();
-        let mut extensions = self.extensions.lock().await;
+        let mut scopes = self.scopes.lock().await;
+        let extensions = scopes.entry(session_id.to_string()).or_default();
         extensions.insert(
             key.clone(),
             Arc::new(Extension {
@@ -905,22 +912,34 @@ impl ExtensionManager {
                 tools: Mutex::new(None),
             }),
         );
-        Self::invalidate_extension_manager_tools(&extensions);
+        Self::invalidate_extension_manager_tools(extensions);
     }
 
-    pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
-        let sanitized_name = name_to_key(name);
-        self.remove_extension_by_key(&sanitized_name).await?;
+    pub async fn remove_extension(&self, session_id: &str, name: &str) -> ExtensionResult<()> {
+        self.remove_extension_by_key(session_id, &name_to_key(name))
+            .await?;
         Ok(())
     }
 
-    pub async fn remove_extension_by_key(&self, key: &str) -> ExtensionResult<bool> {
-        let mut extensions = self.extensions.lock().await;
+    pub async fn remove_extension_by_key(
+        &self,
+        session_id: &str,
+        key: &str,
+    ) -> ExtensionResult<bool> {
+        let mut scopes = self.scopes.lock().await;
+        let Some(extensions) = scopes.get_mut(session_id) else {
+            return Ok(false);
+        };
         let removed = extensions.shift_remove(key).is_some();
         if removed {
-            Self::invalidate_extension_manager_tools(&extensions);
+            Self::invalidate_extension_manager_tools(extensions);
         }
         Ok(removed)
+    }
+
+    /// Drops the session's extensions. Processes stop once no lease holds them.
+    pub async fn release(&self, session_id: &str) {
+        self.scopes.lock().await.remove(session_id);
     }
 
     pub async fn update_working_dir(
@@ -946,24 +965,22 @@ impl ExtensionManager {
                 .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
         }
         let extensions = self
-            .extensions
-            .lock()
+            .running(session_id)
             .await
-            .values()
+            .into_iter()
             .filter(|extension| {
                 extension
                     .working_dir
                     .as_ref()
                     .is_some_and(|working_dir| working_dir != new_dir)
             })
-            .cloned()
             .collect::<Vec<_>>();
         for extension in extensions {
             self.add_extension_if_current(
                 extension.config.clone(),
                 Some(new_dir.to_path_buf()),
                 container,
-                Some(session_id),
+                session_id,
                 Some(&extension),
             )
             .await?;
@@ -971,21 +988,36 @@ impl ExtensionManager {
         Ok(())
     }
 
-    pub async fn list_extensions(&self) -> ExtensionResult<Vec<String>> {
-        Ok(self.extensions.lock().await.keys().cloned().collect())
-    }
-
-    pub async fn is_extension_enabled(&self, name: &str) -> bool {
-        let normalized = name_to_key(name);
-        self.extensions.lock().await.contains_key(&normalized)
-    }
-
-    pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
-        self.extensions
+    async fn running(&self, session_id: &str) -> Vec<Arc<Extension>> {
+        self.scopes
             .lock()
             .await
-            .values()
-            .map(|ext| ext.config.clone())
+            .get(session_id)
+            .map(|extensions| extensions.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub async fn list_extensions(&self, session_id: &str) -> Vec<String> {
+        self.running(session_id)
+            .await
+            .into_iter()
+            .map(|extension| extension.key.clone())
+            .collect()
+    }
+
+    pub async fn is_extension_enabled(&self, session_id: &str, name: &str) -> bool {
+        let key = name_to_key(name);
+        self.running(session_id)
+            .await
+            .iter()
+            .any(|extension| extension.key == key)
+    }
+
+    pub async fn get_extension_configs(&self, session_id: &str) -> Vec<ExtensionConfig> {
+        self.running(session_id)
+            .await
+            .into_iter()
+            .map(|extension| extension.config.clone())
             .collect()
     }
 }
@@ -1029,7 +1061,7 @@ mod tests {
                 bundled: None,
                 available_tools,
             };
-            self.add_client(config, client, None).await;
+            self.add_client("session", config, client, None).await;
         }
     }
 
@@ -1314,7 +1346,7 @@ mod tests {
             .await;
         let (sender, mut receiver) = mpsc::channel(1);
         let ctx = ToolCallContext::new(
-            "nested-session".to_string(),
+            "session".to_string(),
             None,
             Some("nested-request".to_string()),
         )
@@ -1557,11 +1589,12 @@ mod tests {
             .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
             .await;
 
-        let same = ExtensionSet::new("s", None, vec![builtin_config("ext_a", vec![])]).unwrap();
+        let same =
+            ExtensionSet::new("session", None, vec![builtin_config("ext_a", vec![])]).unwrap();
         assert!(extension_manager.resolve(&same).await.is_enabled("ext_a"));
 
         let narrower = ExtensionSet::new(
-            "s",
+            "session",
             None,
             vec![builtin_config("ext_a", vec!["tool".to_string()])],
         )
@@ -1601,25 +1634,26 @@ mod tests {
                 },
                 None,
                 None,
-                Some(&session.id),
+                &session.id,
             )
             .await
             .unwrap();
         manager
             .add_client(
+                &session.id,
                 builtin_config("external", vec![]),
                 Arc::new(MockClient {}),
                 None,
             )
             .await;
-        let before = manager.extensions.lock().await.clone();
+        let before = manager.scopes.lock().await[&session.id].clone();
 
         manager
             .update_working_dir(new_working_dir.path(), None, &session.id)
             .await
             .unwrap();
 
-        let after = manager.extensions.lock().await.clone();
+        let after = manager.scopes.lock().await[&session.id].clone();
         for key in ["developer", "external"] {
             assert!(
                 Arc::ptr_eq(&before[key], &after[key]),
@@ -1648,17 +1682,11 @@ mod tests {
             available_tools: vec![],
         };
         extension_manager
-            .add_client(config.clone(), Arc::new(MockClient {}), None)
+            .add_client("session", config.clone(), Arc::new(MockClient {}), None)
             .await;
-        let stale = extension_manager
-            .extensions
-            .lock()
-            .await
-            .get("developer")
-            .unwrap()
-            .clone();
+        let stale = extension_manager.scopes.lock().await["session"]["developer"].clone();
         extension_manager
-            .remove_extension("developer")
+            .remove_extension("session", "developer")
             .await
             .unwrap();
 
@@ -1667,13 +1695,17 @@ mod tests {
                 config,
                 Some(new_working_dir.path().to_path_buf()),
                 None,
-                Some("session"),
+                "session",
                 Some(&stale),
             )
             .await
             .unwrap();
 
-        assert!(!extension_manager.is_extension_enabled("developer").await);
+        assert!(
+            !extension_manager
+                .is_extension_enabled("session", "developer")
+                .await
+        );
     }
 
     #[test]
@@ -1707,7 +1739,7 @@ mod tests {
                 },
                 None,
                 None,
-                None,
+                "session",
             )
             .await
             .unwrap();
@@ -1728,6 +1760,7 @@ mod tests {
         );
         extension_manager
             .add_client(
+                "session",
                 builtin_config("resources", vec![]),
                 Arc::new(MockClient {}),
                 Some(resource_info),
@@ -1744,7 +1777,7 @@ mod tests {
             .any(|tool| tool.name == "extensionmanager__list_resources"));
 
         extension_manager
-            .remove_extension("resources")
+            .remove_extension("session", "resources")
             .await
             .unwrap();
         let tools = extension_manager
@@ -1774,7 +1807,7 @@ mod tests {
                 },
                 None,
                 None,
-                None,
+                "session",
             )
             .await
             .unwrap();
@@ -1785,6 +1818,7 @@ mod tests {
         );
         extension_manager
             .add_client(
+                "session",
                 builtin_config("resources", vec![]),
                 Arc::new(ResourceClient { label: "old" }),
                 Some(resource_info.clone()),
@@ -1792,7 +1826,7 @@ mod tests {
             .await;
         let lease = extension_manager.current_lease("session", None).await;
         extension_manager
-            .remove_extension("resources")
+            .remove_extension("session", "resources")
             .await
             .unwrap();
         assert!(lease
@@ -1803,6 +1837,7 @@ mod tests {
 
         extension_manager
             .add_client(
+                "session",
                 builtin_config("resources", vec![]),
                 Arc::new(ResourceClient { label: "new" }),
                 Some(resource_info),
@@ -1858,20 +1893,14 @@ mod tests {
         extension_manager
             .add_mock_extension("dynamic".to_string(), tools_client.clone())
             .await;
-        let tools_version = extension_manager.extensions.lock().await["dynamic"]
+        let tools_version = extension_manager.scopes.lock().await["session"]["dynamic"]
             .tools_version
             .clone();
 
         let manager = Arc::new(extension_manager);
         let first_fetch = {
             let manager = manager.clone();
-            tokio::spawn(async move {
-                manager
-                    .current_lease("test-session", None)
-                    .await
-                    .tools()
-                    .await
-            })
+            tokio::spawn(async move { manager.current_lease("session", None).await.tools().await })
         };
 
         let _started = tools_client.first_fetch_started.acquire().await.unwrap();
@@ -1881,11 +1910,7 @@ mod tests {
         let stale_result = first_fetch.await.unwrap();
         assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
 
-        let refreshed = manager
-            .current_lease("test-session", None)
-            .await
-            .tools()
-            .await;
+        let refreshed = manager.current_lease("session", None).await.tools().await;
         assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
         assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
     }

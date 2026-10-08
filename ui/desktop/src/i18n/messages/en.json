@@ -3977,9 +3977,6 @@
   "sessions.toast.updated": {
     "defaultMessage": "Session description updated successfully"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Use the operation-based agent loop. Turn this off to use the legacy loop."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Auto"
   },

@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     agent.add_extension(config, &session.id).await?;
 
     println!("Extensions:");
-    for extension in agent.list_extensions().await {
+    for extension in agent.list_extensions(&session.id).await {
         println!("  {}", extension);
     }
 
@@ -51,20 +51,12 @@ async fn main() -> anyhow::Result<()> {
         id: session.id,
         schedule_id: None,
         max_turns: None,
-        retry_config: None,
     };
 
     let user_message = Message::user()
         .with_text("can you summarize the readme.md in this dir using just a haiku?");
 
-    let mut stream = agent
-        .reply(
-            user_message,
-            session_config,
-            goose::agents::state_machine::enabled(),
-            None,
-        )
-        .await?;
+    let mut stream = agent.reply(user_message, session_config, None).await?;
 
     while let Some(Ok(AgentEvent::Message(message))) = stream.next().await {
         println!("{}", serde_json::to_string_pretty(&message)?);

@@ -28,7 +28,6 @@ use crate::session::Session;
 pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
     "Tool approval expired because its extension lease is no longer available. Request the tool again.";
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
 
@@ -78,6 +77,7 @@ pub(super) fn tool_span(tool_name: &str, tool_call_id: &str, session_id: &str) -
         "gen_ai.operation.name" = "execute_tool",
         "gen_ai.tool.name" = %tool_name,
         "gen_ai.tool.call.id" = %tool_call_id,
+        "gen_ai.conversation.id" = %session_id,
         "gen_ai.tool.call.arguments" = tracing::field::Empty,
         "gen_ai.tool.call.result" = tracing::field::Empty,
         "error.type" = tracing::field::Empty,
@@ -314,22 +314,19 @@ pub(super) fn with_post_tool_hooks(
     }
 }
 
-pub struct ToolExecutionOperation<'a> {
-    goose_mode: &'a Mutex<GooseMode>,
+pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
-impl<'a> ToolExecutionOperation<'a> {
+impl ToolExecutionOperation {
     pub fn new(
-        goose_mode: &'a Mutex<GooseMode>,
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
-            goose_mode,
             extension_manager,
             hook_manager,
             lease,
@@ -405,9 +402,7 @@ impl<'a> ToolExecutionOperation<'a> {
             let result = lease
                 .call(
                     tool_call.clone(),
-                    CallRequest::new(request_id.clone())
-                        .with_container(session.container.clone())
-                        .with_state_machine(),
+                    CallRequest::new(request_id.clone()).with_container(session.container.clone()),
                     cancellation_token,
                 )
                 .await;
@@ -772,7 +767,7 @@ fn approval_denied(permission: Option<&crate::permission::Permission>) -> bool {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
+impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     fn name(&self) -> &'static str {
         "tool_execution"
     }
@@ -816,7 +811,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
         let mut hints = SubdirectoryHintTracker::new();
-        for message in conversation.messages() {
+        for message in conversation
+            .messages()
+            .iter()
+            .filter(|message| message.is_agent_visible())
+        {
             for content in &message.content {
                 if let MessageContent::ToolRequest(request) = content {
                     if let Ok(tool_call) = &request.tool_call {
@@ -936,7 +935,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
             return not_applicable();
         }
 
-        if *self.goose_mode.lock().await == GooseMode::Chat {
+        if session.goose_mode == GooseMode::Chat {
             let mut response = Message::user();
             for (request, disposition) in &pending {
                 let result = match disposition {

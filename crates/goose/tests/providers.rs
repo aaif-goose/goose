@@ -260,7 +260,6 @@ impl ProviderFixture {
             session_manager.clone(),
             permission_manager,
             None,
-            mode,
             true,
             GoosePlatform::GooseCli,
         ));
@@ -269,7 +268,7 @@ impl ProviderFixture {
                 std::env::current_dir()?,
                 "provider_test".to_string(),
                 SessionType::User,
-                GooseMode::default(),
+                mode,
             )
             .await?;
         let session_id = session.id;
@@ -583,18 +582,9 @@ impl ProviderFixture {
             id: self.session_id.clone(),
             schedule_id: None,
             max_turns: Some(5),
-            retry_config: None,
         };
 
-        let mut stream = self
-            .agent
-            .reply(
-                message,
-                session_config,
-                goose::agents::state_machine::enabled(),
-                None,
-            )
-            .await?;
+        let mut stream = self.agent.reply(message, session_config, None).await?;
         let mut saw_action_required = false;
 
         while let Some(event) = stream.next().await {

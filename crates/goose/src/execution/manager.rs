@@ -67,13 +67,11 @@ impl AgentManager {
                 let max_sessions = config
                     .get_goose_max_active_agents()
                     .unwrap_or(DEFAULT_MAX_SESSION);
-                let default_mode = config.get_goose_mode().unwrap_or_default();
                 let session_manager = Arc::new(SessionManager::instance());
                 let agent_config = AgentConfig::new(
                     session_manager,
                     PermissionManager::instance(),
                     None,
-                    default_mode,
                     config.get_goose_disable_session_naming().unwrap_or(false),
                     GoosePlatform::GooseDesktop,
                 );
@@ -177,19 +175,7 @@ impl AgentManager {
             }
         }
 
-        let mut mode = self.agent_config.goose_mode;
-        if let Ok(session) = self
-            .agent_config
-            .session_manager
-            .get_session(session_id, false)
-            .await
-        {
-            mode = session.goose_mode;
-            info!(goose_mode = %mode, session_id = %session_id, "Session loaded");
-        }
-
         let mut config = self.agent_config.clone();
-        config.goose_mode = mode;
         config.mcp_host_info = runtime_context.mcp_host_info;
         config.use_login_shell_path = runtime_context.use_login_shell_path;
         config.session_name_update_tx = runtime_context.session_name_update_tx;
@@ -368,7 +354,6 @@ mod tests {
     use tempfile::TempDir;
 
     use goose_test_support::McpFixture;
-    use test_case::test_case;
     use tokio::sync::Barrier;
 
     use crate::agents::extension::{Envs, ExtensionConfig};
@@ -385,7 +370,6 @@ mod tests {
             session_manager,
             PermissionManager::instance(),
             None,
-            GooseMode::default(),
             false,
             GoosePlatform::GooseDesktop,
         );
@@ -610,7 +594,6 @@ mod tests {
             session_manager,
             PermissionManager::instance(),
             None,
-            GooseMode::default(),
             false,
             GoosePlatform::GooseDesktop,
         );
@@ -637,29 +620,6 @@ mod tests {
         assert!(locks.contains_key("c"));
     }
 
-    #[test_case(GooseMode::Approve ; "approve")]
-    #[test_case(GooseMode::Chat ; "chat")]
-    #[test_case(GooseMode::SmartApprove ; "smart_approve")]
-    #[tokio::test]
-    async fn test_agent_inherits_session_mode(mode: GooseMode) {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir).await;
-
-        let session = manager
-            .session_manager()
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "test".into(),
-                crate::session::SessionType::User,
-                mode,
-            )
-            .await
-            .unwrap();
-
-        let agent = manager.get_or_create_agent(session.id).await.unwrap();
-        assert_eq!(agent.goose_mode().await, mode);
-    }
-
     #[tokio::test]
     async fn test_final_output_tool_restored_after_lru_eviction() {
         use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
@@ -672,7 +632,6 @@ mod tests {
             Arc::clone(&session_manager),
             PermissionManager::instance(),
             None,
-            GooseMode::default(),
             false,
             GoosePlatform::GooseDesktop,
         );
@@ -752,37 +711,5 @@ mod tests {
                 .any(|t| t.name.as_ref() == FINAL_OUTPUT_TOOL_NAME),
             "final_output_tool must be restored after LRU eviction"
         );
-    }
-
-    #[tokio::test]
-    async fn test_session_mode_isolation() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir).await;
-        let sm = manager.session_manager();
-
-        let s1 = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "s1".into(),
-                crate::session::SessionType::User,
-                GooseMode::Approve,
-            )
-            .await
-            .unwrap();
-        let s2 = sm
-            .create_session(
-                temp_dir.path().to_path_buf(),
-                "s2".into(),
-                crate::session::SessionType::User,
-                GooseMode::Auto,
-            )
-            .await
-            .unwrap();
-
-        let a1 = manager.get_or_create_agent(s1.id).await.unwrap();
-        let a2 = manager.get_or_create_agent(s2.id).await.unwrap();
-
-        assert_eq!(a1.goose_mode().await, GooseMode::Approve);
-        assert_eq!(a2.goose_mode().await, GooseMode::Auto);
     }
 }

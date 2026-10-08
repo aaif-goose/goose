@@ -11,6 +11,7 @@ mod ops_acp;
 mod ops_bang_shell;
 mod ops_compaction;
 mod ops_doctor;
+mod ops_empty_response;
 mod ops_entry_hook;
 mod ops_exit_on_error;
 mod ops_foreground_subagent;
@@ -75,6 +76,8 @@ pub(super) use ops_acp::AcpInferenceRunner;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
+pub(super) use ops_empty_response::EmptyResponseOperation;
+pub(crate) use ops_entry_hook::session_start_message;
 pub(super) use ops_entry_hook::EntryHookOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
 pub(super) use ops_foreground_subagent::{subagent_cancelled_message, ForegroundSubagentOperation};
@@ -92,9 +95,3 @@ pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
-
-pub fn enabled() -> bool {
-    std::env::var("GOOSE_STATE_MACHINE")
-        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes"))
-        .unwrap_or(false)
-}

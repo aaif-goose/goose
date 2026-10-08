@@ -301,9 +301,9 @@ async fn prefix_result(stream_error: bool) -> goose_agent::operation::StepResult
 #[tokio::test]
 async fn runner_persists_prepared_prefix_before_empty_completion_fallback() {
     let step = prefix_result(false).await;
-    assert!(step.yield_to_client);
+    assert!(!step.yield_to_client);
     assert!(
-        matches!(&step.effects[1], Effect::Message(message) if message.as_concat_text().contains("empty response") && message.error_kind().is_none())
+        matches!(&step.effects[1], Effect::Message(message) if goose_agent::inference::is_empty_response_marker(message) && !message.is_user_visible() && !message.is_agent_visible())
     );
 }
 

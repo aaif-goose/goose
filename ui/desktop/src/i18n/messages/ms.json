@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Lawati"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Gunakan gelung ejen berasaskan operasi. Matikan untuk menggunakan gelung legasi."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatik"
   },
