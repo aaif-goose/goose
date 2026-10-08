@@ -107,9 +107,10 @@ impl GooseAcpAgent {
 
         let ctx = crate::agents::ToolCallContext::new(
             session_id.clone(),
-            Some(session.working_dir),
+            Some(session.working_dir.clone()),
             None,
-        );
+        )
+        .with_model_from_session(&session);
         let tool_result = agent
             .extension_manager
             .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
