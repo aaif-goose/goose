@@ -23,6 +23,7 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use super::hooks_lifecycle::{HookTestEnv, LOG_AND_ALLOW_SCRIPT};
 use super::test_pipeline;
 use crate::agents::state_machine::{
     Emitter, GooseEffect, Operation, StateMachine, Step, ToolPairCompactionOperation,
@@ -93,7 +94,9 @@ impl InferenceRequestPreparer<Session> for AdditionalContext {
 
 #[tokio::test]
 async fn interrupted_inference_saves_streamed_output_then_answers_its_request() -> Result<()> {
+    let prompt_submit = HookTestEnv::new("UserPromptSubmit", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, _) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(prompt_submit.hook_manager());
     pipeline
         .seed([Message::user().with_text("kickoff")])
         .await?;
@@ -141,6 +144,7 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
     assert!(messages[2].get_tool_request_ids().contains("pending"));
     assert!(messages[3].get_tool_response_ids().contains("pending"));
     assert_eq!(session.usage.total_tokens, Some(15));
+    assert_eq!(prompt_submit.invocations(), 1);
     let emitted_ids: Vec<_> = emitted.iter().map(|message| &message.id).collect();
     assert_eq!(
         emitted_ids,
