@@ -405,7 +405,7 @@
     "env": [
       "CORAL_API_KEY"
     ],
-    "model_count": 5
+    "model_count": 4
   },
   {
     "id": "cortecs",
@@ -416,7 +416,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 103
+    "model_count": 105
   },
   {
     "id": "crof",
@@ -438,7 +438,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 68
+    "model_count": 69
   },
   {
     "id": "crusoe",
@@ -549,7 +549,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 292
+    "model_count": 296
   },
   {
     "id": "empiriolabs",
@@ -648,7 +648,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 34
+    "model_count": 35
   },
   {
     "id": "gmicloud",
@@ -891,7 +891,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 395
+    "model_count": 398
   },
   {
     "id": "kimi-code-plan-cn",
@@ -968,7 +968,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 214
+    "model_count": 218
   },
   {
     "id": "llmgateway-providers",
@@ -979,7 +979,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 439
+    "model_count": 446
   },
   {
     "id": "llmtech",
@@ -1254,7 +1254,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 610
+    "model_count": 611
   },
   {
     "id": "nearai",
@@ -1376,7 +1376,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 24
+    "model_count": 25
   },
   {
     "id": "opencode",
@@ -1387,7 +1387,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 116
+    "model_count": 119
   },
   {
     "id": "opencode-go",
@@ -1398,7 +1398,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 33
+    "model_count": 35
   },
   {
     "id": "openreason",
@@ -1442,7 +1442,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 14
+    "model_count": 13
   },
   {
     "id": "pareto",
@@ -1564,7 +1564,7 @@
     "env": [
       "REQUESTY_API_KEY"
     ],
-    "model_count": 166
+    "model_count": 170
   },
   {
     "id": "routing-run",
@@ -1840,7 +1840,7 @@
     "env": [
       "THEGRID_API_KEY"
     ],
-    "model_count": 9
+    "model_count": 16
   },
   {
     "id": "thinkingmachines",
@@ -1972,7 +1972,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 36
+    "model_count": 37
   },
   {
     "id": "volcengine",
