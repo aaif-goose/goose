@@ -1,3 +1,4 @@
+use crate::agents::Container;
 use crate::config::paths::Paths;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
@@ -7,7 +8,7 @@ use crate::providers::base::Provider;
 use crate::recipe::validate_recipe::strip_unreferenced_parameters;
 use crate::recipe::Recipe;
 use crate::session::export_markdown::export_session_to_markdown;
-use crate::session::extension_data::ExtensionData;
+use crate::session::extension_data::{ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
@@ -15,7 +16,9 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use goose_providers::conversation::token_usage::Usage;
 use goose_providers::model::ModelConfig;
+use indexmap::IndexMap;
 use rmcp::model::Role;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
@@ -25,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 16;
+pub const CURRENT_SCHEMA_VERSION: i32 = 17;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -96,6 +99,12 @@ pub struct Session {
     pub parent_session_id: Option<String>,
     #[serde(default)]
     pub last_message_snippet: Option<String>,
+    #[serde(default)]
+    pub system_prompt_override: Option<String>,
+    #[serde(default)]
+    pub system_prompt_extras: IndexMap<String, String>,
+    #[serde(default)]
+    pub container: Option<Container>,
 }
 
 impl From<&Session> for TokenState {
@@ -168,6 +177,9 @@ pub struct SessionUpdateBuilder<'a> {
 
     project_id: Option<Option<String>>,
     parent_session_id: Option<Option<String>>,
+    system_prompt_override: Option<Option<String>>,
+    system_prompt_extras: Option<IndexMap<String, String>>,
+    container: Option<Option<Container>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -205,6 +217,9 @@ impl<'a> SessionUpdateBuilder<'a> {
             archived_at: None,
             project_id: None,
             parent_session_id: None,
+            system_prompt_override: None,
+            system_prompt_extras: None,
+            container: None,
         }
     }
 
@@ -310,6 +325,21 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn parent_session_id(mut self, parent_session_id: Option<String>) -> Self {
         self.parent_session_id = Some(parent_session_id);
+        self
+    }
+
+    pub fn system_prompt_override(mut self, system_prompt_override: Option<String>) -> Self {
+        self.system_prompt_override = Some(system_prompt_override);
+        self
+    }
+
+    pub fn system_prompt_extras(mut self, system_prompt_extras: IndexMap<String, String>) -> Self {
+        self.system_prompt_extras = Some(system_prompt_extras);
+        self
+    }
+
+    pub fn container(mut self, container: Option<Container>) -> Self {
+        self.container = Some(container);
         self
     }
 }
@@ -709,6 +739,49 @@ impl SessionManager {
             .update_tool_request_meta(session_id, tool_call_id, patch)
             .await
     }
+
+    pub async fn set_extension_state<S: ExtensionState>(
+        &self,
+        session_id: &str,
+        state: &S,
+    ) -> Result<()> {
+        self.set_extension_value(session_id, S::EXTENSION_NAME, S::VERSION, state.to_value()?)
+            .await
+    }
+
+    pub async fn set_extension_value(
+        &self,
+        session_id: &str,
+        extension_name: &str,
+        version: &str,
+        value: serde_json::Value,
+    ) -> Result<()> {
+        self.storage
+            .update_json_column(session_id, "extension_data", |data: &mut ExtensionData| {
+                data.set_extension_state(extension_name, version, value)
+            })
+            .await
+    }
+
+    pub async fn set_system_prompt_extra(
+        &self,
+        session_id: &str,
+        key: &str,
+        text: Option<String>,
+    ) -> Result<()> {
+        self.storage
+            .update_json_column(
+                session_id,
+                "system_prompt_extras_json",
+                |extras: &mut IndexMap<String, String>| {
+                    match text {
+                        Some(text) => extras.insert(key.to_string(), text),
+                        None => extras.shift_remove(key),
+                    };
+                },
+            )
+            .await
+    }
 }
 
 pub struct SessionStorage {
@@ -775,6 +848,9 @@ impl Default for Session {
             project_id: None,
             parent_session_id: None,
             last_message_snippet: None,
+            system_prompt_override: None,
+            system_prompt_extras: IndexMap::new(),
+            container: None,
         }
     }
 }
@@ -894,6 +970,16 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
             project_id: row.try_get("project_id").ok().flatten(),
             parent_session_id: row.try_get("parent_session_id").ok().flatten(),
             last_message_snippet: None,
+            system_prompt_override: row.try_get("system_prompt_override")?,
+            system_prompt_extras: row
+                .try_get::<Option<String>, _>("system_prompt_extras_json")?
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|e| sqlx::Error::Decode(Box::new(e)))?
+                .unwrap_or_default(),
+            container: row
+                .try_get::<Option<String>, _>("container_id")?
+                .map(Container::new),
         })
     }
 }
@@ -1054,7 +1140,10 @@ impl SessionStorage {
                 goose_mode TEXT NOT NULL DEFAULT 'auto',
                 archived_at TIMESTAMP,
                 project_id TEXT,
-                parent_session_id TEXT
+                parent_session_id TEXT,
+                system_prompt_override TEXT,
+                system_prompt_extras_json TEXT,
+                container_id TEXT
             )
         "#,
         )
@@ -1609,6 +1698,28 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
+            17 => {
+                for column in [
+                    "system_prompt_override",
+                    "system_prompt_extras_json",
+                    "container_id",
+                ] {
+                    let has_column = sqlx::query_scalar::<_, i32>(
+                        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = ?",
+                    )
+                    .bind(column)
+                    .fetch_one(&mut **tx)
+                    .await?
+                        > 0;
+                    if !has_column {
+                        sqlx::query(AssertSqlSafe(format!(
+                            "ALTER TABLE sessions ADD COLUMN {column} TEXT"
+                        )))
+                        .execute(&mut **tx)
+                        .await?;
+                    }
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1674,7 +1785,8 @@ impl SessionStorage {
                accumulated_cost,
                schedule_id, recipe_json, user_recipe_values_json,
                provider_name, model_config_json, goose_mode,
-               archived_at, project_id, parent_session_id
+               archived_at, project_id, parent_session_id,
+               system_prompt_override, system_prompt_extras_json, container_id
         FROM sessions
         WHERE id = ?
     "#,
@@ -1760,6 +1872,9 @@ impl SessionStorage {
 
         add_update!(builder.project_id, "project_id");
         add_update!(builder.parent_session_id, "parent_session_id");
+        add_update!(builder.system_prompt_override, "system_prompt_override");
+        add_update!(builder.system_prompt_extras, "system_prompt_extras_json");
+        add_update!(builder.container, "container_id");
 
         if updates.is_empty() {
             return Ok(());
@@ -1839,6 +1954,15 @@ impl SessionStorage {
         if let Some(ref parent_session_id) = builder.parent_session_id {
             q = q.bind(parent_session_id.as_ref());
         }
+        if let Some(system_prompt_override) = builder.system_prompt_override {
+            q = q.bind(system_prompt_override);
+        }
+        if let Some(system_prompt_extras) = builder.system_prompt_extras {
+            q = q.bind(serde_json::to_string(&system_prompt_extras)?);
+        }
+        if let Some(container) = builder.container {
+            q = q.bind(container.map(|container| container.id().to_string()));
+        }
 
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -1849,6 +1973,37 @@ impl SessionStorage {
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
         }
 
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn update_json_column<T: Serialize + DeserializeOwned + Default>(
+        &self,
+        session_id: &str,
+        column: &'static str,
+        update: impl FnOnce(&mut T),
+    ) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let json: Option<String> = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT {column} FROM sessions WHERE id = ?"
+        )))
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        let mut value = json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?
+            .unwrap_or_default();
+        update(&mut value);
+        sqlx::query(AssertSqlSafe(format!(
+            "UPDATE sessions SET {column} = ?, updated_at = datetime('now') WHERE id = ?"
+        )))
+        .bind(serde_json::to_string(&value)?)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -2135,6 +2290,7 @@ impl SessionStorage {
                    s.schedule_id, s.recipe_json, s.user_recipe_values_json,
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id, s.parent_session_id,
+                   s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
                    {} as message_count,
                    MAX({}) as last_message_timestamp,
                    {} as sort_timestamp
@@ -2556,7 +2712,10 @@ impl SessionStorage {
             .accumulated_cost(import.accumulated_cost)
             .schedule_id(import.schedule_id)
             .recipe(import.recipe)
-            .user_recipe_values(import.user_recipe_values);
+            .user_recipe_values(import.user_recipe_values)
+            .system_prompt_override(import.system_prompt_override)
+            .system_prompt_extras(import.system_prompt_extras)
+            .container(import.container);
 
         if import.user_set_name {
             builder = builder.user_provided_name(import.name.clone());
@@ -2605,7 +2764,11 @@ impl SessionStorage {
         if let Some(model_config) = original_session.model_config {
             builder = builder.model_config(model_config);
         }
-        builder = builder.goose_mode(original_session.goose_mode);
+        builder = builder
+            .goose_mode(original_session.goose_mode)
+            .system_prompt_override(original_session.system_prompt_override)
+            .system_prompt_extras(original_session.system_prompt_extras)
+            .container(original_session.container);
 
         builder.apply().await?;
 
@@ -4449,7 +4612,12 @@ mod tests {
         sm.update(&original.id)
             .usage(usage)
             .accumulated_usage(accumulated_usage)
+            .system_prompt_override(Some("custom prompt".to_string()))
+            .container(Some(Container::new("container-1")))
             .apply()
+            .await
+            .unwrap();
+        sm.set_system_prompt_extra(&original.id, "extra", Some("extra text".to_string()))
             .await
             .unwrap();
 
@@ -4488,6 +4656,12 @@ mod tests {
         assert_eq!(imported.usage, usage);
         assert_eq!(imported.accumulated_usage, accumulated_usage);
         assert_eq!(imported.message_count, 2);
+        assert_eq!(
+            imported.system_prompt_override.as_deref(),
+            Some("custom prompt")
+        );
+        assert_eq!(imported.system_prompt_extras["extra"], "extra text");
+        assert_eq!(imported.container, Some(Container::new("container-1")));
 
         let conversation = imported.conversation.unwrap();
         assert_eq!(conversation.messages().len(), 2);

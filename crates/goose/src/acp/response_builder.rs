@@ -235,8 +235,11 @@ pub(super) fn build_mode_state(
 
 /// The provider decides whether goose owns the effort menu; a session without a
 /// live provider keeps the model-name based path.
-pub(super) async fn agent_thinking_effort_support(agent: &Agent) -> ThinkingEffortSupport {
-    match agent.provider().await {
+pub(super) async fn agent_thinking_effort_support(
+    agent: &Agent,
+    session_id: &str,
+) -> ThinkingEffortSupport {
+    match agent.provider(session_id).await {
         Ok(provider) => provider.thinking_effort_support(),
         Err(_) => ThinkingEffortSupport::Unspecified,
     }

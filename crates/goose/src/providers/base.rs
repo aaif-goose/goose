@@ -31,6 +31,10 @@ pub(crate) fn current_working_dir() -> PathBuf {
 pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     type Provider: Provider + 'static;
 
+    /// Instances hold a remote session or are built from one session's
+    /// extensions and working directory, so they cannot be shared.
+    const SESSION_BOUND: bool = false;
+
     fn from_env(
         extensions: Vec<ExtensionConfig>,
         tls_config: Option<TlsConfig>,

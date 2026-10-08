@@ -81,22 +81,18 @@ impl GooseAcpAgent {
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        let rendered_recipe = self
-            .configure_new_session(cx, config, session, args, recipe, meta)
+        self.configure_new_session(cx, config, session, args, recipe, meta)
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
-        if let Some(recipe) = &rendered_recipe {
-            self.apply_recipe(&agent, recipe).await?;
-        }
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent).await,
+                &super::agent_thinking_effort_support(&agent, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)
@@ -132,7 +128,7 @@ impl GooseAcpAgent {
         args: NewSessionRequest,
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
-    ) -> Result<Option<Recipe>, agent_client_protocol::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let recipe_parameter_scope_id = meta_string(args.meta.as_ref(), "recipeParameterScopeId")?;
         let (rendered, user_recipe_values) = self
             .render_recipe_for_session(
@@ -164,14 +160,12 @@ impl GooseAcpAgent {
                 provider,
                 model_config,
                 extension_data,
-                recipe: recipe.map(|(recipe, _)| recipe),
+                recipe: rendered,
                 user_recipe_values,
                 meta,
             },
         )
-        .await?;
-
-        Ok(rendered)
+        .await
     }
 
     async fn reload_session(

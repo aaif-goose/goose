@@ -31,7 +31,6 @@ use tracing::{debug, info};
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
     pub max_turns: usize,
-    pub task_instructions: String,
     pub tool_count: usize,
     pub available_tools: String,
 }
@@ -101,14 +100,6 @@ pub(crate) async fn from_foreground_subagent_session(
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
     let extensions = EnabledExtensionsState::from_value(saved_extensions)?.extensions;
 
-    let provider = crate::providers::create_with_working_dir(
-        provider_name,
-        extensions.clone(),
-        session.working_dir.clone(),
-    )
-    .await?;
-    provider.apply_model_selection(model_config).await?;
-
     let mut config = AgentConfig::new(
         session_manager,
         PermissionManager::instance(),
@@ -120,7 +111,9 @@ pub(crate) async fn from_foreground_subagent_session(
     .with_use_login_shell_path(use_login_shell_path);
     config.is_subagent = true;
     let agent = Agent::with_config(config);
-    *agent.provider.lock().await = Some(provider);
+    agent
+        .switch_provider(session_id, provider_name, model_config.clone())
+        .await?;
     for extension in extensions {
         let name = extension.name();
         if let Err(e) = agent.add_extension_inner(extension, session_id).await {
@@ -128,14 +121,14 @@ pub(crate) async fn from_foreground_subagent_session(
         }
     }
 
-    let subagent_prompt = build_subagent_prompt(
-        &agent,
-        max_turns,
-        session_id,
-        recipe.instructions.clone().unwrap_or_default(),
-    )
-    .await?;
-    agent.override_system_prompt(subagent_prompt).await;
+    let subagent_prompt = build_subagent_prompt(&agent, max_turns, session_id).await?;
+    agent
+        .config
+        .session_manager
+        .update(session_id)
+        .system_prompt_override(Some(subagent_prompt))
+        .apply()
+        .await?;
     let session_config = SessionConfig {
         id: session_id.to_string(),
         schedule_id: None,
@@ -340,7 +333,6 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             ..
         } = params;
 
-        let system_instructions = recipe.instructions.clone().unwrap_or_default();
         let user_task = recipe
             .prompt
             .clone()
@@ -368,28 +360,26 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         }
 
         let has_response_schema = recipe.response.is_some();
-        agent
-            .apply_recipe_components(recipe.response.clone(), true)
+        let session_manager = &agent.config.session_manager;
+        session_manager
+            .update(&session_id)
+            .recipe(Some(recipe.clone()))
+            .apply()
             .await?;
 
         let max_turns = task_config
             .max_turns
             .expect("TaskConfig always sets max_turns");
-        let subagent_prompt =
-            build_subagent_prompt(&agent, max_turns, &session_id, system_instructions).await?;
-        agent.override_system_prompt(subagent_prompt).await;
+        let subagent_prompt = build_subagent_prompt(&agent, max_turns, &session_id).await?;
+        session_manager
+            .update(&session_id)
+            .system_prompt_override(Some(subagent_prompt))
+            .apply()
+            .await?;
 
         let user_message =
             Message::user().with_text(format!("Subagent ID: {session_id}\n\n{user_task}"));
         let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
-
-        agent
-            .config
-            .session_manager
-            .update(&session_id)
-            .recipe(Some(recipe.clone()))
-            .apply()
-            .await?;
 
         if let Some(activities) = recipe.activities {
             for activity in activities {
@@ -447,7 +437,9 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             }
         }
 
-        let final_output = get_final_output(&agent, has_response_schema).await;
+        let final_output = has_response_schema
+            .then(|| FinalOutputTool::successful_output(conversation.messages()))
+            .flatten();
 
         Ok((conversation, final_output))
     })
@@ -457,7 +449,6 @@ async fn build_subagent_prompt(
     agent: &Agent,
     max_turns: usize,
     session_id: &str,
-    system_instructions: String,
 ) -> Result<String> {
     let mut tool_names: Vec<_> = agent
         .list_tools(session_id, None)
@@ -471,25 +462,11 @@ async fn build_subagent_prompt(
         "subagent_system.md",
         &SubagentPromptContext {
             max_turns,
-            task_instructions: system_instructions,
             tool_count: tool_names.len(),
             available_tools: tool_names.join(", "),
         },
     )
     .map_err(|e| anyhow!("Failed to render subagent system prompt: {}", e))
-}
-
-async fn get_final_output(agent: &Agent, has_response_schema: bool) -> Option<String> {
-    if has_response_schema {
-        agent
-            .final_output_tool
-            .lock()
-            .await
-            .as_ref()
-            .and_then(|tool| tool.final_output.clone())
-    } else {
-        None
-    }
 }
 
 #[expect(deprecated)]

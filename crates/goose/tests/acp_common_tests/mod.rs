@@ -448,7 +448,7 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
 
 pub async fn run_initialize_doesnt_hit_provider<C: Connection>() {
     let provider_factory: AcpProviderFactory =
-        Arc::new(|_, _, _, _| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
+        Arc::new(|_| Box::pin(async { Err(anyhow::anyhow!("no provider configured")) }));
 
     let openai = OpenAiFixture::new(vec![], C::expected_session_id()).await;
     let config = TestConnectionConfig {

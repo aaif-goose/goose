@@ -130,16 +130,8 @@ mod tool_calls;
 mod tool_notifications;
 mod tools;
 
-pub type AcpProviderFactory = Arc<
-    dyn Fn(
-            String,
-            Vec<ExtensionConfig>,
-            Option<PathBuf>,
-            bool,
-        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
-        + Send
-        + Sync,
->;
+pub type AcpProviderFactory =
+    Arc<dyn Fn(String) -> BoxFuture<'static, Result<Arc<dyn Provider>>> + Send + Sync>;
 
 const ACP_VISIBLE_SESSION_TYPES: [SessionType; 3] =
     [SessionType::User, SessionType::Scheduled, SessionType::Acp];
@@ -894,7 +886,7 @@ impl GooseAcpAgent {
             let provider_name = session.provider_name.clone();
             let agent = self.get_session_agent(session_id).await?;
             let provider = agent
-                .provider()
+                .provider(session_id)
                 .await
                 .internal_err_ctx("Failed to resolve session provider")?;
             let context_limit =
@@ -907,7 +899,7 @@ impl GooseAcpAgent {
                 .await
                 .internal_err_ctx("Failed to refresh session for setup notifications")?;
             let current_provider = agent
-                .provider()
+                .provider(session_id)
                 .await
                 .internal_err_ctx("Failed to refresh session provider")?;
             let refreshed_model_name = session
@@ -1007,20 +999,8 @@ impl GooseAcpAgent {
         Ok(Config::global())
     }
 
-    async fn create_provider(
-        &self,
-        provider_name: &str,
-        extensions: Vec<ExtensionConfig>,
-        working_dir: Option<PathBuf>,
-        use_default_model: bool,
-    ) -> Result<Arc<dyn Provider>> {
-        (self.provider_factory)(
-            provider_name.to_string(),
-            extensions,
-            working_dir,
-            use_default_model,
-        )
-        .await
+    async fn create_provider(&self, provider_name: &str) -> Result<Arc<dyn Provider>> {
+        (self.provider_factory)(provider_name.to_string()).await
     }
 
     /// Warm the provider model-list cache after session creation.
@@ -1047,7 +1027,7 @@ impl GooseAcpAgent {
             if !should_refresh_inventory_for_session_init(&inventory) {
                 return;
             }
-            let provider = match agent.provider().await {
+            let provider = match agent.provider(&session_id).await {
                 Ok(provider) => provider,
                 Err(error) => {
                     warn!(
@@ -1253,7 +1233,7 @@ impl GooseAcpAgent {
     }
 
     async fn subscribe_thinking_effort_updates(&self, session_id: &str, agent: &Arc<Agent>) {
-        let Ok(provider) = agent.provider().await else {
+        let Ok(provider) = agent.provider(session_id).await else {
             return;
         };
         let Some(mut updates) = provider.subscribe_thinking_effort_support() else {
@@ -2036,7 +2016,7 @@ impl GooseAcpAgent {
         session_id: &str,
         agent: &Arc<Agent>,
     ) -> Result<(), agent_client_protocol::Error> {
-        let Ok(provider) = agent.provider().await else {
+        let Ok(provider) = agent.provider(session_id).await else {
             return Ok(());
         };
         if provider.get_name() != "local" {
@@ -2072,7 +2052,7 @@ impl GooseAcpAgent {
         agent: &Arc<Agent>,
     ) -> Result<usize, agent_client_protocol::Error> {
         let provider = agent
-            .provider()
+            .provider(&session.id)
             .await
             .internal_err_ctx("Failed to resolve session provider")?;
         let model = session.model_config.as_ref().ok_or_else(|| {
@@ -2440,7 +2420,7 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         let agent = self.get_session_agent(session_id).await?;
         let current_provider = agent
-            .provider()
+            .provider(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
@@ -2458,12 +2438,9 @@ impl GooseAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
         agent
-            .recreate_provider_for_session(session_id, &provider_name, model_config)
+            .switch_provider(session_id, &provider_name, model_config)
             .await
-            .internal_err_ctx("Failed to recreate provider")?;
-        self.subscribe_thinking_effort_updates(session_id, &agent)
-            .await;
-        // model_config is already updated on the session by the agent's update_provider call.
+            .internal_err_ctx("Failed to switch provider")?;
         Ok(())
     }
 
@@ -2478,7 +2455,7 @@ impl GooseAcpAgent {
             .internal_err()?;
         let agent = self.get_session_agent(&session_id.0).await?;
         let provider = agent
-            .provider()
+            .provider(&session_id.0)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = provider.get_name().to_string();
@@ -2561,7 +2538,7 @@ impl GooseAcpAgent {
         let config = self.config()?;
         let agent = self.get_session_agent(session_id).await?;
         let current_provider = agent
-            .provider()
+            .provider(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let current_provider_name = current_provider.get_name();
@@ -2605,14 +2582,13 @@ impl GooseAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
 
+        agent.config.providers.release(session_id);
         agent
-            .recreate_provider_for_session(session_id, &resolved_provider_name, model_config)
+            .switch_provider(session_id, &resolved_provider_name, model_config)
             .await
-            .internal_err_ctx("Failed to recreate provider")?;
+            .internal_err_ctx("Failed to switch provider")?;
         self.subscribe_thinking_effort_updates(session_id, &agent)
             .await;
-
-        // provider_name is already updated on the session by the agent's update_provider call.
         Ok(())
     }
 
@@ -3655,11 +3631,9 @@ print(\"hello, world\")
         let root = tempfile::tempdir().unwrap();
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |_provider_name, _extensions, _working_dir, _use_default_model| {
-                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
-            },
-        );
+        let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
+            Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+        });
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
@@ -3788,11 +3762,9 @@ print(\"hello, world\")
         let root = tempfile::tempdir().unwrap();
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |_provider_name, _extensions, _working_dir, _use_default_model| {
-                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
-            },
-        );
+        let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
+            Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+        });
         let server = Arc::new(
             GooseAcpAgent::new(GooseAcpAgentOptions {
                 provider_factory,

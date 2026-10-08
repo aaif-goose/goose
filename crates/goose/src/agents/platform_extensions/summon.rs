@@ -1264,8 +1264,8 @@ impl SummonClient {
             .await?;
         let provider = match providers::get_from_registry(&config.provider_name).await {
             Ok(entry) => entry.create(config.extensions.clone()).await?,
-            Err(error) => match self.context.provider.lock().await.clone() {
-                Some(provider)
+            Err(error) => match self.context.providers.provider_for(session).await {
+                Ok(provider)
                     if provider.get_name() == config.provider_name
                         && !provider.manages_own_context() =>
                 {
@@ -1646,7 +1646,7 @@ mod tests {
     ) -> PlatformExtensionContext {
         PlatformExtensionContext {
             extension_manager: None,
-            provider: Arc::new(tokio::sync::Mutex::new(None)),
+            providers: Default::default(),
             session_manager,
             scheduler: None,
             use_login_shell_path: false,
@@ -1788,7 +1788,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            reloaded_agent.provider().await.unwrap().get_name(),
+            reloaded_agent.provider(&child.id).await.unwrap().get_name(),
             "openai"
         );
     }
@@ -2493,15 +2493,19 @@ You review code."#;
             )
             .unwrap(),
         );
-        let mut context = create_test_context();
-        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
+        let context = create_test_context();
+        let providers = context.providers.clone();
         let client = SummonClient::new(context).unwrap();
         let session = crate::session::Session {
+            id: "unregistered-parent".to_string(),
             provider_name: Some(parent_provider.get_name().to_string()),
             model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
             working_dir: temp_dir.path().to_path_buf(),
             ..Default::default()
         };
+        providers
+            .set_provider(&session.id, Arc::clone(&parent_provider))
+            .await;
 
         let params = DelegateParams {
             instructions: Some("Review the change".to_string()),
@@ -2528,9 +2532,7 @@ You review code."#;
     async fn test_build_task_config_recreates_registered_parent_provider() {
         let temp_dir = TempDir::new().unwrap();
         let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
-        let mut context = create_test_context();
-        context.provider = Arc::new(tokio::sync::Mutex::new(Some(Arc::clone(&parent_provider))));
-        let client = SummonClient::new(context).unwrap();
+        let client = SummonClient::new(create_test_context()).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),
             model_config: Some(goose_providers::model::ModelConfig::new("test-model")),

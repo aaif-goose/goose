@@ -36,7 +36,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::security::security_inspector::SecurityInspector;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::{Session, SessionManager, SessionType};
+use crate::session::{GoalState, Session, SessionManager, SessionType};
 use crate::tool_inspection::ToolInspectionManager;
 use goose_providers::model::ModelConfig;
 
@@ -100,8 +100,6 @@ pub(super) struct TestPipeline {
     permission_manager: Arc<PermissionManager>,
     pub(super) hook_manager: HookManager,
     stop_hook_block_cap: u32,
-    goal: TokioMutex<Option<String>>,
-    grind: TokioMutex<Option<String>>,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
     working_dir: std::path::PathBuf,
@@ -166,13 +164,10 @@ impl TestPipeline {
                 &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
-                None,
                 Arc::clone(&extension_lease),
             )),
             Arc::new(UnknownToolOperation::new(self.hook_manager.clone())),
             Arc::new(RetryOperation::new(
-                &self.goal,
-                &self.grind,
                 std::time::Duration::from_secs(1),
                 std::time::Duration::from_secs(1),
             )),
@@ -317,11 +312,16 @@ impl TestPipeline {
     }
 
     pub(super) async fn get_goal(&self) -> Option<String> {
-        self.goal.lock().await.clone()
+        GoalState::of(&self.session().await.unwrap()).goal
     }
 
     pub(super) async fn set_grind(&self, grind: Option<String>) {
-        *self.grind.lock().await = grind;
+        let mut state = GoalState::of(&self.session().await.unwrap());
+        state.grind = grind;
+        self.session_manager
+            .set_extension_state(&self.session_id, &state)
+            .await
+            .unwrap();
     }
 
     pub(super) async fn session(&self) -> Result<Session> {
@@ -352,8 +352,6 @@ impl TestPipeline {
 
     pub(super) async fn reconstruct(&self) -> Result<Self> {
         let session = self.session().await?;
-        let goal = self.goal.lock().await.clone();
-        let grind = self.grind.lock().await.clone();
         let mut pipeline = build_test_pipeline(
             self.session_manager.clone(),
             self.api.clone(),
@@ -367,8 +365,6 @@ impl TestPipeline {
         .with_max_turns(self.max_turns)
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
-        *pipeline.goal.lock().await = goal;
-        *pipeline.grind.lock().await = grind;
         Ok(pipeline)
     }
 
@@ -675,18 +671,13 @@ impl TestPipeline {
         Ok(TestRun::new(self.session().await?, events))
     }
 
-    pub(super) async fn set_system_prompt_override(&self, prompt: impl Into<String>) {
-        self.prompt_manager
-            .lock()
+    pub(super) async fn set_system_prompt_override(&self, prompt: Option<&str>) {
+        self.session_manager
+            .update(&self.session_id)
+            .system_prompt_override(prompt.map(str::to_string))
+            .apply()
             .await
-            .set_system_prompt_override(prompt.into());
-    }
-
-    pub(super) async fn clear_system_prompt_override(&self) {
-        self.prompt_manager
-            .lock()
-            .await
-            .clear_system_prompt_override();
+            .unwrap();
     }
 }
 
@@ -800,9 +791,10 @@ async fn build_test_pipeline(
         } else {
             provider
         };
-    let shared_provider = Arc::new(TokioMutex::new(Some(provider.clone())));
+    let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
+    providers.set_provider(&session.id, provider.clone()).await;
     let extension_manager = Arc::new(ExtensionManager::new(
-        shared_provider.clone(),
+        providers.clone(),
         session_manager.clone(),
         scheduler
             .clone()
@@ -821,7 +813,7 @@ async fn build_test_pipeline(
     tool_inspection_manager.add_inspector(Box::new(SecurityInspector::enabled()));
     tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
         permission_manager.clone(),
-        shared_provider,
+        providers,
         session_manager.clone(),
     )));
     let model_config = session
@@ -843,8 +835,6 @@ async fn build_test_pipeline(
         permission_manager,
         hook_manager: HookManager::default(),
         stop_hook_block_cap: 3,
-        goal: TokioMutex::new(None),
-        grind: TokioMutex::new(None),
         calculator: calculator.clone(),
         session_id: session.id.clone(),
         working_dir: session.working_dir.clone(),

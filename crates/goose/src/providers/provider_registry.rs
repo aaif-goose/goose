@@ -33,6 +33,7 @@ pub struct ProviderEntry {
     supports_inventory_refresh: bool,
     tls_config: Option<TlsConfig>,
     toolshim: bool,
+    session_bound: bool,
 }
 
 impl ProviderEntry {
@@ -42,6 +43,10 @@ impl ProviderEntry {
 
     pub fn provider_type(&self) -> ProviderType {
         self.provider_type
+    }
+
+    pub fn session_bound(&self) -> bool {
+        self.session_bound
     }
 
     pub fn supports_inventory_refresh(&self) -> bool {
@@ -154,6 +159,7 @@ impl ProviderRegistry {
                 supports_inventory_refresh: inventory.supports_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
+                session_bound: F::SESSION_BOUND,
             },
         );
     }
@@ -319,6 +325,7 @@ impl ProviderRegistry {
                 supports_inventory_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,
+                session_bound: false,
             },
         );
     }

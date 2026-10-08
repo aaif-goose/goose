@@ -27,7 +27,7 @@ use goose::agents::platform_extensions::developer::shell::{
 use goose::agents::AgentEvent;
 use goose::agents::SUBAGENT_TOOL_REQUEST_TYPE;
 use goose::permission::Permission;
-use goose::providers::base::ProviderUsage;
+use goose::providers::base::{Provider, ProviderUsage};
 use goose::utils::safe_truncate;
 
 use anyhow::Result;
@@ -786,7 +786,7 @@ impl CliSession {
         history.save(editor);
         self.push_message(Message::user().with_text(content));
 
-        let _provider = self.agent.provider().await?;
+        let _provider = self.agent.provider(&self.session_id).await?;
 
         println!();
         output::run_status_hook("thinking");
@@ -880,7 +880,7 @@ impl CliSession {
     }
 
     async fn handle_model(&mut self, options: input::ModelCommandOptions) -> Result<()> {
-        let provider = self.agent.provider().await?;
+        let provider = self.agent.provider(&self.session_id).await?;
         let current_provider_name = provider.get_name().to_string();
         let current_model_config = self
             .agent
@@ -992,8 +992,13 @@ impl CliSession {
         )
         .await?;
 
-        let extensions = self.agent.get_extension_configs().await;
-        let new_provider = match goose::providers::create(target_provider_name, extensions).await {
+        let new_provider = match session_provider(
+            &self.agent,
+            &self.session_id,
+            target_provider_name,
+        )
+        .await
+        {
             Ok(p) => p,
             Err(e) => {
                 output::render_error(&format!(
@@ -1031,11 +1036,8 @@ impl CliSession {
         }
 
         self.agent
-            .update_provider(new_provider, new_model_config, &self.session_id)
+            .switch_provider(&self.session_id, target_provider_name, new_model_config)
             .await?;
-
-        let mode = self.agent.goose_mode().await;
-        self.agent.update_goose_mode(mode, &self.session_id).await?;
 
         self.update_completion_cache().await?;
 
@@ -1054,7 +1056,7 @@ impl CliSession {
     }
 
     async fn handle_clear(&mut self) -> Result<()> {
-        let provider = self.agent.provider().await?;
+        let provider = self.agent.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&context_management_unsupported_message(
                 "clear",
@@ -1101,7 +1103,7 @@ impl CliSession {
     }
 
     async fn handle_new(&mut self) -> Result<()> {
-        let provider = self.agent.provider().await?;
+        let provider = self.agent.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&format!(
                 "Starting a new session is not supported for provider '{}' because it manages its own conversation context.",
@@ -1130,11 +1132,10 @@ impl CliSession {
             .await;
 
         self.agent.discard_pending_steers(&self.session_id).await;
+        self.agent.config.providers.release(&self.session_id);
 
         self.session_id = new_session_id;
         self.messages.clear();
-        self.agent.set_goal(None).await;
-        self.agent.set_grind(None).await;
 
         if let Err(e) = self
             .agent
@@ -1252,7 +1253,7 @@ impl CliSession {
     }
 
     async fn handle_compact(&mut self) -> Result<()> {
-        let provider = self.agent.provider().await?;
+        let provider = self.agent.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&context_management_unsupported_message(
                 "compact",
@@ -1771,7 +1772,7 @@ impl CliSession {
     ) -> Result<()> {
         let prompts = agent.list_extension_prompts(session_id).await;
         let all_providers = goose::providers::providers().await;
-        let session_provider = agent.provider().await?.get_name().to_string();
+        let session_provider = agent.provider(session_id).await?.get_name().to_string();
 
         let provider_ids: Vec<String> = all_providers.iter().map(|(m, _)| m.name.clone()).collect();
         let inventory_models: HashMap<String, Vec<String>> = {
@@ -1901,7 +1902,7 @@ impl CliSession {
 
     /// Display enhanced context usage with session totals
     pub async fn display_context_usage(&self) -> Result<()> {
-        let provider = self.agent.provider().await?;
+        let provider = self.agent.provider(&self.session_id).await?;
         let model_config = self
             .agent
             .model_config_for_session(&self.session_id)
@@ -2020,6 +2021,22 @@ impl CliSession {
     }
 }
 
+/// The provider `session_id` would get with `provider_name`, without switching
+/// the session to it.
+pub(crate) async fn session_provider(
+    agent: &Agent,
+    session_id: &str,
+    provider_name: &str,
+) -> anyhow::Result<Arc<dyn Provider>> {
+    let mut session = agent
+        .config
+        .session_manager
+        .get_session(session_id, false)
+        .await?;
+    session.provider_name = Some(provider_name.to_string());
+    agent.config.providers.provider_for(&session).await
+}
+
 async fn create_successor_session(
     session_manager: &SessionManager,
     old_session: &goose::session::Session,
@@ -2037,7 +2054,10 @@ async fn create_successor_session(
     let mut builder = session_manager
         .update(&new_session.id)
         .recipe(old_session.recipe.clone())
-        .user_recipe_values(old_session.user_recipe_values.clone());
+        .user_recipe_values(old_session.user_recipe_values.clone())
+        .system_prompt_override(old_session.system_prompt_override.clone())
+        .system_prompt_extras(old_session.system_prompt_extras.clone())
+        .container(old_session.container.clone());
 
     if let Some(provider_name) = old_session.provider_name.clone() {
         builder = builder.provider_name(provider_name);
@@ -3215,11 +3235,11 @@ mod tests {
         extension_loading: Option<AbortOnDropHandle<Vec<ExtensionFailure>>>,
         refresh_completions: bool,
     ) -> CliSession {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let data_dir = tempfile::TempDir::new().unwrap().keep();
+        let session_manager = SessionManager::new(data_dir.clone());
         let session = session_manager
             .create_session(
-                temp_dir.path().to_path_buf(),
+                data_dir.clone(),
                 "Loading gate test".to_string(),
                 goose::session::SessionType::User,
                 GooseMode::default(),
@@ -3229,9 +3249,7 @@ mod tests {
 
         let agent = goose::agents::Agent::with_config(goose::agents::AgentConfig::new(
             Arc::new(session_manager),
-            Arc::new(goose::config::PermissionManager::new(
-                temp_dir.path().to_path_buf(),
-            )),
+            Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
             None,
             GooseMode::default(),
             // Disable background session naming so the test agent starts no

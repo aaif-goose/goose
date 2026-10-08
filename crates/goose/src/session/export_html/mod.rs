@@ -67,6 +67,7 @@ mod tests {
             project_id: None,
             parent_session_id: None,
             last_message_snippet: None,
+            ..Default::default()
         }
     }
 

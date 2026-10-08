@@ -34,6 +34,7 @@ impl GooseAcpAgent {
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")?;
+        agent.config.providers.release(&session.id);
         agent
             .restore_provider_from_session(&session)
             .await
@@ -53,15 +54,15 @@ impl GooseAcpAgent {
             );
         }
 
-        let agent = self.get_session_agent(session_id).await?;
+        let text = Some(req.text).filter(|text| !text.trim().is_empty());
         match req.mode {
-            SessionSystemPromptMode::Set => {
-                if req.text.trim().is_empty() {
-                    agent.clear_system_prompt_override().await;
-                } else {
-                    agent.override_system_prompt(req.text).await;
-                }
-            }
+            SessionSystemPromptMode::Set => self
+                .session_manager
+                .update(session_id)
+                .system_prompt_override(text)
+                .apply()
+                .await
+                .internal_err()?,
             SessionSystemPromptMode::Append => {
                 let key = req
                     .key
@@ -72,11 +73,10 @@ impl GooseAcpAgent {
                         agent_client_protocol::Error::invalid_params()
                             .data("key cannot be empty for append mode")
                     })?;
-                if req.text.trim().is_empty() {
-                    agent.remove_system_prompt_extra(key).await;
-                } else {
-                    agent.extend_system_prompt(key.to_string(), req.text).await;
-                }
+                self.session_manager
+                    .set_system_prompt_extra(session_id, key, text)
+                    .await
+                    .internal_err()?
             }
         }
 

@@ -13,6 +13,7 @@ pub mod platform_extensions;
 #[cfg(feature = "scheduler")]
 pub mod platform_tools;
 pub mod prompt_manager;
+pub mod provider_manager;
 pub mod reply_parts;
 pub mod retry;
 #[cfg(feature = "scheduler")]
