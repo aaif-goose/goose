@@ -75,6 +75,7 @@ pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_empty_response::EmptyResponseOperation;
+pub(crate) use ops_entry_hook::session_start_message;
 pub(super) use ops_entry_hook::EntryHookOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
 pub(super) use ops_foreground_subagent::{subagent_cancelled_message, ForegroundSubagentOperation};

@@ -96,7 +96,6 @@ pub(super) struct TestPipeline {
     permission_manager: Arc<PermissionManager>,
     hook_manager: HookManager,
     stop_hook_block_cap: u32,
-    session_start_emitted: bool,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
     working_dir: std::path::PathBuf,
@@ -191,10 +190,8 @@ impl TestPipeline {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let steps = std::iter::once(Arc::new(EntryHookOperation::new(
-            self.hook_manager.clone(),
-            self.session_start_emitted,
-        )) as Arc<dyn Operation<Session, GooseEffect> + '_>)
+        let steps = std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
+            as Arc<dyn Operation<Session, GooseEffect> + '_>)
         .chain(std::iter::once(command_operation))
         .chain(operations)
         .map(Step::Operation)
@@ -265,11 +262,6 @@ impl TestPipeline {
 
     pub(super) fn with_stop_hook_block_cap(mut self, cap: u32) -> Self {
         self.stop_hook_block_cap = cap;
-        self
-    }
-
-    pub(super) fn with_session_start_emitted(mut self) -> Self {
-        self.session_start_emitted = true;
         self
     }
 
@@ -822,7 +814,6 @@ async fn build_test_pipeline(
         permission_manager,
         hook_manager: HookManager::default(),
         stop_hook_block_cap: 3,
-        session_start_emitted: false,
         calculator: calculator.clone(),
         session_id: session.id.clone(),
         working_dir: session.working_dir.clone(),

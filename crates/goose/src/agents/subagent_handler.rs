@@ -85,7 +85,6 @@ pub(crate) async fn from_foreground_subagent_session(
         id: session_id.to_string(),
         schedule_id: None,
         max_turns: Some(max_turns as u32),
-        session_start_emitted: false,
     };
     Ok((agent, session_config))
 }
