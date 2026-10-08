@@ -59,6 +59,39 @@ async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
     count_context_tokens(&messages[after_request..]).await
 }
 
+/// Return proactive compaction pressure using the same eligibility and token
+/// accounting as `CompactionOperation`. Reactive context errors are separate.
+pub(super) async fn proactive_compaction_tokens(
+    session: &Session,
+    conversation: &Conversation,
+    context_limit: usize,
+    threshold: f64,
+) -> Result<Option<i32>> {
+    if context_limit == 0 || threshold <= 0.0 || threshold >= 1.0 {
+        return Ok(None);
+    }
+    let messages = messages_since_kickoff(conversation)?;
+    let tail = last_effective_role(messages)?;
+    if tail == EffectiveRole::Assistant
+        || awaits_tool_responses(messages)
+        || (tail == EffectiveRole::Tool && FinalOutputTool::successful_output(messages).is_some())
+    {
+        return Ok(None);
+    }
+    let tokens = context_tokens(session, conversation).await?;
+    if tokens <= 0 || (tokens as f64 / context_limit as f64) <= threshold {
+        return Ok(None);
+    }
+    Ok(Some(tokens))
+}
+
+async fn context_tokens(session: &Session, conversation: &Conversation) -> Result<i32> {
+    match session.usage.total_tokens {
+        Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
+        None => count_context_tokens(conversation.messages()).await,
+    }
+}
+
 pub struct CompactionOperation {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
@@ -81,20 +114,6 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
-        }
-    }
-
-    fn over_threshold(&self, tokens: usize) -> bool {
-        if self.threshold <= 0.0 || self.threshold >= 1.0 {
-            return false;
-        }
-        (tokens as f64 / self.context_limit as f64) > self.threshold
-    }
-
-    async fn context_tokens(&self, session: &Session, conversation: &Conversation) -> Result<i32> {
-        match session.usage.total_tokens {
-            Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
-            None => count_context_tokens(conversation.messages()).await,
         }
     }
 
@@ -223,7 +242,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             return Ok(Vec::new());
         }
         Ok(compaction_part(
-            Some(self.context_tokens(session, conversation).await?),
+            Some(context_tokens(session, conversation).await?),
             self.context_limit,
             self.threshold,
         )
@@ -259,19 +278,15 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
                 return not_applicable();
             }
         } else {
-            // Compact only ahead of an inference. An assistant tail ends the turn or
-            // awaits tool responses, hiding an unanswered request orphans its result,
-            // and RecipeOperation delivers a successful final output from a tool tail.
-            let tail = last_effective_role(messages)?;
-            if tail == EffectiveRole::Assistant
-                || awaits_tool_responses(messages)
-                || (tail == EffectiveRole::Tool
-                    && FinalOutputTool::successful_output(messages).is_some())
+            if proactive_compaction_tokens(
+                session,
+                conversation,
+                self.context_limit,
+                self.threshold,
+            )
+            .await?
+            .is_none()
             {
-                return not_applicable();
-            }
-            let tokens = self.context_tokens(session, conversation).await?;
-            if tokens <= 0 || !self.over_threshold(tokens as usize) {
                 return not_applicable();
             }
         }
