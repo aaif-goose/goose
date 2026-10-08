@@ -62,9 +62,6 @@ const isUserMessage = (message: Message) => message.role === 'user';
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
-  customChatInputProps?: Record<string, unknown>;
-  customMainLayoutProps?: Record<string, unknown>;
-  contentClassName?: string;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
@@ -75,8 +72,6 @@ interface BaseChatProps {
 
 export default function BaseChat({
   setChat,
-  customChatInputProps = {},
-  customMainLayoutProps = {},
   sessionId,
   initialMessage,
   noAutoSubmit,
@@ -131,10 +126,7 @@ export default function BaseChat({
         setQuoteButtonPos(null);
         return;
       }
-      if (
-        !conversationRef.current ||
-        !conversationRef.current.contains(sel.anchorNode)
-      ) {
+      if (!conversationRef.current || !conversationRef.current.contains(sel.anchorNode)) {
         setQuoteButtonPos(null);
         return;
       }
@@ -435,11 +427,7 @@ export default function BaseChat({
   if (sessionLoadError) {
     return (
       <div className="h-full flex flex-col min-h-0">
-        <MainPanelLayout
-          backgroundColor={'bg-background-primary'}
-          removeTopPadding={true}
-          {...customMainLayoutProps}
-        >
+        <MainPanelLayout backgroundColor={'bg-background-primary'} removeTopPadding={true}>
           <div className="flex flex-col flex-1 min-h-0 relative">
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center justify-center p-8">
@@ -467,11 +455,7 @@ export default function BaseChat({
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <MainPanelLayout
-        backgroundColor={'bg-background-primary'}
-        removeTopPadding={true}
-        {...customMainLayoutProps}
-      >
+      <MainPanelLayout backgroundColor={'bg-background-primary'} removeTopPadding={true}>
         {/* Chat container with sticky recipe header */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Goose watermark - top right */}
@@ -522,17 +506,17 @@ export default function BaseChat({
               <>
                 <SearchView>
                   <div ref={conversationRef}>
-                  <ProgressiveMessageList
-                    messages={messages}
-                    sessionId={sessionId}
-                    toolCallNotifications={toolCallNotifications}
-                    append={appendToChat}
-                    isUserMessage={isUserMessage}
-                    isStreamingMessage={chatState !== ChatState.Idle}
-                    onRenderingComplete={handleRenderingComplete}
-                    onMessageUpdate={onMessageUpdate}
-                    submitElicitationResponse={submitElicitationResponse}
-                  />
+                    <ProgressiveMessageList
+                      messages={messages}
+                      sessionId={sessionId}
+                      toolCallNotifications={toolCallNotifications}
+                      append={appendToChat}
+                      isUserMessage={isUserMessage}
+                      isStreamingMessage={chatState !== ChatState.Idle}
+                      onRenderingComplete={handleRenderingComplete}
+                      onMessageUpdate={onMessageUpdate}
+                      submitElicitationResponse={submitElicitationResponse}
+                    />
                   </div>
                 </SearchView>
 
@@ -628,7 +612,6 @@ export default function BaseChat({
             }}
             appendQuote={pendingQuote}
             onAppendQuoteConsumed={() => setPendingQuote(null)}
-            {...customChatInputProps}
           />
         </ChatInputCard>
       </MainPanelLayout>

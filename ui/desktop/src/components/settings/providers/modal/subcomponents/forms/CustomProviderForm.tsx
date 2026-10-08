@@ -315,7 +315,7 @@ export default function CustomProviderForm({
       setModels(initialData.models.join(', '));
       setSupportsStreaming(initialData.supports_streaming);
       setToolshim(initialData.toolshim);
-      setRequiresAuth(initialData.requires_auth ?? true);
+      setRequiresAuth(initialData.requires_auth);
 
       if (initialData.headers) {
         const headerList = Object.entries(initialData.headers).map(([key, value]) => ({
@@ -453,7 +453,7 @@ export default function CustomProviderForm({
     const errors: Record<string, string> = {};
     if (!displayName) errors.displayName = intl.formatMessage(i18n.displayNameRequired);
     if (!apiUrl) errors.apiUrl = intl.formatMessage(i18n.apiUrlRequired);
-    const existingHadAuth = initialData && (initialData.requires_auth ?? true);
+    const existingHadAuth = initialData && initialData.requires_auth;
     if (requiresAuth && !apiKey && !existingHadAuth)
       errors.apiKey = intl.formatMessage(i18n.apiKeyRequired);
     if (!models) errors.models = intl.formatMessage(i18n.modelsRequired);
