@@ -121,6 +121,7 @@ use crate::agents::Agent;
 use crate::conversation::message::ToolRequest;
 use crate::session::Session;
 use crate::tool_inspection::get_security_finding_id_from_results;
+use crate::utils::run_unless_cancelled;
 
 pub(super) enum ToolStreamItem<T> {
     ActionRequired(Message),
@@ -223,7 +224,10 @@ impl Agent {
                     .user_only();
                 yield action_required_msg;
 
-                let confirmation = confirmation_rx.await
+                let Some(confirmation) = run_unless_cancelled(&cancellation_token, confirmation_rx).await else {
+                    break;
+                };
+                let confirmation = confirmation
                     .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {

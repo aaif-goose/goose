@@ -3173,33 +3173,39 @@ impl Agent {
                                             request.tool_meta.clone(),
                                         );
 
-                                    let final_response = match &request.tool_call {
-                                        Ok(_) => request_to_response_map
-                                            .remove(&request.id)
-                                            .unwrap_or_else(|| Message::user().with_generated_id()),
+                                    let mut final_response = request_to_response_map
+                                        .remove(&request.id)
+                                        .unwrap_or_else(|| Message::user().with_generated_id());
+                                    let already_answered = final_response.content.iter().any(|c| {
+                                        matches!(c, MessageContent::ToolResponse(r) if r.id == request.id)
+                                    });
+                                    match &request.tool_call {
                                         Err(error) => {
                                             error!("Tool call could not be parsed: {error}");
-                                            let mut response = request_to_response_map
-                                                .remove(&request.id)
-                                                .unwrap_or_else(|| Message::user().with_generated_id());
                                             // Only feed the parse error back if this id isn't
                                             // already answered. In Chat mode the skip branch above
                                             // already added a tool response for it; adding another
                                             // here would duplicate the tool_call_id (which strict
                                             // providers reject).
-                                            let already_answered = response.content.iter().any(|c| {
-                                                matches!(c, MessageContent::ToolResponse(r) if r.id == request.id)
-                                            });
                                             if !already_answered {
-                                                response.add_tool_response_with_metadata(
+                                                final_response.add_tool_response_with_metadata(
                                                     request.id.clone(),
                                                     Err(error.clone()),
                                                     request.metadata.as_ref(),
                                                 );
                                             }
-                                            response
                                         }
-                                    };
+                                        Ok(_) if !already_answered && is_token_cancelled(&cancel_token) => {
+                                            final_response.add_tool_response_with_metadata(
+                                                request.id.clone(),
+                                                Ok(CallToolResult::error(vec![ContentBlock::text(
+                                                    "Tool call was interrupted before completing",
+                                                )])),
+                                                request.metadata.as_ref(),
+                                            );
+                                        }
+                                        Ok(_) => {}
+                                    }
 
                                     // Response placeholder is created before tools run, so clamp request to avoid inverted ordering.
                                     if request_msg.created > final_response.created {
