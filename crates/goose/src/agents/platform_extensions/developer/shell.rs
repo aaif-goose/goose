@@ -415,12 +415,14 @@ impl ShellTool {
         let login_path_ref: Option<&str> = None;
 
         let execution = match run_command(
-            &params.command,
+            ShellCommandParams {
+                command_line: &params.command,
+                working_dir,
+                login_path: login_path_ref,
+                session_id,
+                model_name,
+            },
             params.timeout_secs,
-            working_dir,
-            login_path_ref,
-            session_id,
-            model_name,
             notification_emitter,
             cancellation_token,
         )
@@ -563,26 +565,15 @@ fn resolve_shell_timeout(timeout_secs: Option<u64>) -> u64 {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn run_command(
-    command_line: &str,
+    params: ShellCommandParams<'_>,
     timeout_secs: Option<u64>,
-    working_dir: Option<&std::path::Path>,
-    login_path: Option<&str>,
-    session_id: Option<&str>,
-    model_name: Option<&str>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
     cancellation_token: CancellationToken,
 ) -> Result<ExecutionOutput, String> {
     let timeout_secs = Some(resolve_shell_timeout(timeout_secs));
 
-    let mut command = build_shell_command(
-        command_line,
-        working_dir,
-        login_path,
-        session_id,
-        model_name,
-    );
+    let mut command = build_shell_command(&params);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -696,13 +687,15 @@ async fn run_command(
 ///
 /// On Unix the default shell (`bash`, falling back to `sh`) is likewise invoked
 /// as `<shell> -c <line>`.
-fn build_shell_command(
-    command_line: &str,
-    working_dir: Option<&std::path::Path>,
-    login_path: Option<&str>,
-    session_id: Option<&str>,
-    model_name: Option<&str>,
-) -> tokio::process::Command {
+struct ShellCommandParams<'a> {
+    command_line: &'a str,
+    working_dir: Option<&'a std::path::Path>,
+    login_path: Option<&'a str>,
+    session_id: Option<&'a str>,
+    model_name: Option<&'a str>,
+}
+
+fn build_shell_command(params: &ShellCommandParams<'_>) -> tokio::process::Command {
     #[cfg(windows)]
     let mut command = {
         let shell = windows_shell();
@@ -710,20 +703,25 @@ fn build_shell_command(
         let mut command = tokio::process::Command::new(&shell);
         match shell_stem.as_str() {
             "pwsh" | "powershell" => {
-                command.args(["-NoProfile", "-NonInteractive", "-Command", command_line]);
+                command.args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    params.command_line,
+                ]);
             }
             "cmd" => {
-                command.arg("/C").raw_arg(command_line);
+                command.arg("/C").raw_arg(params.command_line);
             }
             // POSIX-like shells (bash, zsh, etc.) on Windows (e.g. Cygwin/MSYS2)
             _ => {
-                command.args(["-c", command_line]);
+                command.args(["-c", params.command_line]);
             }
         }
-        if let Some(path) = working_dir {
+        if let Some(path) = params.working_dir {
             command.current_dir(path);
         }
-        if let Some(path) = login_path {
+        if let Some(path) = params.login_path {
             command.env("PATH", path);
         }
         command
@@ -735,37 +733,37 @@ fn build_shell_command(
 
         if is_flatpak() {
             let mut command = flatpak_spawn_command();
-            if let Some(dir) = working_dir {
+            if let Some(dir) = params.working_dir {
                 command.arg(format!("--directory={}", dir.display()));
             }
-            if let Some(path) = login_path {
+            if let Some(path) = params.login_path {
                 command.arg(format!("--env=PATH={}", path));
             }
-            apply_flatpak_session_environment(&mut command, session_id);
-            apply_flatpak_model_environment(&mut command, model_name);
+            apply_flatpak_session_environment(&mut command, params.session_id);
+            apply_flatpak_model_environment(&mut command, params.model_name);
             command
                 .arg(&shell)
-                .args(unix_shell_command_args(command_line));
+                .args(unix_shell_command_args(params.command_line));
             command
         } else {
             let mut command = tokio::process::Command::new(shell);
-            command.args(unix_shell_command_args(command_line));
-            if let Some(path) = working_dir {
+            command.args(unix_shell_command_args(params.command_line));
+            if let Some(path) = params.working_dir {
                 command.current_dir(path);
             }
-            if let Some(path) = login_path {
+            if let Some(path) = params.login_path {
                 command.env("PATH", path);
             }
-            apply_session_environment(&mut command, session_id);
-            apply_model_environment(&mut command, model_name);
+            apply_session_environment(&mut command, params.session_id);
+            apply_model_environment(&mut command, params.model_name);
             command
         }
     };
 
     #[cfg(windows)]
     {
-        apply_session_environment(&mut command, session_id);
-        apply_model_environment(&mut command, model_name);
+        apply_session_environment(&mut command, params.session_id);
+        apply_model_environment(&mut command, params.model_name);
     }
     command.set_no_window();
     command
