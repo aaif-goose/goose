@@ -49,6 +49,7 @@ impl goose_providers::base::ProviderDescriptor for ClaudeAcpProvider {
 impl ProviderDef for ClaudeAcpProvider {
     type Provider = AcpProvider;
     const SESSION_BOUND: bool = true;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

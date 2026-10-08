@@ -35,6 +35,10 @@ pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     /// extensions and working directory, so they cannot be shared.
     const SESSION_BOUND: bool = false;
 
+    /// Runs its own tool loop with the session's MCP servers; must agree with
+    /// `Provider::manages_own_context`. Read without building the provider.
+    const MANAGES_OWN_CONTEXT: bool = false;
+
     fn from_env(
         extensions: Vec<ExtensionConfig>,
         tls_config: Option<TlsConfig>,

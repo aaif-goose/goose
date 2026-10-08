@@ -738,12 +738,12 @@ impl ExtensionManager {
     async fn session_lease(self: &Arc<Self>, session: &Session) -> ExtensionLease {
         // Providers that run their own tool loop are handed the session's
         // MCP servers directly, so goose does not start them too.
-        let manages_own_context = self
-            .context
-            .providers
-            .provider_for(session)
-            .await
-            .is_ok_and(|provider| provider.manages_own_context());
+        let manages_own_context = match &session.provider_name {
+            Some(name) => crate::providers::get_from_registry(name)
+                .await
+                .is_ok_and(|entry| entry.manages_own_context()),
+            None => false,
+        };
         let mut keys = HashSet::new();
         let extensions = selection(session)
             .into_iter()
@@ -1816,6 +1816,45 @@ mod tests {
             .await
             .iter()
             .any(|tool| tool.name == "mcp-fixture__app_card"));
+    }
+
+    #[tokio::test]
+    async fn a_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_the_lease() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        let mcp = McpFixture::new().await;
+        let todo = ExtensionConfig::Platform {
+            name: "todo".to_string(),
+            display_name: None,
+            description: String::new(),
+            bundled: None,
+            available_tools: vec![],
+        };
+        let session =
+            session_selecting(&manager, temp_dir.path(), vec![todo, fixture_config(&mcp)]).await;
+        manager
+            .get_context()
+            .session_manager
+            .update(&session.id)
+            .provider_name("claude-code")
+            .apply()
+            .await
+            .unwrap();
+
+        let lease = manager.current_lease(&session.id, None).await;
+
+        assert_eq!(
+            lease
+                .configs()
+                .iter()
+                .map(ExtensionConfig::key)
+                .collect::<Vec<_>>(),
+            vec!["todo"]
+        );
+        assert!(lease.start().await.iter().all(|result| result.success));
+        assert_eq!(mcp.request_count(), 0);
     }
 
     #[tokio::test]

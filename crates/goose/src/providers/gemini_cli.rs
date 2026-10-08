@@ -184,6 +184,7 @@ impl goose_providers::base::ProviderDescriptor for GeminiCliProvider {
 impl ProviderDef for GeminiCliProvider {
     type Provider = Self;
     const SESSION_BOUND: bool = true;
+    const MANAGES_OWN_CONTEXT: bool = true;
 
     fn from_env(
         _extensions: Vec<crate::config::ExtensionConfig>,
