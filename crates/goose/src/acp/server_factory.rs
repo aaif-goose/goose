@@ -108,7 +108,8 @@ impl AcpServer {
 
         let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
-                crate::providers::create_with_default_model(&provider_name, Vec::new()).await
+                crate::providers::create_backend_with_default_model(&provider_name, Vec::new())
+                    .await
             })
         });
 

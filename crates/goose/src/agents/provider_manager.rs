@@ -61,6 +61,7 @@ impl ProviderManager {
         Ok(provider)
     }
 
+    /// Transitional injection for standard backends. Use `set_backend` for ACP.
     pub async fn set_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
         self.set_backend(session_id, ProviderBackend::Standard(provider))
             .await;
@@ -127,6 +128,46 @@ pub fn model_config_for(session: &Session) -> Result<ModelConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn typed_acquisition_keeps_acp_sessions_isolated_and_release_removes_the_slot() {
+        let manager = ProviderManager::default();
+        let first = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let second = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let first_session = Session {
+            id: "first".to_string(),
+            provider_name: Some(first.name().to_string()),
+            ..Default::default()
+        };
+        let second_session = Session {
+            id: "second".to_string(),
+            provider_name: Some(second.name().to_string()),
+            ..Default::default()
+        };
+        manager
+            .set_backend(&first_session.id, ProviderBackend::Acp(first.clone()))
+            .await;
+        manager
+            .set_backend(&second_session.id, ProviderBackend::Acp(second.clone()))
+            .await;
+        assert!(
+            matches!(manager.backend_for(&first_session).await.unwrap(), ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &first))
+        );
+        assert!(
+            matches!(manager.backend_for(&second_session).await.unwrap(), ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &second))
+        );
+        assert!(manager.shared.lock().await.is_empty());
+
+        manager.release(&first_session.id);
+        assert!(!manager
+            .sessions
+            .lock()
+            .unwrap()
+            .contains_key(&first_session.id));
+        assert!(
+            matches!(manager.backend_for(&second_session).await.unwrap(), ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &second))
+        );
+    }
 
     #[tokio::test]
     async fn typed_injection_retains_acp_and_legacy_injection_is_standard() {

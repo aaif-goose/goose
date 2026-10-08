@@ -36,6 +36,7 @@ use crate::providers::inventory::{
     ProviderInventoryEntry, ProviderInventoryService, RefreshJobPlan, RefreshPlan,
     RefreshSkipReason,
 };
+use crate::providers::ProviderBackend;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::session_manager::SessionUsageTotals;
 use crate::session::{
@@ -131,7 +132,7 @@ mod tool_notifications;
 mod tools;
 
 pub type AcpProviderFactory =
-    Arc<dyn Fn(String) -> BoxFuture<'static, Result<Arc<dyn Provider>>> + Send + Sync>;
+    Arc<dyn Fn(String) -> BoxFuture<'static, Result<ProviderBackend>> + Send + Sync>;
 
 const ACP_VISIBLE_SESSION_TYPES: [SessionType; 3] =
     [SessionType::User, SessionType::Scheduled, SessionType::Acp];
@@ -999,7 +1000,7 @@ impl GooseAcpAgent {
         Ok(Config::global())
     }
 
-    async fn create_provider(&self, provider_name: &str) -> Result<Arc<dyn Provider>> {
+    async fn create_provider(&self, provider_name: &str) -> Result<ProviderBackend> {
         (self.provider_factory)(provider_name.to_string()).await
     }
 
@@ -2540,11 +2541,11 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         let config = self.config()?;
         let agent = self.get_session_agent(session_id).await?;
-        let current_provider = agent
-            .provider(session_id)
+        let current_backend = agent
+            .backend(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
-        let current_provider_name = current_provider.get_name();
+        let current_provider_name = current_backend.name();
         let current_model_config = agent
             .model_config_for_session(session_id)
             .await

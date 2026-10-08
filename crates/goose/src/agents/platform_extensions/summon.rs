@@ -8,7 +8,7 @@ use crate::agents::AgentConfig;
 use crate::config::paths::Paths;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::Message;
-use crate::providers;
+use crate::providers::{self, ProviderBackend};
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::local_recipes::load_local_recipe_file;
 use crate::recipe::{Recipe, RecipeParameter, Response, Settings, RECIPE_FILE_EXTENSIONS};
@@ -1271,20 +1271,27 @@ impl SummonClient {
         let config = self
             .resolve_subagent_config(params, recipe, session)
             .await?;
-        let provider = match providers::get_from_registry(&config.provider_name).await {
-            Ok(entry) => entry.create(config.extensions.clone()).await?,
-            Err(error) => match self.context.providers.provider_for(session).await {
-                Ok(provider)
+        let backend = match providers::get_from_registry(&config.provider_name).await {
+            Ok(entry) => {
+                entry
+                    .create_backend_with_working_dir(
+                        config.extensions.clone(),
+                        config.working_dir.clone(),
+                    )
+                    .await?
+            }
+            Err(error) => match self.context.providers.backend_for(session).await {
+                Ok(ProviderBackend::Standard(provider))
                     if provider.get_name() == config.provider_name
                         && !provider.manages_own_context() =>
                 {
-                    provider
+                    ProviderBackend::Standard(provider)
                 }
                 _ => return Err(error),
             },
         };
         Ok(TaskConfig {
-            provider,
+            backend,
             model_config: config.model_config,
             parent_session_id: session.id.clone(),
             parent_working_dir: config.working_dir,
@@ -2488,12 +2495,50 @@ You review code."#;
             .await
             .unwrap();
 
-        assert!(Arc::ptr_eq(&parent_provider, &task_config.provider));
+        assert!(matches!(
+            &task_config.backend,
+            ProviderBackend::Standard(provider) if Arc::ptr_eq(&parent_provider, provider)
+        ));
         let error = client
             .handle_foreground_delegate(params, &session)
             .await
             .unwrap_err();
         assert!(error.contains("cannot be reconstructed for a foreground subagent"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_build_task_config_rejects_sharing_unregistered_acp() {
+        let temp_dir = TempDir::new().unwrap();
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let context = create_test_context();
+        let providers = context.providers.clone();
+        let client = SummonClient::new(context).unwrap();
+        let session = crate::session::Session {
+            id: "acp-parent".to_string(),
+            provider_name: Some(acp.name().to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            working_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let params = DelegateParams {
+            extensions: Some(Vec::new()),
+            provider: Some(acp.name().to_string()),
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        assert!(providers::get_from_registry(acp.name()).await.is_err());
+
+        for backend in [
+            ProviderBackend::Acp(acp.clone()),
+            ProviderBackend::Standard(acp.clone()),
+        ] {
+            providers.set_backend(&session.id, backend).await;
+            assert!(client
+                .build_task_config(&params, &empty_recipe(), &session)
+                .await
+                .is_err());
+        }
     }
 
     #[tokio::test]
@@ -2520,7 +2565,10 @@ You review code."#;
             .await
             .unwrap();
 
-        assert!(!Arc::ptr_eq(&parent_provider, &task_config.provider));
+        assert!(matches!(
+            &task_config.backend,
+            ProviderBackend::Standard(provider) if !Arc::ptr_eq(&parent_provider, provider)
+        ));
         assert!(task_config.extensions.is_empty());
     }
 

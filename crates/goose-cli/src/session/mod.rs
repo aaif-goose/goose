@@ -27,7 +27,8 @@ use goose::agents::platform_extensions::developer::shell::{
 use goose::agents::AgentEvent;
 use goose::agents::SUBAGENT_TOOL_REQUEST_TYPE;
 use goose::permission::Permission;
-use goose::providers::base::{Provider, ProviderUsage};
+use goose::providers::base::ProviderUsage;
+use goose::providers::ProviderBackend;
 use goose::utils::safe_truncate;
 
 use anyhow::Result;
@@ -786,7 +787,7 @@ impl CliSession {
         history.save(editor);
         self.push_message(Message::user().with_text(content));
 
-        let _provider = self.agent.provider(&self.session_id).await?;
+        let _backend = self.agent.backend(&self.session_id).await?;
 
         println!();
         output::run_status_hook("thinking");
@@ -880,8 +881,8 @@ impl CliSession {
     }
 
     async fn handle_model(&mut self, options: input::ModelCommandOptions) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
-        let current_provider_name = provider.get_name().to_string();
+        let backend = self.agent.backend(&self.session_id).await?;
+        let current_provider_name = backend.name().to_string();
         let current_model_config = self
             .agent
             .model_config_for_session(&self.session_id)
@@ -920,12 +921,27 @@ impl CliSession {
             }
         };
 
-        if target_provider_name.ends_with("-acp") {
+        if target_entry
+            .metadata()
+            .setup
+            .as_ref()
+            .is_some_and(|setup| setup.acp)
+        {
             output::render_error(
                 "Session model switching is not supported for ACP providers in the CLI.",
             );
             return Ok(());
         }
+
+        let provider = match backend {
+            ProviderBackend::Standard(provider) => provider,
+            ProviderBackend::Acp(_) => {
+                output::render_error(
+                    "Session model switching is not supported for ACP providers in the CLI.",
+                );
+                return Ok(());
+            }
+        };
 
         if provider.manages_own_context() {
             output::render_error(&format!(
@@ -986,12 +1002,6 @@ impl CliSession {
             return Ok(());
         }
 
-        let current_context_limit = goose::context_limit::get_context_limit(
-            provider.as_ref(),
-            &current_model_config.model_name,
-        )
-        .await?;
-
         let new_provider = match session_provider(
             &self.agent,
             &self.session_id,
@@ -1011,6 +1021,16 @@ impl CliSession {
             }
         };
 
+        let new_provider = match new_provider {
+            ProviderBackend::Standard(provider) => provider,
+            ProviderBackend::Acp(_) => {
+                output::render_error(
+                    "Session model switching is not supported for ACP providers in the CLI.",
+                );
+                return Ok(());
+            }
+        };
+
         if new_provider.manages_own_context() {
             output::render_error(&format!(
                 "Session provider switching is not supported for '{}' because it manages its own conversation context.",
@@ -1018,6 +1038,12 @@ impl CliSession {
             ));
             return Ok(());
         }
+
+        let current_context_limit = goose::context_limit::get_context_limit(
+            provider.as_ref(),
+            &current_model_config.model_name,
+        )
+        .await?;
 
         let new_context_limit = goose::context_limit::get_context_limit(
             new_provider.as_ref(),
@@ -1769,7 +1795,7 @@ impl CliSession {
     ) -> Result<()> {
         let prompts = agent.list_extension_prompts(session_id).await;
         let all_providers = goose::providers::providers().await;
-        let session_provider = agent.provider(session_id).await?.get_name().to_string();
+        let session_provider = agent.backend(session_id).await?.name().to_string();
 
         let provider_ids: Vec<String> = all_providers.iter().map(|(m, _)| m.name.clone()).collect();
         let inventory_models: HashMap<String, Vec<String>> = {
@@ -2018,20 +2044,20 @@ impl CliSession {
     }
 }
 
-/// The provider `session_id` would get with `provider_name`, without switching
-/// the session to it.
+/// Acquire a backend for `provider_name` without persisting a provider switch.
+/// This can replace the provider manager's backend slot for the session.
 pub(crate) async fn session_provider(
     agent: &Agent,
     session_id: &str,
     provider_name: &str,
-) -> anyhow::Result<Arc<dyn Provider>> {
+) -> anyhow::Result<ProviderBackend> {
     let mut session = agent
         .config
         .session_manager
         .get_session(session_id, false)
         .await?;
     session.provider_name = Some(provider_name.to_string());
-    agent.config.providers.provider_for(&session).await
+    agent.config.providers.backend_for(&session).await
 }
 
 async fn create_successor_session(

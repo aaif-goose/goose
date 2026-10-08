@@ -28,7 +28,7 @@ impl ProviderBackend {
     pub fn name(&self) -> &str {
         match self {
             Self::Standard(provider) => provider.get_name(),
-            Self::Acp(provider) => provider.get_name(),
+            Self::Acp(provider) => provider.name(),
         }
     }
 
@@ -46,7 +46,18 @@ impl ProviderBackend {
     ) -> Result<(), ProviderError> {
         match self {
             Self::Standard(provider) => provider.update_mode(session_id, mode).await,
-            Self::Acp(provider) => provider.update_mode(session_id, mode).await,
+            Self::Acp(provider) => provider.update_mode(mode).await,
+        }
+    }
+
+    pub async fn set_thinking_effort(
+        &self,
+        session_id: &str,
+        value: &str,
+    ) -> Result<bool, ProviderError> {
+        match self {
+            Self::Standard(provider) => provider.set_thinking_effort(session_id, value).await,
+            Self::Acp(provider) => provider.set_thinking_effort(value).await.map(|()| true),
         }
     }
 }

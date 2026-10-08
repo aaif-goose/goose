@@ -341,8 +341,8 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
         let agent = Arc::new(Agent::with_config(config));
 
         agent
-            .update_provider(
-                task_config.provider.clone(),
+            .update_backend(
+                task_config.backend.clone(),
                 task_config.model_config.clone(),
                 &session_id,
             )

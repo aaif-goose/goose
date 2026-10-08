@@ -326,6 +326,90 @@ fn spawn_client_loop(fut: impl Future<Output = ()> + Send + 'static) -> JoinHand
 }
 
 impl AcpProvider {
+    pub async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+        let session = self.session.lock().unwrap().clone();
+        let (_, available) = resolve_model_info(&self.name, &session.response)?;
+        Ok(available)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub async fn update_mode(&self, mode: GooseMode) -> Result<(), ProviderError> {
+        if let Some(candidates) = self.mode_mapping.get(&mode) {
+            let session = self.session.lock().unwrap().clone();
+            let mode_str =
+                select_mode_id(candidates, session.response.modes.as_ref()).ok_or_else(|| {
+                    ProviderError::RequestFailed(format!(
+                        "None of the mode ids [{}] are offered by the agent",
+                        candidates.join(", ")
+                    ))
+                })?;
+            if self.session_has_config_option(SessionConfigOptionCategory::Mode) {
+                self.send_set_config_option("mode".into(), mode_str)
+                    .await
+                    .map_err(|e| {
+                        ProviderError::RequestFailed(format!("Failed to set mode: {e}"))
+                    })?;
+            } else {
+                self.send_set_mode(mode_str).await.map_err(|e| {
+                    ProviderError::RequestFailed(format!("Failed to set mode: {e}"))
+                })?;
+            }
+        }
+
+        if let Ok(mut guard) = self.goose_mode.lock() {
+            *guard = mode;
+        }
+        Ok(())
+    }
+
+    pub fn thinking_effort_support(&self) -> ThinkingEffortSupport {
+        match self.effort_capability().ok().flatten() {
+            Some(capability) => ThinkingEffortSupport::Options(capability),
+            None => ThinkingEffortSupport::Unsupported,
+        }
+    }
+
+    pub async fn set_thinking_effort(&self, value: &str) -> Result<(), ProviderError> {
+        let capability = self
+            .effort_capability()
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        // No effort selector: the only advertised choice is `off`, which is a
+        // no-op. Falling back to the caller's legacy path would respawn the
+        // agent, while accepting any other value would persist a setting that
+        // was never applied.
+        let Some(capability) = capability else {
+            return if value.eq_ignore_ascii_case("off") {
+                Ok(())
+            } else {
+                Err(ProviderError::InvalidValue(format!(
+                    "Agent offers no thinking effort '{value}'"
+                )))
+            };
+        };
+        let mapped = map_effort_value(&capability, value).ok_or_else(|| {
+            ProviderError::InvalidValue(format!("Agent offers no thinking effort '{value}'"))
+        })?;
+
+        self.set_effort_option(&capability.option_id, mapped)
+            .await
+            .map_err(|e| effort_option_error(value, e))?;
+        Ok(())
+    }
+
+    pub async fn apply_model_selection(
+        &self,
+        model_config: &ModelConfig,
+    ) -> Result<(), ProviderError> {
+        self.apply_model_if_changed(&model_config.model_name)
+            .await
+            .map_err(|e| {
+                ProviderError::RequestFailed(format!("Failed to set ACP model option: {e}"))
+            })
+    }
+
     #[cfg(test)]
     pub(crate) fn new_test_stub() -> Self {
         tests::test_provider().0
@@ -482,7 +566,7 @@ impl AcpProvider {
         })
     }
 
-    pub(crate) async fn send_set_mode(&self, _goose_id: &str, mode_id: String) -> Result<()> {
+    pub(crate) async fn send_set_mode(&self, mode_id: String) -> Result<()> {
         let session_id = self.acp_session_id();
         let (response_tx, response_rx) = oneshot::channel();
         self.tx
@@ -500,7 +584,6 @@ impl AcpProvider {
 
     pub(crate) async fn send_set_config_option(
         &self,
-        _goose_id: &str,
         config_id: String,
         value: String,
     ) -> Result<()> {
@@ -542,7 +625,7 @@ impl AcpProvider {
             }
         }
 
-        self.send_set_config_option("", config_id, model_name.to_string())
+        self.send_set_config_option(config_id, model_name.to_string())
             .await?;
 
         let mut applied = self
@@ -566,12 +649,7 @@ impl AcpProvider {
     /// goose-side record of the last sent value: the agent's `SetConfigOption`
     /// response refreshes `effort_state` before this call returns, and later
     /// refreshes track the agent resetting its own effort.
-    async fn set_effort_option(
-        &self,
-        goose_id: &str,
-        option_id: &str,
-        value: String,
-    ) -> Result<()> {
+    async fn set_effort_option(&self, option_id: &str, value: String) -> Result<()> {
         {
             let state = self
                 .effort
@@ -586,7 +664,7 @@ impl AcpProvider {
             }
         }
 
-        self.send_set_config_option(goose_id, option_id.to_string(), value)
+        self.send_set_config_option(option_id.to_string(), value)
             .await
     }
 
@@ -604,8 +682,7 @@ impl AcpProvider {
             return Ok(());
         };
 
-        self.set_effort_option("", &capability.option_id, mapped)
-            .await
+        self.set_effort_option(&capability.option_id, mapped).await
     }
 
     async fn prompt(
@@ -681,7 +758,7 @@ fn fresh_text_run() -> (String, i64) {
 #[async_trait::async_trait]
 impl Provider for AcpProvider {
     fn get_name(&self) -> &str {
-        &self.name
+        self.name()
     }
 
     fn provider_session_id(&self) -> Option<String> {
@@ -720,42 +797,12 @@ impl Provider for AcpProvider {
             .await
     }
 
-    async fn update_mode(&self, session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
-        if let Some(candidates) = self.mode_mapping.get(&mode) {
-            let session = self.session.lock().unwrap().clone();
-            let mode_str =
-                select_mode_id(candidates, session.response.modes.as_ref()).ok_or_else(|| {
-                    ProviderError::RequestFailed(format!(
-                        "None of the mode ids [{}] are offered by the agent",
-                        candidates.join(", ")
-                    ))
-                })?;
-            if self.session_has_config_option(SessionConfigOptionCategory::Mode) {
-                self.send_set_config_option(session_id, "mode".into(), mode_str)
-                    .await
-                    .map_err(|e| {
-                        ProviderError::RequestFailed(format!("Failed to set mode: {e}"))
-                    })?;
-            } else {
-                self.send_set_mode(session_id, mode_str)
-                    .await
-                    .map_err(|e| {
-                        ProviderError::RequestFailed(format!("Failed to set mode: {e}"))
-                    })?;
-            }
-        }
-
-        if let Ok(mut guard) = self.goose_mode.lock() {
-            *guard = mode;
-        }
-        Ok(())
+    async fn update_mode(&self, _session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
+        AcpProvider::update_mode(self, mode).await
     }
 
     fn thinking_effort_support(&self) -> ThinkingEffortSupport {
-        match self.effort_capability().ok().flatten() {
-            Some(capability) => ThinkingEffortSupport::Options(capability),
-            None => ThinkingEffortSupport::Unsupported,
-        }
+        AcpProvider::thinking_effort_support(self)
     }
 
     fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
@@ -764,41 +811,16 @@ impl Provider for AcpProvider {
 
     async fn set_thinking_effort(
         &self,
-        session_id: &str,
+        _session_id: &str,
         value: &str,
     ) -> Result<bool, ProviderError> {
-        let capability = self
-            .effort_capability()
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
-        // No effort selector: the only advertised choice is `off`, which is a
-        // no-op. Falling back to the caller's legacy path would respawn the
-        // agent, while accepting any other value would persist a setting that
-        // was never applied.
-        let Some(capability) = capability else {
-            return if value.eq_ignore_ascii_case("off") {
-                Ok(true)
-            } else {
-                Err(ProviderError::InvalidValue(format!(
-                    "Agent offers no thinking effort '{value}'"
-                )))
-            };
-        };
-        let mapped = map_effort_value(&capability, value).ok_or_else(|| {
-            ProviderError::InvalidValue(format!("Agent offers no thinking effort '{value}'"))
-        })?;
-
-        self.set_effort_option(session_id, &capability.option_id, mapped)
+        AcpProvider::set_thinking_effort(self, value)
             .await
-            .map_err(|e| effort_option_error(value, e))?;
-        Ok(true)
+            .map(|()| true)
     }
 
     async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
-        self.apply_model_if_changed(&model_config.model_name)
-            .await
-            .map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to set ACP model option: {e}"))
-            })
+        AcpProvider::apply_model_selection(self, model_config).await
     }
 
     fn permission_routing(&self) -> PermissionRouting {
@@ -1105,9 +1127,7 @@ impl Provider for AcpProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        let session = self.session.lock().unwrap().clone();
-        let (_, available) = resolve_model_info(&self.name, &session.response)?;
-        Ok(available)
+        AcpProvider::fetch_supported_models(self).await
     }
 }
 
@@ -3355,6 +3375,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fetch_supported_models_reads_acp_session_options() {
+        let (provider, _) = test_provider();
+        provider.session.lock().unwrap().response = NewSessionResponse::new("test-session")
+            .config_options(vec![SessionConfigOption::select(
+                "model",
+                "Model",
+                "sonnet",
+                vec![
+                    SessionConfigSelectOption::new("sonnet", "Sonnet"),
+                    SessionConfigSelectOption::new("haiku", "Haiku"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Model)]);
+
+        assert_eq!(
+            provider.fetch_supported_models().await.unwrap(),
+            ["sonnet", "haiku"]
+        );
+        assert_eq!(
+            Provider::fetch_supported_models(&provider).await.unwrap(),
+            ["sonnet", "haiku"]
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_session_controls_delegate_to_acp_apis() {
+        let (provider, model) = test_provider();
+        assert_eq!(Provider::get_name(&provider), provider.name());
+        Provider::apply_model_selection(&provider, &model)
+            .await
+            .unwrap();
+        Provider::update_mode(&provider, "local-goose-session", GooseMode::Chat)
+            .await
+            .unwrap();
+        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
+        assert!(
+            Provider::set_thinking_effort(&provider, "local-goose-session", "off")
+                .await
+                .unwrap()
+        );
+        assert!(matches!(
+            Provider::set_thinking_effort(&provider, "local-goose-session", "high").await,
+            Err(ProviderError::InvalidValue(_))
+        ));
+    }
+
+    #[tokio::test]
     async fn apply_model_if_changed_sends_set_config_option_on_change() {
         let (tx, mut rx) = mpsc::channel(1);
         let provider = test_provider_with_model_option(tx, Some("old-model".to_string()));
@@ -3364,11 +3431,12 @@ mod tests {
 
         match rx.recv().await.expect("expected a SetConfigOption request") {
             ClientRequest::SetConfigOption {
+                session_id,
                 config_id,
                 value,
                 response_tx,
-                ..
             } => {
+                assert_eq!(session_id.0.as_ref(), "test-session");
                 assert_eq!(config_id, "model");
                 assert_eq!(value, "new-model");
                 let _ = response_tx.send(Ok(()));
@@ -3452,11 +3520,12 @@ mod tests {
     async fn expect_set_config_option(rx: &mut mpsc::Receiver<ClientRequest>) -> (String, String) {
         match rx.recv().await.expect("expected a SetConfigOption request") {
             ClientRequest::SetConfigOption {
+                session_id,
                 config_id,
                 value,
                 response_tx,
-                ..
             } => {
+                assert_eq!(session_id.0.as_ref(), "test-session");
                 let _ = response_tx.send(Ok(()));
                 (config_id, value)
             }
@@ -3751,19 +3820,15 @@ mod tests {
         let provider =
             test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
 
-        let handle = tokio::spawn(async move {
-            provider
-                .set_thinking_effort("session", "high")
-                .await
-                .unwrap()
-        });
+        let handle =
+            tokio::spawn(async move { provider.set_thinking_effort("high").await.unwrap() });
 
         assert_eq!(
             expect_set_config_option(&mut rx).await,
             ("effort".to_string(), "high".to_string())
         );
 
-        assert!(handle.await.unwrap());
+        handle.await.unwrap();
     }
 
     #[tokio::test]
@@ -3771,10 +3836,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(1);
         let provider = test_provider_with_effort(tx, None);
 
-        assert!(provider
-            .set_thinking_effort("session", "off")
-            .await
-            .unwrap());
+        provider.set_thinking_effort("off").await.unwrap();
         assert!(rx.try_recv().is_err());
     }
 
@@ -3783,7 +3845,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(1);
         let provider = test_provider_with_effort(tx, None);
 
-        let result = provider.set_thinking_effort("session", "high").await;
+        let result = provider.set_thinking_effort("high").await;
 
         assert!(matches!(result, Err(ProviderError::InvalidValue(_))));
         assert!(rx.try_recv().is_err());
@@ -3795,7 +3857,7 @@ mod tests {
         let provider =
             test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
 
-        let result = provider.set_thinking_effort("session", "medium").await;
+        let result = provider.set_thinking_effort("medium").await;
 
         assert!(matches!(result, Err(ProviderError::InvalidValue(_))));
         assert!(rx.try_recv().is_err());
@@ -3807,8 +3869,7 @@ mod tests {
         let provider =
             test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
 
-        let handle =
-            tokio::spawn(async move { provider.set_thinking_effort("session", "high").await });
+        let handle = tokio::spawn(async move { provider.set_thinking_effort("high").await });
         fail_set_config_option(&mut rx, agent_client_protocol::Error::invalid_params()).await;
 
         assert!(matches!(
@@ -3825,8 +3886,7 @@ mod tests {
         let provider =
             test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
 
-        let handle =
-            tokio::spawn(async move { provider.set_thinking_effort("session", "high").await });
+        let handle = tokio::spawn(async move { provider.set_thinking_effort("high").await });
         fail_set_config_option(&mut rx, agent_client_protocol::Error::internal_error()).await;
 
         assert!(matches!(
@@ -3841,8 +3901,7 @@ mod tests {
         let provider =
             test_provider_with_effort(tx, Some(effort_capability(&["default", "high"], "default")));
 
-        let handle =
-            tokio::spawn(async move { provider.set_thinking_effort("session", "high").await });
+        let handle = tokio::spawn(async move { provider.set_thinking_effort("high").await });
         drop(rx.recv().await.expect("expected a SetConfigOption request"));
 
         assert!(matches!(
@@ -4116,10 +4175,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(1);
         let (provider, _) = test_provider_with_tx(Some(tx));
 
-        provider
-            .update_mode("session", GooseMode::Chat)
-            .await
-            .unwrap();
+        provider.update_mode(GooseMode::Chat).await.unwrap();
 
         assert!(rx.try_recv().is_err());
         assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
@@ -4132,19 +4188,17 @@ mod tests {
         provider.mode_mapping = HashMap::from([(GooseMode::Chat, vec!["plan".to_string()])]);
 
         let handle = tokio::spawn(async move {
-            provider
-                .update_mode("session", GooseMode::Chat)
-                .await
-                .unwrap();
+            provider.update_mode(GooseMode::Chat).await.unwrap();
             provider
         });
 
         match rx.recv().await.expect("expected a SetMode request") {
             ClientRequest::SetMode {
+                session_id,
                 mode_id,
                 response_tx,
-                ..
             } => {
+                assert_eq!(session_id.0.as_ref(), "test-session");
                 assert_eq!(mode_id, "plan");
                 let _ = response_tx.send(Ok(()));
             }
@@ -4168,10 +4222,7 @@ mod tests {
         );
 
         let handle = tokio::spawn(async move {
-            provider
-                .update_mode("session", GooseMode::Auto)
-                .await
-                .unwrap();
+            provider.update_mode(GooseMode::Auto).await.unwrap();
             provider
         });
 
@@ -4199,7 +4250,7 @@ mod tests {
         provider.session.lock().unwrap().response = NewSessionResponse::new("test-session")
             .modes(mode_state("agent", &["agent", "agent-full-access"]));
 
-        let result = provider.update_mode("session", GooseMode::Chat).await;
+        let result = provider.update_mode(GooseMode::Chat).await;
 
         assert!(result.is_err());
         assert!(rx.try_recv().is_err());

@@ -63,6 +63,7 @@ use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
+use crate::providers::ProviderBackend;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
@@ -990,13 +991,18 @@ impl Agent {
         }
     }
 
+    /// Transitional access for consumers awaiting typed backend dispatch.
     pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
+        Ok(self.backend(session_id).await?.into_legacy_provider())
+    }
+
+    pub async fn backend(&self, session_id: &str) -> Result<ProviderBackend> {
         let session = self
             .config
             .session_manager
             .get_session(session_id, false)
             .await?;
-        self.config.providers.provider_for(&session).await
+        self.config.providers.backend_for(&session).await
     }
 
     pub async fn model_config_for_session(
@@ -1016,7 +1022,7 @@ impl Agent {
         session_id: &str,
     ) -> Result<goose_providers::model::ModelConfig> {
         let model_config = self.model_config_for_session(session_id).await?;
-        let provider_name = self.provider(session_id).await?.get_name().to_string();
+        let provider_name = self.backend(session_id).await?.name().to_string();
         match crate::providers::get_from_registry(&provider_name).await {
             Ok(entry) => Ok(entry
                 .normalize_model_config(model_config.clone())
@@ -3648,17 +3654,29 @@ impl Agent {
 
     /// Pins `provider` to the session instead of letting the provider manager
     /// build one.
+    /// Transitional injection for standard backends. Use `update_backend` for ACP.
     pub async fn update_provider(
         &self,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
-        let provider_name = provider.get_name().to_string();
-        self.config
-            .providers
-            .set_provider(session_id, provider)
-            .await;
+        self.update_backend(
+            ProviderBackend::Standard(provider),
+            model_config,
+            session_id,
+        )
+        .await
+    }
+
+    pub async fn update_backend(
+        &self,
+        backend: ProviderBackend,
+        model_config: goose_providers::model::ModelConfig,
+        session_id: &str,
+    ) -> Result<()> {
+        let provider_name = backend.name().to_string();
+        self.config.providers.set_backend(session_id, backend).await;
         self.switch_provider(session_id, &provider_name, model_config)
             .await
     }
@@ -3686,17 +3704,20 @@ impl Agent {
 
         session.provider_name = Some(provider_name.to_string());
         session.model_config = Some(model_config.clone());
-        let provider = self
+        let backend = self
             .config
             .providers
-            .provider_for(&session)
+            .backend_for(&session)
             .await
             .map_err(|error| provider_creation_error(error, "Could not create provider"))?;
 
-        let model_config = normalize_legacy_provider_thinking_effort(
-            model_config,
-            &provider.thinking_effort_support(),
-        );
+        let model_config = match &backend {
+            ProviderBackend::Standard(provider) => normalize_legacy_provider_thinking_effort(
+                model_config,
+                &provider.thinking_effort_support(),
+            ),
+            ProviderBackend::Acp(_) => model_config,
+        };
         let effective_model_config = match registry_entry {
             Some(entry) => entry
                 .normalize_model_config(model_config.clone())
@@ -3707,10 +3728,7 @@ impl Agent {
         // A provider that manages its own model has to be told about the
         // selection before the next config snapshot is built. Failures are not
         // fatal here: the selection is re-applied at stream time.
-        if let Err(e) = provider
-            .apply_model_selection(&effective_model_config)
-            .await
-        {
+        if let Err(e) = backend.apply_model_selection(&effective_model_config).await {
             warn!("Failed to apply model selection to provider: {e}");
         }
 
@@ -3726,8 +3744,8 @@ impl Agent {
     }
 
     pub async fn update_goose_mode(&self, mode: GooseMode, session_id: &str) -> Result<()> {
-        if let Ok(provider) = self.provider(session_id).await {
-            provider
+        if let Ok(backend) = self.backend(session_id).await {
+            backend
                 .update_mode(session_id, mode)
                 .await
                 .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
@@ -3751,11 +3769,11 @@ impl Agent {
     /// provider that manages effort through a harness has its own vocabulary,
     /// which is not always a `ThinkingEffort` member.
     pub async fn update_thinking_effort(&self, session_id: &str, effort: &str) -> Result<()> {
-        let current_provider = self.provider(session_id).await?;
+        let backend = self.backend(session_id).await?;
         // Context rather than a formatted string: the caller distinguishes a
         // value rejection from an operational failure by downcasting to
         // `ProviderError`, which stringifying would destroy.
-        let provider_handled = current_provider
+        let provider_handled = backend
             .set_thinking_effort(session_id, effort)
             .await
             .context("Provider rejected thinking effort update")?;
@@ -3783,7 +3801,7 @@ impl Agent {
                 "Invalid thinking effort: {effort}"
             )))
         })?;
-        let provider_name = current_provider.get_name().to_string();
+        let provider_name = backend.name().to_string();
         self.switch_provider(
             session_id,
             &provider_name,
@@ -4927,6 +4945,123 @@ mod tests {
             effort_test_agent(EffortOutcome::Applied).await;
 
         assert_eq!(provider.model_selections(), ["mock-model"]);
+    }
+
+    #[tokio::test]
+    async fn update_backend_retains_acp_identity_through_session_controls() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let model_config =
+            goose_providers::model::ModelConfig::new("test-model").with_merged_request_params(
+                HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
+            );
+
+        agent
+            .update_backend(
+                ProviderBackend::Acp(acp.clone()),
+                model_config.clone(),
+                &session.id,
+            )
+            .await
+            .unwrap();
+        agent
+            .switch_provider(&session.id, acp.name(), model_config)
+            .await
+            .unwrap();
+        assert!(matches!(
+            agent.backend(&session.id).await.unwrap(),
+            ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &acp)
+        ));
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("default")
+        );
+
+        agent
+            .update_goose_mode(GooseMode::Chat, &session.id)
+            .await
+            .unwrap();
+        agent
+            .update_thinking_effort(&session.id, "off")
+            .await
+            .unwrap();
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("off")
+        );
+        let error = agent
+            .update_thinking_effort(&session.id, "high")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<ProviderError>(),
+            Some(ProviderError::InvalidValue(_))
+        ));
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            agent
+                .config
+                .session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap()
+                .goose_mode,
+            GooseMode::Chat
+        );
+        assert!(matches!(
+            agent.backend(&session.id).await.unwrap(),
+            ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &acp)
+        ));
+    }
+
+    #[tokio::test]
+    async fn update_backend_switches_between_acp_and_standard_without_erasing_identity() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let standard: Arc<dyn Provider> = Arc::new(EffortProvider::new(EffortOutcome::Applied));
+
+        for backend in [
+            ProviderBackend::Acp(acp.clone()),
+            ProviderBackend::Standard(standard.clone()),
+            ProviderBackend::Acp(acp.clone()),
+        ] {
+            let name = backend.name().to_string();
+            agent
+                .update_backend(
+                    backend,
+                    goose_providers::model::ModelConfig::new("test-model"),
+                    &session.id,
+                )
+                .await
+                .unwrap();
+            let stored = agent.backend(&session.id).await.unwrap();
+            assert_eq!(stored.name(), name);
+            match stored {
+                ProviderBackend::Standard(provider) => assert!(Arc::ptr_eq(&provider, &standard)),
+                ProviderBackend::Acp(provider) => assert!(Arc::ptr_eq(&provider, &acp)),
+            }
+            assert_eq!(
+                agent
+                    .config
+                    .session_manager
+                    .get_session(&session.id, false)
+                    .await
+                    .unwrap()
+                    .provider_name
+                    .as_deref(),
+                Some(name.as_str())
+            );
+        }
     }
 
     #[tokio::test]
