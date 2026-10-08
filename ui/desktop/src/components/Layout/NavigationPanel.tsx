@@ -17,6 +17,7 @@ import { SessionIndicators } from '../SessionIndicators';
 import { acpRenameSession, type SessionListItem } from '../../acp/sessions';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/Tooltip';
 import { formatMessageTimestamp } from '../../utils/timeUtils';
+import { formatCost } from '../../utils/usageFormatting';
 import { cn } from '../../utils';
 import type { ProjectGroup } from '../../utils/projectSessions';
 import { defineMessages, useIntl } from '../../i18n';
@@ -241,6 +242,41 @@ const SessionRow: React.FC<SessionRowProps> = ({
   );
 };
 
+function ProjectCostBadge({
+  totalCost,
+  sessionCount,
+  sessionsWithCost,
+}: {
+  totalCost?: number | null;
+  sessionCount: number;
+  sessionsWithCost: number;
+}) {
+  const hasCost = totalCost != null;
+  const partial = hasCost && sessionsWithCost < sessionCount;
+  const label = hasCost ? `${formatCost(totalCost)}${partial ? '+' : ''}` : '—';
+  const tip = hasCost
+    ? partial
+      ? `At least ${formatCost(totalCost)} — ${sessionsWithCost} of ${sessionCount} sessions have cost data. Older sessions may not have pricing info.`
+      : `${formatCost(totalCost)} total across ${sessionCount} session${sessionCount === 1 ? '' : 's'}`
+    : 'Cost unavailable — no sessions have pricing data';
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="text-[10px] text-text-tertiary ml-auto flex-shrink-0 font-mono"
+          aria-label={tip}
+        >
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-52">
+        <p>{tip}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export const Navigation: React.FC<{
   className?: string;
   activeLiveVoiceSessionId: string | null;
@@ -315,6 +351,18 @@ export const Navigation: React.FC<{
 
   const [isChatsExpanded, setIsChatsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [showPricing, setShowPricing] = useState(true);
+
+  useEffect(() => {
+    const loadPricingSetting = async () => {
+      const enabled = await window.electron.getSetting('showPricing');
+      setShowPricing(enabled);
+    };
+    loadPricingSetting();
+    const handlePricingChange = () => void loadPricingSetting();
+    window.addEventListener('showPricingChanged', handlePricingChange);
+    return () => window.removeEventListener('showPricingChanged', handlePricingChange);
+  }, []);
 
   const toggleProjectCollapsed = useCallback((path: string) => {
     setCollapsedProjects((prev) => {
@@ -388,6 +436,13 @@ export const Navigation: React.FC<{
                         <ChevronDown className="w-3 h-3 flex-shrink-0" />
                       )}
                       <span className="truncate">{group.label}</span>
+                      {showPricing && (
+                        <ProjectCostBadge
+                          totalCost={group.totalCost}
+                          sessionCount={group.sessionCount ?? 0}
+                          sessionsWithCost={group.sessionsWithCost ?? 0}
+                        />
+                      )}
                     </button>
                     {!isCollapsed &&
                       group.sessions.map((session) => (
