@@ -1752,6 +1752,33 @@ pub fn create_request_for_model_with_options(
     for_streaming: bool,
     format_options: OpenAiFormatOptions,
 ) -> anyhow::Result<Value, Error> {
+    create_request_for_model_with_provider_options(
+        model_config,
+        wire_model_name,
+        capability_model_name,
+        system,
+        messages,
+        tools,
+        image_format,
+        for_streaming,
+        format_options,
+        "openai",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_request_for_model_with_provider_options(
+    model_config: &ModelConfig,
+    wire_model_name: &str,
+    capability_model_name: &str,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    image_format: &ImageFormat,
+    for_streaming: bool,
+    format_options: OpenAiFormatOptions,
+    provider_name: &str,
+) -> anyhow::Result<Value, Error> {
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
     let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
@@ -1759,7 +1786,7 @@ pub fn create_request_for_model_with_options(
         model_config
             .thinking_effort()
             .map_or(legacy_reasoning_effort, |effort| {
-                openai_reasoning_effort_for_thinking(&model_name, effort)
+                openai_reasoning_effort_for_provider(provider_name, &model_name, effort)
             })
     } else if supports_xai_effort {
         model_config
@@ -1935,7 +1962,15 @@ pub fn openai_reasoning_effort_for_thinking(
     model_name: &str,
     effort: ThinkingEffort,
 ) -> Option<String> {
-    let catalog = crate::canonical::maybe_get_canonical_model("openai", model_name);
+    openai_reasoning_effort_for_provider("openai", model_name, effort)
+}
+
+pub fn openai_reasoning_effort_for_provider(
+    provider_name: &str,
+    model_name: &str,
+    effort: ThinkingEffort,
+) -> Option<String> {
+    let catalog = crate::canonical::maybe_get_canonical_model(provider_name, model_name);
     let catalog_efforts = catalog
         .as_ref()
         .and_then(|model| model.reasoning_efforts.as_deref());
@@ -3470,6 +3505,44 @@ mod tests {
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_venice_reasoning_effort_none() {
+        for model in ["openai-gpt-54", "openai-gpt-56-luna", "openai-gpt-6-luna"] {
+            assert_eq!(
+                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Off),
+                Some("none".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn test_venice_reasoning_effort_max() {
+        for (model, expected) in [
+            ("openai-gpt-54", "xhigh"),
+            ("openai-gpt-56-sol", "max"),
+            ("openai-gpt-6-astra", "max"),
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Max),
+                Some(expected.to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn test_venice_reasoning_effort_pro() {
+        for (model, expected) in [
+            ("openai-gpt-54-pro", Some("none")),
+            ("openai-gpt-55-pro", None),
+            ("openai-gpt-56-luna-pro", Some("low")),
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Off),
+                expected.map(str::to_string)
+            );
+        }
     }
 
     #[test]

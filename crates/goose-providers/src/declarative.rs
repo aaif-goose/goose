@@ -162,6 +162,8 @@ pub struct DeclarativeProviderConfig {
     pub session_id_header_override: Option<String>,
     pub timeout_seconds: Option<u64>,
     pub supports_streaming: Option<bool>,
+    #[serde(default)]
+    pub supports_responses: bool,
     #[serde(default = "default_requires_auth")]
     pub requires_auth: bool,
     #[serde(default)]

@@ -11,11 +11,12 @@ use crate::declarative::{DeclarativeProviderConfig, KeyResolver};
 use crate::errors::ProviderError;
 use crate::formats::openai::is_openai_responses_model;
 use crate::formats::openai::{
-    create_request_with_options, get_cost, get_usage, is_reserved_request_param_key,
-    record_response_metadata, response_to_message, OpenAiFormatOptions,
+    create_request_for_model_with_provider_options, get_cost, get_usage,
+    is_reserved_request_param_key, record_response_metadata, response_to_message,
+    OpenAiFormatOptions,
 };
 use crate::formats::openai_responses::{
-    create_responses_request_for_model, get_responses_usage, responses_api_to_message,
+    create_responses_request_for_provider, get_responses_usage, responses_api_to_message,
     ResponsesApiResponse,
 };
 use crate::http_status::read_json_response;
@@ -137,6 +138,9 @@ pub struct OpenAiProvider {
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
     native_openai: bool,
+    supports_responses: bool,
+    explicit_base_path: bool,
+    catalog_provider_id: Option<String>,
     #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
 }
@@ -159,6 +163,9 @@ pub struct OpenAiProviderBuilder {
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
     native_openai: bool,
+    supports_responses: bool,
+    explicit_base_path: bool,
+    catalog_provider_id: Option<String>,
 }
 
 impl OpenAiProviderBuilder {
@@ -176,6 +183,9 @@ impl OpenAiProviderBuilder {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            supports_responses: false,
+            explicit_base_path: false,
+            catalog_provider_id: None,
         }
     }
 
@@ -247,6 +257,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn supports_responses(mut self, supports_responses: bool) -> Self {
+        self.supports_responses = supports_responses;
+        self
+    }
+
     pub fn native_openai(mut self, native_openai: bool) -> Self {
         self.native_openai = native_openai;
         self
@@ -266,12 +281,55 @@ impl OpenAiProviderBuilder {
             skip_canonical_filtering: self.skip_canonical_filtering,
             preserve_thinking_context: self.preserve_thinking_context,
             native_openai: self.native_openai,
+            supports_responses: self.supports_responses,
+            explicit_base_path: self.explicit_base_path,
+            catalog_provider_id: self.catalog_provider_id,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
 impl OpenAiProvider {
+    fn catalog_provider(&self) -> &str {
+        self.catalog_provider_id.as_deref().unwrap_or(&self.name)
+    }
+
+    fn is_openai_model(&self, model_name: &str) -> bool {
+        fn openai_name(name: &str) -> bool {
+            let name = name.to_ascii_lowercase();
+            let short = name.rsplit('/').next().unwrap_or(&name);
+            name.starts_with("openai/")
+                || short.starts_with("openai-")
+                || short.starts_with("gpt-")
+                || short.starts_with("chatgpt-")
+                || short
+                    .strip_prefix('o')
+                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+        }
+        goose_provider_types::canonical::maybe_get_canonical_model(
+            self.catalog_provider(),
+            model_name,
+        )
+        .is_some_and(|model| {
+            model.id.starts_with("openai/")
+                || model
+                    .family
+                    .as_deref()
+                    .is_some_and(|family| family == "gpt" || family.starts_with("gpt-"))
+                || openai_name(&model.id)
+        }) || openai_name(model_name)
+    }
+
+    fn request_config(&self, config: &ModelConfig) -> ModelConfig {
+        if self.catalog_provider_id.is_some() && self.is_openai_model(&config.model_name) {
+            config
+                .clone()
+                .with_canonical_limits(self.catalog_provider())
+        } else {
+            config.clone()
+        }
+    }
+
     pub async fn stream_for_model(
         &self,
         model_config: &ModelConfig,
@@ -281,7 +339,7 @@ impl OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut request_config = model_config.clone();
+        let mut request_config = self.request_config(model_config);
         request_config.supports_vision = self.vision_support(model_config);
         if self.native_openai && request_config.reasoning.is_none() {
             let canonical = goose_provider_types::canonical::maybe_get_canonical_model(
@@ -291,13 +349,14 @@ impl OpenAiProvider {
             request_config.reasoning =
                 Some(canonical.and_then(|model| model.reasoning).unwrap_or(true));
         }
-        let mut payload = create_responses_request_for_model(
+        let mut payload = create_responses_request_for_provider(
             &request_config,
             wire_model,
             capability_model,
             system,
             messages,
             tools,
+            self.catalog_provider(),
         )?;
         payload["stream"] = serde_json::Value::Bool(self.supports_streaming);
         self.stream_responses_payload(model_config, payload).await
@@ -376,6 +435,9 @@ impl OpenAiProvider {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            supports_responses: false,
+            explicit_base_path: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -539,6 +601,18 @@ impl OpenAiProvider {
         let base_path = Self::normalize_base_path(&self.base_path);
         if self.native_openai && base_path == OPEN_AI_DEFAULT_BASE_PATH {
             return true;
+        }
+        if self.explicit_base_path {
+            if base_path.trim_start_matches('/') == "responses" || base_path.ends_with("/responses")
+            {
+                return true;
+            }
+            if base_path.ends_with("chat/completions") {
+                return false;
+            }
+        }
+        if self.supports_responses {
+            return self.is_openai_model(model_name);
         }
         Self::should_use_responses_api(model_name, &self.base_path)
     }
@@ -815,8 +889,13 @@ impl Provider for OpenAiProvider {
                 declared_model.and_then(|m| m.thinking_preservation_format);
             let supports_vision = self.vision_support(model_config).unwrap_or_default();
 
-            let mut payload = create_request_with_options(
-                model_config,
+            let request_config = self.request_config(model_config);
+            let (wire_model, _) =
+                crate::formats::openai::extract_reasoning_effort(&model_config.model_name);
+            let mut payload = create_request_for_model_with_provider_options(
+                &request_config,
+                &wire_model,
+                &model_config.model_name,
                 system,
                 messages,
                 tools,
@@ -828,6 +907,11 @@ impl Provider for OpenAiProvider {
                     supports_vision,
                     thinking_preservation_format,
                 },
+                if self.is_openai_model(&model_config.model_name) {
+                    self.catalog_provider()
+                } else {
+                    "openai"
+                },
             )?;
 
             if let Some(params) = declared_model.and_then(|m| m.request_params.as_ref()) {
@@ -837,11 +921,20 @@ impl Provider for OpenAiProvider {
             let payload = self.sanitize_request_for_compat(payload, model_config);
             let mut log = start_log(model_config, &payload)?;
 
+            let chat_path = Self::map_base_path(
+                &self.base_path,
+                "chat/completions",
+                OPEN_AI_DEFAULT_BASE_PATH,
+            );
             let response = self
                 .with_retry(|| async {
                     let resp = self
                         .api_client
-                        .request(&self.base_path)
+                        .request(if self.supports_responses && !self.explicit_base_path {
+                            &chat_path
+                        } else {
+                            &self.base_path
+                        })
                         .model_headers(model_config)?
                         .streaming(self.supports_streaming)
                         .response_post(&payload)
@@ -975,7 +1068,7 @@ pub fn from_declarative_config(
         api_client = api_client.with_headers(header_map)?;
     }
 
-    Ok(OpenAiProviderBuilder::new(api_client)
+    let mut builder = OpenAiProviderBuilder::new(api_client)
         .base_path(base_path)
         .custom_headers(config.headers)
         .supports_streaming(config.supports_streaming.unwrap_or(true))
@@ -983,7 +1076,12 @@ pub fn from_declarative_config(
         .custom_models(custom_models)
         .dynamic_models(config.dynamic_models)
         .skip_canonical_filtering(config.skip_canonical_filtering)
-        .preserve_thinking_context(config.preserves_thinking))
+        .preserve_thinking_context(config.preserves_thinking);
+    builder.supports_responses = config.supports_responses;
+    builder.explicit_base_path =
+        config.base_path.is_some() || url.path().trim_end_matches('/').ends_with("/responses");
+    builder.catalog_provider_id = config.catalog_provider_id;
+    Ok(builder)
 }
 
 pub fn parse_custom_headers(s: String) -> HashMap<String, String> {
@@ -1002,7 +1100,7 @@ pub fn derive_base_path(url_path: &str) -> String {
     let normalized = stripped.trim_end_matches('/');
     if normalized.is_empty() {
         "v1/chat/completions".to_string()
-    } else if normalized.ends_with("chat/completions") {
+    } else if normalized.ends_with("chat/completions") || normalized.ends_with("/responses") {
         stripped.to_string()
     } else if ends_with_version_segment(normalized) {
         format!("{}/chat/completions", normalized)
@@ -1042,6 +1140,9 @@ mod tests {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            supports_responses: false,
+            explicit_base_path: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1454,6 +1555,7 @@ mod tests {
             session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: None,
+            supports_responses: false,
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,
@@ -1594,6 +1696,9 @@ mod tests {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            supports_responses: false,
+            explicit_base_path: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -2017,5 +2122,160 @@ mod tests {
                 .any(|model| model.name == "gpt-4"),
             "registry-only list should include models the old hardcoded list had drifted past"
         );
+    }
+    #[test]
+    fn venice_responses_routing_uses_provider_capability_and_openai_identity() {
+        let config = crate::declarative::deserialize_provider_config(crate::venice::JSON).unwrap();
+        assert!(config.supports_responses);
+        let mut config = config;
+        config.requires_auth = false;
+        let provider = from_declarative_config(config, None, crate::declarative::EnvKeyResolver {})
+            .unwrap()
+            .build();
+        assert_eq!(provider.catalog_provider(), "venice");
+        for (model, responses) in [
+            ("openai-gpt-56-luna", true),
+            ("openai-gpt-56-luna-pro", true),
+            ("gpt-4o", true),
+            ("openai/o3", true),
+            ("claude-opus-4.6", false),
+            ("deepseek-v4-pro", false),
+            ("llama-3.3-70b", false),
+            ("unknown", false),
+        ] {
+            assert_eq!(
+                provider.should_use_responses_api_for_provider(model),
+                responses,
+                "{model}"
+            );
+        }
+    }
+
+    #[test]
+    fn declarative_endpoint_overrides_preserve_prefixes_and_legacy_routing() {
+        for (base_url, explicit, capability, model, expected) in [
+            (
+                "https://example.com/api/v1/chat/completions",
+                None,
+                true,
+                "openai-gpt-56-luna",
+                true,
+            ),
+            (
+                "https://example.com/api/v1",
+                Some("api/v1/chat/completions"),
+                true,
+                "openai-gpt-56-luna",
+                false,
+            ),
+            (
+                "https://example.com/v1",
+                Some("v1/chat/completions"),
+                true,
+                "gpt-5.4",
+                false,
+            ),
+            (
+                "https://example.com/api/v1/responses",
+                None,
+                true,
+                "llama-3.3-70b",
+                true,
+            ),
+            (
+                "https://example.com/api/v1",
+                Some("proxy/v4/responses"),
+                false,
+                "llama-3.3-70b",
+                true,
+            ),
+            (
+                "https://example.com/api/v1/chat/completions",
+                None,
+                false,
+                "gpt-5.4",
+                false,
+            ),
+            ("https://example.com/v1", None, false, "gpt-5.4", true),
+        ] {
+            let mut config = custom_config(base_url);
+            config.supports_responses = capability;
+            config.base_path = explicit.map(str::to_string);
+            let provider =
+                from_declarative_config(config, None, crate::declarative::EnvKeyResolver {})
+                    .unwrap()
+                    .build();
+            assert_eq!(
+                provider.should_use_responses_api_for_provider(model),
+                expected
+            );
+        }
+        assert_eq!(derive_base_path("/api/v1/responses"), "api/v1/responses");
+        assert_eq!(
+            OpenAiProvider::map_base_path("api/v1/chat/completions", "responses", "v1/responses"),
+            "api/v1/responses"
+        );
+    }
+
+    #[tokio::test]
+    async fn venice_openai_alias_uses_catalog_effort_on_both_endpoints() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        for responses in [true, false] {
+            let server = MockServer::start().await;
+            let mut config = custom_config(&format!(
+                "{}/api/v1/chat/completions?tenant=test",
+                server.uri()
+            ));
+            config.catalog_provider_id = Some("venice".to_string());
+            config.supports_responses = true;
+            config.supports_streaming = Some(false);
+            config.base_path = (!responses).then(|| "api/v1/chat/completions".to_string());
+            let response = if responses {
+                json!({"id":"r", "object":"response", "created_at":0, "status":"completed",
+                    "model":"openai-gpt-56-luna", "output":[{"type":"message", "role":"assistant",
+                    "content":[{"type":"output_text", "text":"ok"}]}]})
+            } else {
+                json!({"id":"r", "model":"openai-gpt-56-luna", "choices":[{"index":0,
+                    "message":{"role":"assistant", "content":"ok"}, "finish_reason":"stop"}],
+                    "usage":{"prompt_tokens":1, "completion_tokens":1, "total_tokens":2}})
+            };
+            let endpoint = if responses {
+                "/api/v1/responses"
+            } else {
+                "/api/v1/chat/completions"
+            };
+            Mock::given(method("POST"))
+                .and(path(endpoint))
+                .respond_with(ResponseTemplate::new(200).set_body_json(response))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let provider =
+                from_declarative_config(config, None, crate::declarative::EnvKeyResolver {})
+                    .unwrap()
+                    .build();
+            let model =
+                ModelConfig::new("openai-gpt-56-luna").with_thinking_effort(ThinkingEffort::Off);
+            provider.complete(&model, "system", &[], &[]).await.unwrap();
+            let requests = server.received_requests().await.unwrap();
+            let payload: serde_json::Value = requests[0].body_json().unwrap();
+            assert_eq!(payload["model"], "openai-gpt-56-luna");
+            assert_eq!(
+                payload
+                    .pointer(if responses {
+                        "/reasoning/effort"
+                    } else {
+                        "/reasoning_effort"
+                    })
+                    .unwrap(),
+                "none"
+            );
+            assert!(requests[0]
+                .url
+                .query_pairs()
+                .any(|(k, v)| k == "tenant" && v == "test"));
+            server.verify().await;
+        }
     }
 }

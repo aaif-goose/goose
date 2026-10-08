@@ -6,7 +6,7 @@ use crate::documents::{
 };
 use crate::errors::ProviderError;
 use crate::formats::openai::{
-    extract_reasoning_effort, openai_reasoning_effort_for_thinking, sanitize_function_name,
+    extract_reasoning_effort, openai_reasoning_effort_for_provider, sanitize_function_name,
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
@@ -631,6 +631,26 @@ pub fn create_responses_request_for_model(
     messages: &[Message],
     tools: &[Tool],
 ) -> anyhow::Result<Value, Error> {
+    create_responses_request_for_provider(
+        model_config,
+        wire_model_name,
+        capability_model_name,
+        system,
+        messages,
+        tools,
+        "openai",
+    )
+}
+
+pub fn create_responses_request_for_provider(
+    model_config: &ModelConfig,
+    wire_model_name: &str,
+    capability_model_name: &str,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    provider_name: &str,
+) -> anyhow::Result<Value, Error> {
     let mut input_items = Vec::new();
 
     if !system.is_empty() {
@@ -663,13 +683,15 @@ pub fn create_responses_request_for_model(
                 effort
                     .parse()
                     .ok()
-                    .and_then(|effort| openai_reasoning_effort_for_thinking(&model_name, effort))
+                    .and_then(|effort| {
+                        openai_reasoning_effort_for_provider(provider_name, &model_name, effort)
+                    })
                     .or(legacy_reasoning_effort)
             }
         } else {
-            model_config
-                .thinking_effort()
-                .and_then(|effort| openai_reasoning_effort_for_thinking(&model_name, effort))
+            model_config.thinking_effort().and_then(|effort| {
+                openai_reasoning_effort_for_provider(provider_name, &model_name, effort)
+            })
         }
     } else {
         None
