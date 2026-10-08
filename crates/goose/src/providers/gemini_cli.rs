@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-use super::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{MessageStream, Provider, ProviderMetadata, SessionBoundProviderDef};
 use super::cli_common::{error_from_event, extract_usage_tokens};
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
@@ -181,9 +181,8 @@ impl goose_providers::base::ProviderDescriptor for GeminiCliProvider {
     }
 }
 
-impl ProviderDef for GeminiCliProvider {
+impl SessionBoundProviderDef for GeminiCliProvider {
     type Provider = Self;
-    const SESSION_BOUND: bool = true;
 
     fn from_env(
         _extensions: Vec<crate::config::ExtensionConfig>,

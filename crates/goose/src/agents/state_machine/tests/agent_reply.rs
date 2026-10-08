@@ -62,7 +62,7 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
         GoosePlatform::GooseCli,
     ));
     agent
-        .update_provider(
+        .update_standard_provider(
             provider,
             ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
                 .with_canonical_limits("openai"),

@@ -9,7 +9,6 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{on_receive_request, Agent as SacpAgent, ByteStreams};
 use goose::acp::{AcpProvider, AcpProviderConfig};
 use goose::config::GooseMode;
-use goose::providers::base::Provider;
 use goose_providers::thinking::ThinkingEffortSupport;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

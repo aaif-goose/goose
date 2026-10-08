@@ -1,5 +1,9 @@
 use super::api_client::TlsConfig;
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::backend::ProviderBackend;
+use super::base::{
+    AcpProviderDef, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType,
+    SessionBoundProviderDef,
+};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -15,7 +19,7 @@ pub type ProviderConstructor = Arc<
             Option<PathBuf>,
             Option<TlsConfig>,
             bool,
-        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
+        ) -> BoxFuture<'static, Result<ProviderBackend>>
         + Send
         + Sync,
 >;
@@ -34,6 +38,7 @@ pub struct ProviderEntry {
     tls_config: Option<TlsConfig>,
     toolshim: bool,
     session_bound: bool,
+    acp: bool,
 }
 
 impl ProviderEntry {
@@ -43,6 +48,10 @@ impl ProviderEntry {
 
     pub fn provider_type(&self) -> ProviderType {
         self.provider_type
+    }
+
+    pub fn is_acp(&self) -> bool {
+        self.acp
     }
 
     pub fn session_bound(&self) -> bool {
@@ -72,22 +81,40 @@ impl ProviderEntry {
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
 
-    pub async fn create_with_default_model(
+    pub async fn create_standard(
         &self,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
+        if self.acp {
+            anyhow::bail!("ACP backends do not provide completion inference");
+        }
+        match self.create_backend(extensions).await? {
+            ProviderBackend::Standard(provider) => Ok(provider),
+            ProviderBackend::Acp(_) => {
+                anyhow::bail!("ACP backends do not provide completion inference")
+            }
+        }
+    }
+
+    pub async fn create_backend_with_default_model(
+        &self,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<ProviderBackend> {
         (self.constructor)(extensions, None, self.tls_config.clone(), true).await
     }
 
-    pub async fn create(&self, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
+    pub async fn create_backend(
+        &self,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<ProviderBackend> {
         (self.constructor)(extensions, None, self.tls_config.clone(), false).await
     }
 
-    pub async fn create_with_working_dir(
+    pub async fn create_backend_with_working_dir(
         &self,
         extensions: Vec<ExtensionConfig>,
         working_dir: PathBuf,
-    ) -> Result<Arc<dyn Provider>> {
+    ) -> Result<ProviderBackend> {
         (self.constructor)(
             extensions,
             Some(working_dir),
@@ -135,6 +162,86 @@ impl ProviderRegistry {
             name,
             ProviderEntry {
                 metadata,
+                constructor: Arc::new(
+                    |_extensions, _working_dir, tls_config, _use_default_model| {
+                        Box::pin(async move {
+                            Ok(ProviderBackend::Standard(Arc::new(
+                                F::from_env(tls_config).await?,
+                            )))
+                        })
+                    },
+                ),
+                inventory_identity: inventory.identity,
+                inventory_configured: inventory.configured,
+                cleanup: None,
+                provider_type: if preferred {
+                    ProviderType::Preferred
+                } else {
+                    ProviderType::Builtin
+                },
+                supports_inventory_refresh: inventory.supports_refresh,
+                tls_config: self.tls_config.clone(),
+                toolshim: false,
+                session_bound: false,
+                acp: false,
+            },
+        );
+    }
+
+    pub fn register_session_bound<F>(&mut self, preferred: bool)
+    where
+        F: SessionBoundProviderDef + 'static,
+    {
+        let metadata = F::metadata();
+        let name = metadata.name.clone();
+        let inventory = InventoryResolvers::for_metadata(&metadata, None);
+
+        self.entries.insert(
+            name,
+            ProviderEntry {
+                metadata,
+                constructor: Arc::new(
+                    |extensions, _working_dir, tls_config, _use_default_model| {
+                        Box::pin(async move {
+                            Ok(ProviderBackend::Standard(Arc::new(
+                                F::from_env(extensions, tls_config).await?,
+                            )))
+                        })
+                    },
+                ),
+                inventory_identity: inventory.identity,
+                inventory_configured: inventory.configured,
+                cleanup: None,
+                provider_type: if preferred {
+                    ProviderType::Preferred
+                } else {
+                    ProviderType::Builtin
+                },
+                supports_inventory_refresh: inventory.supports_refresh,
+                tls_config: self.tls_config.clone(),
+                toolshim: false,
+                session_bound: true,
+                acp: false,
+            },
+        );
+    }
+
+    pub fn register_acp_with_inventory<F>(
+        &mut self,
+        preferred: bool,
+        inventory_registration: Option<InventoryRegistration>,
+    ) where
+        F: AcpProviderDef + 'static,
+    {
+        let metadata = F::metadata();
+        let name = metadata.name.clone();
+
+        let inventory = InventoryResolvers::for_metadata(&metadata, inventory_registration);
+
+        self.entries.insert(
+            name,
+            ProviderEntry {
+                metadata,
                 constructor: Arc::new(|extensions, working_dir, tls_config, use_default_model| {
                     Box::pin(async move {
                         let provider = if use_default_model {
@@ -145,7 +252,7 @@ impl ProviderRegistry {
                         } else {
                             F::from_env(extensions, tls_config).await?
                         };
-                        Ok(Arc::new(provider) as Arc<dyn Provider>)
+                        Ok(ProviderBackend::Acp(Arc::new(provider)))
                     })
                 }),
                 inventory_identity: inventory.identity,
@@ -159,7 +266,8 @@ impl ProviderRegistry {
                 supports_inventory_refresh: inventory.supports_refresh,
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
-                session_bound: F::SESSION_BOUND,
+                session_bound: true,
+                acp: true,
             },
         );
     }
@@ -315,7 +423,7 @@ impl ProviderRegistry {
                     let result = constructor(tls_config);
                     Box::pin(async move {
                         let provider = result?;
-                        Ok(Arc::new(provider) as Arc<dyn Provider>)
+                        Ok(ProviderBackend::Standard(Arc::new(provider)))
                     })
                 }),
                 inventory_identity: Arc::new(inventory_identity),
@@ -326,6 +434,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,
                 session_bound: false,
+                acp: false,
             },
         );
     }
@@ -344,17 +453,17 @@ impl ProviderRegistry {
         self
     }
 
-    pub async fn create(
+    pub async fn create_backend(
         &self,
         name: &str,
         extensions: Vec<ExtensionConfig>,
-    ) -> Result<Arc<dyn Provider>> {
+    ) -> Result<ProviderBackend> {
         let entry = self
             .entries
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", name))?;
 
-        entry.create(extensions).await
+        entry.create_backend(extensions).await
     }
 
     pub fn all_metadata_with_types(&self) -> Vec<(ProviderMetadata, ProviderType)> {
@@ -374,6 +483,343 @@ mod tests {
     use super::*;
     use crate::config::declarative_providers::ProviderEngine;
     use crate::providers::openai_def::OpenAiProviderDef;
+
+    struct TestStandardDef;
+    struct TestSessionBoundDef;
+
+    impl super::super::base::ProviderDescriptor for TestStandardDef {
+        fn metadata() -> ProviderMetadata {
+            ProviderMetadata::new(
+                "test-standard",
+                "Test",
+                "Test",
+                "default",
+                vec![],
+                "",
+                vec![],
+            )
+        }
+    }
+
+    impl super::super::base::ProviderDescriptor for TestSessionBoundDef {
+        fn metadata() -> ProviderMetadata {
+            ProviderMetadata::new(
+                "test-session",
+                "Test",
+                "Test",
+                "default",
+                vec![],
+                "",
+                vec![],
+            )
+        }
+    }
+
+    impl ProviderDef for TestStandardDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(_tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async { anyhow::bail!("standard") })
+        }
+    }
+
+    impl SessionBoundProviderDef for TestSessionBoundDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(
+            extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async move {
+                assert_eq!(extensions.len(), 1);
+                assert_eq!(extensions[0].name(), "developer");
+                anyhow::bail!("session")
+            })
+        }
+    }
+
+    fn test_extensions() -> Vec<ExtensionConfig> {
+        vec![ExtensionConfig::Builtin {
+            name: "developer".to_string(),
+            description: String::new(),
+            display_name: None,
+            timeout: None,
+            bundled: None,
+            available_tools: vec![],
+        }]
+    }
+
+    #[tokio::test]
+    async fn standard_and_session_bound_registration_preserve_construction_behavior() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<TestStandardDef>(true);
+        registry.register_session_bound::<TestSessionBoundDef>(false);
+
+        for (name, session_bound, expected) in [
+            ("test-standard", false, "standard"),
+            ("test-session", true, "session"),
+        ] {
+            let entry = &registry.entries[name];
+            assert_eq!(entry.session_bound(), session_bound);
+            assert_eq!(
+                entry
+                    .create_backend(test_extensions())
+                    .await
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+            assert_eq!(
+                entry
+                    .create_backend_with_working_dir(
+                        test_extensions(),
+                        PathBuf::from("test-workspace")
+                    )
+                    .await
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+            assert_eq!(
+                entry
+                    .create_backend_with_default_model(test_extensions())
+                    .await
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+        }
+        assert_eq!(
+            registry.entries["test-standard"].provider_type(),
+            ProviderType::Preferred
+        );
+        assert_eq!(
+            registry.entries["test-session"].provider_type(),
+            ProviderType::Builtin
+        );
+    }
+
+    struct TestAcpDef;
+
+    impl super::super::base::ProviderDescriptor for TestAcpDef {
+        fn metadata() -> ProviderMetadata {
+            ProviderMetadata::new(
+                "test-acp",
+                "Test ACP",
+                "Test",
+                "default",
+                vec![],
+                "",
+                vec![],
+            )
+        }
+    }
+
+    impl AcpProviderDef for TestAcpDef {
+        fn from_env(
+            extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                anyhow::bail!("from_env")
+            })
+        }
+
+        fn from_env_with_working_dir(
+            extensions: Vec<ExtensionConfig>,
+            working_dir: PathBuf,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                assert_eq!(working_dir, PathBuf::from("test-workspace"));
+                anyhow::bail!("working_dir")
+            })
+        }
+
+        fn from_env_with_default_model(
+            extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async move {
+                assert!(extensions.is_empty());
+                anyhow::bail!("default_model")
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn acp_registration_preserves_inventory_and_constructor_dispatch() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register_acp_with_inventory::<TestAcpDef>(
+            true,
+            Some(
+                InventoryRegistration::new(true, || {
+                    Ok(InventoryIdentityInput::new("test-acp", "test-family"))
+                })
+                .with_configured(|| false),
+            ),
+        );
+        let entry = &registry.entries["test-acp"];
+        assert!(entry
+            .create_standard(vec![])
+            .await
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("do not provide completion inference"));
+        assert_eq!(entry.metadata().name, "test-acp");
+        assert!(entry.session_bound());
+        assert_eq!(entry.provider_type(), ProviderType::Preferred);
+        assert!(entry.supports_inventory_refresh());
+        assert!(!entry.inventory_configured());
+        assert_eq!(
+            entry.inventory_identity().unwrap().provider_family,
+            "test-family"
+        );
+        assert_eq!(
+            entry
+                .create_backend(vec![])
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "from_env"
+        );
+        assert_eq!(
+            entry
+                .create_backend_with_working_dir(vec![], PathBuf::from("test-workspace"))
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "working_dir"
+        );
+        assert_eq!(
+            entry
+                .create_backend_with_default_model(vec![])
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "default_model"
+        );
+
+        registry.register_acp_with_inventory::<TestAcpDef>(false, None);
+        let entry = &registry.entries["test-acp"];
+        assert_eq!(entry.provider_type(), ProviderType::Builtin);
+        assert!(!entry.supports_inventory_refresh());
+    }
+
+    struct StubAcpDef;
+
+    impl super::super::base::ProviderDescriptor for StubAcpDef {
+        fn metadata() -> ProviderMetadata {
+            <TestAcpDef as super::super::base::ProviderDescriptor>::metadata()
+        }
+    }
+
+    impl AcpProviderDef for StubAcpDef {
+        fn from_env(
+            _extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async { Ok(crate::acp::AcpProvider::new_test_stub()) })
+        }
+    }
+
+    struct StubStandardDef;
+
+    impl super::super::base::ProviderDescriptor for StubStandardDef {
+        fn metadata() -> ProviderMetadata {
+            <TestStandardDef as super::super::base::ProviderDescriptor>::metadata()
+        }
+    }
+
+    fn standard_stub() -> crate::providers::testprovider::TestProvider {
+        crate::providers::testprovider::TestProvider::new_replaying("unused-recording.json")
+            .unwrap()
+    }
+
+    impl ProviderDef for StubStandardDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(_tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async { Ok(standard_stub()) })
+        }
+    }
+
+    impl SessionBoundProviderDef for StubStandardDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(
+            _extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async { Ok(standard_stub()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn registrations_retain_backend_variants() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<StubStandardDef>(true);
+        assert!(matches!(
+            registry
+                .create_backend("test-standard", vec![])
+                .await
+                .unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_session_bound::<StubStandardDef>(false);
+        let entry = &registry.entries["test-standard"];
+        assert!(matches!(
+            entry
+                .create_backend_with_working_dir(vec![], PathBuf::from("workspace"))
+                .await
+                .unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_with_name::<StubStandardDef, _, _>(
+            &test_config(),
+            ProviderType::Declarative,
+            false,
+            |_| Ok(standard_stub()),
+            || Ok(InventoryIdentityInput::new("custom_hf", "test")),
+        );
+        assert!(matches!(
+            registry.create_backend("custom_hf", vec![]).await.unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_acp_with_inventory::<StubAcpDef>(false, None);
+        let entry = &registry.entries["test-acp"];
+        assert!(matches!(
+            entry.create_backend(vec![]).await.unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert!(matches!(
+            entry
+                .create_backend_with_default_model(vec![])
+                .await
+                .unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert!(matches!(
+            entry
+                .create_backend_with_working_dir(vec![], PathBuf::from("workspace"))
+                .await
+                .unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert_eq!(
+            entry.create_backend(vec![]).await.unwrap().name(),
+            "acp-test"
+        );
+    }
 
     fn test_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {

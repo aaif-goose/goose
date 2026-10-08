@@ -23,7 +23,9 @@ use goose::config::{
 use goose::posthog::{get_telemetry_choice, TELEMETRY_ENABLED_KEY};
 use goose::providers::base::ConfigKey;
 use goose::providers::provider_test::test_provider_configuration;
-use goose::providers::{create, providers, retry_operation, RetryConfig};
+use goose::providers::{
+    create_backend, create_standard, providers, retry_operation, ProviderBackend, RetryConfig,
+};
 use goose::session::SessionType;
 use goose_providers::thinking::ThinkingEffort;
 use serde_json::Value;
@@ -472,7 +474,7 @@ async fn handle_oauth_configuration(provider_name: &str, key_name: &str) -> anyh
     ));
 
     // Create a temporary provider instance to handle OAuth
-    match create(provider_name, Vec::new()).await {
+    match create_standard(provider_name, Vec::new()).await {
         Ok(provider) => match provider.configure_oauth().await {
             Ok(_) => {
                 let _ = cliclack::log::success("OAuth authentication completed successfully!");
@@ -955,11 +957,16 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
 
     let spin = spinner();
     spin.start("Attempting to fetch supported models...");
-    let temp_provider = create(&provider_name, Vec::new()).await?;
+    let temp_provider = create_backend(&provider_name, Vec::new()).await?;
     let models_res = retry_operation(&RetryConfig::default(), || async {
-        temp_provider
-            .fetch_recommended_models(goose::model_config::global_toolshim())
-            .await
+        match &temp_provider {
+            ProviderBackend::Standard(provider) => {
+                provider
+                    .fetch_recommended_models(goose::model_config::global_toolshim())
+                    .await
+            }
+            ProviderBackend::Acp(provider) => provider.fetch_supported_models().await,
+        }
     })
     .await;
     spin.stop(style("Model fetch complete").green());
@@ -982,9 +989,12 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     };
 
     {
-        let supports_thinking = match temp_provider.fetch_model_info(&model).await {
-            Ok(model_info) => model_info.reasoning,
-            Err(_) => goose_providers::model::ModelConfig::new(&model).is_reasoning_model(),
+        let supports_thinking = match &temp_provider {
+            ProviderBackend::Standard(provider) => match provider.fetch_model_info(&model).await {
+                Ok(model_info) => model_info.reasoning,
+                Err(_) => goose_providers::model::ModelConfig::new(&model).is_reasoning_model(),
+            },
+            ProviderBackend::Acp(_) => false,
         };
 
         if supports_thinking {
@@ -1983,7 +1993,6 @@ pub fn configure_max_turns_dialog() -> anyhow::Result<()> {
 pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
     use goose::config::{configure_openrouter, signup_openrouter::OpenRouterAuth};
     use goose::conversation::message::Message;
-    use goose::providers::create;
 
     // Use the OpenRouter authentication flow
     let mut auth_flow = OpenRouterAuth::new()?;
@@ -2013,7 +2022,7 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
             }
         };
 
-    match create("openrouter", Vec::new()).await {
+    match create_standard("openrouter", Vec::new()).await {
         Ok(provider) => {
             let test_result = provider
                 .complete(
@@ -2090,7 +2099,7 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    match create("tetrate", Vec::new()).await {
+    match create_standard("tetrate", Vec::new()).await {
         Ok(provider) => {
             let test_result = provider.fetch_supported_models().await;
 

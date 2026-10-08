@@ -61,7 +61,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new(tls_config).with_providers(|registry| {
         use super::inventory::registrations;
 
-        registry.register_with_inventory::<AmpAcpProvider>(
+        registry.register_acp_with_inventory::<AmpAcpProvider>(
             false,
             Some(registrations::amp_acp_inventory()),
         );
@@ -83,20 +83,20 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::chatgpt_codex_inventory()),
         );
-        registry.register_with_inventory::<ClaudeAcpProvider>(
+        registry.register_acp_with_inventory::<ClaudeAcpProvider>(
             false,
             Some(registrations::claude_acp_inventory()),
         );
-        registry.register::<ClaudeCodeProvider>(true);
-        registry.register_with_inventory::<CodexAcpProvider>(
+        registry.register_session_bound::<ClaudeCodeProvider>(true);
+        registry.register_acp_with_inventory::<CodexAcpProvider>(
             false,
             Some(registrations::codex_acp_inventory()),
         );
-        registry.register_with_inventory::<CopilotAcpProvider>(
+        registry.register_acp_with_inventory::<CopilotAcpProvider>(
             false,
             Some(registrations::copilot_acp_inventory()),
         );
-        registry.register::<CodexProvider>(true);
+        registry.register_session_bound::<CodexProvider>(true);
         registry.register_with_inventory::<CursorAgentProvider>(
             false,
             Some(registrations::refresh_only()),
@@ -113,7 +113,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::refresh_only()),
         );
-        registry.register::<GeminiCliProvider>(false);
+        registry.register_session_bound::<GeminiCliProvider>(false);
         registry.register_with_inventory::<GeminiOAuthProvider>(
             false,
             Some(registrations::gemini_oauth_inventory()),
@@ -170,7 +170,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
                     .is_ok()
             })),
         );
-        registry.register_with_inventory::<PiAcpProvider>(
+        registry.register_acp_with_inventory::<PiAcpProvider>(
             false,
             Some(registrations::pi_acp_inventory()),
         );
@@ -271,18 +271,33 @@ pub async fn inventory_identity(name: &str) -> Result<super::inventory::Inventor
     get_from_registry(name).await?.inventory_identity()
 }
 
-pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
-    let entry = get_from_registry(name).await?;
-    entry.create(extensions).await
+pub async fn create_backend(
+    name: &str,
+    extensions: Vec<ExtensionConfig>,
+) -> Result<super::ProviderBackend> {
+    get_from_registry(name)
+        .await?
+        .create_backend(extensions)
+        .await
 }
 
-pub async fn create_with_default_model(
+pub async fn create_backend_with_default_model(
     name: impl AsRef<str>,
     extensions: Vec<ExtensionConfig>,
-) -> Result<Arc<dyn Provider>> {
+) -> Result<super::ProviderBackend> {
     get_from_registry(name.as_ref())
         .await?
-        .create_with_default_model(extensions)
+        .create_backend_with_default_model(extensions)
+        .await
+}
+
+pub async fn create_standard(
+    name: &str,
+    extensions: Vec<ExtensionConfig>,
+) -> Result<Arc<dyn Provider>> {
+    get_from_registry(name)
+        .await?
+        .create_standard(extensions)
         .await
 }
 
@@ -453,7 +468,7 @@ mod tests {
             .await
             .expect("custom_inf entry should exist");
         let provider = inf_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_inf provider should be created");
         assert_eq!(provider.get_context_limit("kimi-k2.5", None).await, 256_000);
@@ -462,7 +477,7 @@ mod tests {
             .await
             .expect("custom_zero entry should exist");
         let zero_provider = zero_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_zero provider should be created");
         assert_eq!(
@@ -489,7 +504,7 @@ mod tests {
             .await
             .expect("openai provider should be registered");
         let openai_provider = openai
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("openai provider should be created");
         assert_eq!(
@@ -528,7 +543,7 @@ mod tests {
             .await
             .expect("custom_inf entry should exist");
         let inf_provider = inf_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_inf provider should be created");
         assert_eq!(

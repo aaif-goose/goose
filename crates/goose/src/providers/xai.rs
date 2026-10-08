@@ -40,7 +40,6 @@ impl ProviderDef for XaiProvider {
     type Provider = OpenAiCompatibleProvider;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<OpenAiCompatibleProvider>> {
         Box::pin(async move {

@@ -74,9 +74,11 @@ pub mod openai_compatible {
 pub mod openrouter {
     pub use goose_providers::openrouter::*;
 }
+pub mod backend;
 pub mod openrouter_def;
 pub mod pi_acp;
 pub(crate) mod private_file;
+pub use backend::ProviderBackend;
 pub mod provider_registry;
 pub mod provider_secrets;
 pub mod provider_test;
@@ -100,7 +102,7 @@ pub mod xai;
 pub mod xai_oauth;
 
 pub use init::{
-    cleanup_provider, create, create_with_default_model, get_from_registry, inventory_identity,
-    providers, refresh_custom_providers,
+    cleanup_provider, create_backend, create_backend_with_default_model, create_standard,
+    get_from_registry, inventory_identity, providers, refresh_custom_providers,
 };
 pub use retry::{retry_operation, RetryConfig};

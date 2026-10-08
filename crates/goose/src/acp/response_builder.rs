@@ -239,7 +239,7 @@ pub(super) async fn agent_thinking_effort_support(
     agent: &Agent,
     session_id: &str,
 ) -> ThinkingEffortSupport {
-    match agent.provider(session_id).await {
+    match agent.backend(session_id).await {
         Ok(provider) => provider.thinking_effort_support(),
         Err(_) => ThinkingEffortSupport::Unspecified,
     }

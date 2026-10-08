@@ -808,7 +808,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         saved_model_for_validation.as_deref(),
         &effective_provider_name,
         &effective_model_name,
-        new_provider.manages_own_context(),
+        match &new_provider {
+            goose::providers::ProviderBackend::Standard(provider) => provider.manages_own_context(),
+            goose::providers::ProviderBackend::Acp(_) => true,
+        },
     )
     .unwrap_or_else(|e| {
         output::render_error(&e.to_string());

@@ -9,7 +9,7 @@ use crate::acp::{
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GooseMode};
 use crate::providers::base::{
-    current_working_dir, ProviderDef, ProviderDescriptor, ProviderMetadata,
+    current_working_dir, AcpProviderDef, ProviderDescriptor, ProviderMetadata,
 };
 use crate::providers::catalog::ProviderSetupMetadata;
 
@@ -44,10 +44,7 @@ impl goose_providers::base::ProviderDescriptor for AmpAcpProvider {
     }
 }
 
-impl ProviderDef for AmpAcpProvider {
-    type Provider = AcpProvider;
-    const SESSION_BOUND: bool = true;
-
+impl AcpProviderDef for AmpAcpProvider {
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,

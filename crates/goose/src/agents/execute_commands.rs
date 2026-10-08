@@ -2,8 +2,6 @@ use std::path::Path;
 
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
-use super::Agent;
-
 pub fn slash_commands_enabled() -> bool {
     crate::config::Config::global()
         .get_param::<bool>("GOOSE_SLASH_COMMANDS_ENABLED")
@@ -125,8 +123,6 @@ pub fn command_starts_turn(message_text: &str) -> bool {
         && !parsed.params_str.is_empty()
         && !is_clear_goal_param(parsed.params_str)
 }
-
-impl Agent {}
 
 #[cfg(test)]
 mod tests {

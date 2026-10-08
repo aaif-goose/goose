@@ -1,12 +1,11 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
-    ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect, Operation,
-    OperationResult, StepResult,
+    ConversationEffect, Emitter, Inference, MachineEffect, Operation, OperationResult, StepResult,
 };
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
@@ -53,20 +52,6 @@ pub struct StateMachine<'a, S, E = ConversationEffect> {
     cancel: CancellationToken,
 }
 
-fn add_tools_to_inference_input(
-    input: &mut InferenceInput,
-    tool_names: &mut HashSet<String>,
-    tools: Vec<rmcp::model::Tool>,
-) -> Result<()> {
-    for tool in tools {
-        if !tool_names.insert(tool.name.to_string()) {
-            anyhow::bail!("multiple operations registered tool '{}'", tool.name);
-        }
-        input.tools.push(tool);
-    }
-    Ok(())
-}
-
 impl<'a, S, E> StateMachine<'a, S, E>
 where
     S: MachineSession,
@@ -99,21 +84,12 @@ where
                         if !inference.applies(conversation) {
                             continue;
                         }
-                        let mut input = InferenceInput::default();
-                        let mut tool_names = HashSet::new();
-                        for operation in self.steps.iter().map(|step| step.operation()) {
-                            let tools = tokio::select! {
-                                biased;
-                                _ = self.cancel.cancelled() => return Ok(None),
-                                tools = operation.inference_tools(session) => tools?,
-                            };
-                            add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
-                            input
-                                .prompt_parts
-                                .extend(operation.prompt_parts(session, conversation).await?);
-                            input
-                                .moim_parts
-                                .extend(operation.moim_parts(session, conversation).await?);
+                        let operations = self.steps.iter().map(Step::operation).collect::<Vec<_>>();
+                        let input = inference
+                            .prepare_input(session, conversation, &operations, &self.cancel)
+                            .await?;
+                        if self.cancel.is_cancelled() {
+                            return Ok(None);
                         }
                         inference.infer(session, conversation, input, emit).await?
                     }
@@ -185,26 +161,85 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::operation::{not_applicable, InferenceInput};
 
-    #[test]
-    fn rejects_duplicate_tools_across_operations() {
-        let schema = Arc::new(serde_json::Map::new());
-        let mut input = InferenceInput::default();
-        let mut names = HashSet::new();
+    struct Contributor;
 
-        add_tools_to_inference_input(
-            &mut input,
-            &mut names,
-            vec![rmcp::model::Tool::new("duplicate", "first", schema.clone())],
-        )
-        .unwrap();
-        let error = add_tools_to_inference_input(
-            &mut input,
-            &mut names,
-            vec![rmcp::model::Tool::new("duplicate", "second", schema)],
-        )
-        .unwrap_err();
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Operation<(), ConversationEffect> for Contributor {
+        fn name(&self) -> &'static str {
+            "contributor"
+        }
+        async fn inference_tools(&self, _: &()) -> Result<Vec<rmcp::model::Tool>> {
+            Ok(vec![rmcp::model::Tool::new(
+                "duplicate",
+                "test",
+                serde_json::Map::new(),
+            )])
+        }
+        async fn prompt_parts(&self, _: &(), _: &Conversation) -> Result<Vec<(String, String)>> {
+            Ok(vec![("part".into(), "prompt".into())])
+        }
+        async fn moim_parts(&self, _: &(), _: &Conversation) -> Result<Vec<String>> {
+            Ok(vec!["context".into()])
+        }
+    }
 
+    struct CompletionInference;
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Operation<(), ConversationEffect> for CompletionInference {
+        fn name(&self) -> &'static str {
+            "inference"
+        }
+    }
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Inference<(), ConversationEffect> for CompletionInference {
+        fn applies(&self, _: &Conversation) -> bool {
+            true
+        }
+        async fn infer(
+            &self,
+            _: &(),
+            _: &Conversation,
+            _: InferenceInput,
+            _: &Emitter,
+        ) -> Result<OperationResult<ConversationEffect>> {
+            not_applicable()
+        }
+    }
+
+    #[tokio::test]
+    async fn default_inference_preparation_preserves_operation_contributions() {
+        let input = CompletionInference
+            .prepare_input(
+                &(),
+                &Conversation::empty(),
+                &[&Contributor],
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(input.tools[0].name, "duplicate");
+        assert_eq!(input.prompt_parts, [("part".into(), "prompt".into())]);
+        assert_eq!(input.moim_parts, ["context"]);
+    }
+
+    #[tokio::test]
+    async fn rejects_duplicate_tools_across_operations() {
+        let error = CompletionInference
+            .prepare_input(
+                &(),
+                &Conversation::empty(),
+                &[&Contributor, &Contributor],
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .unwrap();
         assert_eq!(
             error.to_string(),
             "multiple operations registered tool 'duplicate'"

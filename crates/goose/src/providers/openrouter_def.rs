@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::{
-    config::{Config, ConfigError, ExtensionConfig},
+    config::{Config, ConfigError},
     providers::base::ProviderDef,
 };
 
@@ -37,10 +37,7 @@ impl ProviderDescriptor for OpenRouterProviderDef {
 impl ProviderDef for OpenRouterProviderDef {
     type Provider = OpenRouterProvider;
 
-    fn from_env(
-        _extensions: Vec<ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }

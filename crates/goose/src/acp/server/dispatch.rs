@@ -239,15 +239,15 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                     let refresh_provider_id = refresh_job.provider_id;
                                     let mut refresh_guard =
                                         agent_bg.provider_inventory.refresh_guard(&refresh_identity);
-                                    let provider_result: Result<Arc<dyn Provider>> =
+                                    let provider_result: Result<ProviderBackend> =
                                         AssertUnwindSafe(async {
                                             let session_agent =
                                                 agent_bg.get_session_agent(&session_id_bg.0).await?;
                                             let provider = session_agent
-                                                .provider(&session_id_bg.0)
+                                                .backend(&session_id_bg.0)
                                                 .await
                                                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                                            let provider_name = provider.get_name().to_string();
+                                            let provider_name = provider.name().to_string();
                                             if provider_name != refresh_provider_id {
                                                 return Err(anyhow::anyhow!(
                                                     "provider changed before inventory refresh completed"
@@ -270,11 +270,16 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                         )
                                         .await
                                         {
-                                            Ok(()) => match AssertUnwindSafe(
-                                                provider.fetch_recommended_models(
-                                                    crate::model_config::global_toolshim(),
-                                                ),
-                                            )
+                                            Ok(()) => match AssertUnwindSafe(async {
+                                                match &provider {
+                                                    ProviderBackend::Standard(provider) => provider
+                                                        .fetch_recommended_models(refresh_job.toolshim)
+                                                        .await,
+                                                    ProviderBackend::Acp(provider) => provider
+                                                        .fetch_supported_models()
+                                                        .await,
+                                                }
+                                            })
                                             .catch_unwind()
                                             .await
                                             {

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tracing::debug;
 
 use super::gen_ai_telemetry;
+use crate::acp::AcpProvider;
 use crate::config::Config;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{fix_conversation, merge_consecutive_messages_for_request, Conversation};
@@ -476,6 +477,91 @@ pub(crate) async fn stream_response_from_provider(
                 yield (None, final_usage);
             }
         } else {
+            let mut decorated = decorate_response_stream(
+                stream,
+                request_started,
+                span,
+                capture_message_content,
+            );
+            while let Some(result) = decorated.next().await {
+                yield result?;
+            }
+        }
+    }))
+}
+
+#[tracing::instrument(
+    skip(provider, model_config, session_id, messages),
+    fields(
+        session.id = %session_id,
+        gen_ai.conversation.id = %session_id,
+        gen_ai.operation.name = "chat",
+        gen_ai.provider.name = %provider.name(),
+        gen_ai.request.model = %model_config.model_name,
+        gen_ai.request.stream = true,
+        gen_ai.request.temperature = tracing::field::Empty,
+        gen_ai.request.max_tokens = tracing::field::Empty,
+        gen_ai.response.model = tracing::field::Empty,
+        gen_ai.response.finish_reasons = tracing::field::Empty,
+        gen_ai.response.id = tracing::field::Empty,
+        gen_ai.usage.input_tokens = tracing::field::Empty,
+        gen_ai.usage.output_tokens = tracing::field::Empty,
+        gen_ai.usage.cache_read.input_tokens = tracing::field::Empty,
+        gen_ai.usage.cache_creation.input_tokens = tracing::field::Empty,
+        gen_ai.input.messages = tracing::field::Empty,
+        gen_ai.output.messages = tracing::field::Empty,
+    )
+)]
+pub(crate) async fn stream_response_from_acp(
+    provider: Arc<AcpProvider>,
+    model_config: ModelConfig,
+    session_id: &str,
+    messages: &[Message],
+) -> Result<MessageStream, ProviderError> {
+    let span = tracing::Span::current();
+    gen_ai_telemetry::record_request_params(&span, &model_config);
+    let capture_message_content = gen_ai_telemetry::capture_message_content();
+    if capture_message_content {
+        let projected_messages =
+            Conversation::new_unvalidated(messages.iter().cloned()).agent_visible_messages();
+        let input_messages = gen_ai_telemetry::input_messages_json(&projected_messages);
+        span.record("gen_ai.input.messages", input_messages.as_str());
+    }
+
+    let model_config =
+        model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
+    let request_started = std::time::Instant::now();
+    debug!("WAITING_LLM_STREAM_START");
+    let stream_result = crate::session_context::with_session_id(
+        Some(session_id.to_owned()),
+        provider.prompt_messages(&model_config, messages),
+    )
+    .await;
+    debug!("WAITING_LLM_STREAM_END");
+
+    let stream = match stream_result {
+        Ok(stream) => stream,
+        Err(error) => {
+            return Ok(Box::pin(try_stream! {
+                yield Err(error)?;
+            }));
+        }
+    };
+    Ok(decorate_response_stream(
+        stream,
+        request_started,
+        span,
+        capture_message_content,
+    ))
+}
+
+fn decorate_response_stream(
+    mut stream: MessageStream,
+    request_started: std::time::Instant,
+    span: tracing::Span,
+    capture_message_content: bool,
+) -> MessageStream {
+    Box::pin(try_stream! {
             let mut first_content_at: Option<std::time::Instant> = None;
             let mut active_mergeable_assistant_id: Option<String> = None;
             let mut output_message: Option<Message> = None;
@@ -518,8 +604,7 @@ pub(crate) async fn stream_response_from_provider(
                 let output_messages = gen_ai_telemetry::output_message_json(&output_message);
                 span.record("gen_ai.output.messages", output_messages.as_str());
             }
-        }
-    }))
+    })
 }
 
 /// Check whether a tool should be callable by an app based on MCP Apps visibility metadata.
@@ -577,6 +662,70 @@ mod tests {
     use rmcp::object;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn acp_empty_prompt_records_chat_request_without_toolshim() {
+        use goose_test_support::otel::clear_otel_env;
+
+        let _env = clear_otel_env(&[(gen_ai_telemetry::CAPTURE_MESSAGE_CONTENT_ENV, "true")]);
+        let capture = SpanFieldCapture::new("stream_response_from_acp");
+        let _subscriber = capture.clone().set_default();
+        let mut config = ModelConfig::new("requested-model");
+        config.toolshim = true;
+        let mut stream = stream_response_from_acp(
+            Arc::new(AcpProvider::new_test_stub()),
+            config,
+            "goose-session",
+            &[],
+        )
+        .await
+        .unwrap();
+        assert!(stream.next().await.is_none());
+
+        let fields = capture.fields();
+        assert_eq!(fields["gen_ai.operation.name"], "chat");
+        assert_eq!(fields["gen_ai.provider.name"], "acp-test");
+        assert_eq!(fields["gen_ai.request.model"], "requested-model");
+        assert_eq!(fields["gen_ai.request.stream"], true);
+        assert_eq!(fields["gen_ai.conversation.id"], "goose-session");
+        let input: Value =
+            serde_json::from_str(fields["gen_ai.input.messages"].as_str().unwrap()).unwrap();
+        assert_eq!(input, json!([]));
+    }
+
+    #[tokio::test]
+    async fn response_decoration_preserves_usage_ids_and_stream_errors() {
+        let usage = ProviderUsage::new("resolved-model".to_string(), Usage::default());
+        let stream: MessageStream = Box::pin(futures::stream::iter(vec![
+            Ok((Some(Message::assistant().with_text("first")), None)),
+            Ok((Some(Message::assistant().with_text("second")), Some(usage))),
+            Ok((
+                Some(
+                    Message::assistant()
+                        .with_text("explicit")
+                        .with_id("existing"),
+                ),
+                None,
+            )),
+            Err(ProviderError::RequestFailed("stream failure".to_string())),
+        ]));
+        let mut stream =
+            decorate_response_stream(stream, Instant::now(), tracing::Span::none(), false);
+        let (first, _) = stream.next().await.unwrap().unwrap();
+        let (second, usage) = stream.next().await.unwrap().unwrap();
+        assert!(first.as_ref().unwrap().id.is_some());
+        assert_eq!(first.unwrap().id, second.unwrap().id);
+        let stats = usage.unwrap().stats.unwrap();
+        assert!(stats.time_to_first_token_ms.is_some());
+        assert!(stats.elapsed_ms.is_some());
+        let (explicit, _) = stream.next().await.unwrap().unwrap();
+        assert_eq!(explicit.unwrap().id.as_deref(), Some("existing"));
+        assert!(matches!(
+            stream.next().await.unwrap(),
+            Err(ProviderError::RequestFailed(message)) if message == "stream failure"
+        ));
+        assert!(stream.next().await.is_none());
+    }
 
     #[derive(Clone)]
     struct GenAiTracingProvider;

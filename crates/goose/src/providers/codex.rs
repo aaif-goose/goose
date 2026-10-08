@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{ConfigKey, MessageStream, Provider, ProviderMetadata, SessionBoundProviderDef};
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
@@ -635,9 +635,8 @@ impl goose_providers::base::ProviderDescriptor for CodexProvider {
     }
 }
 
-impl ProviderDef for CodexProvider {
+impl SessionBoundProviderDef for CodexProvider {
     type Provider = Self;
-    const SESSION_BOUND: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

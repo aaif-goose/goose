@@ -7,7 +7,7 @@ use goose_providers::api_client::{AuthMethod, AuthProvider, TlsConfig};
 use goose_providers::azure_foundry::{endpoint_kind, AzureFoundryProvider, EndpointKind};
 use goose_providers::base::{ProviderDescriptor, ProviderMetadata};
 
-use crate::config::{Config, ExtensionConfig};
+use crate::config::Config;
 use crate::providers::azureauth::{AzureAuth, AzureCredentials};
 use crate::providers::base::ProviderDef;
 
@@ -68,10 +68,7 @@ impl ProviderDescriptor for AzureFoundryProviderDef {
 impl ProviderDef for AzureFoundryProviderDef {
     type Provider = AzureFoundryProvider;
 
-    fn from_env(
-        _extensions: Vec<ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }

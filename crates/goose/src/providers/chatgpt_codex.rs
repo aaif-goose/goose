@@ -987,7 +987,6 @@ impl ProviderDef for ChatGptCodexProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))

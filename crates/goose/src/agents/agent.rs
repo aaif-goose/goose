@@ -40,6 +40,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::{PermissionRouting, Provider};
+use crate::providers::ProviderBackend;
 use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
@@ -398,13 +399,22 @@ impl Agent {
         tool_inspection_manager
     }
 
-    pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
+    pub async fn standard_provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
         let session = self
             .config
             .session_manager
             .get_session(session_id, false)
             .await?;
-        self.config.providers.provider_for(&session).await
+        self.config.providers.standard_provider_for(&session).await
+    }
+
+    pub async fn backend(&self, session_id: &str) -> Result<ProviderBackend> {
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        self.config.providers.backend_for(&session).await
     }
 
     pub async fn model_config_for_session(
@@ -424,7 +434,7 @@ impl Agent {
         session_id: &str,
     ) -> Result<goose_providers::model::ModelConfig> {
         let model_config = self.model_config_for_session(session_id).await?;
-        let provider_name = self.provider(session_id).await?.get_name().to_string();
+        let provider_name = self.backend(session_id).await?.name().to_string();
         match crate::providers::get_from_registry(&provider_name).await {
             Ok(entry) => Ok(entry
                 .normalize_model_config(model_config.clone())
@@ -492,9 +502,12 @@ impl Agent {
         let manages_own_context = self
             .config
             .providers
-            .provider_for(session)
+            .backend_for(session)
             .await
-            .map(|p| p.manages_own_context())
+            .map(|backend| match backend {
+                ProviderBackend::Standard(provider) => provider.manages_own_context(),
+                ProviderBackend::Acp(_) => true,
+            })
             .unwrap_or(false);
         let (skipped_configs, enabled_configs): (Vec<_>, Vec<_>) =
             enabled_configs.into_iter().partition(|config| {
@@ -839,7 +852,7 @@ impl Agent {
         request_id: &str,
         confirmation: &PermissionConfirmation,
     ) -> bool {
-        if let Ok(provider) = self.provider(session_id).await {
+        if let Ok(provider) = self.backend(session_id).await {
             if provider.permission_routing() == PermissionRouting::ActionRequired
                 && provider
                     .handle_permission_confirmation(request_id, confirmation)
@@ -853,7 +866,7 @@ impl Agent {
 
     pub(super) async fn create_state_machine(
         &self,
-        provider: Arc<dyn Provider>,
+        backend: ProviderBackend,
         model_config: goose_providers::model::ModelConfig,
         context_limit: usize,
         session_config: SessionConfig,
@@ -893,29 +906,32 @@ impl Agent {
             .unwrap_or_else(|_| {
                 crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
             });
-        let manages_own_context = provider.manages_own_context();
-        let tool_pair_compaction_enabled =
-            crate::context_mgmt::tool_pair_summarization_enabled() && !manages_own_context;
-
+        let supports_builtin_tools = match &backend {
+            ProviderBackend::Standard(provider) => provider.supports_builtin_tools(),
+            ProviderBackend::Acp(_) => false,
+        };
         let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(SteerOperation::new(steer_queue, self.hook_manager.clone())),
             Arc::new(BangShellOperation::new()),
         ];
-        if !manages_own_context {
-            operations.push(Arc::new(CompactionOperation::new(
-                provider.clone(),
-                model_config.clone(),
-                context_limit,
-                compaction_threshold,
-            )));
-        }
-        let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-            Arc::new(ToolPairCompactionOperation::new(
+        if let ProviderBackend::Standard(provider) = &backend {
+            if !provider.manages_own_context() {
+                operations.push(Arc::new(CompactionOperation::new(
+                    provider.clone(),
+                    model_config.clone(),
+                    context_limit,
+                    compaction_threshold,
+                )));
+            }
+            operations.push(Arc::new(ToolPairCompactionOperation::new(
                 provider.clone(),
                 model_config.clone(),
                 tool_call_cutoff,
-                tool_pair_compaction_enabled,
-            )),
+                crate::context_mgmt::tool_pair_summarization_enabled()
+                    && !provider.manages_own_context(),
+            )));
+        }
+        let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
             Arc::new(ProjectOperation),
@@ -934,7 +950,8 @@ impl Agent {
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
-                provider.clone(),
+                backend.name().to_string(),
+                supports_builtin_tools,
                 self.hook_manager.clone(),
             )),
             Arc::new(ToolExecutionOperation::new(
@@ -956,19 +973,34 @@ impl Agent {
             Arc::new(MaxTurnsOperation::new(max_turns)),
         ];
         operations.extend(remaining_operations);
-        let request_preparer = GooseInferenceRequestPreparer {
-            extension_manager: Arc::clone(&self.extension_manager),
-            extension_lease,
-            tool_inspection_manager: &self.tool_inspection_manager,
-            context_limit,
-        };
         let status_operation =
-            Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
-        let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
-        let inference = Arc::new(
-            InferenceRunner::new(inference_provider, model_config)
-                .with_request_preparer(Arc::new(request_preparer)),
-        );
+            Arc::new(StatusOperation::new(backend.clone(), model_config.clone()));
+        let inference: Arc<dyn crate::agents::state_machine::Inference<Session, GooseEffect> + '_> =
+            match backend {
+                ProviderBackend::Standard(provider) => {
+                    let request_preparer = GooseInferenceRequestPreparer {
+                        extension_manager: Arc::clone(&self.extension_manager),
+                        extension_lease,
+                        tool_inspection_manager: &self.tool_inspection_manager,
+                        context_limit,
+                    };
+                    Arc::new(
+                        InferenceRunner::new(
+                            Arc::new(GooseInferenceProvider::new(provider)),
+                            model_config,
+                        )
+                        .with_request_preparer(Arc::new(request_preparer)),
+                    )
+                }
+                ProviderBackend::Acp(provider) => {
+                    Arc::new(crate::agents::state_machine::AcpInferenceRunner::new(
+                        provider,
+                        model_config,
+                        self.extension_manager.clone(),
+                        extension_lease,
+                    ))
+                }
+            };
         let mut command_handlers = operations.clone();
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
@@ -1032,25 +1064,26 @@ impl Agent {
             .add_message(&session_config.id, &user_message)
             .await?;
 
-        if !self.config.disable_session_naming {
-            let provider = self.provider(&session_config.id).await?;
-            let manager = session_manager.clone();
-            let tx = self.config.session_name_update_tx.clone();
-            let id = session_id.clone();
-            let provider = provider.clone();
-            tokio::spawn(async move {
-                match manager.maybe_update_name(&id, provider).await {
-                    Ok(Some(update)) => {
-                        if let Some(tx) = tx {
-                            if tx.send(update).is_err() {
-                                tracing::warn!("Failed to publish generated session name");
+        if let ProviderBackend::Standard(provider) = self.backend(&session_config.id).await? {
+            if !self.config.disable_session_naming {
+                let manager = session_manager.clone();
+                let tx = self.config.session_name_update_tx.clone();
+                let id = session_id.clone();
+                let provider = provider.clone();
+                tokio::spawn(async move {
+                    match manager.maybe_update_name(&id, provider).await {
+                        Ok(Some(update)) => {
+                            if let Some(tx) = tx {
+                                if tx.send(update).is_err() {
+                                    tracing::warn!("Failed to publish generated session name");
+                                }
                             }
                         }
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("Failed to generate session description: {}", e),
                     }
-                    Ok(None) => {}
-                    Err(e) => tracing::warn!("Failed to generate session description: {}", e),
-                }
-            });
+                });
+            }
         }
 
         let cancel = cancel_token.unwrap_or_default();
@@ -1202,7 +1235,7 @@ impl Agent {
                         yield event;
                     }
 
-                    if !has_confirmations {
+                    if cancel.is_cancelled() || !has_confirmations {
                         turn_guard.state().clear_confirmations();
                         return;
                     }
@@ -1234,16 +1267,16 @@ impl Agent {
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
-        let provider = self.provider(&session_id).await?;
+        let backend = self.backend(&session_id).await?;
         let model_config = self.effective_model_config_for_session(&session_id).await?;
 
         let context_limit =
-            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+            crate::context_limit::get_backend_context_limit(&backend, &model_config.model_name)
                 .await?;
         let steer_queue = self.steer_queue(&session_id).await;
         let machine = self
             .create_state_machine(
-                provider,
+                backend,
                 model_config,
                 context_limit,
                 session_config,
@@ -1396,19 +1429,29 @@ impl Agent {
             .await
     }
 
-    /// Pins `provider` to the session instead of letting the provider manager
-    /// build one.
-    pub async fn update_provider(
+    /// Pins a standard completion provider to the session.
+    pub async fn update_standard_provider(
         &self,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
         session_id: &str,
     ) -> Result<()> {
-        let provider_name = provider.get_name().to_string();
-        self.config
-            .providers
-            .set_provider(session_id, provider)
-            .await;
+        self.update_backend(
+            ProviderBackend::Standard(provider),
+            model_config,
+            session_id,
+        )
+        .await
+    }
+
+    pub async fn update_backend(
+        &self,
+        backend: ProviderBackend,
+        model_config: goose_providers::model::ModelConfig,
+        session_id: &str,
+    ) -> Result<()> {
+        let provider_name = backend.name().to_string();
+        self.config.providers.set_backend(session_id, backend).await;
         self.switch_provider(session_id, &provider_name, model_config)
             .await
     }
@@ -1436,17 +1479,20 @@ impl Agent {
 
         session.provider_name = Some(provider_name.to_string());
         session.model_config = Some(model_config.clone());
-        let provider = self
+        let backend = self
             .config
             .providers
-            .provider_for(&session)
+            .backend_for(&session)
             .await
             .map_err(|error| provider_creation_error(error, "Could not create provider"))?;
 
-        let model_config = normalize_legacy_provider_thinking_effort(
-            model_config,
-            &provider.thinking_effort_support(),
-        );
+        let model_config = match &backend {
+            ProviderBackend::Standard(provider) => normalize_legacy_provider_thinking_effort(
+                model_config,
+                &provider.thinking_effort_support(),
+            ),
+            ProviderBackend::Acp(_) => model_config,
+        };
         let effective_model_config = match registry_entry {
             Some(entry) => entry
                 .normalize_model_config(model_config.clone())
@@ -1457,10 +1503,7 @@ impl Agent {
         // A provider that manages its own model has to be told about the
         // selection before the next config snapshot is built. Failures are not
         // fatal here: the selection is re-applied at stream time.
-        if let Err(e) = provider
-            .apply_model_selection(&effective_model_config)
-            .await
-        {
+        if let Err(e) = backend.apply_model_selection(&effective_model_config).await {
             warn!("Failed to apply model selection to provider: {e}");
         }
 
@@ -1476,8 +1519,8 @@ impl Agent {
     }
 
     pub async fn update_goose_mode(&self, mode: GooseMode, session_id: &str) -> Result<()> {
-        if let Ok(provider) = self.provider(session_id).await {
-            provider
+        if let Ok(backend) = self.backend(session_id).await {
+            backend
                 .update_mode(session_id, mode)
                 .await
                 .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
@@ -1505,11 +1548,11 @@ impl Agent {
     /// provider that manages effort through a harness has its own vocabulary,
     /// which is not always a `ThinkingEffort` member.
     pub async fn update_thinking_effort(&self, session_id: &str, effort: &str) -> Result<()> {
-        let current_provider = self.provider(session_id).await?;
+        let backend = self.backend(session_id).await?;
         // Context rather than a formatted string: the caller distinguishes a
         // value rejection from an operational failure by downcasting to
         // `ProviderError`, which stringifying would destroy.
-        let provider_handled = current_provider
+        let provider_handled = backend
             .set_thinking_effort(session_id, effort)
             .await
             .context("Provider rejected thinking effort update")?;
@@ -1537,7 +1580,7 @@ impl Agent {
                 "Invalid thinking effort: {effort}"
             )))
         })?;
-        let provider_name = current_provider.get_name().to_string();
+        let provider_name = backend.name().to_string();
         self.switch_provider(
             session_id,
             &provider_name,
@@ -1797,7 +1840,7 @@ mod tests {
             .unwrap();
         let provider = Arc::new(SessionContextProvider::default());
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
@@ -1890,6 +1933,438 @@ mod tests {
             &session_id,
             &["get_context_limit", "stream"],
         );
+    }
+
+    async fn scripted_acp_agent(
+        script: Vec<Vec<crate::acp::AcpTestUpdate>>,
+        mode: GooseMode,
+    ) -> (
+        Agent,
+        Session,
+        TempDir,
+        Arc<crate::acp::AcpProvider>,
+        Arc<std::sync::Mutex<Vec<Vec<agent_client_protocol::schema::v1::ContentBlock>>>>,
+    ) {
+        let (mut agent, session, data_dir) = tracing_test_agent_and_session().await;
+        agent.config.disable_session_naming = false;
+        let (provider, prompts) = crate::acp::AcpProvider::new_test_script(script, mode);
+        let provider = Arc::new(provider);
+        agent
+            .update_backend(
+                ProviderBackend::Acp(provider.clone()),
+                goose_providers::model::ModelConfig::new("test-model").with_toolshim(true),
+                &session.id,
+            )
+            .await
+            .unwrap();
+        agent.update_goose_mode(mode, &session.id).await.unwrap();
+        (agent, session, data_dir, provider, prompts)
+    }
+
+    fn acp_session_config(session: &Session) -> SessionConfig {
+        SessionConfig {
+            id: session.id.clone(),
+            schedule_id: None,
+            max_turns: Some(2),
+        }
+    }
+
+    #[tokio::test]
+    async fn acp_execution_is_protocol_native() {
+        use crate::acp::AcpTestUpdate::*;
+        let (agent, session, _dir, provider, prompts) = scripted_acp_agent(
+            vec![vec![
+                ToolStart {
+                    id: "external".into(),
+                    name: "developer__shell".into(),
+                },
+                ToolComplete {
+                    id: "external".into(),
+                },
+                Text("protocol answer".into()),
+                Complete,
+            ]],
+            GooseMode::Auto,
+        )
+        .await;
+        // A toolshim configuration and broken standard tool names must not alter ACP execution.
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            if let AgentEvent::Message(message) = event.unwrap() {
+                text.push_str(&message.as_concat_text());
+            }
+        }
+        assert!(text.contains("protocol answer"));
+        assert!(!text.contains("Unknown tool"));
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+        let persisted = agent
+            .config
+            .session_manager
+            .get_session(&session.id, true)
+            .await
+            .unwrap();
+        assert_eq!(persisted.usage.total_tokens, Some(3));
+        let conversation = persisted.conversation.unwrap();
+        assert!(!conversation.messages().iter().any(Message::is_turn_context));
+        let request = conversation
+            .messages()
+            .iter()
+            .flat_map(|m| &m.content)
+            .filter_map(MessageContent::as_tool_request)
+            .next()
+            .unwrap();
+        assert!(request.was_executed_externally());
+        assert!(conversation
+            .messages()
+            .iter()
+            .filter_map(|m| m.metadata.inference.as_ref())
+            .all(|i| i.provider_session_id.as_deref() == Some(provider.session_id().as_str())));
+        assert!(matches!(
+            agent.backend(&session.id).await.unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn acp_errors_preserve_partial_output_without_standard_retries() {
+        use crate::acp::AcpTestUpdate::*;
+        let (agent, session, _dir, _provider, prompts) = scripted_acp_agent(
+            vec![vec![
+                Text("partial".into()),
+                Error(agent_client_protocol::Error::auth_required()),
+            ]],
+            GooseMode::Auto,
+        )
+        .await;
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            event.unwrap();
+        }
+        let persisted = agent
+            .config
+            .session_manager
+            .get_session(&session.id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap();
+        assert!(persisted
+            .messages()
+            .iter()
+            .any(|m| m.as_concat_text().contains("partial")));
+        assert!(persisted
+            .messages()
+            .iter()
+            .any(|m| m.error_kind().is_some()));
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn acp_permission_confirmation_is_routed() {
+        use crate::acp::AcpTestUpdate::*;
+        let (agent, session, _dir, _provider, prompts) = scripted_acp_agent(
+            vec![vec![
+                ToolStart {
+                    id: "external".into(),
+                    name: "tool".into(),
+                },
+                Permission {
+                    id: "external".into(),
+                },
+                ToolComplete {
+                    id: "external".into(),
+                },
+                Text("allowed".into()),
+                Complete,
+            ]],
+            GooseMode::Approve,
+        )
+        .await;
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut confirmed = false;
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            if let AgentEvent::Message(message) = event.unwrap() {
+                if message
+                    .content
+                    .iter()
+                    .any(|c| matches!(c, MessageContent::ActionRequired(_)))
+                {
+                    agent
+                        .submit_tool_confirmation(
+                            &session.id,
+                            "external",
+                            crate::permission::Permission::AllowOnce,
+                        )
+                        .await
+                        .unwrap();
+                    confirmed = true;
+                }
+            }
+        }
+        assert!(confirmed);
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn acp_cancellation_drops_permission_wait() {
+        use crate::acp::AcpTestUpdate::*;
+        let (agent, session, _dir, provider, _prompts) = scripted_acp_agent(
+            vec![vec![
+                ToolStart {
+                    id: "external".into(),
+                    name: "tool".into(),
+                },
+                Permission {
+                    id: "external".into(),
+                },
+                WaitForCancellation,
+            ]],
+            GooseMode::Approve,
+        )
+        .await;
+        let cancel = CancellationToken::new();
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                Some(cancel.clone()),
+            )
+            .await
+            .unwrap();
+        let mut asked = false;
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            if let AgentEvent::Message(message) = event.unwrap() {
+                if message
+                    .content
+                    .iter()
+                    .any(|c| matches!(c, MessageContent::ActionRequired(_)))
+                {
+                    cancel.cancel();
+                    asked = true;
+                }
+            }
+        }
+        assert!(asked);
+        assert!(
+            !provider
+                .handle_permission_confirmation(
+                    "external",
+                    &PermissionConfirmation {
+                        principal_type:
+                            crate::permission::permission_confirmation::PrincipalType::Tool,
+                        permission: crate::permission::Permission::AllowOnce
+                    }
+                )
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn acp_tool_only_completion_runs_stop_hooks() {
+        use crate::acp::AcpTestUpdate::*;
+        let (mut agent, session, _dir, _provider, prompts) = scripted_acp_agent(
+            vec![vec![
+                ToolStart {
+                    id: "external".into(),
+                    name: "tool".into(),
+                },
+                ToolComplete {
+                    id: "external".into(),
+                },
+                Complete,
+            ]],
+            GooseMode::Auto,
+        )
+        .await;
+        let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT).unwrap();
+        agent.hook_manager = env.hook_manager();
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            event.unwrap();
+        }
+        assert_eq!(env.stop_payload().unwrap()["event"], "Stop");
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn acp_tool_only_completion_can_continue_after_a_stop_hook_denial() {
+        use crate::acp::AcpTestUpdate::*;
+        let (mut agent, session, _dir, _provider, prompts) = scripted_acp_agent(
+            vec![
+                vec![
+                    ToolStart {
+                        id: "external".into(),
+                        name: "tool".into(),
+                    },
+                    ToolComplete {
+                        id: "external".into(),
+                    },
+                    Complete,
+                ],
+                vec![Text("continued".into()), Complete],
+            ],
+            GooseMode::Auto,
+        )
+        .await;
+        let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT).unwrap();
+        agent.hook_manager = env.hook_manager();
+        agent.set_stop_hook_block_cap_for_test(1);
+        let mut config = acp_session_config(&session);
+        config.max_turns = Some(10);
+        let mut events = agent
+            .reply(Message::user().with_text("run it"), config, None)
+            .await
+            .unwrap();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            event.unwrap();
+        }
+        assert_eq!(env.hook_invocations(), 2);
+        assert_eq!(prompts.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn acp_error_cannot_be_restarted_by_stop_hook() {
+        use crate::acp::AcpTestUpdate::*;
+        let (mut agent, session, _dir, _provider, prompts) = scripted_acp_agent(
+            vec![vec![Error(agent_client_protocol::Error::auth_required())]],
+            GooseMode::Auto,
+        )
+        .await;
+        let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT).unwrap();
+        agent.hook_manager = env.hook_manager();
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            event.unwrap();
+        }
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn acp_empty_completion_does_not_retry() {
+        use crate::acp::AcpTestUpdate::*;
+        let (agent, session, _dir, _provider, prompts) =
+            scripted_acp_agent(vec![vec![Complete]], GooseMode::Auto).await;
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            if let AgentEvent::Message(message) = event.unwrap() {
+                text.push_str(&message.as_concat_text());
+            }
+        }
+        assert!(text.contains(goose_agent::inference::EMPTY_RESPONSE_MESSAGE));
+        assert_eq!(prompts.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn acp_structured_output_is_rejected_before_prompt() {
+        let (agent, session, _dir, _provider, prompts) =
+            scripted_acp_agent(vec![], GooseMode::Auto).await;
+        let recipe = crate::recipe::Recipe::builder().version("1.0.0").title("structured").description("test").prompt("run it").response(crate::recipe::Response { json_schema: Some(serde_json::json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]})) }).build().unwrap();
+        agent
+            .config
+            .session_manager
+            .update(&session.id)
+            .recipe(Some(recipe))
+            .apply()
+            .await
+            .unwrap();
+        let mut events = agent
+            .reply(
+                Message::user().with_text("run it"),
+                acp_session_config(&session),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), events.next())
+                .await
+                .unwrap()
+        {
+            if let AgentEvent::Message(message) = event.unwrap() {
+                text.push_str(&message.as_concat_text());
+            }
+        }
+        assert!(text.contains(
+            &crate::agents::final_output_tool::structured_output_unsupported_message("acp-test")
+        ));
+        assert!(prompts.lock().unwrap().is_empty());
     }
 
     async fn tracing_test_agent_and_session() -> (Agent, Session, TempDir) {
@@ -2008,7 +2483,7 @@ mod tests {
         let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(ActionRequiredProvider::new());
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("test-model"),
                 &session.id,
@@ -2130,7 +2605,7 @@ mod tests {
         let (agent, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
@@ -2154,6 +2629,123 @@ mod tests {
             effort_test_agent(EffortOutcome::Applied).await;
 
         assert_eq!(provider.model_selections(), ["mock-model"]);
+    }
+
+    #[tokio::test]
+    async fn update_backend_retains_acp_identity_through_session_controls() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let model_config =
+            goose_providers::model::ModelConfig::new("test-model").with_merged_request_params(
+                HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
+            );
+
+        agent
+            .update_backend(
+                ProviderBackend::Acp(acp.clone()),
+                model_config.clone(),
+                &session.id,
+            )
+            .await
+            .unwrap();
+        agent
+            .switch_provider(&session.id, acp.name(), model_config)
+            .await
+            .unwrap();
+        assert!(matches!(
+            agent.backend(&session.id).await.unwrap(),
+            ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &acp)
+        ));
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("default")
+        );
+
+        agent
+            .update_goose_mode(GooseMode::Chat, &session.id)
+            .await
+            .unwrap();
+        agent
+            .update_thinking_effort(&session.id, "off")
+            .await
+            .unwrap();
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("off")
+        );
+        let error = agent
+            .update_thinking_effort(&session.id, "high")
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<ProviderError>(),
+            Some(ProviderError::InvalidValue(_))
+        ));
+        assert_eq!(
+            persisted_thinking_effort(&agent, &session.id)
+                .await
+                .as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            agent
+                .config
+                .session_manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap()
+                .goose_mode,
+            GooseMode::Chat
+        );
+        assert!(matches!(
+            agent.backend(&session.id).await.unwrap(),
+            ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &acp)
+        ));
+    }
+
+    #[tokio::test]
+    async fn update_backend_switches_between_acp_and_standard_without_erasing_identity() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let standard: Arc<dyn Provider> = Arc::new(EffortProvider::new(EffortOutcome::Applied));
+
+        for backend in [
+            ProviderBackend::Acp(acp.clone()),
+            ProviderBackend::Standard(standard.clone()),
+            ProviderBackend::Acp(acp.clone()),
+        ] {
+            let name = backend.name().to_string();
+            agent
+                .update_backend(
+                    backend,
+                    goose_providers::model::ModelConfig::new("test-model"),
+                    &session.id,
+                )
+                .await
+                .unwrap();
+            let stored = agent.backend(&session.id).await.unwrap();
+            assert_eq!(stored.name(), name);
+            match stored {
+                ProviderBackend::Standard(provider) => assert!(Arc::ptr_eq(&provider, &standard)),
+                ProviderBackend::Acp(provider) => assert!(Arc::ptr_eq(&provider, &acp)),
+            }
+            assert_eq!(
+                agent
+                    .config
+                    .session_manager
+                    .get_session(&session.id, false)
+                    .await
+                    .unwrap()
+                    .provider_name
+                    .as_deref(),
+                Some(name.as_str())
+            );
+        }
     }
 
     #[tokio::test]
@@ -2186,11 +2778,11 @@ mod tests {
         .unwrap();
         crate::providers::refresh_custom_providers().await.unwrap();
 
-        let provider = crate::providers::create(&config.name, Vec::new())
+        let provider = crate::providers::create_standard(&config.name, Vec::new())
             .await
             .unwrap();
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("test-model"),
                 &session.id,
@@ -2257,7 +2849,7 @@ mod tests {
             );
 
         agent
-            .update_provider(provider, model_config, &session.id)
+            .update_standard_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
@@ -2280,7 +2872,7 @@ mod tests {
             );
 
         agent
-            .update_provider(provider, model_config, &session.id)
+            .update_standard_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
@@ -2312,7 +2904,11 @@ mod tests {
         );
         // The unregistered test provider was not respawned.
         assert_eq!(
-            agent.provider(&session_id).await.unwrap().get_name(),
+            agent
+                .standard_provider(&session_id)
+                .await
+                .unwrap()
+                .get_name(),
             "test-effort"
         );
     }
@@ -2714,7 +3310,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,

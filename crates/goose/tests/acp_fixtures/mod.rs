@@ -392,7 +392,7 @@ pub async fn spawn_acp_server_in_process(
                 )
                 .unwrap();
                 let provider: Arc<dyn Provider> = Arc::new(OpenAiProvider::new(api_client));
-                Ok(provider)
+                Ok(goose::providers::ProviderBackend::Standard(provider))
             })
         })
     });

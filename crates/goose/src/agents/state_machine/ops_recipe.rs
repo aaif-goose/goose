@@ -1,7 +1,5 @@
 //! Applies recipe commands and enforces their structured final output.
 
-use std::sync::Arc;
-
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
@@ -24,7 +22,6 @@ use crate::config::GooseMode;
 use crate::conversation::message::Message;
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::hooks::HookManager;
-use crate::providers::base::Provider;
 use crate::session::Session;
 
 pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputTool>> {
@@ -49,14 +46,20 @@ pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, Stri
 }
 
 pub struct RecipeOperation {
-    provider: Arc<dyn Provider>,
+    provider_name: String,
+    supports_builtin_tools: bool,
     hook_manager: HookManager,
 }
 
 impl RecipeOperation {
-    pub fn new(provider: Arc<dyn Provider>, hook_manager: HookManager) -> Self {
+    pub fn new(
+        provider_name: String,
+        supports_builtin_tools: bool,
+        hook_manager: HookManager,
+    ) -> Self {
         Self {
-            provider,
+            provider_name,
+            supports_builtin_tools,
             hook_manager,
         }
     }
@@ -174,11 +177,11 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
             return not_applicable();
         };
 
-        if !self.provider.supports_builtin_tools() {
+        if !self.supports_builtin_tools {
             return self
                 .command_error(
                     conversation,
-                    structured_output_unsupported_message(self.provider.get_name()),
+                    structured_output_unsupported_message(&self.provider_name),
                     emit,
                 )
                 .await;

@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::conversation::message::Message;
 use crate::providers;
 use crate::providers::base::Provider;
+use crate::providers::ProviderBackend;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{
     config_path, latest_llm_log_path, read_capped, read_tail, recent_cli_log_paths, Session,
@@ -99,11 +100,17 @@ async fn ensure_working_provider(
     let model_name = config.get_goose_model().ok();
 
     if let (Some(ref pname), Some(ref mname)) = (&provider_name, &model_name) {
+        if providers::get_from_registry(pname)
+            .await
+            .is_ok_and(|entry| entry.is_acp())
+        {
+            return Ok(Some(Message::assistant().with_text(
+                "**goose Doctor**\n\nCompletion health checks are not supported for ACP backends. Your configured backend has not been changed.",
+            )));
+        }
         log.push(format!("Checking {} / {} ...", pname, mname));
         match try_create_and_test(pname, mname).await {
-            Ok(_) => {
-                return Ok(None);
-            }
+            Ok(_) => return Ok(None),
             Err(e) => {
                 log.push(format!("❌ {} / {}: {}", pname, mname, describe_error(&e)));
             }
@@ -115,7 +122,7 @@ async fn ensure_working_provider(
             save_and_set(session_manager, session_id, working, model_config).await?;
             let preamble = log.join("\n");
             return Ok(Some(Message::assistant().with_text(format!(
-                "**Goose Doctor**\n\n{}\n\n\
+                "**goose Doctor**\n\n{}\n\n\
                  Your configured model wasn't working, so I switched to \
                  **{} / {}**. Your next message will use it.",
                 preamble, pname, new_model,
@@ -133,7 +140,7 @@ async fn ensure_working_provider(
         save_and_set(session_manager, session_id, working, model_config).await?;
         let preamble = log.join("\n");
         return Ok(Some(Message::assistant().with_text(format!(
-            "**Goose Doctor**\n\n{}\n\n\
+            "**goose Doctor**\n\n{}\n\n\
              Switched to **{} / {}**. Your next message will use it.",
             preamble, name, model,
         ))));
@@ -189,10 +196,9 @@ async fn try_create_and_test(
         crate::model_config::model_config_from_user_config(provider_name, model_name)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
 
-    let provider = providers::create(provider_name, vec![])
+    let provider = providers::create_standard(provider_name, vec![])
         .await
         .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
-
     test_provider(provider.as_ref(), &model_config).await?;
     Ok((provider, model_config))
 }
@@ -203,7 +209,11 @@ async fn try_other_models(
     log: &mut Vec<String>,
 ) -> Option<(Arc<dyn Provider>, goose_providers::model::ModelConfig)> {
     let entry = providers::get_from_registry(provider_name).await.ok()?;
-    let temp = entry.create_with_default_model(vec![]).await.ok()?;
+    let ProviderBackend::Standard(temp) =
+        entry.create_backend_with_default_model(vec![]).await.ok()?
+    else {
+        return None;
+    };
     let toolshim = Config::global()
         .get_param::<bool>("GOOSE_TOOLSHIM")
         .unwrap_or(false);
@@ -212,9 +222,9 @@ async fn try_other_models(
     for model in models.iter().filter(|m| m.as_str() != skip_model).take(3) {
         log.push(format!("  Trying {} / {} ...", provider_name, model));
         match try_create_and_test(provider_name, model).await {
-            Ok(p) => {
+            Ok(result) => {
                 log.push(format!("  ✓ {} / {} works", provider_name, model));
-                return Some(p);
+                return Some(result);
             }
             Err(e) => log.push(format!("  ✗ {}", describe_error(&e))),
         }
@@ -234,15 +244,18 @@ async fn try_other_providers(
             Ok(e) => e,
             Err(_) => continue,
         };
+        if entry.is_acp() {
+            continue;
+        }
         let model_name = entry.metadata().default_model.clone();
         let model_config =
             match crate::model_config::model_config_from_user_config(&meta.name, &model_name) {
                 Ok(config) => config,
                 Err(_) => continue,
             };
-        let provider = match entry.create_with_default_model(vec![]).await {
-            Ok(p) => p,
-            Err(_) => continue,
+        let provider = match entry.create_backend_with_default_model(vec![]).await {
+            Ok(ProviderBackend::Standard(provider)) => provider,
+            _ => continue,
         };
         log.push(format!("  Trying {} / {} ...", meta.name, model_name));
         match test_provider(provider.as_ref(), &model_config).await {
@@ -292,6 +305,46 @@ fn describe_error(e: &ProviderError) -> String {
 mod tests {
     use super::*;
     use crate::session::extension_data::ExtensionState;
+
+    #[tokio::test]
+    async fn acp_health_check_never_changes_config_or_session_when_agent_is_unavailable() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_str().unwrap();
+        let _env = env_lock::lock_env([
+            ("GOOSE_PATH_ROOT", Some(root_path)),
+            ("GOOSE_PROVIDER", Some("codex-acp")),
+            ("GOOSE_MODEL", Some("current")),
+            ("PATH", Some(root_path)),
+        ]);
+        let manager = SessionManager::new(root.path().to_path_buf());
+        let session = manager
+            .create_session(
+                root.path().to_path_buf(),
+                "doctor".into(),
+                crate::session::SessionType::Hidden,
+                crate::config::GooseMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .update(&session.id)
+            .provider_name("codex-acp")
+            .model_config(goose_providers::model::ModelConfig::new("current"))
+            .apply()
+            .await
+            .unwrap();
+        let message = ensure_working_provider(&manager, &session.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(message
+            .as_concat_text()
+            .contains("Completion health checks are not supported"));
+        let unchanged = manager.get_session(&session.id, false).await.unwrap();
+        assert_eq!(unchanged.provider_name.as_deref(), Some("codex-acp"));
+        assert_eq!(unchanged.model_config.unwrap().model_name, "current");
+        assert_eq!(Config::global().get_goose_provider().unwrap(), "codex-acp");
+    }
 
     #[test]
     fn developer_requirement_reads_session_extensions() {

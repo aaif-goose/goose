@@ -13,7 +13,6 @@ use goose::config::{GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
 use goose::permission::permission_confirmation::PrincipalType;
 use goose::permission::{Permission, PermissionConfirmation};
-use goose::providers::base::Provider;
 use goose_providers::model::ModelConfig;
 use goose_test_support::{ExpectedSessionId, IgnoreSessionId, TEST_MODEL};
 use std::collections::HashMap;
@@ -77,7 +76,7 @@ impl AcpProviderSession {
             .unwrap_or_else(|| ModelConfig::new(TEST_MODEL));
         let mut stream = goose::session_context::with_session_id(
             Some(session_id.to_string()),
-            provider.stream(&model_config, "", &[message], &[]),
+            provider.prompt_messages(&model_config, &[message]),
         )
         .await?;
         let mut text = String::new();

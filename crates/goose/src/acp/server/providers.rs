@@ -507,7 +507,11 @@ impl GooseAcpAgent {
             .create_provider(&req.provider_id)
             .await
             .internal_err_ctx("Failed to initialize provider")?;
-        let models = match provider.fetch_supported_models().await {
+        let supported_models = match provider {
+            ProviderBackend::Standard(provider) => provider.fetch_supported_models().await,
+            ProviderBackend::Acp(provider) => provider.fetch_supported_models().await,
+        };
+        let models = match supported_models {
             Ok(models) => models,
             Err(goose_providers::errors::ProviderError::Authentication(error)) => {
                 return Err(agent_client_protocol::Error::auth_required().data(error));
@@ -871,13 +875,20 @@ impl GooseAcpAgent {
                         .await;
 
                 let fetch_result: Result<Vec<String>> = match provider_result {
-                    Ok(Ok(provider)) => {
+                    Ok(Ok(backend)) => {
                         match ensure_refresh_identity_current(&provider_id, &identity).await {
                             Ok(()) => {
-                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
-                                    .catch_unwind()
-                                    .await
-                                {
+                                let fetch_models = async {
+                                    match backend {
+                                        ProviderBackend::Standard(provider) => {
+                                            provider.fetch_recommended_models(toolshim).await
+                                        }
+                                        ProviderBackend::Acp(provider) => {
+                                            provider.fetch_supported_models().await
+                                        }
+                                    }
+                                };
+                                match AssertUnwindSafe(fetch_models).catch_unwind().await {
                                     Ok(Ok(models)) => Ok(models),
                                     Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
                                     Err(_) => Err(anyhow::anyhow!(
@@ -1116,10 +1127,19 @@ impl GooseAcpAgent {
                 )));
             }
 
-            let provider = entry
-                .create_with_default_model(Vec::new())
+            let backend = entry
+                .create_backend_with_default_model(Vec::new())
                 .await
                 .internal_err_ctx("Failed to initialize provider")?;
+            let provider = match backend {
+                ProviderBackend::Standard(provider) => provider,
+                ProviderBackend::Acp(_) => {
+                    return Err(agent_client_protocol::Error::invalid_params().data(format!(
+                        "Native authentication is not supported for ACP providers: {}",
+                        req.provider_id
+                    )));
+                }
+            };
 
             if self.supports_goose_custom_notifications() {
                 let client_cx = self.client_cx.get().cloned();

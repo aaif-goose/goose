@@ -150,7 +150,8 @@ impl TestPipeline {
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
-                provider.clone(),
+                provider.get_name().to_string(),
+                provider.supports_builtin_tools(),
                 self.hook_manager.clone(),
             )),
             Arc::new(ToolExecutionOperation::new(
@@ -178,7 +179,7 @@ impl TestPipeline {
             context_limit: self.model_config.context_limit(),
         };
         let status_operation = Arc::new(StatusOperation::new(
-            provider.clone(),
+            crate::providers::ProviderBackend::Standard(provider.clone()),
             self.model_config.clone(),
         ));
         let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
@@ -780,7 +781,9 @@ async fn build_test_pipeline(
             provider
         };
     let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
-    providers.set_provider(&session.id, provider.clone()).await;
+    providers
+        .set_standard_provider(&session.id, provider.clone())
+        .await;
     let extension_manager = Arc::new(ExtensionManager::new(
         providers.clone(),
         session_manager.clone(),

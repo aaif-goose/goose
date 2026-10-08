@@ -604,10 +604,7 @@ impl ProviderDescriptor for MuseCodeProviderDef {
 impl ProviderDef for MuseCodeProviderDef {
     type Provider = MuseCodeProvider;
 
-    fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
-        tls_config: Option<TlsConfig>,
-    ) -> BoxFuture<'static, Result<Self::Provider>> {
+    fn from_env(tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(from_env(tls_config))
     }
 }
@@ -790,7 +787,7 @@ mod tests {
             .save(&fresh_token("test-key"))
             .expect("token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
 
@@ -832,7 +829,7 @@ mod tests {
                 .as_ref(),
         );
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build without a token");
         let err = provider.fetch_supported_models().await.unwrap_err();
@@ -896,7 +893,7 @@ mod tests {
             .save(&fresh_token("old-access"))
             .expect("existing token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         with_device_code_announce(Box::new(|_, _, _| {}), provider.configure_oauth())
@@ -949,7 +946,7 @@ mod tests {
             .save(&fresh_token("old-access"))
             .expect("existing token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         let err = provider.configure_oauth().await.unwrap_err();
@@ -1000,7 +997,7 @@ mod tests {
         std::env::set_var("MUSE_CODE_HOST", server.uri());
         std::env::set_var("MUSE_AUTH_PATH", cli_path);
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         provider
@@ -1064,7 +1061,7 @@ mod tests {
             })
             .expect("stale token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         provider
@@ -1122,7 +1119,7 @@ mod tests {
             })
             .expect("stale token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         let err = provider.fetch_supported_models().await.unwrap_err();
@@ -1190,7 +1187,7 @@ mod tests {
             .save(&fresh_token("old-access"))
             .expect("existing token should save");
 
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
+        let provider = MuseCodeProviderDef::from_env(None)
             .await
             .expect("provider should build");
         let sign_in = tokio::spawn(async move {

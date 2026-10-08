@@ -1467,6 +1467,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
+    use crate::providers::ProviderBackend;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -1535,7 +1536,9 @@ mod tests {
         let result = {
             let _env =
                 env_lock::lock_env([("OPENAI_HOST", None), ("OPENAI_BASE_URL", Some("http://"))]);
-            assert!(providers::create("openai", Vec::new()).await.is_err());
+            assert!(providers::create_standard("openai", Vec::new())
+                .await
+                .is_err());
             client
                 .handle_delegate(&parent.id, temp_dir.path(), Some(args))
                 .await
@@ -1619,7 +1622,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            reloaded_agent.provider(&child.id).await.unwrap().get_name(),
+            reloaded_agent
+                .standard_provider(&child.id)
+                .await
+                .unwrap()
+                .get_name(),
             "openai"
         );
     }
@@ -2287,6 +2294,78 @@ You review code."#;
             sub_recipes: None,
             retry: None,
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn foreground_delegate_rejects_unregistered_standard_provider() {
+        let temp_dir = TempDir::new().unwrap();
+        let parent_provider: Arc<dyn crate::providers::base::Provider> = Arc::new(
+            crate::providers::testprovider::TestProvider::new_replaying(
+                temp_dir.path().join("records.json").display().to_string(),
+            )
+            .unwrap(),
+        );
+        let context = create_test_context();
+        let providers = context.providers.clone();
+        let client = SummonClient::new(context).unwrap();
+        let session = crate::session::Session {
+            id: "unregistered-parent".to_string(),
+            provider_name: Some(parent_provider.get_name().to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            working_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        providers
+            .set_standard_provider(&session.id, Arc::clone(&parent_provider))
+            .await;
+
+        let params = DelegateParams {
+            instructions: Some("Review the change".to_string()),
+            extensions: Some(Vec::new()),
+            provider: Some(parent_provider.get_name().to_string()),
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        let error = client
+            .handle_foreground_delegate(params, &session)
+            .await
+            .unwrap_err();
+        assert!(error.contains("cannot be reconstructed for a foreground subagent"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn foreground_delegate_rejects_sharing_unregistered_acp() {
+        let temp_dir = TempDir::new().unwrap();
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        let context = create_test_context();
+        let providers = context.providers.clone();
+        let client = SummonClient::new(context).unwrap();
+        let session = crate::session::Session {
+            id: "acp-parent".to_string(),
+            provider_name: Some(acp.name().to_string()),
+            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
+            working_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let params = DelegateParams {
+            instructions: Some("Review the change".to_string()),
+            extensions: Some(Vec::new()),
+            provider: Some(acp.name().to_string()),
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        assert!(providers::get_from_registry(acp.name()).await.is_err());
+
+        providers
+            .set_backend(&session.id, ProviderBackend::Acp(acp))
+            .await;
+        let error = client
+            .handle_foreground_delegate(params, &session)
+            .await
+            .unwrap_err();
+        assert!(error.contains("cannot be reconstructed for a foreground subagent"));
     }
 
     const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";

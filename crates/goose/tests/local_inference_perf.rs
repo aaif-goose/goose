@@ -11,7 +11,7 @@
 //!   TEST_MODEL="bartowski/Qwen_Qwen3-32B-GGUF:Q4_K_M" cargo test -p goose --test local_inference_perf -- --ignored --nocapture
 
 use goose::conversation::message::Message;
-use goose::providers::create;
+use goose::providers::create_standard;
 use goose_providers::model::ModelConfig;
 use std::time::Instant;
 
@@ -25,7 +25,7 @@ fn test_model() -> String {
 #[ignore]
 async fn test_local_inference_cold_vs_warm() {
     let model_config = ModelConfig::new(test_model()).with_max_tokens(Some(20));
-    let provider = create("local", Vec::new())
+    let provider = create_standard("local", Vec::new())
         .await
         .expect("provider creation should succeed");
 

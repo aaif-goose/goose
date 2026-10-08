@@ -236,7 +236,6 @@ impl ProviderDef for HuggingFaceProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async move {

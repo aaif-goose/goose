@@ -4,6 +4,7 @@ use crate::conversation::message::{
     TOOL_META_TITLE_KEY,
 };
 use crate::providers::base::Provider;
+use crate::providers::ProviderBackend;
 use crate::session::SessionManager;
 use crate::utils::safe_truncate;
 use goose_providers::model::ModelConfig;
@@ -33,7 +34,9 @@ pub(crate) async fn generate_tool_title(
     session_id: &str,
     tool_request: &ToolRequest,
 ) -> Option<String> {
-    let provider = agent.provider(session_id).await.ok()?;
+    let ProviderBackend::Standard(provider) = agent.backend(session_id).await.ok()? else {
+        return None;
+    };
     if provider.manages_own_context() {
         return None;
     }
@@ -72,7 +75,9 @@ pub(crate) async fn generate_tool_chain_summary(
         return None;
     }
 
-    let provider = agent.provider(session_id).await.ok()?;
+    let ProviderBackend::Standard(provider) = agent.backend(session_id).await.ok()? else {
+        return None;
+    };
     if provider.manages_own_context() {
         return None;
     }
@@ -498,7 +503,7 @@ mod tests {
                 .unwrap();
             let provider = Arc::new(MockProvider::managing_own_context());
             agent
-                .update_provider(
+                .update_standard_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
                     &session.id,
@@ -573,7 +578,7 @@ mod tests {
                 Message::assistant().with_text("checking project status")
             )]));
             agent
-                .update_provider(provider, ModelConfig::new("test-model"), &session.id)
+                .update_standard_provider(provider, ModelConfig::new("test-model"), &session.id)
                 .await
                 .unwrap();
             let tool_request = tool_request(json!({"command": "git status"}));
@@ -726,7 +731,7 @@ mod tests {
                 .unwrap();
             let provider = Arc::new(MockProvider::managing_own_context());
             agent
-                .update_provider(
+                .update_standard_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
                     &session.id,
@@ -770,7 +775,7 @@ mod tests {
                 .unwrap();
             let provider = Arc::new(MockProvider::new(Vec::new()));
             agent
-                .update_provider(
+                .update_standard_provider(
                     provider.clone(),
                     ModelConfig::new("test-model"),
                     &session.id,
@@ -816,7 +821,7 @@ mod tests {
                 Message::assistant().with_text("inspected and tested project")
             )]));
             agent
-                .update_provider(provider, ModelConfig::new("test-model"), &session.id)
+                .update_standard_provider(provider, ModelConfig::new("test-model"), &session.id)
                 .await
                 .unwrap();
             let tool_requests = chain_tool_requests();

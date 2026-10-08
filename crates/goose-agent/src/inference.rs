@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose_provider_types::base::Provider;
+use goose_provider_types::base::{MessageStream, Provider};
 use goose_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::conversation::{
@@ -320,6 +320,185 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
     span
 }
 
+/// The emitted partial response and terminal state of an inference stream.
+pub struct InferenceResponse {
+    pub messages: Conversation,
+    pub usage: Option<ProviderUsage>,
+    pub cancelled: bool,
+    pub error: Option<ProviderError>,
+}
+
+/// Consume a provider stream, retaining partial output even on cancellation or error.
+pub async fn consume_inference_stream(
+    mut stream: MessageStream,
+    inference: InferenceMetadata,
+    emit: &Emitter,
+) -> InferenceResponse {
+    let mut error = None;
+    let mut accumulator = Conversation::empty();
+    let mut tool_request_ids = std::collections::HashSet::new();
+    let mut provider_usage = None;
+    let mut cancelled = false;
+    loop {
+        tokio::select! {
+            biased;
+            _ = emit.cancelled() => {
+                cancelled = true;
+                break;
+            },
+            next = stream.next() => {
+                let Some(result) = next else { break };
+                let (msg_opt, usage_opt) = match result {
+                    Ok(chunk) => chunk,
+                    Err(err) => {
+                        error = Some(err);
+                        break;
+                    }
+                };
+                if let Some(usage) = usage_opt {
+                    let span = tracing::Span::current();
+                    record_chat_usage(&span, &usage);
+                    provider_usage = Some(usage);
+                }
+                if let Some(mut chunk) = msg_opt {
+                    chunk = chunk.with_inference_if_assistant(inference.clone());
+                    chunk.content.retain(|content| match content {
+                        MessageContent::ToolRequest(request) => {
+                            tool_request_ids.insert(request.id.clone())
+                        }
+                        _ => true,
+                    });
+                    drop_repeated_tool_call_thinking(&accumulator, &mut chunk);
+                    if chunk.content.is_empty() {
+                        if chunk.metadata.output_token_limit_reached {
+                            chunk = emit.message(chunk).await;
+                        }
+                        accumulator.push(chunk);
+                        continue;
+                    }
+                    let chunk = emit.message(chunk).await;
+                    accumulator.push(chunk);
+                }
+            }
+        }
+    }
+
+    drop(stream);
+    InferenceResponse {
+        messages: accumulator,
+        usage: provider_usage,
+        cancelled,
+        error,
+    }
+}
+
+impl InferenceResponse {
+    fn is_unexpected_empty_response(&self, conversation: &Conversation, emit: &Emitter) -> bool {
+        self.error.is_none()
+            && !self.cancelled
+            && !emit.cancel_token().is_cancelled()
+            && !ends_with_successful_tool_response(conversation.messages())
+            && !self
+                .messages
+                .iter()
+                .any(|message| message.metadata.output_token_limit_reached)
+            && self.messages.iter().all(is_empty_response)
+    }
+
+    /// Produce persistence effects, leaving empty responses for end-of-turn operations.
+    pub async fn finish<E: InferenceEffect>(
+        self,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
+        let empty_response = self.is_unexpected_empty_response(conversation, emit);
+        let Self {
+            mut messages,
+            usage,
+            cancelled,
+            error,
+        } = self;
+        let mut usage_effects = Vec::new();
+
+        if let Some(usage) = usage {
+            usage_effects.push(E::record_usage(usage));
+        }
+
+        if let Some(err) = error {
+            usage_effects.extend(messages.into_iter().map(E::from));
+            usage_effects.extend(inference_error(&err, emit).await);
+            return applied(usage_effects);
+        }
+
+        if cancelled || emit.cancel_token().is_cancelled() {
+            if let Some(response) =
+                cancellation_response(messages_since_kickoff(conversation)?, messages.messages())
+            {
+                let response = emit.message(response).await;
+                messages.push(response);
+            }
+        }
+
+        if empty_response {
+            let mut marker = Message::assistant()
+                .with_text(EMPTY_RESPONSE_MESSAGE)
+                .with_visibility(false, false);
+            marker.metadata.set_operation_note(
+                EMPTY_RESPONSE_NOTE_SCOPE,
+                EMPTY_RESPONSE_NOTE,
+                serde_json::Value::Bool(true),
+            );
+            usage_effects.push(E::from(marker));
+            return applied(usage_effects);
+        }
+
+        if ends_with_successful_tool_response(conversation.messages())
+            && !messages
+                .iter()
+                .any(|message| message.metadata.output_token_limit_reached)
+            && messages.iter().all(is_empty_response)
+        {
+            let mut message = messages
+                .into_iter()
+                .last()
+                .unwrap_or_else(Message::assistant);
+            message.content.clear();
+            message.metadata.user_visible = false;
+            message.metadata.agent_visible = true;
+            let message = emit.message(message).await;
+            usage_effects.push(E::from(message));
+        } else {
+            usage_effects.extend(messages.into_iter().map(|message| E::from(message)));
+        }
+        applied(usage_effects)
+    }
+}
+
+/// Emit and persist a provider error using the standard inference outcome.
+pub async fn inference_error<E: InferenceEffect>(err: &ProviderError, emit: &Emitter) -> Vec<E> {
+    tracing::Span::current().record("error.type", err.telemetry_type());
+    tracing::error!("LLM provider error: {err}");
+    let message = Message::from_provider_error(err);
+    let message = emit.message(message).await;
+    vec![E::from(message)]
+}
+
+/// Answer unresolved tool calls when cancellation precedes inference.
+pub async fn cancel_inference<E: InferenceEffect>(
+    conversation: &Conversation,
+    result: OperationResult<E>,
+    emit: &Emitter,
+) -> Result<OperationResult<E>> {
+    let OperationResult::NotApplicable = result else {
+        return Ok(result);
+    };
+    let Some(response) = cancellation_response(messages_since_kickoff(conversation)?, &[]) else {
+        return Ok(OperationResult::NotApplicable);
+    };
+    let response = emit.message(response).await;
+    applied([E::from(response)])
+}
+
 impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
         Self {
@@ -337,14 +516,6 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         self.request_preparer = request_preparer;
         self
     }
-
-    async fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Vec<E> {
-        tracing::Span::current().record("error.type", err.telemetry_type());
-        tracing::error!("LLM provider error: {err}");
-        let message = Message::from_provider_error(err);
-        let message = emit.message(message).await;
-        vec![E::from(message)]
-    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -361,15 +532,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
         result: OperationResult<E>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let OperationResult::NotApplicable = result else {
-            return Ok(result);
-        };
-        let Some(response) = cancellation_response(messages_since_kickoff(conversation)?, &[])
-        else {
-            return Ok(OperationResult::NotApplicable);
-        };
-        let response = emit.message(response).await;
-        applied([E::from(response)])
+        cancel_inference(conversation, result, emit).await
     }
 }
 
@@ -439,152 +602,61 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
             let mut empty_responses = 0;
-            let accumulator = loop {
-            let stream = self
-                .provider
-                .stream(
-                    &self.model_config,
-                    &system_prompt,
-                    conversation_for_provider.messages(),
-                    &tools,
-                )
-                .await;
+            let response = loop {
+                let stream = self
+                    .provider
+                    .stream(
+                        &self.model_config,
+                        &system_prompt,
+                        conversation_for_provider.messages(),
+                        &tools,
+                    )
+                    .await;
 
-            let mut stream = match stream {
-                Ok(stream) => stream,
-                Err(err) => {
-                    usage_effects.extend(self.error_outcome(&err, emit).await);
-                    return applied(usage_effects);
-                }
-            };
-
-            let requested_model = self.model_config.model_name.clone();
-            let resolved_model = self
-                .provider
-                .fetch_model_info(&requested_model)
-                .await
-                .ok()
-                .and_then(|model_info| model_info.resolved_model);
-            let provider_session_id = self.provider.provider_session_id();
-            let inference = Some(InferenceMetadata {
-                provider: self.provider.get_name().to_string(),
-                requested_model,
-                resolved_model,
-                provider_session_id,
-            });
-
-            let mut accumulator = Conversation::empty();
-            let mut tool_request_ids = std::collections::HashSet::new();
-            let mut provider_usage = None;
-            let mut cancelled = false;
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = emit.cancelled() => {
-                        cancelled = true;
-                        break;
-                    },
-                    next = stream.next() => {
-                        let Some(result) = next else { break };
-                        let (msg_opt, usage_opt) = match result {
-                            Ok(chunk) => chunk,
-                            Err(err) => {
-                                if let Some(usage) = provider_usage {
-                                    usage_effects.push(E::record_usage(usage));
-                                }
-                                usage_effects.extend(accumulator.into_iter().map(E::from));
-                                usage_effects.extend(self.error_outcome(&err, emit).await);
-                                return applied(usage_effects);
-                            }
-                        };
-                        if let Some(usage) = usage_opt {
-                            let span = tracing::Span::current();
-                            record_chat_usage(&span, &usage);
-                            provider_usage = Some(usage);
-                        }
-                        if let Some(mut chunk) = msg_opt {
-                            if let Some(inference) = &inference {
-                                chunk = chunk.with_inference_if_assistant(inference.clone());
-                            }
-                            chunk.content.retain(|content| match content {
-                                MessageContent::ToolRequest(request) => {
-                                    tool_request_ids.insert(request.id.clone())
-                                }
-                                _ => true,
-                            });
-                            drop_repeated_tool_call_thinking(&accumulator, &mut chunk);
-                            if chunk.content.is_empty() {
-                                if chunk.metadata.output_token_limit_reached {
-                                    chunk = emit.message(chunk).await;
-                                }
-                                accumulator.push(chunk);
-                                continue;
-                            }
-                            let chunk = emit.message(chunk).await;
-                            accumulator.push(chunk);
-                        }
+                let stream = match stream {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        usage_effects.extend(inference_error(&err, emit).await);
+                        return applied(usage_effects);
                     }
+                };
+
+                let requested_model = self.model_config.model_name.clone();
+                let resolved_model = self
+                    .provider
+                    .fetch_model_info(&requested_model)
+                    .await
+                    .ok()
+                    .and_then(|model_info| model_info.resolved_model);
+                let provider_session_id = self.provider.provider_session_id();
+                let inference = InferenceMetadata {
+                    provider: self.provider.get_name().to_string(),
+                    requested_model,
+                    resolved_model,
+                    provider_session_id,
+                };
+
+                let mut response = consume_inference_stream(stream, inference, emit).await;
+                if !response.is_unexpected_empty_response(conversation, emit)
+                    || empty_responses == MAX_EMPTY_RESPONSE_RETRIES
+                {
+                    break response;
                 }
-            }
-
-            if let Some(usage) = provider_usage {
-                usage_effects.push(E::record_usage(usage));
-            }
-
-            if cancelled || emit.cancel_token().is_cancelled() {
-                if let Some(response) = cancellation_response(messages, accumulator.messages()) {
-                    let response = emit.message(response).await;
-                    accumulator.push(response);
+                if let Some(usage) = response.usage.take() {
+                    usage_effects.push(E::record_usage(usage));
                 }
-            }
-
-            let empty_response = !cancelled
-                && !ends_with_successful_tool_response(conversation.messages())
-                && !accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                && accumulator.iter().all(is_empty_response);
-            if !empty_response {
-                break accumulator;
-            }
-            if empty_responses < MAX_EMPTY_RESPONSE_RETRIES {
                 empty_responses += 1;
                 tracing::warn!(
                     "Provider returned an empty response; retrying ({empty_responses}/{MAX_EMPTY_RESPONSE_RETRIES})"
                 );
-                continue;
-            }
-            let mut marker = Message::assistant()
-                .with_text(EMPTY_RESPONSE_MESSAGE)
-                .with_visibility(false, false);
-            marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
-                EMPTY_RESPONSE_NOTE,
-                serde_json::Value::Bool(true),
-            );
-            usage_effects.push(E::from(marker));
-            return applied(usage_effects);
             };
 
-            if ends_with_successful_tool_response(conversation.messages())
-                && !accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                && accumulator.iter().all(is_empty_response)
-            {
-                let mut message = accumulator
-                    .into_iter()
-                    .last()
-                    .unwrap_or_else(Message::assistant);
-                message.content.clear();
-                message.metadata.user_visible = false;
-                message.metadata.agent_visible = true;
-                let message = emit.message(message).await;
-                usage_effects.push(E::from(message));
-            } else {
-                usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
+            let mut result = response.finish::<E>(conversation, emit).await?;
+            if let OperationResult::Applied(step) = &mut result {
+                usage_effects.append(&mut step.effects);
+                step.effects = usage_effects;
             }
-            applied(usage_effects)
+            Ok(result)
         }
         .instrument(span)
         .await
@@ -594,6 +666,287 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    enum TestEffect {
+        Message(Message),
+        Usage(ProviderUsage),
+    }
+
+    impl From<Message> for TestEffect {
+        fn from(message: Message) -> Self {
+            Self::Message(message)
+        }
+    }
+
+    impl InferenceEffect for TestEffect {
+        fn record_usage(usage: ProviderUsage) -> Self {
+            Self::Usage(usage)
+        }
+    }
+
+    fn test_emitter() -> (
+        Emitter,
+        tokio::sync::mpsc::Receiver<crate::events::AgentEvent>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(32);
+        (
+            Emitter::new(tx, tokio_util::sync::CancellationToken::new()),
+            rx,
+        )
+    }
+
+    fn test_inference() -> InferenceMetadata {
+        InferenceMetadata {
+            provider: "test".into(),
+            requested_model: "model".into(),
+            resolved_model: None,
+            provider_session_id: None,
+        }
+    }
+
+    fn applied_result(
+        result: OperationResult<TestEffect>,
+    ) -> crate::operation::StepResult<TestEffect> {
+        match result {
+            OperationResult::Applied(step) => step,
+            OperationResult::NotApplicable => panic!("expected applied inference"),
+        }
+    }
+
+    #[tokio::test]
+    async fn shared_stream_error_preserves_partial_output_and_usage() {
+        let (emit, _events) = test_emitter();
+        let usage = ProviderUsage::new("model".into(), Default::default());
+        let stream: MessageStream = Box::pin(futures::stream::iter([
+            Ok((Some(Message::assistant().with_text("partial")), Some(usage))),
+            Err(ProviderError::RequestFailed("failed".into())),
+        ]));
+        let response = consume_inference_stream(stream, test_inference(), &emit).await;
+        assert!(response.error.is_some());
+        assert_eq!(response.messages.len(), 1);
+        let step = applied_result(
+            response
+                .finish::<TestEffect>(
+                    &Conversation::new_unvalidated([Message::user().with_text("hi")]),
+                    &emit,
+                )
+                .await
+                .unwrap(),
+        );
+        assert!(!step.yield_to_client);
+        assert_eq!(step.effects.len(), 3);
+        assert!(matches!(&step.effects[0], TestEffect::Usage(usage) if usage.model == "model"));
+        assert!(
+            matches!(&step.effects[1], TestEffect::Message(message) if message.error_kind().is_none())
+        );
+        assert!(
+            matches!(&step.effects[2], TestEffect::Message(message) if message.error_kind().is_some())
+        );
+    }
+
+    #[tokio::test]
+    async fn shared_stream_cancellation_is_biased_and_answers_pending_tools() {
+        let (emit, _events) = test_emitter();
+        emit.cancel_token().cancel();
+        let stream: MessageStream = Box::pin(futures::stream::iter([Ok((
+            Some(Message::assistant().with_text("not consumed")),
+            None,
+        ))]));
+        let response = consume_inference_stream(stream, test_inference(), &emit).await;
+        assert!(response.cancelled);
+        assert!(response.messages.is_empty());
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("run it"),
+            Message::assistant().with_tool_request(
+                "pending",
+                Ok(rmcp::model::CallToolRequestParams::new("tool")),
+            ),
+        ]);
+        let step = applied_result(
+            response
+                .finish::<TestEffect>(&conversation, &emit)
+                .await
+                .unwrap(),
+        );
+        assert!(!step.yield_to_client);
+        assert!(
+            matches!(&step.effects[..], [TestEffect::Message(message)] if message.get_tool_response_ids().contains("pending"))
+        );
+        let step = applied_result(
+            cancel_inference::<TestEffect>(&conversation, OperationResult::NotApplicable, &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(step.effects.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn shared_empty_response_is_hidden_but_successful_tool_completion_is_silent() {
+        let (emit, _events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
+        let response =
+            consume_inference_stream(Box::pin(futures::stream::empty()), test_inference(), &emit)
+                .await;
+        let step = applied_result(
+            response
+                .finish::<TestEffect>(&conversation, &emit)
+                .await
+                .unwrap(),
+        );
+        assert!(!step.yield_to_client);
+        assert!(
+            matches!(&step.effects[..], [TestEffect::Message(message)] if is_empty_response_marker(message) && !message.is_user_visible() && !message.is_agent_visible())
+        );
+
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("hi"),
+            Message::user()
+                .with_tool_response("done", Ok(rmcp::model::CallToolResult::success(vec![]))),
+        ]);
+        let response =
+            consume_inference_stream(Box::pin(futures::stream::empty()), test_inference(), &emit)
+                .await;
+        let step = applied_result(
+            response
+                .finish::<TestEffect>(&conversation, &emit)
+                .await
+                .unwrap(),
+        );
+        assert!(!step.yield_to_client);
+        assert!(
+            matches!(&step.effects[..], [TestEffect::Message(message)] if message.content.is_empty() && !message.is_user_visible() && message.is_agent_visible())
+        );
+    }
+
+    struct EmptyResponseProvider {
+        calls: std::sync::atomic::AtomicUsize,
+        empty_attempts: usize,
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    impl Provider for EmptyResponseProvider {
+        fn get_name(&self) -> &str {
+            "empty-response-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> std::result::Result<MessageStream, ProviderError> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let text = if call < self.empty_attempts {
+                ""
+            } else {
+                "recovered"
+            };
+            Ok(Box::pin(futures::stream::iter([Ok((
+                Some(Message::assistant().with_text(text)),
+                Some(ProviderUsage::new("model".into(), Default::default())),
+            ))])))
+        }
+    }
+
+    #[tokio::test]
+    async fn runner_retries_empty_responses_and_keeps_usage_on_recovery() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: 2,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, _events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert!(!step.yield_to_client);
+        assert!(matches!(
+            &step.effects[..],
+            [TestEffect::Usage(_), TestEffect::Usage(_), TestEffect::Usage(_), TestEffect::Message(message)]
+                if message.as_concat_text() == "recovered" && !is_empty_response_marker(message)
+        ));
+    }
+
+    #[tokio::test]
+    async fn runner_exhausts_empty_response_retries_with_a_hidden_marker() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: usize::MAX,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, mut events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([Message::user().with_text("hi")]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            provider.calls.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_EMPTY_RESPONSE_RETRIES + 1
+        );
+        assert!(!step.yield_to_client);
+        assert_eq!(
+            step.effects
+                .iter()
+                .filter(|effect| matches!(effect, TestEffect::Usage(_)))
+                .count(),
+            MAX_EMPTY_RESPONSE_RETRIES + 1
+        );
+        assert!(matches!(
+            step.effects.last(),
+            Some(TestEffect::Message(message))
+                if is_empty_response_marker(message)
+                    && !message.is_user_visible()
+                    && !message.is_agent_visible()
+                    && message.as_concat_text() == EMPTY_RESPONSE_MESSAGE
+        ));
+        while let Ok(event) = events.try_recv() {
+            if let crate::events::AgentEvent::Message(message) = event {
+                assert!(!is_empty_response_marker(&message));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn runner_does_not_retry_empty_successful_tool_completion() {
+        let provider = Arc::new(EmptyResponseProvider {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            empty_attempts: usize::MAX,
+        });
+        let runner =
+            InferenceRunner::<(), TestEffect>::new(provider.clone(), ModelConfig::new("model"));
+        let (emit, _events) = test_emitter();
+        let conversation = Conversation::new_unvalidated([
+            Message::user().with_text("hi"),
+            Message::assistant()
+                .with_tool_request("done", Ok(rmcp::model::CallToolRequestParams::new("tool"))),
+            Message::user()
+                .with_tool_response("done", Ok(rmcp::model::CallToolResult::success(vec![]))),
+        ]);
+        let step = applied_result(
+            runner
+                .infer(&(), &conversation, InferenceInput::default(), &emit)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(matches!(
+            &step.effects[..],
+            [TestEffect::Usage(_), TestEffect::Message(message)]
+                if message.content.is_empty() && !message.is_user_visible() && message.is_agent_visible()
+        ));
+    }
 
     #[test]
     fn provider_session_id_comes_only_from_latest_inference() {

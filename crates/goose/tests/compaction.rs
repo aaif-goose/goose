@@ -201,7 +201,6 @@ impl ProviderDef for MockCompactionProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<goose::config::ExtensionConfig>,
         _tls_config: Option<goose::providers::api_client::TlsConfig>,
     ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
         Box::pin(async { Ok(Self::new()) })
@@ -273,7 +272,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
     // Setup mock provider (no context limit enforcement)
     let provider = Arc::new(MockCompactionProvider::new());
     agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .update_standard_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
     // Trigger a reply

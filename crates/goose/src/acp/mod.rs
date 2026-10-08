@@ -4,6 +4,8 @@ mod handoff;
 #[cfg(feature = "acp-http")]
 mod mcp_app_proxy;
 mod provider;
+#[cfg(test)]
+pub(crate) use provider::AcpTestUpdate;
 mod response_builder;
 pub mod server;
 pub mod server_factory;

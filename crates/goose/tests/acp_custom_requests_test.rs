@@ -1119,14 +1119,16 @@ fn test_custom_provider_supported_models_lists_raw_provider_models() {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: vec!["canonical-filtered-model".to_string()],
-                    supported_models: Ok(vec![
-                        "goose-claude-opus-4-8".to_string(),
-                        "raw-databricks-endpoint".to_string(),
-                    ]),
-                }) as Arc<dyn Provider>)
+                Ok(goose::providers::ProviderBackend::Standard(
+                    Arc::new(MockProvider {
+                        name: provider_name,
+                        recommended_models: vec!["canonical-filtered-model".to_string()],
+                        supported_models: Ok(vec![
+                            "goose-claude-opus-4-8".to_string(),
+                            "raw-databricks-endpoint".to_string(),
+                        ]),
+                    }) as Arc<dyn Provider>,
+                ))
             })
         });
         let conn = AcpServerConnection::new(
@@ -1168,11 +1170,13 @@ fn test_custom_provider_supported_models_maps_not_configured_error() {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: Vec::new(),
-                    supported_models: Err(ProviderError::NotConfigured),
-                }) as Arc<dyn Provider>)
+                Ok(goose::providers::ProviderBackend::Standard(
+                    Arc::new(MockProvider {
+                        name: provider_name,
+                        recommended_models: Vec::new(),
+                        supported_models: Err(ProviderError::NotConfigured),
+                    }) as Arc<dyn Provider>,
+                ))
             })
         });
         let conn = AcpServerConnection::new(
@@ -1205,13 +1209,15 @@ fn test_custom_provider_supported_models_maps_authentication_error() {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
         let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
-                Ok(Arc::new(MockProvider {
-                    name: provider_name,
-                    recommended_models: Vec::new(),
-                    supported_models: Err(ProviderError::Authentication(
-                        "credentials rejected".to_string(),
-                    )),
-                }) as Arc<dyn Provider>)
+                Ok(goose::providers::ProviderBackend::Standard(
+                    Arc::new(MockProvider {
+                        name: provider_name,
+                        recommended_models: Vec::new(),
+                        supported_models: Err(ProviderError::Authentication(
+                            "credentials rejected".to_string(),
+                        )),
+                    }) as Arc<dyn Provider>,
+                ))
             })
         });
         let conn = AcpServerConnection::new(
