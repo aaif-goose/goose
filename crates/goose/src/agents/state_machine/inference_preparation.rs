@@ -111,18 +111,22 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         _session: &Session,
         conversation: &Conversation,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>> {
-        Ok(matches!(
+        let Some(effort) = super::ops_auto_effort::current_turn_effort(conversation) else {
+            return Ok(std::collections::HashMap::new());
+        };
+        let mut params = std::collections::HashMap::from([(
+            "thinking_effort".to_string(),
+            serde_json::Value::String(effort.to_string()),
+        )]);
+        if matches!(
             self.provider.thinking_effort_support(),
             goose_providers::thinking::ThinkingEffortSupport::Options(_)
-        )
-        .then(|| super::ops_auto_effort::current_turn_effort(conversation))
-        .flatten()
-        .map(|_| {
-            std::collections::HashMap::from([(
+        ) {
+            params.insert(
                 crate::acp::AUTOMATIC_EFFORT_PARAM.to_string(),
                 serde_json::Value::Bool(true),
-            )])
-        })
-        .unwrap_or_default())
+            );
+        }
+        Ok(params)
     }
 }

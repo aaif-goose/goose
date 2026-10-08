@@ -16,7 +16,6 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
-use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
     Inference, InferenceInput, Operation, OperationResult, CLIENT_LOG,
@@ -423,7 +422,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
@@ -453,10 +452,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
         let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
-        let model_config = session
-            .thinking_effort()
-            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
-            .unwrap_or_else(|| self.model_config.clone());
+        let model_config = self.model_config.clone();
         let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
@@ -642,6 +638,24 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inference_runner_accepts_non_machine_sessions() {
+        struct Effect;
+        impl From<Message> for Effect {
+            fn from(_: Message) -> Self {
+                Self
+            }
+        }
+        impl InferenceEffect for Effect {
+            fn record_usage(_: ProviderUsage) -> Self {
+                Self
+            }
+        }
+        fn assert_inference<T: Inference<(), Effect>>() {}
+
+        assert_inference::<InferenceRunner<'static, (), Effect>>();
+    }
 
     #[test]
     fn operation_logs_wait_for_renderable_assistant_content() {

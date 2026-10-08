@@ -10,8 +10,6 @@ use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
 use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
 
-use super::ops_auto_effort::current_turn_effort;
-
 fn contains_tool_confirmation_request(message: &Message) -> bool {
     message.content.iter().any(|content| {
         matches!(
@@ -27,16 +25,6 @@ impl MachineSession for Session {
     }
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
-    }
-    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
-        self.conversation
-            .as_ref()
-            .and_then(current_turn_effort)
-            .or_else(|| {
-                self.model_config
-                    .as_ref()
-                    .and_then(|config| config.thinking_effort())
-            })
     }
 }
 
