@@ -84,7 +84,7 @@ impl Operation<Session, GooseEffect> for EntryHookOperation {
 
         let prompt = messages
             .first()
-            .map(Message::as_concat_text)
+            .map(|message| message.agent_visible_content().as_concat_text())
             .unwrap_or_default();
         if !prompt.is_empty() {
             self.hook_manager
