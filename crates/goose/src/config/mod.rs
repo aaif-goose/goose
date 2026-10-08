@@ -11,6 +11,7 @@ pub mod signup_openrouter;
 pub mod signup_tetrate;
 pub mod tls;
 
+pub use crate::agents::platform_extensions::developer::DeveloperMode;
 pub use crate::agents::ExtensionConfig;
 pub use base::{merge_config_values, Config, ConfigError};
 pub use declarative_providers::DeclarativeProviderConfig;

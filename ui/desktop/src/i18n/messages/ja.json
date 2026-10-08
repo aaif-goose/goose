@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "画像の保存を待機中..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Developer 拡張機能の実行方法を選択します。次に Developer が起動したとき（新しいセッションなど）から適用されます。"
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "開発者ツール"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Gooseがツールや拡張機能とどのようにやり取りするかを設定します"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "{count}件のオプションを表示"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "1 つの永続的な Python セッション。データは会話ではなく変数に保持され、呼び出し、コンパクション、再起動をまたいで維持されます。"
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python セッション"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "シェル、ファイル、ツリー、画像の個別のツール。"
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "ツール"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "バグ報告時は、診断レポートの添付もご検討ください。"

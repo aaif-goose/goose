@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "छवियों को सहेजने की प्रतीक्षा की जा रही है..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "चुनें कि Developer एक्सटेंशन कैसे चलेगा। यह Developer के अगली बार शुरू होने पर लागू होता है, जैसे नए सत्र में।"
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "डेवलपर टूल"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "कॉन्फ़िगर करें कि Goose टूल और एक्सटेंशन के साथ कैसे इंटरैक्ट करता है"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "{count} विकल्प दिखाएँ"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "एक स्थायी Python सत्र। डेटा बातचीत में नहीं, बल्कि कॉल, कंपैक्शन और पुनरारंभ के दौरान वेरिएबल में सुरक्षित रहता है।"
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python सत्र"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "शेल, फ़ाइल, ट्री और इमेज के लिए अलग-अलग टूल।"
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "टूल"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "यदि आप कोई बग दर्ज करते हैं, तो उसके साथ निदान रिपोर्ट संलग्न करने पर विचार करें।"

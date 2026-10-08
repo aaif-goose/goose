@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "正在等待影像儲存…"
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "選擇 Developer 擴充功能的執行方式。在 Developer 下次啟動時生效，例如在新工作階段中。"
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "開發者工具"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "選擇 Goose 用於新工作階段的預設模式。現有的工作階段會維持目前的模式。"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "顯示 {count} 個選項"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "一個持續的 Python 工作階段。資料保存在變數中，而不是對話中，可跨呼叫、壓縮和重新啟動保留。"
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python 工作階段"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "獨立的 shell、檔案、目錄樹和圖片工具。"
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "工具"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "如果您要回報錯誤，建議將診斷報告一併附上。"

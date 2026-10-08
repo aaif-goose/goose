@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Resimlerin kaydedilmesi bekleniyor..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Developer uzantısının nasıl çalışacağını seçin. Developer bir sonraki başlatıldığında, örneğin yeni bir oturumda geçerli olur."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Geliştirici Araçları"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Goose'nin araçlar ve uzantılarla nasıl etkileşimde bulunacağını yapılandırın"
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "{count} seçeneklerini göster"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Tek bir kalıcı Python oturumu. Veriler sohbette değil, çağrılar, sıkıştırma ve yeniden başlatmalar boyunca değişkenlerde kalır."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Python oturumu"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Kabuk, dosya, dizin ağacı ve görüntü için ayrı araçlar."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Araçlar"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Bir hata bildirirseniz, teşhis raporunu buna eklemeyi düşünün."

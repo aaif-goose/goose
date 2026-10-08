@@ -224,6 +224,12 @@
   "chatInput.waitingForImages": {
     "defaultMessage": "Đang chờ lưu hình ảnh..."
   },
+  "chatSettings.developerModeDescription": {
+    "defaultMessage": "Chọn cách tiện ích mở rộng Developer chạy. Áp dụng khi Developer khởi động lần tới, chẳng hạn trong phiên mới."
+  },
+  "chatSettings.developerModeTitle": {
+    "defaultMessage": "Công cụ dành cho nhà phát triển"
+  },
   "chatSettings.modeDescription": {
     "defaultMessage": "Chọn chế độ mặc định mà Goose sử dụng cho các phiên mới. Các phiên hiện có vẫn giữ chế độ hiện tại của chúng."
   },
@@ -814,6 +820,18 @@
   },
   "defaultProviderSetupForm.showOptions": {
     "defaultMessage": "Hiện {count} tùy chọn"
+  },
+  "developerMode.pythonSessionDescription": {
+    "defaultMessage": "Một phiên Python duy trì liên tục. Dữ liệu được giữ trong các biến qua các lần gọi, nén và khởi động lại, thay vì trong cuộc trò chuyện."
+  },
+  "developerMode.pythonSessionLabel": {
+    "defaultMessage": "Phiên Python"
+  },
+  "developerMode.toolsDescription": {
+    "defaultMessage": "Các công cụ riêng cho shell, tệp, cây thư mục và hình ảnh."
+  },
+  "developerMode.toolsLabel": {
+    "defaultMessage": "Công cụ"
   },
   "diagnosticsModal.attachHint": {
     "defaultMessage": "Nếu bạn báo lỗi, hãy cân nhắc đính kèm báo cáo chẩn đoán vào đó."
