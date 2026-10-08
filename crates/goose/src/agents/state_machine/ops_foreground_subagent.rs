@@ -315,7 +315,7 @@ mod tests {
     impl Fixture {
         fn operation(&self, cancel: CancellationToken) -> ForegroundSubagentOperation {
             ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.manager.clone(), false),
+                ForegroundSubagentRunner::new(self.manager.clone()),
                 cancel,
             )
         }

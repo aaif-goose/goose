@@ -325,7 +325,6 @@ pub struct GooseAcpAgent {
     client_supports_goose_custom_notifications: OnceCell<bool>,
     client_supports_recipe_param_requests: OnceCell<bool>,
     client_requests_tool_call_label_enrichment: OnceCell<bool>,
-    use_login_shell_path: OnceCell<bool>,
     client_cx: OnceCell<ConnectionTo<Client>>,
     thinking_effort_update_tx: mpsc::UnboundedSender<String>,
     thinking_effort_update_rx: Mutex<Option<mpsc::UnboundedReceiver<String>>>,
@@ -462,14 +461,6 @@ fn extract_client_mcp_host_info(
         client_name: args.client_info.as_ref().map(|info| info.name.clone()),
         client_version: args.client_info.as_ref().map(|info| info.version.clone()),
     }
-}
-
-fn extract_use_login_shell_path(args: &InitializeRequest) -> bool {
-    args.meta
-        .as_ref()
-        .and_then(|meta| meta.get("goose/useLoginShellPath"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
 }
 
 fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConfig, String> {
@@ -980,7 +971,6 @@ impl GooseAcpAgent {
             client_supports_goose_custom_notifications: OnceCell::new(),
             client_supports_recipe_param_requests: OnceCell::new(),
             client_requests_tool_call_label_enrichment: OnceCell::new(),
-            use_login_shell_path: OnceCell::new(),
             client_cx: OnceCell::new(),
             thinking_effort_update_tx,
             thinking_effort_update_rx: Mutex::new(Some(thinking_effort_update_rx)),
@@ -1055,7 +1045,6 @@ impl GooseAcpAgent {
                 session_id,
                 RuntimeContext {
                     mcp_host_info: self.client_mcp_host_info.get().cloned(),
-                    use_login_shell_path: self.use_login_shell_path.get().copied(),
                     session_name_update_tx: (!self.disable_session_naming)
                         .then(|| spawn_session_name_update_notifier(cx.clone())),
                 },
@@ -1092,8 +1081,7 @@ impl GooseAcpAgent {
             return Ok(());
         }
 
-        let context = agent.extension_manager.get_context().clone();
-        let dev_client = match DeveloperClient::new(context) {
+        let dev_client = match DeveloperClient::new() {
             Ok(dev_client) => dev_client,
             Err(error) => {
                 warn!(error = %error, "Failed to create ACP developer client");
@@ -1816,9 +1804,6 @@ impl GooseAcpAgent {
         let _ = self
             .client_supports_acp_elicitation
             .set(elicitation::client_supports_form_elicitation(&args));
-        let _ = self
-            .use_login_shell_path
-            .set(extract_use_login_shell_path(&args));
 
         let capabilities = AgentCapabilities::new()
             .load_session(true)

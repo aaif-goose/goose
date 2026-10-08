@@ -281,7 +281,6 @@ mod tests {
             providers: Default::default(),
             session_manager: Arc::new(SessionManager::new(std::env::temp_dir())),
             scheduler: None,
-            use_login_shell_path: false,
         }
     }
 

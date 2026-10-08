@@ -1187,7 +1187,6 @@ mod tests {
                     temp.path().join("sessions"),
                 )),
                 scheduler: None,
-                use_login_shell_path: false,
             },
             ToolDisclosure::Filesystem,
         )
