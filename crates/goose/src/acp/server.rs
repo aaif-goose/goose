@@ -29,7 +29,7 @@ use crate::conversation::message::{
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
-use crate::execution::manager::{AgentManager, RuntimeContext};
+use crate::execution::manager::AgentManager;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -296,12 +296,10 @@ impl AcpBuiltinSelection {
 pub struct GooseAcpAgentOptions {
     pub provider_factory: AcpProviderFactory,
     pub builtin_selection: AcpBuiltinSelection,
-    pub data_dir: std::path::PathBuf,
     pub config_dir: std::path::PathBuf,
-    pub disable_session_naming: bool,
-    pub goose_platform: GoosePlatform,
+    /// One per server, shared by every connection.
+    pub agent_manager: Arc<AgentManager>,
     pub additional_source_roots: Vec<SourceRoot>,
-    pub scheduler: Option<Arc<dyn SchedulerTrait>>,
     /// When set, new sessions use this host-controlled working directory instead
     /// of the `cwd` the connecting client sends (see `AcpServerFactoryConfig`).
     pub session_cwd: Option<std::path::PathBuf>,
@@ -309,6 +307,32 @@ pub struct GooseAcpAgentOptions {
     /// delegated agent runs for each session.
     pub active_runs: Arc<ActiveRunRegistry>,
     pub live_voice: Arc<LiveVoiceService>,
+}
+
+/// The agent manager a `goose serve` process shares across its ACP connections.
+pub fn new_acp_agent_manager(
+    data_dir: std::path::PathBuf,
+    config_dir: std::path::PathBuf,
+    scheduler: Option<Arc<dyn SchedulerTrait>>,
+    disable_session_naming: bool,
+    goose_platform: GoosePlatform,
+) -> Arc<AgentManager> {
+    let session_manager = Arc::new(SessionManager::new(data_dir));
+    // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
+    let storage = session_manager.storage().clone();
+    tokio::spawn(async move {
+        let _ = storage.pool().await;
+    });
+    Arc::new(AgentManager::new(
+        AgentConfig::new(
+            session_manager,
+            Arc::new(PermissionManager::new(config_dir)),
+            scheduler,
+            disable_session_naming,
+            goose_platform,
+        ),
+        None,
+    ))
 }
 
 static NEXT_CONNECTION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -331,6 +355,8 @@ pub struct GooseAcpAgent {
     client_supports_recipe_param_requests: OnceCell<bool>,
     client_requests_tool_call_label_enrichment: OnceCell<bool>,
     client_cx: OnceCell<ConnectionTo<Client>>,
+    session_name_update_tx:
+        std::sync::OnceLock<mpsc::UnboundedSender<crate::session::SessionNameUpdate>>,
     thinking_effort_update_tx: mpsc::UnboundedSender<String>,
     thinking_effort_update_rx: Mutex<Option<mpsc::UnboundedReceiver<String>>>,
     config_dir: std::path::PathBuf,
@@ -815,6 +841,11 @@ impl GooseAcpAgent {
     }
 
     #[cfg(test)]
+    pub(crate) fn agent_manager(&self) -> &Arc<AgentManager> {
+        &self.agent_manager
+    }
+
+    #[cfg(test)]
     pub(crate) async fn test_start_active_run(
         &self,
         session_id: &str,
@@ -933,24 +964,13 @@ impl GooseAcpAgent {
     }
 
     pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
-        let session_manager = Arc::new(SessionManager::new(options.data_dir));
-
-        // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
-        let storage_clone = session_manager.storage().clone();
-        tokio::spawn(async move {
-            let _ = storage_clone.pool().await;
-        });
-
-        let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
+        let agent_manager = options.agent_manager;
+        let agent_config = &agent_manager.agent().config;
+        let session_manager = Arc::clone(&agent_config.session_manager);
+        let permission_manager = Arc::clone(&agent_config.permission_manager);
+        let disable_session_naming = agent_config.disable_session_naming;
+        let goose_platform = agent_config.goose_platform.clone();
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
-        let agent_config = AgentConfig::new(
-            Arc::clone(&session_manager),
-            Arc::clone(&permission_manager),
-            options.scheduler,
-            options.disable_session_naming,
-            options.goose_platform.clone(),
-        );
-        let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
         let (thinking_effort_update_tx, thinking_effort_update_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
@@ -964,19 +984,20 @@ impl GooseAcpAgent {
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
-            goose_platform: options.goose_platform.clone(),
+            goose_platform,
             connection_id: NEXT_CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             client_supports_acp_elicitation: OnceCell::new(),
             client_supports_goose_custom_notifications: OnceCell::new(),
             client_supports_recipe_param_requests: OnceCell::new(),
             client_requests_tool_call_label_enrichment: OnceCell::new(),
             client_cx: OnceCell::new(),
+            session_name_update_tx: std::sync::OnceLock::new(),
             thinking_effort_update_tx,
             thinking_effort_update_rx: Mutex::new(Some(thinking_effort_update_rx)),
             config_dir: options.config_dir,
             session_manager,
             permission_manager,
-            disable_session_naming: options.disable_session_naming,
+            disable_session_naming,
             provider_inventory,
             additional_source_roots: options.additional_source_roots,
             session_cwd: options.session_cwd,
@@ -1041,15 +1062,15 @@ impl GooseAcpAgent {
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
         let agent = self
             .agent_manager
-            .get_or_create_agent_with_runtime_context(
-                session_id.clone(),
-                RuntimeContext {
-                    session_name_update_tx: (!self.disable_session_naming)
-                        .then(|| spawn_session_name_update_notifier(cx.clone())),
-                },
-            )
+            .agent_for_session(&session_id)
             .await
             .map_err(|error| agent_creation_error(error, "Failed to create agent"))?;
+        if !self.disable_session_naming {
+            let tx = self
+                .session_name_update_tx
+                .get_or_init(|| spawn_session_name_update_notifier(cx.clone()));
+            agent.subscribe_session_name_updates(&session_id, tx.clone());
+        }
         let mut client = ClientContext::new(
             &self.goose_platform,
             self.client_mcp_host_info.get().cloned(),
@@ -1191,10 +1212,7 @@ impl GooseAcpAgent {
                 .await
                 .internal_err_ctx("Failed to update session")?;
 
-            self.agent_manager
-                .remove_session_if_loaded(&session_id)
-                .await
-                .internal_err_ctx("Failed to remove in-memory agent")?;
+            self.agent_manager.release_session(&session_id).await;
 
             session = self
                 .session_manager
@@ -1919,17 +1937,7 @@ impl GooseAcpAgent {
 
         if self.closed_session_ids.lock().await.contains(session_id) {
             self.sessions.lock().await.remove(session_id);
-            if let Err(error) = self
-                .agent_manager
-                .remove_session_if_loaded(session_id)
-                .await
-            {
-                tracing::warn!(
-                    session_id,
-                    %error,
-                    "Failed to remove in-memory agent for closed session"
-                );
-            }
+            self.agent_manager.release_session(session_id).await;
         }
     }
 
@@ -2617,10 +2625,7 @@ impl GooseAcpAgent {
         sessions.remove(session_id);
         drop(sessions);
 
-        self.agent_manager
-            .remove_session_if_loaded(session_id)
-            .await
-            .internal_err_ctx("Failed to remove in-memory agent")?;
+        self.agent_manager.release_session(session_id).await;
 
         info!(session_id = %session_id, "ACP session closed");
         Ok(CloseSessionResponse::new())
@@ -3638,12 +3643,15 @@ print(\"hello, world\")
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
-            data_dir: root.path().to_path_buf(),
             config_dir: root.path().to_path_buf(),
-            disable_session_naming: true,
-            goose_platform: GoosePlatform::GooseCli,
+            agent_manager: new_acp_agent_manager(
+                root.path().to_path_buf(),
+                root.path().to_path_buf(),
+                None,
+                true,
+                GoosePlatform::GooseCli,
+            ),
             additional_source_roots: Vec::new(),
-            scheduler: None,
             session_cwd: None,
             active_runs,
             live_voice,
@@ -3770,12 +3778,15 @@ print(\"hello, world\")
             GooseAcpAgent::new(GooseAcpAgentOptions {
                 provider_factory,
                 builtin_selection: AcpBuiltinSelection::default(),
-                data_dir: root.path().to_path_buf(),
                 config_dir: root.path().to_path_buf(),
-                disable_session_naming: true,
-                goose_platform: GoosePlatform::GooseCli,
+                agent_manager: new_acp_agent_manager(
+                    root.path().to_path_buf(),
+                    root.path().to_path_buf(),
+                    None,
+                    true,
+                    GoosePlatform::GooseCli,
+                ),
                 additional_source_roots: Vec::new(),
-                scheduler: None,
                 session_cwd: None,
                 active_runs,
                 live_voice,

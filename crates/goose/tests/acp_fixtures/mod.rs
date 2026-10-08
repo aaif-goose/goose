@@ -407,13 +407,16 @@ pub async fn spawn_acp_server_in_process(
             explicit: builtins.to_vec(),
             ..Default::default()
         },
-        data_dir: data_root.to_path_buf(),
         config_dir: data_root.to_path_buf(),
-        disable_session_naming,
-        goose_platform: GoosePlatform::GooseCli,
+        agent_manager: goose::acp::server::new_acp_agent_manager(
+            data_root.to_path_buf(),
+            data_root.to_path_buf(),
+            Some(Arc::new(FixtureScheduler::new())),
+            disable_session_naming,
+            GoosePlatform::GooseCli,
+        ),
         additional_source_roots: Vec::new(),
         session_cwd: None,
-        scheduler: Some(Arc::new(FixtureScheduler::new())),
         active_runs,
         live_voice,
     })

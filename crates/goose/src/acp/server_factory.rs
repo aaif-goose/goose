@@ -1,9 +1,10 @@
 use crate::acp::server::{
-    AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent,
-    GooseAcpAgentOptions, LiveVoiceService,
+    new_acp_agent_manager, AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry,
+    GooseAcpAgent, GooseAcpAgentOptions, LiveVoiceService,
 };
 use crate::agents::GoosePlatform;
 use crate::config::paths::Paths;
+use crate::execution::manager::AgentManager;
 #[cfg(feature = "scheduler")]
 use crate::scheduler_trait::SchedulerTrait;
 #[cfg(feature = "scheduler")]
@@ -32,6 +33,7 @@ pub struct AcpServer {
     data_dir: std::path::PathBuf,
     #[cfg(feature = "scheduler")]
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
+    agent_manager: tokio::sync::OnceCell<Arc<AgentManager>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<crate::acp::server::LiveVoiceService>,
 }
@@ -46,6 +48,7 @@ impl AcpServer {
             data_dir,
             #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
+            agent_manager: tokio::sync::OnceCell::new(),
             active_runs,
             live_voice,
         }
@@ -97,14 +100,29 @@ impl AcpServer {
         &self,
         session_cwd: Option<std::path::PathBuf>,
     ) -> Result<Arc<GooseAcpAgent>> {
-        let config = crate::config::Config::global();
-        let disable_session_naming = config.get_goose_disable_session_naming().unwrap_or(false);
         #[cfg(feature = "scheduler")]
         let scheduler = self.scheduler().await?;
         #[cfg(feature = "scheduler")]
         if let Some(scheduler) = &scheduler {
             scheduler.list_scheduled_jobs().await;
         }
+        #[cfg(not(feature = "scheduler"))]
+        let scheduler = None;
+        let agent_manager = self
+            .agent_manager
+            .get_or_init(|| async {
+                new_acp_agent_manager(
+                    self.data_dir.clone(),
+                    self.config.config_dir.clone(),
+                    scheduler,
+                    crate::config::Config::global()
+                        .get_goose_disable_session_naming()
+                        .unwrap_or(false),
+                    self.config.goose_platform.clone(),
+                )
+            })
+            .await
+            .clone();
 
         let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
@@ -115,16 +133,10 @@ impl AcpServer {
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,
             builtin_selection: self.config.builtins.clone(),
-            data_dir: self.data_dir.clone(),
             config_dir: self.config.config_dir.clone(),
-            disable_session_naming,
-            goose_platform: self.config.goose_platform.clone(),
+            agent_manager,
             additional_source_roots: self.config.additional_source_roots.clone(),
             session_cwd,
-            #[cfg(feature = "scheduler")]
-            scheduler,
-            #[cfg(not(feature = "scheduler"))]
-            scheduler: None,
             active_runs: self.active_runs.clone(),
             live_voice: self.live_voice.clone(),
         })
@@ -146,6 +158,7 @@ impl AcpServer {
             data_dir,
             #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
+            agent_manager: tokio::sync::OnceCell::new(),
             active_runs,
             live_voice,
         }
@@ -188,17 +201,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_from_one_server_share_the_active_run_registry() {
+    async fn connections_to_one_server_share_its_agent_and_run_registry() {
         let root = tempfile::tempdir().unwrap();
         let server = server(root.path().to_path_buf(), false);
 
         let a = server.create_agent().await.unwrap();
         let b = server.create_agent().await.unwrap();
 
-        assert!(
-            Arc::ptr_eq(a.active_run_registry(), b.active_run_registry()),
-            "each connection's agent must share one per-session run registry"
-        );
+        assert!(Arc::ptr_eq(
+            a.active_run_registry(),
+            b.active_run_registry()
+        ));
+        assert!(Arc::ptr_eq(
+            a.agent_manager().agent(),
+            b.agent_manager().agent()
+        ));
     }
 
     #[tokio::test]

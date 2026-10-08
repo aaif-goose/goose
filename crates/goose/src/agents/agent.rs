@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -107,7 +107,6 @@ pub struct AgentConfig {
     pub goose_platform: GoosePlatform,
     pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
-    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub is_subagent: bool,
     pub providers: Arc<ProviderManager>,
 }
@@ -128,18 +127,9 @@ impl AgentConfig {
             goose_platform,
             elicitation_handler: None,
             mcp_protocol_version: None,
-            session_name_update_tx: None,
             is_subagent: false,
             providers: Arc::default(),
         }
-    }
-
-    pub fn with_session_name_update_tx(
-        mut self,
-        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
-    ) -> Self {
-        self.session_name_update_tx = tx;
-        self
     }
 }
 
@@ -155,6 +145,7 @@ pub struct Agent {
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
+    session_name_updates: StdMutex<HashMap<String, mpsc::UnboundedSender<SessionNameUpdate>>>,
 }
 
 fn user_event(event: AgentEvent) -> Option<AgentEvent> {
@@ -226,6 +217,7 @@ impl Agent {
             #[cfg(test)]
             stop_hook_block_cap_override: None,
             steer_queues: Mutex::new(HashMap::new()),
+            session_name_updates: StdMutex::new(HashMap::new()),
         }
     }
 
@@ -288,6 +280,44 @@ impl Agent {
 
     pub async fn discard_pending_steers(&self, session_id: &str) {
         self.steer_queues.lock().await.remove(session_id);
+    }
+
+    /// Generated names for the session go to `tx`, replacing whoever subscribed before.
+    pub fn subscribe_session_name_updates(
+        &self,
+        session_id: &str,
+        tx: mpsc::UnboundedSender<SessionNameUpdate>,
+    ) {
+        self.session_name_updates
+            .lock()
+            .expect("session name subscribers unavailable")
+            .insert(session_id.to_string(), tx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_turn_for_test(&self, session_id: &str) -> impl Drop {
+        self.tool_confirmation_coordinator
+            .session(session_id)
+            .try_start_turn()
+            .unwrap()
+    }
+
+    pub fn has_active_turn(&self, session_id: &str) -> bool {
+        self.tool_confirmation_coordinator
+            .has_active_turn(session_id)
+    }
+
+    /// Stops the session's extensions and drops its provider and pending state. A turn
+    /// still running keeps what it already leased.
+    pub async fn release_session(&self, session_id: &str) {
+        self.discard_pending_steers(session_id).await;
+        self.tool_confirmation_coordinator.release(session_id);
+        self.session_name_updates
+            .lock()
+            .expect("session name subscribers unavailable")
+            .remove(session_id);
+        self.extension_manager.release(session_id).await;
+        self.config.providers.release(session_id);
     }
 
     async fn steer_queue(&self, session_id: &str) -> SteerQueue {
@@ -700,7 +730,12 @@ impl Agent {
         if !self.config.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
             let manager = session_manager.clone();
-            let tx = self.config.session_name_update_tx.clone();
+            let tx = self
+                .session_name_updates
+                .lock()
+                .expect("session name subscribers unavailable")
+                .get(&session_id)
+                .cloned();
             let id = session_id.clone();
             let provider = provider.clone();
             tokio::spawn(async move {

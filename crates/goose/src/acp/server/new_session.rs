@@ -107,17 +107,7 @@ impl GooseAcpAgent {
             );
         }
         self.sessions.lock().await.remove(session_id);
-        if let Err(error) = self
-            .agent_manager
-            .remove_session_if_loaded(session_id)
-            .await
-        {
-            warn!(
-                session_id,
-                %error,
-                "Failed to remove in-memory agent during new-session cleanup"
-            );
-        }
+        self.agent_manager.release_session(session_id).await;
     }
 
     async fn configure_new_session(

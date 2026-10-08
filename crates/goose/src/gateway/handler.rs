@@ -380,7 +380,7 @@ impl GatewayHandler {
     /// configured in the desktop app.  Returns `true` if extensions changed
     /// (which means the caller must recreate the agent so stale extension
     /// processes are torn down).
-    async fn sync_session_config(&self, session: &Session) -> anyhow::Result<bool> {
+    async fn sync_session_config(&self, session: &Session) -> anyhow::Result<()> {
         let config = Config::global();
         let manager = self.agent_manager.session_manager();
 
@@ -406,7 +406,7 @@ impl GatewayHandler {
         let mode_changed = current_mode != session.goose_mode;
 
         if !provider_changed && !model_changed && !extensions_changed && !mode_changed {
-            return Ok(false);
+            return Ok(());
         }
 
         tracing::info!(
@@ -445,7 +445,7 @@ impl GatewayHandler {
                 tracing::warn!(error = %e, "failed to update gateway session extensions");
             }
         }
-        Ok(extensions_changed)
+        Ok(())
     }
 
     async fn relay_to_session(
@@ -463,21 +463,9 @@ impl GatewayHandler {
             .get_session(session_id, false)
             .await?;
 
-        // Sync provider/model/extensions with the user's current desktop config.
-        // If extensions changed we must tear down the old agent so stale
-        // extension processes don't linger.
-        let extensions_changed = self.sync_session_config(&session).await?;
-        if extensions_changed {
-            self.agent_manager
-                .remove_session_if_loaded(session_id)
-                .await?;
-        }
+        self.sync_session_config(&session).await?;
 
-        let agent = match self
-            .agent_manager
-            .get_or_create_agent(session_id.to_string())
-            .await
-        {
+        let agent = match self.agent_manager.agent_for_session(session_id).await {
             Ok(agent) => agent,
             Err(error) if crate::acp::is_auth_required(&error) => {
                 self.gateway
