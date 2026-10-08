@@ -16,6 +16,7 @@ use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
 use tracing_futures::Instrument;
 
+use crate::machine::MachineSession;
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, trailing_error, yielded_with, Emitter,
     Inference, InferenceInput, Operation, OperationResult, CLIENT_LOG,
@@ -41,14 +42,6 @@ pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
         conversation: &Conversation,
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest>;
-
-    async fn model_request_params(
-        &self,
-        _session: &S,
-        _conversation: &Conversation,
-    ) -> Result<std::collections::HashMap<String, serde_json::Value>> {
-        Ok(std::collections::HashMap::new())
-    }
 }
 
 pub struct IdentityInferenceRequestPreparer;
@@ -112,7 +105,7 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
 fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
     let mut seen = messages
         .iter()
-        .flat_map(|message| message.metadata.operation_logs())
+        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
         .collect::<std::collections::HashSet<_>>();
     let mut logs = Vec::new();
 
@@ -141,17 +134,15 @@ fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
         || message.content.iter().any(|content| {
             matches!(
                 content,
-                MessageContent::Text(text) if !text.text.trim().is_empty()
-            ) || matches!(
-                content,
-                MessageContent::Image(_)
+                MessageContent::Text(_)
+                    | MessageContent::Image(_)
                     | MessageContent::ToolRequest(_)
                     | MessageContent::Thinking(_)
                     | MessageContent::Error(_)
             )
         });
     if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
-        message.metadata.set_operation_logs(std::mem::take(logs));
+        message.metadata.operation_logs = std::mem::take(logs);
     }
 }
 
@@ -422,7 +413,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
+impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
             return false;
@@ -452,7 +443,10 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
         let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
-        let model_config = self.model_config.clone();
+        let model_config = session
+            .thinking_effort()
+            .map(|effort| self.model_config.clone().with_thinking_effort(effort))
+            .unwrap_or_else(|| self.model_config.clone());
         let span = inference_span(self.provider.as_ref(), &model_config);
 
         async {
@@ -464,15 +458,6 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 .request_preparer
                 .prepare(session, conversation, input)
                 .await?;
-            let model_request_params = self
-                .request_preparer
-                .model_request_params(session, conversation)
-                .await?;
-            let model_config = if model_request_params.is_empty() {
-                model_config
-            } else {
-                model_config.with_merged_request_params(model_request_params)
-            };
 
             for message in &additional_messages {
                 messages_for_provider.push(message.clone());
@@ -640,24 +625,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inference_runner_accepts_non_machine_sessions() {
-        struct Effect;
-        impl From<Message> for Effect {
-            fn from(_: Message) -> Self {
-                Self
-            }
-        }
-        impl InferenceEffect for Effect {
-            fn record_usage(_: ProviderUsage) -> Self {
-                Self
-            }
-        }
-        fn assert_inference<T: Inference<(), Effect>>() {}
-
-        assert_inference::<InferenceRunner<'static, (), Effect>>();
-    }
-
-    #[test]
     fn operation_logs_wait_for_renderable_assistant_content() {
         let mut logs = vec!["ops_auto_effort: thinking high".to_string()];
         let mut permission = Message::assistant().with_action_required(
@@ -669,20 +636,14 @@ mod tests {
 
         attach_operation_logs(&mut permission, &mut logs);
 
-        assert!(!permission.metadata.has_operation_logs());
+        assert!(permission.metadata.operation_logs.is_empty());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut redacted = Message::assistant()
             .with_content(MessageContent::redacted_thinking("opaque reasoning"));
         attach_operation_logs(&mut redacted, &mut logs);
 
-        assert!(!redacted.metadata.has_operation_logs());
-        assert_eq!(logs, ["ops_auto_effort: thinking high"]);
-
-        let mut whitespace = Message::assistant().with_text(" \n\t ");
-        attach_operation_logs(&mut whitespace, &mut logs);
-
-        assert!(!whitespace.metadata.has_operation_logs());
+        assert!(redacted.metadata.operation_logs.is_empty());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut error = Message::from_provider_error(&ProviderError::RequestFailed(
@@ -691,7 +652,7 @@ mod tests {
         attach_operation_logs(&mut error, &mut logs);
 
         assert_eq!(
-            error.metadata.operation_logs(),
+            error.metadata.operation_logs,
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());
@@ -706,7 +667,7 @@ mod tests {
         attach_operation_logs(&mut message, &mut logs);
 
         assert_eq!(
-            message.metadata.operation_logs(),
+            message.metadata.operation_logs,
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());

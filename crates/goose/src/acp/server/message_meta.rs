@@ -25,14 +25,14 @@ fn goose_message_meta(
     message: &Message,
     steer: bool,
 ) -> serde_json::Map<String, serde_json::Value> {
-    let operation_logs = message.metadata.operation_logs();
     let message_meta = GooseMessageMeta {
         created: message.created,
         message_id: message.id.as_deref(),
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
         fallback_content: has_output_token_limit_fallback_content(message),
-        operation_logs: (!operation_logs.is_empty()).then_some(operation_logs.as_slice()),
+        operation_logs: (!message.metadata.operation_logs.is_empty())
+            .then_some(message.metadata.operation_logs.as_slice()),
     };
 
     match serde_json::to_value(message_meta) {
@@ -148,7 +148,8 @@ mod tests {
         let mut message_with_log = message.clone();
         message_with_log
             .metadata
-            .push_operation_log("ops_auto_effort: thinking high".to_string());
+            .operation_logs
+            .push("ops_auto_effort: thinking high".to_string());
         assert_eq!(
             message_meta(&message_with_log).get("goose"),
             Some(&serde_json::json!({

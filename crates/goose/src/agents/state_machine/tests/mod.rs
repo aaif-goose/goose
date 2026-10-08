@@ -1,9 +1,8 @@
 use anyhow::Result;
 
 use self::calculator_extension::{value, ADD};
-use self::dummy_api::ProviderFeatures;
 use self::pipeline::MessageKind::{Agent, ToolCall};
-use self::pipeline::{test_pipeline, test_pipeline_with, MAX_TURNS};
+use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
@@ -172,11 +171,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     use crate::agents::agent::available_auto_efforts;
     use crate::agents::state_machine::AutoEffortOperation;
 
-    let (pipeline, api) = test_pipeline_with(ProviderFeatures {
-        thinking_effort_options: true,
-        ..ProviderFeatures::default()
-    })
-    .await?;
+    let (pipeline, api) = test_pipeline().await?;
     let skill_dir = pipeline
         .working_dir()
         .join(".agents/skills/auto-effort-review");
@@ -255,14 +250,12 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             ],
             current: Some("default".to_string()),
         }),
-        None,
     );
     assert_eq!(
         available_auto_efforts(
             "openai",
             &ModelConfig::new("gpt-5-pro"),
             ThinkingEffortSupport::Unspecified,
-            None,
         ),
         vec![ThinkingEffort::High]
     );
@@ -271,7 +264,6 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             "anthropic",
             &ModelConfig::new("claude-opus-5-5").with_canonical_limits("anthropic"),
             ThinkingEffortSupport::Unspecified,
-            Some("anthropic"),
         ),
         vec![
             ThinkingEffort::Low,
@@ -285,19 +277,13 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             "google",
             &ModelConfig::new("gemini-3-pro-preview"),
             ThinkingEffortSupport::Unspecified,
-            None,
         ),
         vec![ThinkingEffort::Low, ThinkingEffort::High]
     );
     let mut ollama_model = ModelConfig::new("gpt-oss:20b");
     ollama_model.reasoning = Some(true);
     assert_eq!(
-        available_auto_efforts(
-            "custom-ollama",
-            &ollama_model,
-            ThinkingEffortSupport::Unspecified,
-            Some("ollama"),
-        ),
+        available_auto_efforts("ollama", &ollama_model, ThinkingEffortSupport::Unspecified,),
         vec![
             ThinkingEffort::Off,
             ThinkingEffort::Low,
@@ -370,10 +356,6 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             Some(ThinkingEffort::Low),
         ]
     );
-    assert_eq!(
-        pipeline.recorded_automatic_efforts(),
-        [true, true, true, true, false]
-    );
 
     let decisions: Vec<_> = conversation
         .messages()
@@ -390,19 +372,19 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     let logged_messages: Vec<_> = conversation
         .messages()
         .iter()
-        .filter(|message| message.metadata.has_operation_logs())
+        .filter(|message| !message.metadata.operation_logs.is_empty())
         .collect();
     assert_eq!(logged_messages.len(), 3);
     assert_eq!(
-        logged_messages[0].metadata.operation_logs(),
+        logged_messages[0].metadata.operation_logs,
         ["ops_auto_effort: thinking high"]
     );
     assert_eq!(
-        logged_messages[1].metadata.operation_logs(),
+        logged_messages[1].metadata.operation_logs,
         ["ops_auto_effort: thinking high"]
     );
     assert_eq!(
-        logged_messages[2].metadata.operation_logs(),
+        logged_messages[2].metadata.operation_logs,
         ["ops_auto_effort: thinking off"]
     );
     assert!(logged_messages[0].is_tool_call());

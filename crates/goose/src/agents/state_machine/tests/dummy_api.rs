@@ -13,7 +13,6 @@ pub(super) struct ProviderFeatures {
     pub(super) cache_read_tokens: Option<i32>,
     pub(super) cache_write_tokens: Option<i32>,
     pub(super) manages_own_context: bool,
-    pub(super) thinking_effort_options: bool,
 }
 
 impl Default for ProviderFeatures {
@@ -25,7 +24,6 @@ impl Default for ProviderFeatures {
             cache_read_tokens: None,
             cache_write_tokens: None,
             manages_own_context: false,
-            thinking_effort_options: false,
         }
     }
 }

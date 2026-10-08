@@ -234,37 +234,33 @@ fn get_reasoning_effort(model_name: &str) -> String {
     }
 }
 
-pub(crate) fn reasoning_effort_for_thinking(
-    model_name: &str,
-    effort: goose_providers::thinking::ThinkingEffort,
-) -> Option<String> {
+fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
     use goose_providers::thinking::ThinkingEffort;
 
-    let valid_levels = reasoning_levels_for_model(model_name);
-    let preferred_levels: &[&str] = match effort {
-        ThinkingEffort::Off => &["none"],
-        ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
-        ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
-        ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
-        ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
-    };
+    model_config
+        .thinking_effort()
+        .map(|effort| {
+            let valid_levels = reasoning_levels_for_model(&model_config.model_name);
+            let preferred_levels: &[&str] = match effort {
+                ThinkingEffort::Off => {
+                    return Some(if valid_levels.contains(&"none") {
+                        "none".to_string()
+                    } else {
+                        "low".to_string()
+                    });
+                }
+                ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+                ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
+                ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
+                ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+            };
 
-    preferred_levels
-        .iter()
-        .find(|level| valid_levels.contains(level))
-        .map(|level| (*level).to_string())
-}
-
-fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
-    match model_config.thinking_effort() {
-        Some(effort) => {
-            reasoning_effort_for_thinking(&model_config.model_name, effort).or_else(|| {
-                (effort == goose_providers::thinking::ThinkingEffort::Off)
-                    .then(|| "low".to_string())
-            })
-        }
-        None => Some(get_reasoning_effort(&model_config.model_name)),
-    }
+            preferred_levels
+                .iter()
+                .find(|level| valid_levels.contains(level))
+                .map(|level| (*level).to_string())
+        })
+        .unwrap_or_else(|| Some(get_reasoning_effort(&model_config.model_name)))
 }
 
 fn create_codex_request(

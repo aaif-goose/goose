@@ -365,10 +365,6 @@ impl Provider for AnthropicProvider {
         &self.name
     }
 
-    fn thinking_effort_provider(&self) -> Option<&'static str> {
-        Some(ANTHROPIC_PROVIDER_NAME)
-    }
-
     async fn refresh_credentials(&self) -> Result<(), ProviderError> {
         self.api_client
             .refresh_credentials()

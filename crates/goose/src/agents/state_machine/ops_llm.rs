@@ -9,6 +9,7 @@ pub use goose_agent::inference::InferenceRunner;
 use goose_providers::base::{MessageStream, ModelInfo, Provider};
 use goose_providers::conversation::message::Message;
 use goose_providers::conversation::token_usage::ProviderUsage;
+use goose_providers::conversation::Conversation;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 
@@ -118,7 +119,23 @@ impl Provider for GooseInferenceProvider {
         tools: &[rmcp::model::Tool],
     ) -> Result<MessageStream, ProviderError> {
         let messages = enrich_unclaimed_tool_errors(messages, tools);
-        let model_config = model_config.clone();
+        let model_config = if matches!(
+            self.inner.thinking_effort_support(),
+            goose_providers::thinking::ThinkingEffortSupport::Options(_)
+        ) && super::ops_auto_effort::current_turn_effort(
+            &Conversation::new_unvalidated(messages.clone()),
+        )
+        .is_some()
+        {
+            model_config
+                .clone()
+                .with_merged_request_params(std::collections::HashMap::from([(
+                    crate::acp::AUTOMATIC_EFFORT_PARAM.to_string(),
+                    serde_json::Value::Bool(true),
+                )]))
+        } else {
+            model_config.clone()
+        };
         let (tools, toolshim_tools, system_prompt) =
             crate::agents::reply_parts::prepare_tools_for_provider(
                 tools.to_vec(),

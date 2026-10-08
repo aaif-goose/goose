@@ -72,7 +72,6 @@ pub(crate) use tool_confirmation::{
 };
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
-pub(crate) use ops_auto_effort::current_turn_effort;
 pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;

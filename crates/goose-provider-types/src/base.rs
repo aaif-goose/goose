@@ -714,10 +714,6 @@ pub trait Provider: MaybeSend + MaybeSync {
         ThinkingEffortSupport::Unspecified
     }
 
-    fn thinking_effort_provider(&self) -> Option<&'static str> {
-        None
-    }
-
     /// Subscribe to provider-managed thinking-effort capability changes.
     /// Providers without an asynchronous capability source return `None`.
     fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {

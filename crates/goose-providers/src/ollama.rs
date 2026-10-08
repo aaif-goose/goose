@@ -475,10 +475,6 @@ impl Provider for OllamaProvider {
         &self.name
     }
 
-    fn thinking_effort_provider(&self) -> Option<&'static str> {
-        Some(OLLAMA_PROVIDER_NAME)
-    }
-
     fn skip_canonical_filtering(&self) -> bool {
         self.skip_canonical_filtering
     }

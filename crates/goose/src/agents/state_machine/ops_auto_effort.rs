@@ -132,7 +132,7 @@ fn classification_request(messages: &[crate::conversation::message::Message]) ->
     let kickoff = &messages[0];
     let kickoff_text = kickoff.as_concat_text();
     if crate::agents::execute_commands::parse_slash_command(&kickoff_text)
-        .is_some_and(|command| matches!(command.command, "doctor" | "prompt"))
+        .is_some_and(|command| command.command == "doctor")
     {
         return kickoff_text;
     }
@@ -149,7 +149,7 @@ fn classification_request(messages: &[crate::conversation::message::Message]) ->
         .unwrap_or_default()
 }
 
-pub(crate) fn current_turn_effort(conversation: &Conversation) -> Option<ThinkingEffort> {
+pub(super) fn current_turn_effort(conversation: &Conversation) -> Option<ThinkingEffort> {
     let decision = messages_since_kickoff(conversation)
         .ok()?
         .first()?
@@ -202,23 +202,30 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
             return not_applicable();
         };
 
-        let mut updated = conversation.clone();
-        let kickoff = updated
-            .messages_mut()
-            .iter_mut()
-            .find(|message| message.id.as_deref() == Some(message_id.as_str()))
-            .ok_or_else(|| anyhow!("automatic effort kickoff message disappeared"))?;
+        let mut effects = Vec::new();
         let client_log = decision.effort.map(|effort| format!("thinking {effort}"));
-        kickoff
-            .metadata
-            .set_operation_note(self.name(), DECISION, serde_json::to_value(decision)?);
+        effects.push(
+            ConversationEffect::SetMessageOperationNote {
+                message_id: message_id.clone(),
+                operation: self.name().to_string(),
+                key: DECISION.to_string(),
+                value: serde_json::to_value(decision)?,
+            }
+            .into(),
+        );
         if let Some(client_log) = client_log {
-            kickoff
-                .metadata
-                .set_operation_note(self.name(), CLIENT_LOG, client_log.into());
+            effects.push(
+                ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation: self.name().to_string(),
+                    key: CLIENT_LOG.to_string(),
+                    value: client_log.into(),
+                }
+                .into(),
+            );
         }
 
-        applied([ConversationEffect::ReplaceConversation(updated).into()])
+        applied(effects)
     }
 }
 
@@ -239,22 +246,5 @@ mod tests {
         ];
 
         assert_eq!(classification_request(&messages), "/doctor");
-    }
-
-    #[test]
-    fn prompt_classifies_the_typed_command_instead_of_extension_content() {
-        let messages = vec![
-            Message::user()
-                .with_text("/prompt private-context topic=rust")
-                .with_visibility(true, false),
-            Message::user()
-                .with_text("extension content containing a credential")
-                .with_visibility(false, true),
-        ];
-
-        assert_eq!(
-            classification_request(&messages),
-            "/prompt private-context topic=rust"
-        );
     }
 }
