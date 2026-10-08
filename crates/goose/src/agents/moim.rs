@@ -216,7 +216,7 @@ mod tests {
 
     fn moim_extension() -> ExtensionConfig {
         ExtensionConfig::Platform {
-            name: "context".to_string(),
+            name: "todo".to_string(),
             description: String::new(),
             display_name: None,
             bundled: None,
@@ -224,9 +224,11 @@ mod tests {
         }
     }
 
-    async fn session_and_manager() -> (String, ExtensionManager, tempfile::TempDir) {
+    async fn session_and_manager() -> (String, Arc<ExtensionManager>, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let em = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
+        let em = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
         let session = em
             .get_context()
             .session_manager

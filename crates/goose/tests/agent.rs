@@ -14,6 +14,7 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use chrono::{DateTime, Utc};
+        use goose::agents::extension_manager::ExtensionSet;
         use goose::agents::platform_extensions::scheduler::{
             EXTENSION_NAME as SCHEDULER_EXTENSION_NAME, MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
         };
@@ -131,20 +132,21 @@ mod tests {
         async fn add_scheduler_extension(agent: &Agent) {
             agent
                 .extension_manager
-                .add_extension(
-                    ExtensionConfig::Platform {
-                        name: SCHEDULER_EXTENSION_NAME.to_string(),
-                        description: "Create and manage scheduled recipe execution".to_string(),
-                        display_name: Some("Scheduler".to_string()),
-                        bundled: Some(true),
-                        available_tools: vec![],
-                    },
-                    None,
-                    None,
-                    "test-session-id",
+                .resolve(
+                    &ExtensionSet::new(
+                        "test-session-id",
+                        None,
+                        vec![ExtensionConfig::Platform {
+                            name: SCHEDULER_EXTENSION_NAME.to_string(),
+                            description: "Create and manage scheduled recipe execution".to_string(),
+                            display_name: Some("Scheduler".to_string()),
+                            bundled: Some(true),
+                            available_tools: vec![],
+                        }],
+                    )
+                    .unwrap(),
                 )
-                .await
-                .unwrap();
+                .await;
         }
 
         #[async_trait]
@@ -2122,232 +2124,6 @@ mod tests {
             assert_eq!(after_2.usage.total_tokens, Some(15));
 
             Ok(())
-        }
-    }
-
-    mod add_extensions_bulk_tests {
-        use super::*;
-        use goose::agents::extension::Envs;
-        use goose::agents::{AgentConfig, ExtensionConfig};
-        use goose::config::permission::PermissionManager;
-        use goose::config::GooseMode;
-        use goose::session::session_manager::SessionType;
-        use goose::session::{
-            EnabledExtensionsState, ExtensionData, ExtensionState, SessionManager,
-        };
-        use tempfile::TempDir;
-
-        fn platform_extension(name: &str) -> ExtensionConfig {
-            ExtensionConfig::Platform {
-                name: name.to_string(),
-                description: format!("Platform test extension {name}"),
-                display_name: None,
-                bundled: None,
-                available_tools: vec![],
-            }
-        }
-
-        fn unloadable_stdio_extension(name: &str) -> ExtensionConfig {
-            ExtensionConfig::Stdio {
-                name: name.to_string(),
-                description: format!("Unloadable test extension {name}"),
-                cmd: "goose-test-definitely-missing-binary".to_string(),
-                args: vec![],
-                envs: Envs::default(),
-                env_keys: vec![],
-                timeout: Some(1),
-                cwd: None,
-                bundled: None,
-                available_tools: vec![],
-            }
-        }
-
-        async fn setup_agent_and_session(
-            test_name: &str,
-        ) -> (Arc<Agent>, Arc<SessionManager>, String, TempDir) {
-            let temp_dir = TempDir::new().unwrap();
-            let data_dir = temp_dir.path().to_path_buf();
-            let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
-            let permission_manager = Arc::new(PermissionManager::new(data_dir));
-            let agent = Arc::new(Agent::with_config(AgentConfig::new(
-                session_manager.clone(),
-                permission_manager,
-                None,
-                false,
-                GoosePlatform::GooseDesktop,
-            )));
-
-            let session = session_manager
-                .create_session(
-                    std::env::current_dir().unwrap(),
-                    test_name.to_string(),
-                    SessionType::Hidden,
-                    GooseMode::default(),
-                )
-                .await
-                .unwrap();
-
-            (agent, session_manager, session.id, temp_dir)
-        }
-
-        async fn persisted_extension_names(
-            session_manager: &SessionManager,
-            session_id: &str,
-        ) -> Vec<String> {
-            let session = session_manager
-                .get_session(session_id, false)
-                .await
-                .unwrap();
-            let mut names: Vec<String> =
-                EnabledExtensionsState::from_extension_data(&session.extension_data)
-                    .expect("enabled extensions state should be persisted")
-                    .extensions
-                    .iter()
-                    .map(|extension| extension.name())
-                    .collect();
-            names.sort();
-            names
-        }
-
-        #[tokio::test]
-        async fn test_bulk_load_persists_loaded_extensions() {
-            let (agent, session_manager, session_id, _temp_dir) =
-                setup_agent_and_session("bulk-load-persist-success").await;
-
-            let results = agent
-                .add_extensions_bulk(
-                    vec![platform_extension("analyze"), platform_extension("todo")],
-                    &session_id,
-                )
-                .await
-                .unwrap();
-
-            assert!(results.iter().all(|result| result.success));
-            assert_eq!(
-                persisted_extension_names(&session_manager, &session_id).await,
-                vec!["analyze".to_string(), "todo".to_string()]
-            );
-        }
-
-        #[tokio::test]
-        async fn test_bulk_load_partial_failure_persists_only_loaded_extensions() {
-            let (agent, session_manager, session_id, _temp_dir) =
-                setup_agent_and_session("bulk-load-persist-partial-failure").await;
-
-            let results = agent
-                .add_extensions_bulk(
-                    vec![
-                        platform_extension("todo"),
-                        unloadable_stdio_extension("broken"),
-                    ],
-                    &session_id,
-                )
-                .await
-                .unwrap();
-
-            assert_eq!(results.len(), 2);
-            assert!(results
-                .iter()
-                .any(|result| result.name == "todo" && result.success));
-            let broken = results
-                .iter()
-                .find(|result| result.name == "broken")
-                .expect("broken extension should report a result");
-            assert!(!broken.success);
-            assert!(broken.error.is_some());
-
-            assert_eq!(
-                persisted_extension_names(&session_manager, &session_id).await,
-                vec!["todo".to_string()]
-            );
-        }
-
-        #[tokio::test]
-        async fn test_bulk_load_total_failure_drops_failed_extensions_from_session_state() {
-            let (agent, session_manager, session_id, _temp_dir) =
-                setup_agent_and_session("bulk-load-persist-total-failure").await;
-
-            // Seed the session with the extensions up front, mirroring a resume
-            // where the enabled list is read back from session metadata.
-            let extensions = vec![
-                unloadable_stdio_extension("broken-one"),
-                unloadable_stdio_extension("broken-two"),
-            ];
-            let mut extension_data = ExtensionData::new();
-            EnabledExtensionsState::new(extensions.clone())
-                .to_extension_data(&mut extension_data)
-                .unwrap();
-            session_manager
-                .update(&session_id)
-                .extension_data(extension_data)
-                .apply()
-                .await
-                .unwrap();
-
-            let results = agent
-                .add_extensions_bulk(extensions, &session_id)
-                .await
-                .unwrap();
-
-            assert_eq!(results.len(), 2);
-            assert!(
-                results.iter().all(|result| !result.success),
-                "expected every extension load to fail: {results:?}"
-            );
-
-            // The failed extensions must not stay marked as enabled in the
-            // session, otherwise every future resume retries them.
-            assert_eq!(
-                persisted_extension_names(&session_manager, &session_id).await,
-                Vec::<String>::new()
-            );
-        }
-
-        #[tokio::test]
-        async fn test_bulk_load_cancellation_preserves_pending_extensions() {
-            let (agent, session_manager, session_id, _temp_dir) =
-                setup_agent_and_session("bulk-load-persist-cancellation").await;
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
-            let server = tokio::spawn(async move {
-                let (_connection, _) = listener.accept().await.unwrap();
-                let _ = accepted_tx.send(());
-                std::future::pending::<()>().await;
-            });
-
-            let extension = ExtensionConfig::streamable_http(
-                "pending".to_string(),
-                format!("http://{address}"),
-                "Pending test extension".to_string(),
-                30_u64,
-            );
-            agent
-                .persist_extension_configs(&session_id, vec![extension.clone()])
-                .await
-                .unwrap();
-            let load = tokio::spawn({
-                let agent = agent.clone();
-                let session_id = session_id.clone();
-                async move {
-                    agent
-                        .add_extensions_bulk(vec![extension], &session_id)
-                        .await
-                }
-            });
-
-            tokio::time::timeout(std::time::Duration::from_secs(5), accepted_rx)
-                .await
-                .expect("extension did not connect")
-                .expect("test server stopped before accepting a connection");
-
-            load.abort();
-            assert!(load.await.unwrap_err().is_cancelled());
-            server.abort();
-            assert_eq!(
-                persisted_extension_names(&session_manager, &session_id).await,
-                vec!["pending".to_string()]
-            );
         }
     }
 

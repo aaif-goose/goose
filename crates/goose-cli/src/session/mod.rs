@@ -1124,7 +1124,11 @@ impl CliSession {
             }
         };
 
-        let extension_configs = self.agent.get_extension_configs(&self.session_id).await;
+        let has_extensions = !self
+            .agent
+            .get_extension_configs(&self.session_id)
+            .await
+            .is_empty();
 
         self.agent
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
@@ -1143,16 +1147,22 @@ impl CliSession {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
 
-        if !extension_configs.is_empty() {
+        if has_extensions {
             output::goose_mode_message("Restarting extensions for the new session...");
         }
 
         let mut unavailable = Vec::new();
-        for config in extension_configs {
-            let name = config.name();
-            if let Err(e) = self.agent.add_extension(config, &self.session_id).await {
-                output::render_extension_error(&name, &e.to_string());
-                unavailable.push(name);
+        for result in self
+            .agent
+            .extension_manager
+            .current_lease(&self.session_id, None)
+            .await
+            .start()
+            .await
+        {
+            if let Some(error) = result.error {
+                output::render_extension_error(&result.name, &error);
+                unavailable.push(result.name);
             }
         }
 
@@ -1176,7 +1186,12 @@ impl CliSession {
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
             create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
-        self.agent.persist_extension_state(&new_session_id).await?;
+        self.agent
+            .persist_extension_configs(
+                &new_session_id,
+                self.agent.get_extension_configs(&self.session_id).await,
+            )
+            .await?;
         Ok(new_session_id)
     }
 

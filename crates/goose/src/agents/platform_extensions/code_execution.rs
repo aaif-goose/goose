@@ -393,11 +393,7 @@ fn create_tool_callback(
                     .await;
                 match dispatch_result {
                     Ok(dispatch_result) => match manager
-                        .applying_mutation(
-                            dispatch_result,
-                            ctx.container().cloned(),
-                            &ctx.session_id,
-                        )
+                        .applying_mutation(dispatch_result, &ctx.session_id)
                         .result
                         .await
                     {
@@ -848,7 +844,8 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_extension(
+            .enable(
+                &session.id,
                 ExtensionConfig::Platform {
                     name: super::super::summon::EXTENSION_NAME.to_string(),
                     description: String::new(),
@@ -856,9 +853,6 @@ mod tests {
                     bundled: None,
                     available_tools: Vec::new(),
                 },
-                Some(session.working_dir.clone()),
-                None,
-                &session.id,
             )
             .await
             .unwrap();
@@ -891,7 +885,8 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_extension(
+            .enable(
+                &session.id,
                 ExtensionConfig::Platform {
                     name: "extensionmanager".to_string(),
                     description: String::new(),
@@ -899,9 +894,6 @@ mod tests {
                     bundled: None,
                     available_tools: Vec::new(),
                 },
-                Some(session.working_dir.clone()),
-                None,
-                &session.id,
             )
             .await
             .unwrap();
@@ -911,7 +903,7 @@ mod tests {
                 .await,
         );
         manager
-            .remove_extension(&session.id, "extensionmanager")
+            .disable(&session.id, "extensionmanager")
             .await
             .unwrap();
         let callback = create_tool_callback(

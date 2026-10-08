@@ -414,11 +414,9 @@ impl ToolExecutionOperation {
                 );
                 ToolCallResult::from(Err(error))
             });
-            let result = self.extension_manager.applying_mutation(
-                result,
-                session.container.clone(),
-                &session.id,
-            );
+            let result = self
+                .extension_manager
+                .applying_mutation(result, &session.id);
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
                 result,

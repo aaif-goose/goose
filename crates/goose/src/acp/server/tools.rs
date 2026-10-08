@@ -128,7 +128,7 @@ impl GooseAcpAgent {
 
         let result = agent
             .extension_manager
-            .applying_mutation(tool_result, container, session_id)
+            .applying_mutation(tool_result, session_id)
             .result
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;

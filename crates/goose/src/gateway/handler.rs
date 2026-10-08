@@ -340,7 +340,6 @@ impl GatewayHandler {
             }
         }
 
-        // Store default extensions so load_extensions_from_session works.
         let mut extensions = get_enabled_extensions();
         extensions.extend(crate::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&session.working_dir),
@@ -517,9 +516,6 @@ impl GatewayHandler {
                 .await?;
             return Ok(());
         }
-
-        // Load extensions (skips any already loaded on the agent).
-        agent.load_extensions_from_session(&session).await;
 
         let cancel = CancellationToken::new();
         let cancel_for_reply = cancel.clone();

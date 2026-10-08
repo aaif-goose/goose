@@ -28,7 +28,7 @@ use crate::conversation::message::{
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
-use crate::execution::manager::{AgentManager, AgentManagerGetResult, RuntimeContext};
+use crate::execution::manager::{AgentManager, RuntimeContext};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -1037,11 +1037,11 @@ impl GooseAcpAgent {
         });
     }
 
-    async fn get_or_create_session_agent_with_results(
+    async fn get_or_create_session_agent(
         &self,
         cx: &ConnectionTo<Client>,
         session_id: String,
-    ) -> Result<AgentManagerGetResult, agent_client_protocol::Error> {
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
         self.agent_manager
             .get_or_create_agent_with_runtime_context(
                 session_id,
@@ -1123,15 +1123,22 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session: &Session,
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
-        let agent_result = self
-            .get_or_create_session_agent_with_results(cx, session.id.clone())
+        let agent = self
+            .get_or_create_session_agent(cx, session.id.clone())
             .await?;
-        let agent = agent_result.agent.clone();
         self.apply_acp_extension_overrides(cx, &agent, session)
+            .await;
+        // Leases start extensions on first use anyway; starting them here is
+        // what lets the session response report extensions that fail.
+        let extension_results = agent
+            .extension_manager
+            .current_lease(&session.id, None)
+            .await
+            .start()
             .await;
         self.spawn_provider_inventory_refresh(session, &agent);
 
-        Ok((agent, agent_result.extension_results))
+        Ok((agent, extension_results))
     }
 
     async fn prepare_session_for_activation(

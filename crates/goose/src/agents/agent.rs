@@ -85,14 +85,6 @@ fn normalize_legacy_provider_thinking_effort(
     model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort())
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ExtensionLoadResult {
-    pub name: String,
-    pub success: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
 #[derive(Clone, Debug)]
 pub enum GoosePlatform {
     GooseDesktop,
@@ -210,19 +202,6 @@ fn agent_visible_message_text(message: &Message) -> String {
 impl Default for Agent {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn has_unique_persisted_extension(configs: &[ExtensionConfig], key: &str) -> Result<bool> {
-    match configs
-        .iter()
-        .filter(|config| config.key() == key)
-        .take(2)
-        .count()
-    {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => Err(anyhow!("Duplicate session extension key '{key}'")),
     }
 }
 
@@ -425,17 +404,6 @@ impl Agent {
         }
     }
 
-    /// Save current extension state to session by session_id
-    pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
-        self.persist_extension_configs(
-            session_id,
-            self.extension_manager
-                .get_extension_configs(session_id)
-                .await,
-        )
-        .await
-    }
-
     /// Save the provided extension configuration to session metadata.
     pub async fn persist_extension_configs(
         &self,
@@ -461,231 +429,12 @@ impl Agent {
         Ok(())
     }
 
-    /// Load extensions from session into the agent
-    /// Skips extensions that are already loaded
-    /// Uses the session's working_dir for extension initialization
-    pub async fn load_extensions_from_session(
-        self: &Arc<Self>,
-        session: &Session,
-    ) -> Vec<ExtensionLoadResult> {
-        let session_extensions =
-            EnabledExtensionsState::from_extension_data(&session.extension_data);
-        let enabled_configs = match session_extensions {
-            Some(state) => state.extensions,
-            None => {
-                tracing::warn!(
-                    "No extensions found in session {}. This is unexpected.",
-                    session.id
-                );
-                return vec![];
-            }
-        };
-
-        let manages_own_context = self
-            .config
-            .providers
-            .provider_for(session)
-            .await
-            .map(|p| p.manages_own_context())
-            .unwrap_or(false);
-        let (skipped_configs, enabled_configs): (Vec<_>, Vec<_>) =
-            enabled_configs.into_iter().partition(|config| {
-                manages_own_context
-                    && matches!(
-                        config,
-                        ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
-                    )
-            });
-
-        let session_id = session.id.clone();
-
-        let extension_futures = enabled_configs
-            .into_iter()
-            .map(|config| {
-                let config_clone = config.clone();
-                let agent_ref = self.clone();
-                let session_id_clone = session_id.clone();
-
-                async move {
-                    let name = config_clone.name().to_string();
-
-                    if agent_ref
-                        .extension_manager
-                        .is_extension_enabled(&session_id_clone, &name)
-                        .await
-                    {
-                        tracing::debug!("Extension {} already loaded, skipping", name);
-                        return ExtensionLoadResult {
-                            name,
-                            success: true,
-                            error: None,
-                        };
-                    }
-
-                    match agent_ref
-                        .add_extension_inner(config_clone, &session_id_clone)
-                        .await
-                    {
-                        Ok(_) => ExtensionLoadResult {
-                            name,
-                            success: true,
-                            error: None,
-                        },
-                        Err(e) => {
-                            let error_msg = e.to_string();
-                            warn!("Failed to load extension {}: {}", name, error_msg);
-                            ExtensionLoadResult {
-                                name,
-                                success: false,
-                                error: Some(error_msg),
-                            }
-                        }
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let results = futures::future::join_all(extension_futures).await;
-
-        if results.iter().any(|r| r.success) && skipped_configs.is_empty() {
-            if let Err(e) = self.persist_extension_state(&session_id).await {
-                warn!("Failed to persist extension state after bulk load: {}", e);
-            }
-        }
-
-        results
-    }
-
     pub async fn add_extension(
         &self,
         extension: ExtensionConfig,
         session_id: &str,
     ) -> ExtensionResult<()> {
-        self.add_extension_inner(extension, session_id).await?;
-
-        // Persist extension state after successful add
-        self.persist_extension_state(session_id)
-            .await
-            .map_err(|e| {
-                error!("Failed to persist extension state: {}", e);
-                crate::agents::extension::ExtensionError::SetupError(format!(
-                    "Failed to persist extension state: {}",
-                    e
-                ))
-            })?;
-
-        Ok(())
-    }
-
-    /// Load multiple extensions in parallel, persisting state once at the end.
-    ///
-    /// Unlike `add_extension`, this avoids per-extension persistence and acquires
-    /// the container lock once upfront to prevent serialisation of the parallel futures.
-    ///
-    /// State is persisted once every extension has settled, even when all of them
-    /// fail: the session's enabled list records what actually loaded, so failed
-    /// extensions are dropped instead of staying marked as enabled and being
-    /// retried on every subsequent resume.
-    pub async fn add_extensions_bulk(
-        self: &Arc<Self>,
-        extensions: Vec<ExtensionConfig>,
-        session_id: &str,
-    ) -> anyhow::Result<Vec<ExtensionLoadResult>> {
-        let (working_dir, container) = match self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await
-        {
-            Ok(session) => (Some(session.working_dir), session.container),
-            Err(e) => {
-                warn!("Failed to get session for bulk load: {}", e);
-                (None, None)
-            }
-        };
-
-        let extension_futures = extensions
-            .into_iter()
-            .map(|config| {
-                let ext_manager = Arc::clone(&self.extension_manager);
-                let working_dir = working_dir.clone();
-                let container = container.clone();
-                let sid = session_id.to_string();
-
-                async move {
-                    let name = config.name().to_string();
-                    match ext_manager
-                        .add_extension(config, working_dir, container.as_ref(), &sid)
-                        .await
-                    {
-                        Ok(_) => ExtensionLoadResult {
-                            name,
-                            success: true,
-                            error: None,
-                        },
-                        Err(e) => {
-                            let error = e.to_string();
-                            warn!("Failed to load extension {}: {}", name, error);
-                            ExtensionLoadResult {
-                                name,
-                                success: false,
-                                error: Some(error),
-                            }
-                        }
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let results = futures::future::join_all(extension_futures).await;
-
-        self.persist_extension_state(session_id).await?;
-
-        Ok(results)
-    }
-
-    pub(super) async fn add_extension_inner(
-        &self,
-        extension: ExtensionConfig,
-        session_id: &str,
-    ) -> ExtensionResult<()> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| {
-                crate::agents::extension::ExtensionError::SetupError(format!(
-                    "Failed to get session '{}': {}",
-                    session_id, e
-                ))
-            })?;
-        self.extension_manager
-            .add_extension(
-                extension,
-                Some(session.working_dir),
-                session.container.as_ref(),
-                session_id,
-            )
-            .await?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn update_extension_working_dir(
-        &self,
-        session_id: &str,
-        working_dir: &std::path::Path,
-    ) -> ExtensionResult<()> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .map_err(|e| crate::agents::extension::ExtensionError::SetupError(e.to_string()))?;
-        self.extension_manager
-            .update_working_dir(working_dir, session.container.as_ref(), session_id)
-            .await
+        self.extension_manager.enable(session_id, extension).await
     }
 
     pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
@@ -718,32 +467,7 @@ impl Agent {
     }
 
     pub async fn remove_extension_by_key(&self, key: &str, session_id: &str) -> Result<bool> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
-        let persisted_extensions = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            Config::global(),
-        );
-        if !has_unique_persisted_extension(&persisted_extensions, key)? {
-            return Ok(false);
-        }
-
-        self.extension_manager
-            .remove_extension_by_key(session_id, key)
-            .await?;
-
-        // Persist extension state after successful removal
-        self.persist_extension_state(session_id)
-            .await
-            .map_err(|e| {
-                error!("Failed to persist extension state: {}", e);
-                anyhow!("Failed to persist extension state: {}", e)
-            })?;
-
-        Ok(true)
+        Ok(self.extension_manager.disable(session_id, key).await?)
     }
 
     pub async fn list_extensions(&self, session_id: &str) -> Vec<String> {
@@ -1667,33 +1391,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
-
-    fn persisted_builtin(name: &str) -> ExtensionConfig {
-        ExtensionConfig::Builtin {
-            name: name.to_string(),
-            description: String::new(),
-            display_name: None,
-            timeout: None,
-            bundled: None,
-            available_tools: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn persisted_extension_identity_must_be_unique_before_removal() {
-        let session_extension = persisted_builtin("session-only");
-        assert!(has_unique_persisted_extension(&[session_extension], "session-only").unwrap());
-        assert!(!has_unique_persisted_extension(&[], "missing").unwrap());
-
-        let duplicate_result = has_unique_persisted_extension(
-            &[persisted_builtin("a.b"), persisted_builtin("a/b")],
-            "a_b",
-        );
-        assert_eq!(
-            duplicate_result.unwrap_err().to_string(),
-            "Duplicate session extension key 'a_b'"
-        );
-    }
 
     #[test]
     fn provider_creation_context_preserves_acp_error_code() {

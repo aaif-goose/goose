@@ -17,7 +17,6 @@ use rmcp::model::Role;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
 
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
@@ -52,14 +51,13 @@ pub(crate) async fn from_foreground_subagent_session(
         .model_config
         .as_ref()
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved model"))?;
-    let saved_extensions = session
+    session
         .extension_data
         .get_extension_state(
             EnabledExtensionsState::EXTENSION_NAME,
             EnabledExtensionsState::VERSION,
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
-    let extensions = EnabledExtensionsState::from_value(saved_extensions)?.extensions;
 
     let mut config = AgentConfig::new(
         session_manager,
@@ -74,12 +72,6 @@ pub(crate) async fn from_foreground_subagent_session(
     agent
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
-    for extension in extensions {
-        let name = extension.name();
-        if let Err(e) = agent.add_extension_inner(extension, session_id).await {
-            debug!("Failed to add extension '{}' to subagent: {}", name, e);
-        }
-    }
 
     let subagent_prompt = build_subagent_prompt(&agent, max_turns, session_id).await?;
     agent
