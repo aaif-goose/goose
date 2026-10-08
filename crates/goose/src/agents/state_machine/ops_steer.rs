@@ -35,7 +35,7 @@ impl SteerOperation {
     }
 
     fn take_drained(&self) -> Vec<GooseEffect> {
-        std::mem::take(&mut *self.drained.lock().expect("steer lock poisoned"))
+        std::mem::take(&mut *self.drained.lock().unwrap())
             .into_iter()
             .map(GooseEffect::from)
             .collect()
@@ -85,7 +85,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         for message in pending {
             drained.push(emit.message(message).await);
         }
-        *self.drained.lock().expect("steer lock poisoned") = drained.clone();
+        *self.drained.lock().unwrap() = drained.clone();
         for message in drained {
             let context = HookContext::new(HookEvent::UserPromptSubmit, &session.id)
                 .with_message(message.as_concat_text());

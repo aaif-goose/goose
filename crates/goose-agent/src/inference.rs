@@ -316,7 +316,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     }
 
     fn output(&self) -> MutexGuard<'_, InferenceOutput> {
-        self.output.lock().expect("inference output lock poisoned")
+        self.output.lock().unwrap()
     }
 
     fn take_output(&self) -> Vec<E> {

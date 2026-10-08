@@ -64,10 +64,7 @@ impl RecipeOperation {
     }
 
     fn take_response(&self) -> Option<Message> {
-        self.response
-            .lock()
-            .expect("recipe response lock poisoned")
-            .take()
+        self.response.lock().unwrap().take()
     }
 
     async fn command_error(
@@ -282,7 +279,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 output.clone(),
                 request.metadata.as_ref(),
             );
-            *self.response.lock().expect("recipe response lock poisoned") = Some(response);
+            *self.response.lock().unwrap() = Some(response);
             if pre_tool.is_ok() {
                 // Post event carries the same tool_call_id as the pre events.
                 // The large-response rewrite ToolExecutionOperation applies is

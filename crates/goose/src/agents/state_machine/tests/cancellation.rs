@@ -12,8 +12,10 @@ use goose_providers::{
 use rmcp::model::{CallToolRequestParams, Tool};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use super::test_pipeline;
+use crate::agents::gen_ai_telemetry::test_support::SpanFieldCapture;
 use crate::agents::state_machine::{Emitter, GooseEffect, StateMachine, Step};
 use crate::agents::AgentEvent;
 use crate::conversation::message::Message;
@@ -82,6 +84,13 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
     );
     let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
+    let capture = SpanFieldCapture::new("turn");
+    let _subscriber = capture.clone().set_default();
+    let turn_span = tracing::info_span!(
+        "turn",
+        gen_ai.usage.input_tokens = tracing::field::Empty,
+        gen_ai.usage.output_tokens = tracing::field::Empty,
+    );
     let session = tokio::time::timeout(
         Duration::from_secs(5),
         crate::agents::state_machine::session::run(
@@ -90,7 +99,8 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
             &pipeline.hook_manager,
             &pipeline.session_id,
             &emit,
-        ),
+        )
+        .instrument(turn_span),
     )
     .await??;
     drop(emit);
@@ -107,6 +117,9 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
     assert!(messages[1].get_tool_request_ids().contains("pending"));
     assert!(messages[2].get_tool_response_ids().contains("pending"));
     assert_eq!(session.usage.total_tokens, Some(15));
+    let turn_fields = capture.fields();
+    assert_eq!(turn_fields["gen_ai.usage.input_tokens"], 10);
+    assert_eq!(turn_fields["gen_ai.usage.output_tokens"], 5);
     let emitted_ids: Vec<_> = emitted.iter().map(|message| &message.id).collect();
     assert_eq!(
         emitted_ids,

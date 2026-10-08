@@ -304,11 +304,7 @@ where
     }
 
     async fn cancel(&self, _session: &S, _conversation: &Conversation, emit: &Emitter) -> Vec<E> {
-        let response = self
-            .response
-            .lock()
-            .expect("tool response lock poisoned")
-            .take();
+        let response = self.response.lock().unwrap().take();
         match response {
             Some(response) => vec![E::from(emit.message(response).await)],
             None => Vec::new(),
@@ -375,7 +371,7 @@ where
                         .await
                 }
             };
-            let mut output = self.response.lock().expect("tool response lock poisoned");
+            let mut output = self.response.lock().unwrap();
             let message =
                 output.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
             message.add_tool_response_with_metadata(
@@ -387,7 +383,7 @@ where
         let message = self
             .response
             .lock()
-            .expect("tool response lock poisoned")
+            .unwrap()
             .take()
             .expect("tool responses retained");
         let message = emit.message(message).await;

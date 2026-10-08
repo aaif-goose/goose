@@ -157,10 +157,7 @@ where
                 Some(Ok(result)) => result,
                 Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
                 _ => {
-                    *self
-                        .interrupted_step
-                        .lock()
-                        .expect("interrupted step lock poisoned") = Some(index);
+                    *self.interrupted_step.lock().unwrap() = Some(index);
                     return Ok(None);
                 }
             };
@@ -227,11 +224,7 @@ where
             return Ok(session);
         }
 
-        let interrupted_step = self
-            .interrupted_step
-            .lock()
-            .expect("interrupted step lock poisoned")
-            .take();
+        let interrupted_step = self.interrupted_step.lock().unwrap().take();
         if let Some(index) = interrupted_step {
             session = self
                 .collect_cancelled(runtime, session_id, session, &self.steps[index], emit)

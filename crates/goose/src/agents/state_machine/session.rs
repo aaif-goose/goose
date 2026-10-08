@@ -154,6 +154,39 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
     }
 }
 
+struct TurnRuntime<'a> {
+    session_manager: &'a SessionManager,
+    usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
+}
+
+#[async_trait]
+impl SessionLoader<Session> for TurnRuntime<'_> {
+    async fn load(&self, session_id: &str) -> Result<Session> {
+        self.session_manager.load(session_id).await
+    }
+}
+
+#[async_trait]
+impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
+    async fn apply_effects(
+        &self,
+        session: &Session,
+        effects: &mut [GooseEffect],
+        emit: &Emitter,
+    ) -> Result<()> {
+        self.session_manager
+            .apply_effects(session, effects, emit)
+            .await?;
+        let mut turn_usage = self.usage.lock().unwrap();
+        for effect in effects.iter() {
+            if let Some(usage) = self.session_manager.usage(effect) {
+                *turn_usage += usage;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl EffectUsage<GooseEffect> for SessionManager {
     fn usage(
         &self,
@@ -248,25 +281,24 @@ pub(crate) async fn run(
         tracing::Span::current().record("trace_input", input.as_str());
     }
 
-    let mut turn_usage = goose_providers::conversation::token_usage::Usage::default();
+    let runtime = TurnRuntime {
+        session_manager: runtime,
+        usage: Default::default(),
+    };
     loop {
         let session = runtime.load(session_id).await?;
         let Some(mut result) = machine.step(&session, emit).await? else {
             break;
         };
         tracing::debug!(target: "goose::state_machine", step = result.applied_step, "applied step");
-        for effect in &result.effects {
-            if let Some(usage) = runtime.usage(effect) {
-                turn_usage += usage;
-            }
-        }
-        machine.apply(runtime, &session, &mut result, emit).await?;
+        machine.apply(&runtime, &session, &mut result, emit).await?;
         if result.yield_to_client {
             break;
         }
     }
 
-    let session = machine.finalize(runtime, session_id, emit).await?;
+    let session = machine.finalize(&runtime, session_id, emit).await?;
+    let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()
         .and_then(|conversation| {

@@ -288,11 +288,10 @@ fn with_post_tool_hooks(
     let future = async move {
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
-        batch.lock().expect("tool batch lock poisoned").record(
-            &tool_call_id,
-            result.clone(),
-            metadata.as_ref(),
-        );
+        batch
+            .lock()
+            .unwrap()
+            .record(&tool_call_id, result.clone(), metadata.as_ref());
         crate::agents::gen_ai_telemetry::record_tool_result(&tracing::Span::current(), &result);
         match &result {
             Ok(result) if result.is_error == Some(true) => {
@@ -375,7 +374,7 @@ impl<'a> ToolExecutionOperation<'a> {
     }
 
     fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
-        self.batch.lock().expect("tool batch lock poisoned").take()
+        self.batch.lock().unwrap().take()
     }
 
     async fn lease(&self, session: &Session) -> Arc<ExtensionLease> {
@@ -1057,7 +1056,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
 
         let mut combined = futures::stream::select_all(tool_streams);
         for (request, disposition) in &pending {
-            let mut batch = self.batch.lock().expect("tool batch lock poisoned");
+            let mut batch = self.batch.lock().unwrap();
             match disposition {
                 ToolDisposition::Execute => {}
                 ToolDisposition::Decline => {
@@ -1098,11 +1097,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                         .iter()
                         .find(|r| r.id == request_id)
                         .and_then(|r| r.metadata.as_ref());
-                    self.batch.lock().expect("tool batch lock poisoned").record(
-                        &request_id,
-                        output,
-                        metadata,
-                    );
+                    self.batch
+                        .lock()
+                        .unwrap()
+                        .record(&request_id, output, metadata);
                 }
                 ToolStreamItem::Message(msg) => {
                     emit.emit(AgentEvent::McpNotification((request_id, msg)))
@@ -1110,11 +1108,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
                 }
                 ToolStreamItem::ActionRequired(msg) => {
                     let msg = msg.with_generated_id_if_missing();
-                    self.batch
-                        .lock()
-                        .expect("tool batch lock poisoned")
-                        .actions
-                        .push(msg.clone());
+                    self.batch.lock().unwrap().actions.push(msg.clone());
                     emit.message(msg).await;
                 }
             }

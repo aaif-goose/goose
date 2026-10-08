@@ -43,7 +43,7 @@ impl ToolPairCompactionOperation {
     }
 
     fn take_output(&self) -> Vec<GooseEffect> {
-        std::mem::take(&mut *self.output.lock().expect("tool pair output lock poisoned"))
+        std::mem::take(&mut *self.output.lock().unwrap())
     }
 }
 
@@ -155,7 +155,7 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
                 }
             };
 
-            let mut effects = self.output.lock().expect("tool pair output lock poisoned");
+            let mut effects = self.output.lock().unwrap();
             for message in pair {
                 let Some(message_id) = message.id.clone() else {
                     continue;
