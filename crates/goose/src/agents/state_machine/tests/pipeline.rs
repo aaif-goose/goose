@@ -856,16 +856,15 @@ async fn build_test_pipeline(
             .preserve_thinking_context(provider_features.preserves_thinking)
             .build(),
     );
-    let provider: Arc<dyn Provider> = if provider_features.resolved_model.is_some()
-        || provider_features.manages_own_context
-    {
-        Arc::new(FeatureProvider {
-            inner: provider,
-            features: provider_features,
-        })
-    } else {
-        provider
-    };
+    let provider: Arc<dyn Provider> =
+        if provider_features.resolved_model.is_some() || provider_features.manages_own_context {
+            Arc::new(FeatureProvider {
+                inner: provider,
+                features: provider_features,
+            })
+        } else {
+            provider
+        };
     let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
     providers.set_provider(&session.id, provider.clone()).await;
     let extension_manager = Arc::new(ExtensionManager::new(
