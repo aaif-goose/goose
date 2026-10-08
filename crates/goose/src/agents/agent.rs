@@ -8,13 +8,12 @@ use futures::{StreamExt, TryStreamExt};
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
-use super::mcp_client::GooseMcpHostInfo;
 use super::tool_confirmation_coordinator::{
     ActiveTurnGuard, ConfirmationAnswer, ToolConfirmationCoordinator,
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use crate::agents::extension_manager::{ClientContext, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
@@ -106,7 +105,6 @@ pub struct AgentConfig {
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub mcp_host_info: Option<GooseMcpHostInfo>,
     pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
@@ -128,18 +126,12 @@ impl AgentConfig {
             scheduler_service,
             disable_session_naming,
             goose_platform,
-            mcp_host_info: None,
             elicitation_handler: None,
             mcp_protocol_version: None,
             session_name_update_tx: None,
             is_subagent: false,
             providers: Arc::default(),
         }
-    }
-
-    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
-        self.mcp_host_info = mcp_host_info;
-        self
     }
 
     pub fn with_session_name_update_tx(
@@ -204,26 +196,9 @@ impl Agent {
     pub fn with_config(config: AgentConfig) -> Self {
         let providers = config.providers.clone();
 
-        let goose_platform = config.goose_platform.clone();
-        let explicit_mcp_host_info = config.mcp_host_info.clone();
-        let mcpui = explicit_mcp_host_info
-            .as_ref()
-            .filter(|host_info| host_info.explicit_extensions)
-            .map(GooseMcpHostInfo::mcpui_enabled)
-            .unwrap_or_else(|| match config.goose_platform {
-                GoosePlatform::GooseDesktop => true,
-                GoosePlatform::GooseCli => false,
-            });
-        let capabilities = ExtensionManagerCapabilities {
-            mcpui,
-            host_info: explicit_mcp_host_info.clone(),
-            elicitation_handler: config.elicitation_handler.clone(),
-            protocol_version: config.mcp_protocol_version.clone(),
-        };
-        let client_name = explicit_mcp_host_info
-            .as_ref()
-            .and_then(|host_info| host_info.client_name.clone())
-            .unwrap_or_else(|| goose_platform.to_string());
+        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        default_client.capabilities.elicitation_handler = config.elicitation_handler.clone();
+        default_client.capabilities.protocol_version = config.mcp_protocol_version.clone();
         let session_manager = Arc::clone(&config.session_manager);
         let scheduler = config.scheduler_service.clone();
         let inspection_session_manager = Arc::clone(&config.session_manager);
@@ -235,8 +210,7 @@ impl Agent {
                 providers.clone(),
                 session_manager,
                 scheduler,
-                client_name,
-                capabilities,
+                default_client,
             )),
             tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(

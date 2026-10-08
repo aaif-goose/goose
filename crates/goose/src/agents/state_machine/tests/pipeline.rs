@@ -10,10 +10,8 @@ use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::{
-    ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
-};
-use crate::agents::mcp_client::McpClientTrait;
+use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
+use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClientTrait};
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
     ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
@@ -780,12 +778,15 @@ async fn build_test_pipeline(
         scheduler
             .clone()
             .map(|scheduler| scheduler as Arc<dyn crate::scheduler_trait::SchedulerTrait>),
-        "pipeline-test".to_string(),
-        ExtensionManagerCapabilities {
-            mcpui: false,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version: None,
+        ClientContext {
+            name: "pipeline-test".to_string(),
+            capabilities: GooseMcpClientCapabilities {
+                mcpui: false,
+                host_info: None,
+                elicitation_handler: None,
+                protocol_version: None,
+            },
+            connection: None,
         },
     ));
     let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));

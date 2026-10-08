@@ -10,6 +10,7 @@ pub(super) use crate::acp::response_builder::{
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
+use crate::agents::extension_manager::ClientContext;
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
 use crate::agents::state_machine::{
@@ -310,6 +311,8 @@ pub struct GooseAcpAgentOptions {
     pub live_voice: Arc<LiveVoiceService>,
 }
 
+static NEXT_CONNECTION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
     active_runs: Arc<ActiveRunRegistry>,
@@ -321,6 +324,8 @@ pub struct GooseAcpAgent {
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
     client_terminal: OnceCell<bool>,
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
+    goose_platform: GoosePlatform,
+    connection_id: u64,
     client_supports_acp_elicitation: OnceCell<bool>,
     client_supports_goose_custom_notifications: OnceCell<bool>,
     client_supports_recipe_param_requests: OnceCell<bool>,
@@ -959,6 +964,8 @@ impl GooseAcpAgent {
             client_fs_capabilities: OnceCell::new(),
             client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
+            goose_platform: options.goose_platform.clone(),
+            connection_id: NEXT_CONNECTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             client_supports_acp_elicitation: OnceCell::new(),
             client_supports_goose_custom_notifications: OnceCell::new(),
             client_supports_recipe_param_requests: OnceCell::new(),
@@ -1032,17 +1039,24 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session_id: String,
     ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
-        self.agent_manager
+        let agent = self
+            .agent_manager
             .get_or_create_agent_with_runtime_context(
-                session_id,
+                session_id.clone(),
                 RuntimeContext {
-                    mcp_host_info: self.client_mcp_host_info.get().cloned(),
                     session_name_update_tx: (!self.disable_session_naming)
                         .then(|| spawn_session_name_update_notifier(cx.clone())),
                 },
             )
             .await
-            .map_err(|error| agent_creation_error(error, "Failed to create agent"))
+            .map_err(|error| agent_creation_error(error, "Failed to create agent"))?;
+        let mut client = ClientContext::new(
+            &self.goose_platform,
+            self.client_mcp_host_info.get().cloned(),
+        );
+        client.connection = Some(self.connection_id);
+        agent.extension_manager.attach_client(&session_id, client);
+        Ok(agent)
     }
 
     async fn apply_acp_extension_overrides(
