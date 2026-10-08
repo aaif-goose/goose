@@ -3,10 +3,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
-#[cfg(not(windows))]
-use std::sync::Arc;
-#[cfg(not(windows))]
-use std::sync::Mutex;
 use std::time::Duration;
 
 use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
@@ -15,8 +11,6 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 #[cfg(not(windows))]
 use tokio::sync::OnceCell;
-#[cfg(not(windows))]
-use tokio::task::JoinHandle;
 use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
@@ -212,7 +206,7 @@ pub struct ShellOutput {
 /// a minimal PATH like `/usr/bin:/bin`. This function spawns a login shell to
 /// source the user's profile and recover the full PATH.
 #[cfg(not(windows))]
-pub(crate) fn resolve_login_shell_path() -> Option<String> {
+fn resolve_login_shell_path() -> Option<String> {
     use process_wrap::std::{CommandWrap, ProcessSession};
 
     let shell = unix_shell();
@@ -273,85 +267,51 @@ pub(crate) fn resolve_login_shell_path() -> Option<String> {
     }
 }
 
-/// Resolves the user's login-shell PATH in the background.
-///
-/// Spawned at `ShellTool` construction so the ~hundreds-of-ms cost of sourcing
-/// the user's shell profile overlaps with the rest of agent setup and the
-/// first LLM turn. The first `shell` invocation awaits the result; subsequent
-/// invocations read from the cached cell.
 #[cfg(not(windows))]
-struct LoginPath {
-    cell: OnceCell<Option<Arc<str>>>,
-    handle: Mutex<Option<JoinHandle<Option<String>>>>,
+fn merged_login_path() -> Option<String> {
+    let login = resolve_login_shell_path()?;
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let entries: Vec<&str> = login
+        .split(':')
+        .chain(current.split(':'))
+        .filter(|entry| !entry.is_empty() && seen.insert(*entry))
+        .collect();
+    Some(entries.join(":"))
 }
 
-#[cfg(not(windows))]
-impl LoginPath {
-    fn spawn() -> Self {
-        let handle = tokio::task::spawn_blocking(resolve_login_shell_path);
-        Self {
-            cell: OnceCell::new(),
-            handle: Mutex::new(Some(handle)),
-        }
-    }
-
-    fn resolved(value: Option<String>) -> Self {
-        let cell = OnceCell::new();
-        let _ = cell.set(value.map(Arc::from));
-        Self {
-            cell,
-            handle: Mutex::new(None),
-        }
-    }
-
-    async fn get(&self) -> Option<Arc<str>> {
-        self.cell
+/// A goose started from the Dock inherits launchd's minimal PATH; in a terminal the merge
+/// changes nothing.
+pub(crate) async fn login_path() -> Option<&'static str> {
+    #[cfg(not(windows))]
+    {
+        static LOGIN_PATH: OnceCell<Option<String>> = OnceCell::const_new();
+        LOGIN_PATH
             .get_or_init(|| async {
-                let handle = self
-                    .handle
-                    .lock()
-                    .expect("login_path mutex poisoned")
-                    .take();
-                match handle {
-                    Some(h) => h.await.ok().flatten().map(Arc::from),
-                    None => None,
-                }
+                tokio::task::spawn_blocking(merged_login_path)
+                    .await
+                    .ok()
+                    .flatten()
             })
             .await
-            .clone()
+            .as_deref()
+    }
+    #[cfg(windows)]
+    {
+        None
     }
 }
 
 pub struct ShellTool {
     output_dir: tempfile::TempDir,
     call_index: AtomicUsize,
-    #[cfg(not(windows))]
-    login_path: LoginPath,
 }
 
 impl ShellTool {
-    pub fn new(use_login_shell_path: bool) -> std::io::Result<Self> {
-        #[cfg(windows)]
-        let _unused = use_login_shell_path;
+    pub fn new() -> std::io::Result<Self> {
         Ok(Self {
             output_dir: tempfile::tempdir()?,
             call_index: AtomicUsize::new(0),
-            #[cfg(not(windows))]
-            login_path: if use_login_shell_path {
-                LoginPath::spawn()
-            } else {
-                LoginPath::resolved(None)
-            },
-        })
-    }
-
-    #[cfg(test)]
-    pub fn new_for_test() -> std::io::Result<Self> {
-        Ok(Self {
-            output_dir: tempfile::tempdir()?,
-            call_index: AtomicUsize::new(0),
-            #[cfg(not(windows))]
-            login_path: LoginPath::resolved(None),
         })
     }
 
@@ -399,18 +359,11 @@ impl ShellTool {
             );
         }
 
-        #[cfg(not(windows))]
-        let login_path = self.login_path.get().await;
-        #[cfg(not(windows))]
-        let login_path_ref = login_path.as_deref();
-        #[cfg(windows)]
-        let login_path_ref: Option<&str> = None;
-
         let execution = match run_command(
             &params.command,
             params.timeout_secs,
             working_dir,
-            login_path_ref,
+            login_path().await,
             session_id,
             notification_emitter,
             cancellation_token,
@@ -968,7 +921,7 @@ mod tests {
 
     #[tokio::test]
     async fn shell_executes_command() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let result = tool
             .shell(ShellParams {
                 command: "echo hello".to_string(),
@@ -983,7 +936,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn full_live_notification_channel_does_not_change_final_output() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let (sender, _receiver) = tokio::sync::mpsc::channel(1);
         let result = tool
             .shell_with_cwd_and_emitter(
@@ -1008,7 +961,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn shell_returns_error_for_non_zero_exit() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let result = tool
             .shell(ShellParams {
                 command: "echo fail && exit 7".to_string(),
@@ -1024,7 +977,7 @@ mod tests {
     #[tokio::test]
     async fn shell_uses_working_dir_for_relative_execution() {
         let dir = tempfile::tempdir().unwrap();
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let result = tool
             .shell_with_cwd(
                 ShellParams {
@@ -1092,7 +1045,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn shell_kills_child_on_cancellation() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let token = CancellationToken::new();
         let token_clone = token.clone();
 
@@ -1147,6 +1100,35 @@ mod tests {
         assert_eq!(
             unix_login_shell_command_args("/bin/bash"),
             ["-l", "-i", "-c", "echo $PATH"]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn login_path_puts_login_shell_entries_ahead_of_the_process_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let fake_shell = tmp.path().join("fake-login-shell");
+        std::fs::write(
+            &fake_shell,
+            "#!/bin/sh\necho 'profile noise'\nprintf '%s\\n' \"$FAKE_LOGIN_PATH\"\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&fake_shell).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_shell, perms).unwrap();
+
+        let fake_shell = fake_shell.to_string_lossy().into_owned();
+        let _guard = env_lock::lock_env([
+            ("GOOSE_SHELL", Some(fake_shell.as_str())),
+            ("FAKE_LOGIN_PATH", Some("/opt/homebrew/bin:/usr/bin")),
+            ("PATH", Some("/usr/bin:/bin:/app/bin")),
+        ]);
+
+        assert_eq!(
+            merged_login_path().as_deref(),
+            Some("/opt/homebrew/bin:/usr/bin:/bin:/app/bin")
         );
     }
 
@@ -1273,7 +1255,7 @@ mod tests {
 
     #[test]
     fn call_index_cycles_through_slots() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         for _cycle in 0..3 {
             for expected in 0..OUTPUT_SLOTS {
                 let slot = tool.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS;
@@ -1286,7 +1268,7 @@ mod tests {
     #[tokio::test]
     async fn cmd_rejects_newline_in_command() {
         for command in ["echo a\necho b", "echo a\r\necho b", "echo a\recho b"] {
-            let tool = ShellTool::new_for_test().unwrap();
+            let tool = ShellTool::new().unwrap();
             let result = tool
                 .shell(ShellParams {
                     command: command.to_string(),
@@ -1307,7 +1289,7 @@ mod tests {
 
     #[test]
     fn concurrent_calls_get_distinct_slots() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let mut slots: Vec<usize> = (0..OUTPUT_SLOTS)
             .map(|_| tool.call_index.fetch_add(1, Ordering::Relaxed) % OUTPUT_SLOTS)
             .collect();
@@ -1328,7 +1310,7 @@ mod tests {
             }
         }
 
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let start = std::time::Instant::now();
         let result = tool
             .shell(ShellParams {
@@ -1383,7 +1365,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn shell_kills_hanging_command_after_explicit_timeout() {
-        let tool = ShellTool::new_for_test().unwrap();
+        let tool = ShellTool::new().unwrap();
         let start = std::time::Instant::now();
         let result = tool
             .shell(ShellParams {

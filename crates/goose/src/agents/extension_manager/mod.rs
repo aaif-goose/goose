@@ -590,7 +590,6 @@ impl ExtensionManager {
         scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
         client_name: String,
         capabilities: ExtensionManagerCapabilities,
-        use_login_shell_path: bool,
     ) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
@@ -600,7 +599,6 @@ impl ExtensionManager {
                 providers,
                 session_manager,
                 scheduler,
-                use_login_shell_path,
             },
             client_name,
             capabilities,
@@ -620,7 +618,6 @@ impl ExtensionManager {
                 elicitation_handler: None,
                 protocol_version: None,
             },
-            false,
         )
     }
 

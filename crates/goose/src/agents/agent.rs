@@ -110,7 +110,6 @@ pub struct AgentConfig {
     pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
-    pub use_login_shell_path: Option<bool>,
     pub is_subagent: bool,
     pub providers: Arc<ProviderManager>,
 }
@@ -133,7 +132,6 @@ impl AgentConfig {
             elicitation_handler: None,
             mcp_protocol_version: None,
             session_name_update_tx: None,
-            use_login_shell_path: None,
             is_subagent: false,
             providers: Arc::default(),
         }
@@ -151,19 +149,6 @@ impl AgentConfig {
         self.session_name_update_tx = tx;
         self
     }
-
-    pub fn with_use_login_shell_path(mut self, use_login_shell_path: bool) -> Self {
-        self.use_login_shell_path = Some(use_login_shell_path);
-        self
-    }
-
-    fn resolve_use_login_shell_path(&self) -> bool {
-        resolve_use_login_shell_path(self.use_login_shell_path, &self.goose_platform)
-    }
-}
-
-fn resolve_use_login_shell_path(explicit: Option<bool>, platform: &GoosePlatform) -> bool {
-    explicit.unwrap_or(matches!(platform, GoosePlatform::GooseDesktop))
 }
 
 /// The main goose Agent
@@ -243,7 +228,6 @@ impl Agent {
         let scheduler = config.scheduler_service.clone();
         let inspection_session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
-        let use_login_shell_path = config.resolve_use_login_shell_path();
         let is_subagent = config.is_subagent;
         Self {
             config,
@@ -253,7 +237,6 @@ impl Agent {
                 scheduler,
                 client_name,
                 capabilities,
-                use_login_shell_path,
             )),
             tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
@@ -264,10 +247,7 @@ impl Agent {
             hook_manager: if is_subagent {
                 crate::hooks::HookManager::default()
             } else {
-                crate::hooks::HookManager::load(
-                    std::env::current_dir().ok().as_deref(),
-                    use_login_shell_path,
-                )
+                crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref())
             },
             #[cfg(test)]
             stop_hook_block_cap_override: None,
@@ -641,10 +621,7 @@ impl Agent {
             // started, so a final output from the same batch must not be shown until
             // the subagents have run.
             Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(
-                    self.config.session_manager.clone(),
-                    self.config.resolve_use_login_shell_path(),
-                ),
+                ForegroundSubagentRunner::new(self.config.session_manager.clone()),
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
@@ -1604,30 +1581,6 @@ mod tests {
             .await
             .unwrap();
         (agent, session, data_dir)
-    }
-
-    #[test]
-    fn resolve_use_login_shell_path_defaults_by_platform() {
-        assert!(resolve_use_login_shell_path(
-            None,
-            &GoosePlatform::GooseDesktop
-        ));
-        assert!(!resolve_use_login_shell_path(
-            None,
-            &GoosePlatform::GooseCli
-        ));
-    }
-
-    #[test]
-    fn resolve_use_login_shell_path_explicit_overrides_platform() {
-        assert!(resolve_use_login_shell_path(
-            Some(true),
-            &GoosePlatform::GooseCli
-        ));
-        assert!(!resolve_use_login_shell_path(
-            Some(false),
-            &GoosePlatform::GooseDesktop
-        ));
     }
 
     #[test]

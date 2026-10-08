@@ -28,7 +28,6 @@ pub struct SubagentPromptContext {
 pub(crate) async fn from_foreground_subagent_session(
     session_manager: Arc<SessionManager>,
     session: &Session,
-    use_login_shell_path: bool,
 ) -> Result<(Agent, SessionConfig)> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
@@ -65,8 +64,7 @@ pub(crate) async fn from_foreground_subagent_session(
         None,
         true,
         GoosePlatform::GooseCli,
-    )
-    .with_use_login_shell_path(use_login_shell_path);
+    );
     config.is_subagent = true;
     let agent = Agent::with_config(config);
     agent
@@ -105,15 +103,11 @@ pub(crate) enum SubagentStart {
 #[derive(Clone)]
 pub(crate) struct ForegroundSubagentRunner {
     session_manager: Arc<SessionManager>,
-    use_login_shell_path: bool,
 }
 
 impl ForegroundSubagentRunner {
-    pub(crate) fn new(session_manager: Arc<SessionManager>, use_login_shell_path: bool) -> Self {
-        Self {
-            session_manager,
-            use_login_shell_path,
-        }
+    pub(crate) fn new(session_manager: Arc<SessionManager>) -> Self {
+        Self { session_manager }
     }
 
     pub(crate) async fn start(
@@ -152,12 +146,8 @@ impl ForegroundSubagentRunner {
     }
 
     async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
-        let (agent, session_config) = from_foreground_subagent_session(
-            self.session_manager.clone(),
-            subagent,
-            self.use_login_shell_path,
-        )
-        .await?;
+        let (agent, session_config) =
+            from_foreground_subagent_session(self.session_manager.clone(), subagent).await?;
         let mut events = agent
             .stream_state_machine_session(session_config, cancel)
             .await?;
