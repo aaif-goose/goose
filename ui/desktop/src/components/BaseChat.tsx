@@ -62,8 +62,6 @@ const isUserMessage = (message: Message) => message.role === 'user';
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
-  onMessageSubmit?: (message: string) => void;
-  renderHeader?: () => React.ReactNode;
   customChatInputProps?: Record<string, unknown>;
   customMainLayoutProps?: Record<string, unknown>;
   contentClassName?: string;
@@ -77,7 +75,6 @@ interface BaseChatProps {
 
 export default function BaseChat({
   setChat,
-  renderHeader,
   customChatInputProps = {},
   customMainLayoutProps = {},
   sessionId,
@@ -443,7 +440,6 @@ export default function BaseChat({
           removeTopPadding={true}
           {...customMainLayoutProps}
         >
-          {renderHeader && renderHeader()}
           <div className="flex flex-col flex-1 min-h-0 relative">
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center justify-center p-8">
@@ -476,9 +472,6 @@ export default function BaseChat({
         removeTopPadding={true}
         {...customMainLayoutProps}
       >
-        {/* Custom header */}
-        {renderHeader && renderHeader()}
-
         {/* Chat container with sticky recipe header */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Goose watermark - top right */}
