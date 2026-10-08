@@ -156,6 +156,42 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
         Ok(None)
     }
 
+    /// Collect operation contributions for this inference. Protocol backends can
+    /// override this without changing application command or lifecycle behavior.
+    async fn prepare_input(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+        operations: &[&dyn Operation<S, E>],
+        cancel: &CancellationToken,
+    ) -> Result<InferenceInput>
+    where
+        S: MaybeSync,
+    {
+        let mut input = InferenceInput::default();
+        let mut tool_names = std::collections::HashSet::new();
+        for operation in operations {
+            let tools = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Ok(input),
+                tools = operation.inference_tools(session) => tools?,
+            };
+            for tool in tools {
+                if !tool_names.insert(tool.name.to_string()) {
+                    anyhow::bail!("multiple operations registered tool '{}'", tool.name);
+                }
+                input.tools.push(tool);
+            }
+            input
+                .prompt_parts
+                .extend(operation.prompt_parts(session, conversation).await?);
+            input
+                .moim_parts
+                .extend(operation.moim_parts(session, conversation).await?);
+        }
+        Ok(input)
+    }
+
     async fn infer(
         &self,
         session: &S,

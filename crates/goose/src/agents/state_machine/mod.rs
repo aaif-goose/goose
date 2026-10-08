@@ -29,7 +29,6 @@ mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod ops_unknown_tool;
 mod session;
-mod without_inference_preparation;
 pub(crate) use session::run as run_goose;
 mod tool_confirmation;
 mod usage;
@@ -93,7 +92,6 @@ pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
-pub(super) use without_inference_preparation::WithoutInferencePreparation;
 
 pub fn enabled() -> bool {
     std::env::var("GOOSE_STATE_MACHINE")

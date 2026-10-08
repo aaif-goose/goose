@@ -1806,15 +1806,6 @@ impl Agent {
                     )
                 }
                 ProviderBackend::Acp(provider) => {
-                    operations = operations
-                        .into_iter()
-                        .map(|operation| {
-                            Arc::new(crate::agents::state_machine::WithoutInferencePreparation(
-                                operation,
-                            ))
-                                as Arc<dyn Operation<Session, GooseEffect>>
-                        })
-                        .collect();
                     Arc::new(crate::agents::state_machine::AcpInferenceRunner::new(
                         provider,
                         model_config,
