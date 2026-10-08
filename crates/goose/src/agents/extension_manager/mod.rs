@@ -24,7 +24,7 @@ use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
-use crate::agents::provider_manager::ProviderManager;
+use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
@@ -727,18 +727,16 @@ impl ExtensionManager {
     }
 
     async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
-        // Providers that run their own tool loop are handed the session's
-        // MCP servers directly, so goose does not start them too.
-        let manages_own_context = match &session.provider_name {
-            Some(name) => crate::providers::get_from_registry(name)
+        let provider_runs_tool_loop = match provider_name_for(session) {
+            Ok(name) => crate::providers::get_from_registry(&name)
                 .await
-                .is_ok_and(|entry| entry.manages_own_context()),
-            None => false,
+                .is_ok_and(|entry| entry.runs_own_tool_loop()),
+            Err(_) => false,
         };
         let extensions = selection(session)
             .into_iter()
             .filter(|config| {
-                !(manages_own_context
+                !(provider_runs_tool_loop
                     && matches!(
                         config,
                         ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
@@ -1718,6 +1716,12 @@ mod tests {
                 crate::session::SessionType::Hidden,
                 crate::config::GooseMode::default(),
             )
+            .await
+            .unwrap();
+        session_manager
+            .update(&session.id)
+            .provider_name("openai")
+            .apply()
             .await
             .unwrap();
         session_manager

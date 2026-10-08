@@ -34,7 +34,7 @@ pub struct ProviderEntry {
     tls_config: Option<TlsConfig>,
     toolshim: bool,
     session_bound: bool,
-    manages_own_context: bool,
+    runs_own_tool_loop: bool,
 }
 
 impl ProviderEntry {
@@ -50,8 +50,8 @@ impl ProviderEntry {
         self.session_bound
     }
 
-    pub fn manages_own_context(&self) -> bool {
-        self.manages_own_context
+    pub fn runs_own_tool_loop(&self) -> bool {
+        self.runs_own_tool_loop
     }
 
     pub fn supports_inventory_refresh(&self) -> bool {
@@ -165,7 +165,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
                 session_bound: F::SESSION_BOUND,
-                manages_own_context: F::MANAGES_OWN_CONTEXT,
+                runs_own_tool_loop: F::RUNS_OWN_TOOL_LOOP,
             },
         );
     }
@@ -332,7 +332,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,
                 session_bound: false,
-                manages_own_context: false,
+                runs_own_tool_loop: false,
             },
         );
     }
