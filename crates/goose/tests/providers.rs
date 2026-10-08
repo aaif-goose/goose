@@ -268,7 +268,7 @@ impl ProviderFixture {
                 std::env::current_dir()?,
                 "provider_test".to_string(),
                 SessionType::User,
-                GooseMode::default(),
+                mode,
             )
             .await?;
         let session_id = session.id;

@@ -809,7 +809,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
         let mut hints = SubdirectoryHintTracker::new();
-        for message in conversation.messages() {
+        for message in conversation
+            .messages()
+            .iter()
+            .filter(|message| message.is_agent_visible())
+        {
             for content in &message.content {
                 if let MessageContent::ToolRequest(request) = content {
                     if let Ok(tool_call) = &request.tool_call {
