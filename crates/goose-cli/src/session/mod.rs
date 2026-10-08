@@ -1082,11 +1082,15 @@ impl CliSession {
     }
 
     async fn handle_clear(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
-        if provider.manages_own_context() {
+        let backend = self.agent.backend(&self.session_id).await?;
+        let manages_own_context = match &backend {
+            ProviderBackend::Standard(provider) => provider.manages_own_context(),
+            ProviderBackend::Acp(_) => true,
+        };
+        if manages_own_context {
             output::render_error(&context_management_unsupported_message(
                 "clear",
-                provider.get_name(),
+                backend.name(),
             ));
             return Ok(());
         }
@@ -1129,11 +1133,15 @@ impl CliSession {
     }
 
     async fn handle_new(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
-        if provider.manages_own_context() {
+        let backend = self.agent.backend(&self.session_id).await?;
+        let manages_own_context = match &backend {
+            ProviderBackend::Standard(provider) => provider.manages_own_context(),
+            ProviderBackend::Acp(_) => true,
+        };
+        if manages_own_context {
             output::render_error(&format!(
                 "Starting a new session is not supported for provider '{}' because it manages its own conversation context.",
-                provider.get_name()
+                backend.name()
             ));
             return Ok(());
         }
@@ -1279,11 +1287,15 @@ impl CliSession {
     }
 
     async fn handle_compact(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
-        if provider.manages_own_context() {
+        let backend = self.agent.backend(&self.session_id).await?;
+        let manages_own_context = match &backend {
+            ProviderBackend::Standard(provider) => provider.manages_own_context(),
+            ProviderBackend::Acp(_) => true,
+        };
+        if manages_own_context {
             output::render_error(&context_management_unsupported_message(
                 "compact",
-                provider.get_name(),
+                backend.name(),
             ));
             return Ok(());
         }
@@ -1925,13 +1937,13 @@ impl CliSession {
 
     /// Display enhanced context usage with session totals
     pub async fn display_context_usage(&self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let backend = self.agent.backend(&self.session_id).await?;
         let model_config = self
             .agent
             .model_config_for_session(&self.session_id)
             .await?;
         let context_limit =
-            goose::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+            goose::context_limit::get_backend_context_limit(&backend, &model_config.model_name)
                 .await?;
 
         let config = Config::global();
@@ -3245,7 +3257,7 @@ mod tests {
             goose::agents::GoosePlatform::GooseCli,
         ));
         agent
-            .update_provider(
+            .update_standard_provider(
                 Arc::new(StubProvider),
                 goose_providers::model::ModelConfig::new("stub-model"),
                 &session.id,

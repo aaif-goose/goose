@@ -291,21 +291,14 @@ pub async fn create_backend_with_default_model(
         .await
 }
 
-/// Transitional compatibility API. Prefer `create_backend`.
-pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
-    Ok(create_backend(name, extensions)
-        .await?
-        .into_legacy_provider())
-}
-
-/// Transitional compatibility API. Prefer `create_backend_with_default_model`.
-pub async fn create_with_default_model(
-    name: impl AsRef<str>,
+pub async fn create_standard(
+    name: &str,
     extensions: Vec<ExtensionConfig>,
 ) -> Result<Arc<dyn Provider>> {
-    Ok(create_backend_with_default_model(name, extensions)
+    get_from_registry(name)
         .await?
-        .into_legacy_provider())
+        .create_standard(extensions)
+        .await
 }
 
 pub async fn cleanup_provider(name: &str) -> Result<()> {
@@ -475,7 +468,7 @@ mod tests {
             .await
             .expect("custom_inf entry should exist");
         let provider = inf_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_inf provider should be created");
         assert_eq!(provider.get_context_limit("kimi-k2.5", None).await, 256_000);
@@ -484,7 +477,7 @@ mod tests {
             .await
             .expect("custom_zero entry should exist");
         let zero_provider = zero_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_zero provider should be created");
         assert_eq!(
@@ -511,7 +504,7 @@ mod tests {
             .await
             .expect("openai provider should be registered");
         let openai_provider = openai
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("openai provider should be created");
         assert_eq!(
@@ -550,7 +543,7 @@ mod tests {
             .await
             .expect("custom_inf entry should exist");
         let inf_provider = inf_entry
-            .create(vec![])
+            .create_standard(vec![])
             .await
             .expect("custom_inf provider should be created");
         assert_eq!(

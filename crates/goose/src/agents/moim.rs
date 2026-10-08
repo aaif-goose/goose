@@ -52,11 +52,11 @@ pub(super) async fn compute_compaction_info(
             match extension_manager
                 .get_context()
                 .providers
-                .provider_for(session)
+                .backend_for(session)
                 .await
             {
-                Ok(provider) => crate::context_limit::get_context_limit(
-                    provider.as_ref(),
+                Ok(backend) => crate::context_limit::get_backend_context_limit(
+                    &backend,
                     &model_config.model_name,
                 )
                 .await
@@ -102,11 +102,11 @@ pub async fn turn_context_message(
             match extension_manager
                 .get_context()
                 .providers
-                .provider_for(session)
+                .backend_for(session)
                 .await
             {
-                Ok(provider) => crate::context_limit::get_context_limit(
-                    provider.as_ref(),
+                Ok(backend) => crate::context_limit::get_backend_context_limit(
+                    &backend,
                     &model_config.model_name,
                 )
                 .await

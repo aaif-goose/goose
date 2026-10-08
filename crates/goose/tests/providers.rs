@@ -14,7 +14,7 @@ use goose::providers::base::Provider;
 use goose::providers::bedrock::BEDROCK_DEFAULT_MODEL;
 use goose::providers::claude_code::CLAUDE_CODE_DEFAULT_MODEL;
 use goose::providers::codex::CODEX_DEFAULT_MODEL;
-use goose::providers::create;
+use goose::providers::create_standard;
 use goose::providers::google::GOOGLE_DEFAULT_MODEL;
 use goose::providers::litellm::LITELLM_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
@@ -241,7 +241,7 @@ impl ProviderFixture {
             available_tools: vec![],
         };
 
-        let provider = create(
+        let provider = create_standard(
             &config.name.to_lowercase(),
             vec![mcp_extension.clone(), developer_extension.clone()],
         )
@@ -275,7 +275,7 @@ impl ProviderFixture {
         let session_id = session.id;
         expected_session_id.set(&session_id);
         agent
-            .update_provider(provider.clone(), model_config.clone(), &session_id)
+            .update_standard_provider(provider.clone(), model_config.clone(), &session_id)
             .await?;
         agent
             .add_extension(mcp_extension, &session_id)

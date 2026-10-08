@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 
 use crate::context_mgmt::compact_messages;
 use crate::conversation::message::Message;
+use crate::providers::ProviderBackend;
 use crate::recipe::Recipe;
 use crate::session::GoalState;
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
@@ -184,13 +185,18 @@ impl Agent {
     }
 
     async fn handle_compact_command(&self, session_id: &str) -> Result<Option<Message>> {
-        let provider = self.provider(session_id).await?;
-        if provider.manages_own_context() {
-            return Err(anyhow!(context_management_unsupported_message(
-                "compact",
-                provider.get_name()
-            )));
-        }
+        let backend = self.backend(session_id).await?;
+        let provider = match &backend {
+            ProviderBackend::Standard(provider) if !provider.manages_own_context() => {
+                provider.clone()
+            }
+            _ => {
+                return Err(anyhow!(context_management_unsupported_message(
+                    "compact",
+                    backend.name()
+                )))
+            }
+        };
 
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, true).await?;
@@ -226,13 +232,16 @@ impl Agent {
     async fn handle_clear_command(&self, session_id: &str) -> Result<Option<Message>> {
         use crate::conversation::Conversation;
 
-        let provider = self.provider(session_id).await?;
-        if provider.manages_own_context() {
-            return Err(anyhow!(context_management_unsupported_message(
-                "clear",
-                provider.get_name()
-            )));
-        }
+        let backend = self.backend(session_id).await?;
+        match &backend {
+            ProviderBackend::Standard(provider) if !provider.manages_own_context() => (),
+            _ => {
+                return Err(anyhow!(context_management_unsupported_message(
+                    "clear",
+                    backend.name()
+                )))
+            }
+        };
 
         let manager = self.config.session_manager.clone();
         manager
@@ -265,10 +274,10 @@ impl Agent {
     }
 
     async fn handle_status_command(&self, session_id: &str) -> Result<Option<Message>> {
-        let provider = self.provider(session_id).await?;
+        let backend = self.backend(session_id).await?;
         let model_config = self.model_config_for_session(session_id).await?;
         let context_limit =
-            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+            crate::context_limit::get_backend_context_limit(&backend, &model_config.model_name)
                 .await?;
 
         let goose_mode = self.goose_mode().await;
@@ -310,7 +319,7 @@ impl Agent {
              - Tokens (lifetime): {}\n\
              - Context: {} / {} tokens ({})",
             model_config.model_name,
-            provider.get_name(),
+            backend.name(),
             goose_mode,
             lifetime_tokens,
             context_tokens,

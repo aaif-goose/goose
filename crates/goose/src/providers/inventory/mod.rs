@@ -6,7 +6,7 @@ pub use resolver::{
     InventoryRegistration, InventoryResolvers,
 };
 
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
+use super::base::{ConfigKey, ModelInfo, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
@@ -600,10 +600,10 @@ impl ProviderInventoryService {
         }
     }
 
-    pub(crate) async fn refresh_with_provider(
+    pub(crate) async fn refresh_with_backend(
         &self,
         provider_name: &str,
-        provider: &Arc<dyn Provider>,
+        backend: &crate::providers::ProviderBackend,
         inventory: &mut ProviderInventoryEntry,
         context: &str,
     ) {
@@ -630,10 +630,17 @@ impl ProviderInventoryService {
                             .await
                         {
                             Ok(()) => {
-                                match AssertUnwindSafe(provider.fetch_recommended_models(toolshim))
-                                    .catch_unwind()
-                                    .await
-                                {
+                                let fetch_models = async {
+                                    match backend {
+                                        crate::providers::ProviderBackend::Standard(provider) => {
+                                            provider.fetch_recommended_models(toolshim).await
+                                        }
+                                        crate::providers::ProviderBackend::Acp(provider) => {
+                                            provider.fetch_supported_models().await
+                                        }
+                                    }
+                                };
+                                match AssertUnwindSafe(fetch_models).catch_unwind().await {
                                     Ok(Ok(models)) => Ok(models),
                                     Ok(Err(error)) => Err(anyhow::anyhow!(error.to_string())),
                                     Err(_) => Err(anyhow::anyhow!(

@@ -3,6 +3,7 @@ use console::style;
 use goose::config::paths::Paths;
 use goose::config::Config;
 use goose::conversation::message::Message;
+use goose::providers::ProviderBackend;
 use goose::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
 use goose_providers::errors::ProviderError;
 use serde_yaml;
@@ -76,7 +77,8 @@ async fn check_provider(
     let model_config = goose::model_config::model_config_from_user_config(&provider, &model)
         .map_err(|e| ProviderCheckError::InvalidModel(e.to_string()))?;
 
-    let provider_client = goose::providers::create(&provider, Vec::new())
+    let start = std::time::Instant::now();
+    let backend = goose::providers::create_backend(&provider, Vec::new())
         .await
         .map_err(|e| {
             let error = e.to_string();
@@ -86,14 +88,18 @@ async fn check_provider(
             }
         })?;
 
-    let test_msg = Message::user().with_text("Say 'ok'");
-    let start = std::time::Instant::now();
-    goose::session_context::with_session_id(
-        Some("check".to_string()),
-        provider_client.complete(&model_config, "", &[test_msg], &[]),
-    )
-    .await
-    .map_err(ProviderCheckError::ProviderRequest)?;
+    match backend {
+        ProviderBackend::Standard(provider_client) => {
+            let test_msg = Message::user().with_text("Say 'ok'");
+            goose::session_context::with_session_id(
+                Some("check".to_string()),
+                provider_client.complete(&model_config, "", &[test_msg], &[]),
+            )
+            .await
+            .map_err(ProviderCheckError::ProviderRequest)?;
+        }
+        ProviderBackend::Acp(_) => {}
+    }
 
     Ok(ProviderCheckSuccess {
         provider,

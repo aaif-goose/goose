@@ -31,6 +31,7 @@ use crate::conversation::Conversation;
 use crate::execution::manager::{AgentManager, AgentManagerGetResult, RuntimeContext};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
+#[cfg(test)]
 use crate::providers::base::Provider;
 use crate::providers::inventory::{
     ProviderInventoryEntry, ProviderInventoryService, RefreshJobPlan, RefreshPlan,
@@ -195,13 +196,13 @@ fn thinking_effort_error(error: anyhow::Error) -> agent_client_protocol::Error {
 }
 
 async fn resume_saved_provider_session(
-    provider: &Arc<dyn Provider>,
+    provider: &ProviderBackend,
     conversation: Option<&Conversation>,
 ) {
     let Some(conversation) = conversation else {
         return;
     };
-    let provider_name = provider.get_name();
+    let provider_name = provider.name();
     let Some(session_id) =
         crate::agents::latest_provider_session_id(conversation.messages(), provider_name)
     else {
@@ -887,11 +888,11 @@ impl GooseAcpAgent {
             let provider_name = session.provider_name.clone();
             let agent = self.get_session_agent(session_id).await?;
             let provider = agent
-                .provider(session_id)
+                .backend(session_id)
                 .await
                 .internal_err_ctx("Failed to resolve session provider")?;
             let context_limit =
-                crate::context_limit::get_context_limit(provider.as_ref(), &model_name)
+                crate::context_limit::get_backend_context_limit(&provider, &model_name)
                     .await
                     .internal_err_ctx("Failed to resolve context limit")?;
             let session = self
@@ -900,15 +901,15 @@ impl GooseAcpAgent {
                 .await
                 .internal_err_ctx("Failed to refresh session for setup notifications")?;
             let current_provider = agent
-                .provider(session_id)
+                .backend(session_id)
                 .await
                 .internal_err_ctx("Failed to refresh session provider")?;
             let refreshed_model_name = session
                 .model_config
                 .as_ref()
                 .map(|model| model.model_name.as_str());
-            if provider_name.as_deref() != Some(provider.get_name())
-                || !Arc::ptr_eq(&provider, &current_provider)
+            if provider_name.as_deref() != Some(provider.name())
+                || !provider.same_instance(&current_provider)
                 || session.provider_name != provider_name
                 || refreshed_model_name != Some(model_name.as_str())
             {
@@ -1028,7 +1029,7 @@ impl GooseAcpAgent {
             if !should_refresh_inventory_for_session_init(&inventory) {
                 return;
             }
-            let provider = match agent.provider(&session_id).await {
+            let provider = match agent.backend(&session_id).await {
                 Ok(provider) => provider,
                 Err(error) => {
                     warn!(
@@ -1041,7 +1042,7 @@ impl GooseAcpAgent {
                 }
             };
             inventory_service
-                .refresh_with_provider(&provider_name, &provider, &mut inventory, "session init")
+                .refresh_with_backend(&provider_name, &provider, &mut inventory, "session init")
                 .await;
         });
     }
@@ -1234,7 +1235,7 @@ impl GooseAcpAgent {
     }
 
     async fn subscribe_thinking_effort_updates(&self, session_id: &str, agent: &Arc<Agent>) {
-        let Ok(provider) = agent.provider(session_id).await else {
+        let Ok(provider) = agent.backend(session_id).await else {
             return;
         };
         let Some(mut updates) = provider.subscribe_thinking_effort_support() else {
@@ -2017,10 +2018,10 @@ impl GooseAcpAgent {
         session_id: &str,
         agent: &Arc<Agent>,
     ) -> Result<(), agent_client_protocol::Error> {
-        let Ok(provider) = agent.provider(session_id).await else {
+        let Ok(provider) = agent.backend(session_id).await else {
             return Ok(());
         };
-        if provider.get_name() != "local" {
+        if provider.name() != "local" {
             return Ok(());
         }
 
@@ -2053,13 +2054,13 @@ impl GooseAcpAgent {
         agent: &Arc<Agent>,
     ) -> Result<usize, agent_client_protocol::Error> {
         let provider = agent
-            .provider(&session.id)
+            .backend(&session.id)
             .await
             .internal_err_ctx("Failed to resolve session provider")?;
         let model = session.model_config.as_ref().ok_or_else(|| {
             agent_client_protocol::Error::internal_error().data("Session has no model")
         })?;
-        crate::context_limit::get_context_limit(provider.as_ref(), &model.model_name)
+        crate::context_limit::get_backend_context_limit(&provider, &model.model_name)
             .await
             .internal_err_ctx("Failed to resolve context limit")
     }
@@ -2424,10 +2425,10 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         let agent = self.get_session_agent(session_id).await?;
         let current_provider = agent
-            .provider(session_id)
+            .backend(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
-        let provider_name = current_provider.get_name().to_string();
+        let provider_name = current_provider.name().to_string();
         let current_model_config = agent
             .model_config_for_session(session_id)
             .await
@@ -2459,10 +2460,10 @@ impl GooseAcpAgent {
             .internal_err()?;
         let agent = self.get_session_agent(&session_id.0).await?;
         let provider = agent
-            .provider(&session_id.0)
+            .backend(&session_id.0)
             .await
             .internal_err_ctx("Failed to get provider")?;
-        let provider_name = provider.get_name().to_string();
+        let provider_name = provider.name().to_string();
         let current_model_config = agent
             .model_config_for_session(&session_id.0)
             .await
@@ -3806,7 +3807,7 @@ print(\"hello, world\")
         )));
         let provider = Arc::new(AsyncEffortProvider::new());
         session_agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
                     HashMap::from([("thinking_effort".to_string(), serde_json::json!("xhigh"))]),

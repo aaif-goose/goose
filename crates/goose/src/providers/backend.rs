@@ -17,19 +17,35 @@ pub enum ProviderBackend {
 }
 
 impl ProviderBackend {
-    /// Temporary bridge for consumers not yet migrated to typed backend dispatch.
-    /// ACP remains typed in storage; only the returned handle loses that identity.
-    pub fn into_legacy_provider(self) -> Arc<dyn Provider> {
-        match self {
-            Self::Standard(provider) => provider,
-            Self::Acp(provider) => provider,
-        }
-    }
-
     pub fn name(&self) -> &str {
         match self {
             Self::Standard(provider) => provider.get_name(),
             Self::Acp(provider) => provider.name(),
+        }
+    }
+
+    pub fn same_instance(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Standard(left), Self::Standard(right)) => Arc::ptr_eq(left, right),
+            (Self::Acp(left), Self::Acp(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
+    }
+
+    pub fn thinking_effort_support(&self) -> goose_providers::thinking::ThinkingEffortSupport {
+        match self {
+            Self::Standard(provider) => provider.thinking_effort_support(),
+            Self::Acp(provider) => provider.thinking_effort_support(),
+        }
+    }
+
+    pub fn subscribe_thinking_effort_support(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<goose_providers::thinking::ThinkingEffortSupport>>
+    {
+        match self {
+            Self::Standard(provider) => provider.subscribe_thinking_effort_support(),
+            Self::Acp(provider) => Some(provider.subscribe_thinking_effort_support()),
         }
     }
 

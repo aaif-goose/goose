@@ -22,9 +22,13 @@ pub struct ProviderManager {
 }
 
 impl ProviderManager {
-    /// Temporary bridge for agent-loop consumers awaiting typed backend dispatch.
-    pub async fn provider_for(&self, session: &Session) -> Result<Arc<dyn Provider>> {
-        Ok(self.backend_for(session).await?.into_legacy_provider())
+    pub async fn standard_provider_for(&self, session: &Session) -> Result<Arc<dyn Provider>> {
+        match self.backend_for(session).await? {
+            ProviderBackend::Standard(provider) => Ok(provider),
+            ProviderBackend::Acp(_) => {
+                anyhow::bail!("ACP backends do not provide completion inference")
+            }
+        }
     }
 
     pub async fn backend_for(&self, session: &Session) -> Result<ProviderBackend> {
@@ -61,8 +65,7 @@ impl ProviderManager {
         Ok(provider)
     }
 
-    /// Transitional injection for standard backends. Use `set_backend` for ACP.
-    pub async fn set_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
+    pub async fn set_standard_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
         self.set_backend(session_id, ProviderBackend::Standard(provider))
             .await;
     }
@@ -156,6 +159,13 @@ mod tests {
         assert!(
             matches!(manager.backend_for(&second_session).await.unwrap(), ProviderBackend::Acp(provider) if Arc::ptr_eq(&provider, &second))
         );
+        assert!(manager
+            .standard_provider_for(&first_session)
+            .await
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("do not provide completion inference"));
         assert!(manager.shared.lock().await.is_empty());
 
         manager.release(&first_session.id);
@@ -170,7 +180,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn typed_injection_retains_acp_and_legacy_injection_is_standard() {
+    async fn typed_injection_keeps_standard_and_acp_distinct() {
         let manager = ProviderManager::default();
         let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
         manager
@@ -180,12 +190,13 @@ mod tests {
         assert!(
             matches!(slot.lock().await.as_ref(), Some(ProviderBackend::Acp(provider)) if Arc::ptr_eq(provider, &acp))
         );
-        let standard: Arc<dyn Provider> =
-            Arc::new(crate::providers::testprovider::TestProvider::new_recording(
-                acp,
-                "unused-recording.json",
-            ));
-        manager.set_provider("session", standard.clone()).await;
+        let standard: Arc<dyn Provider> = Arc::new(
+            crate::providers::testprovider::TestProvider::new_replaying("unused-recording.json")
+                .unwrap(),
+        );
+        manager
+            .set_standard_provider("session", standard.clone())
+            .await;
         assert!(
             matches!(slot.lock().await.as_ref(), Some(ProviderBackend::Standard(provider)) if Arc::ptr_eq(provider, &standard))
         );

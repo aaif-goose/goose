@@ -230,7 +230,7 @@ pub struct PlatformExtensionContext {
 }
 
 impl PlatformExtensionContext {
-    pub async fn provider_for_session(
+    pub async fn standard_provider_for_session(
         &self,
         session_id: &str,
     ) -> Result<std::sync::Arc<dyn crate::providers::base::Provider>, String> {
@@ -240,7 +240,7 @@ impl PlatformExtensionContext {
             .await
             .map_err(|e| e.to_string())?;
         self.providers
-            .provider_for(&session)
+            .standard_provider_for(&session)
             .await
             .map_err(|e| e.to_string())
     }

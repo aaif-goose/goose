@@ -307,7 +307,10 @@ impl AppsManagerClient {
         session_id: &str,
         prd: &str,
     ) -> Result<CreateAppContentResponse, String> {
-        let provider = self.context.provider_for_session(session_id).await?;
+        let provider = self
+            .context
+            .standard_provider_for_session(session_id)
+            .await?;
 
         let existing_apps = self.list_stored_apps().unwrap_or_default();
         let existing_names = existing_apps.join(", ");
@@ -358,7 +361,10 @@ impl AppsManagerClient {
         existing_prd: &str,
         feedback: &str,
     ) -> Result<UpdateAppContentResponse, String> {
-        let provider = self.context.provider_for_session(session_id).await?;
+        let provider = self
+            .context
+            .standard_provider_for_session(session_id)
+            .await?;
 
         let context: HashMap<&str, &str> = HashMap::new();
         let system_prompt = render_template("apps_iterate.md", &context)

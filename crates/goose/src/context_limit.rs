@@ -9,6 +9,20 @@ pub async fn get_context_limit(provider: &dyn Provider, model: &str) -> Result<u
     Ok(provider.get_context_limit(model, override_limit).await)
 }
 
+pub async fn get_backend_context_limit(
+    backend: &crate::providers::ProviderBackend,
+    model: &str,
+) -> Result<usize> {
+    match backend {
+        crate::providers::ProviderBackend::Standard(provider) => {
+            get_context_limit(provider.as_ref(), model).await
+        }
+        crate::providers::ProviderBackend::Acp(provider) => Ok(provider
+            .get_context_limit(model, Config::global().get_goose_context_limit()?)
+            .await),
+    }
+}
+
 pub fn get_local_context_limit(provider_name: &str, model: &str) -> Result<usize> {
     let override_limit = Config::global().get_goose_context_limit()?;
     let mut configured_limits = Vec::new();

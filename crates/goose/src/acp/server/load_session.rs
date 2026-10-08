@@ -416,7 +416,7 @@ impl GooseAcpAgent {
         self.register_acp_session(session_id_str.clone(), agent.clone())
             .await;
         let provider = agent
-            .provider(&session.id)
+            .backend(&session.id)
             .await
             .internal_err_ctx("Failed to get provider while loading ACP session")?;
         resume_saved_provider_session(&provider, session.conversation.as_ref()).await;
@@ -554,7 +554,7 @@ mod tests {
             },
         )]);
 
-        let provider_dyn: Arc<dyn Provider> = provider.clone();
+        let provider_dyn = ProviderBackend::Standard(provider.clone());
         resume_saved_provider_session(&provider_dyn, Some(&conversation)).await;
 
         let ThinkingEffortSupport::Options(capability) = provider.thinking_effort_support() else {

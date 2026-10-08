@@ -57,7 +57,7 @@ impl GooseAcpAgent {
         self.register_acp_session(goose_session.id.clone(), agent.clone())
             .await;
         let provider = agent
-            .provider(&goose_session.id)
+            .backend(&goose_session.id)
             .await
             .internal_err_ctx("Failed to get provider while forking ACP session")?;
         resume_saved_provider_session(&provider, goose_session.conversation.as_ref()).await;

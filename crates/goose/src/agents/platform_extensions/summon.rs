@@ -1698,7 +1698,9 @@ mod tests {
         let result = {
             let _env =
                 env_lock::lock_env([("OPENAI_HOST", None), ("OPENAI_BASE_URL", Some("http://"))]);
-            assert!(providers::create("openai", Vec::new()).await.is_err());
+            assert!(providers::create_standard("openai", Vec::new())
+                .await
+                .is_err());
             client
                 .handle_delegate(
                     &parent.id,
@@ -1789,7 +1791,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            reloaded_agent.provider(&child.id).await.unwrap().get_name(),
+            reloaded_agent
+                .standard_provider(&child.id)
+                .await
+                .unwrap()
+                .get_name(),
             "openai"
         );
     }
@@ -2480,7 +2486,7 @@ You review code."#;
             ..Default::default()
         };
         providers
-            .set_provider(&session.id, Arc::clone(&parent_provider))
+            .set_standard_provider(&session.id, Arc::clone(&parent_provider))
             .await;
 
         let params = DelegateParams {
@@ -2529,23 +2535,22 @@ You review code."#;
         };
         assert!(providers::get_from_registry(acp.name()).await.is_err());
 
-        for backend in [
-            ProviderBackend::Acp(acp.clone()),
-            ProviderBackend::Standard(acp.clone()),
-        ] {
-            providers.set_backend(&session.id, backend).await;
-            assert!(client
-                .build_task_config(&params, &empty_recipe(), &session)
-                .await
-                .is_err());
-        }
+        providers
+            .set_backend(&session.id, ProviderBackend::Acp(acp))
+            .await;
+        assert!(client
+            .build_task_config(&params, &empty_recipe(), &session)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
     #[serial]
     async fn test_build_task_config_recreates_registered_parent_provider() {
         let temp_dir = TempDir::new().unwrap();
-        let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
+        let parent_provider = providers::create_standard("openai", Vec::new())
+            .await
+            .unwrap();
         let client = SummonClient::new(create_test_context()).unwrap();
         let session = crate::session::Session {
             provider_name: Some(parent_provider.get_name().to_string()),

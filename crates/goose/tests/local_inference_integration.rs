@@ -16,7 +16,7 @@
 use base64::prelude::*;
 use futures::StreamExt;
 use goose::conversation::message::Message;
-use goose::providers::create;
+use goose::providers::create_standard;
 use goose_providers::model::ModelConfig;
 
 const DEFAULT_TEST_MODEL: &str = "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M";
@@ -29,7 +29,7 @@ fn test_model() -> String {
 #[ignore]
 async fn test_local_inference_stream_produces_output() {
     let model_config = ModelConfig::new(test_model());
-    let provider = create("local", Vec::new())
+    let provider = create_standard("local", Vec::new())
         .await
         .expect("provider creation should succeed");
 
@@ -71,7 +71,7 @@ async fn test_local_inference_stream_produces_output() {
 #[ignore]
 async fn test_local_inference_large_prompt() {
     let model_config = ModelConfig::new(test_model()).with_max_tokens(Some(20));
-    let provider = create("local", Vec::new())
+    let provider = create_standard("local", Vec::new())
         .await
         .expect("provider creation should succeed");
 
@@ -136,7 +136,7 @@ async fn test_local_inference_vision_produces_output() {
     };
 
     let model_config = ModelConfig::new(&model_id);
-    let provider = create("local", Vec::new())
+    let provider = create_standard("local", Vec::new())
         .await
         .expect("provider creation should succeed");
 
@@ -181,7 +181,7 @@ async fn test_local_inference_vision_produces_output() {
 #[ignore]
 async fn test_local_inference_vision_text_only_model_graceful() {
     let model_config = ModelConfig::new(test_model());
-    let provider = create("local", Vec::new())
+    let provider = create_standard("local", Vec::new())
         .await
         .expect("provider creation should succeed");
 

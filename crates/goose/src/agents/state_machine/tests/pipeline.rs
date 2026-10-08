@@ -783,7 +783,9 @@ async fn build_test_pipeline(
             provider
         };
     let providers: Arc<crate::agents::provider_manager::ProviderManager> = Default::default();
-    providers.set_provider(&session.id, provider.clone()).await;
+    providers
+        .set_standard_provider(&session.id, provider.clone())
+        .await;
     let extension_manager = Arc::new(ExtensionManager::new(
         providers.clone(),
         session_manager.clone(),

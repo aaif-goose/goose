@@ -277,7 +277,7 @@ async fn context_owning_provider_rejects_clear_and_compact_without_changing_sess
     let usage_before = before.usage;
     let provider = Arc::new(MockCompactionProvider::context_owning());
     agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .update_standard_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
     for command in ["clear", "compact"] {
@@ -425,7 +425,7 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     // Setup mock provider
     let provider = Arc::new(MockCompactionProvider::new());
     agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .update_standard_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
     // Execute manual compaction
@@ -520,7 +520,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
     // Setup mock provider (no context limit enforcement)
     let provider = Arc::new(MockCompactionProvider::new());
     agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .update_standard_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
     // Trigger a reply
@@ -685,7 +685,7 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     // Initial context (6000 system + 15400 messages = 21400) exceeds this limit
     let provider = Arc::new(MockCompactionProvider::new());
     agent
-        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .update_standard_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
     // Try to send a message - should trigger context limit, then recover via compaction

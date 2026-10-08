@@ -41,23 +41,11 @@ impl Operation<Session, GooseEffect> for StatusOperation {
         if command.command != "status" {
             return not_applicable();
         }
-        let context_limit = match &self.backend {
-            ProviderBackend::Standard(provider) => {
-                crate::context_limit::get_context_limit(
-                    provider.as_ref(),
-                    &self.model_config.model_name,
-                )
-                .await?
-            }
-            ProviderBackend::Acp(provider) => {
-                provider
-                    .get_context_limit(
-                        &self.model_config.model_name,
-                        crate::config::Config::global().get_goose_context_limit()?,
-                    )
-                    .await
-            }
-        };
+        let context_limit = crate::context_limit::get_backend_context_limit(
+            &self.backend,
+            &self.model_config.model_name,
+        )
+        .await?;
         let context_tokens = session.usage.total_tokens.unwrap_or(0);
         let lifetime_tokens = session.accumulated_usage.total_tokens.unwrap_or(0);
         let context_pct = if context_limit > 0 {

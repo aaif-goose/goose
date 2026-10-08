@@ -3,7 +3,7 @@ use futures::StreamExt;
 use goose::agents::{Agent, AgentEvent, ExtensionConfig, SessionConfig};
 use goose::config::{GooseMode, DEFAULT_EXTENSION_DESCRIPTION, DEFAULT_EXTENSION_TIMEOUT};
 use goose::conversation::message::Message;
-use goose::providers::create;
+use goose::providers::create_standard;
 use goose::session::session_manager::SessionType;
 use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 async fn main() -> anyhow::Result<()> {
     let _ = dotenv();
 
-    let provider = create("databricks", Vec::new()).await?;
+    let provider = create_standard("databricks", Vec::new()).await?;
     let model_config =
         goose::model_config::model_config_from_user_config("databricks", DATABRICKS_DEFAULT_MODEL)?;
 
@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     agent
-        .update_provider(provider, model_config, &session.id)
+        .update_standard_provider(provider, model_config, &session.id)
         .await?;
 
     let config = ExtensionConfig::stdio(

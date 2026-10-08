@@ -121,7 +121,11 @@ impl McpClientTrait for SummarizeClient {
             )]));
         }
 
-        let provider = match self.context.provider_for_session(&ctx.session_id).await {
+        let provider = match self
+            .context
+            .standard_provider_for_session(&ctx.session_id)
+            .await
+        {
             Ok(p) => p,
             Err(e) => {
                 return Ok(CallToolResult::error(vec![ContentBlock::text(format!(

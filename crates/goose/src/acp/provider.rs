@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
@@ -38,7 +38,7 @@ use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
-use crate::providers::base::{MessageStream, PermissionRouting, Provider};
+use crate::providers::base::MessageStream;
 use crate::subprocess::configure_subprocess;
 use crate::token_counter::create_token_counter;
 use crate::utils::sanitize_unicode_tags;
@@ -1228,81 +1228,6 @@ fn fresh_text_run() -> (String, i64) {
         uuid::Uuid::new_v4().to_string(),
         chrono::Utc::now().timestamp(),
     )
-}
-
-#[async_trait::async_trait]
-impl Provider for AcpProvider {
-    fn get_name(&self) -> &str {
-        self.name()
-    }
-
-    fn provider_session_id(&self) -> Option<String> {
-        Some(self.session_id())
-    }
-
-    async fn resume(&self, session_id: &str) -> Result<(), ProviderError> {
-        AcpProvider::resume(self, session_id).await
-    }
-
-    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
-        AcpProvider::get_context_limit(self, model, override_limit).await
-    }
-
-    async fn update_mode(&self, _session_id: &str, mode: GooseMode) -> Result<(), ProviderError> {
-        AcpProvider::update_mode(self, mode).await
-    }
-
-    fn thinking_effort_support(&self) -> ThinkingEffortSupport {
-        AcpProvider::thinking_effort_support(self)
-    }
-
-    fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
-        Some(AcpProvider::subscribe_thinking_effort_support(self))
-    }
-
-    async fn set_thinking_effort(
-        &self,
-        _session_id: &str,
-        value: &str,
-    ) -> Result<bool, ProviderError> {
-        AcpProvider::set_thinking_effort(self, value)
-            .await
-            .map(|()| true)
-    }
-
-    async fn apply_model_selection(&self, model_config: &ModelConfig) -> Result<(), ProviderError> {
-        AcpProvider::apply_model_selection(self, model_config).await
-    }
-
-    fn permission_routing(&self) -> PermissionRouting {
-        PermissionRouting::ActionRequired
-    }
-
-    fn manages_own_context(&self) -> bool {
-        true
-    }
-
-    async fn handle_permission_confirmation(
-        &self,
-        request_id: &str,
-        confirmation: &PermissionConfirmation,
-    ) -> bool {
-        AcpProvider::handle_permission_confirmation(self, request_id, confirmation).await
-    }
-
-    async fn stream(
-        &self,
-        model_config: &ModelConfig,
-        _system: &str,
-        messages: &[Message],
-        _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
-        self.prompt_messages(model_config, messages).await
-    }
-
-    async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        AcpProvider::fetch_supported_models(self).await
-    }
 }
 
 impl Drop for AcpProvider {
@@ -2987,7 +2912,7 @@ mod tests {
             Message::user().with_content(current),
         ];
 
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
 
         assert!(stream.next().await.is_none());
         assert!(rx.try_recv().is_err());
@@ -3003,7 +2928,7 @@ mod tests {
         *provider.goose_mode.lock().unwrap() = GooseMode::Chat;
 
         let messages = vec![Message::user().with_text("inspect src/lib.rs")];
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
 
         let response_tx = match rx.recv().await.expect("expected ACP prompt request") {
             ClientRequest::Prompt { response_tx, .. } => response_tx,
@@ -3146,10 +3071,7 @@ mod tests {
         assert_eq!(session_id.to_string(), "test-session");
 
         let provider = handle.await.unwrap();
-        assert_eq!(
-            provider.provider_session_id().as_deref(),
-            Some("saved-session")
-        );
+        assert_eq!(provider.session_id(), "saved-session");
 
         let messages = vec![
             Message::assistant().with_text("prior answer"),
@@ -3158,64 +3080,6 @@ mod tests {
         let claim = provider.claim_handoff_context(&messages);
         assert!(!claim.first_prompt);
         assert!(!claim.include_context);
-    }
-
-    #[tokio::test]
-    async fn protocol_apis_and_provider_delegates_agree() {
-        use futures::StreamExt;
-
-        let (provider, model) = test_provider();
-        assert_eq!(provider.session_id(), "test-session");
-        assert_eq!(
-            Provider::provider_session_id(&provider),
-            Some(provider.session_id())
-        );
-        provider.resume("test-session").await.unwrap();
-        Provider::resume(&provider, "test-session").await.unwrap();
-        assert_eq!(
-            provider
-                .get_context_limit(&model.model_name, Some(1234))
-                .await,
-            Provider::get_context_limit(&provider, &model.model_name, Some(1234)).await
-        );
-        assert_eq!(
-            *provider.subscribe_thinking_effort_support().borrow(),
-            *Provider::subscribe_thinking_effort_support(&provider)
-                .unwrap()
-                .borrow()
-        );
-        let confirmation = PermissionConfirmation {
-            principal_type: PrincipalType::Tool,
-            permission: Permission::Cancel,
-        };
-        for via_trait in [false, true] {
-            let (tx, rx) = oneshot::channel();
-            provider
-                .pending_confirmations
-                .lock()
-                .unwrap()
-                .insert("request".into(), tx);
-            let handled = if via_trait {
-                Provider::handle_permission_confirmation(&provider, "request", &confirmation).await
-            } else {
-                provider
-                    .handle_permission_confirmation("request", &confirmation)
-                    .await
-            };
-            assert!(handled);
-            assert_eq!(rx.await.unwrap().permission, Permission::Cancel);
-        }
-        assert!(
-            !provider
-                .handle_permission_confirmation("missing", &confirmation)
-                .await
-        );
-        let mut protocol_stream = provider.prompt_messages(&model, &[]).await.unwrap();
-        let mut trait_stream = Provider::stream(&provider, &model, "ignored", &[], &[])
-            .await
-            .unwrap();
-        assert!(protocol_stream.next().await.is_none());
-        assert!(trait_stream.next().await.is_none());
     }
 
     #[tokio::test]
@@ -3290,14 +3154,14 @@ mod tests {
             }
         });
 
-        let mut first_stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut first_stream = provider.prompt_messages(&model, &messages).await.unwrap();
         let first = first_stream.next().await;
         assert!(
             matches!(first, Some(Err(ProviderError::RequestFailed(_)))),
             "expected streamed error, got {first:?}"
         );
 
-        let mut next_stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut next_stream = provider.prompt_messages(&model, &messages).await.unwrap();
         let next_content = next_content_rx.await.unwrap();
         assert_eq!(
             next_content.len(),
@@ -3327,7 +3191,7 @@ mod tests {
             }
         });
 
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
         assert!(stream.next().await.is_none());
         server.await.unwrap();
 
@@ -3353,7 +3217,7 @@ mod tests {
             }
         });
 
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
         assert!(stream.next().await.is_none());
         server.await.unwrap();
 
@@ -3379,7 +3243,7 @@ mod tests {
             }
         });
 
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
         assert!(stream.next().await.is_none());
         server.await.unwrap();
 
@@ -3396,7 +3260,7 @@ mod tests {
             Message::user().with_text("current request"),
         ];
 
-        let stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let stream = provider.prompt_messages(&model, &messages).await.unwrap();
         let request = rx.recv().await;
         assert!(matches!(request, Some(ClientRequest::Prompt { .. })));
         drop(stream);
@@ -3412,7 +3276,7 @@ mod tests {
         let (provider, model) = test_provider_with_tx(Some(tx));
         let messages = vec![Message::user().with_text("current request")];
 
-        let result = provider.stream(&model, "", &messages, &[]).await;
+        let result = provider.prompt_messages(&model, &messages).await;
 
         assert!(matches!(result, Err(ProviderError::RequestFailed(_))));
         let next_claim = provider.claim_handoff_context(&messages);
@@ -3430,7 +3294,7 @@ mod tests {
             Message::user().with_text("current request"),
         ];
 
-        let result = provider.stream(&model, "", &messages, &[]).await;
+        let result = provider.prompt_messages(&model, &messages).await;
 
         assert!(matches!(result, Err(ProviderError::RequestFailed(_))));
         let next_claim = provider.claim_handoff_context(&messages);
@@ -3463,7 +3327,7 @@ mod tests {
         ];
 
         let handle = tokio::spawn(async move {
-            let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+            let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
             let mut results = Vec::new();
             while let Some(item) = stream.next().await {
                 results.push(item);
@@ -3504,7 +3368,7 @@ mod tests {
         ];
 
         let handle = tokio::spawn(async move {
-            let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+            let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
             let mut results = Vec::new();
             while let Some(item) = stream.next().await {
                 results.push(item);
@@ -3542,7 +3406,7 @@ mod tests {
         ];
 
         let handle = tokio::spawn(async move {
-            let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+            let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
             let mut results = Vec::new();
             while let Some(item) = stream.next().await {
                 results.push(item);
@@ -3597,7 +3461,7 @@ mod tests {
             content
         });
 
-        let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
         assert!(stream.next().await.is_none());
         let content = server.await.unwrap();
         assert_eq!(content.len(), 1, "no memo fit beside the prompt");
@@ -3620,7 +3484,7 @@ mod tests {
         ];
 
         let handle = tokio::spawn(async move {
-            let mut stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+            let mut stream = provider.prompt_messages(&model, &messages).await.unwrap();
             let mut results = Vec::new();
             while let Some(item) = stream.next().await {
                 results.push(item);
@@ -3690,32 +3554,6 @@ mod tests {
             provider.fetch_supported_models().await.unwrap(),
             ["sonnet", "haiku"]
         );
-        assert_eq!(
-            Provider::fetch_supported_models(&provider).await.unwrap(),
-            ["sonnet", "haiku"]
-        );
-    }
-
-    #[tokio::test]
-    async fn legacy_session_controls_delegate_to_acp_apis() {
-        let (provider, model) = test_provider();
-        assert_eq!(Provider::get_name(&provider), provider.name());
-        Provider::apply_model_selection(&provider, &model)
-            .await
-            .unwrap();
-        Provider::update_mode(&provider, "local-goose-session", GooseMode::Chat)
-            .await
-            .unwrap();
-        assert_eq!(*provider.goose_mode.lock().unwrap(), GooseMode::Chat);
-        assert!(
-            Provider::set_thinking_effort(&provider, "local-goose-session", "off")
-                .await
-                .unwrap()
-        );
-        assert!(matches!(
-            Provider::set_thinking_effort(&provider, "local-goose-session", "high").await,
-            Err(ProviderError::InvalidValue(_))
-        ));
     }
 
     #[tokio::test]

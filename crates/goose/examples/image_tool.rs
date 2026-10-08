@@ -3,7 +3,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use dotenvy::dotenv;
 use goose::conversation::message::Message;
 use goose::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
-use goose::providers::create;
+use goose::providers::create_standard;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
 use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use rmcp::model::{CallToolRequestParams, ContentBlock, Tool};
@@ -22,18 +22,18 @@ async fn main() -> Result<()> {
         goose_providers::model::ModelConfig,
     )> = vec![
         (
-            create("databricks", Vec::new()).await?,
+            create_standard("databricks", Vec::new()).await?,
             goose::model_config::model_config_from_user_config(
                 "databricks",
                 DATABRICKS_DEFAULT_MODEL,
             )?,
         ),
         (
-            create("openai", Vec::new()).await?,
+            create_standard("openai", Vec::new()).await?,
             goose::model_config::model_config_from_user_config("openai", OPEN_AI_DEFAULT_MODEL)?,
         ),
         (
-            create("anthropic", Vec::new()).await?,
+            create_standard("anthropic", Vec::new()).await?,
             goose::model_config::model_config_from_user_config(
                 "anthropic",
                 ANTHROPIC_DEFAULT_MODEL,

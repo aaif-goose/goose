@@ -914,15 +914,16 @@ impl Agent {
         {
             Ok(v) => v,
             Err(_) => {
-                let context_limit = match self.config.providers.provider_for(&session).await {
-                    Ok(provider) => crate::context_limit::get_context_limit(
-                        provider.as_ref(),
-                        &model_config.model_name,
-                    )
-                    .await
-                    .unwrap_or(goose_providers::model::DEFAULT_CONTEXT_LIMIT),
-                    Err(_) => goose_providers::model::DEFAULT_CONTEXT_LIMIT,
-                };
+                let context_limit =
+                    match self.config.providers.standard_provider_for(&session).await {
+                        Ok(provider) => crate::context_limit::get_context_limit(
+                            provider.as_ref(),
+                            &model_config.model_name,
+                        )
+                        .await
+                        .unwrap_or(goose_providers::model::DEFAULT_CONTEXT_LIMIT),
+                        Err(_) => goose_providers::model::DEFAULT_CONTEXT_LIMIT,
+                    };
                 let compaction_threshold = Config::global()
                     .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
                     .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD);
@@ -1009,9 +1010,13 @@ impl Agent {
         }
     }
 
-    /// Transitional access for consumers awaiting typed backend dispatch.
-    pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
-        Ok(self.backend(session_id).await?.into_legacy_provider())
+    pub async fn standard_provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        self.config.providers.standard_provider_for(&session).await
     }
 
     pub async fn backend(&self, session_id: &str) -> Result<ProviderBackend> {
@@ -2087,20 +2092,9 @@ impl Agent {
         let backend = self.backend(&session_id).await?;
         let model_config = self.effective_model_config_for_session(&session_id).await?;
 
-        let context_limit = match &backend {
-            ProviderBackend::Standard(provider) => {
-                crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
-                    .await?
-            }
-            ProviderBackend::Acp(provider) => {
-                provider
-                    .get_context_limit(
-                        &model_config.model_name,
-                        Config::global().get_goose_context_limit()?,
-                    )
-                    .await
-            }
-        };
+        let context_limit =
+            crate::context_limit::get_backend_context_limit(&backend, &model_config.model_name)
+                .await?;
         let steer_queue = self.steer_queue(&session_id).await;
         let machine = self
             .create_state_machine(
@@ -3744,10 +3738,8 @@ impl Agent {
         Ok(inner)
     }
 
-    /// Pins `provider` to the session instead of letting the provider manager
-    /// build one.
-    /// Transitional injection for standard backends. Use `update_backend` for ACP.
-    pub async fn update_provider(
+    /// Pins a standard completion provider to the session.
+    pub async fn update_standard_provider(
         &self,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
@@ -4475,7 +4467,7 @@ mod tests {
             .unwrap();
         let provider = Arc::new(SessionContextProvider::default());
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
@@ -5330,7 +5322,7 @@ mod tests {
         let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(ActionRequiredProvider::new());
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("test-model"),
                 &session.id,
@@ -5479,7 +5471,7 @@ mod tests {
         let (agent, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
@@ -5652,11 +5644,11 @@ mod tests {
         .unwrap();
         crate::providers::refresh_custom_providers().await.unwrap();
 
-        let provider = crate::providers::create(&config.name, Vec::new())
+        let provider = crate::providers::create_standard(&config.name, Vec::new())
             .await
             .unwrap();
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("test-model"),
                 &session.id,
@@ -5723,7 +5715,7 @@ mod tests {
             );
 
         agent
-            .update_provider(provider, model_config, &session.id)
+            .update_standard_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
@@ -5746,7 +5738,7 @@ mod tests {
             );
 
         agent
-            .update_provider(provider, model_config, &session.id)
+            .update_standard_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
@@ -5778,7 +5770,11 @@ mod tests {
         );
         // The unregistered test provider was not respawned.
         assert_eq!(
-            agent.provider(&session_id).await.unwrap().get_name(),
+            agent
+                .standard_provider(&session_id)
+                .await
+                .unwrap()
+                .get_name(),
             "test-effort"
         );
     }
@@ -6231,7 +6227,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             )
             .await?;
         agent
-            .update_provider(
+            .update_standard_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,

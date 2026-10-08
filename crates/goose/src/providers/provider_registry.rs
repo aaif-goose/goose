@@ -38,6 +38,7 @@ pub struct ProviderEntry {
     tls_config: Option<TlsConfig>,
     toolshim: bool,
     session_bound: bool,
+    acp: bool,
 }
 
 impl ProviderEntry {
@@ -47,6 +48,10 @@ impl ProviderEntry {
 
     pub fn provider_type(&self) -> ProviderType {
         self.provider_type
+    }
+
+    pub fn is_acp(&self) -> bool {
+        self.acp
     }
 
     pub fn session_bound(&self) -> bool {
@@ -76,35 +81,19 @@ impl ProviderEntry {
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
 
-    /// Transitional compatibility API. Prefer `create_backend_with_default_model`.
-    pub async fn create_with_default_model(
+    pub async fn create_standard(
         &self,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
-        Ok(self
-            .create_backend_with_default_model(extensions)
-            .await?
-            .into_legacy_provider())
-    }
-
-    /// Transitional compatibility API. Prefer `create_backend`.
-    pub async fn create(&self, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
-        Ok(self
-            .create_backend(extensions)
-            .await?
-            .into_legacy_provider())
-    }
-
-    /// Transitional compatibility API. Prefer `create_backend_with_working_dir`.
-    pub async fn create_with_working_dir(
-        &self,
-        extensions: Vec<ExtensionConfig>,
-        working_dir: PathBuf,
-    ) -> Result<Arc<dyn Provider>> {
-        Ok(self
-            .create_backend_with_working_dir(extensions, working_dir)
-            .await?
-            .into_legacy_provider())
+        if self.acp {
+            anyhow::bail!("ACP backends do not provide completion inference");
+        }
+        match self.create_backend(extensions).await? {
+            ProviderBackend::Standard(provider) => Ok(provider),
+            ProviderBackend::Acp(_) => {
+                anyhow::bail!("ACP backends do not provide completion inference")
+            }
+        }
     }
 
     pub async fn create_backend_with_default_model(
@@ -194,6 +183,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
                 session_bound: false,
+                acp: false,
             },
         );
     }
@@ -231,6 +221,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
                 session_bound: true,
+                acp: false,
             },
         );
     }
@@ -276,6 +267,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: false,
                 session_bound: true,
+                acp: true,
             },
         );
     }
@@ -442,6 +434,7 @@ impl ProviderRegistry {
                 tls_config: self.tls_config.clone(),
                 toolshim: config.toolshim,
                 session_bound: false,
+                acp: false,
             },
         );
     }
@@ -458,18 +451,6 @@ impl ProviderRegistry {
     {
         setup(&mut self);
         self
-    }
-
-    /// Transitional compatibility API. Prefer `create_backend`.
-    pub async fn create(
-        &self,
-        name: &str,
-        extensions: Vec<ExtensionConfig>,
-    ) -> Result<Arc<dyn Provider>> {
-        Ok(self
-            .create_backend(name, extensions)
-            .await?
-            .into_legacy_provider())
     }
 
     pub async fn create_backend(
@@ -582,7 +563,7 @@ mod tests {
             assert_eq!(entry.session_bound(), session_bound);
             assert_eq!(
                 entry
-                    .create(test_extensions())
+                    .create_backend(test_extensions())
                     .await
                     .err()
                     .unwrap()
@@ -591,7 +572,10 @@ mod tests {
             );
             assert_eq!(
                 entry
-                    .create_with_working_dir(test_extensions(), PathBuf::from("test-workspace"))
+                    .create_backend_with_working_dir(
+                        test_extensions(),
+                        PathBuf::from("test-workspace")
+                    )
                     .await
                     .err()
                     .unwrap()
@@ -600,7 +584,7 @@ mod tests {
             );
             assert_eq!(
                 entry
-                    .create_with_default_model(test_extensions())
+                    .create_backend_with_default_model(test_extensions())
                     .await
                     .err()
                     .unwrap()
@@ -681,6 +665,13 @@ mod tests {
             ),
         );
         let entry = &registry.entries["test-acp"];
+        assert!(entry
+            .create_standard(vec![])
+            .await
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("do not provide completion inference"));
         assert_eq!(entry.metadata().name, "test-acp");
         assert!(entry.session_bound());
         assert_eq!(entry.provider_type(), ProviderType::Preferred);
@@ -691,12 +682,17 @@ mod tests {
             "test-family"
         );
         assert_eq!(
-            entry.create(vec![]).await.err().unwrap().to_string(),
+            entry
+                .create_backend(vec![])
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
             "from_env"
         );
         assert_eq!(
             entry
-                .create_with_working_dir(vec![], PathBuf::from("test-workspace"))
+                .create_backend_with_working_dir(vec![], PathBuf::from("test-workspace"))
                 .await
                 .err()
                 .unwrap()
@@ -705,7 +701,7 @@ mod tests {
         );
         assert_eq!(
             entry
-                .create_with_default_model(vec![])
+                .create_backend_with_default_model(vec![])
                 .await
                 .err()
                 .unwrap()
@@ -745,10 +741,8 @@ mod tests {
     }
 
     fn standard_stub() -> crate::providers::testprovider::TestProvider {
-        crate::providers::testprovider::TestProvider::new_recording(
-            Arc::new(crate::acp::AcpProvider::new_test_stub()),
-            "unused-recording.json",
-        )
+        crate::providers::testprovider::TestProvider::new_replaying("unused-recording.json")
+            .unwrap()
     }
 
     impl ProviderDef for StubStandardDef {
@@ -821,7 +815,10 @@ mod tests {
                 .unwrap(),
             ProviderBackend::Acp(_)
         ));
-        assert_eq!(entry.create(vec![]).await.unwrap().get_name(), "acp-test");
+        assert_eq!(
+            entry.create_backend(vec![]).await.unwrap().name(),
+            "acp-test"
+        );
     }
 
     fn test_config() -> DeclarativeProviderConfig {
