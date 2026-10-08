@@ -48,7 +48,12 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         "steer"
     }
 
-    async fn cancel(&self, _emit: &Emitter) -> Vec<GooseEffect> {
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<GooseEffect> {
         self.take_drained()
     }
 

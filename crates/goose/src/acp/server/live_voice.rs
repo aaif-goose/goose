@@ -360,9 +360,6 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            agent.cancel_foreground_subagents(&session_id).await;
-        }
         self.clear_active_run(&session_id, &run_id).await;
         let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
         if cancel_token.is_cancelled() {

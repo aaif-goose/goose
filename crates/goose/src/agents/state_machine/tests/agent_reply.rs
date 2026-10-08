@@ -22,7 +22,7 @@ use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
-use crate::config::permission::PermissionManager;
+use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
@@ -493,6 +493,190 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         1
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn stop_at_a_confirmation_cancels_a_delegated_subagent() -> Result<()> {
+    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("GOOSE_STATE_MACHINE", Some("1")),
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    agent
+        .config
+        .permission_manager
+        .update_user_permission("delegate", PermissionLevel::AlwaysAllow);
+    agent
+        .add_extension(
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+            &session_id,
+        )
+        .await?;
+    let agent = Arc::new(agent);
+    api.on("research and add").calls([
+        (
+            "call_delegate",
+            "delegate",
+            json!({ "instructions": "Research the cache" }),
+        ),
+        ("call_add", ADD, value(1)),
+    ]);
+
+    let cancel = CancellationToken::new();
+    let session_config = SessionConfig {
+        id: session_id.clone(),
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("research and add"),
+            session_config,
+            true,
+            Some(cancel.clone()),
+        )
+        .await?;
+    loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if !confirmation_ids(std::slice::from_ref(&message)).is_empty() {
+                break;
+            }
+        }
+    }
+    let session_manager = &agent.config.session_manager;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !session_manager
+            .get_session(&session_id, true)
+            .await?
+            .conversation
+            .expect("session conversation")
+            .messages()
+            .iter()
+            .any(|message| message.get_tool_response_ids().contains("call_delegate"))
+        {
+            let _ = tokio::time::timeout(Duration::from_millis(10), stream.next()).await;
+        }
+        anyhow::Ok(())
+    })
+    .await??;
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
+
+    let subagent_id = session_manager
+        .list_sessions_by_types(&[SessionType::SubAgent])
+        .await?
+        .pop()
+        .expect("delegate created a subagent")
+        .id;
+    let session = session_manager.get_session(&session_id, true).await?;
+    let messages = session.conversation.expect("session conversation");
+    let add_response = messages
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_response)
+        .find(|response| response.id == "call_add")
+        .expect("the waiting call is answered");
+    assert_eq!(
+        add_response.tool_result.as_ref().unwrap().content[0]
+            .as_text()
+            .unwrap()
+            .text,
+        "Tool call was interrupted before completing"
+    );
+    let last = messages.messages().last().unwrap();
+    assert!(!last.is_user_visible());
+    assert_eq!(
+        last.as_concat_text(),
+        format!("Subagent {subagent_id} was cancelled before it finished and will not run again.")
+    );
+    assert_eq!(calculator.total(), 0);
+    assert_eq!(api.call_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancel_at_a_confirmation_answers_the_call_once() -> Result<()> {
+    let _guard = env_lock::lock_env([("GOOSE_STATE_MACHINE", Some("1"))]);
+    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let agent = Arc::new(agent);
+    api.on("add one").call(ADD, value(1));
+
+    let cancel = CancellationToken::new();
+    let session_config = SessionConfig {
+        id: session_id.clone(),
+        schedule_id: None,
+        max_turns: Some(2),
+        retry_config: None,
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            session_config,
+            true,
+            Some(cancel.clone()),
+        )
+        .await?;
+    let confirmation_id = loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if let Some(id) = confirmation_ids(std::slice::from_ref(&message)).pop() {
+                break id;
+            }
+        }
+    };
+    agent
+        .submit_tool_confirmation(&session_id, &confirmation_id, Permission::Cancel)
+        .await?;
+    cancel.cancel();
+    let emitted = tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
+
+    let messages = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?
+        .conversation
+        .expect("session conversation");
+    let responses: Vec<_> = messages
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_response)
+        .filter(|response| response.id == confirmation_id)
+        .collect();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].tool_result.as_ref().unwrap().content[0]
+            .as_text()
+            .unwrap()
+            .text,
+        "Tool call was interrupted before completing"
+    );
+    assert!(emitted.iter().any(|message| message
+        .get_tool_response_ids()
+        .contains(confirmation_id.as_str())));
+    assert_eq!(calculator.total(), 0);
+    assert_eq!(api.call_count(), 1);
     Ok(())
 }
 

@@ -90,12 +90,15 @@ enum Behavior {
     NotApplicable,
     HangAfterStop,
     ReturnAfterStop,
+    FailAfterStop,
+    WatchStop,
 }
 
 struct Recorder {
     name: &'static str,
     behavior: Behavior,
     execution_dropped: Arc<Mutex<bool>>,
+    saw_stop: Mutex<bool>,
     cancel_calls: Mutex<usize>,
 }
 
@@ -105,6 +108,7 @@ impl Recorder {
             name,
             behavior,
             execution_dropped: Arc::new(Mutex::new(false)),
+            saw_stop: Mutex::new(false),
             cancel_calls: Mutex::new(0),
         })
     }
@@ -133,20 +137,34 @@ impl Operation<Session> for Recorder {
                 emit.cancel_token().cancel();
                 applied([Message::assistant().with_text("returned").into()])
             }
+            Behavior::FailAfterStop => {
+                emit.cancel_token().cancel();
+                Err(anyhow::anyhow!("stopped"))
+            }
+            Behavior::WatchStop => {
+                emit.cancelled().await;
+                *self.saw_stop.lock().unwrap() = true;
+                std::future::pending().await
+            }
         }
     }
 
-    async fn cancel(&self, _emit: &Emitter) -> Vec<ConversationEffect> {
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<ConversationEffect> {
         if self.behavior == Behavior::HangAfterStop {
             assert!(*self.execution_dropped.lock().unwrap());
         }
         *self.cancel_calls.lock().unwrap() += 1;
-        vec![Message::user().with_text(self.name).into()]
+        vec![Message::assistant().with_text(self.name).into()]
     }
 }
 
 #[tokio::test]
-async fn stop_drops_the_running_step_then_collects_every_operation_once() -> Result<()> {
+async fn stop_saves_the_interrupted_step_then_unanswered_calls_then_the_rest() -> Result<()> {
     let before = Recorder::new("before", Behavior::NotApplicable);
     let active = Recorder::new("active", Behavior::HangAfterStop);
     let after = Recorder::new("after", Behavior::NotApplicable);
@@ -161,7 +179,11 @@ async fn stop_drops_the_running_step_then_collects_every_operation_once() -> Res
     );
     let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
-    let runtime = Runtime::new([Message::user().with_text("kickoff")]);
+    let runtime = Runtime::new([
+        Message::user().with_text("kickoff"),
+        Message::assistant()
+            .with_tool_request("unanswered", Ok(CallToolRequestParams::new("tool"))),
+    ]);
 
     let session = tokio::time::timeout(
         Duration::from_secs(5),
@@ -169,7 +191,11 @@ async fn stop_drops_the_running_step_then_collects_every_operation_once() -> Res
     )
     .await??;
 
-    assert_eq!(texts(&session), ["kickoff", "before", "active", "after"]);
+    assert_eq!(
+        texts(&session),
+        ["kickoff", "", "active", "", "before", "after"]
+    );
+    assert!(interrupted(&session.0.messages()[3].content[0]));
     for operation in [&before, &active, &after] {
         assert_eq!(*operation.cancel_calls.lock().unwrap(), 1);
     }
@@ -177,18 +203,46 @@ async fn stop_drops_the_running_step_then_collects_every_operation_once() -> Res
 }
 
 #[tokio::test]
-async fn a_result_returned_before_stop_is_saved_once() -> Result<()> {
-    let active = Recorder::new("active", Behavior::ReturnAfterStop);
+async fn what_a_step_returns_after_stop_is_kept_or_dropped() -> Result<()> {
+    for (behavior, expected) in [
+        (
+            Behavior::ReturnAfterStop,
+            &["kickoff", "returned", "active"][..],
+        ),
+        (Behavior::FailAfterStop, &["kickoff", "active"][..]),
+    ] {
+        let active = Recorder::new("active", behavior);
+        let cancel = CancellationToken::new();
+        let machine = StateMachine::new(vec![Step::Operation(active.clone())], cancel.clone());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let emit = Emitter::new(tx, cancel);
+        let runtime = Runtime::new([Message::user().with_text("kickoff")]);
+
+        let session = machine.run(&runtime, "session", &emit).await?;
+
+        assert_eq!(texts(&session), expected);
+        assert_eq!(*active.cancel_calls.lock().unwrap(), 1);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_running_step_sees_stop_before_it_is_dropped() -> Result<()> {
+    let watcher = Recorder::new("watcher", Behavior::WatchStop);
     let cancel = CancellationToken::new();
-    let machine = StateMachine::new(vec![Step::Operation(active.clone())], cancel.clone());
+    let machine = StateMachine::new(vec![Step::Operation(watcher.clone())], cancel.clone());
     let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, cancel);
+    let emit = Emitter::new(tx, cancel.clone());
     let runtime = Runtime::new([Message::user().with_text("kickoff")]);
+    let run = machine.run(&runtime, "session", &emit);
+    tokio::pin!(run);
 
-    let session = machine.run(&runtime, "session", &emit).await?;
+    assert!(futures::poll!(run.as_mut()).is_pending());
+    cancel.cancel();
+    let session = tokio::time::timeout(Duration::from_secs(5), run).await??;
 
-    assert_eq!(texts(&session), ["kickoff", "returned", "active"]);
-    assert_eq!(*active.cancel_calls.lock().unwrap(), 1);
+    assert!(*watcher.saw_stop.lock().unwrap());
+    assert_eq!(texts(&session), ["kickoff", "watcher"]);
     Ok(())
 }
 
@@ -337,7 +391,10 @@ async fn stop_saves_completed_results_then_answers_each_unanswered_request_once(
     assert!(messages[3].content.iter().all(interrupted));
     let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, CancellationToken::new());
-    assert!(Operation::<Session>::cancel(operation.as_ref(), &emit)
-        .await
-        .is_empty());
+    let session = Session(Conversation::new_unvalidated(messages));
+    assert!(
+        Operation::<Session>::cancel(operation.as_ref(), &session, &session.0, &emit)
+            .await
+            .is_empty()
+    );
 }

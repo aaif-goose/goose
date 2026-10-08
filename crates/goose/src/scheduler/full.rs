@@ -990,7 +990,6 @@ async fn execute_job(
     let mut stream = std::pin::pin!(stream);
 
     let mut stream_error = false;
-    let mut failed_before_stop = false;
     while let Some(message_result) = stream.next().await {
         tokio::task::yield_now().await;
 
@@ -1005,14 +1004,9 @@ async fn execute_job(
             Err(e) => {
                 tracing::error!("Error in agent stream: {}", e);
                 stream_error = true;
-                failed_before_stop = !cancel_token.is_cancelled();
                 break;
             }
         }
-    }
-
-    if cancel_token.is_cancelled() && !failed_before_stop {
-        agent.cancel_foreground_subagents(&session.id).await;
     }
 
     {

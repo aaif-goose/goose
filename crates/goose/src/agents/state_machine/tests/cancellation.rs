@@ -20,17 +20,20 @@ use goose_providers::{
     model::ModelConfig,
 };
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
+use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use super::calculator_extension::{delayed_value, ADD};
 use super::hooks_lifecycle::{HookTestEnv, LOG_AND_ALLOW_SCRIPT};
 use super::test_pipeline;
 use crate::agents::state_machine::{
     Emitter, GooseEffect, Operation, StateMachine, Step, ToolPairCompactionOperation,
 };
 use crate::agents::AgentEvent;
+use crate::config::GooseMode;
 use crate::conversation::{message::Message, Conversation};
-use crate::session::Session;
+use crate::session::{Session, SessionType};
 
 struct InterruptedProvider {
     cancel: CancellationToken,
@@ -243,6 +246,136 @@ async fn stop_during_next_summary_saves_the_completed_pair_and_leaves_other_pair
             || message.get_tool_response_ids().contains("call-0");
         assert_eq!(message.is_agent_visible(), !first_pair);
     }
-    assert!(operation.cancel(&emit).await.is_empty());
+    assert!(operation
+        .cancel(&session, session.conversation.as_ref().unwrap(), &emit)
+        .await
+        .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn stop_beside_a_delegate_cancels_the_subagent_before_it_runs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    pipeline.add_extension("summon").await?;
+    api.on("Research and run the tests").calls([
+        (
+            "call_delegate",
+            "delegate",
+            json!({ "instructions": "Research the cache" }),
+        ),
+        ("call_tests", ADD, delayed_value(1, 5_000)),
+    ]);
+    let cancel = CancellationToken::new();
+    let stop_once_delegated = async {
+        let subagent_id = loop {
+            let subagents = pipeline
+                .session_manager
+                .list_sessions_by_types(&[SessionType::SubAgent])
+                .await
+                .unwrap();
+            if let Some(subagent) = subagents.first() {
+                let subagent = pipeline
+                    .session_manager
+                    .get_session(&subagent.id, true)
+                    .await
+                    .unwrap();
+                if subagent
+                    .conversation
+                    .is_some_and(|conversation| !conversation.is_empty())
+                {
+                    break subagent.id;
+                }
+            }
+            tokio::task::yield_now().await;
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        cancel.cancel();
+        subagent_id
+    };
+
+    let (result, subagent_id) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            pipeline.run_with_cancel("Research and run the tests", cancel.clone()),
+            stop_once_delegated
+        )
+    })
+    .await?;
+    let result = result?;
+
+    let last = result.conversation().messages().last().unwrap();
+    assert!(!last.is_user_visible());
+    assert_eq!(
+        last.as_concat_text(),
+        format!("Subagent {subagent_id} was cancelled before it finished and will not run again.")
+    );
+
+    api.on("next prompt").reply("done");
+    pipeline.run(["next prompt"]).await?;
+    assert_eq!(api.call_count(), 2);
+    let subagent = pipeline
+        .session_manager
+        .get_session(&subagent_id, true)
+        .await?;
+    assert_eq!(subagent.conversation.unwrap().len(), 1);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_kills_a_running_shell_command() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
+    pipeline.add_extension("developer").await?;
+    let pid_file = pipeline.working_dir().join("shell.pid");
+    api.on("run the tests").calls([(
+        "call_tests",
+        "shell",
+        json!({ "command": format!("echo $$ > {}; exec sleep 30", pid_file.display()) }),
+    )]);
+    let cancel = CancellationToken::new();
+    let stop_once_started = async {
+        let pid = loop {
+            if let Some(pid) = std::fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|pid| pid.trim().parse::<u32>().ok())
+            {
+                break pid;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        cancel.cancel();
+        pid
+    };
+
+    let (result, pid) = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            pipeline.run_with_cancel("run the tests", cancel.clone()),
+            stop_once_started
+        )
+    })
+    .await?;
+    result?;
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while process_is_alive(pid) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
     Ok(())
 }

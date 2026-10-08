@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -52,6 +55,7 @@ impl<S, E: MaybeSend> Step<'_, S, E> {
 pub struct StateMachine<'a, S, E = ConversationEffect> {
     steps: Vec<Step<'a, S, E>>,
     cancel: CancellationToken,
+    interrupted_step: Mutex<Option<usize>>,
 }
 
 fn interrupted_response(messages: &[Message]) -> Option<Message> {
@@ -99,7 +103,11 @@ where
     E: MachineEffect + From<Message> + MaybeSend + 'static,
 {
     pub fn new(steps: Vec<Step<'a, S, E>>, cancel: CancellationToken) -> Self {
-        Self { steps, cancel }
+        Self {
+            steps,
+            cancel,
+            interrupted_step: Mutex::new(None),
+        }
     }
 
     pub async fn step(&self, session: &S, emit: &Emitter) -> Result<Option<StepResult<E>>> {
@@ -107,7 +115,7 @@ where
             .conversation()
             .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
 
-        for step in &self.steps {
+        for (index, step) in self.steps.iter().enumerate() {
             let name = step.operation().name();
             if self.cancel.is_cancelled() {
                 return Ok(None);
@@ -142,8 +150,19 @@ where
             };
             let result = tokio::select! {
                 biased;
-                _ = self.cancel.cancelled() => return Ok(None),
-                result = execution => result?,
+                result = execution => Some(result),
+                _ = self.cancel.cancelled() => None,
+            };
+            let result = match result {
+                Some(Ok(result)) => result,
+                Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
+                _ => {
+                    *self
+                        .interrupted_step
+                        .lock()
+                        .expect("interrupted step lock poisoned") = Some(index);
+                    return Ok(None);
+                }
             };
 
             match result {
@@ -203,32 +222,77 @@ where
     where
         R: SessionLoader<S> + EffectHandler<S, E>,
     {
-        let session = runtime.load(session_id).await?;
+        let mut session = runtime.load(session_id).await?;
         if !self.cancel.is_cancelled() {
             return Ok(session);
         }
 
-        let mut effects = Vec::new();
-        for step in &self.steps {
-            effects.extend(step.operation().cancel(emit).await);
+        let interrupted_step = self
+            .interrupted_step
+            .lock()
+            .expect("interrupted step lock poisoned")
+            .take();
+        if let Some(index) = interrupted_step {
+            session = self
+                .collect_cancelled(runtime, session_id, session, &self.steps[index], emit)
+                .await?;
         }
-        let mut result = StepResult {
-            effects,
-            applied_step: None,
-            yield_to_client: true,
-        };
-        self.apply(runtime, &session, &mut result, emit).await?;
-        let session = runtime.load(session_id).await?;
 
         let unanswered = session
             .conversation()
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
             .and_then(interrupted_response);
-        let Some(response) = unanswered else {
+        if let Some(response) = unanswered {
+            let effects = vec![E::from(emit.message(response).await)];
+            session = self
+                .save(runtime, session_id, session, effects, emit)
+                .await?;
+        }
+
+        for (index, step) in self.steps.iter().enumerate() {
+            if Some(index) != interrupted_step {
+                session = self
+                    .collect_cancelled(runtime, session_id, session, step, emit)
+                    .await?;
+            }
+        }
+        Ok(session)
+    }
+
+    async fn collect_cancelled<R>(
+        &self,
+        runtime: &R,
+        session_id: &str,
+        session: S,
+        step: &Step<'a, S, E>,
+        emit: &Emitter,
+    ) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        let conversation = session
+            .conversation()
+            .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
+        let effects = step.operation().cancel(&session, conversation, emit).await;
+        self.save(runtime, session_id, session, effects, emit).await
+    }
+
+    async fn save<R>(
+        &self,
+        runtime: &R,
+        session_id: &str,
+        session: S,
+        effects: Vec<E>,
+        emit: &Emitter,
+    ) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        if effects.is_empty() {
             return Ok(session);
-        };
+        }
         let mut result = StepResult {
-            effects: vec![E::from(emit.message(response).await)],
+            effects,
             applied_step: None,
             yield_to_client: true,
         };

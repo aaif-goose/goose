@@ -35,13 +35,13 @@ use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, BangShellOperation,
-    CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation, MAX_TURNS_MESSAGE,
+    persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
+    DoctorOperation, Emitter, ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
+    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnknownToolOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::types::{
@@ -1874,29 +1874,6 @@ impl Agent {
             .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
     }
 
-    pub async fn cancel_foreground_subagents(&self, session_id: &str) {
-        if let Err(error) = self.record_cancelled_subagents(session_id).await {
-            error!(
-                session_id,
-                ?error,
-                "Failed to record cancelled foreground subagents"
-            );
-        }
-    }
-
-    async fn record_cancelled_subagents(&self, session_id: &str) -> Result<()> {
-        let session_manager = &self.config.session_manager;
-        let session = session_manager.get_session(session_id, true).await?;
-        let Some(message) = session
-            .conversation
-            .as_ref()
-            .and_then(|conversation| subagent_cancelled_message(conversation.messages()))
-        else {
-            return Ok(());
-        };
-        session_manager.add_message(session_id, &message).await
-    }
-
     async fn resume_state_machine_turn_inner(
         self: &Arc<Self>,
         session_config: SessionConfig,
@@ -2004,11 +1981,15 @@ impl Agent {
                     }
                 }
 
-                let has_state_machine_answer = turn_guard
+                let resume = match turn_guard
                     .state()
                     .wait_for_all_confirmation_answers(&cancel)
-                    .await?;
-                if !has_state_machine_answer {
+                    .await
+                {
+                    Err(_) if cancel.is_cancelled() => true,
+                    answer => answer?,
+                };
+                if !resume {
                     turn_guard.state().clear_confirmations();
                     return;
                 }

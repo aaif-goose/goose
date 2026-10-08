@@ -331,11 +331,7 @@ async fn execution_recovers_from_timeout_cancellation_and_filtered_output() -> R
     let (result, ()) = tokio::join!(run, cancel_after_result);
     let result = result?;
     result.assert_message(-2, ToolResponse, "result: 1");
-    result.assert_message(
-        -1,
-        ToolResponse,
-        "Tool call was interrupted before completing",
-    );
+    result.assert_message(-1, ToolResponse, "calculator call cancelled");
     assert_eq!(pipeline.calculator_total(), 1);
 
     api.on("continue after cancellation").call(ADD, value(1));

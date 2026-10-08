@@ -141,6 +141,7 @@ pub(crate) async fn from_foreground_subagent_session(
 pub(crate) enum SubagentOutcome {
     Completed(String),
     Failed(String),
+    Cancelled,
 }
 
 pub(crate) enum SubagentStart {
@@ -217,7 +218,8 @@ impl ForegroundSubagentRunner {
     }
 
     async fn run(self, subagent: Session, cancel: CancellationToken) -> SubagentOutcome {
-        let run_result = self.run_to_end(&subagent, cancel).await;
+        let run_result = self.run_to_end(&subagent, cancel.clone()).await;
+        let stopped = cancel.is_cancelled();
         let subagent = match self.session_manager.get_session(&subagent.id, true).await {
             Ok(subagent) => subagent,
             Err(error) => return SubagentOutcome::Failed(error.to_string()),
@@ -227,6 +229,9 @@ impl ForegroundSubagentRunner {
             messages.and_then(|messages| FinalOutputTool::successful_output(messages))
         {
             return SubagentOutcome::Completed(output);
+        }
+        if stopped {
+            return SubagentOutcome::Cancelled;
         }
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());

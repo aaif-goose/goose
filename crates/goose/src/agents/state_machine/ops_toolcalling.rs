@@ -821,7 +821,12 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation<'_> {
         "tool_execution"
     }
 
-    async fn cancel(&self, emit: &Emitter) -> Vec<GooseEffect> {
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
         let (actions, response) = self.take_batch();
         if let Some(response) = &response {
             emit.emit(AgentEvent::Message(response.user_visible_content()))

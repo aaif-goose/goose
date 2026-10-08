@@ -108,7 +108,12 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         "recipe"
     }
 
-    async fn cancel(&self, emit: &Emitter) -> Vec<GooseEffect> {
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
         match self.take_response() {
             Some(response) => vec![emit.message(response).await.into()],
             None => Vec::new(),

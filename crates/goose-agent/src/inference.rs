@@ -359,7 +359,7 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
         "llm"
     }
 
-    async fn cancel(&self, _emit: &Emitter) -> Vec<E> {
+    async fn cancel(&self, _session: &S, _conversation: &Conversation, _emit: &Emitter) -> Vec<E> {
         self.take_output()
     }
 }

@@ -303,7 +303,7 @@ where
         "tools"
     }
 
-    async fn cancel(&self, emit: &Emitter) -> Vec<E> {
+    async fn cancel(&self, _session: &S, _conversation: &Conversation, emit: &Emitter) -> Vec<E> {
         let response = self
             .response
             .lock()
