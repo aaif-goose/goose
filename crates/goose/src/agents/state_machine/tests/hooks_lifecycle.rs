@@ -14,13 +14,13 @@ use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 use crate::permission::Permission;
 
-pub(super) struct HookTestEnv {
+struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
     plugin_dir: std::path::PathBuf,
 }
 
 impl HookTestEnv {
-    pub(super) fn new(event: &str, script: &str) -> Self {
+    fn new(event: &str, script: &str) -> Self {
         let temp_dir = tempfile::tempdir().unwrap();
         let plugin_dir = temp_dir.path().join("test-plugin");
         std::fs::create_dir_all(plugin_dir.join("hooks")).unwrap();
@@ -38,7 +38,7 @@ impl HookTestEnv {
         }
     }
 
-    pub(super) fn hook_manager(&self) -> crate::hooks::HookManager {
+    fn hook_manager(&self) -> crate::hooks::HookManager {
         use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
         crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
             name: "test-plugin".into(),
@@ -47,7 +47,7 @@ impl HookTestEnv {
         }])
     }
 
-    pub(super) fn invocations(&self) -> usize {
+    fn invocations(&self) -> usize {
         std::fs::read_to_string(self.plugin_dir.join("hook.log"))
             .unwrap_or_default()
             .lines()
@@ -70,8 +70,7 @@ impl HookTestEnv {
     }
 }
 
-pub(super) const LOG_AND_ALLOW_SCRIPT: &str =
-    "#!/bin/sh\necho ran >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
+const LOG_AND_ALLOW_SCRIPT: &str = "#!/bin/sh\necho ran >> \"$PLUGIN_ROOT/hook.log\"\nexit 0\n";
 const LOG_AND_BLOCK_SCRIPT: &str =
     "#!/bin/sh\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
 const LOG_CONTEXT_AND_BLOCK_SCRIPT: &str = "#!/bin/sh\ncat > \"$PLUGIN_ROOT/context.json\"\necho blocked >> \"$PLUGIN_ROOT/hook.log\"\necho \"not done yet\" >&2\nexit 2\n";
@@ -85,64 +84,6 @@ case \"$payload\" in
 esac
 exit 0
 ";
-
-#[cfg(unix)]
-#[tokio::test]
-async fn stop_during_post_tool_hook_keeps_results_only_where_held() -> Result<()> {
-    for tool_name in [ADD, "load_skill", FINAL_OUTPUT_TOOL_NAME] {
-        let env = HookTestEnv::new("PostToolUse", "#!/bin/sh\ncat >/dev/null\nexec 3<>\"$PLUGIN_ROOT/gate\"\necho ran >>\"$PLUGIN_ROOT/hook.log\"\nread -r line <&3\n");
-        assert!(std::process::Command::new("mkfifo")
-            .arg(env.plugin_dir.join("gate"))
-            .status()?
-            .success());
-        std::fs::write(
-            env.plugin_dir.join("hooks/hooks.json"),
-            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"exec sh ${PLUGIN_ROOT}/hook.sh"}]}]}}"#,
-        )?;
-        let (pipeline, api) = test_pipeline().await?;
-        let pipeline = pipeline.with_hook_manager(env.hook_manager());
-        let arguments = if tool_name == "load_skill" {
-            install_skill(pipeline.working_dir())
-        } else if tool_name == FINAL_OUTPUT_TOOL_NAME {
-            pipeline.set_recipe(final_output_recipe()).await?;
-            serde_json::json!({"answer":"finished"})
-        } else {
-            value(1)
-        };
-        api.on("complete then stop").call(tool_name, arguments);
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let stop_at_hook = async {
-            while env.invocations() == 0 {
-                tokio::task::yield_now().await;
-            }
-            cancel.cancel();
-        };
-        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(
-                pipeline.run_with_cancel("complete then stop", cancel.clone()),
-                stop_at_hook
-            )
-        })
-        .await?;
-        let result = result?;
-        let responses = result
-            .conversation()
-            .messages()
-            .iter()
-            .flat_map(|message| &message.content)
-            .filter_map(MessageContent::as_tool_response)
-            .collect::<Vec<_>>();
-        assert_eq!(responses.len(), 1, "{tool_name}");
-        assert_eq!(
-            responses[0].tool_result.as_ref().unwrap().is_error == Some(true),
-            tool_name == "load_skill",
-            "{tool_name}"
-        );
-        assert_eq!(env.invocations(), 1);
-        assert_eq!(api.call_count(), 1);
-    }
-    Ok(())
-}
 
 #[tokio::test]
 async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {

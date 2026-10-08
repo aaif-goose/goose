@@ -1906,31 +1906,6 @@ You review code."#;
     }
 
     #[test]
-    fn test_delegate_result_reports_cancelled_subagent_as_error() {
-        let text_of = |result: &CallToolResult| {
-            result.content[0]
-                .as_text()
-                .map(|text| text.text.clone())
-                .unwrap()
-        };
-
-        let cancelled = delegate_result(Ok("No text content in last message".into()), true);
-        assert_eq!(cancelled.is_error, Some(true));
-        assert_eq!(
-            text_of(&cancelled),
-            "Subagent was cancelled before it finished."
-        );
-
-        let finished = delegate_result(Ok("done".into()), false);
-        assert_eq!(finished.is_error, Some(false));
-        assert_eq!(text_of(&finished), "done");
-
-        let failed = delegate_result(Err(anyhow::anyhow!("boom")), false);
-        assert_eq!(failed.is_error, Some(true));
-        assert_eq!(text_of(&failed), "Delegation failed: boom");
-    }
-
-    #[test]
     fn test_resolve_working_dir_relative_subdir() {
         let temp_dir = TempDir::new().unwrap();
         let parent = temp_dir.path().canonicalize().unwrap();

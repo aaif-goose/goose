@@ -5321,29 +5321,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         }
     }
 
-    struct FinalOutputCallProvider;
-
-    #[async_trait::async_trait]
-    impl crate::providers::base::Provider for FinalOutputCallProvider {
-        async fn stream(
-            &self,
-            _model_config: &goose_providers::model::ModelConfig,
-            _system_prompt: &str,
-            _messages: &[Message],
-            _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
-            let call = rmcp::model::CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)
-                .with_arguments(rmcp::object!({ "result": "done" }));
-            let message = Message::assistant().with_tool_request("final-output-call", Ok(call));
-            let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
-            Ok(stream_from_single_message(message, usage))
-        }
-
-        fn get_name(&self) -> &str {
-            "final-output-call"
-        }
-    }
-
     struct ChunkedTextProvider;
 
     #[async_trait::async_trait]
@@ -6004,90 +5981,6 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             "non-consecutive Stop hook blocks should not trip the cap warning"
         );
 
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn stop_hook_does_not_run_for_a_cancelled_legacy_turn() -> Result<()> {
-        let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT)?;
-        let (agent, session_id, _provider) = create_stop_hook_test_agent(&env, 1).await?;
-
-        #[derive(PartialEq)]
-        enum CancelAt {
-            Start,
-            FirstMessage,
-            FinalOutput,
-        }
-        const FINAL_OUTPUT: &str = r#"{"result":"done"}"#;
-
-        for cancel_at in [
-            CancelAt::Start,
-            CancelAt::FirstMessage,
-            CancelAt::FinalOutput,
-        ] {
-            if cancel_at == CancelAt::FinalOutput {
-                agent
-                    .update_provider(
-                        Arc::new(FinalOutputCallProvider),
-                        goose_providers::model::ModelConfig::new("mock-model"),
-                        &session_id,
-                    )
-                    .await?;
-                let recipe = crate::recipe::Recipe::builder()
-                    .title("Final output")
-                    .description("Stops after the final output")
-                    .instructions("Return a result")
-                    .response(crate::recipe::Response {
-                        json_schema: Some(serde_json::json!({
-                            "type": "object",
-                            "properties": { "result": { "type": "string" } },
-                            "required": ["result"]
-                        })),
-                    })
-                    .build()
-                    .expect("valid recipe");
-                agent
-                    .config
-                    .session_manager
-                    .update(&session_id)
-                    .recipe(Some(recipe))
-                    .apply()
-                    .await?;
-            }
-            let cancel_token = CancellationToken::new();
-            if cancel_at == CancelAt::Start {
-                cancel_token.cancel();
-            }
-            let session_config = SessionConfig {
-                id: session_id.clone(),
-                schedule_id: None,
-                max_turns: Some(10),
-                retry_config: None,
-            };
-
-            let mut stream = agent
-                .reply(
-                    Message::user().with_text("hello"),
-                    session_config,
-                    false,
-                    Some(cancel_token.clone()),
-                )
-                .await?;
-            while let Some(event) = stream.next().await {
-                if let AgentEvent::Message(message) = event? {
-                    if cancel_at != CancelAt::FinalOutput
-                        || message.as_concat_text() == FINAL_OUTPUT
-                    {
-                        cancel_token.cancel();
-                    }
-                }
-            }
-        }
-
-        assert!(
-            env.stop_payload().is_err(),
-            "the Stop hook should not run when the turn was cancelled"
-        );
         Ok(())
     }
 

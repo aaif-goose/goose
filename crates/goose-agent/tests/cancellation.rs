@@ -165,63 +165,52 @@ impl Operation<Session> for Recorder {
 
 #[tokio::test]
 async fn stop_saves_the_interrupted_step_then_unanswered_calls_then_the_rest() -> Result<()> {
-    let before = Recorder::new("before", Behavior::NotApplicable);
-    let active = Recorder::new("active", Behavior::HangAfterStop);
-    let after = Recorder::new("after", Behavior::NotApplicable);
-    let cancel = CancellationToken::new();
-    let machine = StateMachine::new(
-        vec![
-            Step::Operation(before.clone()),
-            Step::Operation(active.clone()),
-            Step::Operation(after.clone()),
-        ],
-        cancel.clone(),
-    );
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, cancel);
-    let runtime = Runtime::new([
-        Message::user().with_text("kickoff"),
-        Message::assistant()
-            .with_tool_request("unanswered", Ok(CallToolRequestParams::new("tool"))),
-    ]);
-
-    let session = tokio::time::timeout(
-        Duration::from_secs(5),
-        machine.run(&runtime, "session", &emit),
-    )
-    .await??;
-
-    assert_eq!(
-        texts(&session),
-        ["kickoff", "", "active", "", "before", "after"]
-    );
-    assert!(interrupted(&session.0.messages()[3].content[0]));
-    for operation in [&before, &active, &after] {
-        assert_eq!(*operation.cancel_calls.lock().unwrap(), 1);
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn what_a_step_returns_after_stop_is_kept_or_dropped() -> Result<()> {
     for (behavior, expected) in [
         (
-            Behavior::ReturnAfterStop,
-            &["kickoff", "returned", "active"][..],
+            Behavior::HangAfterStop,
+            &["kickoff", "", "active", "", "before", "after"][..],
         ),
-        (Behavior::FailAfterStop, &["kickoff", "active"][..]),
+        (
+            Behavior::FailAfterStop,
+            &["kickoff", "", "active", "", "before", "after"][..],
+        ),
+        (
+            Behavior::ReturnAfterStop,
+            &["kickoff", "", "returned", "", "before", "active", "after"][..],
+        ),
     ] {
+        let before = Recorder::new("before", Behavior::NotApplicable);
         let active = Recorder::new("active", behavior);
+        let after = Recorder::new("after", Behavior::NotApplicable);
         let cancel = CancellationToken::new();
-        let machine = StateMachine::new(vec![Step::Operation(active.clone())], cancel.clone());
+        let machine = StateMachine::new(
+            vec![
+                Step::Operation(before.clone()),
+                Step::Operation(active.clone()),
+                Step::Operation(after.clone()),
+            ],
+            cancel.clone(),
+        );
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
-        let runtime = Runtime::new([Message::user().with_text("kickoff")]);
+        let runtime = Runtime::new([
+            Message::user().with_text("kickoff"),
+            Message::assistant()
+                .with_tool_request("unanswered", Ok(CallToolRequestParams::new("tool"))),
+        ]);
 
-        let session = machine.run(&runtime, "session", &emit).await?;
+        let session = tokio::time::timeout(
+            Duration::from_secs(5),
+            machine.run(&runtime, "session", &emit),
+        )
+        .await??;
 
         assert_eq!(texts(&session), expected);
-        assert_eq!(*active.cancel_calls.lock().unwrap(), 1);
+        let answer = expected.iter().rposition(|text| text.is_empty()).unwrap();
+        assert!(interrupted(&session.0.messages()[answer].content[0]));
+        for operation in [&before, &active, &after] {
+            assert_eq!(*operation.cancel_calls.lock().unwrap(), 1);
+        }
     }
     Ok(())
 }
@@ -244,32 +233,6 @@ async fn a_running_step_sees_stop_before_it_is_dropped() -> Result<()> {
     assert!(*watcher.saw_stop.lock().unwrap());
     assert_eq!(texts(&session), ["kickoff", "watcher"]);
     Ok(())
-}
-
-async fn run_and_stop(
-    operation: Arc<ToolOperation<Session>>,
-    request: Message,
-    started: impl Fn() -> bool,
-    deadline: Duration,
-) -> Vec<Message> {
-    let cancel = CancellationToken::new();
-    let machine = StateMachine::new(vec![Step::Operation(operation)], cancel.clone());
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, cancel.clone());
-    let runtime = Runtime::new([Message::user().with_text("kickoff"), request]);
-    let run = tokio::spawn(async move { machine.run(&runtime, "session", &emit).await });
-    while !started() {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    tokio::time::timeout(deadline, run)
-        .await
-        .expect("Stop should not wait for the running call")
-        .unwrap()
-        .unwrap()
-        .0
-        .messages()
-        .clone()
 }
 
 fn interrupted(response: &MessageContent) -> bool {
@@ -343,8 +306,12 @@ async fn stop_saves_completed_results_then_answers_each_unanswered_request_once(
             .with_sync_tool::<BlockingSyncTool>(),
     );
 
-    let messages = run_and_stop(
-        operation.clone(),
+    let cancel = CancellationToken::new();
+    let machine = StateMachine::new(vec![Step::Operation(operation.clone())], cancel.clone());
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, cancel.clone());
+    let runtime = Runtime::new([
+        Message::user().with_text("kickoff"),
         Message::assistant()
             .with_tool_request("completed", Ok(CallToolRequestParams::new("finish")))
             .with_tool_request("blocking", Ok(CallToolRequestParams::new("blocking_sync")))
@@ -358,10 +325,20 @@ async fn stop_saves_completed_results_then_answers_each_unanswered_request_once(
                 None,
                 Some(json!({ "goose.external_dispatch": true })),
             ),
-        || BLOCKING_SYNC_STARTED.load(Ordering::SeqCst),
-        Duration::from_millis(50),
-    )
-    .await;
+    ]);
+    let run = tokio::spawn(async move { machine.run(&runtime, "session", &emit).await });
+    while !BLOCKING_SYNC_STARTED.load(Ordering::SeqCst) {
+        tokio::task::yield_now().await;
+    }
+    cancel.cancel();
+    let messages = tokio::time::timeout(Duration::from_millis(50), run)
+        .await
+        .expect("Stop should not wait for the running call")
+        .unwrap()
+        .unwrap()
+        .0
+        .messages()
+        .clone();
 
     assert_eq!(messages.len(), 4);
     let output = messages[2].content[0].as_tool_response().unwrap();

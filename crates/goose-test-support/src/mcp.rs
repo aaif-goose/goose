@@ -91,11 +91,6 @@ impl McpFixtureServer {
         Ok(CallToolResult::success(vec![ContentBlock::text(FAKE_CODE)]))
     }
 
-    #[tool(description = "Never returns; the caller has to cancel it")]
-    async fn wait_for_cancel(&self) -> Result<CallToolResult, McpError> {
-        std::future::pending().await
-    }
-
     #[tool(description = "Get an image")]
     fn get_image(&self) -> Result<CallToolResult, McpError> {
         Ok(CallToolResult::success(vec![ContentBlock::image(

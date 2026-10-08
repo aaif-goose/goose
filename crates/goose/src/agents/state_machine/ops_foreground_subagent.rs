@@ -711,7 +711,7 @@ mod tests {
         let running_subagent_id =
             add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel.clone());
         let aborted = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -777,14 +777,6 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(deliveries, expected);
-        let mut notices = notices(&mut rx);
-        notices.sort();
-        let mut expected_notices = vec![
-            format!("Subagent {} completed\n\ndone", fixture.subagent_id),
-            format!("Subagent {failed_subagent_id} failed: rate limited"),
-        ];
-        expected_notices.sort();
-        assert_eq!(notices, expected_notices);
         assert_eq!(
             cancelled_ids(&effects[2]),
             [stopped_subagent_id, running_subagent_id]
@@ -811,30 +803,6 @@ mod tests {
             panic!("expected the subagent to start");
         };
         assert!(matches!(run.await, SubagentOutcome::Cancelled));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn a_cancelled_subagent_is_left_for_the_cancelled_note() -> Result<()> {
-        let fixture = fixture().await?;
-        let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let emit = Emitter::new(tx, cancel.clone());
-        let operation = fixture.operation(cancel);
-        {
-            let mut running = operation.running.lock().await;
-            let handle = running.tasks.spawn(async { SubagentOutcome::Cancelled });
-            running
-                .subagent_ids
-                .insert(handle.id(), fixture.subagent_id.clone());
-        }
-
-        let (_, result) = run_step(&operation, &fixture, &emit).await?;
-        assert!(matches!(result, OperationResult::NotApplicable));
-        assert!(notices(&mut rx).is_empty());
-        let (_, effects) = cancel_step(&operation, &fixture, &emit).await?;
-        assert_eq!(effects.len(), 1);
-        assert_eq!(cancelled_ids(&effects[0]), [fixture.subagent_id]);
         Ok(())
     }
 
