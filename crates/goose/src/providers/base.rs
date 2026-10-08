@@ -53,8 +53,7 @@ pub trait SessionBoundProviderDef: ProviderDescriptor + Send + Sync {
 
 /// Defines ACP construction independently of standard provider construction.
 ///
-/// The registry still bridges ACP instances to `Arc<dyn Provider>` temporarily;
-/// this trait separates definitions, not the runtime provider interfaces.
+/// The registry retains ACP instances in the typed application backend.
 pub trait AcpProviderDef: ProviderDescriptor + Send + Sync {
     fn from_env(
         extensions: Vec<ExtensionConfig>,

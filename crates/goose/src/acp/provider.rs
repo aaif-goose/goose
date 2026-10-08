@@ -326,6 +326,11 @@ fn spawn_client_loop(fut: impl Future<Output = ()> + Send + 'static) -> JoinHand
 }
 
 impl AcpProvider {
+    #[cfg(test)]
+    pub(crate) fn new_test_stub() -> Self {
+        tests::test_provider().0
+    }
+
     pub async fn connect(
         name: String,
         goose_mode: GooseMode,
@@ -2509,7 +2514,7 @@ mod tests {
         assert!(matches!(error, ProviderError::RequestFailed(_)));
     }
 
-    fn test_provider() -> (AcpProvider, ModelConfig) {
+    pub(super) fn test_provider() -> (AcpProvider, ModelConfig) {
         test_provider_with_tx(None)
     }
 

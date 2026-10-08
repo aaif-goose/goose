@@ -8,10 +8,11 @@ use tracing::warn;
 use crate::config::Config;
 use crate::providers::base::Provider;
 use crate::providers::provider_registry::ProviderEntry;
+use crate::providers::ProviderBackend;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::Session;
 
-type SessionSlot = Arc<tokio::sync::Mutex<Option<Arc<dyn Provider>>>>;
+type SessionSlot = Arc<tokio::sync::Mutex<Option<ProviderBackend>>>;
 type SharedProviders = HashMap<String, (u64, Arc<dyn Provider>)>;
 
 #[derive(Default)]
@@ -21,11 +22,16 @@ pub struct ProviderManager {
 }
 
 impl ProviderManager {
+    /// Temporary bridge for agent-loop consumers awaiting typed backend dispatch.
     pub async fn provider_for(&self, session: &Session) -> Result<Arc<dyn Provider>> {
+        Ok(self.backend_for(session).await?.into_legacy_provider())
+    }
+
+    pub async fn backend_for(&self, session: &Session) -> Result<ProviderBackend> {
         let name = provider_name_for(session)?;
         let slot = self.slot(&session.id);
         let mut slot = slot.lock().await;
-        if let Some(provider) = slot.as_ref().filter(|p| p.get_name() == name) {
+        if let Some(provider) = slot.as_ref().filter(|p| p.name() == name) {
             return Ok(provider.clone());
         }
 
@@ -33,7 +39,7 @@ impl ProviderManager {
         if !entry.session_bound() {
             let provider = self.shared(&name, &entry).await?;
             *slot = None;
-            return Ok(provider);
+            return Ok(ProviderBackend::Standard(provider));
         }
 
         let extensions = EnabledExtensionsState::extensions_or_default(
@@ -41,7 +47,7 @@ impl ProviderManager {
             Config::global(),
         );
         let provider = entry
-            .create_with_working_dir(extensions, session.working_dir.clone())
+            .create_backend_with_working_dir(extensions, session.working_dir.clone())
             .await?;
         let model_config = entry.normalize_model_config(model_config_for(session)?)?;
         if let Err(e) = provider.apply_model_selection(&model_config).await {
@@ -56,7 +62,12 @@ impl ProviderManager {
     }
 
     pub async fn set_provider(&self, session_id: &str, provider: Arc<dyn Provider>) {
-        *self.slot(session_id).lock().await = Some(provider);
+        self.set_backend(session_id, ProviderBackend::Standard(provider))
+            .await;
+    }
+
+    pub async fn set_backend(&self, session_id: &str, backend: ProviderBackend) {
+        *self.slot(session_id).lock().await = Some(backend);
     }
 
     pub fn release(&self, session_id: &str) {
@@ -80,7 +91,12 @@ impl ProviderManager {
                 return Ok(provider.clone());
             }
         }
-        let provider = entry.create(Vec::new()).await?;
+        let provider = match entry.create_backend(Vec::new()).await? {
+            ProviderBackend::Standard(provider) => provider,
+            ProviderBackend::Acp(_) => {
+                anyhow::bail!("ACP backends cannot enter the shared provider cache")
+            }
+        };
         shared.insert(name.to_string(), (generation, provider.clone()));
         Ok(provider)
     }
@@ -106,4 +122,33 @@ pub fn model_config_for(session: &Session) -> Result<ModelConfig> {
         .map_err(|_| anyhow!("Could not resolve model config: missing model"))?;
     crate::model_config::model_config_from_user_config(&provider_name, &model_name)
         .map_err(|e| anyhow!("Could not resolve model config: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn typed_injection_retains_acp_and_legacy_injection_is_standard() {
+        let manager = ProviderManager::default();
+        let acp = Arc::new(crate::acp::AcpProvider::new_test_stub());
+        manager
+            .set_backend("session", ProviderBackend::Acp(acp.clone()))
+            .await;
+        let slot = manager.slot("session");
+        assert!(
+            matches!(slot.lock().await.as_ref(), Some(ProviderBackend::Acp(provider)) if Arc::ptr_eq(provider, &acp))
+        );
+        let standard: Arc<dyn Provider> =
+            Arc::new(crate::providers::testprovider::TestProvider::new_recording(
+                acp,
+                "unused-recording.json",
+            ));
+        manager.set_provider("session", standard.clone()).await;
+        assert!(
+            matches!(slot.lock().await.as_ref(), Some(ProviderBackend::Standard(provider)) if Arc::ptr_eq(provider, &standard))
+        );
+        manager.release("session");
+        assert!(manager.slot("session").lock().await.is_none());
+    }
 }

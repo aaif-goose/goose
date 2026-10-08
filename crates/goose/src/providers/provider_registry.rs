@@ -1,4 +1,5 @@
 use super::api_client::TlsConfig;
+use super::backend::ProviderBackend;
 use super::base::{
     AcpProviderDef, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType,
     SessionBoundProviderDef,
@@ -18,7 +19,7 @@ pub type ProviderConstructor = Arc<
             Option<PathBuf>,
             Option<TlsConfig>,
             bool,
-        ) -> BoxFuture<'static, Result<Arc<dyn Provider>>>
+        ) -> BoxFuture<'static, Result<ProviderBackend>>
         + Send
         + Sync,
 >;
@@ -75,22 +76,56 @@ impl ProviderEntry {
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
 
+    /// Transitional compatibility API. Prefer `create_backend_with_default_model`.
     pub async fn create_with_default_model(
         &self,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
-        (self.constructor)(extensions, None, self.tls_config.clone(), true).await
+        Ok(self
+            .create_backend_with_default_model(extensions)
+            .await?
+            .into_legacy_provider())
     }
 
+    /// Transitional compatibility API. Prefer `create_backend`.
     pub async fn create(&self, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
-        (self.constructor)(extensions, None, self.tls_config.clone(), false).await
+        Ok(self
+            .create_backend(extensions)
+            .await?
+            .into_legacy_provider())
     }
 
+    /// Transitional compatibility API. Prefer `create_backend_with_working_dir`.
     pub async fn create_with_working_dir(
         &self,
         extensions: Vec<ExtensionConfig>,
         working_dir: PathBuf,
     ) -> Result<Arc<dyn Provider>> {
+        Ok(self
+            .create_backend_with_working_dir(extensions, working_dir)
+            .await?
+            .into_legacy_provider())
+    }
+
+    pub async fn create_backend_with_default_model(
+        &self,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<ProviderBackend> {
+        (self.constructor)(extensions, None, self.tls_config.clone(), true).await
+    }
+
+    pub async fn create_backend(
+        &self,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<ProviderBackend> {
+        (self.constructor)(extensions, None, self.tls_config.clone(), false).await
+    }
+
+    pub async fn create_backend_with_working_dir(
+        &self,
+        extensions: Vec<ExtensionConfig>,
+        working_dir: PathBuf,
+    ) -> Result<ProviderBackend> {
         (self.constructor)(
             extensions,
             Some(working_dir),
@@ -141,7 +176,9 @@ impl ProviderRegistry {
                 constructor: Arc::new(
                     |_extensions, _working_dir, tls_config, _use_default_model| {
                         Box::pin(async move {
-                            Ok(Arc::new(F::from_env(tls_config).await?) as Arc<dyn Provider>)
+                            Ok(ProviderBackend::Standard(Arc::new(
+                                F::from_env(tls_config).await?,
+                            )))
                         })
                     },
                 ),
@@ -176,8 +213,9 @@ impl ProviderRegistry {
                 constructor: Arc::new(
                     |extensions, _working_dir, tls_config, _use_default_model| {
                         Box::pin(async move {
-                            Ok(Arc::new(F::from_env(extensions, tls_config).await?)
-                                as Arc<dyn Provider>)
+                            Ok(ProviderBackend::Standard(Arc::new(
+                                F::from_env(extensions, tls_config).await?,
+                            )))
                         })
                     },
                 ),
@@ -223,9 +261,7 @@ impl ProviderRegistry {
                         } else {
                             F::from_env(extensions, tls_config).await?
                         };
-                        // Transitional bridge: ACP definitions are separate, but registry
-                        // consumers still require the standard Provider runtime interface.
-                        Ok(Arc::new(provider) as Arc<dyn Provider>)
+                        Ok(ProviderBackend::Acp(Arc::new(provider)))
                     })
                 }),
                 inventory_identity: inventory.identity,
@@ -395,7 +431,7 @@ impl ProviderRegistry {
                     let result = constructor(tls_config);
                     Box::pin(async move {
                         let provider = result?;
-                        Ok(Arc::new(provider) as Arc<dyn Provider>)
+                        Ok(ProviderBackend::Standard(Arc::new(provider)))
                     })
                 }),
                 inventory_identity: Arc::new(inventory_identity),
@@ -424,17 +460,29 @@ impl ProviderRegistry {
         self
     }
 
+    /// Transitional compatibility API. Prefer `create_backend`.
     pub async fn create(
         &self,
         name: &str,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
+        Ok(self
+            .create_backend(name, extensions)
+            .await?
+            .into_legacy_provider())
+    }
+
+    pub async fn create_backend(
+        &self,
+        name: &str,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<ProviderBackend> {
         let entry = self
             .entries
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", name))?;
 
-        entry.create(extensions).await
+        entry.create_backend(extensions).await
     }
 
     pub fn all_metadata_with_types(&self) -> Vec<(ProviderMetadata, ProviderType)> {
@@ -669,6 +717,111 @@ mod tests {
         let entry = &registry.entries["test-acp"];
         assert_eq!(entry.provider_type(), ProviderType::Builtin);
         assert!(!entry.supports_inventory_refresh());
+    }
+
+    struct StubAcpDef;
+
+    impl super::super::base::ProviderDescriptor for StubAcpDef {
+        fn metadata() -> ProviderMetadata {
+            <TestAcpDef as super::super::base::ProviderDescriptor>::metadata()
+        }
+    }
+
+    impl AcpProviderDef for StubAcpDef {
+        fn from_env(
+            _extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<crate::acp::AcpProvider>> {
+            Box::pin(async { Ok(crate::acp::AcpProvider::new_test_stub()) })
+        }
+    }
+
+    struct StubStandardDef;
+
+    impl super::super::base::ProviderDescriptor for StubStandardDef {
+        fn metadata() -> ProviderMetadata {
+            <TestStandardDef as super::super::base::ProviderDescriptor>::metadata()
+        }
+    }
+
+    fn standard_stub() -> crate::providers::testprovider::TestProvider {
+        crate::providers::testprovider::TestProvider::new_recording(
+            Arc::new(crate::acp::AcpProvider::new_test_stub()),
+            "unused-recording.json",
+        )
+    }
+
+    impl ProviderDef for StubStandardDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(_tls_config: Option<TlsConfig>) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async { Ok(standard_stub()) })
+        }
+    }
+
+    impl SessionBoundProviderDef for StubStandardDef {
+        type Provider = crate::providers::testprovider::TestProvider;
+
+        fn from_env(
+            _extensions: Vec<ExtensionConfig>,
+            _tls_config: Option<TlsConfig>,
+        ) -> BoxFuture<'static, Result<Self::Provider>> {
+            Box::pin(async { Ok(standard_stub()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn registrations_retain_backend_variants() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<StubStandardDef>(true);
+        assert!(matches!(
+            registry
+                .create_backend("test-standard", vec![])
+                .await
+                .unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_session_bound::<StubStandardDef>(false);
+        let entry = &registry.entries["test-standard"];
+        assert!(matches!(
+            entry
+                .create_backend_with_working_dir(vec![], PathBuf::from("workspace"))
+                .await
+                .unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_with_name::<StubStandardDef, _, _>(
+            &test_config(),
+            ProviderType::Declarative,
+            false,
+            |_| Ok(standard_stub()),
+            || Ok(InventoryIdentityInput::new("custom_hf", "test")),
+        );
+        assert!(matches!(
+            registry.create_backend("custom_hf", vec![]).await.unwrap(),
+            ProviderBackend::Standard(_)
+        ));
+        registry.register_acp_with_inventory::<StubAcpDef>(false, None);
+        let entry = &registry.entries["test-acp"];
+        assert!(matches!(
+            entry.create_backend(vec![]).await.unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert!(matches!(
+            entry
+                .create_backend_with_default_model(vec![])
+                .await
+                .unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert!(matches!(
+            entry
+                .create_backend_with_working_dir(vec![], PathBuf::from("workspace"))
+                .await
+                .unwrap(),
+            ProviderBackend::Acp(_)
+        ));
+        assert_eq!(entry.create(vec![]).await.unwrap().get_name(), "acp-test");
     }
 
     fn test_config() -> DeclarativeProviderConfig {

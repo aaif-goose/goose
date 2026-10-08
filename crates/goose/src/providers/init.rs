@@ -271,19 +271,41 @@ pub async fn inventory_identity(name: &str) -> Result<super::inventory::Inventor
     get_from_registry(name).await?.inventory_identity()
 }
 
-pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
-    let entry = get_from_registry(name).await?;
-    entry.create(extensions).await
+pub async fn create_backend(
+    name: &str,
+    extensions: Vec<ExtensionConfig>,
+) -> Result<super::ProviderBackend> {
+    get_from_registry(name)
+        .await?
+        .create_backend(extensions)
+        .await
 }
 
+pub async fn create_backend_with_default_model(
+    name: impl AsRef<str>,
+    extensions: Vec<ExtensionConfig>,
+) -> Result<super::ProviderBackend> {
+    get_from_registry(name.as_ref())
+        .await?
+        .create_backend_with_default_model(extensions)
+        .await
+}
+
+/// Transitional compatibility API. Prefer `create_backend`.
+pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<dyn Provider>> {
+    Ok(create_backend(name, extensions)
+        .await?
+        .into_legacy_provider())
+}
+
+/// Transitional compatibility API. Prefer `create_backend_with_default_model`.
 pub async fn create_with_default_model(
     name: impl AsRef<str>,
     extensions: Vec<ExtensionConfig>,
 ) -> Result<Arc<dyn Provider>> {
-    get_from_registry(name.as_ref())
+    Ok(create_backend_with_default_model(name, extensions)
         .await?
-        .create_with_default_model(extensions)
-        .await
+        .into_legacy_provider())
 }
 
 pub async fn cleanup_provider(name: &str) -> Result<()> {
