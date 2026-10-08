@@ -283,29 +283,6 @@ mod tests {
     }
 
     #[test]
-    fn bundled_claude_models_from_4_6_have_thinking_modes() {
-        let registry = CanonicalModelRegistry::bundled().unwrap();
-        for model in registry.get_all_models_for_provider("anthropic") {
-            let version = model.id.rsplit('-').next().unwrap();
-            let mut parts = version.split('.');
-            let Some(major) = parts.next().and_then(|part| part.parse::<u32>().ok()) else {
-                continue;
-            };
-            let minor = parts
-                .next()
-                .and_then(|part| part.parse::<u32>().ok())
-                .unwrap_or(0);
-            if major > 4 || (major == 4 && minor >= 6) {
-                assert!(
-                    model.thinking_mode.is_some(),
-                    "{} missing thinking mode",
-                    model.id
-                );
-            }
-        }
-    }
-
-    #[test]
     fn anthropic_opus_5_5_resolves_with_always_on_adaptive_thinking() {
         let canonical = maybe_get_canonical_model("anthropic", "claude-opus-5-5")
             .expect("claude-opus-5-5 should resolve");

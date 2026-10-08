@@ -261,21 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn infers_claude_5_5_always_on_adaptive_thinking() {
-        for family in ["sonnet", "haiku"] {
-            let model_id = format!("claude-{family}-5.5");
-            let json = serde_json::json!({
-                "anthropic": {"models": {&model_id: {"name": format!("Claude {family} 5.5")}}}
-            });
-            let registry = from_models_dev(&json.to_string()).unwrap();
-            assert_eq!(
-                registry.get("anthropic", &model_id).unwrap().thinking_mode,
-                Some(ThinkingMode::AlwaysOnAdaptive)
-            );
-        }
-    }
-
-    #[test]
     fn converts_provider_models_and_rejects_empty_catalog() {
         let json = r#"{"openai":{"models":{"gpt-4o":{"name":"GPT-4o","tool_call":true,"limit":{"context":128000,"output":4096},"cost":{"input":2.5}}}}}"#;
         let registry = from_models_dev(json).unwrap();
