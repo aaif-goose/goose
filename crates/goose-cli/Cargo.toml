@@ -162,7 +162,6 @@ native-tls = [
     "goose-providers/native-tls",
 ]
 [dev-dependencies]
-goose = { path = "../goose", default-features = false, features = ["test-keyring-guard"] }
 env-lock.workspace = true
 tempfile = { workspace = true }
 test-case = { workspace = true }

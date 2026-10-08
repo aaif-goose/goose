@@ -93,7 +93,6 @@ native-tls = [
     "goose-context-management/native-tls",
 ]
 system-keyring = ["dep:keyring"]
-test-keyring-guard = []
 portable-default = [
     "rustls-tls",
     "tree-sitter",
@@ -282,7 +281,6 @@ keyring = { workspace = true, features = ["sync-secret-service"], optional = tru
 libc = { version = "0.2.182", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-goose = { path = ".", default-features = false, features = ["test-keyring-guard"] }
 serial_test = { workspace = true }
 mockall = { version = "0.15", default-features = false }
 wiremock = { workspace = true }

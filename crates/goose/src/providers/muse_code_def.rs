@@ -162,7 +162,8 @@ fn muse_cli_auth_path() -> PathBuf {
 fn muse_cli_keychain_token() -> Option<MuseToken> {
     #[cfg(feature = "system-keyring")]
     {
-        if std::env::var("MUSE_AUTH_PATH").is_ok() {
+        if std::env::var("MUSE_AUTH_PATH").is_ok() || std::env::var("GOOSE_FAIL_ON_KEYRING").is_ok()
+        {
             return None;
         }
 

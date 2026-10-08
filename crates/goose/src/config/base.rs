@@ -1249,9 +1249,9 @@ impl Config {
         service: &str,
         fallback_values: Option<&HashMap<String, Value>>,
     ) -> Result<T, ConfigError> {
-        if cfg!(feature = "test-keyring-guard") {
+        if env::var("GOOSE_FAIL_ON_KEYRING").is_ok() {
             return Err(ConfigError::KeyringError(
-                "keyring access is disabled in test builds".to_string(),
+                "keyring access is not allowed when GOOSE_FAIL_ON_KEYRING is set".to_string(),
             ));
         }
 

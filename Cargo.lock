@@ -5053,7 +5053,6 @@ dependencies = [
  "fs2",
  "futures",
  "gethostname",
- "goose",
  "goose-acp-macros",
  "goose-agent",
  "goose-context-management",
