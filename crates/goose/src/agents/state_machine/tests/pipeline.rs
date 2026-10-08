@@ -314,6 +314,15 @@ impl TestPipeline {
         GoalState::of(&self.session().await.unwrap()).goal
     }
 
+    pub(super) async fn set_goal(&self, goal: Option<String>) {
+        let mut state = GoalState::of(&self.session().await.unwrap());
+        state.goal = goal;
+        self.session_manager
+            .set_extension_state(&self.session_id, &state)
+            .await
+            .unwrap();
+    }
+
     pub(super) async fn set_grind(&self, grind: Option<String>) {
         let mut state = GoalState::of(&self.session().await.unwrap());
         state.grind = grind;

@@ -325,5 +325,20 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
     assert!(command.is_user_visible());
     assert!(command.is_agent_visible());
 
+    pipeline
+        .set_goal(Some("finish the migration".to_string()))
+        .await;
+    let shown = pipeline.run(["/goal"]).await?;
+    shown.assert_message(-1, Agent, "Current goal: finish the migration");
+    assert_eq!(
+        pipeline.get_goal().await.as_deref(),
+        Some("finish the migration")
+    );
+
+    let cleared = pipeline.run(["/goal clear"]).await?;
+    cleared.assert_message(-1, Agent, "Goal cleared");
+    assert!(pipeline.get_goal().await.is_none());
+    assert_eq!(api.call_count(), 1);
+
     Ok(())
 }
