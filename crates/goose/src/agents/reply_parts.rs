@@ -8,7 +8,6 @@ use futures::stream::StreamExt;
 use serde_json::{json, Value};
 use tracing::debug;
 
-use super::super::agents::Agent;
 use super::gen_ai_telemetry;
 use crate::config::Config;
 use crate::conversation::message::{Message, MessageContent};
@@ -109,7 +108,9 @@ pub(crate) fn coerce_tool_arguments(
 ) -> Option<serde_json::Map<String, Value>> {
     let args = arguments?;
 
-    let properties = tool_schema.get("properties").and_then(|p| p.as_object())?;
+    let Some(properties) = tool_schema.get("properties").and_then(|p| p.as_object()) else {
+        return Some(args);
+    };
 
     let mut coerced = serde_json::Map::new();
 
@@ -179,8 +180,6 @@ fn is_mergeable_assistant_chunk(message: &Message) -> bool {
             )
         })
 }
-
-impl Agent {}
 
 pub(crate) fn prepare_inference_tools(
     mut tools: Vec<Tool>,
@@ -522,8 +521,6 @@ pub(crate) async fn stream_response_from_provider(
         }
     }))
 }
-
-impl Agent {}
 
 /// Check whether a tool should be callable by an app based on MCP Apps visibility metadata.
 ///
