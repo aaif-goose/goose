@@ -26,6 +26,7 @@ This conflicted with `723a825fb` — **Add ProviderManager and route session pro
 1. `e0d076eb2` — `refactor: separate ACP provider construction from standard definitions`
 2. `a71faf14b` — `refactor: trim standard provider definitions to session-independent construction`
 3. `5d0a710bb` — `provider backend`
+4. `718788298` — `refactor: retain typed backends through agent switching and injection`
 
 The third slice was uncommitted at the end of the prior assistant turn; inspection at handoff confirms it is now committed under the third hash above. Do not assume it is still unstaged.
 
@@ -83,9 +84,9 @@ pub enum ProviderBackend {
 - ProviderManager injection tests check typed ACP storage, legacy standard injection, and release.
 - Existing mocks and constructor call sites were updated for the trimmed signatures.
 
-### 4. Typed application access, switching, and injection (working tree)
+### 4. Typed application access, switching, and injection
 
-This follow-up slice is implemented but **not committed**:
+Committed as `718788298`:
 
 - Added `Agent::backend` and `update_backend`; switching, effective model configuration, mode updates, and thinking-effort updates retain typed identity. Existing `provider` and `update_provider` remain transitional APIs for unmigrated consumers and standard injection.
 - Legacy thinking-effort normalization is confined to Standard. ACP raw effort values remain intact.
@@ -96,14 +97,37 @@ This follow-up slice is implemented but **not committed**:
 - Regression tests cover typed acquisition/injection, ACP and Standard replacement, ACP raw-effort preservation and rejection, mode persistence, remote control request IDs, session isolation/release, discovery, and subagent fallback restrictions.
 - No execution-loop changes or published GDK API changes were made. Doctor/completion health probes and other standard-only inference consumers remain for a later explicit capability audit. This is a refactor slice, not a new user-facing feature; the self-test recipe was not changed or run.
 
+### 5. Explicit execution split (working tree)
+
+This follow-up slice is implemented and verified but **not committed**:
+
+- ACP has inherent `prompt_messages(ModelConfig, messages)` with no standard system/tool inputs. Resume, remote-session identity, context-limit resolution, permission responses, and effort subscriptions are inherent as well; existing Provider methods delegate.
+- Legacy inference explicitly matches backend kind. ACP skips goose conversation repair, system/tools/toolshim preparation, project/MOIM preparation, automatic compaction, tool-pair summarization, standard model-error enhancement/retries, and completion-based session naming.
+- The state machine uses a direct `AcpInferenceRunner` implementing application `Inference`/`Operation`, not a Provider adapter. Its common operations retain command/lifecycle behavior through `WithoutInferencePreparation`, without constructing standard completion inputs. Standard continues to use the existing GDK inference runner and request preparer unchanged.
+- Recipe capability checks use explicit name/support data; ACP structured responses fail before inference. Status uses typed context lookup. ACP has no compaction operations. Permissions route through typed backend controls.
+- ACP errors persist partial output and errors, and cannot be restarted by blocking Stop hooks. Empty responses do not cause host completion retries. Tool-only completion has an invisible terminal assistant marker so Stop hooks and continuation retain their lifecycle.
+- Live ACP permission messages are not republished after persistence. Cancellation removes stale pending permissions via a guard, sends a cancelled permission outcome, and drops the stream promptly.
+- Transport stream drop sends `session/cancel` for the remote ACP session and drains the original prompt before accepting the next queued prompt. A duplex integration test verifies notification delivery and isolation of late old chunks. A nonresponsive peer can still block the connection while draining; no timeout/session-teardown redesign was introduced.
+- Nine regression tests exercise both loops for streaming/usage/metadata, external-tool isolation, errors, empty completion, structured-output rejection, permissions, cancellation, and tool-only completion with Stop-hook continuation.
+- No GDK APIs or the ProviderBackend capability contract were expanded to standard inference. This remains exploratory; no upstream issue/PR communication.
+
+Verification for this execution slice:
+
+- Formatting and whitespace checks passed.
+- `cargo check -p goose -p goose-cli --all-targets` passed during implementation; final workspace clippy (`cargo clippy --all-targets --features goose/scheduler -- -D warnings`) passed after all production changes and added tests.
+- 337 combined ACP-provider, agent, reply-parts, and state-machine tests passed using `--features scheduler,tree-sitter`, serial execution, `RUST_MIN_STACK=16777216`, and an isolated config root with keyring disabled. The nine both-loop ACP tests also passed separately.
+- ACP bootstrap/effort (3), cancellation transport (1), custom requests (21), and secret cache integration (1) tests passed: 26 integration tests.
+- Running reply-parts tests alone exposed a pre-existing initialization issue: synchronous tool-categorization tests construct Agent/SessionManager without a Tokio context. They pass in the combined suite after async agent tests initialize the shared storage. No unrelated test/runtime initialization changes were made.
+- No live external-agent smoke test, self-test recipe run, or CLI binary rebuild was performed for this refactoring slice.
+
 ## Important limitations / temporary bridges
 
 This is **not yet the full issue implementation**:
 
 - `AcpProvider` still implements `Provider` in `crates/goose/src/acp/provider.rs`.
 - `ProviderBackend::into_legacy_provider` explicitly erases identity for unmigrated consumers.
-- The enum's ACP name/model/mode/effort dispatch now calls inherent ACP APIs. Remaining execution, context, lifecycle, permission, and subscription consumers still depend on the trait implementation.
-- Agent-loop consumers still use the compatibility provider APIs, so execution is not yet split by variant.
+- ACP identity, model/mode/effort, prompt execution, resume, context, permission, and subscription APIs are inherent. Remaining compatibility consumers still acquire erased trait handles.
+- Both agent inference loops now split execution by variant. Other CLI/server, diagnostics, summarization, and platform-extension consumers still use compatibility provider APIs.
 - Registry entry creation still accepts generic session inputs for compatibility, though standard definitions no longer receive those inputs.
 - Existing `manages_own_context` and `permission_routing` flags still do runtime work. They are useful audit markers, not the final typed separation.
 
@@ -112,12 +136,10 @@ Do not implement Provider on the enum or add a general `as_provider` accessor as
 ## Recommended next steps
 
 1. Typed agent access/update/switching, CLI construction, ACP server factories, and legacy summon/subagent injection are migrated. Continue auditing remaining consumers, especially doctor/health probes and capability-specific CLI/server operations.
-2. Split execution at the application boundary:
-   - Standard inference receives Goose-prepared system prompts, conversation history, and tools.
-   - ACP sends protocol prompts to its existing agent session; it does not receive standard completion inputs it ignores.
-3. Implement equivalent behavior in **both** the legacy loop (`agents/agent.rs`) and state machine (`agents/state_machine/`, enabled by `GOOSE_STATE_MACHINE=1`). Do not migrate only one path.
+2. Execution is now split in both loops: Standard receives goose-prepared completion inputs; ACP uses its protocol session. Maintain parity while migrating the remaining consumers.
+3. Audit remaining trait erasure in CLI/server resume/model/effort operations, doctor/health checks, execute_commands, summaries, tool-call labels, security/permission inspectors, and platform extensions before removing compatibility APIs.
 4. Audit preparation/compaction/structured output/tool summarization and permission routing. Relevant files include `agents/reply_parts.rs`, `agents/execute_commands.rs`, `agents/state_machine/ops_llm.rs`, `ops_compaction.rs`, and platform extension summon code.
-5. Move ACP session lifecycle, model/mode/effort selection, permission responses, prompt submission, and context-limit resolution onto inherent protocol-facing APIs.
+5. Inherent ACP APIs are in place; migrate remaining consumers to them rather than adding capability forwarding to the backend enum.
 6. Remove `impl Provider for AcpProvider`, then remove compatibility creation APIs and `into_legacy_provider` once callers are migrated.
 7. Simplify shared registry construction inputs if useful after compatibility callers are gone; do not let factory cleanup expand into an unnecessary discovery/inventory rewrite.
 
