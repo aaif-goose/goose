@@ -17,6 +17,9 @@ pub struct ProviderUsage {
     pub finish_reasons: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_id: Option<String>,
+    /// The model vendor's own id for this call: Anthropic sends `request-id`, OpenAI `x-request-id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// Provider-specific response fields that have no canonical equivalent, kept
     /// unstructured so new fields flow through without changing this type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,6 +62,7 @@ impl ProviderUsage {
             cost_source: None,
             finish_reasons: None,
             response_id: None,
+            request_id: None,
             additional_data: None,
         }
     }
@@ -81,6 +85,11 @@ impl ProviderUsage {
 
     pub fn with_response_id(mut self, id: String) -> Self {
         self.response_id = Some(id);
+        self
+    }
+
+    pub fn with_request_id(mut self, id: String) -> Self {
+        self.request_id = Some(id);
         self
     }
 }

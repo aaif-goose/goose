@@ -74,6 +74,9 @@ pub(super) fn record_provider_usage(span: &Span, usage: &ProviderUsage) {
     if let Some(id) = &usage.response_id {
         span.record("gen_ai.response.id", id.as_str());
     }
+    if let Some(id) = &usage.request_id {
+        span.record("gen_ai.request.id", id.as_str());
+    }
 }
 
 pub(super) fn record_request_params(span: &Span, model_config: &ModelConfig) {
@@ -537,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn record_provider_usage_includes_finish_reasons_and_response_id() {
+    fn record_provider_usage_includes_finish_reasons_and_ids() {
         let capture = test_support::SpanFieldCapture::new("test_span");
         let _guard = capture.clone().set_default();
 
@@ -546,13 +549,15 @@ mod tests {
             Usage::new(Some(10), Some(20), None),
         )
         .with_finish_reasons(vec!["stop".to_string()])
-        .with_response_id("resp-123".to_string());
+        .with_response_id("resp-123".to_string())
+        .with_request_id("req-456".to_string());
 
         let span = tracing::info_span!(
             "test_span",
             "gen_ai.response.model" = tracing::field::Empty,
             "gen_ai.response.finish_reasons" = tracing::field::Empty,
             "gen_ai.response.id" = tracing::field::Empty,
+            "gen_ai.request.id" = tracing::field::Empty,
             "gen_ai.usage.input_tokens" = tracing::field::Empty,
             "gen_ai.usage.output_tokens" = tracing::field::Empty,
         );
@@ -562,6 +567,7 @@ mod tests {
         assert_eq!(fields["gen_ai.response.model"], "test-model");
         assert_eq!(fields["gen_ai.response.finish_reasons"], "[\"stop\"]");
         assert_eq!(fields["gen_ai.response.id"], "resp-123");
+        assert_eq!(fields["gen_ai.request.id"], "req-456");
         assert_eq!(fields["gen_ai.usage.input_tokens"], 10);
         assert_eq!(fields["gen_ai.usage.output_tokens"], 20);
     }

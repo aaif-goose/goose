@@ -128,6 +128,7 @@ impl OpenAiCompatibleProvider {
         if self.supports_streaming {
             stream_openai_compat(response, log)
         } else {
+            let request_id = extract_request_id(response.headers());
             let json = read_json_response(response).await?;
             let message = response_to_message(&json).map_err(|e| {
                 ProviderError::RequestFailed(format!("Failed to parse message: {}", e))
@@ -135,6 +136,7 @@ impl OpenAiCompatibleProvider {
             let usage_json = json.get("usage").unwrap_or(&Value::Null);
             let usage_data = get_usage(usage_json);
             let mut usage = ProviderUsage::new(model_config.model_name.clone(), usage_data);
+            usage.request_id = request_id;
             record_response_metadata(&mut usage, &json);
             if let Some(cost) = get_cost(usage_json) {
                 usage = usage.with_cost(cost, CostSource::ProviderReported);
@@ -228,16 +230,28 @@ impl Provider for OpenAiCompatibleProvider {
 // Re-exported from the dedicated `http_status` module — these helpers are
 // format-agnostic and used across all provider families.
 pub use super::http_status::{
-    handle_response, handle_status, map_http_error_to_provider_error, sanitize_url,
+    extract_request_id, handle_response, handle_status, map_http_error_to_provider_error,
+    parse_request_id_suffix, request_id_message_suffix, sanitize_url,
 };
 
 // Legacy alias kept for callers that haven't migrated their import path yet.
 pub use super::http_status::handle_response as handle_response_openai_compat;
 
+/// SSE error frames arrive after a 200, so the header id is only available here.
+fn annotate_request_id(mut error: ProviderError, request_id: Option<&str>) -> ProviderError {
+    if let (Some(details), Some(id)) = (error.details_mut(), request_id) {
+        if parse_request_id_suffix(details).is_none() {
+            details.push_str(&request_id_message_suffix(Some(id)));
+        }
+    }
+    error
+}
+
 pub fn stream_openai_compat(
     response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
 ) -> Result<MessageStream, ProviderError> {
+    let request_id = extract_request_id(response.headers());
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
     Ok(Box::pin(try_stream! {
@@ -248,10 +262,16 @@ pub fn stream_openai_compat(
         let message_stream = response_to_streaming_message(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
-            let (message, usage) = message.map_err(|e|
-                e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
+            let (message, mut usage) = message.map_err(|e|
+                annotate_request_id(
+                    e.downcast::<ProviderError>()
+                        .unwrap_or_else(ProviderError::stream_decode_error),
+                    request_id.as_deref(),
+                )
             )?;
+            if let Some(usage) = usage.as_mut() {
+                usage.request_id = request_id.clone();
+            }
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
         }
@@ -262,6 +282,7 @@ pub fn stream_responses_compat(
     response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
 ) -> Result<MessageStream, ProviderError> {
+    let request_id = extract_request_id(response.headers());
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
     Ok(Box::pin(try_stream! {
@@ -272,10 +293,16 @@ pub fn stream_responses_compat(
         let message_stream = responses_api_to_streaming_message(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
-            let (message, usage) = message.map_err(|e|
-                e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
+            let (message, mut usage) = message.map_err(|e|
+                annotate_request_id(
+                    e.downcast::<ProviderError>()
+                        .unwrap_or_else(ProviderError::stream_decode_error),
+                    request_id.as_deref(),
+                )
             )?;
+            if let Some(usage) = usage.as_mut() {
+                usage.request_id = request_id.clone();
+            }
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
         }
@@ -288,6 +315,59 @@ mod tests {
     use crate::model::ModelConfig;
     use serde_json::json;
     use test_case::test_case;
+
+    #[test]
+    fn stream_errors_carry_request_id_once() {
+        let error = annotate_request_id(
+            ProviderError::ServerError("boom".to_string()),
+            Some("req_stream"),
+        );
+        assert_eq!(
+            parse_request_id_suffix(&error.to_string()).as_deref(),
+            Some("req_stream")
+        );
+        let again = annotate_request_id(error, Some("req_other"));
+        assert!(!again.to_string().contains("req_other"));
+    }
+
+    #[tokio::test]
+    async fn streaming_usage_carries_request_id() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let body = concat!(
+            "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0}]}\n\n",
+            "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{},\"index\":0,\"finish_reason\":\"stop\"}],",
+            "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n",
+            "data: [DONE]\n\n",
+        );
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-request-id", "req_stream")
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+
+        let response = reqwest::Client::new()
+            .get(server.uri())
+            .send()
+            .await
+            .unwrap();
+        let mut stream = stream_openai_compat(response, None).unwrap();
+
+        let mut seen = false;
+        while let Some(item) = futures::StreamExt::next(&mut stream).await {
+            if let (_, Some(usage)) = item.unwrap() {
+                seen |= usage.request_id.as_deref() == Some("req_stream");
+            }
+        }
+        assert!(seen, "expected request id on streamed usage");
+    }
 
     #[test_case(
         StatusCode::PAYMENT_REQUIRED,

@@ -118,6 +118,7 @@ pub fn chat_span(
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "goose.chat.purpose" = purpose,
@@ -185,6 +186,9 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     }
     if let Some(id) = &usage.response_id {
         span.record("gen_ai.response.id", id.as_str());
+    }
+    if let Some(id) = &usage.request_id {
+        span.record("gen_ai.request.id", id.as_str());
     }
 }
 
@@ -299,6 +303,7 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
         "gen_ai.response.model" = tracing::field::Empty,
         "gen_ai.response.finish_reasons" = tracing::field::Empty,
         "gen_ai.response.id" = tracing::field::Empty,
+        "gen_ai.request.id" = tracing::field::Empty,
         "gen_ai.usage.input_tokens" = tracing::field::Empty,
         "gen_ai.usage.output_tokens" = tracing::field::Empty,
         "error.type" = tracing::field::Empty,
