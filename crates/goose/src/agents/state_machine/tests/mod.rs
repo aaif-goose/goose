@@ -160,9 +160,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
 
     use goose_providers::api_client::{ApiClient, AuthMethod};
     use goose_providers::model::ModelConfig;
-    use goose_providers::thinking::{
-        ThinkingEffort, ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
-    };
+    use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
     use goose_providers::typesafe::TypeSafeProvider;
     use serde_json::json;
     use wiremock::matchers::{body_partial_json, header, method, path};
@@ -233,24 +231,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
         AuthMethod::BearerToken("test-key".to_string()),
         None,
     )?);
-    let efforts = available_auto_efforts(
-        "claude-acp",
-        &ModelConfig::new("current"),
-        ThinkingEffortSupport::Options(ThinkingEffortCapability {
-            option_id: "effort".to_string(),
-            values: vec![
-                ThinkingEffortOption {
-                    value: "default".to_string(),
-                    label: "Default".to_string(),
-                },
-                ThinkingEffortOption {
-                    value: "high".to_string(),
-                    label: "High".to_string(),
-                },
-            ],
-            current: Some("default".to_string()),
-        }),
-    );
+    let efforts = vec![ThinkingEffort::Off, ThinkingEffort::High];
     assert_eq!(
         available_auto_efforts(
             "openai",
@@ -272,6 +253,19 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             ThinkingEffort::Max,
         ]
     );
+    assert!(available_auto_efforts(
+        "claude-acp",
+        &ModelConfig::new("current"),
+        ThinkingEffortSupport::Options(goose_providers::thinking::ThinkingEffortCapability {
+            option_id: "effort".to_string(),
+            values: vec![goose_providers::thinking::ThinkingEffortOption {
+                value: "high".to_string(),
+                label: "High".to_string(),
+            }],
+            current: Some("high".to_string()),
+        }),
+    )
+    .is_empty());
     for (provider, model) in [
         ("snowflake", "openai-gpt-5"),
         ("snowflake", "claude-sonnet-4-5"),

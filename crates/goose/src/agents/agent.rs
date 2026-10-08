@@ -147,13 +147,9 @@ pub(super) fn available_auto_efforts(
                 .filter(|effort| !always_on || *effort != ThinkingEffort::Off)
                 .collect()
         }
-        ThinkingEffortSupport::Options(capability) => AUTO_EFFORTS
-            .into_iter()
-            .filter(|effort| {
-                crate::acp::map_effort_value(&capability, &effort.to_string()).is_some()
-            })
-            .collect(),
-        ThinkingEffortSupport::Unspecified | ThinkingEffortSupport::Unsupported => Vec::new(),
+        ThinkingEffortSupport::Unspecified
+        | ThinkingEffortSupport::Unsupported
+        | ThinkingEffortSupport::Options(_) => Vec::new(),
     }
 }
 

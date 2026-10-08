@@ -128,6 +128,27 @@ impl AutoEffortOperation {
     }
 }
 
+fn classification_request(messages: &[crate::conversation::message::Message]) -> String {
+    let kickoff = &messages[0];
+    let kickoff_text = kickoff.as_concat_text();
+    if crate::agents::execute_commands::parse_slash_command(&kickoff_text)
+        .is_some_and(|command| matches!(command.command, "doctor" | "prompt"))
+    {
+        return kickoff_text;
+    }
+
+    messages
+        .iter()
+        .rev()
+        .filter(|message| message.is_agent_visible())
+        .find_map(|message| {
+            let message = message.agent_visible_content();
+            matches!(effective_role(&message), EffectiveRole::User)
+                .then(|| message.as_concat_text())
+        })
+        .unwrap_or_default()
+}
+
 pub(super) fn current_turn_effort(conversation: &Conversation) -> Option<ThinkingEffort> {
     let decision = messages_since_kickoff(conversation)
         .ok()?
@@ -162,16 +183,7 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
             return not_applicable();
         }
 
-        let request = messages
-            .iter()
-            .rev()
-            .filter(|message| message.is_agent_visible())
-            .find_map(|message| {
-                let message = message.agent_visible_content();
-                matches!(effective_role(&message), EffectiveRole::User)
-                    .then(|| message.as_concat_text())
-            })
-            .unwrap_or_default();
+        let request = classification_request(messages);
         if request.trim().is_empty() {
             return not_applicable();
         }
@@ -214,5 +226,42 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
         }
 
         applied(effects)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classification_request;
+    use crate::conversation::message::Message;
+
+    #[test]
+    fn doctor_classifies_the_typed_command_instead_of_diagnostics() {
+        let messages = vec![
+            Message::user()
+                .with_text("/doctor")
+                .with_visibility(true, false),
+            Message::user()
+                .with_text("system info and private logs")
+                .with_visibility(false, true),
+        ];
+
+        assert_eq!(classification_request(&messages), "/doctor");
+    }
+
+    #[test]
+    fn prompt_classifies_the_typed_command_instead_of_extension_content() {
+        let messages = vec![
+            Message::user()
+                .with_text("/prompt private-context topic=rust")
+                .with_visibility(true, false),
+            Message::user()
+                .with_text("extension content containing a credential")
+                .with_visibility(false, true),
+        ];
+
+        assert_eq!(
+            classification_request(&messages),
+            "/prompt private-context topic=rust"
+        );
     }
 }
