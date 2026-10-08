@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "에이전트 루프"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "작업 디렉터리가 더 이상 존재하지 않습니다: {path}. 이 세션을 열려면 다른 디렉터리를 선택하세요."
   }
 }

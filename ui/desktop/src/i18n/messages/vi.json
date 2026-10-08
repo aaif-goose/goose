@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Vòng lặp tác nhân"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Thư mục làm việc không còn tồn tại: {path}. Chọn thư mục thay thế để mở phiên này."
   }
 }

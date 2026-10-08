@@ -126,6 +126,58 @@ describe('ACP sessions', () => {
     );
   });
 
+  it('retries with the selected directory and records only the confirmed path', async () => {
+    const client = newSessionClient();
+    const selected = 'C:\\Users\\goose\\renamed';
+    const addRecentDir = vi.fn();
+    window.electron.addRecentDir = addRecentDir;
+    client.goose.sessionInfo_unstable.mockResolvedValue({
+      session: sessionInfo({ cwd: selected }),
+    });
+
+    const result = await acpLoadSession('session-1', selected);
+
+    expect(client.connection.agent.request).toHaveBeenCalledWith(methods.agent.session.load, {
+      sessionId: 'session-1',
+      cwd: selected,
+      mcpServers: [],
+    });
+    expect(result.sessionInfo.cwd).toBe(selected);
+    expect(addRecentDir).toHaveBeenCalledWith(selected);
+  });
+
+  it('does not record a rejected replacement directory', async () => {
+    const client = newSessionClient();
+    const failure = new Error('invalid directory path');
+    client.connection.agent.request.mockRejectedValue(failure);
+    const addRecentDir = vi.fn();
+    window.electron.addRecentDir = addRecentDir;
+
+    await expect(acpLoadSession('session-1', '/invalid')).rejects.toBe(failure);
+
+    expect(addRecentDir).not.toHaveBeenCalled();
+    expect(client.goose.sessionInfo_unstable).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares a concurrent recovery load without replaying twice', async () => {
+    const client = newSessionClient();
+    let resolveLoad!: (response: { sessionId: string }) => void;
+    client.connection.agent.request.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLoad = resolve;
+      })
+    );
+    window.electron.addRecentDir = vi.fn();
+
+    const first = acpLoadSession('session-1', '/replacement');
+    const second = acpLoadSession('session-1', '/replacement');
+    await vi.waitFor(() => expect(client.connection.agent.request).toHaveBeenCalledTimes(1));
+    resolveLoad({ sessionId: 'session-1' });
+
+    expect(await first).toBe(await second);
+    expect(window.electron.addRecentDir).toHaveBeenCalledTimes(1);
+  });
+
   it('sends an explicitly empty extension set as an empty list', async () => {
     const client = newSessionClient();
 

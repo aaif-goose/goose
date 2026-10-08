@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Boucle d’agent"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Le répertoire de travail n’existe plus : {path}. Choisissez un autre répertoire pour ouvrir cette session."
   }
 }

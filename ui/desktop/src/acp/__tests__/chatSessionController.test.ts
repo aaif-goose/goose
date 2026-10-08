@@ -149,7 +149,7 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, undefined);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
@@ -162,7 +162,7 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).not.toHaveBeenCalled();
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, undefined);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
@@ -180,7 +180,7 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, undefined);
   });
 
   it('restores a cached session from the server', async () => {
@@ -193,11 +193,51 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.restoreSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, undefined);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
     );
+  });
+});
+
+describe('acpChatSessionController working directory recovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+  });
+
+  it('preserves the recoverable missing path for the UI', async () => {
+    vi.mocked(acpLoadSession).mockRejectedValue({
+      message: 'Invalid params',
+      data: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(SESSION_ID, {
+      reason: 'working_directory_missing',
+      path: '/deleted',
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('keeps recovery available after a replacement is rejected', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+    vi.mocked(acpLoadSession).mockRejectedValue(new Error('invalid directory path'));
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/invalid' });
+
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, '/invalid');
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(SESSION_ID, {
+      reason: 'working_directory_missing',
+      path: '/deleted',
+      recoveryError: 'invalid directory path',
+    });
   });
 });
 
@@ -266,7 +306,6 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(acpChatSessionActions.startPromptAttempt).not.toHaveBeenCalled();
     expect(acpPromptSession).not.toHaveBeenCalled();
   });
-
 });
 
 describe('acpChatSessionController.updateMessage', () => {

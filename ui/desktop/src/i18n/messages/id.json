@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Loop agen"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Direktori kerja sudah tidak ada: {path}. Pilih direktori pengganti untuk membuka sesi ini."
   }
 }

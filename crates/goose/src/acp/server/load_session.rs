@@ -398,6 +398,19 @@ impl GooseAcpAgent {
             })?;
 
         let cwd = effective_session_cwd(self.session_cwd.as_deref(), &args.cwd);
+        if self.session_cwd.is_none()
+            && cwd == session.working_dir
+            && cwd.is_absolute()
+            && std::fs::metadata(&cwd)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "reason": "working_directory_missing",
+                    "path": cwd,
+                })),
+            );
+        }
         validate_absolute_cwd(&cwd)?;
 
         session = self
