@@ -202,30 +202,23 @@ impl Operation<Session, GooseEffect> for AutoEffortOperation {
             return not_applicable();
         };
 
-        let mut effects = Vec::new();
+        let mut updated = conversation.clone();
+        let kickoff = updated
+            .messages_mut()
+            .iter_mut()
+            .find(|message| message.id.as_deref() == Some(message_id.as_str()))
+            .ok_or_else(|| anyhow!("automatic effort kickoff message disappeared"))?;
         let client_log = decision.effort.map(|effort| format!("thinking {effort}"));
-        effects.push(
-            ConversationEffect::SetMessageOperationNote {
-                message_id: message_id.clone(),
-                operation: self.name().to_string(),
-                key: DECISION.to_string(),
-                value: serde_json::to_value(decision)?,
-            }
-            .into(),
-        );
+        kickoff
+            .metadata
+            .set_operation_note(self.name(), DECISION, serde_json::to_value(decision)?);
         if let Some(client_log) = client_log {
-            effects.push(
-                ConversationEffect::SetMessageOperationNote {
-                    message_id,
-                    operation: self.name().to_string(),
-                    key: CLIENT_LOG.to_string(),
-                    value: client_log.into(),
-                }
-                .into(),
-            );
+            kickoff
+                .metadata
+                .set_operation_note(self.name(), CLIENT_LOG, client_log.into());
         }
 
-        applied(effects)
+        applied([ConversationEffect::ReplaceConversation(updated).into()])
     }
 }
 

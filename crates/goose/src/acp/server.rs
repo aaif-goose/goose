@@ -1724,7 +1724,7 @@ fn operation_log_chunk_for_system_notification(
     message: &Message,
     notification: &SystemNotificationContent,
 ) -> Option<ContentChunk> {
-    if message.metadata.operation_logs.is_empty() {
+    if !message.metadata.has_operation_logs() {
         return None;
     }
     Some(content_chunk_for_message(
@@ -2165,7 +2165,7 @@ impl GooseAcpAgent {
                     populate_output_token_limit_content(&mut message);
                     for content_item in &message.content {
                         if let Some(error) = prompt_error_from_message_content(content_item) {
-                            if !message.metadata.operation_logs.is_empty() {
+                            if message.metadata.has_operation_logs() {
                                 self.handle_message_content(
                                     content_item,
                                     &message,
@@ -3539,8 +3539,7 @@ print(\"hello, world\")
         let mut message = Message::assistant().with_id("terminal-notification");
         message
             .metadata
-            .operation_logs
-            .push("ops_auto_effort: thinking high".to_string());
+            .push_operation_log("ops_auto_effort: thinking high".to_string());
 
         let chunk = operation_log_chunk_for_system_notification(&message, &notification)
             .expect("operation log should be forwarded in a message chunk");

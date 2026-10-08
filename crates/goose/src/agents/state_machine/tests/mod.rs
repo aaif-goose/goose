@@ -381,19 +381,19 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     let logged_messages: Vec<_> = conversation
         .messages()
         .iter()
-        .filter(|message| !message.metadata.operation_logs.is_empty())
+        .filter(|message| message.metadata.has_operation_logs())
         .collect();
     assert_eq!(logged_messages.len(), 3);
     assert_eq!(
-        logged_messages[0].metadata.operation_logs,
+        logged_messages[0].metadata.operation_logs(),
         ["ops_auto_effort: thinking high"]
     );
     assert_eq!(
-        logged_messages[1].metadata.operation_logs,
+        logged_messages[1].metadata.operation_logs(),
         ["ops_auto_effort: thinking high"]
     );
     assert_eq!(
-        logged_messages[2].metadata.operation_logs,
+        logged_messages[2].metadata.operation_logs(),
         ["ops_auto_effort: thinking off"]
     );
     assert!(logged_messages[0].is_tool_call());

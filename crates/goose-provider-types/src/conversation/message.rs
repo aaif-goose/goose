@@ -823,6 +823,9 @@ impl MessageUsage {
 pub type OperationNotes =
     std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>;
 
+const CLIENT_METADATA_OPERATION: &str = "_client";
+const OPERATION_LOGS_NOTE: &str = "logs";
+
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 /// Metadata for message visibility and model inference details
 #[serde(rename_all = "camelCase")]
@@ -846,8 +849,6 @@ pub struct MessageMetadata {
     pub turn_context: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub operation_logs: Vec<String>,
     /// What an operation did to this message, keyed by operation name. Read back
     /// from the persisted conversation so a rebuilt pipeline knows what already
     /// happened. Never sent to providers.
@@ -865,13 +866,56 @@ impl Default for MessageMetadata {
             steer: false,
             turn_context: false,
             usage: None,
-            operation_logs: Vec::new(),
             operations: None,
         }
     }
 }
 
 impl MessageMetadata {
+    pub fn operation_logs(&self) -> Vec<String> {
+        self.operation_note(CLIENT_METADATA_OPERATION, OPERATION_LOGS_NOTE)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect()
+    }
+
+    pub fn has_operation_logs(&self) -> bool {
+        self.operation_note(CLIENT_METADATA_OPERATION, OPERATION_LOGS_NOTE)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|logs| !logs.is_empty())
+    }
+
+    pub fn set_operation_logs(&mut self, logs: Vec<String>) {
+        if logs.is_empty() {
+            if let Some(operations) = self.operations.as_mut() {
+                if let Some(client) = operations.get_mut(CLIENT_METADATA_OPERATION) {
+                    client.remove(OPERATION_LOGS_NOTE);
+                    if client.is_empty() {
+                        operations.remove(CLIENT_METADATA_OPERATION);
+                    }
+                }
+                if operations.is_empty() {
+                    self.operations = None;
+                }
+            }
+            return;
+        }
+        self.set_operation_note(
+            CLIENT_METADATA_OPERATION,
+            OPERATION_LOGS_NOTE,
+            serde_json::json!(logs),
+        );
+    }
+
+    pub fn push_operation_log(&mut self, log: String) {
+        let mut logs = self.operation_logs();
+        logs.push(log);
+        self.set_operation_logs(logs);
+    }
+
     pub fn operation_note(&self, operation: &str, key: &str) -> Option<&serde_json::Value> {
         self.operations.as_ref()?.get(operation)?.get(key)
     }

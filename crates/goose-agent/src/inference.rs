@@ -113,7 +113,7 @@ fn drop_repeated_tool_call_thinking(accumulator: &Conversation, chunk: &mut Mess
 fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
     let mut seen = messages
         .iter()
-        .flat_map(|message| message.metadata.operation_logs.iter().cloned())
+        .flat_map(|message| message.metadata.operation_logs())
         .collect::<std::collections::HashSet<_>>();
     let mut logs = Vec::new();
 
@@ -152,7 +152,7 @@ fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
             )
         });
     if message.role == rmcp::model::Role::Assistant && renderable && !logs.is_empty() {
-        message.metadata.operation_logs = std::mem::take(logs);
+        message.metadata.set_operation_logs(std::mem::take(logs));
     }
 }
 
@@ -655,20 +655,20 @@ mod tests {
 
         attach_operation_logs(&mut permission, &mut logs);
 
-        assert!(permission.metadata.operation_logs.is_empty());
+        assert!(!permission.metadata.has_operation_logs());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut redacted = Message::assistant()
             .with_content(MessageContent::redacted_thinking("opaque reasoning"));
         attach_operation_logs(&mut redacted, &mut logs);
 
-        assert!(redacted.metadata.operation_logs.is_empty());
+        assert!(!redacted.metadata.has_operation_logs());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut whitespace = Message::assistant().with_text(" \n\t ");
         attach_operation_logs(&mut whitespace, &mut logs);
 
-        assert!(whitespace.metadata.operation_logs.is_empty());
+        assert!(!whitespace.metadata.has_operation_logs());
         assert_eq!(logs, ["ops_auto_effort: thinking high"]);
 
         let mut error = Message::from_provider_error(&ProviderError::RequestFailed(
@@ -677,7 +677,7 @@ mod tests {
         attach_operation_logs(&mut error, &mut logs);
 
         assert_eq!(
-            error.metadata.operation_logs,
+            error.metadata.operation_logs(),
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());
@@ -692,7 +692,7 @@ mod tests {
         attach_operation_logs(&mut message, &mut logs);
 
         assert_eq!(
-            message.metadata.operation_logs,
+            message.metadata.operation_logs(),
             ["ops_auto_effort: thinking high"]
         );
         assert!(logs.is_empty());

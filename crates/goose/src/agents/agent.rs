@@ -251,9 +251,16 @@ pub(super) fn available_auto_efforts(
             )
             .and_then(|model| model.thinking_mode)
                 == Some(goose_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
+            let mandatory_openrouter_reasoning = provider_name == "openrouter"
+                && model_name.rsplit('/').next().is_some_and(|model| {
+                    model.starts_with("gemini-3.5") || model.starts_with("gemini-3.6")
+                });
             AUTO_EFFORTS
                 .into_iter()
-                .filter(|effort| !always_on || *effort != ThinkingEffort::Off)
+                .filter(|effort| {
+                    (!always_on && !mandatory_openrouter_reasoning)
+                        || *effort != ThinkingEffort::Off
+                })
                 .collect()
         }
         ThinkingEffortSupport::Options(capability) => AUTO_EFFORTS
@@ -609,7 +616,7 @@ fn attach_operation_log(message: &mut Message, pending: &mut Option<String>) {
         });
     if message.role == rmcp::model::Role::Assistant && renderable {
         if let Some(log) = pending.take() {
-            message.metadata.operation_logs.push(log);
+            message.metadata.push_operation_log(log);
         }
     }
 }
@@ -3249,8 +3256,9 @@ impl Agent {
                                         &toolshim_tools,
                                         surfaced_thinking_in_turn,
                                     );
-                                filtered_response.metadata.operation_logs =
-                                    response.metadata.operation_logs.clone();
+                                filtered_response
+                                    .metadata
+                                    .set_operation_logs(response.metadata.operation_logs());
 
                                 let filtered_response = if let Some(inference) = inference.as_ref() {
                                     filtered_response.with_inference(inference.clone())
@@ -3489,8 +3497,9 @@ impl Agent {
                                             Message::assistant().with_generated_id()
                                         };
                                     if index == 0 {
-                                        request_msg.metadata.operation_logs =
-                                            response.metadata.operation_logs.clone();
+                                        request_msg
+                                            .metadata
+                                            .set_operation_logs(response.metadata.operation_logs());
                                     }
 
                                     let thinking = if index == 0 {
@@ -4386,6 +4395,21 @@ mod tests {
         assert!(
             available_auto_efforts("snowflake", &model, ThinkingEffortSupport::Unspecified,)
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn openrouter_mandatory_reasoning_models_exclude_off() {
+        let model = goose_providers::model::ModelConfig::new("google/gemini-3.5-flash");
+
+        assert_eq!(
+            available_auto_efforts("openrouter", &model, ThinkingEffortSupport::Unspecified),
+            vec![
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]
         );
     }
 
@@ -6218,7 +6242,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .find(|message| message.as_concat_text() == "selected effort applied")
             .expect("provider response should be emitted");
         assert_eq!(
-            response.metadata.operation_logs,
+            response.metadata.operation_logs(),
             ["ops_auto_effort: thinking high"]
         );
 
@@ -6256,7 +6280,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(fallback_response
             .expect("fallback response should be emitted")
             .metadata
-            .operation_logs
+            .operation_logs()
             .is_empty());
 
         {
@@ -6301,7 +6325,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             refusal_response
                 .expect("refusal response should be emitted")
                 .metadata
-                .operation_logs,
+                .operation_logs(),
             ["ops_auto_effort: thinking high"]
         );
         {
