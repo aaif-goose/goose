@@ -1391,7 +1391,7 @@ impl CliSession {
                                     .await?;
                                 if cancelled_by_user {
                                     cancel_token_clone.cancel();
-                                    drain_stopped_run(&mut stream, &mut self.messages).await;
+                                    drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                     if !has_tool_response(&self.messages, &confirmation_request.id) {
                                         let mut response_message = Message::user();
                                         response_message.content.push(MessageContent::tool_response(
@@ -1459,14 +1459,14 @@ impl CliSession {
                                         let _ = self.agent.reply(response_message, session_config.clone(), goose::agents::state_machine::enabled(), Some(cancel_token.clone())).await?;
                                         if should_cancel {
                                             cancel_token_clone.cancel();
-                                            drain_stopped_run(&mut stream, &mut self.messages).await;
+                                            drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                             break;
                                         }
                                     }
                                     Err(e) => {
                                         output::render_error(&format!("Failed to collect input: {}", e));
                                         cancel_token_clone.cancel();
-                                        drain_stopped_run(&mut stream, &mut self.messages).await;
+                                        drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                         break;
                                     }
                                 }
@@ -1530,7 +1530,7 @@ impl CliSession {
                     }
                 }
                 _ = cancel_token_clone.cancelled() => {
-                    drain_stopped_run(&mut stream, &mut self.messages).await;
+                    drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                     drop(stream);
                     if let Err(e) = self.handle_interrupted_messages(true).await {
                         eprintln!("Error handling interruption: {}", e);
@@ -2069,6 +2069,7 @@ async fn create_successor_session(
 async fn drain_stopped_run(
     stream: &mut (impl futures::Stream<Item = Result<AgentEvent>> + Unpin),
     messages: &mut Conversation,
+    last_usage: &mut Option<ProviderUsage>,
 ) {
     use futures::StreamExt;
     let interrupted_again = ctrl_c();
@@ -2089,6 +2090,7 @@ async fn drain_stopped_run(
                 messages.push(message);
             }
             Ok(AgentEvent::HistoryReplaced(conversation)) => *messages = conversation,
+            Ok(AgentEvent::Usage(usage)) => *last_usage = Some(usage),
             _ => {}
         }
     }
