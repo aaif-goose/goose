@@ -120,6 +120,10 @@ pub(super) fn available_auto_efforts(
 
     match support {
         ThinkingEffortSupport::Unspecified if model_config.is_reasoning_model() => {
+            if provider_name == "snowflake" {
+                return Vec::new();
+            }
+
             if provider_name == "databricks_v2"
                 && model_config.model_name.to_lowercase().contains("gemini")
             {
@@ -4389,13 +4393,17 @@ mod tests {
 
     #[test]
     fn snowflake_has_no_automatic_efforts_without_wire_support() {
-        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-5")
-            .with_canonical_limits("snowflake");
+        for model_name in ["claude-sonnet-4-5", "openai-gpt-5"] {
+            let model = goose_providers::model::ModelConfig::new(model_name)
+                .with_canonical_limits("snowflake");
 
-        assert!(
-            available_auto_efforts("snowflake", &model, ThinkingEffortSupport::Unspecified,)
-                .is_empty()
-        );
+            assert!(available_auto_efforts(
+                "snowflake",
+                &model,
+                ThinkingEffortSupport::Unspecified,
+            )
+            .is_empty());
+        }
     }
 
     #[test]

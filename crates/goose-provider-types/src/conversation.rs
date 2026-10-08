@@ -49,6 +49,7 @@ impl Conversation {
 
     pub fn push(&mut self, message: Message) {
         let output_token_limit_reached = message.metadata.output_token_limit_reached;
+        let mut operation_logs = message.metadata.operation_logs();
         if message.content.is_empty()
             && (message.metadata.inference.is_some() || output_token_limit_reached)
         {
@@ -61,6 +62,11 @@ impl Conversation {
             }) {
                 if let Some(inference) = message.metadata.inference.clone() {
                     existing.metadata.inference = Some(inference);
+                }
+                if !operation_logs.is_empty() {
+                    let mut existing_logs = existing.metadata.operation_logs();
+                    existing_logs.append(&mut operation_logs);
+                    existing.metadata.set_operation_logs(existing_logs);
                 }
                 existing.metadata.output_token_limit_reached |= output_token_limit_reached;
                 return;
@@ -79,6 +85,11 @@ impl Conversation {
         {
             if message.metadata.inference.is_some() {
                 last.metadata.inference = message.metadata.inference.clone();
+            }
+            if !operation_logs.is_empty() {
+                let mut existing_logs = last.metadata.operation_logs();
+                existing_logs.append(&mut operation_logs);
+                last.metadata.set_operation_logs(existing_logs);
             }
             last.metadata.output_token_limit_reached |= message.metadata.output_token_limit_reached;
             match (last.content.last_mut(), message.content.last()) {
@@ -1843,7 +1854,11 @@ mod tests {
     #[test]
     fn test_push_merges_empty_output_token_limit_update_by_id() {
         let mut conv = Conversation::empty();
-        conv.push(Message::assistant().with_text("first").with_id("turn-1"));
+        conv.push(
+            Message::assistant()
+                .with_redacted_thinking("redacted")
+                .with_id("turn-1"),
+        );
 
         let inference = InferenceMetadata {
             provider: "test-provider".to_string(),
@@ -1855,11 +1870,18 @@ mod tests {
             .with_id("turn-1")
             .with_inference(inference.clone());
         limited.metadata.output_token_limit_reached = true;
+        limited
+            .metadata
+            .set_operation_logs(vec!["ops_auto_effort: thinking high".to_string()]);
         conv.push(limited);
 
         assert_eq!(conv.messages().len(), 1);
         assert!(conv.messages()[0].metadata.output_token_limit_reached);
         assert_eq!(conv.messages()[0].metadata.inference, Some(inference));
+        assert_eq!(
+            conv.messages()[0].metadata.operation_logs(),
+            vec!["ops_auto_effort: thinking high"]
+        );
     }
 
     #[test]
