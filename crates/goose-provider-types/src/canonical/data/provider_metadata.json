@@ -891,7 +891,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 398
+    "model_count": 397
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1387,7 +1387,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 119
+    "model_count": 120
   },
   {
     "id": "opencode-go",
@@ -1398,7 +1398,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 35
+    "model_count": 36
   },
   {
     "id": "openreason",
