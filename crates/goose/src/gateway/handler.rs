@@ -15,7 +15,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::execution::manager::AgentManager;
 use crate::permission::Permission;
 use crate::session::SessionType;
-use crate::session::{EnabledExtensionsState, ExtensionState, Session};
+use crate::session::{EnabledExtensionsState, Session};
 
 use super::pairing::PairingStore;
 use super::{Gateway, GatewayConfig, IncomingMessage, OutgoingMessage, PairingState, PlatformUser};
@@ -344,15 +344,13 @@ impl GatewayHandler {
         extensions.extend(crate::plugins::mcp_servers::enabled_plugin_mcp_servers(
             Some(&session.working_dir),
         ));
-        let extensions_state = EnabledExtensionsState::new(extensions);
-        let mut extension_data = session.extension_data.clone();
-        if let Err(e) = extensions_state.to_extension_data(&mut extension_data) {
-            tracing::warn!(error = %e, "failed to initialize gateway session extensions");
-        } else {
-            update = update.extension_data(extension_data);
-        }
-
         update.apply().await?;
+        if let Err(e) = manager
+            .update_enabled_extensions(&session.id, |selected| *selected = extensions)
+            .await
+        {
+            tracing::warn!(error = %e, "failed to initialize gateway session extensions");
+        }
 
         let now = chrono::Utc::now().timestamp();
         self.pairing_store
@@ -434,21 +432,19 @@ impl GatewayHandler {
             }
         }
 
-        if extensions_changed {
-            let extensions_state = EnabledExtensionsState::new(current_extensions);
-            let mut extension_data = session.extension_data.clone();
-            if let Err(e) = extensions_state.to_extension_data(&mut extension_data) {
-                tracing::warn!(error = %e, "failed to update gateway session extensions");
-            } else {
-                update = update.extension_data(extension_data);
-            }
-        }
-
         if mode_changed {
             update = update.goose_mode(current_mode);
         }
 
         update.apply().await?;
+        if extensions_changed {
+            if let Err(e) = manager
+                .update_enabled_extensions(&session.id, |selected| *selected = current_extensions)
+                .await
+            {
+                tracing::warn!(error = %e, "failed to update gateway session extensions");
+            }
+        }
         Ok(extensions_changed)
     }
 

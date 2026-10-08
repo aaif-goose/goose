@@ -27,7 +27,7 @@ use crate::agents::provider_manager::ProviderManager;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
-use crate::session::{EnabledExtensionsState, ExtensionState, Session};
+use crate::session::{EnabledExtensionsState, Session};
 use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
@@ -368,7 +368,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     scopes: Mutex<HashMap<String, IndexMap<String, Arc<ExtensionSlot>>>>,
-    mutation_lock: Mutex<()>,
+    start_lock: Mutex<()>,
     context: PlatformExtensionContext,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
@@ -593,7 +593,7 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
-            mutation_lock: Mutex::new(()),
+            start_lock: Mutex::new(()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -879,20 +879,16 @@ impl ExtensionManager {
             .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
 
-    async fn write_selection(
-        &self,
-        session: Session,
-        extensions: Vec<ExtensionConfig>,
-    ) -> ExtensionResult<()> {
-        let mut extension_data = session.extension_data;
-        EnabledExtensionsState::new(extensions)
-            .to_extension_data(&mut extension_data)
-            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+    async fn select(&self, session_id: &str, config: ExtensionConfig) -> ExtensionResult<()> {
         self.context
             .session_manager
-            .update(&session.id)
-            .extension_data(extension_data)
-            .apply()
+            .update_enabled_extensions(session_id, |extensions| {
+                let key = config.key();
+                match extensions.iter_mut().find(|selected| selected.key() == key) {
+                    Some(selected) => *selected = config,
+                    None => extensions.push(config),
+                }
+            })
             .await
             .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
@@ -914,7 +910,7 @@ impl ExtensionManager {
         session_id: &str,
         config: ExtensionConfig,
     ) -> ExtensionResult<()> {
-        let _guard = self.mutation_lock.lock().await;
+        let _guard = self.start_lock.lock().await;
         let session = self.session(session_id).await?;
         let existing = self
             .scopes
@@ -929,8 +925,7 @@ impl ExtensionManager {
             .cloned();
         if let Some(slot) = existing {
             if !matches!(slot.runtime().await, Runtime::Failed(_)) {
-                let extensions = with_selected(selection(&session), config);
-                return self.write_selection(session, extensions).await;
+                return self.select(session_id, config).await;
             }
         }
         let placement = Placement::for_config(
@@ -954,21 +949,19 @@ impl ExtensionManager {
             },
         )
         .await;
-        let extensions = with_selected(selection(&session), config);
-        self.write_selection(session, extensions).await
+        self.select(session_id, config).await
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
-        let _guard = self.mutation_lock.lock().await;
-        let session = self.session(session_id).await?;
-        let mut extensions = selection(&session);
-        let selected = extensions.len();
-        extensions.retain(|config| config.key() != key);
-        if extensions.len() == selected {
-            return Ok(false);
-        }
-        self.write_selection(session, extensions).await?;
-        Ok(true)
+        self.context
+            .session_manager
+            .update_enabled_extensions(session_id, |extensions| {
+                let selected = extensions.len();
+                extensions.retain(|config| config.key() != key);
+                extensions.len() != selected
+            })
+            .await
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
 
     pub async fn apply(
@@ -1022,7 +1015,6 @@ impl ExtensionManager {
         client: McpClientBox,
         info: Option<ServerConfig>,
     ) {
-        let _guard = self.mutation_lock.lock().await;
         let key = config.key();
         self.install(
             session_id,
@@ -1044,11 +1036,8 @@ impl ExtensionManager {
         )
         .await;
         // Otherwise the next lease, built from the record, drops the slot.
-        if let Ok(session) = self.session(session_id).await {
-            let extensions = with_selected(selection(&session), config);
-            if let Err(error) = self.write_selection(session, extensions).await {
-                warn!(%error, "failed to select injected extension");
-            }
+        if let Err(error) = self.select(session_id, config).await {
+            warn!(%error, "failed to select injected extension");
         }
     }
 
@@ -1090,18 +1079,6 @@ fn selection(session: &Session) -> Vec<ExtensionConfig> {
     EnabledExtensionsState::from_extension_data(&session.extension_data)
         .map(|state| state.extensions)
         .unwrap_or_default()
-}
-
-fn with_selected(
-    mut extensions: Vec<ExtensionConfig>,
-    config: ExtensionConfig,
-) -> Vec<ExtensionConfig> {
-    let key = config.key();
-    match extensions.iter_mut().find(|selected| selected.key() == key) {
-        Some(selected) => *selected = config,
-        None => extensions.push(config),
-    }
-    extensions
 }
 
 #[cfg(test)]
@@ -1760,14 +1737,60 @@ mod tests {
             )
             .await
             .unwrap();
-        manager
-            .write_selection(session.clone(), extensions)
+        session_manager
+            .update_enabled_extensions(&session.id, |selected| *selected = extensions)
             .await
             .unwrap();
         session_manager
             .get_session(&session.id, false)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn concurrent_selection_changes_from_separate_connections_are_all_kept() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let first = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
+        let session = session_selecting(&first, temp_dir.path(), vec![]).await;
+        let managers = (0..8)
+            .map(|_| ExtensionManager::with_data_dir(temp_dir.path().to_path_buf()))
+            .collect::<Vec<_>>();
+
+        futures::future::join_all(managers.iter().enumerate().map(|(i, manager)| {
+            manager.add_client(
+                &session.id,
+                builtin_config(&format!("ext_{i}"), vec![]),
+                Arc::new(MockClient {}),
+                None,
+            )
+        }))
+        .await;
+
+        let mut selected = first.list_extensions(&session.id).await;
+        selected.sort();
+        assert_eq!(
+            selected,
+            (0..8).map(|i| format!("ext_{i}")).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_selection_with_colliding_keys_is_refused() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
+        let session =
+            session_selecting(&manager, temp_dir.path(), vec![builtin_config("a", vec![])]).await;
+
+        let result = manager
+            .get_context()
+            .session_manager
+            .update_enabled_extensions(&session.id, |selected| {
+                *selected = vec![builtin_config("a.b", vec![]), builtin_config("a/b", vec![])]
+            })
+            .await;
+
+        assert!(result.unwrap_err().to_string().contains("appears twice"));
+        assert_eq!(manager.list_extensions(&session.id).await, vec!["a"]);
     }
 
     #[tokio::test]

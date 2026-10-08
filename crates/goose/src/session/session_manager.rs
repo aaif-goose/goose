@@ -1,5 +1,6 @@
 use crate::agents::Container;
 use crate::config::paths::Paths;
+use crate::config::ExtensionConfig;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
 use crate::conversation::Conversation;
@@ -8,7 +9,7 @@ use crate::providers::base::Provider;
 use crate::recipe::validate_recipe::strip_unreferenced_parameters;
 use crate::recipe::Recipe;
 use crate::session::export_markdown::export_session_to_markdown;
-use crate::session::extension_data::{ExtensionData, ExtensionState};
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
@@ -761,6 +762,32 @@ impl SessionManager {
                 data.set_extension_state(extension_name, version, value)
             })
             .await
+    }
+
+    /// Reads, changes and writes the selection in one transaction, so
+    /// concurrent changes from other connections are not lost.
+    pub async fn update_enabled_extensions<R>(
+        &self,
+        session_id: &str,
+        update: impl FnOnce(&mut Vec<ExtensionConfig>) -> R,
+    ) -> Result<R> {
+        let mut outcome = None;
+        self.storage
+            .update_json_column(session_id, "extension_data", |data: &mut ExtensionData| {
+                let mut extensions = EnabledExtensionsState::from_extension_data(data)
+                    .map(|state| state.extensions)
+                    .unwrap_or_default();
+                let output = update(&mut extensions);
+                outcome = Some(
+                    EnabledExtensionsState::check_unique_keys(&extensions)
+                        .and_then(|()| {
+                            EnabledExtensionsState::new(extensions).to_extension_data(data)
+                        })
+                        .map(|()| output),
+                );
+            })
+            .await?;
+        outcome.expect("the update ran")
     }
 
     pub async fn set_system_prompt_extra(

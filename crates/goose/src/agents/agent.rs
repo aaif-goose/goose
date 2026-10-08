@@ -44,7 +44,6 @@ use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
-use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
@@ -418,23 +417,10 @@ impl Agent {
         session_id: &str,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<()> {
-        let extensions_state = EnabledExtensionsState::new(extensions);
-
-        let session_manager = self.config.session_manager.clone();
-        let session = session_manager.get_session(session_id, false).await?;
-        let mut extension_data = session.extension_data.clone();
-
-        extensions_state
-            .to_extension_data(&mut extension_data)
-            .map_err(|e| anyhow!("Failed to serialize extension state: {}", e))?;
-
-        session_manager
-            .update(session_id)
-            .extension_data(extension_data)
-            .apply()
-            .await?;
-
-        Ok(())
+        self.config
+            .session_manager
+            .update_enabled_extensions(session_id, |selected| *selected = extensions)
+            .await
     }
 
     pub async fn add_extension(

@@ -70,15 +70,8 @@ impl ExtensionSet {
         working_dir: Option<PathBuf>,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Self, ExtensionError> {
-        let mut seen = std::collections::HashSet::new();
-        for config in &extensions {
-            if !seen.insert(config.key()) {
-                return Err(ExtensionError::ConfigError(format!(
-                    "extension '{}' appears twice in the set",
-                    config.name()
-                )));
-            }
-        }
+        crate::session::EnabledExtensionsState::check_unique_keys(&extensions)
+            .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
         Ok(Self {
             scope_id: scope_id.into(),
             working_dir,
