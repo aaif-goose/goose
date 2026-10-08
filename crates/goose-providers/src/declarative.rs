@@ -161,7 +161,8 @@ pub struct DeclarativeProviderConfig {
     #[serde(default)]
     pub session_id_header_override: Option<String>,
     pub timeout_seconds: Option<u64>,
-    pub supports_streaming: Option<bool>,
+    #[serde(default = "default_supports_streaming")]
+    pub supports_streaming: bool,
     #[serde(default = "default_requires_auth")]
     pub requires_auth: bool,
     #[serde(default)]
@@ -200,6 +201,10 @@ pub struct DeclarativeProviderConfig {
 }
 
 fn default_requires_auth() -> bool {
+    true
+}
+
+fn default_supports_streaming() -> bool {
     true
 }
 
@@ -307,7 +312,7 @@ fn resolve_config(config: &mut DeclarativeProviderConfig) -> Result<()> {
                     .or_else(|| var.default.clone())
                     .map(|value| value.eq_ignore_ascii_case("true"));
                 if let Some(value) = value {
-                    config.supports_streaming = Some(value);
+                    config.supports_streaming = value;
                 }
             }
         }
@@ -585,6 +590,24 @@ mod tests {
         let config = config_from_json(&json).unwrap();
 
         assert!(config.preserves_thinking);
+    }
+
+    #[test]
+    fn from_json_defaults_supports_streaming_to_true() {
+        let json = json!({
+            "name": "test-provider",
+            "engine": "openai",
+            "display_name": "Test Provider",
+            "base_url": "http://localhost:1234/v1/chat/completions",
+            "models": [model_json()],
+            "requires_auth": false,
+            "dynamic_models": false
+        })
+        .to_string();
+
+        let config = config_from_json(&json).unwrap();
+
+        assert!(config.supports_streaming);
     }
 
     #[test]

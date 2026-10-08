@@ -970,7 +970,7 @@ pub fn from_declarative_config(
     Ok(OpenAiProviderBuilder::new(api_client)
         .base_path(base_path)
         .custom_headers(config.headers)
-        .supports_streaming(config.supports_streaming.unwrap_or(true))
+        .supports_streaming(config.supports_streaming)
         .name(config.name.clone())
         .custom_models(custom_models)
         .dynamic_models(config.dynamic_models)
@@ -1445,7 +1445,7 @@ mod tests {
             headers: None,
             session_id_header_override: None,
             timeout_seconds: None,
-            supports_streaming: None,
+            supports_streaming: true,
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,

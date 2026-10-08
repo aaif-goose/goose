@@ -421,7 +421,7 @@ pub fn from_declarative_config(
         api_client = api_client.with_headers(header_map)?;
     }
 
-    let supports_streaming = config.supports_streaming.unwrap_or(true);
+    let supports_streaming = config.supports_streaming;
 
     if !supports_streaming {
         return Err(anyhow::anyhow!(
@@ -676,7 +676,7 @@ mod tests {
             headers: None,
             session_id_header_override: None,
             timeout_seconds: None,
-            supports_streaming: None,
+            supports_streaming: true,
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,

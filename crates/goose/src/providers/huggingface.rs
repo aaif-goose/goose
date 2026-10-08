@@ -131,7 +131,7 @@ impl HuggingFaceProvider {
                 api_client,
                 completions_prefix,
             )
-            .with_supports_streaming(config.supports_streaming.unwrap_or(true)),
+            .with_supports_streaming(config.supports_streaming),
             custom_models,
             dynamic_models: config.dynamic_models,
         })
@@ -578,7 +578,7 @@ mod tests {
             headers: None,
             session_id_header_override: None,
             timeout_seconds: None,
-            supports_streaming: Some(true),
+            supports_streaming: true,
             requires_auth: true,
             catalog_provider_id: None,
             base_path: None,

@@ -570,7 +570,7 @@ pub fn from_declarative_config(
         api_client = api_client.with_header("anthropic-version", ANTHROPIC_API_VERSION)?;
     }
 
-    let supports_streaming = config.supports_streaming.unwrap_or(true);
+    let supports_streaming = config.supports_streaming;
 
     if !supports_streaming {
         return Err(anyhow::anyhow!(

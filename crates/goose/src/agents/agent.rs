@@ -4946,7 +4946,7 @@ mod tests {
                 api_url: "https://example.invalid/v1".to_string(),
                 api_key: None,
                 models: vec![crate::providers::base::ModelInfo::new("test-model")],
-                supports_streaming: Some(true),
+                supports_streaming: true,
                 headers: None,
                 requires_auth: false,
                 catalog_provider_id: None,

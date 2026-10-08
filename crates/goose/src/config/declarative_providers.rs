@@ -147,7 +147,7 @@ pub struct CreateCustomProviderParams {
     pub api_url: String,
     pub api_key: Option<String>,
     pub models: Vec<ModelInfo>,
-    pub supports_streaming: Option<bool>,
+    pub supports_streaming: bool,
     pub headers: Option<HashMap<String, String>>,
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
@@ -166,7 +166,7 @@ pub struct UpdateCustomProviderParams {
     pub api_url: String,
     pub api_key: Option<String>,
     pub models: Vec<ModelInfo>,
-    pub supports_streaming: Option<bool>,
+    pub supports_streaming: bool,
     pub headers: Option<HashMap<String, String>>,
     pub requires_auth: bool,
     pub catalog_provider_id: Option<String>,
@@ -341,9 +341,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             },
             session_id_header_override: existing_config.session_id_header_override,
             timeout_seconds: existing_config.timeout_seconds,
-            supports_streaming: params
-                .supports_streaming
-                .or(existing_config.supports_streaming),
+            supports_streaming: params.supports_streaming,
             requires_auth: params.requires_auth,
             catalog_provider_id: params.catalog_provider_id,
             base_path: params.base_path,
@@ -443,7 +441,7 @@ fn resolve_config(config: &mut DeclarativeProviderConfig) -> Result<()> {
                     .or_else(|| global_config.get_param::<bool>(&var.name).ok())
                     .or_else(|| var.default.as_deref().map(|d| d.to_lowercase() == "true"));
                 if let Some(v) = val {
-                    config.supports_streaming = Some(v);
+                    config.supports_streaming = v;
                 }
             }
         }
@@ -619,7 +617,7 @@ mod tests {
             headers: None,
             session_id_header_override: None,
             timeout_seconds: None,
-            supports_streaming: Some(true),
+            supports_streaming: true,
             requires_auth: true,
             catalog_provider_id: Some("huggingface".to_string()),
             base_path: None,
@@ -796,7 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_provider_update_preserves_existing_values() {
+    fn custom_provider_update_preserves_model_metadata() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
@@ -812,7 +810,7 @@ mod tests {
             api_url: "https://example.invalid/v1".to_string(),
             api_key: None,
             models: vec![model],
-            supports_streaming: Some(false),
+            supports_streaming: false,
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -830,7 +828,7 @@ mod tests {
             api_url: created.base_url.clone(),
             api_key: None,
             models: vec![ModelInfo::new("large-model").with_context_limit(2_097_152)],
-            supports_streaming: None,
+            supports_streaming: false,
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -842,7 +840,6 @@ mod tests {
         .unwrap();
 
         let loaded = load_provider(&created.name).unwrap();
-        assert_eq!(loaded.config.supports_streaming, Some(false));
         let model = &loaded.config.models[0];
         assert_eq!(model.context_limit, Some(2_097_152));
         assert_eq!(model.input_token_cost, Some(0.000002));
@@ -949,7 +946,7 @@ mod tests {
             api_url: "https://updated.example.invalid/v1/chat/completions".to_string(),
             api_key: None,
             models: vec![ModelInfo::new("z-model")],
-            supports_streaming: Some(true),
+            supports_streaming: true,
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,

@@ -313,7 +313,7 @@ export default function CustomProviderForm({
       setApiUrl(initialData.api_url);
       setBasePath(initialData.base_path ?? '');
       setModels(initialData.models.join(', '));
-      setSupportsStreaming(initialData.supports_streaming ?? true);
+      setSupportsStreaming(initialData.supports_streaming);
       setToolshim(initialData.toolshim);
       setRequiresAuth(initialData.requires_auth ?? true);
 
