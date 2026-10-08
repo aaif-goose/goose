@@ -312,6 +312,7 @@ impl GooseAcpAgent {
                                 &acp_session_id,
                                 &target,
                                 &tool_requests,
+                                None,
                                 &cx,
                             )
                             .await;

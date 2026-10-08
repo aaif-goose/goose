@@ -1303,6 +1303,87 @@ fn test_prompt_model_mismatch() {
     run_test(async { run_prompt_model_mismatch::<AcpServerConnection>().await });
 }
 
+/// A slash command makes `Agent::reply` yield the user's own prompt back into
+/// the reply stream. The client rendered that prompt when it sent it, so the
+/// server must not forward the echo as a `user_message_chunk`, while the
+/// session history must still record the prompt exactly once.
+#[test]
+fn test_slash_command_does_not_echo_the_prompt_to_the_client() {
+    run_test(async {
+        let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+        // `/skills` is resolved locally, so the provider must never be called.
+        let openai = OpenAiFixture::new(vec![], expected_session_id.clone()).await;
+        let mut conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+        let session_id = session.session_id().0.to_string();
+
+        let output = session
+            .prompt("/skills", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+        assert!(
+            output.text.to_lowercase().contains("skill"),
+            "the command's own reply must still reach the client: {:?}",
+            output.text
+        );
+
+        let turn_updates = session.session_updates();
+        let echoed_user_text = user_chunk_text(&turn_updates);
+        assert!(
+            echoed_user_text.is_empty(),
+            "the client already rendered the prompt; the turn must not echo it back: {echoed_user_text:?}"
+        );
+        assert!(
+            turn_updates
+                .iter()
+                .any(|update| matches!(update, SessionUpdate::AgentMessageChunk(_))),
+            "the command's reply must still be streamed as an agent message"
+        );
+
+        // The prompt is dropped from the live stream only, never from history:
+        // reloading the session replays it exactly once, before the reply.
+        let SessionData { session, .. } = conn.load_session(&session_id, vec![]).await.unwrap();
+        let replayed = session.session_updates();
+        assert_eq!(
+            user_chunk_text(&replayed),
+            vec!["/skills".to_string()],
+            "load_session must replay the slash command exactly once"
+        );
+        let notifications = common_tests::fixtures::to_notifications(&replayed);
+        assert_eq!(
+            notifications
+                .iter()
+                .filter(|n| matches!(
+                    n,
+                    common_tests::fixtures::Notification::UserMessage
+                        | common_tests::fixtures::Notification::AgentMessage
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                &common_tests::fixtures::Notification::UserMessage,
+                &common_tests::fixtures::Notification::AgentMessage
+            ],
+            "history must hold the prompt followed by the command's reply"
+        );
+    });
+}
+
+/// Text of every `user_message_chunk` in `updates`, in order.
+fn user_chunk_text(updates: &[SessionUpdate]) -> Vec<String> {
+    updates
+        .iter()
+        .filter_map(|update| match update {
+            SessionUpdate::UserMessageChunk(chunk) => match &chunk.content {
+                ContentBlock::Text(text) => Some(text.text.clone()),
+                other => Some(format!("{other:?}")),
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn test_prompt_skill() {
     run_test(async { run_prompt_skill::<AcpServerConnection>().await });
