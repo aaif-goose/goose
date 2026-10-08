@@ -255,12 +255,14 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             ],
             current: Some("default".to_string()),
         }),
+        None,
     );
     assert_eq!(
         available_auto_efforts(
             "openai",
             &ModelConfig::new("gpt-5-pro"),
             ThinkingEffortSupport::Unspecified,
+            None,
         ),
         vec![ThinkingEffort::High]
     );
@@ -269,6 +271,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             "anthropic",
             &ModelConfig::new("claude-opus-5-5").with_canonical_limits("anthropic"),
             ThinkingEffortSupport::Unspecified,
+            Some("anthropic"),
         ),
         vec![
             ThinkingEffort::Low,
@@ -282,13 +285,19 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
             "google",
             &ModelConfig::new("gemini-3-pro-preview"),
             ThinkingEffortSupport::Unspecified,
+            None,
         ),
         vec![ThinkingEffort::Low, ThinkingEffort::High]
     );
     let mut ollama_model = ModelConfig::new("gpt-oss:20b");
     ollama_model.reasoning = Some(true);
     assert_eq!(
-        available_auto_efforts("ollama", &ollama_model, ThinkingEffortSupport::Unspecified,),
+        available_auto_efforts(
+            "ollama",
+            &ollama_model,
+            ThinkingEffortSupport::Unspecified,
+            None,
+        ),
         vec![
             ThinkingEffort::Off,
             ThinkingEffort::Low,

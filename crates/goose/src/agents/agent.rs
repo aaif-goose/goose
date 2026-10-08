@@ -106,6 +106,7 @@ pub(super) fn available_auto_efforts(
     provider_name: &str,
     model_config: &goose_providers::model::ModelConfig,
     support: ThinkingEffortSupport,
+    thinking_effort_provider: Option<&str>,
 ) -> Vec<ThinkingEffort> {
     let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
         ThinkingEffort::Off => matches!(
@@ -240,17 +241,20 @@ pub(super) fn available_auto_efforts(
             }
 
             let model_name = model_config.model_name.to_lowercase();
-            let supports_generic_effort = match provider_name {
-                "anthropic" | "kimi_code" | "openrouter" => true,
-                "aws_bedrock" | "gcp_vertex_ai" | "databricks_v2" => model_name.contains("claude"),
-                _ => false,
-            };
+            let supports_generic_effort = thinking_effort_provider.is_some()
+                || match provider_name {
+                    "anthropic" | "kimi_code" | "openrouter" => true,
+                    "aws_bedrock" | "gcp_vertex_ai" | "databricks_v2" => {
+                        model_name.contains("claude")
+                    }
+                    _ => false,
+                };
             if !supports_generic_effort {
                 return Vec::new();
             }
 
             let always_on = goose_providers::canonical::maybe_get_canonical_model(
-                provider_name,
+                thinking_effort_provider.unwrap_or(provider_name),
                 &model_config.model_name,
             )
             .and_then(|model| model.thinking_mode)
@@ -296,6 +300,7 @@ fn auto_effort_operation(
         provider.get_name(),
         model_config,
         provider.thinking_effort_support(),
+        provider.thinking_effort_provider(),
     );
     if efforts.is_empty() {
         return None;
@@ -4314,11 +4319,16 @@ mod tests {
         ];
 
         assert_eq!(
-            available_auto_efforts("meta", &model, ThinkingEffortSupport::Unspecified),
+            available_auto_efforts("meta", &model, ThinkingEffortSupport::Unspecified, None),
             expected
         );
         assert_eq!(
-            available_auto_efforts("muse_code", &model, ThinkingEffortSupport::Unspecified),
+            available_auto_efforts(
+                "muse_code",
+                &model,
+                ThinkingEffortSupport::Unspecified,
+                None,
+            ),
             expected
         );
     }
@@ -4330,6 +4340,7 @@ mod tests {
                 "chatgpt_codex",
                 &goose_providers::model::ModelConfig::new("gpt-5.5"),
                 ThinkingEffortSupport::Unspecified,
+                None,
             ),
             vec![
                 ThinkingEffort::Low,
@@ -4343,6 +4354,7 @@ mod tests {
                 "chatgpt_codex",
                 &goose_providers::model::ModelConfig::new("gpt-5.6"),
                 ThinkingEffortSupport::Unspecified,
+                None,
             ),
             AUTO_EFFORTS
         );
@@ -4355,7 +4367,7 @@ mod tests {
 
         for provider in ["google", "gemini_oauth", "gcp_vertex_ai"] {
             assert_eq!(
-                available_auto_efforts(provider, &model, ThinkingEffortSupport::Unspecified),
+                available_auto_efforts(provider, &model, ThinkingEffortSupport::Unspecified, None),
                 vec![ThinkingEffort::Off, ThinkingEffort::High]
             );
         }
@@ -4367,7 +4379,12 @@ mod tests {
             .with_canonical_limits("gcp_vertex_ai");
 
         assert_eq!(
-            available_auto_efforts("gcp_vertex_ai", &model, ThinkingEffortSupport::Unspecified,),
+            available_auto_efforts(
+                "gcp_vertex_ai",
+                &model,
+                ThinkingEffortSupport::Unspecified,
+                None,
+            ),
             vec![
                 ThinkingEffort::Off,
                 ThinkingEffort::Low,
@@ -4387,6 +4404,7 @@ mod tests {
             "databricks_v2",
             &model,
             ThinkingEffortSupport::Unspecified,
+            None,
         )
         .is_empty());
     }
@@ -4401,6 +4419,7 @@ mod tests {
                 "snowflake",
                 &model,
                 ThinkingEffortSupport::Unspecified,
+                None,
             )
             .is_empty());
         }
@@ -4411,7 +4430,12 @@ mod tests {
         let model = goose_providers::model::ModelConfig::new("google/gemini-3.5-flash");
 
         assert_eq!(
-            available_auto_efforts("openrouter", &model, ThinkingEffortSupport::Unspecified),
+            available_auto_efforts(
+                "openrouter",
+                &model,
+                ThinkingEffortSupport::Unspecified,
+                None,
+            ),
             vec![
                 ThinkingEffort::Low,
                 ThinkingEffort::Medium,
@@ -4440,8 +4464,38 @@ mod tests {
                 "claude-acp",
                 &goose_providers::model::ModelConfig::new("current"),
                 ThinkingEffortSupport::Options(capability),
+                None,
             ),
             vec![ThinkingEffort::Low, ThinkingEffort::High]
+        );
+    }
+
+    #[test]
+    fn custom_anthropic_provider_uses_model_thinking_effort() {
+        let model = goose_providers::model::ModelConfig::new("claude-sonnet-4-6");
+
+        assert_eq!(
+            available_auto_efforts(
+                "custom-anthropic",
+                &model,
+                ThinkingEffortSupport::Unspecified,
+                Some("anthropic"),
+            ),
+            AUTO_EFFORTS
+        );
+        assert_eq!(
+            available_auto_efforts(
+                "custom-anthropic",
+                &goose_providers::model::ModelConfig::new("claude-opus-5-5"),
+                ThinkingEffortSupport::Unspecified,
+                Some("anthropic"),
+            ),
+            vec![
+                ThinkingEffort::Low,
+                ThinkingEffort::Medium,
+                ThinkingEffort::High,
+                ThinkingEffort::Max,
+            ]
         );
     }
 
