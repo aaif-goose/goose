@@ -226,7 +226,7 @@ pub fn create_custom_provider(
         headers: params.headers,
         session_id_header_override: None,
         timeout_seconds: None,
-        supports_streaming: params.supports_streaming,
+        supports_streaming: Some(params.supports_streaming),
         requires_auth: params.requires_auth,
         catalog_provider_id: params.catalog_provider_id,
         base_path: params.base_path,
@@ -341,7 +341,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             },
             session_id_header_override: existing_config.session_id_header_override,
             timeout_seconds: existing_config.timeout_seconds,
-            supports_streaming: params.supports_streaming,
+            supports_streaming: Some(params.supports_streaming),
             requires_auth: params.requires_auth,
             catalog_provider_id: params.catalog_provider_id,
             base_path: params.base_path,
@@ -441,7 +441,7 @@ fn resolve_config(config: &mut DeclarativeProviderConfig) -> Result<()> {
                     .or_else(|| global_config.get_param::<bool>(&var.name).ok())
                     .or_else(|| var.default.as_deref().map(|d| d.to_lowercase() == "true"));
                 if let Some(v) = val {
-                    config.supports_streaming = v;
+                    config.supports_streaming = Some(v);
                 }
             }
         }
@@ -617,7 +617,7 @@ mod tests {
             headers: None,
             session_id_header_override: None,
             timeout_seconds: None,
-            supports_streaming: true,
+            supports_streaming: Some(true),
             requires_auth: true,
             catalog_provider_id: Some("huggingface".to_string()),
             base_path: None,
@@ -810,7 +810,7 @@ mod tests {
             api_url: "https://example.invalid/v1".to_string(),
             api_key: None,
             models: vec![model],
-            supports_streaming: false,
+            supports_streaming: Some(false),
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -828,7 +828,7 @@ mod tests {
             api_url: created.base_url.clone(),
             api_key: None,
             models: vec![ModelInfo::new("large-model").with_context_limit(2_097_152)],
-            supports_streaming: false,
+            supports_streaming: Some(false),
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,
@@ -946,7 +946,7 @@ mod tests {
             api_url: "https://updated.example.invalid/v1/chat/completions".to_string(),
             api_key: None,
             models: vec![ModelInfo::new("z-model")],
-            supports_streaming: true,
+            supports_streaming: Some(true),
             headers: None,
             requires_auth: false,
             catalog_provider_id: None,

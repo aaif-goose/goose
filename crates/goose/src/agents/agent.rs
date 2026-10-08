@@ -4994,7 +4994,7 @@ mod tests {
                 api_url: config.base_url,
                 api_key: None,
                 models: config.models,
-                supports_streaming: config.supports_streaming,
+                supports_streaming: config.supports_streaming.unwrap_or(true),
                 headers: config.headers,
                 requires_auth: false,
                 catalog_provider_id: None,
