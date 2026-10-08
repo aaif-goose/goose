@@ -431,9 +431,13 @@ impl Agent {
         self.extension_manager.enable(session_id, extension).await
     }
 
-    pub async fn list_tools(&self, session_id: &str, extension_name: Option<String>) -> Vec<Tool> {
+    pub async fn list_tools(
+        &self,
+        session_id: &str,
+        extension_name: Option<String>,
+    ) -> Result<Vec<Tool>> {
         let include_final_output = extension_name.is_none();
-        let lease = self.extension_manager.current_lease(session_id, None).await;
+        let lease = self.extension_manager.current_lease(session_id).await?;
         let mut prefixed_tools = match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
@@ -451,7 +455,7 @@ impl Agent {
             }
         }
 
-        prefixed_tools
+        Ok(prefixed_tools)
     }
 
     pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
@@ -464,11 +468,11 @@ impl Agent {
         Ok(self.extension_manager.disable(session_id, key).await?)
     }
 
-    pub async fn list_extensions(&self, session_id: &str) -> Vec<String> {
+    pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
         self.extension_manager.list_extensions(session_id).await
     }
 
-    pub async fn get_extension_configs(&self, session_id: &str) -> Vec<ExtensionConfig> {
+    pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
         self.extension_manager
             .get_extension_configs(session_id)
             .await
@@ -1339,12 +1343,16 @@ impl Agent {
         Ok(true)
     }
 
-    pub async fn list_extension_prompts(&self, session_id: &str) -> HashMap<String, Vec<Prompt>> {
-        self.extension_manager
-            .current_lease(session_id, None)
-            .await
+    pub async fn list_extension_prompts(
+        &self,
+        session_id: &str,
+    ) -> Result<HashMap<String, Vec<Prompt>>> {
+        Ok(self
+            .extension_manager
+            .current_lease(session_id)
+            .await?
             .list_prompts(CancellationToken::default())
-            .await
+            .await)
     }
 
     pub async fn get_prompt(
@@ -1353,7 +1361,7 @@ impl Agent {
         name: &str,
         arguments: Value,
     ) -> Result<GetPromptResult> {
-        let lease = self.extension_manager.current_lease(session_id, None).await;
+        let lease = self.extension_manager.current_lease(session_id).await?;
         let prompts = lease.list_prompts(CancellationToken::default()).await;
 
         if let Some(extension) = prompts

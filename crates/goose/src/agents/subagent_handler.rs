@@ -224,7 +224,7 @@ async fn build_subagent_prompt(
 ) -> Result<String> {
     let mut tool_names: Vec<_> = agent
         .list_tools(session_id, None)
-        .await
+        .await?
         .into_iter()
         .filter(super::reply_parts::is_tool_visible_to_model)
         .map(|t| t.name.to_string())

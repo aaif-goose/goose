@@ -21,6 +21,7 @@ impl GooseAcpAgent {
         let mut tools: Vec<ToolListItem> = agent
             .list_tools(session_id, req.extension_name)
             .await
+            .internal_err()?
             .into_iter()
             .map(|tool| {
                 let permission = permission_manager
@@ -68,7 +69,8 @@ impl GooseAcpAgent {
         let agent = self.get_session_agent(&req.session_id).await?;
         let tools = agent
             .list_tools(session_id, Some(req.extension_name.clone()))
-            .await;
+            .await
+            .internal_err()?;
 
         let Some(tool) = tools.iter().find(|tool| {
             *tool.name == req.name && is_tool_owned_by_extension(tool, &req.extension_name)
@@ -114,8 +116,9 @@ impl GooseAcpAgent {
         let container = session.container;
         let tool_result = agent
             .extension_manager
-            .current_lease(session_id, Some(&session.working_dir))
+            .current_lease(session_id)
             .await
+            .internal_err()?
             .call_for_app(
                 tool_call,
                 &req.extension_name,

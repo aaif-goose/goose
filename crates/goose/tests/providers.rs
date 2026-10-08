@@ -309,8 +309,8 @@ impl ProviderFixture {
         let lease = self
             .agent
             .extension_manager
-            .current_lease(&self.session_id, None)
-            .await;
+            .current_lease(&self.session_id)
+            .await?;
         let tools = lease.tools().await;
         let info = lease.instructions().await;
         let system = PromptManager::new()
@@ -358,8 +358,8 @@ impl ProviderFixture {
         let result = self
             .agent
             .extension_manager
-            .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
-            .await
+            .current_lease(&ctx.session_id)
+            .await?
             .call(params, CallRequest::from(&ctx), CancellationToken::new())
             .await
             .unwrap()

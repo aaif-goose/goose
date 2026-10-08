@@ -1,8 +1,9 @@
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -689,53 +690,43 @@ impl ExtensionManager {
         self.lease(set.scope_id(), set.working_dir.clone(), slots)
     }
 
-    pub async fn current_lease(
-        self: &Arc<Self>,
-        session_id: &str,
-        fallback_working_dir: Option<&Path>,
-    ) -> ExtensionLease {
-        match self
+    pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
+        let session = self
             .context
             .session_manager
             .get_session(session_id, false)
-            .await
-        {
-            Ok(session) => self.session_lease(&session).await,
-            Err(_) => {
-                let slots = self
-                    .scopes
-                    .lock()
-                    .await
-                    .get(session_id)
-                    .into_iter()
-                    .flat_map(IndexMap::values)
-                    .filter(|slot| slot.serves(fallback_working_dir, None))
-                    .cloned()
-                    .collect();
-                self.lease(
-                    session_id,
-                    fallback_working_dir.map(Path::to_path_buf),
-                    slots,
-                )
-            }
-        }
+            .await?;
+        self.session_lease(&session).await
     }
 
     pub async fn current_session_snapshot(
         self: &Arc<Self>,
-        fallback: &Session,
-    ) -> (Session, ExtensionLease) {
+        session: &Session,
+    ) -> Result<(Session, ExtensionLease)> {
         let session = self
             .context
             .session_manager
-            .get_session(&fallback.id, fallback.conversation.is_some())
-            .await
-            .unwrap_or_else(|_| fallback.clone());
-        let lease = self.session_lease(&session).await;
-        (session, lease)
+            .get_session(&session.id, session.conversation.is_some())
+            .await?;
+        let lease = self.session_lease(&session).await?;
+        Ok((session, lease))
     }
 
-    async fn session_lease(self: &Arc<Self>, session: &Session) -> ExtensionLease {
+    #[cfg(test)]
+    pub(crate) async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
+        let slots = self
+            .scopes
+            .lock()
+            .await
+            .get(scope_id)
+            .into_iter()
+            .flat_map(IndexMap::values)
+            .cloned()
+            .collect();
+        self.lease(scope_id, None, slots)
+    }
+
+    async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
         // Providers that run their own tool loop are handed the session's
         // MCP servers directly, so goose does not start them too.
         let manages_own_context = match &session.provider_name {
@@ -744,7 +735,6 @@ impl ExtensionManager {
                 .is_ok_and(|entry| entry.manages_own_context()),
             None => false,
         };
-        let mut keys = HashSet::new();
         let extensions = selection(session)
             .into_iter()
             .filter(|config| {
@@ -754,12 +744,10 @@ impl ExtensionManager {
                         ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
                     ))
             })
-            .filter(|config| keys.insert(config.key()))
             .collect();
-        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)
-            .expect("keys are deduplicated")
+        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)?
             .with_container(session.container.clone());
-        self.resolve(&set).await
+        Ok(self.resolve(&set).await)
     }
 
     async fn start(
@@ -1046,32 +1034,27 @@ impl ExtensionManager {
         self.scopes.lock().await.remove(session_id);
     }
 
-    pub async fn get_extension_configs(&self, session_id: &str) -> Vec<ExtensionConfig> {
-        match self.session(session_id).await {
-            Ok(session) => selection(&session),
-            Err(_) => self
-                .scopes
-                .lock()
-                .await
-                .get(session_id)
-                .into_iter()
-                .flat_map(IndexMap::values)
-                .map(|slot| slot.config.clone())
-                .collect(),
-        }
+    pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
+        let session = self
+            .context
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        Ok(selection(&session))
     }
 
-    pub async fn list_extensions(&self, session_id: &str) -> Vec<String> {
-        self.get_extension_configs(session_id)
-            .await
+    pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
+        Ok(self
+            .get_extension_configs(session_id)
+            .await?
             .iter()
             .map(ExtensionConfig::key)
-            .collect()
+            .collect())
     }
 
-    pub async fn is_extension_enabled(&self, session_id: &str, name: &str) -> bool {
+    pub async fn is_extension_enabled(&self, session_id: &str, name: &str) -> Result<bool> {
         let key = name_to_key(name);
-        self.list_extensions(session_id).await.contains(&key)
+        Ok(self.list_extensions(session_id).await?.contains(&key))
     }
 }
 
@@ -1356,7 +1339,7 @@ mod tests {
         let tool_call = CallToolRequestParams::new("notifications__tool".to_string())
             .with_arguments(object!({}));
         let dispatched = extension_manager
-            .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+            .scope_lease(&ctx.session_id)
             .await
             .call(
                 tool_call,
@@ -1420,7 +1403,7 @@ mod tests {
             .with_arguments(object!({}));
 
         let dispatched = extension_manager
-            .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+            .scope_lease(&ctx.session_id)
             .await
             .call(
                 tool_call,
@@ -1558,7 +1541,7 @@ mod tests {
             )
             .await;
 
-        let lease = extension_manager.current_lease("session", None).await;
+        let lease = extension_manager.scope_lease("session").await;
         assert_eq!(
             lease.tools().await.len(),
             1,
@@ -1573,7 +1556,7 @@ mod tests {
 
         let ctx = ToolCallContext::new("session".to_string(), None, None);
         let result = extension_manager
-            .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+            .scope_lease(&ctx.session_id)
             .await
             .call_for_app(
                 CallToolRequestParams::new("ext_a__ext_b__secret".to_string()),
@@ -1766,7 +1749,7 @@ mod tests {
         }))
         .await;
 
-        let mut selected = first.list_extensions(&session.id).await;
+        let mut selected = first.list_extensions(&session.id).await.unwrap();
         selected.sort();
         assert_eq!(
             selected,
@@ -1790,7 +1773,10 @@ mod tests {
             .await;
 
         assert!(result.unwrap_err().to_string().contains("appears twice"));
-        assert_eq!(manager.list_extensions(&session.id).await, vec!["a"]);
+        assert_eq!(
+            manager.list_extensions(&session.id).await.unwrap(),
+            vec!["a"]
+        );
     }
 
     #[tokio::test]
@@ -1806,7 +1792,12 @@ mod tests {
         )
         .await;
 
-        let tools = manager.current_lease(&session.id, None).await.tools().await;
+        let tools = manager
+            .current_lease(&session.id)
+            .await
+            .unwrap()
+            .tools()
+            .await;
 
         assert!(tools.iter().any(|tool| tool.name == "fixture__app_card"));
     }
@@ -1832,7 +1823,12 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             tokio::spawn(async move {
                 barrier.wait().await;
-                manager.current_lease(&session_id, None).await.start().await
+                manager
+                    .current_lease(&session_id)
+                    .await
+                    .unwrap()
+                    .start()
+                    .await
             })
         });
         for results in futures::future::join_all(starts).await {
@@ -1854,10 +1850,10 @@ mod tests {
             vec![fixture_config("fixture", serve_fixture)],
         )
         .await;
-        let before = manager.current_lease(&session.id, None).await;
+        let before = manager.current_lease(&session.id).await.unwrap();
 
         assert!(manager.disable(&session.id, "fixture").await.unwrap());
-        let after = manager.current_lease(&session.id, None).await;
+        let after = manager.current_lease(&session.id).await.unwrap();
 
         assert!(after.tools().await.is_empty());
         assert!(before
@@ -1895,7 +1891,7 @@ mod tests {
             .await
             .unwrap();
 
-        let lease = manager.current_lease(&session.id, None).await;
+        let lease = manager.current_lease(&session.id).await.unwrap();
 
         assert_eq!(
             lease
@@ -1924,7 +1920,7 @@ mod tests {
         )
         .await;
 
-        let lease = manager.current_lease(&session.id, None).await;
+        let lease = manager.current_lease(&session.id).await.unwrap();
         let results = lease.start().await;
 
         assert_eq!(
@@ -1969,7 +1965,12 @@ mod tests {
                 None,
             )
             .await;
-        manager.current_lease(&session.id, None).await.start().await;
+        manager
+            .current_lease(&session.id)
+            .await
+            .unwrap()
+            .start()
+            .await;
         let before = manager.scopes.lock().await[&session.id].clone();
 
         manager
@@ -1980,7 +1981,7 @@ mod tests {
             .apply()
             .await
             .unwrap();
-        let lease = manager.current_lease(&session.id, None).await;
+        let lease = manager.current_lease(&session.id).await.unwrap();
 
         let after = manager.scopes.lock().await[&session.id].clone();
         for key in ["developer", "external"] {
@@ -2030,8 +2031,9 @@ mod tests {
             .unwrap();
 
         let tools = extension_manager
-            .current_lease(&session.id, None)
+            .current_lease(&session.id)
             .await
+            .unwrap()
             .tools_for("extensionmanager")
             .await;
         assert!(tools
@@ -2053,8 +2055,9 @@ mod tests {
             .await;
 
         let tools = extension_manager
-            .current_lease(&session.id, None)
+            .current_lease(&session.id)
             .await
+            .unwrap()
             .tools_for("extensionmanager")
             .await;
         assert!(tools
@@ -2066,8 +2069,9 @@ mod tests {
             .await
             .unwrap();
         let tools = extension_manager
-            .current_lease(&session.id, None)
+            .current_lease(&session.id)
             .await
+            .unwrap()
             .tools_for("extensionmanager")
             .await;
         assert!(tools
@@ -2108,7 +2112,7 @@ mod tests {
                 Some(resource_info.clone()),
             )
             .await;
-        let lease = extension_manager.current_lease(&session.id, None).await;
+        let lease = extension_manager.current_lease(&session.id).await.unwrap();
         extension_manager
             .disable(&session.id, "resources")
             .await
@@ -2185,7 +2189,7 @@ mod tests {
         let manager = extension_manager;
         let first_fetch = {
             let manager = manager.clone();
-            tokio::spawn(async move { manager.current_lease("session", None).await.tools().await })
+            tokio::spawn(async move { manager.scope_lease("session").await.tools().await })
         };
 
         let _started = tools_client.first_fetch_started.acquire().await.unwrap();
@@ -2195,7 +2199,7 @@ mod tests {
         let stale_result = first_fetch.await.unwrap();
         assert!(stale_result.iter().any(|tool| tool.name == "dynamic__old"));
 
-        let refreshed = manager.current_lease("session", None).await.tools().await;
+        let refreshed = manager.scope_lease("session").await.tools().await;
         assert!(refreshed.iter().any(|tool| tool.name == "dynamic__new"));
         assert_eq!(tools_client.calls.load(Ordering::SeqCst), 2);
     }

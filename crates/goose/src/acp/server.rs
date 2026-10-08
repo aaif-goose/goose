@@ -1061,7 +1061,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         agent: &Arc<Agent>,
         session: &Session,
-    ) {
+    ) -> Result<(), agent_client_protocol::Error> {
         let client_fs_capabilities = self
             .client_fs_capabilities
             .get()
@@ -1072,15 +1072,16 @@ impl GooseAcpAgent {
             && !client_fs_capabilities.write_text_file
             && !client_terminal
         {
-            return;
+            return Ok(());
         }
 
         if !agent
             .extension_manager
             .is_extension_enabled(&session.id, "developer")
             .await
+            .internal_err()?
         {
-            return;
+            return Ok(());
         }
 
         let context = agent.extension_manager.get_context().clone();
@@ -1088,7 +1089,7 @@ impl GooseAcpAgent {
             Ok(dev_client) => dev_client,
             Err(error) => {
                 warn!(error = %error, "Failed to create ACP developer client");
-                return;
+                return Ok(());
             }
         };
 
@@ -1108,6 +1109,7 @@ impl GooseAcpAgent {
             .extension_manager
             .get_extension_configs(&session.id)
             .await
+            .internal_err()?
             .into_iter()
             .find(|extension| extension.name() == "developer")
             .unwrap_or_else(|| builtin_to_extension_config("developer"));
@@ -1116,6 +1118,7 @@ impl GooseAcpAgent {
             .extension_manager
             .add_client(&session.id, developer_config, client, info)
             .await;
+        Ok(())
     }
 
     async fn prepare_acp_session_agent(
@@ -1127,13 +1130,14 @@ impl GooseAcpAgent {
             .get_or_create_session_agent(cx, session.id.clone())
             .await?;
         self.apply_acp_extension_overrides(cx, &agent, session)
-            .await;
+            .await?;
         // Leases start extensions on first use anyway; starting them here is
         // what lets the session response report extensions that fail.
         let extension_results = agent
             .extension_manager
-            .current_lease(&session.id, None)
+            .current_lease(&session.id)
             .await
+            .internal_err()?
             .start()
             .await;
         self.spawn_provider_inventory_refresh(session, &agent);

@@ -234,11 +234,14 @@ pub struct ExtensionFailure {
     pub error: anyhow::Error,
 }
 
-async fn load_extensions(agent: Arc<Agent>, session_id: &str) -> Vec<ExtensionFailure> {
-    agent
+async fn load_extensions(
+    agent: Arc<Agent>,
+    session_id: &str,
+) -> anyhow::Result<Vec<ExtensionFailure>> {
+    Ok(agent
         .extension_manager
-        .current_lease(session_id, None)
-        .await
+        .current_lease(session_id)
+        .await?
         .start()
         .await
         .into_iter()
@@ -248,7 +251,7 @@ async fn load_extensions(agent: Arc<Agent>, session_id: &str) -> Vec<ExtensionFa
                 error: anyhow::anyhow!(error),
             })
         })
-        .collect()
+        .collect())
 }
 
 struct ResolvedProviderConfig {

@@ -14,7 +14,6 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use chrono::{DateTime, Utc};
-        use goose::agents::extension_manager::ExtensionSet;
         use goose::agents::platform_extensions::scheduler::{
             EXTENSION_NAME as SCHEDULER_EXTENSION_NAME, MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
         };
@@ -129,24 +128,32 @@ mod tests {
             }
         }
 
-        async fn add_scheduler_extension(agent: &Agent) {
-            agent
-                .extension_manager
-                .resolve(
-                    &ExtensionSet::new(
-                        "test-session-id",
-                        None,
-                        vec![ExtensionConfig::Platform {
-                            name: SCHEDULER_EXTENSION_NAME.to_string(),
-                            description: "Create and manage scheduled recipe execution".to_string(),
-                            display_name: Some("Scheduler".to_string()),
-                            bundled: Some(true),
-                            available_tools: vec![],
-                        }],
-                    )
-                    .unwrap(),
+        async fn add_scheduler_extension(agent: &Agent) -> String {
+            let session = agent
+                .config
+                .session_manager
+                .create_session(
+                    PathBuf::from("."),
+                    "schedule".to_string(),
+                    goose::session::SessionType::Hidden,
+                    goose::config::GooseMode::default(),
                 )
-                .await;
+                .await
+                .unwrap();
+            agent
+                .add_extension(
+                    ExtensionConfig::Platform {
+                        name: SCHEDULER_EXTENSION_NAME.to_string(),
+                        description: "Create and manage scheduled recipe execution".to_string(),
+                        display_name: Some("Scheduler".to_string()),
+                        bundled: Some(true),
+                        available_tools: vec![],
+                    },
+                    &session.id,
+                )
+                .await
+                .unwrap();
+            session.id
         }
 
         #[async_trait]
@@ -253,9 +260,9 @@ mod tests {
                 GoosePlatform::GooseCli,
             );
             let agent = Agent::with_config(config);
-            add_scheduler_extension(&agent).await;
+            let session_id = add_scheduler_extension(&agent).await;
 
-            let tools = agent.list_tools("test-session-id", None).await;
+            let tools = agent.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -272,9 +279,9 @@ mod tests {
         #[tokio::test]
         async fn test_no_schedule_management_tool_without_scheduler() {
             let agent = Agent::new();
-            add_scheduler_extension(&agent).await;
+            let session_id = add_scheduler_extension(&agent).await;
 
-            let tools = agent.list_tools("test-session-id", None).await;
+            let tools = agent.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -296,14 +303,12 @@ mod tests {
                 GoosePlatform::GooseCli,
             );
             let agent = Agent::with_config(config);
-            add_scheduler_extension(&agent).await;
+            let session_id = add_scheduler_extension(&agent).await;
 
             let tools = agent
-                .list_tools(
-                    "test-session-id",
-                    Some(SCHEDULER_EXTENSION_NAME.to_string()),
-                )
-                .await;
+                .list_tools(&session_id, Some(SCHEDULER_EXTENSION_NAME.to_string()))
+                .await
+                .unwrap();
 
             let schedule_tool = tools
                 .iter()
@@ -353,9 +358,9 @@ mod tests {
                 GoosePlatform::GooseCli,
             );
             let agent = Agent::with_config(config);
-            add_scheduler_extension(&agent).await;
+            let session_id = add_scheduler_extension(&agent).await;
 
-            let tools = agent.list_tools("test-session-id", None).await;
+            let tools = agent.list_tools(&session_id, None).await.unwrap();
             let schedule_tool = tools
                 .iter()
                 .find(|tool| tool.name == MANAGE_SCHEDULE_TOOL_NAME_COMPLETE);
@@ -945,7 +950,7 @@ mod tests {
         #[tokio::test]
         async fn test_extension_manager_tools_available() {
             let (agent, session_id, _temp_dir) = setup_agent_with_extension_manager().await;
-            let tools = agent.list_tools(&session_id, None).await;
+            let tools = agent.list_tools(&session_id, None).await.unwrap();
 
             // Note: Tool names are prefixed with the normalized extension name "extensionmanager"
             // not the display name "Extension Manager"

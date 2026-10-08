@@ -480,8 +480,9 @@ mod tests {
                     .unwrap();
                 agent
                     .extension_manager
-                    .current_lease(&session_id, None)
+                    .current_lease(&session_id)
                     .await
+                    .unwrap()
                     .start()
                     .await;
                 agent
@@ -668,7 +669,7 @@ mod tests {
             .get_or_create_agent(session.id.clone())
             .await
             .unwrap();
-        let tools = agent.list_tools(&session.id, None).await;
+        let tools = agent.list_tools(&session.id, None).await.unwrap();
         assert!(
             tools
                 .iter()
@@ -691,7 +692,7 @@ mod tests {
             .get_or_create_agent(session.id.clone())
             .await
             .unwrap();
-        let tools = restored_agent.list_tools(&session.id, None).await;
+        let tools = restored_agent.list_tools(&session.id, None).await.unwrap();
         assert!(
             tools
                 .iter()

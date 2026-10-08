@@ -27,7 +27,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         let (session, lease) = self
             .extension_manager
             .current_session_snapshot(session)
-            .await;
+            .await?;
         // Tool requests run under the lease of the inference that made them, so an
         // approval answered after that lease is gone expires instead of picking up a new one.
         let awaiting = match &session.conversation {

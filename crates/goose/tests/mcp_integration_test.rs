@@ -505,8 +505,9 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert!(tool_names(&lease.tools().await).contains(&"todo__todo_write".to_string()));
     assert!(!tool_names(
         &fx.manager
-            .current_lease(&session.id, None)
+            .current_lease(&session.id)
             .await
+            .unwrap()
             .tools()
             .await
     )
@@ -903,13 +904,7 @@ async fn test_replayed_session(
 
     #[allow(clippy::redundant_closure_call)]
     let result = (async || -> Result<(), Box<dyn std::error::Error>> {
-        extension_manager
-            .resolve(&ExtensionSet::new(
-                "test-session-id",
-                None,
-                vec![extension_config],
-            )?)
-            .await;
+        let set = ExtensionSet::new("test-session-id", None, vec![extension_config])?;
         let mut results = Vec::new();
         for tool_call in tool_calls {
             let mut new_call = CallToolRequestParams::new(format!("test__{}", tool_call.name));
@@ -926,7 +921,7 @@ async fn test_replayed_session(
                 Some("test-id".to_string()),
             );
             let result = extension_manager
-                .current_lease(&ctx.session_id, ctx.working_dir.as_deref())
+                .resolve(&set)
                 .await
                 .call(
                     tool_call,

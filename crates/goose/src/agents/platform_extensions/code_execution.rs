@@ -814,7 +814,7 @@ mod tests {
             )
             .await;
 
-        let lease = manager.current_lease("test-session", None).await;
+        let lease = manager.scope_lease("test-session").await;
         let configs =
             CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
@@ -857,7 +857,7 @@ mod tests {
             .await
             .unwrap();
 
-        let lease = manager.current_lease(&session.id, None).await;
+        let lease = manager.current_lease(&session.id).await.unwrap();
         let configs =
             CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
@@ -897,11 +897,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let lease = Arc::new(
-            manager
-                .current_lease(&session.id, Some(&session.working_dir))
-                .await,
-        );
+        let lease = Arc::new(manager.current_lease(&session.id).await.unwrap());
         manager
             .disable(&session.id, "extensionmanager")
             .await
@@ -929,6 +925,7 @@ mod tests {
         assert!(manager
             .list_extensions(&session.id)
             .await
+            .unwrap()
             .contains(&"analyze".to_string()));
         let stored_session = manager
             .get_context()
