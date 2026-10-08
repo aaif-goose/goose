@@ -4682,6 +4682,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatis"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Terkonfigurasi"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Kunci API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Masukkan kunci API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Hapus kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Simpan kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Menggunakan Jev untuk memilih tingkat penalaran bagi setiap permintaan. Teks permintaan dikirim ke TypeSafe AI; perintah garis miring skill dan resep menyertakan instruksi lokal yang telah diperluas."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Tingkat penalaran otomatis"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Batas pemblokiran"
   },

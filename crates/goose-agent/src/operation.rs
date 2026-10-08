@@ -17,6 +17,8 @@ pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[cfg(target_arch = "wasm32")]
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
+pub const CLIENT_LOG: &str = "client_log";
+
 pub struct SlashCommand<'a> {
     pub command: &'a str,
     pub params_str: &'a str,
@@ -214,6 +216,12 @@ pub enum ConversationEffect {
     PatchToolRequestMeta {
         tool_call_id: String,
         patch: serde_json::Value,
+    },
+    SetMessageOperationNote {
+        message_id: String,
+        operation: String,
+        key: String,
+        value: serde_json::Value,
     },
     SetMessageVisibility {
         message_id: String,

@@ -10,6 +10,8 @@ use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
 use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
 
+use super::ops_auto_effort::current_turn_effort;
+
 fn contains_tool_confirmation_request(message: &Message) -> bool {
     message.content.iter().any(|content| {
         matches!(
@@ -25,6 +27,16 @@ impl MachineSession for Session {
     }
     fn conversation(&self) -> Option<&Conversation> {
         self.conversation.as_ref()
+    }
+    fn thinking_effort(&self) -> Option<goose_providers::thinking::ThinkingEffort> {
+        self.conversation
+            .as_ref()
+            .and_then(current_turn_effort)
+            .or_else(|| {
+                self.model_config
+                    .as_ref()
+                    .and_then(|config| config.thinking_effort())
+            })
     }
 }
 
@@ -82,6 +94,18 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 }) => {
                     self.update_tool_request_meta(&session.id, tool_call_id, patch.clone())
                         .await?;
+                }
+                GooseEffect::Conversation(ConversationEffect::SetMessageOperationNote {
+                    message_id,
+                    operation,
+                    key,
+                    value,
+                }) => {
+                    self.update_message_metadata(&session.id, message_id, |mut metadata| {
+                        metadata.set_operation_note(operation, key, value.clone());
+                        metadata
+                    })
+                    .await?;
                 }
                 GooseEffect::Conversation(ConversationEffect::SetMessageVisibility {
                     message_id,

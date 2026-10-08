@@ -693,7 +693,20 @@ impl Provider for AcpProvider {
             .load_session(SessionId::new(session_id))
             .await
             .map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
+        let applied_model = self.model_config_option_id.as_ref().and_then(|config_id| {
+            loaded
+                .response
+                .config_options
+                .as_deref()?
+                .iter()
+                .find(|option| option.id.0.as_ref() == config_id.as_str())
+                .and_then(|option| match &option.kind {
+                    SessionConfigKind::Select(select) => Some(select.current_value.0.to_string()),
+                    _ => None,
+                })
+        });
         *self.session.lock().unwrap() = loaded;
+        *self.applied_model.lock().unwrap() = applied_model;
         self.handoff_context_sent.store(true, Ordering::Release);
         let _ = self
             .tx
@@ -2274,7 +2287,7 @@ fn replace_effort_state(
 /// and the agent share pass through; goose's own enum values map onto their
 /// closest agent equivalent. Anything else yields `None` so we never send a
 /// value the agent would reject.
-pub(super) fn map_effort_value(
+pub(crate) fn map_effort_value(
     capability: &ThinkingEffortCapability,
     value: &str,
 ) -> Option<String> {
@@ -2854,8 +2867,8 @@ mod tests {
 
     #[tokio::test]
     async fn resume_replaces_session_and_skips_handoff() {
-        let (tx, mut rx) = mpsc::channel(2);
-        let (provider, _) = test_provider_with_tx(Some(tx));
+        let (tx, mut rx) = mpsc::channel(3);
+        let provider = test_provider_with_model_option(tx, Some("configured-model".to_string()));
 
         let handle = tokio::spawn(async move {
             provider.resume("saved-session").await.unwrap();
@@ -2871,7 +2884,15 @@ mod tests {
         };
         assert_eq!(session_id.to_string(), "saved-session");
         response_tx
-            .send(Ok(NewSessionResponse::new("saved-session")))
+            .send(Ok(NewSessionResponse::new("saved-session").config_options(
+                vec![SessionConfigOption::select(
+                    "model",
+                    "Model",
+                    "session-model",
+                    effort_select_options(&["session-model", "configured-model"]),
+                )
+                .category(SessionConfigOptionCategory::Model)],
+            )))
             .unwrap();
 
         let ClientRequest::CloseSession { session_id } =
@@ -2894,6 +2915,18 @@ mod tests {
         let claim = provider.claim_handoff_context(&messages);
         assert!(!claim.first_prompt);
         assert!(!claim.include_context);
+
+        let handle = tokio::spawn(async move {
+            provider
+                .apply_model_if_changed("configured-model")
+                .await
+                .unwrap();
+        });
+        assert_eq!(
+            expect_set_config_option(&mut rx).await,
+            ("model".to_string(), "configured-model".to_string())
+        );
+        handle.await.unwrap();
     }
 
     #[tokio::test]

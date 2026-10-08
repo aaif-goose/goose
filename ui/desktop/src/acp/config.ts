@@ -1,6 +1,20 @@
 import { getAcpClient } from './acpConnection';
 
 export type ConfigReadValue = unknown;
+export type MaskedConfigValue = { maskedValue: string };
+
+export function isMaskedConfigValue(value: unknown): value is MaskedConfigValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'maskedValue' in value &&
+    typeof value.maskedValue === 'string'
+  );
+}
+
+export function hasConfiguredSecret(value: unknown): boolean {
+  return isMaskedConfigValue(value) && value.maskedValue.length > 0;
+}
 
 export async function acpReadConfig(
   key: string,
@@ -12,7 +26,7 @@ export async function acpReadConfig(
     return null;
   }
   if (isSecret) {
-    return { maskedValue: value as string };
+    return { maskedValue: value as string } satisfies MaskedConfigValue;
   }
   return value;
 }

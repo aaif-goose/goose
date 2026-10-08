@@ -846,6 +846,8 @@ pub struct MessageMetadata {
     pub turn_context: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_logs: Vec<String>,
     /// What an operation did to this message, keyed by operation name. Read back
     /// from the persisted conversation so a rebuilt pipeline knows what already
     /// happened. Never sent to providers.
@@ -863,6 +865,7 @@ impl Default for MessageMetadata {
             steer: false,
             turn_context: false,
             usage: None,
+            operation_logs: Vec::new(),
             operations: None,
         }
     }

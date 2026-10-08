@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Input } from '../../../../../ui/input';
 import { acpReadProviderConfig } from '../../../../../../acp/providers';
+import { isMaskedConfigValue, type MaskedConfigValue } from '../../../../../../acp/config';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../../../ui/collapsible';
 import type { ConfigKey, ProviderDetails } from '../../../../../../types/providers';
 import { configLabels, configPlaceholders } from '../../../../../../utils/configUtils';
@@ -51,7 +52,7 @@ const i18n = defineMessages({
 
 type ValidationErrors = Record<string, string>;
 
-type ConfigValue = string | { maskedValue: string };
+type ConfigValue = string | MaskedConfigValue;
 export interface ConfigInput {
   serverValue?: ConfigValue;
   value?: string;
@@ -144,7 +145,7 @@ export default function DefaultProviderSetupForm({
   const getPlaceholder = (parameter: ConfigKey): string => {
     if (parameter.secret) {
       const serverValue = configValues[parameter.name]?.serverValue;
-      if (typeof serverValue === 'object' && 'maskedValue' in serverValue) {
+      if (isMaskedConfigValue(serverValue)) {
         return serverValue.maskedValue;
       }
     }
