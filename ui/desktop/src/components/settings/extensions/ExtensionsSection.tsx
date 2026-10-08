@@ -43,12 +43,11 @@ const i18n = defineMessages({
 interface ExtensionSectionProps {
   deepLinkConfig?: ExtensionConfig;
   showEnvVars?: boolean;
-  hideButtons?: boolean;
+  hideButtons: boolean;
   disableConfiguration?: boolean;
-  customToggle?: (extension: FixedExtensionEntry) => Promise<boolean | void>;
   selectedExtensions?: string[]; // Add controlled state
-  onModalClose?: (extensionName: string) => void;
-  searchTerm?: string;
+  onModalClose: (extensionName: string) => void;
+  searchTerm: string;
 }
 
 export default function ExtensionsSection({
@@ -56,10 +55,9 @@ export default function ExtensionsSection({
   showEnvVars,
   hideButtons,
   disableConfiguration,
-  customToggle,
   selectedExtensions = [],
   onModalClose,
-  searchTerm = '',
+  searchTerm,
 }: ExtensionSectionProps) {
   const intl = useIntl();
   const { getExtensions, addExtension, removeExtension, setExtensionEnabled, extensionsList } =
@@ -109,11 +107,6 @@ export default function ExtensionsSection({
   }, [getExtensions]);
 
   const handleExtensionToggle = async (extensionConfig: FixedExtensionEntry) => {
-    if (customToggle) {
-      await customToggle(extensionConfig);
-      return true;
-    }
-
     const toggleDirection = extensionConfig.enabled ? 'toggleOff' : 'toggleOn';
     const configKey = extensionConfig.configKey ?? nameToKey(extensionConfig.name);
 
@@ -146,11 +139,9 @@ export default function ExtensionsSection({
       console.error('Failed to add extension:', error);
     } finally {
       await fetchExtensions();
-      if (onModalClose) {
-        setTimeout(() => {
-          onModalClose(formData.name);
-        }, 200);
-      }
+      setTimeout(() => {
+        onModalClose(formData.name);
+      }, 200);
     }
   };
 

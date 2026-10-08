@@ -18,7 +18,7 @@ interface UseAutoSubmitProps {
   messages: Message[];
   chatState: ChatState;
   initialMessage: UserInput | undefined;
-  canAutoSubmit?: boolean;
+  canAutoSubmit: boolean;
   handleSubmit: (input: UserInput) => void;
 }
 
@@ -32,7 +32,7 @@ export function useAutoSubmit({
   messages,
   chatState,
   initialMessage,
-  canAutoSubmit = true,
+  canAutoSubmit,
   handleSubmit,
 }: UseAutoSubmitProps): UseAutoSubmitReturn {
   const [searchParams] = useSearchParams();

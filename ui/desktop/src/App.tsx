@@ -224,8 +224,7 @@ const SessionsRoute = () => {
 };
 
 const SchedulesRoute = () => {
-  const navigate = useNavigate();
-  return <SchedulesView onClose={() => navigate('/')} />;
+  return <SchedulesView />;
 };
 
 const RecipesRoute = () => {

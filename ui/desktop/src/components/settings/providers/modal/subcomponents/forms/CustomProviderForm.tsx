@@ -577,7 +577,7 @@ export default function CustomProviderForm({
   if (step === 'catalog') {
     return (
       <div className="mt-4">
-        <ProviderCatalogPicker onSelect={handleTemplateSelect} onCancel={handleCancel} embedded />
+        <ProviderCatalogPicker onSelect={handleTemplateSelect} />
         <div className="flex justify-between pt-4">
           <Button type="button" variant="ghost" onClick={handleBackToChoice}>
             {intl.formatMessage(i18n.back)}

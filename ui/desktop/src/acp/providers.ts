@@ -324,9 +324,9 @@ export async function acpReadDefaults(): Promise<{
   };
 }
 
-export async function acpSaveDefaults(providerId: string, modelId?: string | null): Promise<void> {
+export async function acpSaveDefaults(providerId: string, modelId: string | null): Promise<void> {
   const client = await getAcpClient();
-  await client.goose.defaultsSave_unstable({ providerId, modelId: modelId ?? null });
+  await client.goose.defaultsSave_unstable({ providerId, modelId });
 }
 
 export async function acpClearDefaults(): Promise<void> {

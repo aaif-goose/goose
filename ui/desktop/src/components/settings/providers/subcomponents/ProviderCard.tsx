@@ -63,9 +63,9 @@ export const ProviderCard = function ProviderCard({
       onClick={handleCardClick}
       header={
         <CardHeader
-          name={metadata.display_name || provider?.name || intl.formatMessage(i18n.unknownProvider)}
+          name={metadata.display_name || provider.name || intl.formatMessage(i18n.unknownProvider)}
           description={description}
-          isConfigured={provider?.is_configured || false}
+          isConfigured={provider.is_configured}
         />
       }
       body={

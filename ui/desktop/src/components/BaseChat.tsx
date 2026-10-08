@@ -497,7 +497,6 @@ export default function BaseChat({
                 <RecipeActivities
                   append={appendToChat}
                   activities={Array.isArray(recipe.activities) ? recipe.activities : null}
-                  title={recipe.title}
                 />
               </div>
             )}

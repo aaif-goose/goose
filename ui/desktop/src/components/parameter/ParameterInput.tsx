@@ -86,18 +86,18 @@ const i18n = defineMessages({
 interface ParameterInputProps {
   parameter: Parameter;
   onChange: (name: string, updatedParameter: Partial<Parameter>) => void;
-  onDelete?: (parameterKey: string) => void;
-  isUnused?: boolean;
-  isExpanded?: boolean;
-  onToggleExpanded?: (parameterKey: string) => void;
+  onDelete: (parameterKey: string) => void;
+  isUnused: boolean;
+  isExpanded: boolean;
+  onToggleExpanded: (parameterKey: string) => void;
 }
 
 const ParameterInput: React.FC<ParameterInputProps> = ({
   parameter,
   onChange,
   onDelete,
-  isUnused = false,
-  isExpanded = true,
+  isUnused,
+  isExpanded,
   onToggleExpanded,
 }) => {
   const intl = useIntl();
@@ -106,7 +106,7 @@ const ParameterInput: React.FC<ParameterInputProps> = ({
 
   const handleToggleExpanded = (e: React.MouseEvent) => {
     // Only toggle if we're not clicking on the delete button
-    if (onToggleExpanded && !(e.target as HTMLElement).closest('button')) {
+    if (!(e.target as HTMLElement).closest('button')) {
       onToggleExpanded(key);
     }
   };
@@ -146,25 +146,25 @@ const ParameterInput: React.FC<ParameterInputProps> = ({
                 title={intl.formatMessage(i18n.unusedWarningTitle)}
               >
                 <AlertTriangle className="w-4 h-4 text-orange-500" />
-                <span className="text-xs text-orange-500 font-normal">{intl.formatMessage(i18n.unused)}</span>
+                <span className="text-xs text-orange-500 font-normal">
+                  {intl.formatMessage(i18n.unused)}
+                </span>
               </div>
             )}
           </div>
         </div>
 
-        {onDelete && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(key);
-            }}
-            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-            title={intl.formatMessage(i18n.deleteParameter, { key })}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(key);
+          }}
+          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+          title={intl.formatMessage(i18n.deleteParameter, { key })}
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Expandable content - only shown when expanded */}

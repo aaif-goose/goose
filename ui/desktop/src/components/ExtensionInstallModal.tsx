@@ -29,7 +29,8 @@ const i18n = defineMessages({
   },
   blockedMessage: {
     id: 'extensionInstallModal.blockedMessage',
-    defaultMessage: 'This extension command is not in the allowed list and its installation is blocked.\n\nExtension: {name}\nCommand: {command}\n\nContact your administrator to request approval for this extension.',
+    defaultMessage:
+      'This extension command is not in the allowed list and its installation is blocked.\n\nExtension: {name}\nCommand: {command}\n\nContact your administrator to request approval for this extension.',
   },
   ok: {
     id: 'extensionInstallModal.ok',
@@ -41,15 +42,18 @@ const i18n = defineMessages({
   },
   untrustedSecurityMessage: {
     id: 'extensionInstallModal.untrustedSecurityMessage',
-    defaultMessage: 'This extension command is not in the allowed list and will be able to access your conversations and provide additional functionality.\n\nInstalling extensions from untrusted sources may pose security risks.',
+    defaultMessage:
+      'This extension command is not in the allowed list and will be able to access your conversations and provide additional functionality.\n\nInstalling extensions from untrusted sources may pose security risks.',
   },
   untrustedMessageWithUrl: {
     id: 'extensionInstallModal.untrustedMessageWithUrl',
-    defaultMessage: '{securityMessage}\n\nExtension: {name}\nURL: {url}\n\nContact your administrator if you are unsure about this.',
+    defaultMessage:
+      '{securityMessage}\n\nExtension: {name}\nURL: {url}\n\nContact your administrator if you are unsure about this.',
   },
   untrustedMessageWithCommand: {
     id: 'extensionInstallModal.untrustedMessageWithCommand',
-    defaultMessage: '{securityMessage}\n\nExtension: {name}\nCommand: {command}\n\nContact your administrator if you are unsure about this.',
+    defaultMessage:
+      '{securityMessage}\n\nExtension: {name}\nCommand: {command}\n\nContact your administrator if you are unsure about this.',
   },
   installAnyway: {
     id: 'extensionInstallModal.installAnyway',
@@ -81,7 +85,8 @@ const i18n = defineMessages({
   },
   alreadyInstalledMessage: {
     id: 'extensionInstallModal.alreadyInstalledMessage',
-    defaultMessage: "''{name}'' extension has already been installed successfully. Start a new chat session to use it.",
+    defaultMessage:
+      "''{name}'' extension has already been installed successfully. Start a new chat session to use it.",
   },
   installing: {
     id: 'extensionInstallModal.installing',
@@ -93,7 +98,7 @@ type ModalType = 'blocked' | 'untrusted' | 'trusted';
 
 interface ExtensionInfo {
   name: string;
-  command?: string;
+  command: string;
   remoteUrl?: string;
   link: string;
 }
@@ -116,7 +121,7 @@ interface ExtensionModalConfig {
 }
 
 interface ExtensionInstallModalProps {
-  addExtension?: (name: string, config: ExtensionConfig, enabled: boolean) => Promise<void>;
+  addExtension: (name: string, config: ExtensionConfig, enabled: boolean) => Promise<void>;
   setView: (view: View, options?: ViewOptions) => void;
 }
 
@@ -200,7 +205,8 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
       case 'blocked':
         return {
           title: intl.formatMessage(i18n.blockedTitle),
-          message: '\n\n' + intl.formatMessage(i18n.blockedMessage, { name, command: displayCommand }),
+          message:
+            '\n\n' + intl.formatMessage(i18n.blockedMessage, { name, command: displayCommand }),
           confirmLabel: intl.formatMessage(i18n.ok),
           cancelLabel: '',
           showSingleButton: true,
@@ -210,8 +216,16 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
       case 'untrusted': {
         const securityMessage = '\n\n' + intl.formatMessage(i18n.untrustedSecurityMessage);
         const message = remoteUrl
-          ? intl.formatMessage(i18n.untrustedMessageWithUrl, { securityMessage, name, url: remoteUrl })
-          : intl.formatMessage(i18n.untrustedMessageWithCommand, { securityMessage, name, command: displayCommand });
+          ? intl.formatMessage(i18n.untrustedMessageWithUrl, {
+              securityMessage,
+              name,
+              url: remoteUrl,
+            })
+          : intl.formatMessage(i18n.untrustedMessageWithCommand, {
+              securityMessage,
+              name,
+              command: displayCommand,
+            });
 
         return {
           title: intl.formatMessage(i18n.untrustedTitle),
@@ -236,58 +250,59 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
     }
   };
 
-  const handleExtensionRequest = useCallback(async (link: string): Promise<void> => {
-    if (processingLinkRef.current === link) {
-      return;
-    }
-    processingLinkRef.current = link;
-
-    try {
-
-      const command = extractCommand(link);
-      const remoteUrl = extractRemoteUrl(link);
-      const extName = extractExtensionName(link);
-      const extensionsList = await getExtensionsRef.current(true);
-
-      if (extensionsList?.find((ext) => ext.name === extName)) {
-
-        toastService.success({
-          title: intl.formatMessage(i18n.alreadyInstalledTitle, { name: extName }),
-          msg: intl.formatMessage(i18n.alreadyInstalledMessage, { name: extName }),
-        });
+  const handleExtensionRequest = useCallback(
+    async (link: string): Promise<void> => {
+      if (processingLinkRef.current === link) {
         return;
       }
+      processingLinkRef.current = link;
 
-      const extensionInfo: ExtensionInfo = {
-        name: extName,
-        command: command,
-        remoteUrl: remoteUrl || undefined,
-        link: link,
-      };
+      try {
+        const command = extractCommand(link);
+        const remoteUrl = extractRemoteUrl(link);
+        const extName = extractExtensionName(link);
+        const extensionsList = await getExtensionsRef.current(true);
 
-      const modalType = await determineModalType(command, remoteUrl);
+        if (extensionsList?.find((ext) => ext.name === extName)) {
+          toastService.success({
+            title: intl.formatMessage(i18n.alreadyInstalledTitle, { name: extName }),
+            msg: intl.formatMessage(i18n.alreadyInstalledMessage, { name: extName }),
+          });
+          return;
+        }
 
-      setModalState({
-        isOpen: true,
-        modalType,
-        extensionInfo,
-        isPending: false,
-        error: null,
-      });
+        const extensionInfo: ExtensionInfo = {
+          name: extName,
+          command: command,
+          remoteUrl: remoteUrl || undefined,
+          link: link,
+        };
 
-      setPendingLink(modalType === 'blocked' ? null : link);
+        const modalType = await determineModalType(command, remoteUrl);
 
-      window.electron.logInfo(`Extension modal opened: ${modalType} for ${extName}`);
-    } catch (error) {
-      console.error('Error processing extension request:', error);
-      setModalState((prev) => ({
-        ...prev,
-        error: errorMessage(error, 'Unknown error'),
-      }));
-    } finally {
-      processingLinkRef.current = null;
-    }
-  }, [intl]);
+        setModalState({
+          isOpen: true,
+          modalType,
+          extensionInfo,
+          isPending: false,
+          error: null,
+        });
+
+        setPendingLink(modalType === 'blocked' ? null : link);
+
+        window.electron.logInfo(`Extension modal opened: ${modalType} for ${extName}`);
+      } catch (error) {
+        console.error('Error processing extension request:', error);
+        setModalState((prev) => ({
+          ...prev,
+          error: errorMessage(error, 'Unknown error'),
+        }));
+      } finally {
+        processingLinkRef.current = null;
+      }
+    },
+    [intl]
+  );
 
   const dismissModal = useCallback(() => {
     setModalState({
@@ -308,18 +323,13 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
     setModalState((prev) => ({ ...prev, isPending: true }));
 
     try {
-
-      if (addExtension) {
-        await addExtensionFromDeepLink(
-          pendingLink,
-          addExtension,
-          (view: string, options?: ViewOptions) => {
-            setView(view as View, options);
-          }
-        );
-      } else {
-        throw new Error('addExtension function not provided to component');
-      }
+      await addExtensionFromDeepLink(
+        pendingLink,
+        addExtension,
+        (view: string, options?: ViewOptions) => {
+          setView(view as View, options);
+        }
+      );
       dismissModal();
     } catch (error) {
       setModalState((prev) => ({
@@ -331,7 +341,6 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
   }, [pendingLink, dismissModal, addExtension, setView]);
 
   useEffect(() => {
-
     const handleAddExtension = async (_event: IpcRendererEvent, ...args: unknown[]) => {
       const link = args[0] as string;
       await handleExtensionRequest(link);
