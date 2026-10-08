@@ -146,8 +146,6 @@ struct CachedTools {
     tools: Arc<Vec<Tool>>,
 }
 
-/// Where an extension's process runs. Platform extensions and injected
-/// clients have none: they take the directory from each call.
 struct Placement {
     working_dir: PathBuf,
     container: Option<Container>,
@@ -181,11 +179,11 @@ enum Runtime {
     Failed(String),
 }
 
-/// One selected extension of one scope. The process starts the first time a
-/// lease needs it; concurrent first uses wait on that one start.
 pub(super) struct ExtensionSlot {
     key: String,
     config: ExtensionConfig,
+    /// `None` for platform extensions and injected clients, which take the
+    /// directory from each call.
     placement: Option<Placement>,
     scope_id: String,
     manager: Weak<ExtensionManager>,
@@ -221,7 +219,7 @@ impl ExtensionSlot {
             .await
     }
 
-    pub(super) async fn extension(&self) -> Option<&Arc<Extension>> {
+    pub(super) async fn start(&self) -> Option<&Arc<Extension>> {
         match self.runtime().await {
             Runtime::Running(extension) => Some(extension),
             Runtime::Declined | Runtime::Failed(_) => None,
@@ -651,8 +649,6 @@ impl ExtensionManager {
         )
     }
 
-    /// Lease the set's extensions, reusing the scope's slots that match and
-    /// replacing the rest. Nothing starts until the lease needs it.
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
         let slots = {
             let mut scopes = self.scopes.lock().await;
@@ -693,8 +689,6 @@ impl ExtensionManager {
         self.lease(set.scope_id(), set.working_dir.clone(), slots)
     }
 
-    /// The session's extensions as its record selects them. A scope without
-    /// a session record leases the slots it was given directly.
     pub async fn current_lease(
         self: &Arc<Self>,
         session_id: &str,
@@ -914,8 +908,7 @@ impl ExtensionManager {
 
     /// Start the extension and select it for the session. It is started here
     /// rather than on the next lease so a failure reaches whoever asked, and
-    /// the selection is only changed when it starts. A slot already serving
-    /// the same config is kept unless it failed.
+    /// the selection is only changed when it starts.
     pub async fn enable(
         self: &Arc<Self>,
         session_id: &str,
@@ -1022,8 +1015,6 @@ impl ExtensionManager {
         }
     }
 
-    /// Serve an extension from a client the caller built. When the scope is
-    /// a session, the extension is selected in its record like any other.
     pub async fn add_client(
         &self,
         session_id: &str,
@@ -1052,6 +1043,7 @@ impl ExtensionManager {
             },
         )
         .await;
+        // Otherwise the next lease, built from the record, drops the slot.
         if let Ok(session) = self.session(session_id).await {
             let extensions = with_selected(selection(&session), config);
             if let Err(error) = self.write_selection(session, extensions).await {
@@ -1060,7 +1052,7 @@ impl ExtensionManager {
         }
     }
 
-    /// Drops the session's slots. Processes stop once no lease holds them.
+    /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
         self.scopes.lock().await.remove(session_id);
     }
@@ -1774,8 +1766,6 @@ mod tests {
             .any(|tool| tool.name == "mcp-fixture__app_card"));
     }
 
-    /// Issue #9031: concurrent first requests for a session must not start an
-    /// MCP server twice.
     #[tokio::test]
     async fn concurrent_first_leases_start_an_extension_once() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -2111,7 +2101,7 @@ mod tests {
             .add_mock_extension("dynamic".to_string(), tools_client.clone())
             .await;
         let slot = extension_manager.scopes.lock().await["session"]["dynamic"].clone();
-        let tools_version = slot.extension().await.unwrap().tools_version.clone();
+        let tools_version = slot.start().await.unwrap().tools_version.clone();
 
         let manager = extension_manager;
         let first_fetch = {

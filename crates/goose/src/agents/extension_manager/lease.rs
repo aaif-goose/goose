@@ -1,13 +1,6 @@
-//! An `ExtensionSet` describes the extensions requested by one scope and the
-//! working directory and container they share. Resolving a set gives an
-//! `ExtensionLease` over one slot per extension; a slot starts its process the
-//! first time the lease needs it. The lease builds its public tool catalog on
-//! first use and keeps both its slots and catalog stable, so an existing lease
-//! survives selection changes while a newly resolved lease sees replacements,
-//! removals, and tool-list changes. Tool calls, resource operations, and
-//! extension prompt context use the lease's snapshot. Calls also use its scope
-//! and working directory and carry their notification and action-required
-//! streams with them.
+//! A lease keeps the slots and tool catalog it was resolved with, so a held
+//! lease is unaffected by selection changes and tool-list changes; only a newly
+//! resolved lease sees them.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -224,15 +217,13 @@ impl ExtensionLease {
     async fn tool_catalog(&self) -> &ToolCatalog {
         self.tool_catalog
             .get_or_init(|| async {
-                ToolCatalog::build(&self.scope_id, &self.running().await).await
+                ToolCatalog::build(&self.scope_id, &self.start_extensions().await).await
             })
             .await
     }
 
-    /// The leased extensions that are running, starting any that have not
-    /// been started yet.
-    async fn running(&self) -> Vec<Arc<Extension>> {
-        futures::future::join_all(self.slots.iter().map(|slot| slot.extension()))
+    async fn start_extensions(&self) -> Vec<Arc<Extension>> {
+        futures::future::join_all(self.slots.iter().map(|slot| slot.start()))
             .await
             .into_iter()
             .flatten()
@@ -240,13 +231,12 @@ impl ExtensionLease {
             .collect()
     }
 
-    async fn extension(&self, extension_name: &str) -> Option<Arc<Extension>> {
+    async fn start_extension(&self, extension_name: &str) -> Option<Arc<Extension>> {
         let key = name_to_key(extension_name);
         let slot = self.slots.iter().find(|slot| slot.key == key)?;
-        slot.extension().await.cloned()
+        slot.start().await.cloned()
     }
 
-    /// Start every leased extension and report how each one went.
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
         futures::future::join_all(self.slots.iter().map(|slot| slot.load_result())).await
     }
@@ -333,7 +323,7 @@ impl ExtensionLease {
         cancellation_token: CancellationToken,
     ) -> Result<ReadResourceResult, ErrorData> {
         let client = self
-            .extension(extension_name)
+            .start_extension(extension_name)
             .await
             .map(|extension| Arc::clone(&extension.client))
             .ok_or_else(|| {
@@ -365,7 +355,7 @@ impl ExtensionLease {
     }
 
     async fn client(&self, extension_name: &str) -> Result<Arc<dyn McpClientTrait>, ErrorData> {
-        self.extension(extension_name)
+        self.start_extension(extension_name)
             .await
             .map(|extension| Arc::clone(&extension.client))
             .ok_or_else(|| {
@@ -418,7 +408,7 @@ impl ExtensionLease {
         &self,
         cancellation_token: CancellationToken,
     ) -> HashMap<String, Vec<Prompt>> {
-        let running = self.running().await;
+        let running = self.start_extensions().await;
         let results = futures::future::join_all(running.iter().map(|extension| {
             let token = cancellation_token.clone();
             async move {
@@ -458,7 +448,7 @@ impl ExtensionLease {
 
     pub async fn ui_resources(&self) -> Vec<(String, Resource)> {
         let mut ui_resources = Vec::new();
-        for extension in self.running().await {
+        for extension in self.start_extensions().await {
             match extension
                 .client
                 .list_resources(&self.scope_id, None, CancellationToken::default())
@@ -529,7 +519,7 @@ impl ExtensionLease {
                 .await;
         }
 
-        let running = self.running().await;
+        let running = self.start_extensions().await;
         let results = futures::future::join_all(
             running
                 .iter()
@@ -556,7 +546,7 @@ impl ExtensionLease {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
         let placeholder = working_dir.to_string_lossy();
         let mut infos = Vec::new();
-        for extension in self.running().await {
+        for extension in self.start_extensions().await {
             let instructions = extension
                 .client
                 .get_instructions(&self.scope_id, &working_dir)
@@ -574,7 +564,7 @@ impl ExtensionLease {
     pub async fn moim(&self) -> Vec<String> {
         let mut content = Vec::new();
         for extension in self
-            .running()
+            .start_extensions()
             .await
             .iter()
             .filter(|extension| extension.is_platform())
