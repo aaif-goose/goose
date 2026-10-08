@@ -85,6 +85,64 @@ esac
 exit 0
 ";
 
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_during_post_tool_hook_keeps_results_only_where_held() -> Result<()> {
+    for tool_name in [ADD, "load_skill", FINAL_OUTPUT_TOOL_NAME] {
+        let env = HookTestEnv::new("PostToolUse", "#!/bin/sh\ncat >/dev/null\nexec 3<>\"$PLUGIN_ROOT/gate\"\necho ran >>\"$PLUGIN_ROOT/hook.log\"\nread -r line <&3\n");
+        assert!(std::process::Command::new("mkfifo")
+            .arg(env.plugin_dir.join("gate"))
+            .status()?
+            .success());
+        std::fs::write(
+            env.plugin_dir.join("hooks/hooks.json"),
+            r#"{"hooks":{"PostToolUse":[{"hooks":[{"type":"command","command":"exec sh ${PLUGIN_ROOT}/hook.sh"}]}]}}"#,
+        )?;
+        let (pipeline, api) = test_pipeline().await?;
+        let pipeline = pipeline.with_hook_manager(env.hook_manager());
+        let arguments = if tool_name == "load_skill" {
+            install_skill(pipeline.working_dir())
+        } else if tool_name == FINAL_OUTPUT_TOOL_NAME {
+            pipeline.set_recipe(final_output_recipe()).await?;
+            serde_json::json!({"answer":"finished"})
+        } else {
+            value(1)
+        };
+        api.on("complete then stop").call(tool_name, arguments);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let stop_at_hook = async {
+            while env.invocations() == 0 {
+                tokio::task::yield_now().await;
+            }
+            cancel.cancel();
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(
+                pipeline.run_with_cancel("complete then stop", cancel.clone()),
+                stop_at_hook
+            )
+        })
+        .await?;
+        let result = result?;
+        let responses = result
+            .conversation()
+            .messages()
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(MessageContent::as_tool_response)
+            .collect::<Vec<_>>();
+        assert_eq!(responses.len(), 1, "{tool_name}");
+        assert_eq!(
+            responses[0].tool_result.as_ref().unwrap().is_error == Some(true),
+            tool_name == "load_skill",
+            "{tool_name}"
+        );
+        assert_eq!(env.invocations(), 1);
+        assert_eq!(api.call_count(), 1);
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
     let allowed = HookTestEnv::new("Stop", LOG_AND_ALLOW_SCRIPT);
@@ -280,28 +338,6 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
             )
         })
     }));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn stop_hook_does_not_run_once_the_turn_is_stopped() -> Result<()> {
-    let env = HookTestEnv::new("Stop", LOG_AND_ALLOW_SCRIPT);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline
-        .seed([
-            Message::user().with_text("hello"),
-            Message::assistant().with_text("done"),
-        ])
-        .await?;
-
-    pipeline.resume_cancelled().await?;
-    assert_eq!(env.invocations(), 0);
-
-    pipeline.resume().await?;
-    assert_eq!(env.invocations(), 1);
-    assert_eq!(api.call_count(), 0);
 
     Ok(())
 }

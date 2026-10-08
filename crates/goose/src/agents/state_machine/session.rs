@@ -6,6 +6,7 @@ use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::hooks::{HookContext, HookEvent, HookManager};
 use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
 use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
@@ -160,13 +161,64 @@ impl EffectUsage<GooseEffect> for SessionManager {
     }
 }
 
+pub(crate) async fn run_turn_start_hooks(
+    hook_manager: &HookManager,
+    session: &Session,
+) -> Result<()> {
+    let conversation = session
+        .conversation()
+        .ok_or_else(|| anyhow::anyhow!("state-machine session loaded without conversation"))?;
+    let messages = crate::agents::state_machine::messages_since_kickoff(conversation)?;
+    if messages.iter().any(|message| {
+        message.role == rmcp::model::Role::Assistant
+            && ((message.is_user_visible() && message.is_agent_visible())
+                || message.error_kind().is_some())
+    }) {
+        return Ok(());
+    }
+
+    let working_dir = session.working_dir.to_string_lossy().to_string();
+    let messages_before_kickoff = &conversation.messages()[..conversation.len() - messages.len()];
+    if !messages_before_kickoff.iter().any(|message| {
+        message.role == rmcp::model::Role::User
+            && message.is_user_visible()
+            && !message.is_tool_response()
+    }) {
+        hook_manager
+            .emit(
+                HookEvent::SessionStart,
+                HookContext::new(HookEvent::SessionStart, &session.id)
+                    .with_working_dir(working_dir.clone()),
+            )
+            .await;
+    }
+
+    let prompt = messages
+        .first()
+        .map(Message::as_concat_text)
+        .unwrap_or_default();
+    if !prompt.is_empty() {
+        hook_manager
+            .emit(
+                HookEvent::UserPromptSubmit,
+                HookContext::new(HookEvent::UserPromptSubmit, &session.id)
+                    .with_message(prompt)
+                    .with_working_dir(working_dir),
+            )
+            .await;
+    }
+    Ok(())
+}
+
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
+    hook_manager: &HookManager,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
     let entry_session = runtime.load(session_id).await?;
+    run_turn_start_hooks(hook_manager, &entry_session).await?;
     tracing::Span::current().record(
         "gen_ai.agent.name",
         crate::agents::gen_ai_telemetry::agent_name(&entry_session),
@@ -206,7 +258,7 @@ pub(crate) async fn run(
         }
     }
 
-    let session = runtime.load(session_id).await?;
+    let session = machine.finalize(runtime, session_id, emit).await?;
     let last_assistant_text = session
         .conversation()
         .and_then(|conversation| {

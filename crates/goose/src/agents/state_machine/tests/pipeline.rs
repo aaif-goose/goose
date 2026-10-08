@@ -8,7 +8,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::CalculatorExtension;
-use super::dummy_api::{DummyApi, ProviderFeatures, ResponseGate};
+use super::dummy_api::{DummyApi, ProviderFeatures};
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::{
@@ -17,8 +17,8 @@ use crate::agents::extension_manager::{
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::prompt_manager::PromptManager;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
-    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
+    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
     StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
@@ -98,7 +98,7 @@ pub(super) struct TestPipeline {
     prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
-    hook_manager: HookManager,
+    pub(super) hook_manager: HookManager,
     stop_hook_block_cap: u32,
     goal: TokioMutex<Option<String>>,
     grind: TokioMutex<Option<String>>,
@@ -205,13 +205,11 @@ impl TestPipeline {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let steps = std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
-            as Arc<dyn Operation<Session, GooseEffect> + '_>)
-        .chain(std::iter::once(command_operation))
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+        let steps = std::iter::once(command_operation)
+            .chain(operations)
+            .map(Step::Operation)
+            .chain(std::iter::once(Step::Inference(inference)))
+            .collect();
 
         StateMachine::new(steps, cancel)
     }
@@ -444,10 +442,11 @@ impl TestPipeline {
             .await?;
 
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -486,6 +485,14 @@ impl TestPipeline {
                 .await?;
         }
         Ok(())
+    }
+
+    pub(super) async fn start_turn(&self) -> Result<()> {
+        crate::agents::state_machine::session::run_turn_start_hooks(
+            &self.hook_manager,
+            &self.session().await?,
+        )
+        .await
     }
 
     pub(super) async fn resume(&self) -> Result<TestRun> {
@@ -539,8 +546,9 @@ impl TestPipeline {
         let cancel = CancellationToken::new();
         cancel.cancel();
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
+        self.start_turn().await?;
         let session = machine
             .run(self.session_manager.as_ref(), &self.session_id, &emit)
             .await?;
@@ -562,8 +570,9 @@ impl TestPipeline {
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
+        self.start_turn().await?;
         let session = machine
             .run(self.session_manager.as_ref(), &self.session_id, &emit)
             .await?;
@@ -573,28 +582,6 @@ impl TestPipeline {
             events.push(event);
         }
         Ok(TestRun::new(session, events))
-    }
-
-    pub(super) async fn run_cancelled_while_held(
-        &self,
-        message: &str,
-        gate: ResponseGate,
-    ) -> Result<TestRun> {
-        let cancel = CancellationToken::new();
-        let run = self.run_with_cancel(message, cancel.clone());
-        tokio::pin!(run);
-        let stopped = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            tokio::select! {
-                () = gate.entered() => cancel.cancel(),
-                result = &mut run => {
-                    return Err(anyhow::anyhow!("run ended before the held request: {:?}", result.err()));
-                }
-            }
-            (&mut run).await
-        })
-        .await;
-        gate.release();
-        stopped.map_err(|_| anyhow::anyhow!("run did not stop within 10s of the held request"))?
     }
 
     pub(super) async fn run_with_elicitation(
@@ -609,10 +596,11 @@ impl TestPipeline {
             .await?;
         let cancel = CancellationToken::new();
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -1120,9 +1108,10 @@ impl TestRun {
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
     let cancel = CancellationToken::new();
     let machine = pipeline.machine(cancel.clone());
-    let (tx, mut rx) = mpsc::channel(1024);
+    let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
+    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let Some(mut result) = machine.step(&session, &emit).await? else {

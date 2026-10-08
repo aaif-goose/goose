@@ -35,7 +35,7 @@ use crate::agents::retry::{RetryManager, RetryResult};
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, subagent_cancelled_message, BangShellOperation,
-    CompactionOperation, DoctorOperation, Emitter, EntryHookOperation, ExitOnErrorOperation,
+    CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
@@ -1822,15 +1822,8 @@ impl Agent {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let operations: Vec<_> =
-            std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
-                as Arc<dyn Operation<Session, GooseEffect> + '_>)
-            .chain(std::iter::once(command_operation))
+        let steps = std::iter::once(command_operation)
             .chain(operations)
-            .collect();
-
-        let steps = operations
-            .into_iter()
             .map(Step::Operation)
             .chain(std::iter::once(Step::Inference(inference)))
             .collect();
@@ -2118,12 +2111,18 @@ impl Agent {
 
         Ok(Box::pin(
             async_stream::try_stream! {
-                let (tx, mut rx) = mpsc::channel::<AgentEvent>(32);
+                let (tx, mut rx) = mpsc::unbounded_channel::<AgentEvent>();
                 let emit = Emitter::new(tx, cancel.clone());
                 let result = {
                     let run = crate::session_context::with_session_id(
                         Some(session_id.clone()),
-                        run_goose(&machine, session_manager.as_ref(), &session_id, &emit),
+                        run_goose(
+                            &machine,
+                            session_manager.as_ref(),
+                            &self.hook_manager,
+                            &session_id,
+                            &emit,
+                        ),
                     );
                     tokio::pin!(run);
                     loop {

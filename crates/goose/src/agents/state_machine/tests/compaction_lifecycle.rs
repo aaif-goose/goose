@@ -80,7 +80,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     pipeline.set_total_tokens(100).await;
     let machine =
         state_machine::StateMachine::new(Vec::new(), tokio_util::sync::CancellationToken::new());
-    let (tx, _rx) = tokio::sync::mpsc::channel(4);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let emit = state_machine::Emitter::new(tx, tokio_util::sync::CancellationToken::new());
     let apply = async |effects: Vec<state_machine::GooseEffect>| -> Result<()> {
         let session = pipeline.session().await?;
@@ -498,101 +498,6 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
         .agent_visible_messages()
         .iter()
         .any(|message| message.as_concat_text().contains(&large_result)));
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stop_during_compaction_keeps_the_conversation() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    api.on("fill the context").reply("filled");
-    pipeline.run(["fill the context"]).await?;
-    let filled_usage = (pipeline.context_limit() as f64 * 0.81) as i32;
-
-    for message in ["continue", "/compact"] {
-        let total_tokens = if message == "/compact" {
-            100
-        } else {
-            filled_usage
-        };
-        pipeline.set_total_tokens(total_tokens).await;
-        let calls_before = api.call_count();
-        let gate = api.on(SUMMARIZE_HISTORY).hold_reply("summary");
-
-        let stopped = pipeline.run_cancelled_while_held(message, gate).await?;
-
-        assert_eq!(api.call_count(), calls_before + 1, "{message}");
-        assert_eq!(stopped.history_replacements(), 0, "{message}");
-        assert!(
-            stopped
-                .conversation()
-                .messages()
-                .iter()
-                .any(|message| message.as_concat_text() == "filled" && message.is_agent_visible()),
-            "{message}"
-        );
-        assert!(
-            !stopped
-                .conversation()
-                .messages()
-                .iter()
-                .any(|message| message.as_concat_text().contains("Compaction complete")),
-            "{message}"
-        );
-    }
-
-    pipeline.set_total_tokens(filled_usage).await;
-    api.on("Your context was compacted")
-        .reply("continued after compaction");
-    let resumed = pipeline.run(["continue again"]).await?;
-    assert_eq!(resumed.history_replacements(), 1);
-    resumed.assert_message(-1, Agent, "continued after compaction");
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stop_during_tool_pair_compaction_keeps_the_pairs() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let cutoff = compute_tool_call_cutoff(pipeline.context_limit(), pipeline::COMPACTION_THRESHOLD);
-    let boundary = cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE;
-
-    api.on("do a lot of work").call(ADD, value(1));
-    api.on("result:").call(ADD, value(1));
-    api.on(format!("result: {}", boundary - 1))
-        .reply("first batch done");
-    api.on("reach the boundary").call(ADD, value(1));
-    api.on(format!("result: {boundary}"))
-        .reply("at the boundary");
-    api.on("cross the boundary").call(ADD, value(1));
-    api.on(format!("result: {}", boundary + 1))
-        .reply("all work done");
-    pipeline
-        .run([
-            "do a lot of work",
-            "reach the boundary",
-            "cross the boundary",
-        ])
-        .await?;
-
-    let calls_before = api.call_count();
-    let gate = api
-        .on_system(SUMMARIZE_TOOL_PAIR)
-        .hold_reply("summary of the pair");
-    let stopped = pipeline.run_cancelled_while_held("carry on", gate).await?;
-
-    assert_eq!(api.call_count(), calls_before + 1);
-    let messages = stopped.conversation().messages();
-    assert!(!messages
-        .iter()
-        .any(|message| message.as_concat_text() == "summary of the pair"));
-    assert_eq!(
-        messages
-            .iter()
-            .filter(|message| message.is_agent_visible() && message.is_tool_call())
-            .count(),
-        boundary + 1
-    );
 
     Ok(())
 }

@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -63,12 +66,6 @@ fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> V
                 .map_or(true, |call| tool_names.contains(call.name.as_ref()))
         })
         .collect()
-}
-
-fn interrupted_result() -> Result<CallToolResult, ErrorData> {
-    Ok(CallToolResult::error(vec![
-        rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
-    ]))
 }
 
 fn parameters<T: ToolBase>(arguments: Option<JsonObject>) -> Result<T::Parameter, ErrorData> {
@@ -196,6 +193,7 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
+    response: Mutex<Option<Message>>,
 }
 
 impl<S> ToolOperation<S>
@@ -206,6 +204,7 @@ where
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
+            response: Mutex::new(None),
         }
     }
 
@@ -304,6 +303,18 @@ where
         "tools"
     }
 
+    async fn cancel(&self, emit: &Emitter) -> Vec<E> {
+        let response = self
+            .response
+            .lock()
+            .expect("tool response lock poisoned")
+            .take();
+        match response {
+            Some(response) => vec![E::from(emit.message(response).await)],
+            None => Vec::new(),
+        }
+    }
+
     async fn inference_tools(&self, session: &S) -> Result<Vec<Tool>> {
         Ok(self
             .available_tools(session)
@@ -337,22 +348,7 @@ where
             return not_applicable();
         }
 
-        let available = tokio::select! {
-            biased;
-            _ = emit.cancelled() => {
-                let mut message = Message::user();
-                for request in pending {
-                    message.add_tool_response_with_metadata(
-                        request.id,
-                        interrupted_result(),
-                        request.metadata.as_ref(),
-                    );
-                }
-                let message = emit.message(message).await;
-                return applied([E::from(message)]);
-            },
-            available = self.available_tools(session) => available?,
-        };
+        let available = self.available_tools(session).await?;
         let available_names = available
             .iter()
             .map(|(tool, _)| tool.name.as_ref())
@@ -362,8 +358,6 @@ where
             return not_applicable();
         }
 
-        let mut message = Message::user();
-        let mut cancelled = false;
         for request in pending {
             let provider = match request.tool_call.as_ref() {
                 Ok(call) => available
@@ -373,30 +367,29 @@ where
                     .expect("pending requests were filtered by available tools"),
                 Err(_) => &self.registered as &dyn ToolProvider<S>,
             };
-            let tool_result = if cancelled || emit.cancel_token().is_cancelled() {
-                cancelled = true;
-                interrupted_result()
-            } else {
-                match request.tool_call.as_ref() {
-                    Err(error) => Err(error.clone()),
-                    Ok(call) => {
-                        tokio::select! {
-                            biased;
-                            _ = emit.cancelled() => {
-                                cancelled = true;
-                                interrupted_result()
-                            },
-                            result = provider.call(session, &request.id, call.clone(), emit) => result,
-                        }
-                    }
+            let tool_result = match request.tool_call.as_ref() {
+                Err(error) => Err(error.clone()),
+                Ok(call) => {
+                    provider
+                        .call(session, &request.id, call.clone(), emit)
+                        .await
                 }
             };
+            let mut output = self.response.lock().expect("tool response lock poisoned");
+            let message =
+                output.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
             message.add_tool_response_with_metadata(
                 request.id,
                 tool_result,
                 request.metadata.as_ref(),
             );
         }
+        let message = self
+            .response
+            .lock()
+            .expect("tool response lock poisoned")
+            .take()
+            .expect("tool responses retained");
         let message = emit.message(message).await;
         applied([E::from(message)])
     }

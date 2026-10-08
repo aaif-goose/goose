@@ -1,6 +1,6 @@
 //! Provider inference operation for the unrolled agent loop.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -73,7 +73,6 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
 
 const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
-const CANCELLED_TOOL_RESPONSE: &str = "Tool call was cancelled before execution";
 
 fn is_thinking(content: &MessageContent) -> bool {
     matches!(
@@ -188,10 +187,27 @@ pub fn record_chat_usage(span: &tracing::Span, usage: &ProviderUsage) {
     }
 }
 
+struct InferenceOutput {
+    accumulator: Conversation,
+    additional_messages: Vec<Message>,
+    usage: Option<ProviderUsage>,
+}
+
+impl Default for InferenceOutput {
+    fn default() -> Self {
+        Self {
+            accumulator: Conversation::empty(),
+            additional_messages: Vec::new(),
+            usage: None,
+        }
+    }
+}
+
 pub struct InferenceRunner<'a, S, E> {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
+    output: Mutex<InferenceOutput>,
     effect: std::marker::PhantomData<fn() -> E>,
 }
 
@@ -260,33 +276,6 @@ fn should_infer(conversation: &Conversation, turn: &[Message]) -> bool {
     ends_with_provider_turn(&messages_for_provider(conversation, turn, false))
 }
 
-fn cancellation_response(persisted: &[Message], pending: &[Message]) -> Option<Message> {
-    let mut answered = persisted
-        .iter()
-        .chain(pending)
-        .flat_map(Message::get_tool_response_ids)
-        .collect::<std::collections::HashSet<_>>();
-    let mut request_ids = std::collections::HashSet::new();
-    let mut response = Message::user();
-    for request in persisted
-        .iter()
-        .chain(pending)
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-    {
-        if request_ids.insert(request.id.as_str()) && !answered.remove(request.id.as_str()) {
-            response.add_tool_response_with_metadata(
-                request.id.clone(),
-                Ok(rmcp::model::CallToolResult::error(vec![
-                    rmcp::model::ContentBlock::text(CANCELLED_TOOL_RESPONSE),
-                ])),
-                request.metadata.as_ref(),
-            );
-        }
-    }
-    (!response.get_tool_response_ids().is_empty()).then_some(response)
-}
-
 fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracing::Span {
     let span = tracing::info_span!(
         target: "goose::state_machine",
@@ -313,6 +302,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
             provider,
             model_config,
             request_preparer: Arc::new(IdentityInferenceRequestPreparer),
+            output: Mutex::new(InferenceOutput::default()),
             effect: std::marker::PhantomData,
         }
     }
@@ -325,12 +315,40 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         self
     }
 
-    async fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Vec<E> {
+    fn output(&self) -> MutexGuard<'_, InferenceOutput> {
+        self.output.lock().expect("inference output lock poisoned")
+    }
+
+    fn take_output(&self) -> Vec<E> {
+        let output = std::mem::take(&mut *self.output());
+        let mut effects: Vec<E> = output
+            .additional_messages
+            .into_iter()
+            .map(E::from)
+            .collect();
+        if let Some(usage) = output.usage {
+            effects.push(E::record_usage(usage));
+        }
+        effects.extend(output.accumulator.into_iter().map(E::from));
+        effects
+    }
+
+    async fn emit_message(&self, message: Message, emit: &Emitter) {
+        let message = message.with_generated_id_if_missing();
+        self.output().accumulator.push(message.clone());
+        emit.message(message).await;
+    }
+
+    async fn error_outcome(
+        &self,
+        err: &ProviderError,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        let message = Message::from_provider_error(err);
-        let message = emit.message(message).await;
-        vec![E::from(message)]
+        self.emit_message(Message::from_provider_error(err), emit)
+            .await;
+        applied(self.take_output())
     }
 }
 
@@ -341,22 +359,8 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
         "llm"
     }
 
-    async fn cancel(
-        &self,
-        _session: &S,
-        conversation: &Conversation,
-        result: OperationResult<E>,
-        emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
-        let OperationResult::NotApplicable = result else {
-            return Ok(result);
-        };
-        let Some(response) = cancellation_response(messages_since_kickoff(conversation)?, &[])
-        else {
-            return Ok(OperationResult::NotApplicable);
-        };
-        let response = emit.message(response).await;
-        applied([E::from(response)])
+    async fn cancel(&self, _emit: &Emitter) -> Vec<E> {
+        self.take_output()
     }
 }
 
@@ -406,7 +410,18 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             for message in &additional_messages {
                 messages_for_provider.push(message.clone());
             }
-            let mut usage_effects: Vec<E> = additional_messages.into_iter().map(E::from).collect();
+            self.output().additional_messages = additional_messages;
+
+            let provider_name = self.provider.get_name();
+            if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
+                if let Err(error) = self.provider.resume(session_id).await {
+                    tracing::warn!(
+                        provider = provider_name,
+                        %error,
+                        "Could not resume provider session; continuing with a handoff"
+                    );
+                }
+            }
 
             let projected =
                 Conversation::new_unvalidated(messages_for_provider).agent_visible_messages();
@@ -414,49 +429,28 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
+            let stream = self
+                .provider
+                .stream(
+                    &self.model_config,
+                    &system_prompt,
+                    conversation_for_provider.messages(),
+                    &tools,
+                )
+                .await;
+
+            let mut stream = match stream {
+                Ok(stream) => stream,
+                Err(err) => return self.error_outcome(&err, emit).await,
+            };
+
             let requested_model = self.model_config.model_name.clone();
-            let start_request = async {
-                let provider_name = self.provider.get_name();
-                if let Some(session_id) = latest_provider_session_id(conversation, provider_name) {
-                    if let Err(error) = self.provider.resume(session_id).await {
-                        tracing::warn!(
-                            provider = provider_name,
-                            %error,
-                            "Could not resume provider session; continuing with a handoff"
-                        );
-                    }
-                }
-                let stream = self
-                    .provider
-                    .stream(
-                        &self.model_config,
-                        &system_prompt,
-                        conversation_for_provider.messages(),
-                        &tools,
-                    )
-                    .await?;
-                let resolved_model = self
-                    .provider
-                    .fetch_model_info(&requested_model)
-                    .await
-                    .ok()
-                    .and_then(|model_info| model_info.resolved_model);
-                Ok::<_, ProviderError>((stream, resolved_model))
-            };
-            let started = tokio::select! {
-                biased;
-                _ = emit.cancelled() => return applied(usage_effects),
-                started = start_request => started,
-            };
-
-            let (mut stream, resolved_model) = match started {
-                Ok(started) => started,
-                Err(err) => {
-                    usage_effects.extend(self.error_outcome(&err, emit).await);
-                    return applied(usage_effects);
-                }
-            };
-
+            let resolved_model = self
+                .provider
+                .fetch_model_info(&requested_model)
+                .await
+                .ok()
+                .and_then(|model_info| model_info.resolved_model);
             let provider_session_id = self.provider.provider_session_id();
             let inference = Some(InferenceMetadata {
                 provider: self.provider.get_name().to_string(),
@@ -465,103 +459,69 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                 provider_session_id,
             });
 
-            let mut accumulator = Conversation::empty();
             let mut tool_request_ids = std::collections::HashSet::new();
-            let mut provider_usage = None;
-            let mut cancelled = false;
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = emit.cancelled() => {
-                        cancelled = true;
-                        break;
-                    },
-                    next = stream.next() => {
-                        let Some(result) = next else { break };
-                        let (msg_opt, usage_opt) = match result {
-                            Ok(chunk) => chunk,
-                            Err(err) => {
-                                if let Some(usage) = provider_usage {
-                                    usage_effects.push(E::record_usage(usage));
-                                }
-                                usage_effects.extend(accumulator.into_iter().map(E::from));
-                                usage_effects.extend(self.error_outcome(&err, emit).await);
-                                return applied(usage_effects);
-                            }
-                        };
-                        if let Some(usage) = usage_opt {
-                            let span = tracing::Span::current();
-                            record_chat_usage(&span, &usage);
-                            provider_usage = Some(usage);
+            while let Some(result) = stream.next().await {
+                let (msg_opt, usage_opt) = match result {
+                    Ok(chunk) => chunk,
+                    Err(err) => return self.error_outcome(&err, emit).await,
+                };
+                if let Some(usage) = usage_opt {
+                    record_chat_usage(&tracing::Span::current(), &usage);
+                    self.output().usage = Some(usage);
+                }
+                if let Some(mut chunk) = msg_opt {
+                    if let Some(inference) = &inference {
+                        chunk = chunk.with_inference_if_assistant(inference.clone());
+                    }
+                    chunk.content.retain(|content| match content {
+                        MessageContent::ToolRequest(request) => {
+                            tool_request_ids.insert(request.id.clone())
                         }
-                        if let Some(mut chunk) = msg_opt {
-                            if let Some(inference) = &inference {
-                                chunk = chunk.with_inference_if_assistant(inference.clone());
-                            }
-                            chunk.content.retain(|content| match content {
-                                MessageContent::ToolRequest(request) => {
-                                    tool_request_ids.insert(request.id.clone())
-                                }
-                                _ => true,
-                            });
-                            drop_repeated_tool_call_thinking(&accumulator, &mut chunk);
-                            if chunk.content.is_empty() {
-                                if chunk.metadata.output_token_limit_reached {
-                                    chunk = emit.message(chunk).await;
-                                }
-                                accumulator.push(chunk);
-                                continue;
-                            }
-                            let chunk = emit.message(chunk).await;
-                            accumulator.push(chunk);
-                        }
+                        _ => true,
+                    });
+                    drop_repeated_tool_call_thinking(&self.output().accumulator, &mut chunk);
+                    if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
+                        self.output().accumulator.push(chunk);
+                    } else {
+                        self.emit_message(chunk, emit).await;
                     }
                 }
             }
 
-            if let Some(usage) = provider_usage {
-                usage_effects.push(E::record_usage(usage));
-            }
-
-            if cancelled || emit.cancel_token().is_cancelled() {
-                if let Some(response) = cancellation_response(messages, accumulator.messages()) {
-                    let response = emit.message(response).await;
-                    accumulator.push(response);
-                }
-            }
-
-            let empty_response = !cancelled
-                && !ends_with_successful_tool_response(conversation.messages())
-                && !accumulator
+            let empty_output = {
+                let output = self.output();
+                !output
+                    .accumulator
                     .iter()
                     .any(|message| message.metadata.output_token_limit_reached)
-                && accumulator.iter().all(is_empty_response);
-            if empty_response {
-                let message = Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE);
-                let message = emit.message(message).await;
-                usage_effects.push(E::from(message));
-                return yielded_with(usage_effects);
+                    && output.accumulator.iter().all(is_empty_response)
+            };
+            let successful_tool_response =
+                ends_with_successful_tool_response(conversation.messages());
+            if empty_output && !successful_tool_response && !emit.cancel_token().is_cancelled() {
+                self.output().accumulator.clear();
+                self.emit_message(Message::assistant().with_text(EMPTY_RESPONSE_MESSAGE), emit)
+                    .await;
+                return yielded_with(self.take_output());
             }
 
-            if ends_with_successful_tool_response(conversation.messages())
-                && !accumulator
-                    .iter()
-                    .any(|message| message.metadata.output_token_limit_reached)
-                && accumulator.iter().all(is_empty_response)
-            {
-                let mut message = accumulator
-                    .into_iter()
-                    .last()
-                    .unwrap_or_else(Message::assistant);
-                message.content.clear();
-                message.metadata.user_visible = false;
-                message.metadata.agent_visible = true;
-                let message = emit.message(message).await;
-                usage_effects.push(E::from(message));
-            } else {
-                usage_effects.extend(accumulator.into_iter().map(|message| E::from(message)));
+            if empty_output && successful_tool_response {
+                let message = {
+                    let mut output = self.output();
+                    let mut message = output
+                        .accumulator
+                        .last()
+                        .cloned()
+                        .unwrap_or_else(Message::assistant);
+                    message.content.clear();
+                    message.metadata.user_visible = false;
+                    message.metadata.agent_visible = true;
+                    output.accumulator.clear();
+                    message
+                };
+                self.emit_message(message, emit).await;
             }
-            applied(usage_effects)
+            applied(self.take_output())
         }
         .instrument(span)
         .await
@@ -597,52 +557,6 @@ mod tests {
             latest_provider_session_id(&conversation, "provider-a"),
             None
         );
-    }
-
-    #[test]
-    fn cancellation_response_includes_requests_from_unconverted_messages() {
-        let persisted = [Message::user().with_text("run it")];
-        let pending = [Message::assistant().with_tool_request(
-            "pending-call",
-            Ok(rmcp::model::CallToolRequestParams::new("tool")),
-        )];
-
-        let response = cancellation_response(&persisted, &pending).expect("cancellation response");
-
-        assert_eq!(
-            response.get_tool_response_ids(),
-            std::collections::HashSet::from(["pending-call"])
-        );
-        let cancellation_text = response
-            .content
-            .iter()
-            .filter_map(MessageContent::as_tool_response)
-            .flat_map(|response| {
-                response
-                    .tool_result
-                    .as_ref()
-                    .expect("tool result")
-                    .content
-                    .iter()
-            })
-            .filter_map(|content| content.as_text())
-            .map(|text| text.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(cancellation_text, vec![CANCELLED_TOOL_RESPONSE]);
-    }
-
-    #[test]
-    fn cancellation_response_skips_answered_requests() {
-        let request = Message::assistant().with_tool_request(
-            "answered-call",
-            Ok(rmcp::model::CallToolRequestParams::new("tool")),
-        );
-        let response = Message::user().with_tool_response(
-            "answered-call",
-            Ok(rmcp::model::CallToolResult::success(vec![])),
-        );
-
-        assert!(cancellation_response(&[request, response], &[]).is_none());
     }
 
     #[test]

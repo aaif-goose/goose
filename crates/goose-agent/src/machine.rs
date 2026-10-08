@@ -5,9 +5,10 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
-    ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect, Operation,
-    OperationResult, StepResult,
+    messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
+    Operation, OperationResult, StepResult,
 };
+use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
@@ -53,6 +54,31 @@ pub struct StateMachine<'a, S, E = ConversationEffect> {
     cancel: CancellationToken,
 }
 
+fn interrupted_response(messages: &[Message]) -> Option<Message> {
+    let answered = messages
+        .iter()
+        .flat_map(Message::get_tool_response_ids)
+        .collect::<HashSet<_>>();
+    let mut request_ids = HashSet::new();
+    let mut response = Message::user();
+    for request in messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_request)
+    {
+        if request_ids.insert(request.id.as_str()) && !answered.contains(request.id.as_str()) {
+            response.add_tool_response_with_metadata(
+                request.id.clone(),
+                Ok(rmcp::model::CallToolResult::error(vec![
+                    rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
+                ])),
+                request.metadata.as_ref(),
+            );
+        }
+    }
+    (!response.get_tool_response_ids().is_empty()).then_some(response)
+}
+
 fn add_tools_to_inference_input(
     input: &mut InferenceInput,
     tool_names: &mut HashSet<String>,
@@ -70,7 +96,7 @@ fn add_tools_to_inference_input(
 impl<'a, S, E> StateMachine<'a, S, E>
 where
     S: MachineSession,
-    E: MachineEffect + MaybeSend + 'static,
+    E: MachineEffect + From<Message> + MaybeSend + 'static,
 {
     pub fn new(steps: Vec<Step<'a, S, E>>, cancel: CancellationToken) -> Self {
         Self { steps, cancel }
@@ -83,13 +109,12 @@ where
 
         for step in &self.steps {
             let name = step.operation().name();
-            let result = if self.cancel.is_cancelled() {
-                OperationResult::NotApplicable
-            } else {
+            if self.cancel.is_cancelled() {
+                return Ok(None);
+            }
+            let execution = async {
                 match step {
-                    Step::Operation(operation) => {
-                        operation.run(session, conversation, emit).await?
-                    }
+                    Step::Operation(operation) => operation.run(session, conversation, emit).await,
                     Step::Inference(inference) => {
                         let prepared_session = inference.prepare_session(session).await?;
                         let session = prepared_session.as_ref().unwrap_or(session);
@@ -97,16 +122,12 @@ where
                             anyhow!("state-machine session loaded without conversation")
                         })?;
                         if !inference.applies(conversation) {
-                            continue;
+                            return Ok(OperationResult::NotApplicable);
                         }
                         let mut input = InferenceInput::default();
                         let mut tool_names = HashSet::new();
                         for operation in self.steps.iter().map(|step| step.operation()) {
-                            let tools = tokio::select! {
-                                biased;
-                                _ = self.cancel.cancelled() => return Ok(None),
-                                tools = operation.inference_tools(session) => tools?,
-                            };
+                            let tools = operation.inference_tools(session).await?;
                             add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
                             input
                                 .prompt_parts
@@ -115,17 +136,14 @@ where
                                 .moim_parts
                                 .extend(operation.moim_parts(session, conversation).await?);
                         }
-                        inference.infer(session, conversation, input, emit).await?
+                        inference.infer(session, conversation, input, emit).await
                     }
                 }
             };
-            let cancelled = self.cancel.is_cancelled();
-            let result = if cancelled {
-                step.operation()
-                    .cancel(session, conversation, result, emit)
-                    .await?
-            } else {
-                result
+            let result = tokio::select! {
+                biased;
+                _ = self.cancel.cancelled() => return Ok(None),
+                result = execution => result?,
             };
 
             match result {
@@ -135,7 +153,7 @@ where
                     for effect in &mut result.effects {
                         effect.ensure_message_ids();
                     }
-                    if cancelled {
+                    if self.cancel.is_cancelled() {
                         result.yield_to_client = true;
                     }
                     return Ok(Some(result));
@@ -178,6 +196,43 @@ where
                 break;
             }
         }
+        self.finalize(runtime, session_id, emit).await
+    }
+
+    pub async fn finalize<R>(&self, runtime: &R, session_id: &str, emit: &Emitter) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        let session = runtime.load(session_id).await?;
+        if !self.cancel.is_cancelled() {
+            return Ok(session);
+        }
+
+        let mut effects = Vec::new();
+        for step in &self.steps {
+            effects.extend(step.operation().cancel(emit).await);
+        }
+        let mut result = StepResult {
+            effects,
+            applied_step: None,
+            yield_to_client: true,
+        };
+        self.apply(runtime, &session, &mut result, emit).await?;
+        let session = runtime.load(session_id).await?;
+
+        let unanswered = session
+            .conversation()
+            .and_then(|conversation| messages_since_kickoff(conversation).ok())
+            .and_then(interrupted_response);
+        let Some(response) = unanswered else {
+            return Ok(session);
+        };
+        let mut result = StepResult {
+            effects: vec![E::from(emit.message(response).await)],
+            applied_step: None,
+            yield_to_client: true,
+        };
+        self.apply(runtime, &session, &mut result, emit).await?;
         runtime.load(session_id).await
     }
 }

@@ -22,6 +22,7 @@ pub(crate) type SteerQueue = Arc<Mutex<VecDeque<Message>>>;
 pub struct SteerOperation {
     queue: SteerQueue,
     hook_manager: HookManager,
+    drained: std::sync::Mutex<Vec<Message>>,
 }
 
 impl SteerOperation {
@@ -29,7 +30,15 @@ impl SteerOperation {
         Self {
             queue,
             hook_manager,
+            drained: std::sync::Mutex::default(),
         }
+    }
+
+    fn take_drained(&self) -> Vec<GooseEffect> {
+        std::mem::take(&mut *self.drained.lock().expect("steer lock poisoned"))
+            .into_iter()
+            .map(GooseEffect::from)
+            .collect()
     }
 }
 
@@ -37,6 +46,10 @@ impl SteerOperation {
 impl Operation<Session, GooseEffect> for SteerOperation {
     fn name(&self) -> &'static str {
         "steer"
+    }
+
+    async fn cancel(&self, _emit: &Emitter) -> Vec<GooseEffect> {
+        self.take_drained()
     }
 
     async fn run(
@@ -63,16 +76,18 @@ impl Operation<Session, GooseEffect> for SteerOperation {
             return not_applicable();
         }
 
-        let mut effects = Vec::with_capacity(pending.len());
+        let mut drained = Vec::with_capacity(pending.len());
         for message in pending {
+            drained.push(emit.message(message).await);
+        }
+        *self.drained.lock().expect("steer lock poisoned") = drained.clone();
+        for message in drained {
             let context = HookContext::new(HookEvent::UserPromptSubmit, &session.id)
                 .with_message(message.as_concat_text());
             self.hook_manager
                 .emit(HookEvent::UserPromptSubmit, context)
                 .await;
-            let message = emit.message(message).await;
-            effects.push(message.into());
         }
-        applied(effects)
+        applied(self.take_drained())
     }
 }

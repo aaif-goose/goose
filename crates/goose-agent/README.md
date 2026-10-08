@@ -48,9 +48,23 @@ remember that it already did something, it records that on the message itself vi
 
 ## Cancellation
 
-Cancellation is cooperative. Once the token fires, remaining steps are treated as
-not-applicable and each step's `cancel` hook gets a chance to rewrite its result;
-anything applied while cancelled yields to the client.
+On Stop, the machine drops the running step's future, including inference
+preparation. It then calls every operation's `cancel` once, in pipeline order,
+saves the returned effects, reloads the session, and answers every tool request
+since kickoff that still has no response with "Tool call was interrupted before
+completing". Callers driving `step` and `apply` themselves must call `finalize`
+on exit.
+
+An operation implements `cancel` only when it holds received output across a
+later await, or owns work that must finish. Keep that output in the operation,
+not in locals of the dropped future, and drain the same field on normal
+completion. `cancel` emits only what the client has not seen yet.
+`InferenceRunner` holds its streamed messages and usage; `ToolOperation` holds
+its tool response message. Use one operation instance per active execution.
+
+`Emitter` sends on an unbounded channel, so emitting never pauses and an
+operation that only builds, emits, and returns holds nothing. Dropping a future
+cannot undo external actions or stop blocking work that has already started.
 
 ## WebAssembly
 

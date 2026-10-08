@@ -8,8 +8,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::agents::state_machine::{
-    applied, awaits_tool_responses, messages_since_kickoff, not_applicable, yielded, Emitter,
-    GooseEffect, Operation, OperationResult,
+    applied, awaits_tool_responses, messages_since_kickoff, not_applicable, Emitter, GooseEffect,
+    Operation, OperationResult,
 };
 use crate::agents::subagent_handler::{ForegroundSubagentRunner, SubagentOutcome, SubagentStart};
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
@@ -188,6 +188,20 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
         OPERATION_NAME
     }
 
+    async fn cancel(&self, emit: &Emitter) -> Vec<GooseEffect> {
+        let mut running = self.running.lock().await;
+        let mut effects = Vec::new();
+        while let Some(finished) = running.tasks.join_next_with_id().await {
+            let Ok((task_id, outcome @ SubagentOutcome::Completed(_))) = finished else {
+                continue;
+            };
+            if let Some(subagent_id) = running.subagent_ids.remove(&task_id) {
+                effects.push(subagent_result_message(&subagent_id, outcome, true, emit).await);
+            }
+        }
+        effects
+    }
+
     async fn run(
         &self,
         session: &Session,
@@ -216,9 +230,6 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
                 .await
             {
                 SubagentStart::HasOutcome(outcome) => {
-                    if self.cancel.is_cancelled() {
-                        return yielded();
-                    }
                     return applied([subagent_result_message(
                         subagent_id,
                         outcome,
@@ -238,13 +249,11 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
             }
         }
 
-        let finished = tokio::select! {
-            biased;
-            _ = self.cancel.cancelled() => return yielded(),
-            finished = running.tasks.join_next_with_id() => {
-                finished.ok_or_else(|| anyhow!("No foreground subagent is running"))?
-            }
-        };
+        let finished = running
+            .tasks
+            .join_next_with_id()
+            .await
+            .ok_or_else(|| anyhow!("No foreground subagent is running"))?;
         let (task_id, outcome) = match finished {
             Ok(finished) => finished,
             Err(error) => (error.id(), SubagentOutcome::Failed(error.to_string())),
@@ -486,7 +495,7 @@ mod tests {
         Ok(())
     }
 
-    fn notices(rx: &mut mpsc::Receiver<AgentEvent>) -> Vec<String> {
+    fn notices(rx: &mut mpsc::UnboundedReceiver<AgentEvent>) -> Vec<String> {
         let mut notices = Vec::new();
         while let Ok(event) = rx.try_recv() {
             let AgentEvent::Message(message) = event else {
@@ -513,7 +522,7 @@ mod tests {
             add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         save_final_output(&fixture.manager, &second_subagent_id).await?;
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel);
 
@@ -564,7 +573,7 @@ mod tests {
     async fn failed_subagent_emits_start_and_failure_notices() -> Result<()> {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel);
         let (_, result) = run_step(&operation, &fixture, &emit).await?;
@@ -596,7 +605,7 @@ mod tests {
         let second_subagent_id =
             add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         let cancel = CancellationToken::new();
-        let (tx, _rx) = mpsc::channel(16);
+        let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel);
 
@@ -630,20 +639,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_yields_without_delivering() -> Result<()> {
+    async fn stop_waits_for_running_subagents_and_delivers_only_completed_ones() -> Result<()> {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
-        cancel.cancel();
-        let (tx, _rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
-        let operation = fixture.operation(cancel);
+        let operation = fixture.operation(cancel.clone());
+        {
+            let mut running = operation.running.lock().await;
+            for (subagent_id, outcome) in [
+                ("finished", SubagentOutcome::Completed("done".to_string())),
+                (
+                    "stopped",
+                    SubagentOutcome::Failed("stopped without final output".to_string()),
+                ),
+            ] {
+                let child_cancel = cancel.clone();
+                let handle = running.tasks.spawn(async move {
+                    child_cancel.cancelled().await;
+                    outcome
+                });
+                running
+                    .subagent_ids
+                    .insert(handle.id(), subagent_id.to_string());
+            }
+        }
+        cancel.cancel();
 
-        let (_, result) = run_step(&operation, &fixture, &emit).await?;
-        let OperationResult::Applied(step) = result else {
-            panic!("expected the operation to yield");
-        };
-        assert!(step.yield_to_client);
-        assert!(step.effects.is_empty());
+        let effects = operation.cancel(&emit).await;
+
+        assert_eq!(effects.len(), 1);
+        let (subagent_id, message) = delivered(&effects[0]);
+        assert_eq!(subagent_id, "finished");
+        assert_eq!(
+            message.as_concat_text(),
+            "Subagent finished completed: done"
+        );
+        assert_eq!(notices(&mut rx), ["Subagent finished completed\n\ndone"]);
         Ok(())
     }
 
@@ -654,7 +686,7 @@ mod tests {
         let unfinished_subagent_id =
             add_delegated_subagent(&fixture.manager, &fixture.temp_dir, &fixture.parent_id).await?;
         let cancel = CancellationToken::new();
-        let (tx, _rx) = mpsc::channel(16);
+        let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel.clone());
         let (parent, result) = run_step(&operation, &fixture, &emit).await?;
@@ -711,7 +743,7 @@ mod tests {
             .add_message(&copy.id, &delegate_message("missing-subagent"))
             .await?;
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(16);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let operation = fixture.operation(cancel);
 

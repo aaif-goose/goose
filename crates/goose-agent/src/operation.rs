@@ -92,14 +92,8 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         message.metadata.operation_note(self.name(), key)
     }
 
-    async fn cancel(
-        &self,
-        _session: &S,
-        _conversation: &Conversation,
-        result: OperationResult<E>,
-        _emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
-        Ok(result)
+    async fn cancel(&self, _emit: &Emitter) -> Vec<E> {
+        Vec::new()
     }
 
     async fn run_command(
@@ -252,17 +246,17 @@ impl From<Conversation> for ConversationEffect {
 }
 
 pub struct Emitter {
-    tx: mpsc::Sender<AgentEvent>,
+    tx: mpsc::UnboundedSender<AgentEvent>,
     cancel: CancellationToken,
 }
 
 impl Emitter {
-    pub fn new(tx: mpsc::Sender<AgentEvent>, cancel: CancellationToken) -> Self {
+    pub fn new(tx: mpsc::UnboundedSender<AgentEvent>, cancel: CancellationToken) -> Self {
         Self { tx, cancel }
     }
 
     pub async fn emit(&self, event: AgentEvent) {
-        let _ = self.tx.send(event).await;
+        let _ = self.tx.send(event);
     }
 
     pub async fn message(&self, message: Message) -> Message {
