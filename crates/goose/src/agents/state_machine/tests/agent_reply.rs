@@ -30,7 +30,7 @@ use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
 use goose_providers::model::ModelConfig;
 
-async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfile::TempDir)> {
+async fn agent_with_dummy_api() -> Result<(Arc<Agent>, Arc<DummyApi>, String, tempfile::TempDir)> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
     let api_client = goose_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
@@ -75,7 +75,7 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
 }
 
 async fn agent_with_calculator() -> Result<(
-    Agent,
+    Arc<Agent>,
     Arc<DummyApi>,
     String,
     Arc<CalculatorExtension>,
@@ -100,7 +100,7 @@ async fn agent_with_calculator() -> Result<(
     Ok((agent, api, session_id, calculator, temp_dir))
 }
 
-async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
+async fn enable_developer(agent: &Arc<Agent>, session_id: &str) -> Result<()> {
     agent
         .add_extension(
             ExtensionConfig::Platform {
@@ -169,7 +169,6 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
             scope: crate::plugins::discovery::PluginScope::Project,
         },
     ]));
-    let agent = Arc::new(agent);
 
     api.on("add one").call(ADD, delayed_value(1, 80));
     api.on("result: 1").reply("the result is one");
@@ -391,7 +390,6 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
 #[tokio::test]
 async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
     let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
-    let agent = Arc::new(agent);
     api.on("add one").calls([("call_add", ADD, value(1))]);
 
     let cancel = CancellationToken::new();
@@ -453,7 +451,6 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
     agent
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
-    let agent = Arc::new(agent);
 
     api.on("load review")
         .call("load_skill", json!({ "name": "review" }));
@@ -518,7 +515,6 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
     agent
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
-    let agent = Arc::new(agent);
 
     api.on("load review")
         .call("load_skill", json!({ "name": "review" }));
@@ -570,7 +566,6 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
 #[tokio::test]
 async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
     let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
-    let agent = Arc::new(agent);
 
     api.on("add one").call(ADD, value(1));
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
@@ -637,7 +632,6 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
     agent
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
-    let agent = Arc::new(agent);
     let session_config = SessionConfig {
         id: session_id,
         schedule_id: None,
@@ -769,7 +763,7 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
 }
 
 async fn reply_messages(
-    agent: &Agent,
+    agent: &Arc<Agent>,
     session_id: String,
     message: Message,
 ) -> Result<Vec<Message>> {
@@ -926,4 +920,89 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
 #[tokio::test]
 async fn bang_shell_visibility_is_enforced_when_state_machine_is_enabled() -> Result<()> {
     assert_bang_shell_uses_only_user_visible_content().await
+}
+
+#[tokio::test]
+async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() -> Result<()> {
+    let (mut agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    let hook_dir = tempfile::tempdir()?;
+    let plugin_dir = hook_dir.path().join("test-plugin");
+    std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+    std::fs::write(
+        plugin_dir.join("hooks/hooks.json"),
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
+    )?;
+    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+        crate::plugins::discovery::DiscoveredPlugin {
+            name: "test-plugin".into(),
+            root: plugin_dir.clone(),
+            scope: crate::plugins::discovery::PluginScope::Project,
+        },
+    ]));
+    enable_developer(&agent, &session_id).await?;
+    agent
+        .extension_manager
+        .enable(
+            &session_id,
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        )
+        .await?;
+
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "print the subagent marker", "max_turns": 3 }),
+    );
+    api.on("print the subagent marker")
+        .call("shell", json!({ "command": "echo marker-from-subagent" }));
+    api.on("marker-from-subagent").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "printed it" }),
+    );
+    api.on("printed it").reply("the subagent printed it");
+
+    reply_messages(
+        &agent,
+        session_id.clone(),
+        Message::user().with_text("hand this off"),
+    )
+    .await?;
+
+    let hook_log = std::fs::read_to_string(plugin_dir.join("hook.log"))?;
+    let subagent_shell_calls: Vec<String> = hook_log
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<serde_json::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|payload| payload["tool_name"].as_str() == Some("shell"))
+        .map(|payload| {
+            payload["session_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    let [subagent_id] = subagent_shell_calls.as_slice() else {
+        panic!("expected one shell call through the hook, got {subagent_shell_calls:?}");
+    };
+    assert_ne!(subagent_id, &session_id);
+    assert!(agent
+        .extension_manager
+        .scope_lease(subagent_id)
+        .await
+        .configs()
+        .is_empty());
+    Ok(())
 }

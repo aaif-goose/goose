@@ -313,11 +313,20 @@ mod tests {
     }
 
     impl Fixture {
+        fn runner(&self) -> ForegroundSubagentRunner {
+            let mut agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+                self.manager.clone(),
+                crate::config::permission::PermissionManager::instance(),
+                None,
+                true,
+                crate::agents::GoosePlatform::GooseCli,
+            ));
+            agent.set_hook_manager_for_test(crate::hooks::HookManager::default());
+            ForegroundSubagentRunner::new(agent)
+        }
+
         fn operation(&self, cancel: CancellationToken) -> ForegroundSubagentOperation {
-            ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.manager.clone(), false),
-                cancel,
-            )
+            ForegroundSubagentOperation::new(self.runner(), cancel)
         }
     }
 
@@ -775,7 +784,7 @@ mod tests {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let runner = ForegroundSubagentRunner::new(fixture.manager.clone(), false);
+        let runner = fixture.runner();
         let SubagentStart::Started { run, .. } = runner
             .start(&fixture.parent_id, &fixture.subagent_id, cancel)
             .await

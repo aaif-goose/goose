@@ -110,7 +110,6 @@ pub struct AgentConfig {
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub use_login_shell_path: Option<bool>,
-    pub is_subagent: bool,
     pub providers: Arc<ProviderManager>,
 }
 
@@ -133,7 +132,6 @@ impl AgentConfig {
             mcp_protocol_version: None,
             session_name_update_tx: None,
             use_login_shell_path: None,
-            is_subagent: false,
             providers: Arc::default(),
         }
     }
@@ -197,14 +195,8 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
-impl Default for Agent {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Agent {
-    pub fn new() -> Self {
+    pub fn new() -> Arc<Self> {
         let config = Config::global();
         Self::with_config(AgentConfig::new(
             Arc::new(SessionManager::instance()),
@@ -215,7 +207,7 @@ impl Agent {
         ))
     }
 
-    pub fn with_config(config: AgentConfig) -> Self {
+    pub fn with_config(config: AgentConfig) -> Arc<Self> {
         let providers = config.providers.clone();
 
         let goose_platform = config.goose_platform.clone();
@@ -243,8 +235,7 @@ impl Agent {
         let inspection_session_manager = Arc::clone(&config.session_manager);
         let permission_manager = Arc::clone(&config.permission_manager);
         let use_login_shell_path = config.resolve_use_login_shell_path();
-        let is_subagent = config.is_subagent;
-        Self {
+        Arc::new(Self {
             config,
             extension_manager: Arc::new(ExtensionManager::new(
                 providers.clone(),
@@ -260,25 +251,24 @@ impl Agent {
                 providers,
                 inspection_session_manager,
             ),
-            hook_manager: if is_subagent {
-                crate::hooks::HookManager::default()
-            } else {
-                crate::hooks::HookManager::load(
-                    std::env::current_dir().ok().as_deref(),
-                    use_login_shell_path,
-                )
-            },
+            hook_manager: crate::hooks::HookManager::load(
+                std::env::current_dir().ok().as_deref(),
+                use_login_shell_path,
+            ),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
             steer_queues: Mutex::new(HashMap::new()),
-        }
+        })
     }
 
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
     #[cfg(test)]
-    pub(crate) fn set_hook_manager_for_test(&mut self, hook_manager: crate::hooks::HookManager) {
-        self.hook_manager = hook_manager;
+    pub(crate) fn set_hook_manager_for_test(
+        self: &mut Arc<Self>,
+        hook_manager: crate::hooks::HookManager,
+    ) {
+        Arc::get_mut(self).expect("agent is shared").hook_manager = hook_manager;
     }
 
     #[cfg(test)]
@@ -289,8 +279,10 @@ impl Agent {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_stop_hook_block_cap_for_test(&mut self, cap: u32) {
-        self.stop_hook_block_cap_override = Some(cap);
+    pub(crate) fn set_stop_hook_block_cap_for_test(self: &mut Arc<Self>, cap: u32) {
+        Arc::get_mut(self)
+            .expect("agent is shared")
+            .stop_hook_block_cap_override = Some(cap);
     }
 
     pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
@@ -333,6 +325,14 @@ impl Agent {
 
     pub async fn discard_pending_steers(&self, session_id: &str) {
         self.steer_queues.lock().await.remove(session_id);
+    }
+
+    /// Stops the session's extensions and drops its provider and pending steers. A turn
+    /// still running keeps what it already leased.
+    pub async fn release_session(&self, session_id: &str) {
+        self.discard_pending_steers(session_id).await;
+        self.extension_manager.release(session_id).await;
+        self.config.providers.release(session_id);
     }
 
     async fn steer_queue(&self, session_id: &str) -> SteerQueue {
@@ -565,7 +565,7 @@ impl Agent {
     }
 
     pub(super) async fn create_state_machine(
-        &self,
+        self: &Arc<Self>,
         provider: Arc<dyn Provider>,
         model_config: goose_providers::model::ModelConfig,
         context_limit: usize,
@@ -638,10 +638,7 @@ impl Agent {
             // started, so a final output from the same batch must not be shown until
             // the subagents have run.
             Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(
-                    self.config.session_manager.clone(),
-                    self.config.resolve_use_login_shell_path(),
-                ),
+                ForegroundSubagentRunner::new(Arc::clone(self)),
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
@@ -694,7 +691,7 @@ impl Agent {
     }
 
     pub(crate) async fn reply_with_state_machine(
-        &self,
+        self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
@@ -712,7 +709,7 @@ impl Agent {
     }
 
     async fn reply_with_state_machine_inner(
-        &self,
+        self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
@@ -863,7 +860,7 @@ impl Agent {
     }
 
     fn stream_state_machine_turn<'a>(
-        &'a self,
+        self: &'a Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
         turn_guard: ActiveTurnGuard,
@@ -909,7 +906,7 @@ impl Agent {
     }
 
     pub(super) async fn stream_state_machine_session(
-        &self,
+        self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
@@ -970,7 +967,7 @@ impl Agent {
     }
 
     pub(crate) async fn reply_live_delegation(
-        &self,
+        self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: CancellationToken,
@@ -1000,7 +997,7 @@ impl Agent {
         )
     )]
     pub async fn reply(
-        &self,
+        self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
@@ -1024,7 +1021,7 @@ impl Agent {
     }
 
     async fn reply_impl(
-        &self,
+        self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
@@ -1439,8 +1436,12 @@ mod tests {
         }
     }
 
-    async fn session_context_agent() -> (Agent, Arc<SessionContextProvider>, SessionConfig, TempDir)
-    {
+    async fn session_context_agent() -> (
+        Arc<Agent>,
+        Arc<SessionContextProvider>,
+        SessionConfig,
+        TempDir,
+    ) {
         let temp_dir = TempDir::new().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let agent = Agent::with_config(AgentConfig::new(
@@ -1556,7 +1557,7 @@ mod tests {
         );
     }
 
-    async fn tracing_test_agent_and_session() -> (Agent, Session, TempDir) {
+    async fn tracing_test_agent_and_session() -> (Arc<Agent>, Session, TempDir) {
         let data_dir = TempDir::new().unwrap();
         let data_path = data_dir.path().to_path_buf();
         let session_manager = Arc::new(SessionManager::new(data_path.clone()));
@@ -1790,7 +1791,7 @@ mod tests {
 
     async fn effort_test_agent(
         outcome: EffortOutcome,
-    ) -> (Agent, String, Arc<EffortProvider>, TempDir) {
+    ) -> (Arc<Agent>, String, Arc<EffortProvider>, TempDir) {
         let (agent, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
         agent
@@ -1804,7 +1805,7 @@ mod tests {
         (agent, session.id, provider, data_dir)
     }
 
-    async fn persisted_thinking_effort(agent: &Agent, session_id: &str) -> Option<String> {
+    async fn persisted_thinking_effort(agent: &Arc<Agent>, session_id: &str) -> Option<String> {
         agent
             .model_config_for_session(session_id)
             .await
@@ -2357,7 +2358,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         data_dir: PathBuf,
         hook_manager: crate::hooks::HookManager,
         provider: Arc<dyn crate::providers::base::Provider>,
-    ) -> Result<(Agent, String)> {
+    ) -> Result<(Arc<Agent>, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
         let config = AgentConfig::new(
@@ -2390,7 +2391,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn create_stop_hook_test_agent(
         env: &StopHookTestEnv,
         stop_hook_block_cap: u32,
-    ) -> Result<(Agent, String, Arc<CountingTextProvider>)> {
+    ) -> Result<(Arc<Agent>, String, Arc<CountingTextProvider>)> {
         let provider = Arc::new(CountingTextProvider::new());
         let (mut agent, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
@@ -2399,7 +2400,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     async fn run_stop_hook_test_turn(
-        agent: &Agent,
+        agent: &Arc<Agent>,
         session_id: &str,
         text: &str,
     ) -> Result<Vec<Message>> {

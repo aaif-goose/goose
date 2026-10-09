@@ -2,9 +2,8 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, AgentConfig, GoosePlatform, SessionConfig,
+        Agent, SessionConfig,
     },
-    config::permission::PermissionManager,
     conversation::{message::Message, Conversation},
     prompt_template::render_template,
     session::extension_data::{EnabledExtensionsState, ExtensionState},
@@ -25,11 +24,10 @@ pub struct SubagentPromptContext {
     pub available_tools: String,
 }
 
-pub(crate) async fn from_foreground_subagent_session(
-    session_manager: Arc<SessionManager>,
+pub(crate) async fn prepare_foreground_subagent(
+    agent: &Agent,
     session: &Session,
-    use_login_shell_path: bool,
-) -> Result<(Agent, SessionConfig)> {
+) -> Result<SessionConfig> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
@@ -59,21 +57,11 @@ pub(crate) async fn from_foreground_subagent_session(
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
 
-    let mut config = AgentConfig::new(
-        session_manager,
-        PermissionManager::instance(),
-        None,
-        true,
-        GoosePlatform::GooseCli,
-    )
-    .with_use_login_shell_path(use_login_shell_path);
-    config.is_subagent = true;
-    let agent = Agent::with_config(config);
     agent
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
 
-    let subagent_prompt = build_subagent_prompt(&agent, max_turns, session_id).await?;
+    let subagent_prompt = build_subagent_prompt(agent, max_turns, session_id).await?;
     agent
         .config
         .session_manager
@@ -81,12 +69,11 @@ pub(crate) async fn from_foreground_subagent_session(
         .system_prompt_override(Some(subagent_prompt))
         .apply()
         .await?;
-    let session_config = SessionConfig {
+    Ok(SessionConfig {
         id: session_id.to_string(),
         schedule_id: None,
         max_turns: Some(max_turns as u32),
-    };
-    Ok((agent, session_config))
+    })
 }
 
 pub(crate) enum SubagentOutcome {
@@ -105,16 +92,16 @@ pub(crate) enum SubagentStart {
 
 #[derive(Clone)]
 pub(crate) struct ForegroundSubagentRunner {
-    session_manager: Arc<SessionManager>,
-    use_login_shell_path: bool,
+    agent: Arc<Agent>,
 }
 
 impl ForegroundSubagentRunner {
-    pub(crate) fn new(session_manager: Arc<SessionManager>, use_login_shell_path: bool) -> Self {
-        Self {
-            session_manager,
-            use_login_shell_path,
-        }
+    pub(crate) fn new(agent: Arc<Agent>) -> Self {
+        Self { agent }
+    }
+
+    fn session_manager(&self) -> &SessionManager {
+        &self.agent.config.session_manager
     }
 
     pub(crate) async fn start(
@@ -123,7 +110,7 @@ impl ForegroundSubagentRunner {
         subagent_id: &str,
         cancel: CancellationToken,
     ) -> SubagentStart {
-        let subagent = match self.session_manager.get_session(subagent_id, true).await {
+        let subagent = match self.session_manager().get_session(subagent_id, true).await {
             Ok(subagent) => subagent,
             Err(error) => {
                 return SubagentStart::HasOutcome(SubagentOutcome::Failed(error.to_string()))
@@ -153,13 +140,9 @@ impl ForegroundSubagentRunner {
     }
 
     async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
-        let (agent, session_config) = from_foreground_subagent_session(
-            self.session_manager.clone(),
-            subagent,
-            self.use_login_shell_path,
-        )
-        .await?;
-        let mut events = agent
+        let session_config = prepare_foreground_subagent(&self.agent, subagent).await?;
+        let mut events = self
+            .agent
             .stream_state_machine_session(session_config, cancel)
             .await?;
         while let Some(event) = events.next().await {
@@ -170,8 +153,9 @@ impl ForegroundSubagentRunner {
 
     async fn run(self, subagent: Session, cancel: CancellationToken) -> SubagentOutcome {
         let run_result = self.run_to_end(&subagent, cancel.clone()).await;
+        self.agent.release_session(&subagent.id).await;
         let stopped = cancel.is_cancelled();
-        let subagent = match self.session_manager.get_session(&subagent.id, true).await {
+        let subagent = match self.session_manager().get_session(&subagent.id, true).await {
             Ok(subagent) => subagent,
             Err(error) => return SubagentOutcome::Failed(error.to_string()),
         };

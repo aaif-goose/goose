@@ -1610,12 +1610,14 @@ mod tests {
             })
         }));
 
-        let (reloaded_agent, _) =
-            crate::agents::subagent_handler::from_foreground_subagent_session(
-                Arc::new(reloaded),
-                &child,
-                false,
-            )
+        let reloaded_agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+            Arc::new(reloaded),
+            crate::config::permission::PermissionManager::instance(),
+            None,
+            true,
+            crate::agents::GoosePlatform::GooseCli,
+        ));
+        crate::agents::subagent_handler::prepare_foreground_subagent(&reloaded_agent, &child)
             .await
             .unwrap();
         assert_eq!(

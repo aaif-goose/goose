@@ -161,7 +161,7 @@ impl AgentManager {
         config.mcp_host_info = runtime_context.mcp_host_info;
         config.use_login_shell_path = runtime_context.use_login_shell_path;
         config.session_name_update_tx = runtime_context.session_name_update_tx;
-        let agent = Arc::new(Agent::with_config(config));
+        let agent = Agent::with_config(config);
 
         if let Ok(session) = self
             .agent_config
