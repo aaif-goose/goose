@@ -206,19 +206,18 @@ pub struct ShellOutput {
 /// a minimal PATH like `/usr/bin:/bin`. This function spawns a login shell to
 /// source the user's profile and recover the full PATH.
 #[cfg(not(windows))]
-fn resolve_login_shell_path() -> Option<String> {
+fn resolve_login_shell_path(shell: &str) -> Option<String> {
     use process_wrap::std::{CommandWrap, ProcessSession};
 
-    let shell = unix_shell();
-    let login_args = unix_login_shell_command_args(&shell);
+    let login_args = unix_login_shell_command_args(shell);
 
     // Build the command, varying only the flatpak vs direct invocation.
     let mut cmd = if is_flatpak() {
         let mut c = flatpak_spawn_process();
-        c.arg(&shell).args(login_args);
+        c.arg(shell).args(login_args);
         CommandWrap::from(c)
     } else {
-        let mut c = std::process::Command::new(&shell);
+        let mut c = std::process::Command::new(shell);
         c.args(login_args);
         CommandWrap::from(c)
     };
@@ -268,9 +267,8 @@ fn resolve_login_shell_path() -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn merged_login_path() -> Option<String> {
-    let login = resolve_login_shell_path()?;
-    let current = std::env::var("PATH").unwrap_or_default();
+fn merged_login_path(shell: &str, current: &str) -> Option<String> {
+    let login = resolve_login_shell_path(shell)?;
     let mut seen = std::collections::HashSet::new();
     let entries: Vec<&str> = login
         .split(':')
@@ -288,10 +286,12 @@ pub(crate) async fn login_path() -> Option<&'static str> {
         static LOGIN_PATH: OnceCell<Option<String>> = OnceCell::const_new();
         LOGIN_PATH
             .get_or_init(|| async {
-                tokio::task::spawn_blocking(merged_login_path)
-                    .await
-                    .ok()
-                    .flatten()
+                tokio::task::spawn_blocking(|| {
+                    merged_login_path(&unix_shell(), &std::env::var("PATH").unwrap_or_default())
+                })
+                .await
+                .ok()
+                .flatten()
             })
             .await
             .as_deref()
@@ -1112,22 +1112,15 @@ mod tests {
         let fake_shell = tmp.path().join("fake-login-shell");
         std::fs::write(
             &fake_shell,
-            "#!/bin/sh\necho 'profile noise'\nprintf '%s\\n' \"$FAKE_LOGIN_PATH\"\n",
+            "#!/bin/sh\necho 'profile noise'\necho /opt/homebrew/bin:/usr/bin\n",
         )
         .unwrap();
         let mut perms = std::fs::metadata(&fake_shell).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&fake_shell, perms).unwrap();
 
-        let fake_shell = fake_shell.to_string_lossy().into_owned();
-        let _guard = env_lock::lock_env([
-            ("GOOSE_SHELL", Some(fake_shell.as_str())),
-            ("FAKE_LOGIN_PATH", Some("/opt/homebrew/bin:/usr/bin")),
-            ("PATH", Some("/usr/bin:/bin:/app/bin")),
-        ]);
-
         assert_eq!(
-            merged_login_path().as_deref(),
+            merged_login_path(&fake_shell.to_string_lossy(), "/usr/bin:/bin:/app/bin").as_deref(),
             Some("/opt/homebrew/bin:/usr/bin:/bin:/app/bin")
         );
     }
