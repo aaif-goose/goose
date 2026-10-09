@@ -76,68 +76,43 @@ async fn relay_to_direct_upgrade_loses_no_data() {
         .expect("run test relay");
     let relay = RelaySettings::Custom(vec![RelayEntry::new(relay_url.to_string())]);
 
-    let host = bind_node_with_relay(relay.clone()).await;
-    host.share(Arc::new(StreamingEchoServer))
-        .await
-        .expect("share");
-
-    let client = bind_node_with_relay(relay).await;
-    host.trust().lock().await.accept(&client.endpoint_id());
-
-    assert!(
-        host.wait_online(std::time::Duration::from_secs(15)).await,
-        "host never reached the test relay"
-    );
-    assert!(
-        client.wait_online(std::time::Duration::from_secs(15)).await,
-        "client never reached the test relay"
-    );
-
-    // Dial with a RELAY-ONLY address — the browser-card shape. The direct
-    // path must be discovered by holepunching, not seeded by the dialer.
-    let mut addr = iroh::EndpointAddr::new(host.endpoint_id());
-    addr.addrs.insert(TransportAddr::Relay(
-        relay_url_of(&host).expect("host has a relay addr"),
-    ));
-    let mut stream = client
-        .connect_with_addr(addr, Some("hairpin-test".into()))
-        .await
-        .expect("connect through relay");
-
-    // Prove we really started on the relay: the dial address was relay-only,
-    // so a relay path must exist on the connection right now. Without this
-    // the test could silently pass on a direct-from-the-start connection and
-    // never exercise the migration at all.
-    let has_relay_path = stream
-        .conn
-        .paths()
-        .iter()
-        .any(|p| matches!(p.remote_addr(), TransportAddr::Relay(_)));
-    assert!(
-        has_relay_path,
-        "expected the connection to start with a relay path (dialed relay-only)"
-    );
+    // Holepunching races the roam handshake inside `connect_with_addr`, so
+    // on a slow machine the connection can already be direct when it is
+    // returned. Such a run never migrates under traffic, so start over with
+    // fresh nodes that have no remembered direct path.
+    let mut attempt = 1;
+    let (host, _client, mut stream) = loop {
+        let (host, client, stream) = connect_relay_only(&relay).await;
+        if matches!(
+            selected_remote(&stream.conn.paths()),
+            Some(TransportAddr::Relay(_))
+        ) {
+            break (host, client, stream);
+        }
+        host.shutdown().await.unwrap();
+        assert!(
+            attempt < 5,
+            "direct path was selected before connect returned in {attempt} attempts"
+        );
+        attempt += 1;
+    };
+    let conn = stream.conn.clone();
+    let mut paths = conn.paths_stream();
 
     // Phase 1: traffic while on the relay path.
     let mut counter: u64 = 0;
     exchange_frames(&mut stream, &mut counter, 50).await;
 
     // Wait for a direct (IP) path to be selected, pumping traffic the whole
-    // time so the migration happens under load. Holepunching races the roam
-    // handshake inside `connect_with_addr`, so the upgrade may already be
-    // done by now; `paths_stream` starts with the current snapshot where a
-    // `path_events` subscription would miss an earlier `Selected` event.
-    let conn = stream.conn.clone();
-    let mut paths = conn.paths_stream();
+    // time so the migration happens under load. `paths_stream` starts with
+    // the current snapshot, so an upgrade during phase 1 is not missed.
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut direct_selected = false;
     while !direct_selected {
         tokio::select! {
             list = futures::StreamExt::next(&mut paths) => {
                 let list = list.expect("connection closed before direct upgrade");
-                direct_selected = list
-                    .iter()
-                    .any(|p| p.is_selected() && matches!(p.remote_addr(), TransportAddr::Ip(_)));
+                direct_selected = matches!(selected_remote(&list), Some(TransportAddr::Ip(_)));
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
                 exchange_frames(&mut stream, &mut counter, 5).await;
@@ -156,6 +131,51 @@ async fn relay_to_direct_upgrade_loses_no_data() {
     assert!(counter >= 100, "test exchanged {counter} frames");
     stream.send.finish().unwrap();
     host.shutdown().await.unwrap();
+}
+
+/// Bind a fresh host and client on `relay` and dial the host with a
+/// relay-only address, the browser-card shape: the direct path must be found
+/// by holepunching, not seeded by the dialer.
+async fn connect_relay_only(
+    relay: &RelaySettings,
+) -> (
+    Arc<RoamingNode>,
+    Arc<RoamingNode>,
+    goose_roaming::RoamingClientStream,
+) {
+    let host = bind_node_with_relay(relay.clone()).await;
+    host.share(Arc::new(StreamingEchoServer))
+        .await
+        .expect("share");
+
+    let client = bind_node_with_relay(relay.clone()).await;
+    host.trust().lock().await.accept(&client.endpoint_id());
+
+    assert!(
+        host.wait_online(std::time::Duration::from_secs(15)).await,
+        "host never reached the test relay"
+    );
+    assert!(
+        client.wait_online(std::time::Duration::from_secs(15)).await,
+        "client never reached the test relay"
+    );
+
+    let mut addr = iroh::EndpointAddr::new(host.endpoint_id());
+    addr.addrs.insert(TransportAddr::Relay(
+        relay_url_of(&host).expect("host has a relay addr"),
+    ));
+    let stream = client
+        .connect_with_addr(addr, Some("hairpin-test".into()))
+        .await
+        .expect("connect through relay");
+    (host, client, stream)
+}
+
+fn selected_remote(paths: &iroh::endpoint::PathList) -> Option<TransportAddr> {
+    paths
+        .iter()
+        .find(|p| p.is_selected())
+        .map(|p| p.remote_addr().clone())
 }
 
 /// Send `n` numbered frames and require each to echo back verbatim, in order.
