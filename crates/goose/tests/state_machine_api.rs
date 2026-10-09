@@ -68,9 +68,7 @@ impl Inference<Session, GooseEffect> for TestInference {
             .find(|message| message.role == rmcp::model::Role::User)
             .map(Message::as_concat_text)
             .unwrap();
-        let message = emit
-            .message(Message::assistant().with_text(format!("{prompt} answered")))
-            .await;
+        let message = emit.message(Message::assistant().with_text(format!("{prompt} answered")));
         yielded_with([
             GooseEffect::from(message),
             GooseEffect::RecordUsage(ProviderUsage::new(

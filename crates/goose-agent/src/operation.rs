@@ -260,13 +260,13 @@ impl Emitter {
         Self { tx, cancel }
     }
 
-    pub async fn emit(&self, event: AgentEvent) {
+    pub fn emit(&self, event: AgentEvent) {
         let _ = self.tx.send(event);
     }
 
-    pub async fn message(&self, message: Message) -> Message {
+    pub fn message(&self, message: Message) -> Message {
         let message = message.with_generated_id_if_missing();
-        self.emit(AgentEvent::Message(message.clone())).await;
+        self.emit(AgentEvent::Message(message.clone()));
         message
     }
 

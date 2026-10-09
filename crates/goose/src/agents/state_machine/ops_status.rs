@@ -69,9 +69,8 @@ impl Operation<Session, GooseEffect> for StatusOperation {
             .id
             .clone()
             .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
-        emit.message(command_message.with_visibility(true, false))
-            .await;
-        let response = emit.message(response).await;
+        emit.message(command_message.with_visibility(true, false));
+        let response = emit.message(response);
         yielded_with([
             ConversationEffect::SetMessageVisibility {
                 message_id,

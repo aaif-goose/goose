@@ -236,7 +236,7 @@ where
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
             .and_then(interrupted_response);
         if let Some(response) = unanswered {
-            let effects = vec![E::from(emit.message(response).await)];
+            let effects = vec![E::from(emit.message(response))];
             session = self
                 .save(runtime, session_id, session, effects, emit)
                 .await?;

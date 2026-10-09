@@ -67,7 +67,7 @@ impl RecipeOperation {
         self.response.lock().unwrap().take()
     }
 
-    async fn command_error(
+    fn command_error(
         &self,
         conversation: &Conversation,
         message: String,
@@ -85,8 +85,8 @@ impl RecipeOperation {
         let response = Message::assistant()
             .with_text(message)
             .with_visibility(true, false);
-        emit.message(command).await;
-        let response = emit.message(response).await;
+        emit.message(command);
+        let response = emit.message(response);
         yielded_with([
             ConversationEffect::SetMessageVisibility {
                 message_id,
@@ -112,7 +112,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         emit: &Emitter,
     ) -> Vec<GooseEffect> {
         match self.take_response() {
-            Some(response) => vec![emit.message(response).await.into()],
+            Some(response) => vec![emit.message(response).into()],
             None => Vec::new(),
         }
     }
@@ -130,14 +130,16 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         ) {
             Ok(Some(recipe)) => recipe,
             Ok(None) => return not_applicable(),
-            Err(error) => return self.command_error(conversation, error, emit).await,
+            Err(error) => return self.command_error(conversation, error, emit),
         };
 
         if let Some(response) = recipe.response.clone() {
             if let Err(error) = FinalOutputTool::try_new(response) {
-                return self
-                    .command_error(conversation, format!("Recipe is not valid: {error}"), emit)
-                    .await;
+                return self.command_error(
+                    conversation,
+                    format!("Recipe is not valid: {error}"),
+                    emit,
+                );
             }
         }
 
@@ -193,13 +195,11 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         };
 
         if !self.provider.supports_builtin_tools() {
-            return self
-                .command_error(
-                    conversation,
-                    structured_output_unsupported_message(self.provider.get_name()),
-                    emit,
-                )
-                .await;
+            return self.command_error(
+                conversation,
+                structured_output_unsupported_message(self.provider.get_name()),
+                emit,
+            );
         }
 
         let messages = messages_since_kickoff(conversation)?;
@@ -222,7 +222,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                     )])),
                     request.metadata.as_ref(),
                 );
-                let response = emit.message(response).await;
+                let response = emit.message(response);
                 return applied([response.into()]);
             }
             if FinalOutputTool::has_unanswered_siblings(messages, &request.id) {
@@ -297,14 +297,14 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 .await;
             }
             let response = self.take_response().expect("recipe response held");
-            let response = emit.message(response).await;
+            let response = emit.message(response);
             return applied([response.into()]);
         }
 
         if let Some(output) = FinalOutputTool::successful_output(messages) {
             if last_effective_role(messages)? == EffectiveRole::Tool {
                 let message = Message::assistant().with_text(output);
-                let message = emit.message(message).await;
+                let message = emit.message(message);
                 return applied([message.into()]);
             }
             return not_applicable();
@@ -314,7 +314,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
             let message = Message::user()
                 .with_text(FINAL_OUTPUT_CONTINUATION_MESSAGE)
                 .agent_only();
-            let message = emit.message(message).await;
+            let message = emit.message(message);
             return applied([message.into()]);
         }
 

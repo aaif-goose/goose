@@ -335,21 +335,16 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         effects
     }
 
-    async fn emit_message(&self, message: Message, emit: &Emitter) {
+    fn emit_message(&self, message: Message, emit: &Emitter) {
         let message = message.with_generated_id_if_missing();
         self.output().accumulator.push(message.clone());
-        emit.message(message).await;
+        emit.message(message);
     }
 
-    async fn error_outcome(
-        &self,
-        err: &ProviderError,
-        emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
+    fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        self.emit_message(Message::from_provider_error(err), emit)
-            .await;
+        self.emit_message(Message::from_provider_error(err), emit);
         applied(self.take_output())
     }
 }
@@ -453,7 +448,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, emit).await,
+                Err(err) => return self.error_outcome(&err, emit),
             };
 
             let requested_model = self.model_config.model_name.clone();
@@ -475,7 +470,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, emit).await,
+                    Err(err) => return self.error_outcome(&err, emit),
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -497,7 +492,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
                         self.output().accumulator.push(chunk);
                     } else {
-                        self.emit_message(chunk, emit).await;
+                        self.emit_message(chunk, emit);
                     }
                 }
             }
@@ -547,7 +542,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     output.accumulator.clear();
                     message
                 };
-                self.emit_message(message, emit).await;
+                self.emit_message(message, emit);
             }
             applied(self.take_output())
         }

@@ -121,7 +121,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
                     if contains_tool_confirmation_request(message) {
                         // Responses can arrive immediately, so publish only after the persistence pass.
-                        emit.emit(AgentEvent::Message(message.clone())).await;
+                        emit.emit(AgentEvent::Message(message.clone()));
                     }
                     if let Some(usage) = message
                         .metadata
@@ -133,8 +133,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         emit.emit(AgentEvent::MessageUsage {
                             message_id: message.id.clone(),
                             usage,
-                        })
-                        .await;
+                        });
                     }
                 }
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(
@@ -144,12 +143,9 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     emit.emit(AgentEvent::HistoryReplaced(replaced_history(
                         conversation,
                         &effects[index + 1..],
-                    )))
-                    .await;
+                    )));
                 }
-                GooseEffect::RecordUsage(usage) => {
-                    emit.emit(AgentEvent::Usage(usage.clone())).await
-                }
+                GooseEffect::RecordUsage(usage) => emit.emit(AgentEvent::Usage(usage.clone())),
                 _ => {}
             }
         }

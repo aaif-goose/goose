@@ -83,7 +83,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
 
         let mut drained = Vec::with_capacity(pending.len());
         for message in pending {
-            drained.push(emit.message(message).await);
+            drained.push(emit.message(message));
         }
         *self.drained.lock().unwrap() = drained.clone();
         for message in drained {

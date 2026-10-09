@@ -311,7 +311,7 @@ where
     ) -> Vec<E> {
         let response = self.response.lock().unwrap().take();
         match response {
-            Some(response) => vec![E::from(emit.message(response).await)],
+            Some(response) => vec![E::from(emit.message(response))],
             None => Vec::new(),
         }
     }
@@ -391,7 +391,7 @@ where
             .unwrap()
             .take()
             .expect("tool responses retained");
-        let message = emit.message(message).await;
+        let message = emit.message(message);
         applied([E::from(message)])
     }
 }
