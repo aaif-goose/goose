@@ -316,7 +316,8 @@ impl ProviderFixture {
         let system = PromptManager::new()
             .builder()
             .with_extensions(info.into_iter())
-            .build();
+            .build()
+            .unwrap();
 
         let message = Message::user().with_text(prompt);
         let model_config = model_config.unwrap_or_else(|| self.model_config.clone());

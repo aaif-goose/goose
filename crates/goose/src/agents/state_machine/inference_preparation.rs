@@ -69,7 +69,7 @@ impl InferenceRequestPreparer<Session> for GooseInferenceRequestPreparer<'_> {
         let tools =
             crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
         let system_prompt =
-            PromptManager::new().build_system_prompt(session, input.prompt_parts, goose_mode);
+            PromptManager::new().build_system_prompt(session, input.prompt_parts, goose_mode)?;
         let turn = messages_since_kickoff(conversation)?;
         let turn_start = turn
             .first()
