@@ -56,7 +56,19 @@ vi.mock('../../../ui/dropdown-menu', () => ({
       {children}
     </div>
   ),
-  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuTrigger: ({
+    children,
+    disabled,
+    title,
+  }: {
+    children: React.ReactNode;
+    disabled?: boolean;
+    title?: string;
+  }) => (
+    <div data-testid="model-menu-trigger" data-disabled={disabled ? 'true' : 'false'} title={title}>
+      {children}
+    </div>
+  ),
   DropdownMenuContent: ({
     children,
     onCloseAutoFocus,
@@ -74,10 +86,16 @@ vi.mock('../../../ui/dropdown-menu', () => ({
   DropdownMenuItem: ({
     children,
     onSelect,
+    disabled,
   }: {
     children: React.ReactNode;
     onSelect?: () => void;
-  }) => <button onClick={onSelect}>{children}</button>,
+    disabled?: boolean;
+  }) => (
+    <button disabled={disabled} onClick={() => !disabled && onSelect?.()}>
+      {children}
+    </button>
+  ),
   DropdownMenuSeparator: () => null,
 }));
 
@@ -183,5 +201,32 @@ describe('ModelsBottomBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
     expect(screen.getByTestId('switch-model-modal')).toBeInTheDocument();
     expect(mockPreventCloseAutoFocus).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the model picker closed while a turn is running', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        modelChangeLocked
+      />
+    );
+
+    const trigger = screen.getByTestId('model-menu-trigger');
+    expect(trigger).toHaveAttribute('data-disabled', 'true');
+    expect(trigger).toHaveAttribute(
+      'title',
+      'Model changes apply after this turn finishes. Stop the run to switch now.'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open model menu' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Change Model' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete model menu close' }));
+    expect(screen.queryByTestId('switch-model-modal')).not.toBeInTheDocument();
   });
 });

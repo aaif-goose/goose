@@ -2366,6 +2366,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Local Model Settings — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "Model changes apply after this turn finishes. Stop the run to switch now."
+  },
   "modelsBottomBar.recentModels": {
     "defaultMessage": "Recent"
   },

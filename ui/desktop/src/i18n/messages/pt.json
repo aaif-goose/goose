@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Configurações do Modelo Local — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "A mudança de modelo aplica-se quando este turno terminar. Pare a execução para mudar agora."
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Modelo resolvido"
   },
