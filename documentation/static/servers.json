@@ -189,6 +189,18 @@
     "environmentVariables": []
   },
   {
+    "id": "datacircle",
+    "name": "Datacircle",
+    "description": "Look up LinkedIn profiles and B2B data at the data provider's own price, no markup",
+    "url": "https://api.datacircle.dev/mcp",
+    "link": "https://docs.datacircle.dev/mcp-server",
+    "installation_notes": "Hosted remote server. Sign in with your Datacircle account (a work email) via OAuth on first connect; a new account gets a $5 credit.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "datahub-mcp",
     "name": "DataHub",
     "description": "Data discovery and metadata platform for exploring datasets, lineage, and queries",
