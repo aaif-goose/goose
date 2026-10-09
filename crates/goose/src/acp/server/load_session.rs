@@ -221,7 +221,6 @@ impl GooseAcpAgent {
     fn resend_pending_tool_permissions(
         &self,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<StateMachineServices>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
         cancel_token: Option<CancellationToken>,
@@ -237,8 +236,7 @@ impl GooseAcpAgent {
                     arguments: request.arguments.clone(),
                     prompt: request.prompt.clone(),
                 },
-                SessionAgentTarget {
-                    agent: agent.clone(),
+                SessionTarget {
                     session_id: session_id.to_string(),
                     cancel_token: cancel_token.clone(),
                 },
@@ -251,7 +249,6 @@ impl GooseAcpAgent {
     async fn start_resumed_state_machine_turn(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<StateMachineServices>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
     ) -> Result<(), agent_client_protocol::Error> {
@@ -271,7 +268,8 @@ impl GooseAcpAgent {
             schedule_id: None,
             max_turns: None,
         };
-        let stream = match agent
+        let stream = match self
+            .services
             .resume_state_machine_turn(session_config, cancel_token.clone())
             .await
         {
@@ -292,7 +290,6 @@ impl GooseAcpAgent {
 
         let server = Arc::clone(self);
         let task_cx = cx.clone();
-        let task_agent = agent.clone();
         let task_session_id = session_id.to_string();
         let task_run_id = run_id.clone();
         let task_cancel_token = cancel_token.clone();
@@ -310,7 +307,6 @@ impl GooseAcpAgent {
                     &task_cx,
                     &task_acp_session_id,
                     &task_session_id,
-                    &task_agent,
                     &task_cancel_token,
                     stream,
                 )
@@ -321,7 +317,6 @@ impl GooseAcpAgent {
                         &task_cx,
                         &task_acp_session_id,
                         &task_session_id,
-                        &task_agent,
                         &mut None,
                     )
                     .await
@@ -360,7 +355,6 @@ impl GooseAcpAgent {
 
         if let Err(error) = self.resend_pending_tool_permissions(
             cx,
-            agent,
             session_id,
             requests,
             Some(cancel_token.clone()),
@@ -407,10 +401,10 @@ impl GooseAcpAgent {
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
-        self.register_acp_session(session_id_str.clone(), agent.clone())
-            .await;
-        let provider = agent
+        let extension_results = self.prepare_acp_session(cx, &session).await?;
+        self.register_acp_session(session_id_str.clone()).await;
+        let provider = self
+            .services
             .provider(&session.id)
             .await
             .internal_err_ctx("Failed to get provider while loading ACP session")?;
@@ -424,7 +418,7 @@ impl GooseAcpAgent {
         let (mode_state, config_options) = build_session_setup_config(
             &self.provider_inventory,
             &session,
-            &agent_thinking_effort_support(&agent, &session.id).await,
+            &agent_thinking_effort_support(&self.services, &session.id).await,
         )
         .await?;
 
@@ -453,17 +447,11 @@ impl GooseAcpAgent {
                 .as_ref()
                 .is_some_and(has_unapplied_tool_confirmation_response);
         if should_resume_state_machine {
-            self.start_resumed_state_machine_turn(
-                cx,
-                &agent,
-                &session_id_str,
-                &pending_confirmations,
-            )
-            .await?;
+            self.start_resumed_state_machine_turn(cx, &session_id_str, &pending_confirmations)
+                .await?;
         } else {
             self.resend_pending_tool_permissions(
                 cx,
-                &agent,
                 &session_id_str,
                 &pending_confirmations,
                 None,

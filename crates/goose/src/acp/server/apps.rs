@@ -22,8 +22,9 @@ impl GooseAcpAgent {
             });
         };
 
-        let agent = self.get_session_agent(&session_id).await?;
-        let lease = agent
+        self.open_session(&session_id).await?;
+        let lease = self
+            .services
             .extension_manager
             .current_lease(&session_id)
             .await

@@ -241,9 +241,9 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                         agent_bg.provider_inventory.refresh_guard(&refresh_identity);
                                     let provider_result: Result<Arc<dyn Provider>> =
                                         AssertUnwindSafe(async {
-                                            let session_agent =
-                                                agent_bg.get_session_agent(&session_id_bg.0).await?;
-                                            let provider = session_agent
+                                            agent_bg.open_session(&session_id_bg.0).await?;
+                                            let provider = agent_bg
+                                                .services
                                                 .provider(&session_id_bg.0)
                                                 .await
                                                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;

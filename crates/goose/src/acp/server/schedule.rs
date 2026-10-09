@@ -395,16 +395,16 @@ mod tests {
             session_cwd: None,
             enable_scheduler: true,
         });
-        let agent = server.create_agent().await.unwrap();
+        let handler = server.create_agent().await.unwrap();
 
-        let created = agent
+        let created = handler
             .on_create_schedule(create_schedule_request("nightly", "original prompt"))
             .await
             .unwrap();
         let recipe_path = created.job.source;
         let original_recipe = std::fs::read(&recipe_path).unwrap();
 
-        let error = agent
+        let error = handler
             .on_create_schedule(create_schedule_request("nightly", "replacement prompt"))
             .await
             .expect_err("duplicate schedule must be rejected");
@@ -432,20 +432,20 @@ mod tests {
             session_cwd: None,
             enable_scheduler: false,
         });
-        let agent = server.create_agent().await.unwrap();
+        let handler = server.create_agent().await.unwrap();
 
-        let list_error = agent
+        let list_error = handler
             .on_list_schedules(ListSchedulesRequest {})
             .await
             .expect_err("schedule listing must be unsupported");
         assert_scheduler_disabled(list_error);
 
-        agent
+        handler
             .on_list_recipes(ListRecipesRequest {})
             .await
             .expect("recipe listing must remain available");
 
-        let create_error = agent
+        let create_error = handler
             .on_create_schedule(CreateScheduleRequest {
                 id: "nightly".to_string(),
                 recipe: Default::default(),
@@ -459,7 +459,7 @@ mod tests {
             .join("nightly.yaml")
             .exists());
 
-        let schedule_recipe_error = agent
+        let schedule_recipe_error = handler
             .on_schedule_recipe(ScheduleRecipeRequest {
                 id: "missing-recipe".to_string(),
                 cron_schedule: Some("0 0 0 * * *".to_string()),

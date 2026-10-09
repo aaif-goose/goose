@@ -85,14 +85,14 @@ impl GooseAcpAgent {
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
+        let extension_results = self.activate_acp_session(cx, &reloaded_session).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent, &reloaded_session.id).await,
+                &super::agent_thinking_effort_support(&self.services, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)
@@ -106,7 +106,7 @@ impl GooseAcpAgent {
                 "Failed to delete session during new-session cleanup"
             );
         }
-        self.sessions.lock().await.remove(session_id);
+        self.open_sessions.lock().await.remove(session_id);
         self.services.release_session(session_id).await;
     }
 

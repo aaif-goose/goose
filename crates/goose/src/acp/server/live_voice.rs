@@ -68,11 +68,10 @@ impl GooseAcpAgent {
             .reserve_interaction(&session_id, session.goose_mode)
             .map_err(map_live_voice_error)?;
         let transcript_publisher = Self::live_transcript_publisher(cx, &req.session_id);
-        let agent = self
-            .prepare_live_agent(&req.session_id)
+        self.open_live_session(&req.session_id)
             .await
             .map_err(|error| agent_client_protocol::Error::internal_error().data(error))?;
-        let main_agent = self.live_main_agent(cx, agent);
+        let main_agent = self.live_main_agent(cx);
         let start = self.live_voice.start_interaction(
             reservation,
             offer,
@@ -122,11 +121,7 @@ impl GooseAcpAgent {
         })
     }
 
-    fn live_main_agent(
-        self: &Arc<Self>,
-        cx: &ConnectionTo<Client>,
-        agent: Arc<StateMachineServices>,
-    ) -> LiveMainAgent {
+    fn live_main_agent(self: &Arc<Self>, cx: &ConnectionTo<Client>) -> LiveMainAgent {
         let start_owner = Arc::clone(self);
         let start_connection = cx.clone();
         let steer_owner = Arc::clone(self);
@@ -136,7 +131,6 @@ impl GooseAcpAgent {
                     session_id,
                     input,
                     start_connection.clone(),
-                    agent.clone(),
                 )
             },
             move |session_id, input| {
@@ -202,7 +196,6 @@ impl GooseAcpAgent {
         session_id: String,
         input: String,
         cx: ConnectionTo<Client>,
-        agent: Arc<StateMachineServices>,
     ) -> Result<BoxFuture<'static, String>, String> {
         let cancel_token = CancellationToken::new();
         let run_id = format!("run_{}", Uuid::new_v4());
@@ -223,7 +216,7 @@ impl GooseAcpAgent {
 
         Ok(async move {
             let _run_guard = run_guard;
-            self.run_live_delegation(session_id, input, cancel_token, cx, agent, run_id)
+            self.run_live_delegation(session_id, input, cancel_token, cx, run_id)
                 .await
         }
         .boxed())
@@ -235,7 +228,6 @@ impl GooseAcpAgent {
         input: String,
         cancel_token: CancellationToken,
         cx: ConnectionTo<Client>,
-        agent: Arc<StateMachineServices>,
         run_id: String,
     ) -> String {
         let acp_session_id = SessionId::new(session_id.clone());
@@ -248,7 +240,8 @@ impl GooseAcpAgent {
         };
         let input_message =
             Message::user().with_text(format!("{LIVE_DELEGATION_INSTRUCTION}\n\n{input}"));
-        let mut stream = match agent
+        let mut stream = match self
+            .services
             .reply_live_delegation(input_message, session_config, cancel_token.clone())
             .await
         {
@@ -263,8 +256,7 @@ impl GooseAcpAgent {
         let mut tool_requests = HashMap::new();
         let mut outcome_message_id: Option<String> = None;
         let mut outcome = String::new();
-        let target = SessionAgentTarget {
-            agent: agent.clone(),
+        let target = SessionTarget {
             session_id: session_id.clone(),
             cancel_token: Some(cancel_token.clone()),
         };
@@ -374,11 +366,8 @@ impl GooseAcpAgent {
         )
     }
 
-    async fn prepare_live_agent(
-        &self,
-        session_id: &str,
-    ) -> Result<Arc<StateMachineServices>, String> {
-        self.get_session_agent(session_id)
+    async fn open_live_session(&self, session_id: &str) -> Result<(), String> {
+        self.open_session(session_id)
             .await
             .map_err(|_| "Goose could not activate the coding agent.".to_string())
     }

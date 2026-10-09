@@ -53,15 +53,15 @@ impl GooseAcpAgent {
         self.render_stored_recipe_template(&mut goose_session)
             .await?;
 
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, &goose_session).await?;
-        self.register_acp_session(goose_session.id.clone(), agent.clone())
-            .await;
-        let provider = agent
+        let extension_results = self.prepare_acp_session(cx, &goose_session).await?;
+        self.register_acp_session(goose_session.id.clone()).await;
+        let provider = self
+            .services
             .provider(&goose_session.id)
             .await
             .internal_err_ctx("Failed to get provider while forking ACP session")?;
         resume_saved_provider_session(&provider, goose_session.conversation.as_ref()).await;
-        let effort_support = agent_thinking_effort_support(&agent, &goose_session.id).await;
+        let effort_support = agent_thinking_effort_support(&self.services, &goose_session.id).await;
 
         let acp_session_id = SessionId::new(new_session_id.clone());
         let mut meta = session_meta(&goose_session);

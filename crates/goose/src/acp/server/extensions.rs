@@ -11,8 +11,8 @@ impl GooseAcpAgent {
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let config = goose_extension_to_config_without_secrets(req.extension)?;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        agent
+        self.open_session(&req.session_id).await?;
+        self.services
             .extension_manager
             .enable(session_id, config)
             .await
@@ -25,8 +25,9 @@ impl GooseAcpAgent {
         req: RemoveSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let removed = agent
+        self.open_session(&req.session_id).await?;
+        let removed = self
+            .services
             .extension_manager
             .disable(session_id, &req.extension_key)
             .await

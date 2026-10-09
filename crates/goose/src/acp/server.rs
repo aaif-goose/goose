@@ -223,10 +223,6 @@ const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 ///
 /// The ACP session ID maps directly to a `sessions` row. The `sessions` HashMap
 /// below is keyed by session ID.
-struct GooseAcpSession {
-    agent: Arc<StateMachineServices>,
-}
-
 struct AgentStreamOutcome {
     was_cancelled: bool,
     output_token_limit_reached: bool,
@@ -331,7 +327,7 @@ pub fn new_acp_services(
 static NEXT_CONNECTION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub struct GooseAcpAgent {
-    sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
+    open_sessions: Mutex<HashSet<String>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<LiveVoiceService>,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
@@ -758,8 +754,7 @@ fn prompt_stop_reason(was_cancelled: bool, output_token_limit_reached: bool) -> 
 }
 
 #[derive(Clone)]
-struct SessionAgentTarget {
-    agent: Arc<StateMachineServices>,
+struct SessionTarget {
     session_id: String,
     cancel_token: Option<CancellationToken>,
 }
@@ -905,8 +900,9 @@ impl GooseAcpAgent {
                     agent_client_protocol::Error::internal_error().data("Session has no model")
                 })?;
             let provider_name = session.provider_name.clone();
-            let agent = self.get_session_agent(session_id).await?;
-            let provider = agent
+            self.open_session(session_id).await?;
+            let provider = self
+                .services
                 .provider(session_id)
                 .await
                 .internal_err_ctx("Failed to resolve session provider")?;
@@ -919,7 +915,8 @@ impl GooseAcpAgent {
                 .get_session(session_id, false)
                 .await
                 .internal_err_ctx("Failed to refresh session for setup notifications")?;
-            let current_provider = agent
+            let current_provider = self
+                .services
                 .provider(session_id)
                 .await
                 .internal_err_ctx("Failed to refresh session provider")?;
@@ -975,7 +972,7 @@ impl GooseAcpAgent {
         let (thinking_effort_update_tx, thinking_effort_update_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            open_sessions: Mutex::new(HashSet::new()),
             active_runs: options.active_runs,
             live_voice: options.live_voice,
             closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
@@ -1021,16 +1018,12 @@ impl GooseAcpAgent {
     /// `session/new` critical path avoids stalling session creation on slow or
     /// blocking work such as a synchronous keychain read while resolving the
     /// provider's inventory identity.
-    fn spawn_provider_inventory_refresh(
-        &self,
-        goose_session: &Session,
-        agent: &Arc<StateMachineServices>,
-    ) {
+    fn spawn_provider_inventory_refresh(&self, goose_session: &Session) {
         let Some(provider_name) = goose_session.provider_name.clone() else {
             return;
         };
         let inventory_service = self.provider_inventory.clone();
-        let agent = agent.clone();
+        let services = self.services.clone();
         let session_id = goose_session.id.clone();
         tokio::spawn(async move {
             let Some(mut inventory) = inventory_service
@@ -1042,7 +1035,7 @@ impl GooseAcpAgent {
             if !should_refresh_inventory_for_session_init(&inventory) {
                 return;
             }
-            let provider = match agent.provider(&session_id).await {
+            let provider = match services.provider(&session_id).await {
                 Ok(provider) => provider,
                 Err(error) => {
                     warn!(
@@ -1060,32 +1053,29 @@ impl GooseAcpAgent {
         });
     }
 
-    async fn get_or_create_session_agent(
-        &self,
-        cx: &ConnectionTo<Client>,
-        session_id: String,
-    ) -> Result<Arc<StateMachineServices>, agent_client_protocol::Error> {
-        self.services.touch_session(&session_id).await;
-        let agent = Arc::clone(&self.services);
+    /// Points the session's name updates and extension starts at this connection.
+    async fn attach_session(&self, cx: &ConnectionTo<Client>, session_id: &str) {
+        self.services.touch_session(session_id).await;
         if !self.disable_session_naming {
             let tx = self
                 .session_name_update_tx
                 .get_or_init(|| spawn_session_name_update_notifier(cx.clone()));
-            agent.subscribe_session_name_updates(&session_id, tx.clone());
+            self.services
+                .subscribe_session_name_updates(session_id, tx.clone());
         }
         let mut client = ClientContext::new(
             &self.goose_platform,
             self.client_mcp_host_info.get().cloned(),
         );
         client.connection = Some(self.connection_id);
-        agent.extension_manager.attach_client(&session_id, client);
-        Ok(agent)
+        self.services
+            .extension_manager
+            .attach_client(session_id, client);
     }
 
     async fn apply_acp_extension_overrides(
         &self,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<StateMachineServices>,
         session: &Session,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_fs_capabilities = self
@@ -1101,7 +1091,8 @@ impl GooseAcpAgent {
             return Ok(());
         }
 
-        if !agent
+        if !self
+            .services
             .extension_manager
             .is_extension_enabled(&session.id, "developer")
             .await
@@ -1130,7 +1121,8 @@ impl GooseAcpAgent {
         });
         let info = client.get_info().cloned();
 
-        let developer_config = agent
+        let developer_config = self
+            .services
             .extension_manager
             .get_extension_configs(&session.id)
             .await
@@ -1139,44 +1131,41 @@ impl GooseAcpAgent {
             .find(|extension| extension.name() == "developer")
             .unwrap_or_else(|| builtin_to_extension_config("developer"));
 
-        agent
+        self.services
             .extension_manager
             .add_client(&session.id, developer_config, client, info)
             .await;
         Ok(())
     }
 
-    async fn prepare_acp_session_agent(
+    async fn prepare_acp_session(
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
-    ) -> Result<(Arc<StateMachineServices>, Vec<ExtensionLoadResult>), agent_client_protocol::Error>
-    {
-        let agent = self
-            .get_or_create_session_agent(cx, session.id.clone())
-            .await?;
+    ) -> Result<Vec<ExtensionLoadResult>, agent_client_protocol::Error> {
+        self.attach_session(cx, &session.id).await;
         if session.provider_name.is_some() {
-            if let Err(error) = agent.restore_provider_from_session(session).await {
+            if let Err(error) = self.services.restore_provider_from_session(session).await {
                 if crate::acp::is_auth_required(&error) {
                     return Err(agent_client_protocol::Error::auth_required());
                 }
                 warn!(session_id = %session.id, %error, "Failed to restore provider");
             }
         }
-        self.apply_acp_extension_overrides(cx, &agent, session)
-            .await?;
+        self.apply_acp_extension_overrides(cx, session).await?;
         // Leases start extensions on first use anyway; starting them here is
         // what lets the session response report extensions that fail.
-        let extension_results = agent
+        let extension_results = self
+            .services
             .extension_manager
             .current_lease(&session.id)
             .await
             .internal_err()?
             .start()
             .await;
-        self.spawn_provider_inventory_refresh(session, &agent);
+        self.spawn_provider_inventory_refresh(session);
 
-        Ok((agent, extension_results))
+        Ok(extension_results)
     }
 
     async fn prepare_session_for_activation(
@@ -1255,24 +1244,13 @@ impl GooseAcpAgent {
         enabled_extensions_data(session, extensions)
     }
 
-    async fn register_acp_session(&self, session_id: String, agent: Arc<StateMachineServices>) {
-        let acp_session = GooseAcpSession {
-            agent: agent.clone(),
-        };
-        self.sessions
-            .lock()
-            .await
-            .insert(session_id.clone(), acp_session);
-        self.subscribe_thinking_effort_updates(&session_id, &agent)
-            .await;
+    async fn register_acp_session(&self, session_id: String) {
+        self.open_sessions.lock().await.insert(session_id.clone());
+        self.subscribe_thinking_effort_updates(&session_id).await;
     }
 
-    async fn subscribe_thinking_effort_updates(
-        &self,
-        session_id: &str,
-        agent: &Arc<StateMachineServices>,
-    ) {
-        let Ok(provider) = agent.provider(session_id).await else {
+    async fn subscribe_thinking_effort_updates(&self, session_id: &str) {
+        let Ok(provider) = self.services.provider(session_id).await else {
             return;
         };
         let Some(mut updates) = provider.subscribe_thinking_effort_support() else {
@@ -1293,18 +1271,23 @@ impl GooseAcpAgent {
         let Some(mut updates) = self.thinking_effort_update_rx.lock().await.take() else {
             return;
         };
-        let agent = Arc::downgrade(self);
+        let services = Arc::downgrade(self);
         let cx = cx.clone();
         tokio::spawn(async move {
             while let Some(session_id) = updates.recv().await {
-                let Some(agent) = agent.upgrade() else {
+                let Some(services) = services.upgrade() else {
                     break;
                 };
-                if agent.closed_session_ids.lock().await.contains(&session_id) {
+                if services
+                    .closed_session_ids
+                    .lock()
+                    .await
+                    .contains(&session_id)
+                {
                     continue;
                 }
                 let session_id = SessionId::new(session_id);
-                match agent.build_config_update(&session_id).await {
+                match services.build_config_update(&session_id).await {
                     Ok((notification, _)) => {
                         if let Err(error) = cx.send_notification(notification) {
                             warn!(
@@ -1330,17 +1313,14 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
-    ) -> Result<(Arc<StateMachineServices>, Vec<ExtensionLoadResult>), agent_client_protocol::Error>
-    {
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, session).await?;
-        self.register_acp_session(session.id.clone(), agent.clone())
-            .await;
-
-        Ok((agent, extension_results))
+    ) -> Result<Vec<ExtensionLoadResult>, agent_client_protocol::Error> {
+        let extension_results = self.prepare_acp_session(cx, session).await?;
+        self.register_acp_session(session.id.clone()).await;
+        Ok(extension_results)
     }
 
     pub async fn has_session(&self, session_id: &str) -> bool {
-        self.sessions.lock().await.contains_key(session_id)
+        self.open_sessions.lock().await.contains(session_id)
     }
 
     /// Convert ACP prompt content blocks into a user message.
@@ -1389,7 +1369,7 @@ impl GooseAcpAgent {
         content_item: &MessageContent,
         message: &Message,
         session_id: &SessionId,
-        target: &SessionAgentTarget,
+        target: &SessionTarget,
         tool_requests: &HashMap<String, ToolRequest>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
@@ -1408,7 +1388,7 @@ impl GooseAcpAgent {
                 cx.send_notification(SessionNotification::new(session_id.clone(), update))?;
             }
             MessageContent::ToolRequest(tool_request) => {
-                self.handle_tool_request(tool_request, message, session_id, &target.agent, cx)
+                self.handle_tool_request(tool_request, message, session_id, cx)
                     .await?;
             }
             MessageContent::ToolResponse(tool_response) => {
@@ -1518,7 +1498,6 @@ impl GooseAcpAgent {
     fn spawn_ready_chain_summary(
         &self,
         chain: ReadyToolChain,
-        agent: &Arc<StateMachineServices>,
         session_id: &SessionId,
         cx: &ConnectionTo<Client>,
     ) {
@@ -1528,7 +1507,7 @@ impl GooseAcpAgent {
 
         let tool_call_notifier = ToolCallNotifier::new(cx, session_id);
         spawn_chain_summary_enrichment(
-            agent,
+            &self.services,
             session_id,
             tool_call_notifier,
             &self.session_manager,
@@ -1541,7 +1520,6 @@ impl GooseAcpAgent {
         tool_request: &ToolRequest,
         message: &Message,
         session_id: &SessionId,
-        agent: &Arc<StateMachineServices>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_requests_label_enrichment = self.requests_tool_call_label_enrichment();
@@ -1559,7 +1537,7 @@ impl GooseAcpAgent {
 
         if tool_request.tool_call.is_ok() {
             spawn_tool_title_enrichment(
-                agent,
+                &self.services,
                 tool_call_notifier,
                 &self.session_manager,
                 session_id.0.as_ref(),
@@ -1592,7 +1570,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session_id: &SessionId,
         request: PendingToolPermission,
-        target: SessionAgentTarget,
+        target: SessionTarget,
     ) -> Result<(), agent_client_protocol::Error> {
         let cx = cx.clone();
         let session_id = session_id.clone();
@@ -1622,6 +1600,7 @@ impl GooseAcpAgent {
         let permission_request =
             RequestPermissionRequest::new(session_id, tool_call_update, options);
         let request_id = request.request_id;
+        let services = Arc::clone(&self.services);
 
         cx.send_request(permission_request)
             .on_receiving_result(move |result| async move {
@@ -1633,8 +1612,7 @@ impl GooseAcpAgent {
                     }
                 };
 
-                if let Err(error) = target
-                    .agent
+                if let Err(error) = services
                     .submit_tool_confirmation(&target.session_id, &request_id, permission)
                     .await
                 {
@@ -1878,11 +1856,8 @@ impl GooseAcpAgent {
         self.handle_new_session(cx, args).await
     }
 
-    /// Look up the session's agent.
-    async fn get_session_agent(
-        &self,
-        session_id: &str,
-    ) -> Result<Arc<StateMachineServices>, agent_client_protocol::Error> {
+    /// Loads the session on this connection unless it is already open here.
+    async fn open_session(&self, session_id: &str) -> Result<(), agent_client_protocol::Error> {
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
                 session_id.to_string(),
@@ -1890,11 +1865,8 @@ impl GooseAcpAgent {
             .data(format!("Session not found: {}", session_id)));
         }
 
-        {
-            let sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get(session_id) {
-                return Ok(session.agent.clone());
-            }
+        if self.open_sessions.lock().await.contains(session_id) {
+            return Ok(());
         }
 
         let cx = self.client_cx.get().ok_or_else(|| {
@@ -1909,8 +1881,8 @@ impl GooseAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
-        let (agent, _) = self.activate_acp_session(cx, &session).await?;
-        Ok(agent)
+        self.activate_acp_session(cx, &session).await?;
+        Ok(())
     }
 
     async fn start_active_run(
@@ -1948,7 +1920,7 @@ impl GooseAcpAgent {
         }
 
         if self.closed_session_ids.lock().await.contains(session_id) {
-            self.sessions.lock().await.remove(session_id);
+            self.open_sessions.lock().await.remove(session_id);
             self.services.release_session(session_id).await;
         }
     }
@@ -2036,16 +2008,19 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
-        let Ok(provider) = agent.provider(session_id).await else {
+        let Ok(provider) = self.services.provider(session_id).await else {
             return Ok(());
         };
         if provider.get_name() != "local" {
             return Ok(());
         }
 
-        let model_config = agent.model_config_for_session(session_id).await.ok();
+        let model_config = self
+            .services
+            .model_config_for_session(session_id)
+            .await
+            .ok();
         let model_name = model_config
             .as_ref()
             .map(|config| config.model_name.clone())
@@ -2071,9 +2046,9 @@ impl GooseAcpAgent {
 
     async fn resolve_context_limit(
         session: &Session,
-        agent: &Arc<StateMachineServices>,
+        services: &Arc<StateMachineServices>,
     ) -> Result<usize, agent_client_protocol::Error> {
-        let provider = agent
+        let provider = services
             .provider(&session.id)
             .await
             .internal_err_ctx("Failed to resolve session provider")?;
@@ -2092,7 +2067,6 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<StateMachineServices>,
         cached_context_limit: &mut Option<usize>,
     ) -> Result<Session, agent_client_protocol::Error> {
         let session = self
@@ -2108,7 +2082,7 @@ impl GooseAcpAgent {
         let context_limit = match *cached_context_limit {
             Some(limit) => limit,
             None => {
-                let limit = Self::resolve_context_limit(&session, agent).await?;
+                let limit = Self::resolve_context_limit(&session, &self.services).await?;
                 *cached_context_limit = Some(limit);
                 limit
             }
@@ -2130,7 +2104,6 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<StateMachineServices>,
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
@@ -2138,8 +2111,7 @@ impl GooseAcpAgent {
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
         let mut context_limit = None;
-        let target = SessionAgentTarget {
-            agent: agent.clone(),
+        let target = SessionTarget {
             session_id: session_id.to_string(),
             cancel_token: Some(cancel_token.clone()),
         };
@@ -2153,12 +2125,10 @@ impl GooseAcpAgent {
                 Ok(crate::agents::AgentEvent::Message(mut message)) => {
                     update_output_token_limit_reached(&mut output_token_limit_reached, &message);
 
-                    let sessions = self.sessions.lock().await;
-                    if !sessions.contains_key(session_id) {
+                    if !self.open_sessions.lock().await.contains(session_id) {
                         return Err(agent_client_protocol::Error::invalid_params()
                             .data(format!("Session not found: {session_id}")));
                     }
-                    drop(sessions);
 
                     populate_output_token_limit_content(&mut message);
                     for content_item in &message.content {
@@ -2195,7 +2165,7 @@ impl GooseAcpAgent {
                         };
 
                         if let Some(chain) = ready_chain {
-                            self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
+                            self.spawn_ready_chain_summary(chain, acp_session_id, cx);
                         }
                     }
                 }
@@ -2226,7 +2196,6 @@ impl GooseAcpAgent {
                             cx,
                             acp_session_id,
                             session_id,
-                            agent,
                             &mut context_limit,
                         )
                         .await
@@ -2245,7 +2214,7 @@ impl GooseAcpAgent {
         let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
             if let Some(chain) = chain_tracker.close_current_chain() {
-                self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
+                self.spawn_ready_chain_summary(chain, acp_session_id, cx);
             }
         }
 
@@ -2274,7 +2243,7 @@ impl GooseAcpAgent {
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
 
-        let agent = self.get_session_agent(&session_id).await?;
+        self.open_session(&session_id).await?;
         self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
             .await?;
 
@@ -2301,7 +2270,7 @@ impl GooseAcpAgent {
         }
 
         if let Err(error) = self
-            .send_local_inference_progress_update(cx, &args.session_id, &session_id, &agent)
+            .send_local_inference_progress_update(cx, &args.session_id, &session_id)
             .await
         {
             self.clear_active_run(&session_id, &run_id).await;
@@ -2316,7 +2285,8 @@ impl GooseAcpAgent {
             max_turns: None,
         };
 
-        let stream = match agent
+        let stream = match self
+            .services
             .reply(user_message, session_config, Some(cancel_token.clone()))
             .await
         {
@@ -2329,21 +2299,14 @@ impl GooseAcpAgent {
             }
         };
         let stream_result = self
-            .forward_agent_stream(
-                cx,
-                &args.session_id,
-                &session_id,
-                &agent,
-                &cancel_token,
-                stream,
-            )
+            .forward_agent_stream(cx, &args.session_id, &session_id, &cancel_token, stream)
             .await;
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         let outcome = stream_result?;
 
         let session = self
-            .send_session_usage_updates(cx, &args.session_id, &session_id, &agent, &mut None)
+            .send_session_usage_updates(cx, &args.session_id, &session_id, &mut None)
             .await?;
 
         let stop_reason =
@@ -2407,7 +2370,7 @@ impl GooseAcpAgent {
         if let Some(token) = token {
             info!(session_id = %session_id, "prompt cancelled");
             token.cancel();
-        } else if !self.sessions.lock().await.contains_key(&session_id) {
+        } else if !self.open_sessions.lock().await.contains(&session_id) {
             warn!(session_id = %session_id, "cancel request for unknown session");
         }
 
@@ -2419,13 +2382,15 @@ impl GooseAcpAgent {
         session_id: &str,
         model_id: &str,
     ) -> Result<(), agent_client_protocol::Error> {
-        let agent = self.get_session_agent(session_id).await?;
-        let current_provider = agent
+        self.open_session(session_id).await?;
+        let current_provider = self
+            .services
             .provider(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = current_provider.get_name().to_string();
-        let current_model_config = agent
+        let current_model_config = self
+            .services
             .model_config_for_session(session_id)
             .await
             .internal_err_ctx("Failed to resolve model config")?;
@@ -2438,7 +2403,7 @@ impl GooseAcpAgent {
                 None,
             )
             .invalid_params_err_ctx("Invalid model config")?;
-        agent
+        self.services
             .switch_provider(session_id, &provider_name, model_config)
             .await
             .internal_err_ctx("Failed to switch provider")?;
@@ -2454,13 +2419,15 @@ impl GooseAcpAgent {
             .get_session(&session_id.0, false)
             .await
             .internal_err()?;
-        let agent = self.get_session_agent(&session_id.0).await?;
-        let provider = agent
+        self.open_session(&session_id.0).await?;
+        let provider = self
+            .services
             .provider(&session_id.0)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let provider_name = provider.get_name().to_string();
-        let current_model_config = agent
+        let current_model_config = self
+            .services
             .model_config_for_session(&session_id.0)
             .await
             .internal_err_ctx("Failed to resolve model config")?;
@@ -2508,8 +2475,8 @@ impl GooseAcpAgent {
                 .data(format!("Invalid mode: {}", mode_id))
         })?;
 
-        let agent = self.get_session_agent(session_id).await?;
-        agent
+        self.open_session(session_id).await?;
+        self.services
             .update_goose_mode(mode, session_id)
             .await
             .internal_err_ctx("Failed to update mode")?;
@@ -2524,8 +2491,8 @@ impl GooseAcpAgent {
         session_id: &str,
         effort_id: &str,
     ) -> Result<(), agent_client_protocol::Error> {
-        let agent = self.get_session_agent(session_id).await?;
-        agent
+        self.open_session(session_id).await?;
+        self.services
             .update_thinking_effort(session_id, effort_id)
             .await
             .map_err(thinking_effort_error)?;
@@ -2542,13 +2509,15 @@ impl GooseAcpAgent {
         request_params: Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> Result<(), agent_client_protocol::Error> {
         let config = self.config()?;
-        let agent = self.get_session_agent(session_id).await?;
-        let current_provider = agent
+        self.open_session(session_id).await?;
+        let current_provider = self
+            .services
             .provider(session_id)
             .await
             .internal_err_ctx("Failed to get provider")?;
         let current_provider_name = current_provider.get_name();
-        let current_model_config = agent
+        let current_model_config = self
+            .services
             .model_config_for_session(session_id)
             .await
             .internal_err_ctx("Failed to resolve model config")?;
@@ -2588,13 +2557,12 @@ impl GooseAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
 
-        agent.config.providers.release(session_id);
-        agent
+        self.services.config.providers.release(session_id);
+        self.services
             .switch_provider(session_id, &resolved_provider_name, model_config)
             .await
             .internal_err_ctx("Failed to switch provider")?;
-        self.subscribe_thinking_effort_updates(session_id, &agent)
-            .await;
+        self.subscribe_thinking_effort_updates(session_id).await;
         Ok(())
     }
 
@@ -2618,9 +2586,7 @@ impl GooseAcpAgent {
         self.active_runs.cancel_agent_run(session_id);
         self.live_voice.stop_session_interaction(session_id).await;
 
-        let mut sessions = self.sessions.lock().await;
-        sessions.remove(session_id);
-        drop(sessions);
+        self.open_sessions.lock().await.remove(session_id);
 
         self.services.release_session(session_id).await;
 
@@ -3777,17 +3743,9 @@ print(\"hello, world\")
             )
             .await
             .unwrap();
-        let session_agent = Arc::new(StateMachineServices::with_config(
-            StateMachineServicesConfig::new(
-                server.session_manager.clone(),
-                server.permission_manager.clone(),
-                None,
-                true,
-                GoosePlatform::GooseCli,
-            ),
-        ));
         let provider = Arc::new(AsyncEffortProvider::new());
-        session_agent
+        server
+            .services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("gpt-4o").with_merged_request_params(
@@ -3797,9 +3755,7 @@ print(\"hello, world\")
             )
             .await
             .unwrap();
-        server
-            .register_acp_session(session.id.clone(), session_agent)
-            .await;
+        server.register_acp_session(session.id.clone()).await;
 
         let (client_read, server_write) = tokio::io::duplex(64 * 1024);
         let (server_read, client_write) = tokio::io::duplex(64 * 1024);

@@ -32,20 +32,20 @@ fn build_chain_summary_update(
 }
 
 pub(crate) fn spawn_tool_title_enrichment(
-    agent: &Arc<StateMachineServices>,
+    services: &Arc<StateMachineServices>,
     tool_call_notifier: ToolCallNotifier,
     session_manager: &Arc<SessionManager>,
     session_id: &str,
     tool_request: &ToolRequest,
 ) {
-    let agent = agent.clone();
+    let services = services.clone();
     let session_manager = session_manager.clone();
     let session_id = session_id.to_string();
     let tool_request = tool_request.clone();
 
     spawn(async move {
         if let Some(title) = generate_tool_title(
-            agent.as_ref(),
+            services.as_ref(),
             session_manager.as_ref(),
             &session_id,
             &tool_request,
@@ -61,13 +61,13 @@ pub(crate) fn spawn_tool_title_enrichment(
 }
 
 pub(crate) fn spawn_chain_summary_enrichment(
-    agent: &Arc<StateMachineServices>,
+    services: &Arc<StateMachineServices>,
     session_id: &SessionId,
     tool_call_notifier: ToolCallNotifier,
     session_manager: &Arc<SessionManager>,
     chain: ReadyToolChain,
 ) {
-    let agent = agent.clone();
+    let services = services.clone();
     let session_id = session_id.clone();
     let session_manager = session_manager.clone();
 
@@ -76,7 +76,7 @@ pub(crate) fn spawn_chain_summary_enrichment(
         let first_tool_call_id = tool_requests[0].id.clone();
 
         let Some(summary) = generate_tool_chain_summary(
-            agent.as_ref(),
+            services.as_ref(),
             session_manager.as_ref(),
             &session_id.0,
             &tool_requests,

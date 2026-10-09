@@ -23,7 +23,7 @@ impl GooseAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        let agent = self.get_session_agent(session_id).await?;
+        self.open_session(session_id).await?;
         self.session_manager
             .update(&session.id)
             .working_dir(path)
@@ -36,8 +36,8 @@ impl GooseAcpAgent {
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")?;
-        agent.config.providers.release(&session.id);
-        agent
+        self.services.config.providers.release(&session.id);
+        self.services
             .restore_provider_from_session(&session)
             .await
             .internal_err_ctx("Failed to refresh provider from session")?;
@@ -96,7 +96,7 @@ impl GooseAcpAgent {
             .delete_session(&session_id)
             .await
             .internal_err()?;
-        self.sessions.lock().await.remove(&session_id);
+        self.open_sessions.lock().await.remove(&session_id);
         self.services.release_session(&session_id).await;
         Ok(DeleteSessionResponse::new())
     }
@@ -227,7 +227,7 @@ impl GooseAcpAgent {
             .apply()
             .await
             .internal_err()?;
-        self.sessions.lock().await.remove(&req.session_id);
+        self.open_sessions.lock().await.remove(&req.session_id);
         self.services.release_session(&req.session_id).await;
         Ok(EmptyResponse {})
     }
