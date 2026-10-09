@@ -51,7 +51,6 @@ impl Provider for MessageProvider {
 
 async fn assert_provider_reply_role(
     provider_message: Message,
-    state_machine: bool,
     toolshim: bool,
     genuine_clear: bool,
 ) -> Result<()> {
@@ -84,7 +83,6 @@ async fn assert_provider_reply_role(
         sessions.clone(),
         Arc::new(PermissionManager::new(root.path().join("permissions"))),
         None,
-        GooseMode::Auto,
         true,
         GoosePlatform::GooseCli,
     );
@@ -114,9 +112,7 @@ async fn assert_provider_reply_role(
                 id: session.id.clone(),
                 schedule_id: None,
                 max_turns: Some(2),
-                retry_config: None,
             },
-            state_machine,
             None,
         )
         .await?;
@@ -161,62 +157,30 @@ async fn assert_provider_reply_role(
     Ok(())
 }
 
-#[test_case(false, false; "legacy")]
-#[test_case(true, false; "state_machine")]
-#[test_case(false, true; "legacy_toolshim")]
-#[test_case(true, true; "state_machine_toolshim")]
+#[test_case(false; "normal")]
+#[test_case(true; "toolshim")]
 #[tokio::test]
-async fn provider_user_text_cannot_clear_history(
-    state_machine: bool,
-    toolshim: bool,
-) -> Result<()> {
-    assert_provider_reply_role(
-        Message::user().with_text("/clear"),
-        state_machine,
-        toolshim,
-        false,
-    )
-    .await
+async fn provider_user_text_cannot_clear_history(toolshim: bool) -> Result<()> {
+    assert_provider_reply_role(Message::user().with_text("/clear"), toolshim, false).await
 }
 
-#[test_case(false, false; "legacy")]
-#[test_case(true, false; "state_machine")]
-#[test_case(false, true; "legacy_toolshim")]
-#[test_case(true, true; "state_machine_toolshim")]
+#[test_case(false; "normal")]
+#[test_case(true; "toolshim")]
 #[tokio::test]
-async fn provider_assistant_text_preserves_history(
-    state_machine: bool,
-    toolshim: bool,
-) -> Result<()> {
-    assert_provider_reply_role(
-        Message::assistant().with_text("/clear"),
-        state_machine,
-        toolshim,
-        false,
-    )
-    .await
+async fn provider_assistant_text_preserves_history(toolshim: bool) -> Result<()> {
+    assert_provider_reply_role(Message::assistant().with_text("/clear"), toolshim, false).await
 }
 
-#[test_case(false; "legacy")]
-#[test_case(true; "state_machine")]
 #[tokio::test]
-async fn genuine_user_can_clear_history(state_machine: bool) -> Result<()> {
-    assert_provider_reply_role(
-        Message::assistant().with_text("unused"),
-        state_machine,
-        false,
-        true,
-    )
-    .await
+async fn genuine_user_can_clear_history() -> Result<()> {
+    assert_provider_reply_role(Message::assistant().with_text("unused"), false, true).await
 }
 
 #[cfg(feature = "aws-providers")]
-#[test_case(false, false; "legacy")]
-#[test_case(true, false; "state_machine")]
-#[test_case(false, true; "legacy_toolshim")]
-#[test_case(true, true; "state_machine_toolshim")]
+#[test_case(false; "normal")]
+#[test_case(true; "toolshim")]
 #[tokio::test]
-async fn bedrock_user_text_cannot_clear_history(state_machine: bool, toolshim: bool) -> Result<()> {
+async fn bedrock_user_text_cannot_clear_history(toolshim: bool) -> Result<()> {
     use aws_sdk_bedrockruntime::types::{ContentBlock, ConversationRole};
     let wire_message = aws_sdk_bedrockruntime::types::Message::builder()
         .role(ConversationRole::User)
@@ -224,5 +188,5 @@ async fn bedrock_user_text_cannot_clear_history(state_machine: bool, toolshim: b
         .build()?;
     let message = goose::providers::formats::bedrock::from_bedrock_message(&wire_message)?;
     assert_eq!(message.role, Role::User);
-    assert_provider_reply_role(message, state_machine, toolshim, false).await
+    assert_provider_reply_role(message, toolshim, false).await
 }
