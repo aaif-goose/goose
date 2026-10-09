@@ -1319,6 +1319,13 @@ impl Agent {
         let session_manager = self.config.session_manager.clone();
 
         let message_text_for_trace = agent_visible_message_text(&user_message);
+
+        // Superfast Decision Gate (shadow mode, off by default). When enabled it
+        // classifies the pending user turn on a detached task and only logs the
+        // recommendation and latency. It never changes routing and never blocks
+        // this turn. When disabled (the default) this call returns immediately.
+        crate::agents::superfast::shadow_classify(message_text_for_trace.clone());
+
         if gen_ai_telemetry::capture_message_content() {
             tracing::Span::current().record("user_message", message_text_for_trace.as_str());
             tracing::Span::current().record("trace_input", message_text_for_trace.as_str());
