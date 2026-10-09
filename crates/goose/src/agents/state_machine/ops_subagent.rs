@@ -119,7 +119,7 @@ fn readable_output(output: &str) -> String {
     }
 }
 
-async fn subagent_result_message(
+fn subagent_result_message(
     subagent_id: &str,
     outcome: SubagentOutcome,
     others_waiting: bool,
@@ -144,7 +144,7 @@ async fn subagent_result_message(
         ),
         SubagentOutcome::Cancelled => return None,
     };
-    emit.message(inline_notice(notice)).await;
+    emit.message(inline_notice(notice));
     let mut message = Message::user().with_text(text).with_visibility(false, true);
     message
         .metadata
@@ -214,7 +214,7 @@ impl Operation<Session, GooseEffect> for SubagentOperation {
         OPERATION_NAME
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         session: &Session,
         conversation: &Conversation,
@@ -233,8 +233,7 @@ impl Operation<Session, GooseEffect> for SubagentOperation {
             let Some(subagent_id) = stopped.subagent_ids.remove(&task_id) else {
                 continue;
             };
-            if let Some(message) = subagent_result_message(&subagent_id, outcome, true, emit).await
-            {
+            if let Some(message) = subagent_result_message(&subagent_id, outcome, true, emit) {
                 effects.push(message);
                 delivered.insert(subagent_id);
             }
@@ -283,14 +282,13 @@ impl Operation<Session, GooseEffect> for SubagentOperation {
             {
                 SubagentStart::HasOutcome(outcome) => {
                     if let Some(message) =
-                        subagent_result_message(subagent_id, outcome, pending.len() > 1, emit).await
+                        subagent_result_message(subagent_id, outcome, pending.len() > 1, emit)
                     {
                         return applied([message]);
                     }
                 }
                 SubagentStart::Started { task, run } => {
-                    emit.message(inline_notice(start_notice(subagent_id, task.as_deref())))
-                        .await;
+                    emit.message(inline_notice(start_notice(subagent_id, task.as_deref())));
                     let handle = running.tasks.spawn(run.in_current_span());
                     running
                         .subagent_ids
@@ -303,7 +301,7 @@ impl Operation<Session, GooseEffect> for SubagentOperation {
         let finished = loop {
             tokio::select! {
                 Some(message) = forwarded.recv() => {
-                    emit.message(message).await;
+                    emit.message(message);
                 }
                 finished = running.tasks.join_next_with_id() => break finished,
             }
@@ -317,7 +315,7 @@ impl Operation<Session, GooseEffect> for SubagentOperation {
             .subagent_ids
             .remove(&task_id)
             .ok_or_else(|| anyhow!("Unknown subagent task {task_id}"))?;
-        match subagent_result_message(&subagent_id, outcome, pending.len() > 1, emit).await {
+        match subagent_result_message(&subagent_id, outcome, pending.len() > 1, emit) {
             Some(message) => applied([message]),
             None => not_applicable(),
         }
@@ -724,7 +722,7 @@ mod tests {
             .get_session(&fixture.parent_id, true)
             .await?;
         let effects = operation
-            .cancel(&parent, parent.conversation.as_ref().unwrap(), emit)
+            .finalize_cancellation(&parent, parent.conversation.as_ref().unwrap(), emit)
             .await;
         Ok((parent, effects))
     }

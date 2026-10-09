@@ -57,8 +57,8 @@ impl Operation<Session, GooseEffect> for DoctorOperation {
         if result.role == Role::Assistant {
             let command_message = command_message.with_visibility(true, false);
             let result = result.with_visibility(true, false);
-            emit.message(command_message).await;
-            let result = emit.message(result).await;
+            emit.message(command_message);
+            let result = emit.message(result);
             return yielded_with([
                 ConversationEffect::SetMessageVisibility {
                     message_id,

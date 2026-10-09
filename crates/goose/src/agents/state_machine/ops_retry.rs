@@ -139,8 +139,8 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
         let command_message = command_message.with_visibility(true, false);
         let response = response.with_visibility(true, false);
-        emit.message(command_message).await;
-        let response = emit.message(response).await;
+        emit.message(command_message);
+        let response = emit.message(response);
 
         let mut effects = vec![
             ConversationEffect::SetMessageVisibility {
@@ -195,8 +195,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 emit.message(Message::assistant().with_system_notification(
                     SystemNotificationType::InlineMessage,
                     format!("Goal: {goal}"),
-                ))
-                .await;
+                ));
                 return applied([message.into()]);
             }
         }
@@ -213,8 +212,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
             emit.message(Message::assistant().with_system_notification(
                 SystemNotificationType::InlineMessage,
                 format!("Grind: {grind}"),
-            ))
-            .await;
+            ));
             return applied([message.into()]);
         }
 
@@ -235,7 +233,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
         let success = match success {
             Ok(success) => success,
             Err(error) => {
-                let message = emit.message(retry_error(&error.to_string())).await;
+                let message = emit.message(retry_error(&error.to_string()));
                 return applied([message.into()]);
             }
         };
@@ -257,7 +255,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 "retry_max_exceeded",
                 &format!("Max retries ({}) exceeded", retry_config.max_retries),
             );
-            let message = emit.message(message).await;
+            let message = emit.message(message);
             return applied([message.into()]);
         }
 
@@ -267,7 +265,7 @@ impl Operation<Session, GooseEffect> for RetryOperation {
                 .map(Duration::from_secs)
                 .unwrap_or(self.on_failure_timeout);
             if let Err(error) = execute_on_failure_command_with_timeout(command, timeout).await {
-                let message = emit.message(retry_error(&error.to_string())).await;
+                let message = emit.message(retry_error(&error.to_string()));
                 return applied([message.into()]);
             }
         }

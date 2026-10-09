@@ -227,7 +227,7 @@ where
         let interrupted_step = self.interrupted_step.lock().unwrap().take();
         if let Some(index) = interrupted_step {
             session = self
-                .collect_cancelled(runtime, session_id, session, &self.steps[index], emit)
+                .finalize_step_cancellation(runtime, session_id, session, &self.steps[index], emit)
                 .await?;
         }
 
@@ -236,7 +236,7 @@ where
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
             .and_then(interrupted_response);
         if let Some(response) = unanswered {
-            let effects = vec![E::from(emit.message(response).await)];
+            let effects = vec![E::from(emit.message(response))];
             session = self
                 .save(runtime, session_id, session, effects, emit)
                 .await?;
@@ -245,14 +245,14 @@ where
         for (index, step) in self.steps.iter().enumerate() {
             if Some(index) != interrupted_step {
                 session = self
-                    .collect_cancelled(runtime, session_id, session, step, emit)
+                    .finalize_step_cancellation(runtime, session_id, session, step, emit)
                     .await?;
             }
         }
         Ok(session)
     }
 
-    async fn collect_cancelled<R>(
+    async fn finalize_step_cancellation<R>(
         &self,
         runtime: &R,
         session_id: &str,
@@ -266,7 +266,10 @@ where
         let conversation = session
             .conversation()
             .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
-        let effects = step.operation().cancel(&session, conversation, emit).await;
+        let effects = step
+            .operation()
+            .finalize_cancellation(&session, conversation, emit)
+            .await;
         self.save(runtime, session_id, session, effects, emit).await
     }
 
