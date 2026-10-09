@@ -4,7 +4,7 @@ use crate::goose_apps::{fetch_mcp_apps, mark_deletable_apps, GooseApp, McpAppCac
 
 const APPS_EXTENSION_NAME: &str = "apps";
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_apps(
         &self,
         req: AppsListRequest,

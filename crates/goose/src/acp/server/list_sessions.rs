@@ -1,5 +1,5 @@
 use super::{
-    build_session_info, is_acp_visible_session_type, meta_string, GooseAcpAgent, ResultExt,
+    build_session_info, is_acp_visible_session_type, meta_string, AcpConnection, ResultExt,
     ACP_VISIBLE_SESSION_TYPES,
 };
 use crate::session::session_manager::{
@@ -171,7 +171,7 @@ fn encode_session_list_cursor(
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_sessions(
         &self,
         req: ListSessionsRequest,

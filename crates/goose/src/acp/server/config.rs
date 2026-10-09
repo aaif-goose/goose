@@ -17,7 +17,7 @@ fn mask_secret(secret: serde_json::Value) -> String {
     format!("{}{}", visible, mask)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_preferences_read(
         &self,
         req: PreferencesReadRequest,

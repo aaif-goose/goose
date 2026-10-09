@@ -1,7 +1,7 @@
 use super::*;
 use crate::session::{generate_diagnostics, DiagnosticsLevel};
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_diagnostics(
         &self,
         req: DiagnosticsGetRequest,

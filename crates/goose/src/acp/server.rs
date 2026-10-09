@@ -283,7 +283,7 @@ impl AcpBuiltinSelection {
     }
 }
 
-pub struct GooseAcpAgentOptions {
+pub struct AcpConnectionOptions {
     pub provider_factory: AcpProviderFactory,
     pub builtin_selection: AcpBuiltinSelection,
     pub config_dir: std::path::PathBuf,
@@ -326,7 +326,7 @@ pub fn new_acp_services(
 
 static NEXT_CONNECTION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-pub struct GooseAcpAgent {
+pub struct AcpConnection {
     open_sessions: Mutex<HashSet<String>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<LiveVoiceService>,
@@ -830,7 +830,7 @@ pub(super) fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_proto
     Ok(())
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     #[cfg(test)]
     pub(crate) fn active_run_registry(&self) -> &Arc<ActiveRunRegistry> {
         &self.active_runs
@@ -961,7 +961,7 @@ impl GooseAcpAgent {
             .unwrap_or(false)
     }
 
-    pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
+    pub async fn new(options: AcpConnectionOptions) -> Result<Self> {
         let services = options.services;
         let agent_config = &services.config;
         let session_manager = Arc::clone(&agent_config.session_manager);
@@ -1789,7 +1789,7 @@ fn message_usage_update(
     }
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     async fn on_initialize(
         &self,
         args: InitializeRequest,
@@ -2595,12 +2595,12 @@ impl GooseAcpAgent {
     }
 }
 
-pub struct GooseAcpHandler {
-    pub agent: Arc<GooseAcpAgent>,
+pub struct AcpConnectionHandler {
+    pub connection: Arc<AcpConnection>,
 }
 
 pub fn serve<R, W>(
-    agent: Arc<GooseAcpAgent>,
+    connection: Arc<AcpConnection>,
     read: R,
     write: W,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
@@ -2609,7 +2609,7 @@ where
     W: futures::AsyncWrite + Unpin + Send + 'static,
 {
     Box::pin(async move {
-        let handler = GooseAcpHandler { agent };
+        let handler = AcpConnectionHandler { connection };
 
         SacpAgent
             .builder()
@@ -2622,29 +2622,27 @@ where
     })
 }
 
-/// A lazily-initialized agent connection used by the HTTP/WebSocket transport.
-///
 /// The `agent-client-protocol-http` server takes a synchronous factory that
-/// yields a [`ConnectTo<Client>`] per connection, but creating a goose agent is
-/// async. Agent creation is therefore deferred into [`ConnectTo::connect_to`],
-/// which runs as the connection's serving future.
-pub struct GooseAgentConnection {
+/// yields a [`ConnectTo<Client>`] per connection, but creating an [`AcpConnection`]
+/// is async, so it happens in [`ConnectTo::connect_to`], the connection's serving
+/// future.
+pub struct LazyAcpConnection {
     server: Arc<crate::acp::server_factory::AcpServer>,
 }
 
-impl GooseAgentConnection {
+impl LazyAcpConnection {
     pub fn new(server: Arc<crate::acp::server_factory::AcpServer>) -> Self {
         Self { server }
     }
 }
 
-impl agent_client_protocol::ConnectTo<Client> for GooseAgentConnection {
+impl agent_client_protocol::ConnectTo<Client> for LazyAcpConnection {
     async fn connect_to(
         self,
         client: impl agent_client_protocol::ConnectTo<SacpAgent>,
     ) -> std::result::Result<(), agent_client_protocol::Error> {
-        let agent = self.server.create_agent().await.internal_err()?;
-        let handler = GooseAcpHandler { agent };
+        let connection = self.server.create_connection().await.internal_err()?;
+        let handler = AcpConnectionHandler { connection };
         SacpAgent
             .builder()
             .name("goose-acp")
@@ -2670,8 +2668,8 @@ pub async fn run(builtins: Vec<String>, enable_scheduler: bool) -> Result<()> {
             enable_scheduler,
         },
     );
-    let agent = server.create_agent().await?;
-    serve(agent, incoming, outgoing).await
+    let connection = server.create_connection().await?;
+    serve(connection, incoming, outgoing).await
 }
 
 #[cfg(test)]
@@ -3234,7 +3232,7 @@ print(\"hello, world\")
             ContentBlock::ResourceLink(ResourceLink::new("logs", uri.clone())),
         ];
 
-        let message = GooseAcpAgent::convert_acp_prompt_to_message(&prompt);
+        let message = AcpConnection::convert_acp_prompt_to_message(&prompt);
         let content = message.agent_visible_content().as_concat_text();
 
         assert!(content.contains("Tell me what is inside"));
@@ -3290,7 +3288,7 @@ print(\"hello, world\")
             ContentBlock::ResourceLink(link.annotations(assistant_only())),
         ];
 
-        let message = GooseAcpAgent::convert_acp_prompt_to_message(&prompt);
+        let message = AcpConnection::convert_acp_prompt_to_message(&prompt);
         let user_content = message.user_visible_content();
         let agent_content = message.agent_visible_content();
         let empty_audience_content = message
@@ -3579,7 +3577,7 @@ print(\"hello, world\")
         let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
             Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
         });
-        let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
+        let connection = AcpConnection::new(AcpConnectionOptions {
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
             config_dir: root.path().to_path_buf(),
@@ -3599,7 +3597,7 @@ print(\"hello, world\")
         .unwrap();
 
         let offered_v2 = agent_client_protocol::schema::ProtocolVersion::from(2u16);
-        let response = agent
+        let response = connection
             .on_initialize(InitializeRequest::new(offered_v2))
             .await
             .unwrap();
@@ -3609,7 +3607,7 @@ print(\"hello, world\")
             "goose implements ACP v1 and must stamp v1 even when the client offers v2"
         );
 
-        let response = agent
+        let response = connection
             .on_initialize(InitializeRequest::new(
                 agent_client_protocol::schema::ProtocolVersion::V1,
             ))
@@ -3714,7 +3712,7 @@ print(\"hello, world\")
             Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
         });
         let server = Arc::new(
-            GooseAcpAgent::new(GooseAcpAgentOptions {
+            AcpConnection::new(AcpConnectionOptions {
                 provider_factory,
                 builtin_selection: AcpBuiltinSelection::default(),
                 config_dir: root.path().to_path_buf(),

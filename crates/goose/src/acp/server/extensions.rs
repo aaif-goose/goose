@@ -4,7 +4,7 @@ use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
 use std::collections::HashSet;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_add_session_extension(
         &self,
         req: AddSessionExtensionRequest,

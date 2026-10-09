@@ -1,6 +1,6 @@
 use super::*;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     #[allow(dead_code)]
     pub(super) async fn handle_fork_session(
         &self,

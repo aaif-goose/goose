@@ -36,7 +36,7 @@ fn add_session_subrecipes(
     }
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_agent_mentions(
         &self,
         req: ListAgentMentionsRequest,

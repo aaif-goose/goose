@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
-use crate::acp::server::GooseAcpAgent;
+use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
@@ -868,7 +868,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let hidden_text_prefix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_text_prefix = AcpConnection::convert_acp_prompt_to_message(&[
         assistant_only_acp_text("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
@@ -879,7 +879,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let empty_audience_text = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let empty_audience_text = AcpConnection::convert_acp_prompt_to_message(&[
         empty_audience_acp_text("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
@@ -888,7 +888,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
     assert_eq!(api.call_count(), 1);
 
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let hidden_text_suffix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_text_suffix = AcpConnection::convert_acp_prompt_to_message(&[
         AcpContentBlock::Text(AcpTextContent::new("!echo visible")),
         assistant_only_acp_text("&& echo hidden"),
     ]);
@@ -899,7 +899,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let hidden_resource_prefix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_resource_prefix = AcpConnection::convert_acp_prompt_to_message(&[
         assistant_only_embedded_resource("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
@@ -910,7 +910,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let empty_audience_resource = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let empty_audience_resource = AcpConnection::convert_acp_prompt_to_message(&[
         empty_audience_embedded_resource("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
@@ -920,7 +920,7 @@ async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
 
     let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let (hidden_link, _resource_file) = assistant_only_resource_link("&& echo hidden")?;
-    let hidden_link_suffix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_link_suffix = AcpConnection::convert_acp_prompt_to_message(&[
         AcpContentBlock::Text(AcpTextContent::new("!echo visible")),
         hidden_link,
     ]);

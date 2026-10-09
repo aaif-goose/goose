@@ -11,7 +11,7 @@ use agent_client_protocol::schema::v1::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use fs_err as fs;
-use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent, GooseAcpAgentOptions};
+use goose::acp::server::{serve, AcpConnection, AcpConnectionOptions, AcpProviderFactory};
 pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
@@ -340,13 +340,19 @@ impl DuplexTransport {
 /// the client transport plus the server handle.
 #[allow(dead_code)]
 pub async fn serve_agent_in_process(
-    agent: Arc<GooseAcpAgent>,
+    connection: Arc<AcpConnection>,
 ) -> (DuplexTransport, JoinHandle<()>) {
     let (client_read, server_write) = tokio::io::duplex(64 * 1024);
     let (server_read, client_write) = tokio::io::duplex(64 * 1024);
 
     let handle = tokio::spawn(async move {
-        if let Err(e) = serve(agent, server_read.compat(), server_write.compat_write()).await {
+        if let Err(e) = serve(
+            connection,
+            server_read.compat(),
+            server_write.compat_write(),
+        )
+        .await
+        {
             tracing::error!("ACP server error: {e}");
         }
     });
@@ -401,7 +407,7 @@ pub async fn spawn_acp_server_in_process(
     let live_voice = Arc::new(goose::acp::server::LiveVoiceService::from_config(
         active_runs.clone(),
     ));
-    let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
+    let connection = AcpConnection::new(AcpConnectionOptions {
         provider_factory,
         builtin_selection: goose::acp::server::AcpBuiltinSelection {
             explicit: builtins.to_vec(),
@@ -422,9 +428,9 @@ pub async fn spawn_acp_server_in_process(
     })
     .await
     .unwrap();
-    let agent = Arc::new(agent);
-    let permission_manager = agent.permission_manager();
-    let (transport, handle) = serve_agent_in_process(agent).await;
+    let connection = Arc::new(connection);
+    let permission_manager = connection.permission_manager();
+    let (transport, handle) = serve_agent_in_process(connection).await;
 
     (transport, handle, permission_manager)
 }

@@ -7,7 +7,7 @@ use goose_sdk_types::custom_requests::{
     UpdateScheduleRequest, UpdateScheduleResponse,
 };
 
-use super::{build_session_info, GooseAcpAgent, ResultExt};
+use super::{build_session_info, AcpConnection, ResultExt};
 use crate::recipe::validate_recipe::validate_recipe_template_from_content;
 use crate::recipe::Recipe;
 use crate::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
@@ -121,7 +121,7 @@ fn scheduled_job_to_dto(job: ScheduledJob) -> ScheduledJobDto {
     }
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) fn require_scheduler(
         &self,
     ) -> Result<Arc<dyn SchedulerTrait>, agent_client_protocol::Error> {
@@ -395,16 +395,16 @@ mod tests {
             session_cwd: None,
             enable_scheduler: true,
         });
-        let handler = server.create_agent().await.unwrap();
+        let connection = server.create_connection().await.unwrap();
 
-        let created = handler
+        let created = connection
             .on_create_schedule(create_schedule_request("nightly", "original prompt"))
             .await
             .unwrap();
         let recipe_path = created.job.source;
         let original_recipe = std::fs::read(&recipe_path).unwrap();
 
-        let error = handler
+        let error = connection
             .on_create_schedule(create_schedule_request("nightly", "replacement prompt"))
             .await
             .expect_err("duplicate schedule must be rejected");
@@ -432,20 +432,20 @@ mod tests {
             session_cwd: None,
             enable_scheduler: false,
         });
-        let handler = server.create_agent().await.unwrap();
+        let connection = server.create_connection().await.unwrap();
 
-        let list_error = handler
+        let list_error = connection
             .on_list_schedules(ListSchedulesRequest {})
             .await
             .expect_err("schedule listing must be unsupported");
         assert_scheduler_disabled(list_error);
 
-        handler
+        connection
             .on_list_recipes(ListRecipesRequest {})
             .await
             .expect("recipe listing must remain available");
 
-        let create_error = handler
+        let create_error = connection
             .on_create_schedule(CreateScheduleRequest {
                 id: "nightly".to_string(),
                 recipe: Default::default(),
@@ -459,7 +459,7 @@ mod tests {
             .join("nightly.yaml")
             .exists());
 
-        let schedule_recipe_error = handler
+        let schedule_recipe_error = connection
             .on_schedule_recipe(ScheduleRecipeRequest {
                 id: "missing-recipe".to_string(),
                 cron_schedule: Some("0 0 0 * * *".to_string()),

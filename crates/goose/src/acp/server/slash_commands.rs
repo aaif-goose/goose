@@ -1,7 +1,7 @@
 use super::*;
 use std::path::PathBuf;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_slash_commands(
         &self,
         req: ListSlashCommandsRequest,

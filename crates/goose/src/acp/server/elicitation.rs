@@ -13,7 +13,7 @@ use tracing::warn;
 use crate::action_required_manager::ElicitationOutcome;
 use crate::session::SessionManager;
 
-impl super::GooseAcpAgent {
+impl super::AcpConnection {
     pub(super) async fn handle_form_elicitation(
         &self,
         cx: &ConnectionTo<Client>,

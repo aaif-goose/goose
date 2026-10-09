@@ -1,6 +1,6 @@
 use super::*;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_update_working_dir(
         &self,
         req: UpdateWorkingDirRequest,

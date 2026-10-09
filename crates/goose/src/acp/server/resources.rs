@@ -1,6 +1,6 @@
 use super::*;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_read_resource(
         &self,
         req: ReadResourceRequest,

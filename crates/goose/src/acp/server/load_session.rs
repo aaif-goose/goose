@@ -217,7 +217,7 @@ fn replay_conversation_to_client(
     Ok(skipped)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     fn resend_pending_tool_permissions(
         &self,
         cx: &ConnectionTo<Client>,

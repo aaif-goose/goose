@@ -15,7 +15,7 @@ use axum::{
 };
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
-use crate::acp::server::GooseAgentConnection;
+use crate::acp::server::LazyAcpConnection;
 use crate::acp::server_factory::AcpServer;
 
 // The upstream ACP HTTP server only supports exact origin allowlists for
@@ -186,7 +186,7 @@ fn aux_cors_layer() -> CorsLayer {
 }
 
 fn create_acp_router_inner(server: Arc<AcpServer>, policy: AcpOriginPolicy) -> Router {
-    AcpHttpServer::new(move || GooseAgentConnection::new(server.clone()))
+    AcpHttpServer::new(move || LazyAcpConnection::new(server.clone()))
         .with_options(acp_http_options())
         .into_router()
         .layer(axum::middleware::from_fn_with_state(

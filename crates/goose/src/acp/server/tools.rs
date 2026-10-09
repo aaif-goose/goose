@@ -5,7 +5,7 @@ use crate::config::permission::PermissionLevel;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_tools(
         &self,
         req: GetToolsRequest,

@@ -18,7 +18,7 @@ use tokio::sync::oneshot;
 
 mod conversions;
 
-use super::{meta_string, GooseAcpAgent, ResultExt};
+use super::{meta_string, AcpConnection, ResultExt};
 use crate::recipe::build_recipe::{build_recipe_from_template, RecipeError};
 use crate::recipe::local_recipes::{self, get_recipe_library_dir};
 use crate::recipe::manifest::{
@@ -43,7 +43,7 @@ pub(super) fn deserialize_save_recipe_request(
     result.map_err(save_recipe_validation_error)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn resolve_recipe_from_meta(
         &self,
         meta: Option<&Meta>,

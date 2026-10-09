@@ -5,7 +5,7 @@ fn local_inference_unavailable() -> agent_client_protocol::Error {
     agent_client_protocol::Error::invalid_params().data("Local inference not enabled")
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_local_inference_models_list(
         &self,
         _req: LocalInferenceModelsListRequest,

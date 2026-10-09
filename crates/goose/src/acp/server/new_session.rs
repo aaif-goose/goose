@@ -5,7 +5,7 @@ use crate::config::{Config, GooseMode};
 use crate::recipe::{Recipe, Settings};
 use crate::session::{ExtensionData, Session, SessionType};
 
-use super::GooseAcpAgent;
+use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use goose_providers::model::ModelConfig;
@@ -32,7 +32,7 @@ struct NewSessionMetaFields {
     client_title: Option<String>,
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,

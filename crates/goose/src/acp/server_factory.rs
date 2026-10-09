@@ -1,6 +1,6 @@
 use crate::acp::server::{
-    new_acp_services, AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent,
-    GooseAcpAgentOptions, LiveVoiceService,
+    new_acp_services, AcpBuiltinSelection, AcpConnection, AcpConnectionOptions, AcpProviderFactory,
+    ActiveRunRegistry, LiveVoiceService,
 };
 use crate::agents::GoosePlatform;
 use crate::agents::StateMachineServices;
@@ -84,8 +84,8 @@ impl AcpServer {
             .map(Some)
     }
 
-    pub async fn create_agent(&self) -> Result<Arc<GooseAcpAgent>> {
-        self.create_agent_with_session_cwd(self.config.session_cwd.clone())
+    pub async fn create_connection(&self) -> Result<Arc<AcpConnection>> {
+        self.create_connection_with_session_cwd(self.config.session_cwd.clone())
             .await
     }
 
@@ -96,10 +96,10 @@ impl AcpServer {
     /// roaming connection gets a host-controlled working directory (the
     /// connector's absolute path is meaningless here). The agent still shares
     /// this server's active-run registry.
-    pub async fn create_agent_with_session_cwd(
+    pub async fn create_connection_with_session_cwd(
         &self,
         session_cwd: Option<std::path::PathBuf>,
-    ) -> Result<Arc<GooseAcpAgent>> {
+    ) -> Result<Arc<AcpConnection>> {
         #[cfg(feature = "scheduler")]
         let scheduler = self.scheduler().await?;
         #[cfg(feature = "scheduler")]
@@ -130,7 +130,7 @@ impl AcpServer {
             })
         });
 
-        let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
+        let connection = AcpConnection::new(AcpConnectionOptions {
             provider_factory,
             builtin_selection: self.config.builtins.clone(),
             config_dir: self.config.config_dir.clone(),
@@ -143,7 +143,7 @@ impl AcpServer {
         .await?;
         info!("Created new ACP agent");
 
-        Ok(Arc::new(agent))
+        Ok(Arc::new(connection))
     }
 
     #[cfg(all(test, feature = "scheduler"))]
@@ -205,8 +205,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let server = server(root.path().to_path_buf(), false);
 
-        let a = server.create_agent().await.unwrap();
-        let b = server.create_agent().await.unwrap();
+        let a = server.create_connection().await.unwrap();
+        let b = server.create_connection().await.unwrap();
 
         assert!(Arc::ptr_eq(
             a.active_run_registry(),
@@ -220,8 +220,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let server = server(root.path().to_path_buf(), false);
 
-        let running = server.create_agent().await.unwrap();
-        let steering = server.create_agent().await.unwrap();
+        let running = server.create_connection().await.unwrap();
+        let steering = server.create_connection().await.unwrap();
 
         running
             .test_start_active_run("session-1", "run-1".to_string())
@@ -241,7 +241,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let server = server(root.path().to_path_buf(), false);
 
-        let running = server.create_agent().await.unwrap();
+        let running = server.create_connection().await.unwrap();
         running
             .test_start_active_run("session-1", "run-1".to_string())
             .await
@@ -250,7 +250,7 @@ mod tests {
         running.test_drop_active_run_guard("session-1", "run-1");
         tokio::task::yield_now().await;
 
-        let second = server.create_agent().await.unwrap();
+        let second = server.create_connection().await.unwrap();
         assert!(
             second
                 .test_require_active_run("session-1", "run-1")

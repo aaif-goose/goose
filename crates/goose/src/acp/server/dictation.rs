@@ -15,7 +15,7 @@ const OPENAI_TRANSCRIPTION_MODEL: &str = "whisper-1";
 const GROQ_TRANSCRIPTION_MODEL: &str = "whisper-large-v3-turbo";
 const ELEVENLABS_TRANSCRIPTION_MODEL: &str = "scribe_v1";
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_dictation_transcribe(
         &self,
         req: DictationTranscribeRequest,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::prompt_template::{get_template, list_templates, reset_template, save_template};
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_prompts(
         &self,
         _req: ListPromptsRequest,

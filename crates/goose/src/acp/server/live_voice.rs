@@ -13,7 +13,7 @@ const LIVE_DELEGATION_INSTRUCTION: &str = concat!(
     "failures, and any required user action. Do not include raw tool output."
 );
 
-impl GooseAcpAgent {
+impl AcpConnection {
     async fn load_live_voice_session(
         &self,
         session_id: &str,
