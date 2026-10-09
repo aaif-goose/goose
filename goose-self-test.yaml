@@ -10,6 +10,7 @@ activities:
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
+  - Validate declared vision through persisted custom-provider configuration and outbound requests
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -26,7 +27,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, advanced"
 
   - key: test_depth
     input_type: string
@@ -318,6 +319,24 @@ prompt: |
   Each delegate runs independently but the tasks are sequentially dependent.
 
   Log results to: {{ workspace_dir }}/phase3_delegation.md
+  {% endif %}
+
+  {% if test_phases == "all" or "declared-vision" in test_phases %}
+  ## Declared Custom-Provider Vision
+
+  When running from a goose source checkout with a Rust toolchain:
+  1. Run `cargo test -p goose --features rustls-tls --test declared_vision_registry`.
+  2. Verify saved custom-provider declarations survive registry reload and control actual
+     image forwarding on both chat completions and Responses. Declared true and false
+     override opposing model settings; an absent declaration preserves those settings.
+  3. Run `cargo test -p goose-providers --features rustls-tls --test declared_vision`.
+  4. Verify actual user and tool-result image requests follow the same precedence and
+     undeclared case variants never inherit another model's declaration.
+  These tests use a local HTTP mock and isolated configuration, requiring no credentials
+  or downloaded vision model. If the source checkout or toolchain is unavailable, mark
+  this phase as SKIPPED.
+
+  Log results to: {{ workspace_dir }}/declared_vision.md
   {% endif %}
 
   {% if test_phases == "all" or "vision" in test_phases %}
