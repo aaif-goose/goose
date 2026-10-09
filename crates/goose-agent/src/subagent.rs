@@ -131,6 +131,7 @@ fn subagent_cancelled_message(subagent_session_ids: &[String]) -> Option<Message
 struct Running {
     subagent_session_ids: HashSet<String>,
     subagent_runs: FuturesUnordered<OperationFuture<'static, (String, SubagentOutcome)>>,
+    delivering: Option<(String, SubagentOutcome)>,
 }
 
 pub struct ForegroundSubagentOperation<S> {
@@ -181,9 +182,9 @@ where
         );
         let mut effects = Vec::new();
         let mut delivered = HashSet::new();
-        while let Some(Some((subagent_session_id, outcome))) =
-            stopped.subagent_runs.next().now_or_never()
-        {
+        let interrupted = stopped.delivering.take();
+        let finished = std::iter::from_fn(|| stopped.subagent_runs.next().now_or_never().flatten());
+        for (subagent_session_id, outcome) in interrupted.into_iter().chain(finished) {
             let remaining = pending.len().saturating_sub(delivered.len() + 1);
             if let Some(effect) = self
                 .deliver(&subagent_session_id, &outcome, remaining, emit)
@@ -236,10 +237,12 @@ where
 
         while let Some((subagent_session_id, outcome)) = running.subagent_runs.next().await {
             running.subagent_session_ids.remove(&subagent_session_id);
-            if let Some(effect) = self
+            running.delivering = Some((subagent_session_id.clone(), outcome.clone()));
+            let effect = self
                 .deliver(&subagent_session_id, &outcome, remaining, emit)
-                .await
-            {
+                .await;
+            running.delivering = None;
+            if let Some(effect) = effect {
                 return applied([effect]);
             }
         }

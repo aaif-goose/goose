@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
@@ -28,6 +29,7 @@ struct FakeRunner {
     events: Mutex<Vec<String>>,
     started_subagent_session_ids: Vec<String>,
     blocked: bool,
+    stall_next_hook: AtomicBool,
 }
 
 impl FakeRunner {
@@ -108,6 +110,9 @@ impl SubagentRunner<Parent> for FakeRunner {
         self.events.lock().unwrap().push(format!(
             "finished {subagent_session_id}, {remaining} remaining"
         ));
+        if self.stall_next_hook.swap(false, Ordering::SeqCst) {
+            future::pending::<()>().await;
+        }
     }
 }
 
@@ -140,6 +145,10 @@ fn appended(effects: Vec<ConversationEffect>) -> Vec<Message> {
         .collect()
 }
 
+fn texts(messages: &[Message]) -> Vec<String> {
+    messages.iter().map(Message::as_concat_text).collect()
+}
+
 fn operation(runner: &Arc<FakeRunner>) -> ForegroundSubagentOperation<Parent> {
     ForegroundSubagentOperation::new(runner.clone())
 }
@@ -157,6 +166,30 @@ async fn run_once(
         OperationResult::NotApplicable => Vec::new(),
         OperationResult::Applied(result) => appended(result.effects),
     }
+}
+
+fn interrupt(operation: &ForegroundSubagentOperation<Parent>, messages: &[Message]) {
+    let conversation = Conversation::new_unvalidated(messages.to_vec());
+    let run =
+        Operation::<Parent, ConversationEffect>::run(operation, &Parent, &conversation, &emitter())
+            .now_or_never();
+    assert!(run.is_none());
+}
+
+async fn stop(
+    operation: &ForegroundSubagentOperation<Parent>,
+    messages: &[Message],
+) -> Vec<Message> {
+    let conversation = Conversation::new_unvalidated(messages.to_vec());
+    appended(
+        Operation::<Parent, ConversationEffect>::cancel(
+            operation,
+            &Parent,
+            &conversation,
+            &emitter(),
+        )
+        .await,
+    )
 }
 
 #[tokio::test]
@@ -183,8 +216,7 @@ async fn a_finished_subagent_is_delivered_without_running() {
 
     let delivered = run_once(&operation, &messages).await;
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].as_concat_text(), "Subagent a completed: done");
+    assert_eq!(texts(&delivered), ["Subagent a completed: done"]);
     assert!(!delivered[0].is_user_visible());
     assert!(delivered[0].is_agent_visible());
     assert_eq!(runner.events(), ["finished a, 0 remaining"]);
@@ -204,17 +236,12 @@ async fn running_subagents_are_delivered_one_per_pass_and_started_once() {
 
     b.send(SubagentOutcome::Completed("b done".into())).unwrap();
     let delivered = run_once(&operation, &messages).await;
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(
-        delivered[0].as_concat_text(),
-        "Subagent b completed: b done"
-    );
+    assert_eq!(texts(&delivered), ["Subagent b completed: b done"]);
     messages.extend(delivered);
 
     a.send(SubagentOutcome::Failed("boom".into())).unwrap();
     let delivered = run_once(&operation, &messages).await;
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].as_concat_text(), "Subagent a failed: boom");
+    assert_eq!(texts(&delivered), ["Subagent a failed: boom"]);
     messages.extend(delivered);
 
     assert!(run_once(&operation, &messages).await.is_empty());
@@ -238,11 +265,7 @@ async fn an_already_finished_subagent_does_not_hold_back_the_others() {
 
     let delivered = run_once(&operation(&runner), &[kickoff()]).await;
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(
-        delivered[0].as_concat_text(),
-        "Subagent a completed: a done"
-    );
+    assert_eq!(texts(&delivered), ["Subagent a completed: a done"]);
     assert_eq!(runner.started(), ["a", "b"]);
     assert_eq!(runner.events(), ["started b", "finished a, 1 remaining"]);
 }
@@ -261,11 +284,7 @@ async fn a_cancelled_subagent_does_not_end_the_wait_for_the_others() {
         b.send(SubagentOutcome::Completed("b done".into())).unwrap();
     });
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(
-        delivered[0].as_concat_text(),
-        "Subagent b completed: b done"
-    );
+    assert_eq!(texts(&delivered), ["Subagent b completed: b done"]);
 }
 
 #[tokio::test]
@@ -273,7 +292,7 @@ async fn a_cancelled_subagent_stays_pending() {
     let runner = Arc::new(fake(&["a"]));
     let a = runner.running("a");
     let operation = operation(&runner);
-    let messages = vec![kickoff()];
+    let messages = [kickoff()];
 
     a.send(SubagentOutcome::Cancelled).unwrap();
     assert!(run_once(&operation, &messages).await.is_empty());
@@ -282,8 +301,7 @@ async fn a_cancelled_subagent_stays_pending() {
     runner.finished("a", SubagentOutcome::Completed("done".into()));
     let delivered = run_once(&operation, &messages).await;
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].as_concat_text(), "Subagent a completed: done");
+    assert_eq!(texts(&delivered), ["Subagent a completed: done"]);
     assert_eq!(runner.started(), ["a", "a"]);
 }
 
@@ -294,51 +312,44 @@ async fn stop_delivers_finished_subagents_and_cancels_the_rest() {
     let b = runner.running("b");
     let operation = operation(&runner);
     let mut messages = vec![kickoff()];
-    let conversation = Conversation::new_unvalidated(messages.clone());
 
-    let interrupted = Operation::<Parent, ConversationEffect>::run(
-        &operation,
-        &Parent,
-        &conversation,
-        &emitter(),
-    )
-    .now_or_never();
-    assert!(interrupted.is_none());
-
+    interrupt(&operation, &messages);
     a.send(SubagentOutcome::Completed("a done".into())).unwrap();
-    let effects = Operation::<Parent, ConversationEffect>::cancel(
-        &operation,
-        &Parent,
-        &conversation,
-        &emitter(),
-    )
-    .await;
-    let saved = appended(effects);
+    let saved = stop(&operation, &messages).await;
 
-    assert_eq!(saved.len(), 2);
-    assert_eq!(saved[0].as_concat_text(), "Subagent a completed: a done");
     assert_eq!(
-        saved[1].as_concat_text(),
-        "Subagent b was cancelled before it finished and will not run again."
+        texts(&saved),
+        [
+            "Subagent a completed: a done",
+            "Subagent b was cancelled before it finished and will not run again.",
+        ]
     );
     assert!(b.is_closed());
     assert_eq!(
         runner.events(),
-        ["started a", "started b", "finished a, 1 remaining",]
+        ["started a", "started b", "finished a, 1 remaining"]
     );
 
     messages.extend(saved);
     assert!(run_once(&operation, &messages).await.is_empty());
     assert_eq!(runner.started(), ["a", "b"]);
+    assert!(stop(&operation, &messages).await.is_empty());
+}
 
-    let stopped_again = Operation::<Parent, ConversationEffect>::cancel(
-        &operation,
-        &Parent,
-        &Conversation::new_unvalidated(messages),
-        &emitter(),
-    )
-    .await;
-    assert!(stopped_again.is_empty());
+#[tokio::test]
+async fn stop_during_the_finished_hook_still_saves_the_result() {
+    let runner = Arc::new(FakeRunner {
+        stall_next_hook: AtomicBool::new(true),
+        ..fake(&["a"])
+    });
+    runner.finished("a", SubagentOutcome::Completed("done".into()));
+    let operation = operation(&runner);
+    let messages = [kickoff()];
+
+    interrupt(&operation, &messages);
+    let saved = stop(&operation, &messages).await;
+
+    assert_eq!(texts(&saved), ["Subagent a completed: done"]);
 }
 
 #[tokio::test]
@@ -348,11 +359,7 @@ async fn a_repeated_id_starts_once() {
 
     let delivered = run_once(&operation(&runner), &[kickoff()]).await;
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(
-        delivered[0].as_concat_text(),
-        "Subagent x failed: boom\ndetails"
-    );
+    assert_eq!(texts(&delivered), ["Subagent x failed: boom\ndetails"]);
     assert_eq!(runner.started(), ["x"]);
 }
 
@@ -376,10 +383,6 @@ async fn reads_the_notes_goose_saves_today() {
     runner.finished("c", SubagentOutcome::Completed("c done".into()));
     let delivered = run_once(&operation(&runner), &messages).await;
 
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(
-        delivered[0].as_concat_text(),
-        "Subagent c completed: c done"
-    );
+    assert_eq!(texts(&delivered), ["Subagent c completed: c done"]);
     assert_eq!(runner.started(), ["c"]);
 }
