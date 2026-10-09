@@ -46,15 +46,22 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
   const [isEditingThreshold, setIsEditingThreshold] = useState(false);
   const [loadedThreshold, setLoadedThreshold] = useState<number>(0.8);
   const [thresholdValue, setThresholdValue] = useState(80);
+  const [tokenLimit, setTokenLimit] = useState(225000);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const loadThreshold = async () => {
       try {
-        const threshold = await read('GOOSE_AUTO_COMPACT_THRESHOLD', false);
+        const [threshold, limit] = await Promise.all([
+          read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
+          read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
+        ]);
         if (threshold !== undefined && threshold !== null && typeof threshold === 'number') {
           setLoadedThreshold(threshold);
           setThresholdValue(Math.max(1, Math.min(99, Math.round(threshold * 100))));
+        }
+        if (typeof limit === 'number') {
+          setTokenLimit(limit);
         }
       } catch (err) {
         console.error('Error fetching auto-compact threshold:', err);
@@ -65,6 +72,9 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
   }, [read]);
 
   const currentThreshold = loadedThreshold;
+  const contextLimit = alert.progress?.total ?? 0;
+  const tokenLimitApplies =
+    currentThreshold > 0 && currentThreshold < 1 && tokenLimit < currentThreshold * contextLimit;
 
   const handleSaveThreshold = async () => {
     if (isSaving) return; // Prevent double-clicks
@@ -89,7 +99,11 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
       }
     } catch (error) {
       console.error('Error saving threshold:', error);
-      window.alert(intl.formatMessage(i18n.failedToSaveThreshold, { error: errorMessage(error, 'Unknown error') }));
+      window.alert(
+        intl.formatMessage(i18n.failedToSaveThreshold, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
     } finally {
       setIsSaving(false);
     }
@@ -111,7 +125,9 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
           <div className="flex items-center justify-center gap-1 min-h-[20px]">
             {isEditingThreshold ? (
               <>
-                <span className="text-[10px] opacity-70">{intl.formatMessage(i18n.autoCompactAt)}</span>
+                <span className="text-[10px] opacity-70">
+                  {intl.formatMessage(i18n.autoCompactAt)}
+                </span>
                 <input
                   type="number"
                   min="1"
@@ -171,7 +187,10 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
             ) : (
               <>
                 <span className="text-[10px] opacity-70">
-                  {intl.formatMessage(i18n.autoCompactAt)} {Math.round(currentThreshold * 100)}%
+                  {intl.formatMessage(i18n.autoCompactAt)}{' '}
+                  {tokenLimitApplies
+                    ? `${Math.round(tokenLimit / 1000)}k`
+                    : `${Math.round(currentThreshold * 100)}%`}
                 </span>
                 <button
                   type="button"
