@@ -470,6 +470,28 @@ impl StateMachineServices {
         }
     }
 
+    pub(crate) async fn start_prompt_run(
+        &self,
+        session_id: &str,
+        connection: u64,
+        attachment: Attachment,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> std::result::Result<(), super::active_run::StartRunError> {
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.runtime
+                .runs
+                .start_prompt_run(session_id, run_id, cancel_token)?;
+            self.extension_manager
+                .attach_client(session_id, attachment.client.clone());
+            self.runtime.attach(session_id, connection, attachment);
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
+        Ok(())
+    }
+
     pub(crate) fn reserve_prompt_run(
         &self,
         session_id: &str,

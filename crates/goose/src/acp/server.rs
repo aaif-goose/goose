@@ -813,19 +813,18 @@ impl AcpConnection {
         run_id: String,
     ) -> Result<(), agent_client_protocol::Error> {
         self.services
-            .reserve_prompt_run(session_id, run_id, CancellationToken::new())
-            .map_err(|_| agent_client_protocol::Error::invalid_params())?;
-        self.services
-            .attach_session(
+            .start_prompt_run(
                 session_id,
                 self.connection_id,
                 Attachment {
                     client: ClientContext::new(&self.services.goose_platform, None),
                     session_names: None,
                 },
+                run_id,
+                CancellationToken::new(),
             )
-            .await;
-        Ok(())
+            .await
+            .map_err(|_| agent_client_protocol::Error::invalid_params())
     }
 
     #[cfg(all(test, feature = "scheduler"))]
@@ -1800,6 +1799,46 @@ impl AcpConnection {
         Ok(())
     }
 
+    async fn start_active_run(
+        &self,
+        session_id: &str,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> Result<(), agent_client_protocol::Error> {
+        if self.closed_session_ids.lock().await.contains(session_id) {
+            return Err(agent_client_protocol::Error::resource_not_found(Some(
+                session_id.to_string(),
+            ))
+            .data(format!("Session not found: {}", session_id)));
+        }
+
+        let cx = self.client_cx.get().ok_or_else(|| {
+            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
+        })?;
+        self.services
+            .start_prompt_run(
+                session_id,
+                self.connection_id,
+                self.session_attachment(cx),
+                run_id,
+                cancel_token,
+            )
+            .await
+            .map_err(|error| match error {
+                StartRunError::AgentRunExists { run_id } => {
+                    let message = format!(
+                        "session already has active run `{run_id}`; use _goose/unstable/session/steer"
+                    );
+                    agent_client_protocol::Error::invalid_params().data(message)
+                }
+                StartRunError::LiveVoiceInteractionExists => agent_client_protocol::Error::invalid_params()
+                    .data("session already has an active Live run"),
+                StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
+            })?;
+        Ok(())
+    }
+
     async fn reserve_prompt_run(
         &self,
         session_id: &str,
@@ -1810,12 +1849,6 @@ impl AcpConnection {
             run_id: format!("run_{}", Uuid::new_v4()),
             cancel_token: CancellationToken::new(),
         };
-        if self.closed_session_ids.lock().await.contains(session_id) {
-            return Err(agent_client_protocol::Error::resource_not_found(Some(
-                session_id.to_string(),
-            ))
-            .data(format!("Session not found: {}", session_id)));
-        }
         self.services
             .reserve_prompt_run(session_id, run.run_id.clone(), run.cancel_token.clone())
             .map_err(|error| match error {
@@ -1829,6 +1862,12 @@ impl AcpConnection {
                     .data("session already has an active Live run"),
                 StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
             })?;
+        if self.closed_session_ids.lock().await.contains(session_id) {
+            return Err(agent_client_protocol::Error::resource_not_found(Some(
+                session_id.to_string(),
+            ))
+            .data(format!("Session not found: {}", session_id)));
+        }
         Ok(run)
     }
 
