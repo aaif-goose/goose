@@ -313,7 +313,7 @@ mod tests {
     impl Fixture {
         fn operation(&self, cancel: CancellationToken) -> ForegroundSubagentOperation {
             ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.manager.clone(), false),
+                ForegroundSubagentRunner::new(self.manager.clone()),
                 cancel,
             )
         }
@@ -773,7 +773,7 @@ mod tests {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let runner = ForegroundSubagentRunner::new(fixture.manager.clone(), false);
+        let runner = ForegroundSubagentRunner::new(fixture.manager.clone());
         let SubagentStart::Started { run, .. } = runner
             .start(&fixture.parent_id, &fixture.subagent_id, cancel)
             .await

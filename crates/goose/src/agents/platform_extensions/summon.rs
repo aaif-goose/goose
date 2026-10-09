@@ -1487,7 +1487,6 @@ mod tests {
             providers: Default::default(),
             session_manager,
             scheduler: None,
-            use_login_shell_path: false,
         }
     }
 
@@ -1614,7 +1613,6 @@ mod tests {
             crate::agents::subagent_handler::from_foreground_subagent_session(
                 Arc::new(reloaded),
                 &child,
-                false,
             )
             .await
             .unwrap();

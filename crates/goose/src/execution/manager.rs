@@ -20,7 +20,6 @@ static AGENT_MANAGER: OnceCell<Arc<AgentManager>> = OnceCell::const_new();
 #[derive(Clone, Default)]
 pub struct RuntimeContext {
     pub mcp_host_info: Option<GooseMcpHostInfo>,
-    pub use_login_shell_path: Option<bool>,
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
@@ -159,7 +158,6 @@ impl AgentManager {
 
         let mut config = self.agent_config.clone();
         config.mcp_host_info = runtime_context.mcp_host_info;
-        config.use_login_shell_path = runtime_context.use_login_shell_path;
         config.session_name_update_tx = runtime_context.session_name_update_tx;
         let agent = Arc::new(Agent::with_config(config));
 

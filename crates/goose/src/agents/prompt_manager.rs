@@ -495,7 +495,6 @@ mod tests {
             providers: Default::default(),
             session_manager,
             scheduler: Some(scheduler),
-            use_login_shell_path: false,
         };
 
         let mut extensions = Vec::new();

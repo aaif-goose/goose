@@ -105,7 +105,6 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
             elicitation_handler: None,
             protocol_version,
         },
-        false,
     ));
     Fixture {
         manager,
@@ -899,7 +898,6 @@ async fn test_replayed_session(
             elicitation_handler: None,
             protocol_version: None,
         },
-        true,
     ));
 
     #[allow(clippy::redundant_closure_call)]

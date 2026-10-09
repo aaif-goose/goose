@@ -142,9 +142,6 @@ async function openConnection(generation: number): Promise<AcpConnection> {
     const initializeResponse = await withTimeout(
       client.connection.agent.request(methods.agent.initialize, {
         protocolVersion: ACP_V1_PROTOCOL_VERSION,
-        _meta: {
-          'goose/useLoginShellPath': true,
-        },
         clientCapabilities: {
           elicitation: { form: {} },
           _meta: {
