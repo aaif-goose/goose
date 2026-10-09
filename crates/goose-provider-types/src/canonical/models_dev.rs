@@ -71,7 +71,7 @@ fn parse_context_tiers(cost: &Value) -> Vec<PricingTier> {
         .filter(|t| t["tier"]["type"] == "context")
         .filter_map(|t| {
             Some(PricingTier {
-                min_input_tokens: t["tier"]["size"].as_u64()?,
+                above_input_tokens: t["tier"]["size"].as_u64()?,
                 input: t.get("input").and_then(|v| v.as_f64()),
                 output: t.get("output").and_then(|v| v.as_f64()),
                 cache_read: t.get("cache_read").and_then(|v| v.as_f64()),

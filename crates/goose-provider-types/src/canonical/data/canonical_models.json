@@ -407,7 +407,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -2468,7 +2468,7 @@
       "cache_write": 0.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5
         }
@@ -8841,7 +8841,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -8889,7 +8889,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -8938,7 +8938,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -8987,7 +8987,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -9186,7 +9186,7 @@
       "cache_write": 4.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.6,
           "output": 24.75,
           "cache_read": 0.66,
@@ -9234,7 +9234,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -9282,7 +9282,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -9504,7 +9504,7 @@
       "cache_read": 0.016,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.16,
           "output": 0.8,
           "cache_read": 0.032
@@ -9542,7 +9542,7 @@
       "cache_read": 0.04,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.4,
           "output": 1.2,
           "cache_read": 0.08
@@ -9821,13 +9821,13 @@
       "cache_read": 0.09644,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.72,
           "output": 3.62,
           "cache_read": 0.144656
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.45,
           "output": 7.23,
           "cache_read": 0.28932
@@ -9872,13 +9872,13 @@
       "cache_read": 0.01692,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.13,
           "output": 0.76,
           "cache_read": 0.02536
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.25,
           "output": 1.52,
           "cache_read": 0.05072
@@ -9923,13 +9923,13 @@
       "cache_read": 0.00564,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.06,
           "output": 0.56,
           "cache_read": 0.01128
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.11,
           "output": 1.13,
           "cache_read": 0.02256
@@ -9974,13 +9974,13 @@
       "cache_read": 0.09644,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.72,
           "output": 3.62,
           "cache_read": 0.144656
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.45,
           "output": 7.23,
           "cache_read": 0.28932
@@ -10132,7 +10132,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -10180,7 +10180,7 @@
       "cache_read": 0.05,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 0.5,
           "output": 3.0,
           "cache_read": 0.05
@@ -10376,7 +10376,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -10423,7 +10423,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -10658,7 +10658,7 @@
       "output": 1.096,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.548,
           "output": 1.644
         }
@@ -10695,7 +10695,7 @@
       "cache_read": 0.0547948,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.547946,
           "output": 2.191784,
           "cache_read": 0.1095892
@@ -10735,7 +10735,7 @@
       "cache_read": 0.0274,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.274,
           "output": 0.822,
           "cache_read": 0.0548
@@ -10773,7 +10773,7 @@
       "cache_read": 0.0547948,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.547946,
           "output": 2.191784,
           "cache_read": 0.1095892
@@ -11214,7 +11214,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -11337,7 +11337,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -11381,7 +11381,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -11548,7 +11548,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -11598,7 +11598,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -11648,7 +11648,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -11813,7 +11813,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -11932,7 +11932,7 @@
       "cache_read": 0.55,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.4,
           "output": 13.2,
           "cache_read": 1.1
@@ -12741,14 +12741,14 @@
       "cache_write": 0.5635,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.902,
           "output": 5.412,
           "cache_read": 0.1804,
           "cache_write": 1.1275
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.3522,
           "output": 8.1132,
           "cache_read": 0.27044,
@@ -12788,13 +12788,13 @@
       "cache_read": 0.0,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.2054,
           "output": 2.054,
           "cache_read": 0.0
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.411,
           "output": 4.11,
           "cache_read": 0.0
@@ -12833,7 +12833,7 @@
       "output": 0.9008,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.2818,
           "output": 2.2544
         }
@@ -12871,7 +12871,7 @@
       "output": 0.6768,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.2536,
           "output": 2.0288
         }
@@ -12909,7 +12909,7 @@
       "output": 0.4512,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.2254,
           "output": 1.8032
         }
@@ -12947,7 +12947,7 @@
       "output": 0.9864,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.411,
           "output": 2.466
         }
@@ -12986,14 +12986,14 @@
       "cache_write": 0.03525,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.1126,
           "output": 1.126,
           "cache_read": 0.01126,
           "cache_write": 0.14075
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.169,
           "output": 1.69,
           "cache_read": 0.0169,
@@ -13035,14 +13035,14 @@
       "cache_write": 0.137,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.274,
           "output": 1.644,
           "cache_read": 0.0274,
           "cache_write": 0.3425
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.548,
           "output": 3.288,
           "cache_read": 0.0548,
@@ -13115,7 +13115,7 @@
       "cache_write": 0.21125,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.68,
           "output": 4.06,
           "cache_read": 0.0676,
@@ -13155,7 +13155,7 @@
       "cache_write": 1.585,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 2.11,
           "output": 12.67,
           "cache_read": 0.2112,
@@ -13197,7 +13197,7 @@
       "cache_write": 0.3525,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.13,
           "output": 6.77,
           "cache_read": 0.1128,
@@ -13580,7 +13580,7 @@
       "cache_read": 0.088,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.88,
           "output": 4.4,
           "cache_read": 0.176
@@ -13651,7 +13651,7 @@
       "cache_read": 0.22,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.2,
           "output": 6.6,
           "cache_read": 0.44
@@ -14496,7 +14496,7 @@
       "output": 2.58,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.86,
           "output": 3.154
         }
@@ -14532,7 +14532,7 @@
       "cache_read": 0.17,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.1,
           "output": 3.851
         }
@@ -15823,12 +15823,12 @@
       "output": 0.861,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.323,
           "output": 1.291
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.538,
           "output": 2.151
         }
@@ -15864,12 +15864,12 @@
       "output": 3.441,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.291,
           "output": 5.161
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 2.151,
           "output": 8.602
         }
@@ -15934,17 +15934,17 @@
       "output": 2.296,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.861,
           "output": 3.444
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.435,
           "output": 5.74
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.87,
           "output": 28.7
         }
@@ -15980,12 +15980,12 @@
       "output": 1.434,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.574,
           "output": 2.294
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.004,
           "output": 4.014
         }
@@ -16236,7 +16236,7 @@
       "output": 1.032,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.43,
           "output": 2.58
         }
@@ -16274,12 +16274,12 @@
       "output": 0.287,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.115,
           "output": 1.147
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.172,
           "output": 1.72
         }
@@ -16317,12 +16317,12 @@
       "output": 0.688,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.287,
           "output": 1.72
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.573,
           "output": 3.44
         }
@@ -16422,7 +16422,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -16463,14 +16463,14 @@
       "cache_write": 0.03703,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.08887,
           "output": 0.35549,
           "cache_read": 0.008887,
           "cache_write": 0.11109
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.17774,
           "output": 0.71098,
           "cache_read": 0.017774,
@@ -16542,7 +16542,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -20020,12 +20020,12 @@
       "output": 2.25,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.75,
           "output": 3.75
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.2,
           "output": 6.0
         }
@@ -20061,12 +20061,12 @@
       "output": 7.5,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 2.7,
           "output": 13.5
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 4.5,
           "output": 22.5
         }
@@ -20751,7 +20751,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -20792,14 +20792,14 @@
       "cache_write": 0.0375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1,
           "output": 0.4,
           "cache_read": 0.01,
           "cache_write": 0.125
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.2,
           "output": 0.8,
           "cache_read": 0.02,
@@ -20871,7 +20871,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.12,
@@ -21311,7 +21311,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -21947,7 +21947,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.55,
           "output": 2.75,
           "cache_read": 0.055,
@@ -22638,7 +22638,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.55,
           "output": 2.75,
           "cache_read": 0.055,
@@ -23290,7 +23290,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -23792,7 +23792,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -23841,7 +23841,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -23890,7 +23890,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -23938,7 +23938,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -23987,7 +23987,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -24036,7 +24036,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -24084,7 +24084,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -24551,7 +24551,7 @@
       "cache_write": 0.275,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.44,
           "output": 1.98,
           "cache_read": 0.044,
@@ -24601,7 +24601,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 19.8,
           "cache_read": 0.44,
@@ -24722,7 +24722,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.55,
           "output": 2.75,
           "cache_read": 0.055,
@@ -25787,7 +25787,7 @@
       "cache_write": 0.275,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.44,
           "output": 1.98,
           "cache_read": 0.044,
@@ -25837,7 +25837,7 @@
       "cache_write": 5.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.8,
           "output": 33.0,
           "cache_read": 0.88,
@@ -25887,7 +25887,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 19.8,
           "cache_read": 0.44,
@@ -25936,7 +25936,7 @@
       "cache_write": 13.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 22.0,
           "output": 82.5,
           "cache_read": 2.2,
@@ -25986,7 +25986,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.22,
           "output": 0.825,
           "cache_read": 0.022,
@@ -26036,7 +26036,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 16.5,
           "cache_read": 0.44,
@@ -26085,7 +26085,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 16.5,
           "cache_read": 0.22,
@@ -26886,7 +26886,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.55,
           "output": 2.75,
           "cache_read": 0.055,
@@ -27626,7 +27626,7 @@
       "cache_write": 0.275,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.44,
           "output": 1.98,
           "cache_read": 0.044,
@@ -27675,7 +27675,7 @@
       "cache_write": 5.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.8,
           "output": 33.0,
           "cache_read": 0.88,
@@ -27724,7 +27724,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 19.8,
           "cache_read": 0.44,
@@ -27772,7 +27772,7 @@
       "cache_write": 13.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 22.0,
           "output": 82.5,
           "cache_read": 2.2,
@@ -27821,7 +27821,7 @@
       "cache_write": 0.1375,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.22,
           "output": 0.825,
           "cache_read": 0.022,
@@ -27870,7 +27870,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 16.5,
           "cache_read": 0.44,
@@ -27918,7 +27918,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 16.5,
           "cache_read": 0.22,
@@ -29047,7 +29047,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -30954,7 +30954,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -31001,7 +31001,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -31074,7 +31074,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -31249,7 +31249,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -31411,7 +31411,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -31570,7 +31570,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -31659,7 +31659,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -32922,7 +32922,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -33043,7 +33043,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -33089,7 +33089,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -33138,7 +33138,7 @@
       "cache_write": 1.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 2.0,
           "output": 9.0,
           "cache_read": 0.2,
@@ -33187,7 +33187,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -33236,7 +33236,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -33286,7 +33286,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -33336,7 +33336,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -33386,7 +33386,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -33435,7 +33435,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -34450,7 +34450,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -34609,7 +34609,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -34698,7 +34698,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -36019,7 +36019,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -36140,7 +36140,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -36186,7 +36186,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -36235,7 +36235,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -36285,7 +36285,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -36335,7 +36335,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -36385,7 +36385,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -36435,7 +36435,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -36485,7 +36485,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -36534,7 +36534,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -40661,7 +40661,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.12,
@@ -42280,7 +42280,7 @@
       "cache_write": 12.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -42330,7 +42330,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -42380,7 +42380,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -42430,7 +42430,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -42710,7 +42710,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -42754,7 +42754,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -42800,7 +42800,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -48188,7 +48188,7 @@
       "cache_read": 0.003,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -49005,7 +49005,7 @@
       "cache_write": 1.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25,
@@ -49093,7 +49093,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -49361,7 +49361,7 @@
       "cache_write": 0.33,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.66,
           "output": 2.63,
           "cache_read": 0.132,
@@ -49544,7 +49544,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -49670,7 +49670,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -49714,7 +49714,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -49761,7 +49761,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -49810,7 +49810,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -49859,7 +49859,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -49907,7 +49907,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -49956,7 +49956,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -50005,7 +50005,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -50053,7 +50053,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -50094,7 +50094,7 @@
       "cache_write": 0.24,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.75,
           "output": 4.5,
           "cache_read": 0.075,
@@ -50136,7 +50136,7 @@
       "cache_write": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.25,
           "output": 7.5,
           "cache_read": 0.124,
@@ -50177,14 +50177,14 @@
       "cache_write": 0.04,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1,
           "output": 0.37,
           "cache_read": 0.02,
           "cache_write": 0.12
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.19,
           "output": 0.74,
           "cache_read": 0.04,
@@ -50256,7 +50256,7 @@
       "cache_write": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.96,
           "output": 3.75,
           "cache_read": 0.096,
@@ -50481,7 +50481,7 @@
       "cache_write": 1.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4,
@@ -50526,7 +50526,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6,
@@ -50573,7 +50573,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0,
@@ -50620,7 +50620,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0,
@@ -50660,7 +50660,7 @@
       "cache_write": 1.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4,
@@ -50853,7 +50853,7 @@
       "cache_write": 0.47,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.62,
           "output": 2.47,
           "cache_read": 0.13,
@@ -50892,7 +50892,7 @@
       "cache_write": 0.6,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.8,
           "output": 3.4,
           "cache_read": 0.2,
@@ -50931,7 +50931,7 @@
       "cache_write": 0.9,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.1,
           "output": 4.3,
           "cache_read": 0.27,
@@ -50970,7 +50970,7 @@
       "cache_write": 1.0,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.2,
           "output": 4.4,
           "cache_read": 0.3,
@@ -52080,7 +52080,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -52166,7 +52166,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -52252,7 +52252,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -52516,7 +52516,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -52633,7 +52633,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -52678,7 +52678,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 2.0,
           "output": 9.0,
           "cache_read": 0.2
@@ -52724,7 +52724,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -52769,7 +52769,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -52916,7 +52916,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.0,
           "output": 6.0,
           "cache_read": 0.2
@@ -52954,7 +52954,7 @@
       "cache_read": 0.02,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.2,
           "output": 0.8,
           "cache_read": 0.2
@@ -52992,7 +52992,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.0,
           "output": 6.0,
           "cache_read": 0.2
@@ -53235,13 +53235,13 @@
       "cache_read": 0.24,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 2.4,
           "output": 12.0,
           "cache_read": 0.48
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 3.0,
           "output": 15.0,
           "cache_read": 0.6
@@ -53556,13 +53556,13 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 5.0,
           "output": 15.0,
           "cache_read": 1.0
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 6.25,
           "output": 18.5,
           "cache_read": 1.25
@@ -55460,7 +55460,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -55507,7 +55507,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -55781,7 +55781,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -55943,7 +55943,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.4,
@@ -55990,7 +55990,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.3,
@@ -57696,7 +57696,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -57815,7 +57815,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -57860,7 +57860,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -57907,7 +57907,7 @@
       "cache_read": 0.02,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04
@@ -57954,7 +57954,7 @@
       "cache_read": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8
@@ -58001,7 +58001,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -58047,7 +58047,7 @@
       "cache_read": 1.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0
@@ -58093,7 +58093,7 @@
       "cache_read": 0.01,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02
@@ -58139,7 +58139,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4
@@ -58185,7 +58185,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2
@@ -62954,7 +62954,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -63002,7 +63002,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -63291,7 +63291,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -64372,7 +64372,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -64969,7 +64969,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -65091,7 +65091,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -65137,7 +65137,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -65181,7 +65181,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -65229,7 +65229,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -65279,7 +65279,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -65329,7 +65329,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -65378,7 +65378,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -65428,7 +65428,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -65478,7 +65478,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -65527,7 +65527,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -65611,7 +65611,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -67800,7 +67800,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -68494,7 +68494,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -68541,7 +68541,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -68579,7 +68579,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -68617,7 +68617,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -68662,7 +68662,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -68706,7 +68706,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -68752,7 +68752,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -68798,7 +68798,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -68837,7 +68837,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -69342,7 +69342,7 @@
       "cache_read": 1.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 15.0,
           "output": 67.5,
           "cache_read": 3.0
@@ -69385,7 +69385,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -69428,7 +69428,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -69629,7 +69629,7 @@
       "cache_read": 0.165,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.1,
           "output": 3.851,
           "cache_read": 0.22
@@ -70133,7 +70133,7 @@
       "cache_read": 0.045,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.45,
           "output": 1.8,
           "cache_read": 0.09
@@ -70364,7 +70364,7 @@
       "cache_read": 0.115,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.287,
           "output": 2.294,
           "cache_read": 0.287
@@ -70410,7 +70410,7 @@
       "cache_read": 0.086,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.258,
           "output": 2.064,
           "cache_read": 0.258
@@ -70456,7 +70456,7 @@
       "cache_read": 0.057,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.229,
           "output": 1.835,
           "cache_read": 0.229
@@ -70502,7 +70502,7 @@
       "cache_read": 0.172,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.43,
           "output": 2.58,
           "cache_read": 0.43
@@ -70648,7 +70648,7 @@
       "cache_read": 0.36,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.08,
           "output": 6.62,
           "cache_read": 1.08
@@ -70768,7 +70768,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.0,
           "output": 4.0,
           "cache_read": 1.0
@@ -70813,7 +70813,7 @@
       "cache_read": 1.31,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.97,
           "output": 11.82,
           "cache_read": 1.97
@@ -70853,7 +70853,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 2.0
@@ -70899,13 +70899,13 @@
       "cache_read": 0.006,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1,
           "output": 0.4,
           "cache_read": 0.02
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.2,
           "output": 0.8,
           "cache_read": 0.04
@@ -70988,7 +70988,7 @@
       "cache_read": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 1.2
@@ -71178,13 +71178,13 @@
       "cache_read": 1.08,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 2.16,
           "output": 11.04,
           "cache_read": 2.16
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 2.7,
           "output": 13.8,
           "cache_read": 2.7
@@ -71228,7 +71228,7 @@
       "cache_read": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.8,
           "output": 4.8,
           "cache_read": 0.8
@@ -71272,7 +71272,7 @@
       "cache_read": 0.31,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.62,
           "output": 5.0,
           "cache_read": 0.62
@@ -71316,7 +71316,7 @@
       "cache_read": 0.12,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.24,
           "output": 1.0,
           "cache_read": 0.24
@@ -71360,7 +71360,7 @@
       "cache_read": 0.63,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.26,
           "output": 7.58,
           "cache_read": 1.26
@@ -76565,7 +76565,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -76681,7 +76681,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -76730,7 +76730,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -76780,7 +76780,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -76830,7 +76830,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -76879,7 +76879,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -76929,7 +76929,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -76979,7 +76979,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -77028,7 +77028,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -77072,7 +77072,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -77117,7 +77117,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -77163,7 +77163,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -78434,7 +78434,7 @@
       "cache_read": 0.12,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.24
@@ -79075,7 +79075,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -79227,7 +79227,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -79276,7 +79276,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -79325,7 +79325,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -79519,7 +79519,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -79761,7 +79761,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -80480,7 +80480,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -80746,7 +80746,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -80793,7 +80793,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -81381,7 +81381,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -81419,7 +81419,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -81457,7 +81457,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -81496,7 +81496,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -81628,7 +81628,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -81671,7 +81671,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -81709,7 +81709,7 @@
       "output": 10.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0
         }
@@ -81879,7 +81879,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -82317,7 +82317,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -82364,7 +82364,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -87726,7 +87726,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -91744,7 +91744,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -91831,7 +91831,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -92719,7 +92719,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -92839,7 +92839,7 @@
       "cache_read": 3.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0,
           "cache_read": 3.0
@@ -92886,7 +92886,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -92931,7 +92931,7 @@
       "cache_read": 3.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0,
           "cache_read": 3.0
@@ -92979,7 +92979,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -93028,7 +93028,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -93077,7 +93077,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -93262,7 +93262,7 @@
       "cache_read": 0.05,
       "tiers": [
         {
-          "min_input_tokens": 262144,
+          "above_input_tokens": 262144,
           "input": 1.0,
           "output": 4.0,
           "cache_read": 0.2
@@ -93331,7 +93331,7 @@
       "cache_read": 0.08,
       "tiers": [
         {
-          "min_input_tokens": 262144,
+          "above_input_tokens": 262144,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.24
@@ -112003,7 +112003,7 @@
       "cache_read": 0.003,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.8,
           "output": 4.0,
           "cache_read": 0.16
@@ -112045,7 +112045,7 @@
       "cache_read": 0.004,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -114834,7 +114834,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -116233,7 +116233,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -116703,7 +116703,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -117720,7 +117720,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -120956,7 +120956,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -121084,7 +121084,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -121444,7 +121444,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -121572,7 +121572,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -123924,7 +123924,7 @@
       "cache_read": 0.0034,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.8,
           "output": 4.0,
           "cache_read": 0.16
@@ -123969,7 +123969,7 @@
       "cache_read": 0.0043,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -125494,7 +125494,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -125538,7 +125538,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -126032,7 +126032,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -127668,7 +127668,7 @@
       "cache_read": 0.0036,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -128526,7 +128526,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -128569,7 +128569,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -128828,7 +128828,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -128871,7 +128871,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -128915,7 +128915,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -129066,7 +129066,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -129113,7 +129113,7 @@
       "cache_read": 0.0028,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.8,
           "output": 4.0,
           "cache_read": 0.16
@@ -129157,7 +129157,7 @@
       "cache_read": 0.0036,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -130889,7 +130889,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -131017,7 +131017,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -132921,7 +132921,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -132965,7 +132965,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -133419,7 +133419,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -133463,7 +133463,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -133502,7 +133502,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -133546,7 +133546,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -133656,7 +133656,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -133809,7 +133809,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -134603,7 +134603,7 @@
       "cache_read": 0.0028,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.8,
           "output": 4.0,
           "cache_read": 0.16
@@ -134650,7 +134650,7 @@
       "cache_read": 0.0036,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -136629,7 +136629,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -140778,7 +140778,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -140892,7 +140892,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -141049,7 +141049,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -141095,7 +141095,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -143047,7 +143047,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -143172,7 +143172,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -144919,7 +144919,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -144957,7 +144957,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -146374,7 +146374,7 @@
       "cache_read": 0.06,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.6,
           "output": 2.4,
           "cache_read": 0.12
@@ -146840,7 +146840,7 @@
       "cache_read": 0.06,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.6,
           "output": 2.4,
           "cache_read": 0.12
@@ -168991,7 +168991,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -169387,7 +169387,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -169510,7 +169510,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -170924,7 +170924,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -171427,7 +171427,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -171553,7 +171553,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -171598,7 +171598,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -171647,7 +171647,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -171698,7 +171698,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -171749,7 +171749,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -171799,7 +171799,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -176063,7 +176063,7 @@
       "cache_read": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -176101,7 +176101,7 @@
       "cache_read": 0.0043,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.522,
           "output": 1.044,
           "cache_read": 0.0043
@@ -179660,7 +179660,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -179698,7 +179698,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -179742,7 +179742,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -179787,7 +179787,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -186184,7 +186184,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -186303,7 +186303,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -186349,7 +186349,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -186393,7 +186393,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -186441,7 +186441,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -186491,7 +186491,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -186541,7 +186541,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -186591,7 +186591,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -186640,7 +186640,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -186690,7 +186690,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -186740,7 +186740,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -186789,7 +186789,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -186839,7 +186839,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -187380,7 +187380,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -187674,7 +187674,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -187724,7 +187724,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -187768,7 +187768,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -187813,7 +187813,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -187859,7 +187859,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -188281,7 +188281,7 @@
       "cache_read": 0.06,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.6,
           "output": 2.4,
           "cache_read": 0.12
@@ -188402,7 +188402,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -188473,7 +188473,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.12,
@@ -188847,7 +188847,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100000,
+          "above_input_tokens": 100000,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -189159,7 +189159,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -189201,7 +189201,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -189646,7 +189646,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -189693,7 +189693,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -190628,7 +190628,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -190790,7 +190790,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -190876,7 +190876,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -190926,7 +190926,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -190976,7 +190976,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -191025,7 +191025,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -191075,7 +191075,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -191125,7 +191125,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -191174,7 +191174,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -191218,7 +191218,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -191263,7 +191263,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -191309,7 +191309,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -193594,7 +193594,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -193643,7 +193643,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -193805,7 +193805,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -193847,7 +193847,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -193895,7 +193895,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -194100,7 +194100,7 @@
       "output": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.5,
           "output": 4.0
         }
@@ -194137,7 +194137,7 @@
       "output": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.1,
           "output": 0.8
         }
@@ -194179,7 +194179,7 @@
       "output": 3.0,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.0,
           "output": 6.0
         }
@@ -194222,7 +194222,7 @@
       "output": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.5,
           "output": 4.0
         }
@@ -194265,7 +194265,7 @@
       "output": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.2,
           "output": 0.8
         }
@@ -195080,7 +195080,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -195122,7 +195122,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -195464,7 +195464,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -195512,7 +195512,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -199419,7 +199419,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -199580,7 +199580,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -199626,7 +199626,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -199670,7 +199670,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -199718,7 +199718,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -199768,7 +199768,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -199818,7 +199818,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -199868,7 +199868,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -199918,7 +199918,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -199968,7 +199968,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -200017,7 +200017,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -200065,7 +200065,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -200115,7 +200115,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -200164,7 +200164,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -200214,7 +200214,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -200263,7 +200263,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -200312,7 +200312,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -200360,7 +200360,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -201424,7 +201424,7 @@
       "cache_write": 0.325,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.78,
           "output": 2.34,
           "cache_read": 0.156,
@@ -201785,14 +201785,14 @@
       "cache_write": 0.24375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.325,
           "output": 1.625,
           "cache_read": 0.065,
           "cache_write": 0.40625
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.52,
           "output": 2.6,
           "cache_read": 0.104,
@@ -201862,14 +201862,14 @@
       "cache_write": 0.8125,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.17,
           "output": 5.85,
           "cache_read": 0.234,
           "cache_write": 1.4625
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.95,
           "output": 9.75,
           "cache_read": 0.39,
@@ -201909,14 +201909,14 @@
       "cache_write": 0.975,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.56,
           "output": 7.8,
           "cache_read": 0.312,
           "cache_write": 1.95
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.95,
           "output": 9.75,
           "cache_read": 0.39,
@@ -201953,12 +201953,12 @@
       "output": 3.9,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.56,
           "output": 7.8
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.95,
           "output": 9.75
         }
@@ -202445,7 +202445,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.375,
           "output": 2.25,
           "cache_write": 0.46875
@@ -202484,7 +202484,7 @@
       "output": 1.56,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.325,
           "output": 1.95
         }
@@ -202584,7 +202584,7 @@
       "cache_write": 0.234375,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.75,
           "output": 3.0,
           "cache_write": 0.9375
@@ -202622,7 +202622,7 @@
       "cache_write": 1.28375,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.58,
           "output": 9.48,
           "cache_write": 1.975
@@ -202662,7 +202662,7 @@
       "cache_write": 0.40625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.3,
           "output": 3.9,
           "cache_write": 1.625
@@ -202702,14 +202702,14 @@
       "cache_write": 0.038,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1,
           "output": 0.4,
           "cache_read": 0.02,
           "cache_write": 0.125
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.2,
           "output": 0.8,
           "cache_read": 0.04,
@@ -202780,7 +202780,7 @@
       "cache_write": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.96,
           "output": 3.84,
           "cache_read": 0.192,
@@ -203185,7 +203185,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -203230,7 +203230,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -204137,7 +204137,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -204183,7 +204183,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -204228,7 +204228,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -204272,7 +204272,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -204318,7 +204318,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -204364,7 +204364,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -204403,7 +204403,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -205406,7 +205406,7 @@
       "cache_write": 0.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -205489,7 +205489,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -205539,7 +205539,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -205627,7 +205627,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -205677,7 +205677,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -205723,7 +205723,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -206097,7 +206097,7 @@
       "cache_write": 4.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.6,
           "output": 24.75,
           "cache_read": 0.66,
@@ -206327,7 +206327,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -206693,7 +206693,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -206812,7 +206812,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -206858,7 +206858,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -206942,7 +206942,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -206992,7 +206992,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -207042,7 +207042,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -207090,7 +207090,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -207246,7 +207246,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -207371,7 +207371,7 @@
       "cache_read": 0.12,
       "tiers": [
         {
-          "min_input_tokens": 524288,
+          "above_input_tokens": 524288,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.24
@@ -208452,7 +208452,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -208619,7 +208619,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -208666,7 +208666,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -209003,7 +209003,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -210232,7 +210232,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -210351,7 +210351,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -210397,7 +210397,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -210441,7 +210441,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -211123,7 +211123,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -212679,7 +212679,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -212728,7 +212728,7 @@
       "cache_read": 0.05,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 0.5,
           "output": 3.0,
           "cache_read": 0.05
@@ -212777,7 +212777,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -213181,7 +213181,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -222058,7 +222058,7 @@
       "output": 0.71,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 0.09,
           "output": 0.71
         }
@@ -222098,7 +222098,7 @@
       "output": 0.43,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 0.07,
           "output": 0.43
         }
@@ -226049,7 +226049,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -226098,7 +226098,7 @@
       "cache_write": 4.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.6,
           "output": 24.75,
           "cache_read": 0.6,
@@ -226227,7 +226227,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -226749,7 +226749,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -226883,7 +226883,7 @@
       "cache_write": 2.375,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.62,
@@ -227098,7 +227098,7 @@
       "cache_write": 4.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -228350,7 +228350,7 @@
       "cache_read": 0.275,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.5,
           "output": 24.75,
           "cache_read": 0.55
@@ -228474,7 +228474,7 @@
       "cache_read": 0.55,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 11.0,
           "output": 49.5,
           "cache_read": 1.1
@@ -228522,7 +228522,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -228571,7 +228571,7 @@
       "cache_write": 0.275,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.44,
           "output": 1.98,
           "cache_read": 0.044,
@@ -228620,7 +228620,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -228669,7 +228669,7 @@
       "cache_write": 5.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.8,
           "output": 33.0,
           "cache_read": 0.88,
@@ -228718,7 +228718,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -228767,7 +228767,7 @@
       "cache_write": 2.75,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.4,
           "output": 19.8,
           "cache_read": 0.44,
@@ -228854,7 +228854,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -228903,7 +228903,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -228952,7 +228952,7 @@
       "cache_write": 0.15,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.24,
           "output": 0.9,
           "cache_read": 0.024,
@@ -229001,7 +229001,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -229050,7 +229050,7 @@
       "cache_write": 3.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.8,
           "output": 18.0,
           "cache_read": 0.48,
@@ -229099,7 +229099,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -229148,7 +229148,7 @@
       "cache_write": 3.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.8,
           "output": 18.0,
           "cache_read": 0.24,
@@ -229194,7 +229194,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.4,
@@ -229242,7 +229242,7 @@
       "cache_write": 1.25,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4,
@@ -229289,7 +229289,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0,
@@ -229337,7 +229337,7 @@
       "cache_write": 2.0,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0,
@@ -232465,7 +232465,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -233851,7 +233851,7 @@
       "cache_read": 0.1,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 2.0,
           "output": 9.0,
           "cache_read": 0.2
@@ -233899,7 +233899,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -233947,7 +233947,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -241606,7 +241606,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -241653,7 +241653,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -242268,7 +242268,7 @@
       "cache_read": 0.06,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.6,
           "output": 2.4,
           "cache_read": 0.12
@@ -242661,7 +242661,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -242700,7 +242700,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -242745,7 +242745,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -242789,7 +242789,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -242835,7 +242835,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -242881,7 +242881,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -242920,7 +242920,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -249981,7 +249981,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -250321,7 +250321,7 @@
       "cache_read": 0.23,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.83,
           "output": 5.67,
           "cache_read": 0.45
@@ -250358,7 +250358,7 @@
       "cache_read": 0.23,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.83,
           "output": 5.67,
           "cache_read": 0.45
@@ -250402,7 +250402,7 @@
       "cache_read": 0.23,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.83,
           "output": 5.67,
           "cache_read": 0.45
@@ -250445,7 +250445,7 @@
       "cache_read": 0.34,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.53,
           "output": 13.6,
           "cache_read": 0.68
@@ -250490,7 +250490,7 @@
       "cache_read": 0.57,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.53,
           "output": 13.6,
           "cache_read": 1.13
@@ -250535,7 +250535,7 @@
       "cache_read": 0.57,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.53,
           "output": 13.6,
           "cache_read": 1.13
@@ -250573,7 +250573,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -251423,7 +251423,7 @@
       "output": 225.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 75.0,
           "output": 337.5
         }
@@ -251468,7 +251468,7 @@
       "cache_read": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 12.5,
           "output": 56.25,
           "cache_read": 1.25
@@ -251551,7 +251551,7 @@
       "cache_write": 0.3125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.5,
           "output": 2.25,
           "cache_read": 0.05,
@@ -251599,7 +251599,7 @@
       "cache_write": 0.3125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.5,
           "output": 2.25,
           "cache_read": 0.05,
@@ -251648,7 +251648,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -251697,7 +251697,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 37.5,
           "cache_read": 1.0,
@@ -251746,7 +251746,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -251794,7 +251794,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -251842,7 +251842,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -251888,7 +251888,7 @@
       "cache_write": 15.625,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 25.0,
           "output": 93.75,
           "cache_read": 2.5,
@@ -251937,7 +251937,7 @@
       "cache_write": 0.15625,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.25,
           "output": 0.9375,
           "cache_read": 0.025,
@@ -251986,7 +251986,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 18.75,
           "cache_read": 0.5,
@@ -252034,7 +252034,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 18.75,
           "cache_read": 0.25,
@@ -252110,7 +252110,7 @@
       "cache_write": 0.78,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.5,
           "output": 7.5,
           "cache_read": 0.0625,
@@ -252184,7 +252184,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.5,
           "output": 6.0,
           "cache_read": 0.15,
@@ -253293,7 +253293,7 @@
       "cache_write": 1.625,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 2.0,
           "output": 12.0,
           "cache_read": 0.2,
@@ -253363,13 +253363,13 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 32001,
+          "above_input_tokens": 32001,
           "input": 2.7,
           "output": 13.5,
           "cache_read": 0.54
         },
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 4.5,
           "output": 22.5,
           "cache_read": 0.9
@@ -253465,19 +253465,19 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 32001,
+          "above_input_tokens": 32001,
           "input": 1.8,
           "output": 9.0,
           "cache_read": 0.36
         },
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 3.0,
           "output": 15.0,
           "cache_read": 0.6
         },
         {
-          "min_input_tokens": 256001,
+          "above_input_tokens": 256001,
           "input": 6.0,
           "output": 60.0,
           "cache_read": 1.2
@@ -253590,13 +253590,13 @@
       "cache_read": 0.24,
       "tiers": [
         {
-          "min_input_tokens": 32001,
+          "above_input_tokens": 32001,
           "input": 2.4,
           "output": 12.0,
           "cache_read": 0.48
         },
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 3.0,
           "output": 15.0,
           "cache_read": 0.6
@@ -253634,13 +253634,13 @@
       "cache_read": 0.24,
       "tiers": [
         {
-          "min_input_tokens": 32001,
+          "above_input_tokens": 32001,
           "input": 2.4,
           "output": 12.0,
           "cache_read": 0.48
         },
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 3.0,
           "output": 15.0,
           "cache_read": 0.6
@@ -253678,13 +253678,13 @@
       "cache_read": 0.24,
       "tiers": [
         {
-          "min_input_tokens": 32001,
+          "above_input_tokens": 32001,
           "input": 2.4,
           "output": 12.0,
           "cache_read": 0.48
         },
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 3.0,
           "output": 15.0,
           "cache_read": 0.6
@@ -253924,7 +253924,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256001,
+          "above_input_tokens": 256001,
           "input": 0.5,
           "output": 3.0,
           "cache_read": 0.05,
@@ -254005,7 +254005,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -254055,14 +254055,14 @@
       "cache_write": 0.038,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1,
           "output": 0.4,
           "cache_read": 0.02,
           "cache_write": 0.125
         },
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.2,
           "output": 0.8,
           "cache_read": 0.04,
@@ -254152,7 +254152,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.24,
@@ -254963,7 +254963,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 100001,
+          "above_input_tokens": 100001,
           "input": 0.5,
           "output": 2.5,
           "cache_read": 0.05,
@@ -255402,7 +255402,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -255484,7 +255484,7 @@
       "cache_write": 3.75,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 6.0,
           "output": 22.5,
           "cache_read": 0.6,
@@ -255937,7 +255937,7 @@
       "cache_read": 0.05,
       "tiers": [
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 0.5,
           "output": 4.0,
           "cache_read": 0.05
@@ -255982,7 +255982,7 @@
       "cache_read": 0.05,
       "tiers": [
         {
-          "min_input_tokens": 128001,
+          "above_input_tokens": 128001,
           "input": 0.5,
           "output": 4.0,
           "cache_read": 0.05
@@ -257082,7 +257082,7 @@
       "cache_read": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 15.0,
           "cache_read": 0.25
@@ -257338,7 +257338,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -261508,7 +261508,7 @@
       "cache_read": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5
@@ -261715,7 +261715,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -261762,7 +261762,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -261846,7 +261846,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -261894,7 +261894,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.4,
           "output": 1.8,
           "cache_read": 0.04,
@@ -261944,7 +261944,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.8,
           "output": 3.6,
           "cache_read": 0.08,
@@ -261995,7 +261995,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -262046,7 +262046,7 @@
       "cache_write": 10.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 16.0,
           "output": 60.0,
           "cache_read": 1.6,
@@ -262097,7 +262097,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4,
@@ -262148,7 +262148,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 8.0,
           "output": 36.0,
           "cache_read": 0.8,
@@ -262197,7 +262197,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -262245,7 +262245,7 @@
       "cache_write": 25.0,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 40.0,
           "output": 150.0,
           "cache_read": 4.0,
@@ -262295,7 +262295,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -262345,7 +262345,7 @@
       "cache_write": 0.25,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 0.4,
           "output": 1.5,
           "cache_read": 0.04,
@@ -262395,7 +262395,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -262445,7 +262445,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.8,
@@ -262494,7 +262494,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.2,
@@ -262543,7 +262543,7 @@
       "cache_write": 5.0,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 8.0,
           "output": 30.0,
           "cache_read": 0.4,
@@ -263992,7 +263992,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -264033,7 +264033,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272001,
+          "above_input_tokens": 272001,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -264179,7 +264179,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264223,7 +264223,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264261,7 +264261,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264299,7 +264299,7 @@
       "cache_read": 0.4,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264343,7 +264343,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264387,7 +264387,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264431,7 +264431,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -264475,7 +264475,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -264520,7 +264520,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -264565,7 +264565,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -264609,7 +264609,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200001,
+          "above_input_tokens": 200001,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -266877,7 +266877,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
           "cache_read": 0.4
@@ -267379,7 +267379,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -267550,7 +267550,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -267600,7 +267600,7 @@
       "cache_write": 0.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 0.2,
           "output": 0.75,
           "cache_read": 0.02,
@@ -267650,7 +267650,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -267699,7 +267699,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -268218,13 +268218,13 @@
       "cache_read": 0.02375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.17812,
           "output": 2.37494,
           "cache_read": 0.02375
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.35624,
           "output": 3.56241,
           "cache_read": 0.02375
@@ -268262,13 +268262,13 @@
       "cache_read": 0.00445,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.04453,
           "output": 0.4453,
           "cache_read": 0.00445
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.08906,
           "output": 0.8906,
           "cache_read": 0.00445
@@ -268306,13 +268306,13 @@
       "cache_read": 0.02375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.17812,
           "output": 2.37494,
           "cache_read": 0.02375
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.35624,
           "output": 3.56241,
           "cache_read": 0.02375
@@ -268359,13 +268359,13 @@
       "cache_read": 0.02375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.17812,
           "output": 2.37494,
           "cache_read": 0.02375
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.35624,
           "output": 3.56241,
           "cache_read": 0.02375
@@ -268413,13 +268413,13 @@
       "cache_read": 0.095,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.71248,
           "output": 3.56241,
           "cache_read": 0.1425
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.42496,
           "output": 7.12482,
           "cache_read": 0.28499
@@ -268467,13 +268467,13 @@
       "cache_read": 0.01781,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.13359,
           "output": 0.80154,
           "cache_read": 0.02672
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.26718,
           "output": 1.60308,
           "cache_read": 0.05344
@@ -268521,13 +268521,13 @@
       "cache_read": 0.00594,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.05937,
           "output": 0.59374,
           "cache_read": 0.01187
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 0.11875,
           "output": 1.18747,
           "cache_read": 0.02375
@@ -268575,13 +268575,13 @@
       "cache_read": 0.095,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.71248,
           "output": 3.56241,
           "cache_read": 0.1425
         },
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 1.42496,
           "output": 7.12482,
           "cache_read": 0.28499
@@ -268705,7 +268705,7 @@
       "cache_read": 0.02375,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.17812,
           "output": 0.8906,
           "cache_read": 0.02375
@@ -269450,7 +269450,7 @@
       "cache_write": 0.0,
       "tiers": [
         {
-          "min_input_tokens": 512000,
+          "above_input_tokens": 512000,
           "input": 0.66,
           "output": 2.64,
           "cache_read": 0.13,
@@ -270309,7 +270309,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -270348,7 +270348,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -270393,7 +270393,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -270438,7 +270438,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -270482,7 +270482,7 @@
       "cache_read": 0.3,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.6
@@ -270528,7 +270528,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -270574,7 +270574,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -270613,7 +270613,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.0,
           "output": 4.0,
           "cache_read": 0.4
@@ -275520,7 +275520,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0
@@ -275600,7 +275600,7 @@
       "output": 180.0,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 60.0,
           "output": 270.0
         }
@@ -275648,7 +275648,7 @@
       "cache_write": 1.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 2.0,
           "output": 9.0,
           "cache_read": 0.2,
@@ -275698,7 +275698,7 @@
       "cache_write": 6.25,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 10.0,
           "output": 45.0,
           "cache_read": 1.0,
@@ -275748,7 +275748,7 @@
       "cache_write": 3.125,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 5.0,
           "output": 22.5,
           "cache_read": 0.5,
@@ -275797,7 +275797,7 @@
       "cache_write": 12.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 20.0,
           "output": 75.0,
           "cache_read": 2.0,
@@ -275847,7 +275847,7 @@
       "cache_write": 2.5,
       "tiers": [
         {
-          "min_input_tokens": 272000,
+          "above_input_tokens": 272000,
           "input": 4.0,
           "output": 15.0,
           "cache_read": 0.4,
@@ -276006,7 +276006,7 @@
       "cache_write": 0.625,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.2,
@@ -276078,7 +276078,7 @@
       "cache_write": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 1.2,
           "output": 4.8,
           "cache_read": 0.24,
@@ -276545,7 +276545,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.2
@@ -276583,7 +276583,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 128000,
+          "above_input_tokens": 128000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 0.2
@@ -276628,7 +276628,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 2.5,
           "output": 5.0,
           "cache_read": 0.4
@@ -276672,7 +276672,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -276717,7 +276717,7 @@
       "cache_read": 0.5,
       "tiers": [
         {
-          "min_input_tokens": 200000,
+          "above_input_tokens": 200000,
           "input": 4.0,
           "output": 12.0,
           "cache_read": 1.0
@@ -276923,7 +276923,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -276964,7 +276964,7 @@
       "cache_read": 0.08,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 0.8,
           "output": 4.0,
           "cache_read": 0.16
@@ -277002,7 +277002,7 @@
       "cache_read": 0.2,
       "tiers": [
         {
-          "min_input_tokens": 256000,
+          "above_input_tokens": 256000,
           "input": 2.0,
           "output": 6.0,
           "cache_read": 0.4
@@ -277072,7 +277072,7 @@
       "cache_read": 0.0582,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.5823,
           "output": 2.3291,
           "cache_read": 0.1165
@@ -277110,7 +277110,7 @@
       "cache_read": 0.0233,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.1747,
           "output": 1.1645,
           "cache_read": 0.0349
@@ -277148,7 +277148,7 @@
       "cache_read": 0.0582,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.5823,
           "output": 2.3291,
           "cache_read": 0.1165
@@ -277188,7 +277188,7 @@
       "cache_read": 0.0291,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.2911,
           "output": 0.8734,
           "cache_read": 0.0582
@@ -277227,7 +277227,7 @@
       "cache_read": 0.0044,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.0437,
           "output": 0.4367,
           "cache_read": 0.0044
@@ -277267,7 +277267,7 @@
       "cache_read": 0.0,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.0,
           "output": 0.0,
           "cache_read": 0.0
@@ -277305,7 +277305,7 @@
       "cache_read": 0.0582,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.5823,
           "output": 2.3291,
           "cache_read": 0.1165
@@ -277402,7 +277402,7 @@
       "cache_read": 0.14,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 0.87,
           "output": 3.18,
           "cache_read": 0.22
@@ -277439,7 +277439,7 @@
       "cache_read": 0.174,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.02,
           "output": 3.77,
           "cache_read": 0.261
@@ -277476,7 +277476,7 @@
       "cache_read": 0.1903,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.1709,
           "output": 4.098,
           "cache_read": 0.2927
@@ -277657,7 +277657,7 @@
       "cache_read": 0.1743,
       "tiers": [
         {
-          "min_input_tokens": 32000,
+          "above_input_tokens": 32000,
           "input": 1.0165,
           "output": 3.7754,
           "cache_read": 0.2614

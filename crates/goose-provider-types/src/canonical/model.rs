@@ -60,8 +60,8 @@ pub struct Pricing {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PricingTier {
-    /// The tier applies once the prompt reaches this many input tokens
-    pub min_input_tokens: u64,
+    /// The tier applies once the prompt exceeds this many input tokens
+    pub above_input_tokens: u64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<f64>,
@@ -93,8 +93,8 @@ impl Pricing {
         let tier = self
             .tiers
             .iter()
-            .filter(|tier| prompt_tokens >= tier.min_input_tokens)
-            .max_by_key(|tier| tier.min_input_tokens);
+            .filter(|tier| prompt_tokens > tier.above_input_tokens)
+            .max_by_key(|tier| tier.above_input_tokens);
         let input_price = tier.and_then(|t| t.input).or(self.input)?;
         let output_price = tier.and_then(|t| t.output).or(self.output)?;
         let cache_read_price = tier
