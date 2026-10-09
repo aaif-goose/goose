@@ -10,5 +10,6 @@ while true; do
     --recipe "$automation_dir/github_issue_manager.yaml" \
     --params "automation_dir=$automation_dir" \
     --no-session || printf '%s\n' "GitHub issue manager run failed" >&2
+  node "$automation_dir/phase_transitions" || printf '%s\n' "Phase transitions run failed" >&2
   sleep "$interval"
 done
