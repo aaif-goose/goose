@@ -1,10 +1,10 @@
 use crate::acp::server::{
-    new_acp_agent_manager, AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry,
-    GooseAcpAgent, GooseAcpAgentOptions, LiveVoiceService,
+    new_acp_services, AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent,
+    GooseAcpAgentOptions, LiveVoiceService,
 };
 use crate::agents::GoosePlatform;
+use crate::agents::StateMachineServices;
 use crate::config::paths::Paths;
-use crate::execution::manager::AgentManager;
 #[cfg(feature = "scheduler")]
 use crate::scheduler_trait::SchedulerTrait;
 #[cfg(feature = "scheduler")]
@@ -33,7 +33,7 @@ pub struct AcpServer {
     data_dir: std::path::PathBuf,
     #[cfg(feature = "scheduler")]
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
-    agent_manager: tokio::sync::OnceCell<Arc<AgentManager>>,
+    services: tokio::sync::OnceCell<Arc<StateMachineServices>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<crate::acp::server::LiveVoiceService>,
 }
@@ -48,7 +48,7 @@ impl AcpServer {
             data_dir,
             #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
-            agent_manager: tokio::sync::OnceCell::new(),
+            services: tokio::sync::OnceCell::new(),
             active_runs,
             live_voice,
         }
@@ -108,10 +108,10 @@ impl AcpServer {
         }
         #[cfg(not(feature = "scheduler"))]
         let scheduler = None;
-        let agent_manager = self
-            .agent_manager
+        let services = self
+            .services
             .get_or_init(|| async {
-                new_acp_agent_manager(
+                new_acp_services(
                     self.data_dir.clone(),
                     self.config.config_dir.clone(),
                     scheduler,
@@ -134,7 +134,7 @@ impl AcpServer {
             provider_factory,
             builtin_selection: self.config.builtins.clone(),
             config_dir: self.config.config_dir.clone(),
-            agent_manager,
+            services,
             additional_source_roots: self.config.additional_source_roots.clone(),
             session_cwd,
             active_runs: self.active_runs.clone(),
@@ -158,7 +158,7 @@ impl AcpServer {
             data_dir,
             #[cfg(feature = "scheduler")]
             scheduler: OnceCell::new(),
-            agent_manager: tokio::sync::OnceCell::new(),
+            services: tokio::sync::OnceCell::new(),
             active_runs,
             live_voice,
         }
@@ -212,10 +212,7 @@ mod tests {
             a.active_run_registry(),
             b.active_run_registry()
         ));
-        assert!(Arc::ptr_eq(
-            a.agent_manager().agent(),
-            b.agent_manager().agent()
-        ));
+        assert!(Arc::ptr_eq(a.services(), b.services()));
     }
 
     #[tokio::test]

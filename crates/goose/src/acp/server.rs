@@ -30,7 +30,6 @@ use crate::conversation::message::{
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
-use crate::execution::manager::AgentManager;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -174,14 +173,6 @@ impl<T, E: std::fmt::Display> ResultExt<T> for Result<T, E> {
     }
 }
 
-fn agent_creation_error(error: anyhow::Error, context: &str) -> agent_client_protocol::Error {
-    if crate::acp::is_auth_required(&error) {
-        agent_client_protocol::Error::auth_required()
-    } else {
-        agent_client_protocol::Error::internal_error().data(format!("{context}: {error}"))
-    }
-}
-
 /// Only a value the client could usefully change is `invalid_params`; everything
 /// else (a dead agent subprocess, a failed persist, a failed provider respawn) is
 /// an operational failure the client cannot fix by picking differently.
@@ -299,7 +290,7 @@ pub struct GooseAcpAgentOptions {
     pub builtin_selection: AcpBuiltinSelection,
     pub config_dir: std::path::PathBuf,
     /// One per server, shared by every connection.
-    pub agent_manager: Arc<AgentManager>,
+    pub services: Arc<StateMachineServices>,
     pub additional_source_roots: Vec<SourceRoot>,
     /// When set, new sessions use this host-controlled working directory instead
     /// of the `cwd` the connecting client sends (see `AcpServerFactoryConfig`).
@@ -310,21 +301,21 @@ pub struct GooseAcpAgentOptions {
     pub live_voice: Arc<LiveVoiceService>,
 }
 
-/// The agent manager a `goose serve` process shares across its ACP connections.
-pub fn new_acp_agent_manager(
+/// The services a `goose serve` process shares across its ACP connections.
+pub fn new_acp_services(
     data_dir: std::path::PathBuf,
     config_dir: std::path::PathBuf,
     scheduler: Option<Arc<dyn SchedulerTrait>>,
     disable_session_naming: bool,
     goose_platform: GoosePlatform,
-) -> Arc<AgentManager> {
+) -> Arc<StateMachineServices> {
     let session_manager = Arc::new(SessionManager::new(data_dir));
     // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
     let storage = session_manager.storage().clone();
     tokio::spawn(async move {
         let _ = storage.pool().await;
     });
-    Arc::new(AgentManager::new(
+    Arc::new(StateMachineServices::with_config(
         StateMachineServicesConfig::new(
             session_manager,
             Arc::new(PermissionManager::new(config_dir)),
@@ -332,7 +323,6 @@ pub fn new_acp_agent_manager(
             disable_session_naming,
             goose_platform,
         ),
-        None,
     ))
 }
 
@@ -343,7 +333,7 @@ pub struct GooseAcpAgent {
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<LiveVoiceService>,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
-    agent_manager: Arc<AgentManager>,
+    services: Arc<StateMachineServices>,
     provider_factory: AcpProviderFactory,
     builtin_selection: AcpBuiltinSelection,
     client_fs_capabilities: OnceCell<FileSystemCapabilities>,
@@ -850,8 +840,8 @@ impl GooseAcpAgent {
     }
 
     #[cfg(test)]
-    pub(crate) fn agent_manager(&self) -> &Arc<AgentManager> {
-        &self.agent_manager
+    pub(crate) fn services(&self) -> &Arc<StateMachineServices> {
+        &self.services
     }
 
     #[cfg(test)]
@@ -973,8 +963,8 @@ impl GooseAcpAgent {
     }
 
     pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
-        let agent_manager = options.agent_manager;
-        let agent_config = &agent_manager.agent().config;
+        let services = options.services;
+        let agent_config = &services.config;
         let session_manager = Arc::clone(&agent_config.session_manager);
         let permission_manager = Arc::clone(&agent_config.permission_manager);
         let disable_session_naming = agent_config.disable_session_naming;
@@ -987,7 +977,7 @@ impl GooseAcpAgent {
             active_runs: options.active_runs,
             live_voice: options.live_voice,
             closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
-            agent_manager,
+            services,
             provider_factory: options.provider_factory,
             builtin_selection: options.builtin_selection,
             client_fs_capabilities: OnceCell::new(),
@@ -1073,11 +1063,8 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session_id: String,
     ) -> Result<Arc<StateMachineServices>, agent_client_protocol::Error> {
-        let agent = self
-            .agent_manager
-            .agent_for_session(&session_id)
-            .await
-            .map_err(|error| agent_creation_error(error, "Failed to create agent"))?;
+        self.services.touch_session(&session_id).await;
+        let agent = Arc::clone(&self.services);
         if !self.disable_session_naming {
             let tx = self
                 .session_name_update_tx
@@ -1166,6 +1153,14 @@ impl GooseAcpAgent {
         let agent = self
             .get_or_create_session_agent(cx, session.id.clone())
             .await?;
+        if session.provider_name.is_some() {
+            if let Err(error) = agent.restore_provider_from_session(session).await {
+                if crate::acp::is_auth_required(&error) {
+                    return Err(agent_client_protocol::Error::auth_required());
+                }
+                warn!(session_id = %session.id, %error, "Failed to restore provider");
+            }
+        }
         self.apply_acp_extension_overrides(cx, &agent, session)
             .await?;
         // Leases start extensions on first use anyway; starting them here is
@@ -1227,7 +1222,7 @@ impl GooseAcpAgent {
                 .await
                 .internal_err_ctx("Failed to update session")?;
 
-            self.agent_manager.release_session(&session_id).await;
+            self.services.release_session(&session_id).await;
 
             session = self
                 .session_manager
@@ -1957,7 +1952,7 @@ impl GooseAcpAgent {
 
         if self.closed_session_ids.lock().await.contains(session_id) {
             self.sessions.lock().await.remove(session_id);
-            self.agent_manager.release_session(session_id).await;
+            self.services.release_session(session_id).await;
         }
     }
 
@@ -2640,7 +2635,7 @@ impl GooseAcpAgent {
         sessions.remove(session_id);
         drop(sessions);
 
-        self.agent_manager.release_session(session_id).await;
+        self.services.release_session(session_id).await;
 
         info!(session_id = %session_id, "ACP session closed");
         Ok(CloseSessionResponse::new())
@@ -2828,30 +2823,6 @@ mod tests {
         let cwd = effective_session_cwd(Some(host.path()), client_path);
 
         assert!(validate_absolute_cwd(&cwd).is_ok());
-    }
-
-    #[test]
-    fn agent_creation_auth_error_maps_to_auth_required() {
-        let error = anyhow::Error::new(agent_client_protocol::Error::auth_required());
-
-        let error = agent_creation_error(error, "Failed to create agent");
-
-        assert_eq!(
-            error.code,
-            agent_client_protocol::schema::v1::ErrorCode::AuthRequired
-        );
-    }
-
-    #[test]
-    fn agent_creation_non_auth_error_remains_internal() {
-        let error = anyhow::Error::new(agent_client_protocol::Error::internal_error());
-
-        let error = agent_creation_error(error, "Failed to create agent");
-
-        assert_eq!(
-            error.code,
-            agent_client_protocol::schema::v1::ErrorCode::InternalError
-        );
     }
 
     fn config_with_yaml(yaml: &str) -> (Config, NamedTempFile, NamedTempFile) {
@@ -3659,7 +3630,7 @@ print(\"hello, world\")
             provider_factory,
             builtin_selection: AcpBuiltinSelection::default(),
             config_dir: root.path().to_path_buf(),
-            agent_manager: new_acp_agent_manager(
+            services: new_acp_services(
                 root.path().to_path_buf(),
                 root.path().to_path_buf(),
                 None,
@@ -3794,7 +3765,7 @@ print(\"hello, world\")
                 provider_factory,
                 builtin_selection: AcpBuiltinSelection::default(),
                 config_dir: root.path().to_path_buf(),
-                agent_manager: new_acp_agent_manager(
+                services: new_acp_services(
                     root.path().to_path_buf(),
                     root.path().to_path_buf(),
                     None,

@@ -151,7 +151,7 @@ impl GooseAcpAgent {
             .collect();
         *self.recipe_path_cache.lock().await = recipe_file_hash_map;
 
-        let scheduled_jobs = match self.agent_manager.scheduler() {
+        let scheduled_jobs = match self.services.config.scheduler_service.clone() {
             Some(scheduler) => scheduler.list_scheduled_jobs().await,
             None => Vec::new(),
         };

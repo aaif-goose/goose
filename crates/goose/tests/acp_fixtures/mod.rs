@@ -408,7 +408,7 @@ pub async fn spawn_acp_server_in_process(
             ..Default::default()
         },
         config_dir: data_root.to_path_buf(),
-        agent_manager: goose::acp::server::new_acp_agent_manager(
+        services: goose::acp::server::new_acp_services(
             data_root.to_path_buf(),
             data_root.to_path_buf(),
             Some(Arc::new(FixtureScheduler::new())),

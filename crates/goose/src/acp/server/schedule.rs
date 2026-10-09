@@ -125,10 +125,14 @@ impl GooseAcpAgent {
     pub(super) fn require_scheduler(
         &self,
     ) -> Result<Arc<dyn SchedulerTrait>, agent_client_protocol::Error> {
-        self.agent_manager.scheduler().ok_or_else(|| {
-            agent_client_protocol::Error::method_not_found()
-                .data("Scheduled recipe execution is not enabled")
-        })
+        self.services
+            .config
+            .scheduler_service
+            .clone()
+            .ok_or_else(|| {
+                agent_client_protocol::Error::method_not_found()
+                    .data("Scheduled recipe execution is not enabled")
+            })
     }
 
     pub(super) async fn on_list_schedules(

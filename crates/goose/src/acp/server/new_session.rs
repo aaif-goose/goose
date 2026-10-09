@@ -107,7 +107,7 @@ impl GooseAcpAgent {
             );
         }
         self.sessions.lock().await.remove(session_id);
-        self.agent_manager.release_session(session_id).await;
+        self.services.release_session(session_id).await;
     }
 
     async fn configure_new_session(

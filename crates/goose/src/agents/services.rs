@@ -106,6 +106,8 @@ pub struct StateMachineServicesConfig {
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub is_subagent: bool,
     pub providers: Arc<ProviderManager>,
+    /// Sessions kept loaded before the least recently used idle one is released.
+    pub max_sessions: usize,
 }
 
 impl StateMachineServicesConfig {
@@ -126,12 +128,19 @@ impl StateMachineServicesConfig {
             mcp_protocol_version: None,
             is_subagent: false,
             providers: Arc::default(),
+            max_sessions: DEFAULT_MAX_SESSIONS,
         }
     }
 }
 
+const DEFAULT_MAX_SESSIONS: usize = 100;
+
+static INSTANCE: tokio::sync::OnceCell<Arc<StateMachineServices>> =
+    tokio::sync::OnceCell::const_new();
+
 pub struct StateMachineServices {
     pub config: StateMachineServicesConfig,
+    loaded_sessions: Mutex<lru::LruCache<String, ()>>,
 
     pub extension_manager: Arc<ExtensionManager>,
     tool_confirmation_coordinator: ToolConfirmationCoordinator,
@@ -180,6 +189,27 @@ impl StateMachineServices {
         ))
     }
 
+    /// The process-wide services for a `goose gateway`.
+    pub async fn instance() -> Arc<Self> {
+        INSTANCE
+            .get_or_init(|| async {
+                let config = Config::global();
+                let mut services_config = StateMachineServicesConfig::new(
+                    Arc::new(SessionManager::instance()),
+                    PermissionManager::instance(),
+                    None,
+                    config.get_goose_disable_session_naming().unwrap_or(false),
+                    GoosePlatform::GooseDesktop,
+                );
+                services_config.max_sessions = config
+                    .get_goose_max_active_agents()
+                    .unwrap_or(DEFAULT_MAX_SESSIONS);
+                Arc::new(Self::with_config(services_config))
+            })
+            .await
+            .clone()
+    }
+
     pub fn with_config(config: StateMachineServicesConfig) -> Self {
         let providers = config.providers.clone();
 
@@ -193,6 +223,7 @@ impl StateMachineServices {
         let is_subagent = config.is_subagent;
         Self {
             config,
+            loaded_sessions: Mutex::new(lru::LruCache::unbounded()),
             extension_manager: Arc::new(ExtensionManager::new(
                 providers.clone(),
                 session_manager,
@@ -303,9 +334,34 @@ impl StateMachineServices {
             .has_active_turn(session_id)
     }
 
+    /// Marks the session as in use. Once more than `max_sessions` are, the least recently
+    /// used one without a turn in flight is released.
+    pub async fn touch_session(&self, session_id: &str) {
+        let evicted = {
+            let mut loaded = self.loaded_sessions.lock().await;
+            loaded.put(session_id.to_string(), ());
+            let excess = loaded.len().saturating_sub(self.config.max_sessions.max(1));
+            let evicted: Vec<String> = loaded
+                .iter()
+                .rev()
+                .map(|(id, ())| id.clone())
+                .filter(|id| !self.has_active_turn(id))
+                .take(excess)
+                .collect();
+            for id in &evicted {
+                loaded.pop(id);
+            }
+            evicted
+        };
+        for id in evicted {
+            self.release_session(&id).await;
+        }
+    }
+
     /// Stops the session's extensions and drops its provider and pending state. A turn
     /// still running keeps what it already leased.
     pub async fn release_session(&self, session_id: &str) {
+        self.loaded_sessions.lock().await.pop(session_id);
         self.discard_pending_steers(session_id).await;
         self.tool_confirmation_coordinator.release(session_id);
         self.session_name_updates
@@ -1254,6 +1310,173 @@ impl StateMachineServices {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod session_lru {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        use goose_test_support::mcp::McpFixtureServer;
+        use rmcp::ServiceExt;
+        use tokio::sync::Barrier;
+
+        use crate::agents::extension::ExtensionConfig;
+        use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
+        use crate::config::permission::PermissionManager;
+        use crate::config::GooseMode;
+        use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
+
+        fn test_services(temp_dir: &TempDir, max_sessions: usize) -> StateMachineServices {
+            let mut config = StateMachineServicesConfig::new(
+                Arc::new(SessionManager::new(temp_dir.path().to_path_buf())),
+                PermissionManager::instance(),
+                None,
+                true,
+                GoosePlatform::GooseDesktop,
+            );
+            config.max_sessions = max_sessions;
+            StateMachineServices::with_config(config)
+        }
+
+        fn serve_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            tokio::spawn(async move {
+                let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+                let _ = running.waiting().await;
+            });
+        }
+
+        static CONCURRENT_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_concurrent_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            CONCURRENT_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        static EVICTION_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_eviction_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            EVICTION_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        async fn session_with_fixture(
+            services: &StateMachineServices,
+            temp_dir: &TempDir,
+            fixture: &'static str,
+            serve: crate::builtin_extension::SpawnServerFn,
+        ) -> String {
+            crate::builtin_extension::register_builtin_extension(fixture, serve);
+            let session_manager = &services.config.session_manager;
+            let session = session_manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "fixture".to_string(),
+                    SessionType::User,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap();
+            let extension = ExtensionConfig::Builtin {
+                name: fixture.to_string(),
+                display_name: None,
+                description: String::new(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            };
+            let mut extension_data = session.extension_data.clone();
+            EnabledExtensionsState::new(vec![extension])
+                .to_extension_data(&mut extension_data)
+                .unwrap();
+            session_manager
+                .update(&session.id)
+                .extension_data(extension_data)
+                .apply()
+                .await
+                .unwrap();
+            session.id
+        }
+
+        async fn use_session(services: &StateMachineServices, session_id: &str) {
+            services.touch_session(session_id).await;
+            services
+                .extension_manager
+                .current_lease(session_id)
+                .await
+                .unwrap()
+                .start()
+                .await;
+        }
+
+        #[tokio::test]
+        async fn concurrent_first_requests_start_extensions_once() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = Arc::new(test_services(&temp_dir, 100));
+            let session_id = session_with_fixture(
+                &services,
+                &temp_dir,
+                "concurrent_fixture",
+                serve_concurrent_fixture,
+            )
+            .await;
+
+            let callers = 20;
+            let barrier = Arc::new(Barrier::new(callers));
+            let handles = (0..callers).map(|_| {
+                let services = Arc::clone(&services);
+                let session_id = session_id.clone();
+                let barrier = Arc::clone(&barrier);
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    use_session(&services, &session_id).await;
+                })
+            });
+            for handle in futures::future::join_all(handles).await {
+                handle.unwrap();
+            }
+
+            assert_eq!(CONCURRENT_STARTS.load(Ordering::SeqCst), 1);
+        }
+
+        #[tokio::test]
+        async fn eviction_releases_the_least_recently_used_idle_session() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 2);
+            let mut sessions = Vec::new();
+            for _ in 0..3 {
+                sessions.push(
+                    session_with_fixture(
+                        &services,
+                        &temp_dir,
+                        "eviction_fixture",
+                        serve_eviction_fixture,
+                    )
+                    .await,
+                );
+            }
+            let [busy, idle, recent] = <[String; 3]>::try_from(sessions).unwrap();
+            for session_id in [&busy, &idle] {
+                use_session(&services, session_id).await;
+            }
+            let _turn = services.hold_turn_for_test(&busy);
+            let starts_before = EVICTION_STARTS.load(Ordering::SeqCst);
+
+            use_session(&services, &recent).await;
+            use_session(&services, &busy).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                1,
+                "only the new session starts; the busy one keeps its extensions"
+            );
+
+            use_session(&services, &idle).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                2,
+                "the evicted idle session starts its extensions again"
+            );
+        }
+    }
 
     use crate::conversation::message::InferenceMetadata;
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};

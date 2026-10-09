@@ -97,7 +97,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         self.sessions.lock().await.remove(&session_id);
-        self.agent_manager.release_session(&session_id).await;
+        self.services.release_session(&session_id).await;
         Ok(DeleteSessionResponse::new())
     }
 
@@ -228,7 +228,7 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
         self.sessions.lock().await.remove(&req.session_id);
-        self.agent_manager.release_session(&req.session_id).await;
+        self.services.release_session(&req.session_id).await;
         Ok(EmptyResponse {})
     }
 

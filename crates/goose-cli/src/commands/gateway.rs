@@ -1,11 +1,11 @@
 use anyhow::Result;
-use goose::execution::manager::AgentManager;
+use goose::agents::StateMachineServices;
 use goose::gateway::manager::GatewayManager;
 use std::sync::Arc;
 
 pub async fn handle_gateway_status() -> Result<()> {
-    let agent_manager = AgentManager::instance().await?;
-    let gateway_manager = Arc::new(GatewayManager::new(agent_manager)?);
+    let services = StateMachineServices::instance().await;
+    let gateway_manager = Arc::new(GatewayManager::new(services)?);
     let statuses = gateway_manager.status().await;
 
     if statuses.is_empty() {
@@ -38,8 +38,8 @@ pub async fn handle_gateway_start(
     gateway_type: String,
     platform_config: serde_json::Value,
 ) -> Result<()> {
-    let agent_manager = AgentManager::instance().await?;
-    let gateway_manager = Arc::new(GatewayManager::new(agent_manager)?);
+    let services = StateMachineServices::instance().await;
+    let gateway_manager = Arc::new(GatewayManager::new(services)?);
 
     let mut config = goose::gateway::GatewayConfig {
         gateway_type,
@@ -59,16 +59,16 @@ pub async fn handle_gateway_start(
 }
 
 pub async fn handle_gateway_stop(gateway_type: String) -> Result<()> {
-    let agent_manager = AgentManager::instance().await?;
-    let gateway_manager = Arc::new(GatewayManager::new(agent_manager)?);
+    let services = StateMachineServices::instance().await;
+    let gateway_manager = Arc::new(GatewayManager::new(services)?);
     gateway_manager.stop_gateway(&gateway_type).await?;
     println!("Gateway '{}' stopped.", gateway_type);
     Ok(())
 }
 
 pub async fn handle_gateway_pair(gateway_type: String) -> Result<()> {
-    let agent_manager = AgentManager::instance().await?;
-    let gateway_manager = Arc::new(GatewayManager::new(agent_manager)?);
+    let services = StateMachineServices::instance().await;
+    let gateway_manager = Arc::new(GatewayManager::new(services)?);
     let (code, expires_at) = gateway_manager.generate_pairing_code(&gateway_type).await?;
 
     let expires = chrono::DateTime::from_timestamp(expires_at, 0)

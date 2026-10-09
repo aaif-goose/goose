@@ -12,7 +12,6 @@ use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
-use crate::execution::manager::AgentManager;
 use crate::permission::Permission;
 use crate::session::SessionType;
 use crate::session::{EnabledExtensionsState, Session};
@@ -50,7 +49,7 @@ type PerUserLocks = Arc<Mutex<HashMap<PlatformUser, Arc<Mutex<()>>>>>;
 
 #[derive(Clone)]
 pub struct GatewayHandler {
-    agent_manager: Arc<AgentManager>,
+    services: Arc<StateMachineServices>,
     pairing_store: Arc<PairingStore>,
     gateway: Arc<dyn Gateway>,
     config: GatewayConfig,
@@ -66,14 +65,14 @@ pub struct GatewayHandler {
 
 impl GatewayHandler {
     pub fn new(
-        agent_manager: Arc<AgentManager>,
+        services: Arc<StateMachineServices>,
         pairing_store: Arc<PairingStore>,
         gateway: Arc<dyn Gateway>,
         config: GatewayConfig,
     ) -> Self {
         let allowed_user_ids = allowed_user_ids_from_config(&config);
         Self {
-            agent_manager,
+            services,
             pairing_store,
             gateway,
             config,
@@ -313,8 +312,9 @@ impl GatewayHandler {
 
         let config = Config::global();
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .config
+            .session_manager
             .create_session(
                 working_dir,
                 session_name,
@@ -323,7 +323,7 @@ impl GatewayHandler {
             )
             .await?;
 
-        let manager = self.agent_manager.session_manager();
+        let manager = &self.services.config.session_manager;
 
         // Store the current provider and model config on the session so the agent
         // can be restored after LRU eviction, matching the start_agent flow.
@@ -382,7 +382,7 @@ impl GatewayHandler {
     /// processes are torn down).
     async fn sync_session_config(&self, session: &Session) -> anyhow::Result<()> {
         let config = Config::global();
-        let manager = self.agent_manager.session_manager();
+        let manager = &self.services.config.session_manager;
 
         // --- current global config ---
         let current_provider = config.get_goose_provider().ok();
@@ -458,33 +458,22 @@ impl GatewayHandler {
             .await?;
 
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .config
+            .session_manager
             .get_session(session_id, false)
             .await?;
 
         self.sync_session_config(&session).await?;
 
-        let agent = match self.agent_manager.agent_for_session(session_id).await {
-            Ok(agent) => agent,
-            Err(error) if crate::acp::is_auth_required(&error) => {
-                self.gateway
-                    .send_message(
-                        &message.user,
-                        OutgoingMessage::Text {
-                            body: format!("⚠️ Failed to configure provider: {error}"),
-                        },
-                    )
-                    .await?;
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
+        self.services.touch_session(session_id).await;
+        let agent = Arc::clone(&self.services);
 
         // Re-read the session after sync so restore picks up the new values.
         let session = self
-            .agent_manager
-            .session_manager()
+            .services
+            .config
+            .session_manager
             .get_session(session_id, false)
             .await?;
 

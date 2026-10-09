@@ -1,7 +1,7 @@
-use goose::execution::manager::AgentManager;
+use goose::agents::StateMachineServices;
 
 #[tokio::test]
-async fn global_agent_manager_does_not_construct_scheduler() {
+async fn global_services_do_not_construct_scheduler() {
     let root = tempfile::tempdir().unwrap();
     let _guard = env_lock::lock_env([
         ("GOOSE_DISABLE_KEYRING", Some("true")),
@@ -13,8 +13,8 @@ async fn global_agent_manager_does_not_construct_scheduler() {
     let sentinel = b"do not touch";
     std::fs::write(&schedule_path, sentinel).unwrap();
 
-    let manager = AgentManager::instance().await.unwrap();
+    let services = StateMachineServices::instance().await;
 
-    assert!(manager.scheduler().is_none());
+    assert!(services.config.scheduler_service.is_none());
     assert_eq!(std::fs::read(schedule_path).unwrap(), sentinel);
 }
