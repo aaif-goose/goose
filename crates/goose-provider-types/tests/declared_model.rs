@@ -19,10 +19,12 @@ fn exact_model_ids_win_over_case_insensitive_collisions() {
 }
 
 #[test]
-fn case_insensitive_fallback_requires_a_unique_model() {
+fn undeclared_case_variants_do_not_inherit_model_metadata() {
     let models = [ModelInfo::new("Foo").with_vision_support(true)];
 
-    assert_eq!(find_declared_model(&models, "FOO").unwrap().name, "Foo");
+    assert_eq!(find_declared_model(&models, "Foo").unwrap().name, "Foo");
+    assert!(find_declared_model(&models, "foo").is_none());
+    assert!(find_declared_model(&models, "FOO").is_none());
     assert!(find_declared_model(&models, "another-model").is_none());
     assert!(find_declared_model(&[], "Foo").is_none());
 }

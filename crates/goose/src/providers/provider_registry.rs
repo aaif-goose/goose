@@ -496,6 +496,7 @@ mod tests {
         config.models = vec![
             ModelInfo::new("Foo").with_vision_support(false),
             ModelInfo::new("foo").with_vision_support(true),
+            ModelInfo::new("Bar").with_vision_support(true),
         ];
         registry.register_with_name::<OpenAiProviderDef, _, _>(
             &config,
@@ -506,7 +507,12 @@ mod tests {
         );
         let entry = &registry.entries["custom_hf"];
 
-        for (name, expected) in [("Foo", Some(false)), ("foo", Some(true)), ("FOO", None)] {
+        for (name, expected) in [
+            ("Foo", Some(false)),
+            ("foo", Some(true)),
+            ("FOO", None),
+            ("bar", None),
+        ] {
             let model = entry
                 .normalize_model_config(ModelConfig::new(name))
                 .unwrap();

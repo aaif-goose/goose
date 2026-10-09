@@ -118,10 +118,10 @@ async fn model_matching_never_borrows_vision_from_a_case_collision() {
 
         let body = image_request(
             vec![ModelInfo::new("Foo").with_vision_support(true)],
-            ModelConfig::new("FOO"),
+            ModelConfig::new("foo").with_vision_support(false),
             endpoint,
         )
         .await;
-        assert_images(&body, true);
+        assert_images(&body, false);
     }
 }
