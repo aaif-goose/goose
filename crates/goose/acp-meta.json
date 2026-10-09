@@ -271,6 +271,56 @@
       "responseType": "DefaultsReadResponse_unstable"
     },
     {
+      "method": "_goose/unstable/client_extensions/list",
+      "requestType": "ClientExtensionsListRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/install",
+      "requestType": "ClientExtensionsInstallRequest_unstable",
+      "responseType": "ClientExtensionsInstallResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/set_enabled",
+      "requestType": "ClientExtensionsSetEnabledRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/uninstall",
+      "requestType": "ClientExtensionsUninstallRequest_unstable",
+      "responseType": "ClientExtensionsListResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/read_main",
+      "requestType": "ClientExtensionsReadMainRequest_unstable",
+      "responseType": "ClientExtensionsReadMainResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/get",
+      "requestType": "ClientExtensionStorageGetRequest_unstable",
+      "responseType": "ClientExtensionStorageGetResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/set",
+      "requestType": "ClientExtensionStorageSetRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/delete",
+      "requestType": "ClientExtensionStorageDeleteRequest_unstable",
+      "responseType": "ClientExtensionStorageDeleteResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/storage/keys",
+      "requestType": "ClientExtensionStorageKeysRequest_unstable",
+      "responseType": "ClientExtensionStorageKeysResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/client_extensions/net/fetch",
+      "requestType": "ClientExtensionNetFetchRequest_unstable",
+      "responseType": "ClientExtensionNetFetchResponse_unstable"
+    },
+    {
       "method": "_goose/unstable/onboarding/import/scan",
       "requestType": "OnboardingImportScanRequest_unstable",
       "responseType": "OnboardingImportScanResponse_unstable"

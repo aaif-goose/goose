@@ -462,6 +462,86 @@ impl GooseAcpAgent {
         self.on_defaults_clear(req).await
     }
 
+    #[custom_method(ClientExtensionsListRequest)]
+    async fn dispatch_client_extensions_list(
+        &self,
+        req: ClientExtensionsListRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_list(req).await
+    }
+
+    #[custom_method(ClientExtensionsInstallRequest)]
+    async fn dispatch_client_extensions_install(
+        &self,
+        req: ClientExtensionsInstallRequest,
+    ) -> Result<ClientExtensionsInstallResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_install(req).await
+    }
+
+    #[custom_method(ClientExtensionsSetEnabledRequest)]
+    async fn dispatch_client_extensions_set_enabled(
+        &self,
+        req: ClientExtensionsSetEnabledRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_set_enabled(req).await
+    }
+
+    #[custom_method(ClientExtensionsUninstallRequest)]
+    async fn dispatch_client_extensions_uninstall(
+        &self,
+        req: ClientExtensionsUninstallRequest,
+    ) -> Result<ClientExtensionsListResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_uninstall(req).await
+    }
+
+    #[custom_method(ClientExtensionsReadMainRequest)]
+    async fn dispatch_client_extensions_read_main(
+        &self,
+        req: ClientExtensionsReadMainRequest,
+    ) -> Result<ClientExtensionsReadMainResponse, agent_client_protocol::Error> {
+        self.on_client_extensions_read_main(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageGetRequest)]
+    async fn dispatch_client_extension_storage_get(
+        &self,
+        req: ClientExtensionStorageGetRequest,
+    ) -> Result<ClientExtensionStorageGetResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_get(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageSetRequest)]
+    async fn dispatch_client_extension_storage_set(
+        &self,
+        req: ClientExtensionStorageSetRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_set(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageDeleteRequest)]
+    async fn dispatch_client_extension_storage_delete(
+        &self,
+        req: ClientExtensionStorageDeleteRequest,
+    ) -> Result<ClientExtensionStorageDeleteResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_delete(req).await
+    }
+
+    #[custom_method(ClientExtensionStorageKeysRequest)]
+    async fn dispatch_client_extension_storage_keys(
+        &self,
+        req: ClientExtensionStorageKeysRequest,
+    ) -> Result<ClientExtensionStorageKeysResponse, agent_client_protocol::Error> {
+        self.on_client_extension_storage_keys(req).await
+    }
+
+    #[custom_method(ClientExtensionNetFetchRequest)]
+    async fn dispatch_client_extension_net_fetch(
+        &self,
+        req: ClientExtensionNetFetchRequest,
+    ) -> Result<ClientExtensionNetFetchResponse, agent_client_protocol::Error> {
+        self.on_client_extension_net_fetch(req).await
+    }
+
     #[custom_method(OnboardingImportScanRequest)]
     async fn dispatch_onboarding_import_scan(
         &self,

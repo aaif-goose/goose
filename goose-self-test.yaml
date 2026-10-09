@@ -13,6 +13,7 @@ activities:
   - Validate declared vision through persisted custom-provider configuration and outbound requests
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
+  - Test client-extension CLI commands (install, list, enable, disable, uninstall)
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content

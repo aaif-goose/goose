@@ -662,6 +662,154 @@ pub struct DefaultsSaveRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DefaultsClearRequest {}
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientExtensionSourceKind {
+    #[default]
+    Installed,
+    Dev,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionInfo {
+    pub id: String,
+    pub version: String,
+    pub directory: String,
+    pub source: ClientExtensionSourceKind,
+    pub enabled: bool,
+    pub manifest: serde_json::Value,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/list", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsListResponse {
+    pub install_dir: String,
+    pub extensions: Vec<ClientExtensionInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/install", response = ClientExtensionsInstallResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsInstallRequest {
+    pub source_path: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsInstallResponse {
+    pub installed_id: String,
+    pub install_dir: String,
+    pub extensions: Vec<ClientExtensionInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/set_enabled", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsSetEnabledRequest {
+    pub id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/uninstall", response = ClientExtensionsListResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsUninstallRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/read_main", response = ClientExtensionsReadMainResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsReadMainRequest {
+    pub id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionsReadMainResponse {
+    pub html: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/get", response = ClientExtensionStorageGetResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageGetRequest {
+    pub extension_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageGetResponse {
+    pub value: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/set", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageSetRequest {
+    pub extension_id: String,
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/delete", response = ClientExtensionStorageDeleteResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageDeleteRequest {
+    pub extension_id: String,
+    pub key: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageDeleteResponse {
+    pub existed: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/storage/keys", response = ClientExtensionStorageKeysResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageKeysRequest {
+    pub extension_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionStorageKeysResponse {
+    pub keys: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/client_extensions/net/fetch", response = ClientExtensionNetFetchResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionNetFetchRequest {
+    pub extension_id: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientExtensionNetFetchResponse {
+    pub ok: bool,
+    pub status: u16,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    pub text: String,
+}
+
 /// Sources that onboarding knows how to discover and import.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
