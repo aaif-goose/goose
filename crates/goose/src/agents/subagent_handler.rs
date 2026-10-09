@@ -20,7 +20,7 @@ use std::future::Future;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::{debug, Instrument};
+use tracing::Instrument;
 
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
@@ -55,14 +55,13 @@ pub(crate) async fn from_foreground_subagent_session(
         .model_config
         .as_ref()
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved model"))?;
-    let saved_extensions = session
+    session
         .extension_data
         .get_extension_state(
             EnabledExtensionsState::EXTENSION_NAME,
             EnabledExtensionsState::VERSION,
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
-    let extensions = EnabledExtensionsState::from_value(saved_extensions)?.extensions;
 
     let mut config = AgentConfig::new(
         session_manager,
@@ -77,12 +76,6 @@ pub(crate) async fn from_foreground_subagent_session(
     agent
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
-    for extension in extensions {
-        let name = extension.name();
-        if let Err(e) = agent.add_extension_inner(extension, session_id).await {
-            debug!("Failed to add extension '{}' to subagent: {}", name, e);
-        }
-    }
 
     let subagent_prompt = build_subagent_prompt(&agent, max_turns, session_id).await?;
     agent
@@ -213,7 +206,7 @@ async fn build_subagent_prompt(
 ) -> Result<String> {
     let mut tool_names: Vec<_> = agent
         .list_tools(session_id, None)
-        .await
+        .await?
         .into_iter()
         .filter(super::reply_parts::is_tool_visible_to_model)
         .map(|t| t.name.to_string())

@@ -176,7 +176,7 @@ async fn stop(
 ) -> Vec<Message> {
     let conversation = Conversation::new_unvalidated(messages.to_vec());
     appended(
-        Operation::<Parent, ConversationEffect>::cancel(
+        Operation::<Parent, ConversationEffect>::finalize_cancellation(
             operation,
             &Parent,
             &conversation,

@@ -28,7 +28,7 @@ use crate::conversation::message::{
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
-use crate::execution::manager::{AgentManager, AgentManagerGetResult, RuntimeContext};
+use crate::execution::manager::{AgentManager, RuntimeContext};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -516,13 +516,21 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     }
 }
 
+fn mcp_server_configs(
+    mcp_servers: Vec<McpServer>,
+) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+    mcp_servers
+        .into_iter()
+        .map(mcp_server_to_extension_config)
+        .collect::<Result<_, _>>()
+        .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))
+}
+
 fn add_mcp_servers(
     extensions: &mut Vec<ExtensionConfig>,
     mcp_servers: Vec<McpServer>,
 ) -> Result<(), agent_client_protocol::Error> {
-    for mcp_server in mcp_servers {
-        let extension = mcp_server_to_extension_config(mcp_server)
-            .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))?;
+    for extension in mcp_server_configs(mcp_servers)? {
         push_or_replace_extension(extensions, extension);
     }
     Ok(())
@@ -1037,11 +1045,11 @@ impl GooseAcpAgent {
         });
     }
 
-    async fn get_or_create_session_agent_with_results(
+    async fn get_or_create_session_agent(
         &self,
         cx: &ConnectionTo<Client>,
         session_id: String,
-    ) -> Result<AgentManagerGetResult, agent_client_protocol::Error> {
+    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
         self.agent_manager
             .get_or_create_agent_with_runtime_context(
                 session_id,
@@ -1061,7 +1069,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         agent: &Arc<Agent>,
         session: &Session,
-    ) {
+    ) -> Result<(), agent_client_protocol::Error> {
         let client_fs_capabilities = self
             .client_fs_capabilities
             .get()
@@ -1072,15 +1080,16 @@ impl GooseAcpAgent {
             && !client_fs_capabilities.write_text_file
             && !client_terminal
         {
-            return;
+            return Ok(());
         }
 
         if !agent
             .extension_manager
             .is_extension_enabled(&session.id, "developer")
             .await
+            .internal_err()?
         {
-            return;
+            return Ok(());
         }
 
         let context = agent.extension_manager.get_context().clone();
@@ -1088,7 +1097,7 @@ impl GooseAcpAgent {
             Ok(dev_client) => dev_client,
             Err(error) => {
                 warn!(error = %error, "Failed to create ACP developer client");
-                return;
+                return Ok(());
             }
         };
 
@@ -1108,6 +1117,7 @@ impl GooseAcpAgent {
             .extension_manager
             .get_extension_configs(&session.id)
             .await
+            .internal_err()?
             .into_iter()
             .find(|extension| extension.name() == "developer")
             .unwrap_or_else(|| builtin_to_extension_config("developer"));
@@ -1116,6 +1126,7 @@ impl GooseAcpAgent {
             .extension_manager
             .add_client(&session.id, developer_config, client, info)
             .await;
+        Ok(())
     }
 
     async fn prepare_acp_session_agent(
@@ -1123,15 +1134,23 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         session: &Session,
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
-        let agent_result = self
-            .get_or_create_session_agent_with_results(cx, session.id.clone())
+        let agent = self
+            .get_or_create_session_agent(cx, session.id.clone())
             .await?;
-        let agent = agent_result.agent.clone();
         self.apply_acp_extension_overrides(cx, &agent, session)
+            .await?;
+        // Leases start extensions on first use anyway; starting them here is
+        // what lets the session response report extensions that fail.
+        let extension_results = agent
+            .extension_manager
+            .current_lease(&session.id)
+            .await
+            .internal_err()?
+            .start()
             .await;
         self.spawn_provider_inventory_refresh(session, &agent);
 
-        Ok((agent, agent_result.extension_results))
+        Ok((agent, extension_results))
     }
 
     async fn prepare_session_for_activation(
@@ -1160,14 +1179,15 @@ impl GooseAcpAgent {
         }
 
         if !mcp_servers.is_empty() {
-            let mut stored_extensions =
-                EnabledExtensionsState::from_extension_data(&session.extension_data)
-                    .unwrap_or_else(|| EnabledExtensionsState::new(Vec::new()));
-            add_mcp_servers(&mut stored_extensions.extensions, mcp_servers)?;
-            builder = builder.extension_data(enabled_extensions_data(
-                &session,
-                stored_extensions.extensions,
-            )?);
+            let extensions = mcp_server_configs(mcp_servers)?;
+            self.session_manager
+                .update_enabled_extensions(&session.id, |selected| {
+                    for extension in extensions {
+                        push_or_replace_extension(selected, extension);
+                    }
+                })
+                .await
+                .internal_err_ctx("Failed to add the client's MCP servers")?;
             session_needs_update = true;
         }
 

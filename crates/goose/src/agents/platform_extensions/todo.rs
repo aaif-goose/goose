@@ -77,32 +77,17 @@ impl TodoClient {
             ));
         }
 
-        let manager = &self.context.session_manager;
-        match manager.get_session(session_id, false).await {
-            Ok(mut session) => {
-                let todo_state = extension_data::TodoState::new(content);
-                if todo_state
-                    .to_extension_data(&mut session.extension_data)
-                    .is_ok()
-                {
-                    match manager
-                        .update(session_id)
-                        .extension_data(session.extension_data)
-                        .apply()
-                        .await
-                    {
-                        Ok(_) => Ok(vec![ContentBlock::text(format!(
-                            "Updated ({} chars)",
-                            char_count
-                        ))]),
-                        Err(_) => Err("Failed to update session metadata".to_string()),
-                    }
-                } else {
-                    Err("Failed to serialize TODO state".to_string())
-                }
-            }
-            Err(_) => Err("Failed to read session metadata".to_string()),
-        }
+        self.context
+            .session_manager
+            .set_extension_state(session_id, &extension_data::TodoState::new(content))
+            .await
+            .map(|()| {
+                vec![ContentBlock::text(format!(
+                    "Updated ({} chars)",
+                    char_count
+                ))]
+            })
+            .map_err(|_| "Failed to update session metadata".to_string())
     }
 
     fn get_tools() -> Vec<Tool> {

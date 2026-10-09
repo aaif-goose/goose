@@ -192,7 +192,7 @@ impl Operation<Session, GooseEffect> for UnknownToolOperation {
             response.add_tool_response_with_metadata(request.id, result, metadata.as_ref());
         }
 
-        let response = emit.message(response).await;
+        let response = emit.message(response);
         applied([response.into()])
     }
 }

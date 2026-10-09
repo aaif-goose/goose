@@ -1,5 +1,5 @@
 use crate::agents::mcp_client::GooseMcpHostInfo;
-use crate::agents::{Agent, AgentConfig, ExtensionLoadResult, GoosePlatform};
+use crate::agents::{Agent, AgentConfig, GoosePlatform};
 use crate::config::permission::PermissionManager;
 use crate::config::Config;
 use crate::scheduler_trait::SchedulerTrait;
@@ -24,19 +24,13 @@ pub struct RuntimeContext {
     pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
 }
 
-pub struct AgentManagerGetResult {
-    pub agent: Arc<Agent>,
-    pub agent_created: bool,
-    pub extension_results: Vec<ExtensionLoadResult>,
-}
-
 pub struct AgentManager {
     sessions: Arc<RwLock<LruCache<String, Arc<Agent>>>>,
     agent_config: AgentConfig,
     cancel_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
     /// Per-session creation locks.  When `get_or_create_agent` misses the
     /// `sessions` cache it acquires the per-session lock before doing the
-    /// expensive work (provider restore, MCP extension initialization) so
+    /// expensive work (provider restore) so
     /// concurrent callers for the same session never race into doing the
     /// work twice.  Entries are inserted on demand and pruned when the
     /// session is removed *or* evicted by the LRU; the underlying
@@ -92,34 +86,26 @@ impl AgentManager {
     }
 
     pub async fn get_or_create_agent(&self, session_id: String) -> Result<Arc<Agent>> {
-        Ok(self
-            .get_or_create_agent_with_runtime_context(session_id, RuntimeContext::default())
-            .await?
-            .agent)
+        self.get_or_create_agent_with_runtime_context(session_id, RuntimeContext::default())
+            .await
     }
 
     pub async fn get_or_create_agent_with_runtime_context(
         &self,
         session_id: String,
         runtime_context: RuntimeContext,
-    ) -> Result<AgentManagerGetResult> {
+    ) -> Result<Arc<Agent>> {
         // Fast path: agent already cached.
         {
             let mut sessions = self.sessions.write().await;
             if let Some(existing) = sessions.get(&session_id) {
-                return Ok(AgentManagerGetResult {
-                    agent: Arc::clone(existing),
-                    agent_created: false,
-                    extension_results: Vec::new(),
-                });
+                return Ok(Arc::clone(existing));
             }
         }
 
         // Slow path: serialize creation per session so concurrent callers
-        // (e.g. start_agent's background extension-loading task and a
-        // resume_agent request racing through the frontend) cannot each
-        // construct their own Agent and independently send `initialize` to
-        // every MCP server.  See issue #9031.
+        // share one Agent. Each Agent has its own extension manager, and two
+        // managers would each start every MCP server.  See issue #9031.
         let creation_lock = {
             let mut locks = self.creation_locks.lock().await;
             Arc::clone(
@@ -161,17 +147,13 @@ impl AgentManager {
         &self,
         session_id: &str,
         runtime_context: RuntimeContext,
-    ) -> Result<AgentManagerGetResult> {
+    ) -> Result<Arc<Agent>> {
         // Re-check under the creation lock: another caller may have
         // finished creating the agent while we were waiting.
         {
             let mut sessions = self.sessions.write().await;
             if let Some(existing) = sessions.get(session_id) {
-                return Ok(AgentManagerGetResult {
-                    agent: Arc::clone(existing),
-                    agent_created: false,
-                    extension_results: Vec::new(),
-                });
+                return Ok(Arc::clone(existing));
             }
         }
 
@@ -180,7 +162,6 @@ impl AgentManager {
         config.use_login_shell_path = runtime_context.use_login_shell_path;
         config.session_name_update_tx = runtime_context.session_name_update_tx;
         let agent = Arc::new(Agent::with_config(config));
-        let mut extension_results = Vec::new();
 
         if let Ok(session) = self
             .agent_config
@@ -204,16 +185,11 @@ impl AgentManager {
                     );
                 }
             }
-            extension_results = agent.load_extensions_from_session(&session).await;
         }
 
         let mut sessions = self.sessions.write().await;
         if let Some(existing) = sessions.get(session_id) {
-            return Ok(AgentManagerGetResult {
-                agent: Arc::clone(existing),
-                agent_created: false,
-                extension_results: Vec::new(),
-            });
+            return Ok(Arc::clone(existing));
         }
         // `push` returns the LRU-evicted entry when the cache is at
         // capacity, which `put` does not surface.  We need the evicted
@@ -232,11 +208,7 @@ impl AgentManager {
             self.prune_creation_lock(&evicted_id).await;
         }
 
-        Ok(AgentManagerGetResult {
-            agent,
-            agent_created: true,
-            extension_results,
-        })
+        Ok(agent)
     }
 
     /// Drop the per-session creation lock for `session_id` if no other
@@ -349,14 +321,15 @@ impl AgentManager {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    use goose_test_support::McpFixture;
+    use goose_test_support::mcp::McpFixtureServer;
+    use rmcp::ServiceExt;
     use tokio::sync::Barrier;
 
-    use crate::agents::extension::{Envs, ExtensionConfig};
+    use crate::agents::extension::ExtensionConfig;
     use crate::agents::{AgentConfig, GoosePlatform};
     use crate::config::permission::PermissionManager;
     use crate::config::GooseMode;
@@ -444,11 +417,24 @@ mod tests {
         manager.remove_session_if_loaded(&session).await.unwrap();
     }
 
+    static FIXTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+    fn serve_counted_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        FIXTURE_STARTS.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(async move {
+            let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+            let _ = running.waiting().await;
+        });
+    }
+
     #[tokio::test]
     async fn concurrent_session_creation_initializes_extensions_once() {
         let temp_dir = TempDir::new().unwrap();
         let manager = Arc::new(create_test_manager(&temp_dir).await);
-        let mcp = McpFixture::new().await;
+        crate::builtin_extension::register_builtin_extension(
+            "agent_manager_fixture",
+            serve_counted_fixture,
+        );
         let session = manager
             .session_manager()
             .create_session(
@@ -459,19 +445,12 @@ mod tests {
             )
             .await
             .unwrap();
-        let extension = ExtensionConfig::StreamableHttp {
-            name: "mcp-fixture".to_string(),
-            description: "MCP fixture".to_string(),
-            uri: mcp.url.clone(),
-            envs: Envs::default(),
-            env_keys: vec![],
-            headers: HashMap::new(),
-            timeout: Some(30),
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: Some(false),
+        let extension = ExtensionConfig::Builtin {
+            name: "agent_manager_fixture".to_string(),
+            display_name: None,
+            description: String::new(),
+            timeout: None,
+            bundled: None,
             available_tools: vec![],
         };
         let mut extension_data = session.extension_data.clone();
@@ -495,7 +474,18 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             handles.push(tokio::spawn(async move {
                 barrier.wait().await;
-                manager.get_or_create_agent(session_id).await.unwrap()
+                let agent = manager
+                    .get_or_create_agent(session_id.clone())
+                    .await
+                    .unwrap();
+                agent
+                    .extension_manager
+                    .current_lease(&session_id)
+                    .await
+                    .unwrap()
+                    .start()
+                    .await;
+                agent
             }));
         }
 
@@ -512,9 +502,7 @@ mod tests {
             );
         }
         assert_eq!(manager.session_count().await, 1);
-        // One discover from one extension start; a second initialization
-        // would have been a second request.
-        assert_eq!(mcp.request_count(), 1);
+        assert_eq!(FIXTURE_STARTS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -681,7 +669,7 @@ mod tests {
             .get_or_create_agent(session.id.clone())
             .await
             .unwrap();
-        let tools = agent.list_tools(&session.id, None).await;
+        let tools = agent.list_tools(&session.id, None).await.unwrap();
         assert!(
             tools
                 .iter()
@@ -704,7 +692,7 @@ mod tests {
             .get_or_create_agent(session.id.clone())
             .await
             .unwrap();
-        let tools = restored_agent.list_tools(&session.id, None).await;
+        let tools = restored_agent.list_tools(&session.id, None).await.unwrap();
         assert!(
             tools
                 .iter()

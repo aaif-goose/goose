@@ -86,18 +86,13 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
         state_machine::StateMachine::new(Vec::new(), tokio_util::sync::CancellationToken::new());
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let emit = state_machine::Emitter::new(tx, tokio_util::sync::CancellationToken::new());
-    let apply = async |effects: Vec<state_machine::GooseEffect>| -> Result<()> {
+    let apply = async |mut effects: Vec<state_machine::GooseEffect>| -> Result<()> {
         let session = pipeline.session().await?;
-        let mut result = state_machine::StepResult {
-            effects,
-            applied_step: None,
-            yield_to_client: false,
-        };
         machine
             .apply(
                 pipeline.session_manager.as_ref(),
                 &session,
-                &mut result,
+                &mut effects,
                 &emit,
             )
             .await

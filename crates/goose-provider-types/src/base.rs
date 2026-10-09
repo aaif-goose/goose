@@ -266,6 +266,9 @@ pub struct ModelInfo {
     /// Whether this model supports reasoning/thinking controls
     #[serde(default)]
     pub reasoning: bool,
+    /// Whether this model accepts image input; when set, overrides canonical detection
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_vision: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
     /// Static params merged into the request body for this model.
@@ -284,6 +287,7 @@ impl ModelInfo {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -296,6 +300,11 @@ impl ModelInfo {
 
     pub fn with_optional_context_limit(mut self, context_limit: Option<usize>) -> Self {
         self.context_limit = context_limit;
+        self
+    }
+
+    pub fn with_vision_support(mut self, supports_vision: bool) -> Self {
+        self.supports_vision = Some(supports_vision);
         self
     }
 
@@ -315,6 +324,7 @@ impl ModelInfo {
             currency: Some("$".to_string()),
             supports_cache_control: None,
             reasoning: false,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -365,9 +375,15 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         currency: None,
         supports_cache_control: None,
         reasoning,
+        supports_vision: None,
         thinking_preservation_format: None,
         request_params: None,
     }
+}
+
+/// Model IDs are case-sensitive; declarations apply only to the requested ID.
+pub fn find_declared_model<'a>(models: &'a [ModelInfo], model_name: &str) -> Option<&'a ModelInfo> {
+    models.iter().find(|model| model.name == model_name)
 }
 
 /// Build `ModelInfo` for discovered model names, preferring metadata declared in
@@ -1102,6 +1118,7 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1117,6 +1134,7 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1132,6 +1150,7 @@ mod tests {
             currency: None,
             supports_cache_control: None,
             reasoning: false,
+            supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
         };

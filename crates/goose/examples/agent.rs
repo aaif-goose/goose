@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     agent.add_extension(config, &session.id).await?;
 
     println!("Extensions:");
-    for extension in agent.list_extensions(&session.id).await {
+    for extension in agent.list_extensions(&session.id).await? {
         println!("  {}", extension);
     }
 

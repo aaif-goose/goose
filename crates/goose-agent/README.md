@@ -26,8 +26,10 @@ is a function of the persisted conversation, not of in-memory loop state.
   boundaries. Their schemas are sent to inference and matching calls are
   dispatched against the current session.
 - **`StateMachine<'a, S, E>`** — holds `Vec<Step<..>>` and a `CancellationToken`.
-  `step()` runs one pass, `apply()` writes effects back, `run()` loops until a
-  step yields to the client or no step applies.
+  `step()` runs one pass and returns a `StepResult` whose `applied_step` names
+  the step that applied (`None` if none did) and whose `status` says whether the
+  run is `Continuing`, `Yielded` to the client, or `Cancelled`; `apply()` writes
+  effects back; `run()` loops while `status` is `Continuing`.
 - **`ConversationEffect`** — the default effect type: `AppendMessage`,
   `ReplaceConversation`, `PatchToolRequestMeta`, `SetMessageVisibility`. Bring
   your own by implementing `MachineEffect`.
@@ -49,17 +51,19 @@ remember that it already did something, it records that on the message itself vi
 ## Cancellation
 
 On Stop, the machine drops the running step's future, including inference
-preparation. It then saves the interrupted step's `cancel` effects, answers every
-tool request since kickoff that still has no response with "Tool call was
-interrupted before completing", and finally calls `cancel` on the remaining
-operations in pipeline order. Every operation's `cancel` runs once, and the
-session is reloaded after each save. Callers driving `step` and `apply`
+preparation. It then saves the interrupted step's `finalize_cancellation`
+effects, answers every tool request since kickoff that still has no response
+with "Tool call was interrupted before completing", and finally calls
+`finalize_cancellation` on the remaining operations in pipeline order. Every
+operation's `finalize_cancellation` runs once, and the session is reloaded
+after each save. Callers driving `step` and `apply`
 themselves must call `finalize` on exit.
 
-An operation implements `cancel` only when it holds received output across a
-later await, or owns work that must finish. Keep that output in the operation,
-not in locals of the dropped future, and drain the same field on normal
-completion. `cancel` emits only what the client has not seen yet.
+An operation implements `finalize_cancellation` only when it holds received
+output across a later await, or owns work that must finish. Keep that output in
+the operation, not in locals of the dropped future, and drain the same field on
+normal completion. `finalize_cancellation` emits only what the client has not
+seen yet.
 `InferenceRunner` holds its streamed messages and usage; `ToolOperation` holds
 its tool response message. Use one operation instance per active execution.
 

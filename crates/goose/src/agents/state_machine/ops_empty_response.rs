@@ -44,8 +44,7 @@ impl Operation<Session, GooseEffect> for EmptyResponseOperation {
             .id
             .clone()
             .ok_or_else(|| anyhow!("Persisted empty-response fallback has no id"))?;
-        emit.message(fallback.clone().with_visibility(true, true))
-            .await;
+        emit.message(fallback.clone().with_visibility(true, true));
         applied([ConversationEffect::SetMessageVisibility {
             message_id,
             user_visible: true,

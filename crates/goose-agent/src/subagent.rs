@@ -173,7 +173,12 @@ where
         OPERATION_NAME
     }
 
-    async fn cancel(&self, session: &S, conversation: &Conversation, emit: &Emitter) -> Vec<E> {
+    async fn finalize_cancellation(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<E> {
         let mut stopped = std::mem::take(&mut *self.running.lock().await);
         let pending = pending_subagents(
             conversation,

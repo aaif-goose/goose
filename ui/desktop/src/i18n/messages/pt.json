@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Limite %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite de tokens"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Resume solicitações e respostas antigas de ferramentas para economizar contexto. O limite é automático quando deixado em branco."
   },

@@ -121,7 +121,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                 GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) => {
                     if contains_tool_confirmation_request(message) {
                         // Responses can arrive immediately, so publish only after the persistence pass.
-                        emit.emit(AgentEvent::Message(message.clone())).await;
+                        emit.emit(AgentEvent::Message(message.clone()));
                     }
                     if let Some(usage) = message
                         .metadata
@@ -133,8 +133,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                         emit.emit(AgentEvent::MessageUsage {
                             message_id: message.id.clone(),
                             usage,
-                        })
-                        .await;
+                        });
                     }
                 }
                 GooseEffect::Conversation(ConversationEffect::ReplaceConversation(
@@ -144,12 +143,9 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
                     emit.emit(AgentEvent::HistoryReplaced(replaced_history(
                         conversation,
                         &effects[index + 1..],
-                    )))
-                    .await;
+                    )));
                 }
-                GooseEffect::RecordUsage(usage) => {
-                    emit.emit(AgentEvent::Usage(usage.clone())).await
-                }
+                GooseEffect::RecordUsage(usage) => emit.emit(AgentEvent::Usage(usage.clone())),
                 _ => {}
             }
         }
@@ -338,19 +334,7 @@ pub(crate) async fn run(
         session_manager: runtime,
         usage: Default::default(),
     };
-    loop {
-        let session = runtime.load(session_id).await?;
-        let Some(mut result) = machine.step(&session, emit).await? else {
-            break;
-        };
-        tracing::debug!(target: "goose::state_machine", step = result.applied_step, "applied step");
-        machine.apply(&runtime, &session, &mut result, emit).await?;
-        if result.yield_to_client {
-            break;
-        }
-    }
-
-    let session = machine.finalize(&runtime, session_id, emit).await?;
+    let session = machine.run(&runtime, session_id, emit).await?;
     let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()

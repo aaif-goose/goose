@@ -549,10 +549,9 @@ impl BedrockProvider {
                         err
                     ))
                 }
-                ConverseError::ValidationException(err) => ProviderError::ExecutionError(format!(
-                    "Bedrock validation error: {}",
-                    err.message().unwrap_or("unknown validation error")
-                )),
+                ConverseError::ValidationException(err) => {
+                    ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+                }
                 ConverseError::ModelErrorException(err) => {
                     ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
                 }
@@ -623,33 +622,7 @@ impl BedrockProvider {
         request
             .send()
             .await
-            .map_err(|err| match err.into_service_error() {
-                ConverseStreamError::ThrottlingException(throttle_err) => {
-                    ProviderError::RateLimitExceeded {
-                        details: format!("Bedrock throttling error: {:?}", throttle_err),
-                        retry_delay: None,
-                    }
-                }
-                ConverseStreamError::AccessDeniedException(err) => {
-                    ProviderError::Authentication(format!("Failed to call Bedrock: {:?}", err))
-                }
-                ConverseStreamError::ValidationException(err)
-                    if {
-                        let msg = err.message().unwrap_or_default();
-                        msg.contains("Input is too long for requested model.")
-                            || msg.contains("prompt is too long")
-                    } =>
-                {
-                    ProviderError::ContextLengthExceeded(format!(
-                        "Failed to call Bedrock: {:?}",
-                        err
-                    ))
-                }
-                ConverseStreamError::ModelErrorException(err) => {
-                    ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
-                }
-                err => ProviderError::ServerError(format!("Failed to call Bedrock: {:?}", err)),
-            })
+            .map_err(|err| map_converse_stream_error(err.into_service_error()))
     }
 
     /// Pre-ConverseStream behaviour: blocking `Converse` call wrapped in a
@@ -1166,6 +1139,36 @@ impl Provider for BedrockProvider {
     }
 }
 
+fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
+    match err {
+        ConverseStreamError::ThrottlingException(throttle_err) => {
+            ProviderError::RateLimitExceeded {
+                details: format!("Bedrock throttling error: {:?}", throttle_err),
+                retry_delay: None,
+            }
+        }
+        ConverseStreamError::AccessDeniedException(err) => {
+            ProviderError::Authentication(format!("Failed to call Bedrock: {:?}", err))
+        }
+        ConverseStreamError::ValidationException(err)
+            if {
+                let msg = err.message().unwrap_or_default();
+                msg.contains("Input is too long for requested model.")
+                    || msg.contains("prompt is too long")
+            } =>
+        {
+            ProviderError::ContextLengthExceeded(format!("Failed to call Bedrock: {:?}", err))
+        }
+        ConverseStreamError::ValidationException(err) => {
+            ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+        }
+        ConverseStreamError::ModelErrorException(err) => {
+            ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
+        }
+        err => ProviderError::ServerError(format!("Failed to call Bedrock: {:?}", err)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1202,6 +1205,55 @@ mod tests {
                 request_headers: None,
             },
         )
+    }
+
+    #[test]
+    fn stream_validation_error_is_not_retried() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("The model returned the following errors: invalid tool schema")
+                .build(),
+        );
+        let mapped = map_converse_stream_error(err);
+        assert!(matches!(mapped, ProviderError::ExecutionError(_)));
+        assert!(!super::super::retry::should_retry(
+            &mapped,
+            &RetryConfig::default()
+        ));
+    }
+
+    #[test]
+    fn stream_context_validation_error_is_context_length() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("prompt is too long")
+                .build(),
+        );
+        assert!(matches!(
+            map_converse_stream_error(err),
+            ProviderError::ContextLengthExceeded(_)
+        ));
+    }
+
+    #[test]
+    fn stream_validation_error_preserves_aws_diagnostics() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("invalid tool schema")
+                .meta(
+                    aws_smithy_types::error::ErrorMetadata::builder()
+                        .code("ValidationException")
+                        .custom("request_id", "bedrock-validation-request-id")
+                        .build(),
+                )
+                .build(),
+        );
+        let mapped = map_converse_stream_error(err);
+        assert!(matches!(mapped, ProviderError::ExecutionError(_)));
+        let details = mapped.to_string();
+        assert!(details.contains("invalid tool schema"));
+        assert!(details.contains("ValidationException"));
+        assert!(details.contains("bedrock-validation-request-id"));
     }
 
     #[test]

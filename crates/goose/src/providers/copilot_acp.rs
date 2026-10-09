@@ -106,6 +106,7 @@ impl CopilotAcpProvider {
 impl ProviderDef for CopilotAcpProvider {
     type Provider = AcpProvider;
     const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

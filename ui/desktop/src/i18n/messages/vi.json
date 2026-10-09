@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Ngưỡng %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Giới hạn token"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Tóm tắt các yêu cầu và phản hồi công cụ cũ để tiết kiệm ngữ cảnh. Ngưỡng cắt được đặt tự động khi để trống."
   },

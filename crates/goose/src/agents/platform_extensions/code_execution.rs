@@ -393,11 +393,7 @@ fn create_tool_callback(
                     .await;
                 match dispatch_result {
                     Ok(dispatch_result) => match manager
-                        .applying_mutation(
-                            dispatch_result,
-                            ctx.container().cloned(),
-                            &ctx.session_id,
-                        )
+                        .applying_mutation(dispatch_result, &ctx.session_id)
                         .result
                         .await
                     {
@@ -818,7 +814,7 @@ mod tests {
             )
             .await;
 
-        let lease = manager.current_lease("test-session", None).await;
+        let lease = manager.scope_lease("test-session").await;
         let configs =
             CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
@@ -848,7 +844,8 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_extension(
+            .enable(
+                &session.id,
                 ExtensionConfig::Platform {
                     name: super::super::summon::EXTENSION_NAME.to_string(),
                     description: String::new(),
@@ -856,14 +853,11 @@ mod tests {
                     bundled: None,
                     available_tools: Vec::new(),
                 },
-                Some(session.working_dir.clone()),
-                None,
-                &session.id,
             )
             .await
             .unwrap();
 
-        let lease = manager.current_lease(&session.id, None).await;
+        let lease = manager.current_lease(&session.id).await.unwrap();
         let configs =
             CodeExecutionClient::callback_configs(lease.tools_excluding(EXTENSION_NAME).await);
         let names = configs
@@ -891,7 +885,8 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_extension(
+            .enable(
+                &session.id,
                 ExtensionConfig::Platform {
                     name: "extensionmanager".to_string(),
                     description: String::new(),
@@ -899,19 +894,12 @@ mod tests {
                     bundled: None,
                     available_tools: Vec::new(),
                 },
-                Some(session.working_dir.clone()),
-                None,
-                &session.id,
             )
             .await
             .unwrap();
-        let lease = Arc::new(
-            manager
-                .current_lease(&session.id, Some(&session.working_dir))
-                .await,
-        );
+        let lease = Arc::new(manager.current_lease(&session.id).await.unwrap());
         manager
-            .remove_extension(&session.id, "extensionmanager")
+            .disable(&session.id, "extensionmanager")
             .await
             .unwrap();
         let callback = create_tool_callback(
@@ -937,6 +925,7 @@ mod tests {
         assert!(manager
             .list_extensions(&session.id)
             .await
+            .unwrap()
             .contains(&"analyze".to_string()));
         let stored_session = manager
             .get_context()

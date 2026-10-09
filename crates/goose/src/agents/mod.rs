@@ -28,11 +28,11 @@ mod tool_schema_normalize;
 pub mod types;
 pub mod validate_extensions;
 
-pub use agent::{Agent, AgentConfig, ExtensionLoadResult, GoosePlatform};
+pub use agent::{Agent, AgentConfig, GoosePlatform};
 pub use container::Container;
 pub use execute_commands::{context_management_unsupported_message, COMPACT_TRIGGERS};
 pub use extension::{ExtensionConfig, ExtensionError};
-pub use extension_manager::ExtensionManager;
+pub use extension_manager::{ExtensionLoadResult, ExtensionManager};
 pub use goose_agent::events::AgentEvent;
 pub(crate) use large_response_handler::max_tool_response_size;
 pub use prompt_manager::PromptManager;

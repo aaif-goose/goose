@@ -10,8 +10,9 @@ impl GooseAcpAgent {
         let cancel_token = CancellationToken::new();
         let result = agent
             .extension_manager
-            .current_lease(session_id, None)
+            .current_lease(session_id)
             .await
+            .internal_err()?
             .read_resource(&req.uri, &req.extension_name, cancel_token)
             .await
             .internal_err()?;

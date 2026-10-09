@@ -293,7 +293,7 @@ impl CliSession {
         output_format: String,
         stats: bool,
         refresh_completions: bool,
-        extension_loading: Option<AbortOnDropHandle<Vec<ExtensionFailure>>>,
+        extension_loading: Option<AbortOnDropHandle<Result<Vec<ExtensionFailure>>>>,
     ) -> Self {
         let messages = agent
             .config
@@ -308,9 +308,9 @@ impl CliSession {
             let session_id = session_id.clone();
             let completion_cache = completion_cache.clone();
             AbortOnDropHandle::new(tokio::spawn(async move {
-                let failures = handle
-                    .await
-                    .map_err(|error| anyhow::anyhow!("Extension loading task failed: {}", error))?;
+                let failures = handle.await.map_err(|error| {
+                    anyhow::anyhow!("Extension loading task failed: {}", error)
+                })??;
                 if refresh_completions {
                     Self::refresh_completion_cache(&agent, &session_id, &completion_cache).await?;
                 }
@@ -490,7 +490,7 @@ impl CliSession {
         extension: Option<String>,
     ) -> Result<HashMap<String, Vec<String>>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await;
+        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
 
         // Early validation if filtering by extension
         if let Some(filter) = &extension {
@@ -512,7 +512,7 @@ impl CliSession {
 
     pub async fn get_prompt_info(&mut self, name: &str) -> Result<Option<output::PromptInfo>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await;
+        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
 
         // Find which extension has this prompt
         for (extension, prompt_list) in prompts {
@@ -1118,7 +1118,11 @@ impl CliSession {
             }
         };
 
-        let extension_configs = self.agent.get_extension_configs(&self.session_id).await;
+        let has_extensions = !self
+            .agent
+            .get_extension_configs(&self.session_id)
+            .await?
+            .is_empty();
 
         self.agent
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
@@ -1136,16 +1140,22 @@ impl CliSession {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
 
-        if !extension_configs.is_empty() {
+        if has_extensions {
             output::goose_mode_message("Restarting extensions for the new session...");
         }
 
         let mut unavailable = Vec::new();
-        for config in extension_configs {
-            let name = config.name();
-            if let Err(e) = self.agent.add_extension(config, &self.session_id).await {
-                output::render_extension_error(&name, &e.to_string());
-                unavailable.push(name);
+        for result in self
+            .agent
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .start()
+            .await
+        {
+            if let Some(error) = result.error {
+                output::render_extension_error(&result.name, &error);
+                unavailable.push(result.name);
             }
         }
 
@@ -1169,7 +1179,12 @@ impl CliSession {
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
             create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
-        self.agent.persist_extension_state(&new_session_id).await?;
+        self.agent
+            .persist_extension_configs(
+                &new_session_id,
+                self.agent.get_extension_configs(&self.session_id).await?,
+            )
+            .await?;
         Ok(new_session_id)
     }
 
@@ -1742,7 +1757,7 @@ impl CliSession {
         session_id: &str,
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
-        let prompts = agent.list_extension_prompts(session_id).await;
+        let prompts = agent.list_extension_prompts(session_id).await?;
         let all_providers = goose::providers::providers().await;
         let session_provider = agent.provider(session_id).await?.get_name().to_string();
 
@@ -3206,7 +3221,7 @@ mod tests {
     }
 
     async fn session_with_loader(
-        extension_loading: Option<AbortOnDropHandle<Vec<ExtensionFailure>>>,
+        extension_loading: Option<AbortOnDropHandle<Result<Vec<ExtensionFailure>>>>,
         refresh_completions: bool,
     ) -> CliSession {
         let data_dir = tempfile::TempDir::new().unwrap().keep();
@@ -3259,7 +3274,7 @@ mod tests {
         let (release, released) = tokio::sync::oneshot::channel::<()>();
         let loader = AbortOnDropHandle::new(tokio::spawn(async move {
             let _ = released.await;
-            Vec::<ExtensionFailure>::new()
+            Ok(Vec::<ExtensionFailure>::new())
         }));
 
         let mut session = session_with_loader(Some(loader), false).await;
@@ -3285,7 +3300,8 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_extensions_loaded_drains_the_loader_once() {
-        let loader = AbortOnDropHandle::new(tokio::spawn(async { Vec::<ExtensionFailure>::new() }));
+        let loader =
+            AbortOnDropHandle::new(tokio::spawn(async { Ok(Vec::<ExtensionFailure>::new()) }));
         let mut session = session_with_loader(Some(loader), false).await;
 
         session.ensure_extensions_loaded(false).await.unwrap();
@@ -3301,7 +3317,7 @@ mod tests {
         let (release, released) = tokio::sync::oneshot::channel::<()>();
         let loader = AbortOnDropHandle::new(tokio::spawn(async move {
             let _ = released.await;
-            Vec::<ExtensionFailure>::new()
+            Ok(Vec::<ExtensionFailure>::new())
         }));
         let session = session_with_loader(Some(loader), true).await;
 
@@ -3334,7 +3350,8 @@ mod tests {
 
     #[tokio::test]
     async fn headless_loader_skips_completion_refresh() {
-        let loader = AbortOnDropHandle::new(tokio::spawn(async { Vec::<ExtensionFailure>::new() }));
+        let loader =
+            AbortOnDropHandle::new(tokio::spawn(async { Ok(Vec::<ExtensionFailure>::new()) }));
         let mut session = session_with_loader(Some(loader), false).await;
 
         session.ensure_extensions_loaded(false).await.unwrap();

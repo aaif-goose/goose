@@ -57,6 +57,7 @@ impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
 impl ProviderDef for CodexAcpProvider {
     type Provider = AcpProvider;
     const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

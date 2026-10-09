@@ -35,6 +35,10 @@ pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     /// extensions and working directory, so they cannot be shared.
     const SESSION_BOUND: bool = false;
 
+    /// Is handed the session's MCP servers and runs the tool loop itself, so
+    /// goose does not start those servers.
+    const RUNS_OWN_TOOL_LOOP: bool = false;
+
     fn from_env(
         extensions: Vec<ExtensionConfig>,
         tls_config: Option<TlsConfig>,

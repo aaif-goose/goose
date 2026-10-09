@@ -131,6 +131,17 @@ impl EnabledExtensionsState {
         Self { extensions }
     }
 
+    pub fn check_unique_keys(extensions: &[ExtensionConfig]) -> Result<()> {
+        let mut keys = std::collections::HashSet::new();
+        match extensions.iter().find(|config| !keys.insert(config.key())) {
+            Some(config) => Err(anyhow::anyhow!(
+                "extension '{}' appears twice in the selection",
+                config.name()
+            )),
+            None => Ok(()),
+        }
+    }
+
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {
         let mut state = <Self as ExtensionState>::from_extension_data(extension_data)?;
         state.extensions.retain(is_extension_available);

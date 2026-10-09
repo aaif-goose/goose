@@ -126,8 +126,7 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
             .recipe
             .as_ref()
             .and_then(|recipe| recipe.prompt.as_deref());
-        emit.message(inline_notice(start_notice(subagent_session_id, task)))
-            .await;
+        emit.message(inline_notice(start_notice(subagent_session_id, task)));
         self.spawn(subagent, emit.cancel_token().clone())
     }
 
@@ -140,7 +139,7 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
     ) {
         let show_output = remaining > 0 || emit.cancel_token().is_cancelled();
         if let Some(notice) = finished_notice(subagent_session_id, outcome, show_output) {
-            emit.message(inline_notice(notice)).await;
+            emit.message(inline_notice(notice));
         }
     }
 }
@@ -160,7 +159,7 @@ mod tests {
     use super::*;
     use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
     use crate::agents::state_machine::{
-        ConversationEffect, GooseEffect, Operation, OperationResult,
+        ConversationEffect, GooseEffect, Operation, OperationResult, RunStatus,
     };
     use crate::config::GooseMode;
     use crate::session::SessionManager;
@@ -283,7 +282,7 @@ mod tests {
         let OperationResult::Applied(step) = result else {
             panic!("expected the operation to apply");
         };
-        assert!(!step.yield_to_client);
+        assert_eq!(step.status, RunStatus::Continuing);
         step.effects
     }
 

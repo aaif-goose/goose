@@ -92,7 +92,12 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         message.metadata.operation_note(self.name(), key)
     }
 
-    async fn cancel(&self, _session: &S, _conversation: &Conversation, _emit: &Emitter) -> Vec<E> {
+    async fn finalize_cancellation(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<E> {
         Vec::new()
     }
 
@@ -159,10 +164,17 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
     ) -> Result<OperationResult<E>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    Continuing,
+    Yielded,
+    Cancelled,
+}
+
 pub struct StepResult<E = ConversationEffect> {
     pub effects: Vec<E>,
     pub applied_step: Option<&'static str>,
-    pub yield_to_client: bool,
+    pub status: RunStatus,
 }
 
 pub enum OperationResult<E = ConversationEffect> {
@@ -178,7 +190,7 @@ pub fn applied<E>(effects: impl IntoIterator<Item = E>) -> Result<OperationResul
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: false,
+        status: RunStatus::Continuing,
     }))
 }
 
@@ -186,7 +198,7 @@ pub fn yielded<E>() -> Result<OperationResult<E>> {
     Ok(OperationResult::Applied(StepResult {
         effects: Vec::new(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
@@ -194,7 +206,7 @@ pub fn yielded_with<E>(effects: impl IntoIterator<Item = E>) -> Result<Operation
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
@@ -255,13 +267,13 @@ impl Emitter {
         Self { tx, cancel }
     }
 
-    pub async fn emit(&self, event: AgentEvent) {
+    pub fn emit(&self, event: AgentEvent) {
         let _ = self.tx.send(event);
     }
 
-    pub async fn message(&self, message: Message) -> Message {
+    pub fn message(&self, message: Message) -> Message {
         let message = message.with_generated_id_if_missing();
-        self.emit(AgentEvent::Message(message.clone())).await;
+        self.emit(AgentEvent::Message(message.clone()));
         message
     }
 

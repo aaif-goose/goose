@@ -25,8 +25,9 @@ impl GooseAcpAgent {
         let agent = self.get_session_agent(&session_id).await?;
         let lease = agent
             .extension_manager
-            .current_lease(&session_id, None)
-            .await;
+            .current_lease(&session_id)
+            .await
+            .internal_err()?;
         let mut apps = fetch_mcp_apps(&lease).await;
 
         McpAppCache::restore_bundled_default_apps(&mut apps);

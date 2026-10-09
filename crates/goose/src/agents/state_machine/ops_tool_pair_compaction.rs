@@ -53,7 +53,7 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
         "tool_pair_compaction"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,

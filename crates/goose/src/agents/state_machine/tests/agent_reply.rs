@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
+use super::pipeline::calculator_extension;
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
@@ -91,22 +92,12 @@ async fn agent_with_calculator() -> Result<(
         .extension_manager
         .add_client(
             &session_id,
-            calculator_config(),
+            calculator_extension(),
             calculator.clone(),
             calculator.get_info().cloned(),
         )
         .await;
     Ok((agent, api, session_id, calculator, temp_dir))
-}
-
-fn calculator_config() -> ExtensionConfig {
-    ExtensionConfig::Platform {
-        name: "calculator".to_string(),
-        description: "Stateful test calculator".to_string(),
-        display_name: None,
-        bundled: None,
-        available_tools: vec![],
-    }
 }
 
 async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
@@ -219,9 +210,6 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .working_dir(new_working_dir.path().to_path_buf())
         .apply()
         .await?;
-    agent
-        .update_extension_working_dir(&session_config.id, new_working_dir.path())
-        .await?;
 
     {
         let session = agent
@@ -246,7 +234,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .extension_manager
         .add_client(
             &session_config.id,
-            calculator_config(),
+            calculator_extension(),
             replacement.clone(),
             replacement.get_info().cloned(),
         )
@@ -503,9 +491,6 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
         .update(&session_config.id)
         .working_dir(new_working_dir.path().to_path_buf())
         .apply()
-        .await?;
-    agent
-        .update_extension_working_dir(&session_config.id, new_working_dir.path())
         .await?;
     agent
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)

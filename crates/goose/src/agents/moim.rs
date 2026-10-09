@@ -216,7 +216,7 @@ mod tests {
 
     fn moim_extension() -> ExtensionConfig {
         ExtensionConfig::Platform {
-            name: "context".to_string(),
+            name: "todo".to_string(),
             description: String::new(),
             display_name: None,
             bundled: None,
@@ -224,9 +224,11 @@ mod tests {
         }
     }
 
-    async fn session_and_manager() -> (String, ExtensionManager, tempfile::TempDir) {
+    async fn session_and_manager() -> (String, Arc<ExtensionManager>, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let em = ExtensionManager::with_data_dir(temp_dir.path().to_path_buf());
+        let em = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
         let session = em
             .get_context()
             .session_manager
@@ -244,7 +246,7 @@ mod tests {
     #[tokio::test]
     async fn turn_context_message_is_an_agent_only_user_message() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        let lease = em.current_lease(&session_id, None).await;
+        let lease = em.current_lease(&session_id).await.unwrap();
 
         let message =
             turn_context_message(&session_id, &em, &lease, 0, 100, chrono::Local::now(), None)
@@ -263,7 +265,7 @@ mod tests {
     #[tokio::test]
     async fn turn_context_bytes_are_stable_for_a_turn() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        let lease = em.current_lease(&session_id, None).await;
+        let lease = em.current_lease(&session_id).await.unwrap();
         let turn_start = chrono::Local::now();
 
         let first = turn_context_message(&session_id, &em, &lease, 0, 100, turn_start, None)
@@ -290,7 +292,7 @@ mod tests {
             None,
         )
         .await;
-        let lease = em.current_lease(&session_id, None).await;
+        let lease = em.current_lease(&session_id).await.unwrap();
         em.add_client(
             &session_id,
             moim_extension(),

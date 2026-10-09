@@ -230,32 +230,28 @@ impl Default for SessionBuilderConfig {
 }
 
 pub struct ExtensionFailure {
-    pub label: Option<String>,
+    pub label: String,
     pub error: anyhow::Error,
 }
 
 async fn load_extensions(
     agent: Arc<Agent>,
-    extensions: Vec<ExtensionConfig>,
     session_id: &str,
-) -> Vec<ExtensionFailure> {
-    let results = match agent.add_extensions_bulk(extensions, session_id).await {
-        Ok(results) => results,
-        Err(error) => {
-            tracing::error!("failed to load extensions: {}", error);
-            return vec![ExtensionFailure { label: None, error }];
-        }
-    };
-
-    results
+) -> anyhow::Result<Vec<ExtensionFailure>> {
+    Ok(agent
+        .extension_manager
+        .current_lease(session_id)
+        .await?
+        .start()
+        .await
         .into_iter()
         .filter_map(|r| {
             r.error.map(|error| ExtensionFailure {
-                label: Some(r.name),
+                label: r.name,
                 error: anyhow::anyhow!(error),
             })
         })
-        .collect()
+        .collect())
 }
 
 struct ResolvedProviderConfig {
@@ -856,7 +852,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     let loading_handle = AbortOnDropHandle::new(tokio::spawn({
         let agent = agent_ptr.clone();
         let sid = session_id.clone();
-        async move { load_extensions(agent, extensions_for_provider, &sid).await }
+        async move { load_extensions(agent, &sid).await }
     }));
 
     let edit_mode = config

@@ -12,6 +12,7 @@ use goose_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
         ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
+        RunStatus,
     },
     tool::{ToolOperation, ToolProvider},
 };
@@ -470,7 +471,7 @@ async fn cancellation_interrupts_inference_discovery() {
     }
     cancel.cancel();
 
-    assert!(step.await.unwrap().unwrap().is_none());
+    assert_eq!(step.await.unwrap().unwrap().status, RunStatus::Cancelled);
 }
 
 #[tokio::test]

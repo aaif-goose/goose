@@ -374,7 +374,7 @@ impl ToolExecutionOperation {
         self.batch.lock().unwrap().take()
     }
 
-    async fn lease(&self, session: &Session) -> Arc<ExtensionLease> {
+    async fn lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
         let lease = self
             .lease
             .lock()
@@ -382,20 +382,16 @@ impl ToolExecutionOperation {
             .clone();
         if let Some(lease) = lease {
             if lease.scope_id() == session.id {
-                return lease;
+                return Ok(lease);
             }
         }
         self.resolve_lease(session).await
     }
 
-    async fn resolve_lease(&self, session: &Session) -> Arc<ExtensionLease> {
-        let lease = Arc::new(
-            self.extension_manager
-                .current_lease(&session.id, Some(&session.working_dir))
-                .await,
-        );
+    async fn resolve_lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
+        let lease = Arc::new(self.extension_manager.current_lease(&session.id).await?);
         *self.lease.lock().expect("extension lease unavailable") = Some(Arc::clone(&lease));
-        lease
+        Ok(lease)
     }
 
     async fn dispatch_tool_call(
@@ -456,11 +452,9 @@ impl ToolExecutionOperation {
                 );
                 ToolCallResult::from(Err(error))
             });
-            let result = self.extension_manager.applying_mutation(
-                result,
-                session.container.clone(),
-                &session.id,
-            );
+            let result = self
+                .extension_manager
+                .applying_mutation(result, &session.id);
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
                 &self.batch,
@@ -475,7 +469,7 @@ impl ToolExecutionOperation {
         .await
     }
 
-    async fn command_response(
+    fn command_response(
         conversation: &Conversation,
         message: String,
         emit: &Emitter,
@@ -492,8 +486,8 @@ impl ToolExecutionOperation {
         let response = Message::assistant()
             .with_text(message)
             .with_visibility(true, false);
-        emit.message(command).await;
-        let response = emit.message(response).await;
+        emit.message(command);
+        let response = emit.message(response);
         yielded_with([
             ConversationEffect::SetMessageVisibility {
                 message_id,
@@ -514,7 +508,7 @@ impl ToolExecutionOperation {
     ) -> Result<OperationResult<GooseEffect>> {
         let prompts = self
             .lease(session)
-            .await
+            .await?
             .list_prompts(emit.cancel_token().clone())
             .await;
         let extension_filter = command.params_str.split_whitespace().next();
@@ -524,8 +518,7 @@ impl ToolExecutionOperation {
                     conversation,
                     format!("Extension '{filter}' not found"),
                     emit,
-                )
-                .await;
+                );
             }
         }
 
@@ -546,7 +539,7 @@ impl ToolExecutionOperation {
                 output.push('\n');
             }
         }
-        Self::command_response(conversation, output, emit).await
+        Self::command_response(conversation, output, emit)
     }
 
     async fn run_prompt(
@@ -562,12 +555,11 @@ impl ToolExecutionOperation {
                 conversation,
                 "Prompt name argument is required".to_string(),
                 emit,
-            )
-            .await;
+            );
         };
         let prompts = self
             .lease(session)
-            .await
+            .await?
             .list_prompts(emit.cancel_token().clone())
             .await;
         let found = prompts.iter().find_map(|(extension, prompts)| {
@@ -581,8 +573,7 @@ impl ToolExecutionOperation {
                 conversation,
                 format!("Prompt '{prompt_name}' not found"),
                 emit,
-            )
-            .await;
+            );
         };
 
         if params.get(1) == Some(&"--info") {
@@ -601,7 +592,7 @@ impl ToolExecutionOperation {
                     output.push('\n');
                 }
             }
-            return Self::command_response(conversation, output, emit).await;
+            return Self::command_response(conversation, output, emit);
         }
 
         let arguments: HashMap<_, _> = params
@@ -612,7 +603,7 @@ impl ToolExecutionOperation {
             .collect();
         let result = match self
             .lease(session)
-            .await
+            .await?
             .get_prompt(
                 &extension,
                 prompt_name,
@@ -623,7 +614,7 @@ impl ToolExecutionOperation {
         {
             Ok(result) => result,
             Err(error) => {
-                return Self::command_response(conversation, error.to_string(), emit).await;
+                return Self::command_response(conversation, error.to_string(), emit);
             }
         };
 
@@ -655,8 +646,7 @@ impl ToolExecutionOperation {
                         message.role
                     ),
                     emit,
-                )
-                .await;
+                );
             }
             effects.push(message.with_visibility(false, true).into());
         }
@@ -665,8 +655,7 @@ impl ToolExecutionOperation {
                 conversation,
                 format!("Prompt '{prompt_name}' returned no messages"),
                 emit,
-            )
-            .await;
+            );
         }
         applied(effects)
     }
@@ -815,7 +804,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         "tool_execution"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,
@@ -823,8 +812,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     ) -> Vec<GooseEffect> {
         let (actions, response) = self.take_batch();
         if let Some(response) = &response {
-            emit.emit(AgentEvent::Message(response.user_visible_content()))
-                .await;
+            emit.emit(AgentEvent::Message(response.user_visible_content()));
         }
         actions
             .into_iter()
@@ -853,7 +841,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
         Ok(self
             .lease(session)
-            .await
+            .await?
             .tools_excluding(crate::skills::EXTENSION_NAME)
             .await)
     }
@@ -863,7 +851,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<String>> {
-        Ok(self.lease(session).await.moim().await)
+        Ok(self.lease(session).await?.moim().await)
     }
 
     async fn prompt_parts(
@@ -887,7 +875,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         let mut prompt_parts = hints.load_new_hints(&session.working_dir);
 
-        let lease = self.lease(session).await;
+        let lease = self.lease(session).await?;
         #[cfg(feature = "code-mode")]
         if lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
             return Ok(prompt_parts);
@@ -949,7 +937,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                             && !request_has_approval_history(messages, request)
                     }) =>
             {
-                Some(self.resolve_lease(session).await)
+                Some(self.resolve_lease(session).await?)
             }
             None => None,
         };
@@ -975,7 +963,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     request.metadata.as_ref(),
                 );
             }
-            let response = emit.message(response).await;
+            let response = emit.message(response);
             return applied([response.into()]);
         };
 
@@ -1015,7 +1003,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     request.metadata.as_ref(),
                 );
             }
-            let response = emit.message(response).await;
+            let response = emit.message(response);
             return applied([response.into()]);
         }
 
@@ -1088,8 +1076,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                             emit.emit(AgentEvent::McpNotification((
                                 request_id.clone(),
                                 notification,
-                            )))
-                            .await;
+                            )));
                         }
                     }
                     let metadata = requests
@@ -1102,21 +1089,19 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                         .record(&request_id, output, metadata);
                 }
                 ToolStreamItem::Message(msg) => {
-                    emit.emit(AgentEvent::McpNotification((request_id, msg)))
-                        .await;
+                    emit.emit(AgentEvent::McpNotification((request_id, msg)));
                 }
                 ToolStreamItem::ActionRequired(msg) => {
                     let msg = msg.with_generated_id_if_missing();
                     self.batch.lock().unwrap().actions.push(msg.clone());
-                    emit.message(msg).await;
+                    emit.message(msg);
                 }
             }
         }
 
         let (actions, response) = self.take_batch();
         let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
-        emit.emit(AgentEvent::Message(response.user_visible_content()))
-            .await;
+        emit.emit(AgentEvent::Message(response.user_visible_content()));
         applied(actions.into_iter().chain([response]).map(GooseEffect::from))
     }
 }
