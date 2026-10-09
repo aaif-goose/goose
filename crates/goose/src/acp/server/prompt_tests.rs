@@ -1,13 +1,12 @@
 use super::*;
 use agent_client_protocol::JsonRpcMessage;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
-use test_case::test_case;
 
 #[derive(Debug, Default)]
 struct CountingProvider {
     calls: AtomicUsize,
-    pause_activation: bool,
+    pause_activation: AtomicBool,
     activation_entered: tokio::sync::Notify,
     activation_release: tokio::sync::Notify,
 }
@@ -15,11 +14,14 @@ struct CountingProvider {
 #[async_trait::async_trait]
 impl Provider for CountingProvider {
     fn get_name(&self) -> &str {
-        "prompt-cancellation-test"
+        "openai"
     }
 
-    async fn update_mode(&self, _: &str, _: GooseMode) -> Result<(), ProviderError> {
-        if self.pause_activation {
+    async fn apply_model_selection(
+        &self,
+        _: &goose_providers::model::ModelConfig,
+    ) -> Result<(), ProviderError> {
+        if self.pause_activation.swap(false, Ordering::SeqCst) {
             self.activation_entered.notify_one();
             self.activation_release.notified().await;
         }
@@ -53,7 +55,7 @@ async fn server_with_session(
     let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
     let server = Arc::new(
         GooseAcpAgent::new(GooseAcpAgentOptions {
-            provider_factory: Arc::new(|_, _, _, _| {
+            provider_factory: Arc::new(|_| {
                 Box::pin(async { anyhow::bail!("unexpected provider construction") })
             }),
             builtin_selection: AcpBuiltinSelection::default(),
@@ -80,49 +82,51 @@ async fn server_with_session(
         )
         .await
         .unwrap();
-    let provider = Arc::new(CountingProvider {
-        pause_activation: lazy,
-        ..Default::default()
-    });
-    if lazy {
-        server
-            .agent_manager
-            .set_default_provider(provider.clone())
-            .await;
-        return (root, server, session, provider);
-    }
-    let agent = Arc::new(Agent::with_config(AgentConfig::new(
-        server.session_manager.clone(),
-        server.permission_manager.clone(),
-        None,
-        GooseMode::Auto,
-        true,
-        GoosePlatform::GooseCli,
-    )));
+    server
+        .session_manager
+        .update(&session.id)
+        .extension_data(enabled_extensions_data(&session, Vec::new()).unwrap())
+        .apply()
+        .await
+        .unwrap();
+    let provider = Arc::new(CountingProvider::default());
+    let agent = server
+        .agent_manager
+        .get_or_create_agent(session.id.clone())
+        .await
+        .unwrap();
     agent
         .update_provider(
             provider.clone(),
-            goose_providers::model::ModelConfig::new("test-model"),
+            goose_providers::model::ModelConfig::new("gpt-4o"),
             &session.id,
         )
         .await
         .unwrap();
-    server.register_acp_session(session.id.clone(), agent).await;
+    if lazy {
+        server
+            .agent_manager
+            .remove_session_if_loaded(&session.id)
+            .await
+            .unwrap();
+        agent
+            .config
+            .providers
+            .set_provider(&session.id, provider.clone())
+            .await;
+        provider.pause_activation.store(true, Ordering::SeqCst);
+        assert!(!server.agent_manager.has_session(&session.id).await);
+    } else {
+        server.register_acp_session(session.id.clone(), agent).await;
+    }
     (root, server, session, provider)
 }
 
-fn prompt(session_id: &str, state_machine: bool) -> PromptRequest {
-    let mut request = PromptRequest::new(
+fn prompt(session_id: &str) -> PromptRequest {
+    PromptRequest::new(
         SessionId::new(session_id.to_string()),
         vec![ContentBlock::Text(TextContent::new("hello"))],
-    );
-    request.meta = Some(
-        serde_json::from_value(serde_json::json!({
-            "goose": { "unrolledAgentLoop": state_machine }
-        }))
-        .unwrap(),
-    );
-    request
+    )
 }
 
 struct CancelBeforePromptTask {
@@ -166,10 +170,8 @@ impl HandleDispatchFrom<Client> for CancelBeforePromptTask {
     }
 }
 
-#[test_case(false; "legacy")]
-#[test_case(true; "state_machine")]
 #[tokio::test]
-async fn dispatch_cancel_before_prompt_task_prevents_work(state_machine: bool) {
+async fn dispatch_cancel_before_prompt_task_prevents_work() {
     let (_root, server, session, provider) = server_with_session(false).await;
     let handler = CancelBeforePromptTask {
         handler: GooseAcpHandler {
@@ -181,10 +183,7 @@ async fn dispatch_cancel_before_prompt_task_prevents_work(state_machine: bool) {
         Client
             .builder()
             .connect_with(SacpAgent.builder().with_handler(handler), async |cx| {
-                let response = cx
-                    .send_request(prompt(&session.id, state_machine))
-                    .block_task()
-                    .await?;
+                let response = cx.send_request(prompt(&session.id)).block_task().await?;
                 assert_eq!(response.stop_reason, StopReason::Cancelled);
                 assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
                 assert!(!server.active_runs.is_active(&session.id));
@@ -202,10 +201,8 @@ async fn dispatch_cancel_before_prompt_task_prevents_work(state_machine: bool) {
     .unwrap();
 }
 
-#[test_case(false; "legacy")]
-#[test_case(true; "state_machine")]
 #[tokio::test]
-async fn dispatch_cancel_during_lazy_activation_prevents_work(state_machine: bool) {
+async fn dispatch_cancel_during_lazy_activation_prevents_work() {
     let (_root, server, session, provider) = server_with_session(true).await;
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -215,10 +212,13 @@ async fn dispatch_cancel_during_lazy_activation_prevents_work(state_machine: boo
             }),
             async |cx| {
                 let prompt_cx = cx.clone();
-                let request = prompt(&session.id, state_machine);
+                let request = prompt(&session.id);
                 let pending =
                     tokio::spawn(async move { prompt_cx.send_request(request).block_task().await });
                 provider.activation_entered.notified().await;
+                assert!(!server.has_session(&session.id).await);
+                assert!(!server.agent_manager.has_session(&session.id).await);
+                assert!(server.active_runs.agent_run(&session.id).is_none());
                 cx.send_notification(CancelNotification::new(SessionId::new(session.id.clone())))?;
                 // Authenticate runs inline, so its response acknowledges that the
                 // preceding cancellation notification has completed dispatch.
@@ -240,10 +240,7 @@ async fn dispatch_cancel_during_lazy_activation_prevents_work(state_machine: boo
                     .unwrap();
                 assert!(stored.conversation.unwrap_or_default().is_empty());
 
-                let response = cx
-                    .send_request(prompt(&session.id, state_machine))
-                    .block_task()
-                    .await?;
+                let response = cx.send_request(prompt(&session.id)).block_task().await?;
                 assert_eq!(response.stop_reason, StopReason::EndTurn);
                 assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
                 assert!(!server.active_runs.is_active(&session.id));
@@ -256,10 +253,8 @@ async fn dispatch_cancel_during_lazy_activation_prevents_work(state_machine: boo
     .unwrap();
 }
 
-#[test_case(false; "legacy")]
-#[test_case(true; "state_machine")]
 #[tokio::test]
-async fn dispatch_prompt_error_and_idle_cancel_allow_later_prompt(state_machine: bool) {
+async fn dispatch_prompt_error_and_idle_cancel_allow_later_prompt() {
     let (_root, server, session, provider) = server_with_session(false).await;
     tokio::time::timeout(
         Duration::from_secs(10),
@@ -270,17 +265,14 @@ async fn dispatch_prompt_error_and_idle_cancel_allow_later_prompt(state_machine:
             async |cx| {
                 for _ in 0..2 {
                     assert!(cx
-                        .send_request(prompt("missing-session", state_machine))
+                        .send_request(prompt("missing-session"))
                         .block_task()
                         .await
                         .is_err());
                     assert!(!server.active_runs.is_active("missing-session"));
                 }
                 cx.send_notification(CancelNotification::new(SessionId::new(session.id.clone())))?;
-                let response = cx
-                    .send_request(prompt(&session.id, state_machine))
-                    .block_task()
-                    .await?;
+                let response = cx.send_request(prompt(&session.id)).block_task().await?;
                 assert_eq!(response.stop_reason, StopReason::EndTurn);
                 assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
                 assert!(!server.active_runs.is_active(&session.id));
@@ -348,11 +340,8 @@ async fn dropping_unpolled_prompt_releases_pending_run() {
                     .await?;
                 let run = server.reserve_prompt_run(&session.id).await.unwrap();
                 let token = run.cancel_token.clone();
-                let future = server.on_prompt(
-                    server.client_cx.get().unwrap(),
-                    prompt(&session.id, false),
-                    run,
-                );
+                let future =
+                    server.on_prompt(server.client_cx.get().unwrap(), prompt(&session.id), run);
                 drop(future);
                 assert!(token.is_cancelled());
                 tokio::time::timeout(Duration::from_secs(2), async {
@@ -373,23 +362,28 @@ async fn dropping_unpolled_prompt_releases_pending_run() {
 #[tokio::test]
 async fn disconnect_during_activation_releases_pending_run() {
     let (_root, server, session, provider) = server_with_session(true).await;
-    let pending = Client
-        .builder()
-        .connect_with(
+    let pending = tokio::time::timeout(
+        Duration::from_secs(10),
+        Client.builder().connect_with(
             SacpAgent.builder().with_handler(GooseAcpHandler {
                 agent: server.clone(),
             }),
             async |cx| {
-                let request = prompt(&session.id, false);
+                let request = prompt(&session.id);
                 let pending =
                     tokio::spawn(async move { cx.send_request(request).block_task().await });
                 provider.activation_entered.notified().await;
+                assert!(!server.has_session(&session.id).await);
+                assert!(!server.agent_manager.has_session(&session.id).await);
+                assert!(server.active_runs.agent_run(&session.id).is_none());
                 assert!(server.active_runs.is_active(&session.id));
                 Ok(pending)
             },
-        )
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .expect("activation timed out")
+    .unwrap();
     assert!(pending.await.unwrap().is_err());
     tokio::time::timeout(Duration::from_secs(2), async {
         while server.active_runs.is_active(&session.id) {
