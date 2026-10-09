@@ -35,14 +35,21 @@ impl OpenedSkillDirectory {
         if !same_directory(directory, &resolved_directory)? {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "linked skill path no longer identifies the discovered directory",
+                "skill path no longer identifies the discovered directory",
             ));
         }
         Ok(Self(directory.try_clone()?, resolved_path))
     }
 
-    pub(super) fn resolved_path(&self) -> &Path {
-        &self.1
+    pub(super) fn resolved_path(&self) -> io::Result<&Path> {
+        let directory = open_skill_root(&self.1, RootLinkPolicy::Reject, &mut |_| {})?;
+        if !same_directory(&self.0, &directory)? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "skill path no longer identifies the discovered directory",
+            ));
+        }
+        Ok(&self.1)
     }
 }
 
@@ -298,6 +305,7 @@ fn read_opened_file(file: fs::File, limit: ReadLimit) -> io::Result<String> {
     }
 }
 
+#[cfg(test)]
 pub(super) fn walk_regular_files_no_follow_with_hook<F, G, H>(
     root: &Path,
     linked_skill_root: bool,
@@ -1462,15 +1470,17 @@ mod tests {
         fs::create_dir(&original).unwrap();
         let directory = open_skill_root(&original, RootLinkPolicy::Reject, &mut |_| {}).unwrap();
         let captured = OpenedSkillDirectory::from_opened(&directory, &original).unwrap();
-        assert_eq!(captured.resolved_path(), original);
+        assert_eq!(captured.resolved_path().unwrap(), original);
 
         fs::rename(&original, &moved).unwrap();
         fs::create_dir(&original).unwrap();
         assert!(OpenedSkillDirectory::from_opened(&directory, &original).is_err());
+        assert!(captured.resolved_path().is_err());
         assert_eq!(
             OpenedSkillDirectory::from_opened(&directory, &moved)
                 .unwrap()
-                .resolved_path(),
+                .resolved_path()
+                .unwrap(),
             moved
         );
     }

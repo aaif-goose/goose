@@ -8,13 +8,12 @@ pub mod client;
 mod supporting_files;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
-#[cfg(test)]
-use supporting_files::load_supporting_file;
 pub(crate) use supporting_files::{create_source_file, read_source_file, write_source_file};
+#[cfg(test)]
+use supporting_files::{load_supporting_file, walk_regular_files_no_follow_with_hook};
 use supporting_files::{
     load_supporting_file_from_opened, walk_regular_files_from_opened_with_hook,
-    walk_regular_files_no_follow_with_hook, walk_skill_files_no_follow_with_hook,
-    OpenedSkillDirectory,
+    walk_skill_files_no_follow_with_hook, OpenedSkillDirectory,
 };
 
 use crate::config::{paths::Paths, Config};
@@ -54,19 +53,16 @@ impl DiscoveredSkill {
         let Some(load_root) = &self.load_root else {
             return loaded_skill_context_with_args(&self.source, args);
         };
+        let resolved_path = load_root.resolved_path()?;
         let mut rendered_source = self.source.clone();
-        rendered_source.path = load_root.resolved_path().to_string_lossy().into_owned();
+        rendered_source.path = resolved_path.to_string_lossy().into_owned();
         rendered_source.supporting_files = self
             .source
             .supporting_files
             .iter()
             .map(|file| {
                 let relative = Path::new(file).strip_prefix(&self.source.path)?;
-                Ok(load_root
-                    .resolved_path()
-                    .join(relative)
-                    .to_string_lossy()
-                    .into_owned())
+                Ok(resolved_path.join(relative).to_string_lossy().into_owned())
             })
             .collect::<Result<Vec<_>>>()?;
         loaded_skill_context_with_args(&rendered_source, args)
@@ -665,7 +661,7 @@ where
     walk_skill_files_no_follow_with_hook(
         &walk_root,
         &mut |path| !should_skip_dir(path),
-        &mut |path, inside_linked_skill_root, directory, open_for_read| {
+        &mut |path, _inside_linked_skill_root, directory, open_for_read| {
             if path.file_name().and_then(|name| name.to_str()) == Some("SKILL.md") {
                 if let Some(skill_dir) = path.parent() {
                     skill_dirs.insert(skill_dir.to_path_buf());
@@ -673,23 +669,19 @@ where
                 let mut content = String::new();
                 match open_for_read().and_then(|mut file| file.read_to_string(&mut content)) {
                     Ok(_) => {
-                        let load_root = if inside_linked_skill_root || preserve_path {
-                            match OpenedSkillDirectory::from_opened(
-                                directory,
-                                path.parent().unwrap(),
-                            ) {
-                                Ok(directory) => Some(directory),
-                                Err(error) => {
-                                    warn!(
-                                        "Failed to retain linked skill directory {}: {}",
-                                        path.display(),
-                                        error
-                                    );
-                                    return;
-                                }
+                        let load_root = match OpenedSkillDirectory::from_opened(
+                            directory,
+                            path.parent().unwrap(),
+                        ) {
+                            Ok(directory) => directory,
+                            Err(error) => {
+                                warn!(
+                                    "Failed to retain skill directory {}: {}",
+                                    path.display(),
+                                    error
+                                );
+                                return;
                             }
-                        } else {
-                            None
                         };
                         skill_files.push((path.to_path_buf(), content, load_root));
                         after_marker_read(path);
@@ -741,28 +733,19 @@ where
                         }
                     }
                 };
-                let _ = match &load_root {
-                    Some(load_root) => walk_regular_files_from_opened_with_hook(
-                        &load_path,
-                        load_root,
-                        &mut should_descend,
-                        &mut visit_file,
-                        after_read_dir,
-                    ),
-                    None => walk_regular_files_no_follow_with_hook(
-                        &load_path,
-                        false,
-                        &mut should_descend,
-                        &mut visit_file,
-                        after_read_dir,
-                    ),
-                };
+                let _ = walk_regular_files_from_opened_with_hook(
+                    &load_path,
+                    &load_root,
+                    &mut should_descend,
+                    &mut visit_file,
+                    after_read_dir,
+                );
                 source.supporting_files = files;
 
                 seen.insert(source.name.clone());
                 sources.push(DiscoveredSkill {
                     load_path,
-                    load_root,
+                    load_root: Some(load_root),
                     source,
                 });
             }
@@ -1753,6 +1736,82 @@ mod tests {
         let state_machine_text = state_machine.content[0].as_text().unwrap();
         assert!(state_machine_text.text.contains("original guidance"));
         assert!(!state_machine_text.text.contains("replacement data"));
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn regular_skill_replacement_stays_bound_to_opened_root() {
+        let (_temp_dir, temp_root) = canonical_temp_root();
+        let skill_root = temp_root.join("skills");
+        let skill_dir = skill_root.join("regular-skill");
+        let moved_skill_dir = temp_root.join("moved-skill");
+        write_skill(&skill_dir, "regular-skill");
+        std::fs::write(skill_dir.join("guide.md"), "original guidance").unwrap();
+
+        let mut replaced = false;
+        let sources = scan_skills_from_dir_with_marker_hook(
+            &skill_root,
+            false,
+            &mut HashSet::new(),
+            &mut |marker| {
+                if marker == skill_dir.join("SKILL.md") && !replaced {
+                    std::fs::rename(&skill_dir, &moved_skill_dir).unwrap();
+                    write_skill(&skill_dir, "replacement-skill");
+                    std::fs::write(skill_dir.join("guide.md"), "replacement data").unwrap();
+                    std::fs::write(skill_dir.join("replacement.md"), "replacement data").unwrap();
+                    replaced = true;
+                }
+            },
+        );
+        assert!(replaced);
+        let skill = sources
+            .iter()
+            .find(|skill| skill.name == "regular-skill")
+            .unwrap();
+        assert_eq!(
+            skill.supporting_files,
+            vec![skill_dir.join("guide.md").to_string_lossy()]
+        );
+
+        let assert_original_reads = || {
+            let legacy = crate::skills::client::load_supporting_file(
+                skill,
+                "regular-skill/guide.md",
+                Path::new("guide.md"),
+            );
+            assert!(!legacy.is_error.unwrap_or(false));
+            assert!(legacy.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("original guidance"));
+
+            let state_machine = crate::agents::state_machine::load_skill_supporting_file(
+                skill,
+                "regular-skill/guide.md",
+                "guide.md",
+            );
+            assert!(!state_machine.is_error.unwrap_or(false));
+            assert!(state_machine.content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .contains("original guidance"));
+        };
+        assert_original_reads();
+        assert!(skill.loaded_context_with_args(None).is_err());
+
+        std::fs::rename(&skill_dir, temp_root.join("first-replacement")).unwrap();
+        write_skill(&skill_dir, "second-replacement");
+        std::fs::write(skill_dir.join("guide.md"), "later replacement data").unwrap();
+        assert_original_reads();
+        assert!(skill.loaded_context_with_args(None).is_err());
+
+        std::fs::rename(&skill_dir, temp_root.join("second-replacement")).unwrap();
+        std::fs::rename(&moved_skill_dir, &skill_dir).unwrap();
+        assert_original_reads();
+        let restored_context = skill.loaded_context_with_args(None).unwrap();
+        assert!(restored_context.contains(&format!("Skill directory: {}", skill_dir.display())));
     }
 
     #[cfg(unix)]
