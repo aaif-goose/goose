@@ -457,7 +457,8 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         for config in configs {
             self.agent
-                .add_extension(config, &self.session_id)
+                .extension_manager
+                .enable(&self.session_id, config)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to start extension: {}", e))?;
         }
@@ -490,7 +491,13 @@ impl CliSession {
         extension: Option<String>,
     ) -> Result<HashMap<String, Vec<String>>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
+        let prompts = self
+            .agent
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
 
         // Early validation if filtering by extension
         if let Some(filter) = &extension {
@@ -512,7 +519,13 @@ impl CliSession {
 
     pub async fn get_prompt_info(&mut self, name: &str) -> Result<Option<output::PromptInfo>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
+        let prompts = self
+            .agent
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
 
         // Find which extension has this prompt
         for (extension, prompt_list) in prompts {
@@ -531,9 +544,20 @@ impl CliSession {
 
     pub async fn get_prompt(&mut self, name: &str, arguments: Value) -> Result<Vec<PromptMessage>> {
         self.ensure_extensions_loaded(true).await?;
-        Ok(self
+        let lease = self
             .agent
-            .get_prompt(&self.session_id, name, arguments)
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?;
+        let extension = lease
+            .list_prompts(CancellationToken::default())
+            .await
+            .into_iter()
+            .find(|(_, prompts)| prompts.iter().any(|prompt| prompt.name == name))
+            .map(|(extension, _)| extension)
+            .ok_or_else(|| anyhow::anyhow!("Prompt '{}' not found", name))?;
+        Ok(lease
+            .get_prompt(&extension, name, arguments, CancellationToken::default())
             .await?
             .messages)
     }
@@ -1120,6 +1144,7 @@ impl CliSession {
 
         let has_extensions = !self
             .agent
+            .extension_manager
             .get_extension_configs(&self.session_id)
             .await?
             .is_empty();
@@ -1128,14 +1153,18 @@ impl CliSession {
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
-        self.agent.discard_pending_steers(&self.session_id).await;
-        self.agent.extension_manager.release(&self.session_id).await;
-        self.agent.config.providers.release(&self.session_id);
+        self.agent.release_session(&self.session_id).await;
 
         self.session_id = new_session_id;
         self.messages.clear();
 
-        let mode = self.agent.goose_mode(&self.session_id).await?;
+        let mode = self
+            .agent
+            .config
+            .session_manager
+            .get_session(&self.session_id, false)
+            .await?
+            .goose_mode;
         if let Err(e) = self.agent.update_goose_mode(mode, &self.session_id).await {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
@@ -1179,11 +1208,15 @@ impl CliSession {
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
             create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
+        let extensions = self
+            .agent
+            .extension_manager
+            .get_extension_configs(&self.session_id)
+            .await?;
         self.agent
-            .persist_extension_configs(
-                &new_session_id,
-                self.agent.get_extension_configs(&self.session_id).await?,
-            )
+            .config
+            .session_manager
+            .update_enabled_extensions(&new_session_id, |selected| *selected = extensions)
             .await?;
         Ok(new_session_id)
     }
@@ -1757,7 +1790,12 @@ impl CliSession {
         session_id: &str,
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
-        let prompts = agent.list_extension_prompts(session_id).await?;
+        let prompts = agent
+            .extension_manager
+            .current_lease(session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
         let all_providers = goose::providers::providers().await;
         let session_provider = agent.provider(session_id).await?.get_name().to_string();
 

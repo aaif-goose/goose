@@ -12,7 +12,6 @@ use super::tool_confirmation_coordinator::{
     ActiveTurnGuard, ConfirmationAnswer, ToolConfirmationCoordinator,
 };
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{ClientContext, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
@@ -31,7 +30,6 @@ use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
 use crate::agents::AgentEvent;
-use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -47,7 +45,7 @@ use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
-use rmcp::model::{ElicitationAction, GetPromptResult, Prompt, Tool};
+use rmcp::model::{ElicitationAction, Tool};
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -393,26 +391,6 @@ impl StateMachineServices {
         }
     }
 
-    /// Save the provided extension configuration to session metadata.
-    pub async fn persist_extension_configs(
-        &self,
-        session_id: &str,
-        extensions: Vec<ExtensionConfig>,
-    ) -> Result<()> {
-        self.config
-            .session_manager
-            .update_enabled_extensions(session_id, |selected| *selected = extensions)
-            .await
-    }
-
-    pub async fn add_extension(
-        &self,
-        extension: ExtensionConfig,
-        session_id: &str,
-    ) -> ExtensionResult<()> {
-        self.extension_manager.enable(session_id, extension).await
-    }
-
     pub async fn list_tools(
         &self,
         session_id: &str,
@@ -438,26 +416,6 @@ impl StateMachineServices {
         }
 
         Ok(prefixed_tools)
-    }
-
-    pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
-        self.remove_extension_by_key(&name_to_key(name), session_id)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn remove_extension_by_key(&self, key: &str, session_id: &str) -> Result<bool> {
-        Ok(self.extension_manager.disable(session_id, key).await?)
-    }
-
-    pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
-        self.extension_manager.list_extensions(session_id).await
-    }
-
-    pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
-        self.extension_manager
-            .get_extension_configs(session_id)
-            .await
     }
 
     pub async fn submit_tool_confirmation(
@@ -1164,15 +1122,6 @@ impl StateMachineServices {
             .context("Failed to persist goose_mode to session")
     }
 
-    pub async fn goose_mode(&self, session_id: &str) -> Result<GooseMode> {
-        Ok(self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?
-            .goose_mode)
-    }
-
     /// Apply a thinking-effort selection. `effort` is the raw option value: a
     /// provider that manages effort through a harness has its own vocabulary,
     /// which is not always a `ThinkingEffort` member.
@@ -1299,40 +1248,6 @@ impl StateMachineServices {
                 )
             })?;
         Ok(true)
-    }
-
-    pub async fn list_extension_prompts(
-        &self,
-        session_id: &str,
-    ) -> Result<HashMap<String, Vec<Prompt>>> {
-        Ok(self
-            .extension_manager
-            .current_lease(session_id)
-            .await?
-            .list_prompts(CancellationToken::default())
-            .await)
-    }
-
-    pub async fn get_prompt(
-        &self,
-        session_id: &str,
-        name: &str,
-        arguments: Value,
-    ) -> Result<GetPromptResult> {
-        let lease = self.extension_manager.current_lease(session_id).await?;
-        let prompts = lease.list_prompts(CancellationToken::default()).await;
-
-        if let Some(extension) = prompts
-            .iter()
-            .find(|(_, prompt_list)| prompt_list.iter().any(|p| p.name == name))
-            .map(|(extension, _)| extension)
-        {
-            return lease
-                .get_prompt(extension, name, arguments, CancellationToken::default())
-                .await;
-        }
-
-        Err(anyhow!("Prompt '{}' not found", name))
     }
 }
 

@@ -109,7 +109,9 @@ async fn agent_with_calculator() -> Result<(
 
 async fn enable_developer(agent: &StateMachineServices, session_id: &str) -> Result<()> {
     agent
-        .add_extension(
+        .extension_manager
+        .enable(
+            session_id,
             ExtensionConfig::Platform {
                 name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
                 description: "Developer tools".to_string(),
@@ -117,7 +119,6 @@ async fn enable_developer(agent: &StateMachineServices, session_id: &str) -> Res
                 bundled: None,
                 available_tools: Vec::new(),
             },
-            session_id,
         )
         .await?;
     Ok(())

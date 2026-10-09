@@ -12,10 +12,12 @@ impl GooseAcpAgent {
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let goose_mode = agent
-            .goose_mode(session_id)
+        let goose_mode = self
+            .session_manager
+            .get_session(session_id, false)
             .await
-            .internal_err_ctx("Failed to read goose mode")?;
+            .internal_err_ctx("Failed to read goose mode")?
+            .goose_mode;
         let permission_manager = self.permission_manager();
 
         let mut tools: Vec<ToolListItem> = agent

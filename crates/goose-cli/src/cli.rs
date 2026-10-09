@@ -1560,7 +1560,10 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         )
         .await?;
     let session_id = session.id.as_str();
-    agent.add_extension(extension, session_id).await?;
+    agent
+        .extension_manager
+        .enable(session_id, extension)
+        .await?;
 
     let mut results = Vec::new();
     for step in script.steps {

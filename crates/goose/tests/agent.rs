@@ -141,7 +141,9 @@ mod tests {
                 .await
                 .unwrap();
             agent
-                .add_extension(
+                .extension_manager
+                .enable(
+                    &session.id,
                     ExtensionConfig::Platform {
                         name: SCHEDULER_EXTENSION_NAME.to_string(),
                         description: "Create and manage scheduled recipe execution".to_string(),
@@ -149,7 +151,6 @@ mod tests {
                         bundled: Some(true),
                         available_tools: vec![],
                     },
-                    &session.id,
                 )
                 .await
                 .unwrap();
@@ -942,7 +943,8 @@ mod tests {
             };
 
             agent
-                .add_extension(ext_config, &session_id)
+                .extension_manager
+                .enable(&session_id, ext_config)
                 .await
                 .expect("Failed to add extension manager");
             (agent, session_id, temp_dir)
@@ -2239,7 +2241,10 @@ mod tests {
                     &session_id,
                 )
                 .await?;
-            agent.add_extension(extension, &session_id).await?;
+            agent
+                .extension_manager
+                .enable(&session_id, extension)
+                .await?;
 
             let stream = agent
                 .reply(

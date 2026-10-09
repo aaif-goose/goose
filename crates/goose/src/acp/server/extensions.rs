@@ -13,7 +13,8 @@ impl GooseAcpAgent {
         let config = goose_extension_to_config_without_secrets(req.extension)?;
         let agent = self.get_session_agent(&req.session_id).await?;
         agent
-            .add_extension(config, session_id)
+            .extension_manager
+            .enable(session_id, config)
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
@@ -26,7 +27,8 @@ impl GooseAcpAgent {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
         let removed = agent
-            .remove_extension_by_key(&req.extension_key, session_id)
+            .extension_manager
+            .disable(session_id, &req.extension_key)
             .await
             .internal_err()?;
         if !removed {

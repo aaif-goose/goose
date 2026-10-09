@@ -721,7 +721,11 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             }
         };
     if let Err(e) = agent
-        .persist_extension_configs(&session_id, extensions_for_provider.clone())
+        .config
+        .session_manager
+        .update_enabled_extensions(&session_id, |selected| {
+            *selected = extensions_for_provider.clone()
+        })
         .await
     {
         output::render_error(&format!("Failed to save session extensions: {}", e));

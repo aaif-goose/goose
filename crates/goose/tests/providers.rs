@@ -280,11 +280,13 @@ impl ProviderFixture {
             .update_provider(provider.clone(), model_config.clone(), &session_id)
             .await?;
         agent
-            .add_extension(mcp_extension, &session_id)
+            .extension_manager
+            .enable(&session_id, mcp_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
         agent
-            .add_extension(developer_extension, &session_id)
+            .extension_manager
+            .enable(&session_id, developer_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 

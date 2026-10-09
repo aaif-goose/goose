@@ -892,7 +892,10 @@ async fn execute_job(
         ));
     }
     for ext in &extensions {
-        agent.add_extension(ext.clone(), &session.id).await?;
+        agent
+            .extension_manager
+            .enable(&session.id, ext.clone())
+            .await?;
     }
 
     agent

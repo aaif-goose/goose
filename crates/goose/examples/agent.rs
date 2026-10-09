@@ -40,10 +40,10 @@ async fn main() -> anyhow::Result<()> {
         DEFAULT_EXTENSION_TIMEOUT,
     )
     .with_args(vec!["mcp", "developer"]);
-    agent.add_extension(config, &session.id).await?;
+    agent.extension_manager.enable(&session.id, config).await?;
 
     println!("Extensions:");
-    for extension in agent.list_extensions(&session.id).await? {
+    for extension in agent.extension_manager.list_extensions(&session.id).await? {
         println!("  {}", extension);
     }
 
