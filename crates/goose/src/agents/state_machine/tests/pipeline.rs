@@ -17,10 +17,11 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Next, Operation,
+    ProjectOperation, RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
+    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnknownToolOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::AgentEvent;
@@ -445,21 +446,25 @@ impl TestPipeline {
         loop {
             let session = self.session().await?;
             let machine = self.machine(cancel.clone());
-            let Some(mut result) = machine.step(&session, &emit).await? else {
-                break;
-            };
+            let mut result = machine.step(&session, &emit).await?;
             machine
-                .apply(self.session_manager.as_ref(), &session, &mut result, &emit)
+                .apply(
+                    self.session_manager.as_ref(),
+                    &session,
+                    &mut result.effects,
+                    &emit,
+                )
                 .await?;
-            applied_steps += 1;
+            if !result.effects.is_empty() {
+                applied_steps += 1;
+            }
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
             }
 
-            let yield_to_client = result.yield_to_client;
             drop(machine);
             self = self.reconstruct().await?;
-            if yield_to_client {
+            if result.next != Next::Continue {
                 break;
             }
         }
@@ -644,16 +649,18 @@ impl TestPipeline {
                     }
                 }
             };
-            let Some(ref mut result) = result else {
-                break;
-            };
             machine
-                .apply(self.session_manager.as_ref(), &session, result, &emit)
+                .apply(
+                    self.session_manager.as_ref(),
+                    &session,
+                    &mut result.effects,
+                    &emit,
+                )
                 .await?;
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
             }
-            if result.yield_to_client {
+            if result.next != Next::Continue {
                 break;
             }
         }
@@ -1118,21 +1125,19 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
     pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
-        let Some(mut result) = machine.step(&session, &emit).await? else {
-            break;
-        };
+        let mut result = machine.step(&session, &emit).await?;
         machine
             .apply(
                 pipeline.session_manager.as_ref(),
                 &session,
-                &mut result,
+                &mut result.effects,
                 &emit,
             )
             .await?;
         while let Ok(event) = rx.try_recv() {
             events.push(event);
         }
-        if result.yield_to_client {
+        if result.next != Next::Continue {
             break;
         }
     }

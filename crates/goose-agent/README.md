@@ -26,8 +26,9 @@ is a function of the persisted conversation, not of in-memory loop state.
   boundaries. Their schemas are sent to inference and matching calls are
   dispatched against the current session.
 - **`StateMachine<'a, S, E>`** — holds `Vec<Step<..>>` and a `CancellationToken`.
-  `step()` runs one pass, `apply()` writes effects back, `run()` loops until a
-  step yields to the client or no step applies.
+  `step()` runs one pass and reports in `StepResult::next` whether to
+  `Continue`, `Yield` to the client, or stop because the run was `Cancelled`;
+  `apply()` writes effects back; `run()` loops until `next` is not `Continue`.
 - **`ConversationEffect`** — the default effect type: `AppendMessage`,
   `ReplaceConversation`, `PatchToolRequestMeta`, `SetMessageVisibility`. Bring
   your own by implementing `MachineEffect`.

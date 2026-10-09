@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use goose_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
-        ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
+        ConversationEffect, Emitter, Inference, InferenceInput, Next, Operation, OperationResult,
     },
     tool::{ToolOperation, ToolProvider},
 };
@@ -470,7 +470,7 @@ async fn cancellation_interrupts_inference_discovery() {
     }
     cancel.cancel();
 
-    assert!(step.await.unwrap().unwrap().is_none());
+    assert_eq!(step.await.unwrap().unwrap().next, Next::Cancelled);
 }
 
 #[tokio::test]

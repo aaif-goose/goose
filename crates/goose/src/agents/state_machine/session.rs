@@ -338,19 +338,7 @@ pub(crate) async fn run(
         session_manager: runtime,
         usage: Default::default(),
     };
-    loop {
-        let session = runtime.load(session_id).await?;
-        let Some(mut result) = machine.step(&session, emit).await? else {
-            break;
-        };
-        tracing::debug!(target: "goose::state_machine", step = result.applied_step, "applied step");
-        machine.apply(&runtime, &session, &mut result, emit).await?;
-        if result.yield_to_client {
-            break;
-        }
-    }
-
-    let session = machine.finalize(&runtime, session_id, emit).await?;
+    let session = machine.run(&runtime, session_id, emit).await?;
     let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()
