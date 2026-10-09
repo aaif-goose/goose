@@ -307,6 +307,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                     model.supports_cache_control = model
                         .supports_cache_control
                         .or(existing.supports_cache_control);
+                    model.supports_vision = model.supports_vision.or(existing.supports_vision);
                     model.reasoning |= existing.reasoning;
                     model.thinking_preservation_format = model
                         .thinking_preservation_format
@@ -800,7 +801,8 @@ mod tests {
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
 
-        let mut model = ModelInfo::with_cost("large-model", 1_048_576, 0.000002, 0.000006);
+        let mut model = ModelInfo::with_cost("large-model", 1_048_576, 0.000002, 0.000006)
+            .with_vision_support(true);
         model.request_params = Some(HashMap::from([(
             "temperature".to_string(),
             serde_json::json!(0.25),
@@ -822,23 +824,35 @@ mod tests {
         })
         .unwrap();
 
-        update_custom_provider(UpdateCustomProviderParams {
-            id: created.name.clone(),
-            engine: "openai".to_string(),
-            display_name: created.display_name.clone(),
-            api_url: created.base_url.clone(),
-            api_key: None,
-            models: vec![ModelInfo::new("large-model").with_context_limit(2_097_152)],
-            supports_streaming: Some(true),
-            headers: None,
-            requires_auth: false,
-            catalog_provider_id: None,
-            base_path: None,
-            toolshim: false,
-            preserves_thinking: None,
-            auth: None,
-        })
-        .unwrap();
+        for (declared, expected) in [
+            (None, true),
+            (Some(false), false),
+            (None, false),
+            (Some(true), true),
+        ] {
+            let mut replacement = ModelInfo::new("large-model").with_context_limit(2_097_152);
+            replacement.supports_vision = declared;
+            update_custom_provider(UpdateCustomProviderParams {
+                id: created.name.clone(),
+                engine: "openai".to_string(),
+                display_name: created.display_name.clone(),
+                api_url: created.base_url.clone(),
+                api_key: None,
+                models: vec![replacement],
+                supports_streaming: Some(true),
+                headers: None,
+                requires_auth: false,
+                catalog_provider_id: None,
+                base_path: None,
+                toolshim: false,
+                preserves_thinking: None,
+                auth: None,
+            })
+            .unwrap();
+
+            let loaded = load_provider(&created.name).unwrap();
+            assert_eq!(loaded.config.models[0].supports_vision, Some(expected));
+        }
 
         let loaded = load_provider(&created.name).unwrap();
         let model = &loaded.config.models[0];
