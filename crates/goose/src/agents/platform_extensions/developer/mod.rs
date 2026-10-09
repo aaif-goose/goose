@@ -379,6 +379,29 @@ mod tests {
 
     #[cfg(not(windows))]
     #[tokio::test]
+    async fn developer_client_sets_agent_environment_for_shell_tool() {
+        let temp = tempfile::tempdir().unwrap();
+        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let ctx = ToolCallContext::new("session".to_owned(), None, None);
+
+        let result = client
+            .call_tool(
+                &ctx,
+                "shell",
+                Some(object!({
+                    "command": "printf '%s %s' \"$AGENT\" \"$GOOSE_TERMINAL\""
+                })),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(first_text(&result), "goose 1");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
     async fn developer_client_uses_working_dir_for_shell_tool() {
         let temp = tempfile::tempdir().unwrap();
         let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
