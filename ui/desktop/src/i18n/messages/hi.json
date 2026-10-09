@@ -4508,6 +4508,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "उपकरण विवरण"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "उपकरण पहचानकर्ता"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "उपकरण परिणाम"
   },
