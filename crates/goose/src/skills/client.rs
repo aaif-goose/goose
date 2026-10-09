@@ -339,6 +339,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     async fn load_skill(
         client: &SkillsClient,
         context: &ToolCallContext,
