@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "एजेंट लूप"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "कार्य निर्देशिका अब मौजूद नहीं है: {path}। इस सत्र को खोलने के लिए दूसरी निर्देशिका चुनें।"
   }
 }

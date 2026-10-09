@@ -3,10 +3,10 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
-    NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
-    SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    ContentBlock, ForkSessionRequest, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, McpServer, McpServerHttp, NewSessionRequest, PromptRequest,
+    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionId,
+    SessionInfo, SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::{
@@ -31,14 +31,17 @@ use common_tests::{
     run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
     OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
+use goose::agents::extension::ExtensionConfig;
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
 use goose::custom_requests::{
-    GetSessionInfoRequest, GetSessionInfoResponse, UpdateSessionProjectRequest,
+    GetSessionInfoRequest, GetSessionInfoResponse, GooseToolCallRequest,
+    UpdateSessionProjectRequest,
 };
 use goose::recipe::{Recipe, Settings};
 use goose::recipe_deeplink;
-use goose::session::{SessionManager, SessionType};
+use goose::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
+use goose_test_support::mcp::ContextReport;
 use goose_test_support::{McpFixture, FAKE_CODE};
 use std::path::Path;
 
@@ -824,6 +827,190 @@ fn test_load_model() {
 #[test]
 fn test_load_session_error_session_not_found() {
     run_test(async { run_load_session_error::<AcpServerConnection>().await });
+}
+
+#[test_case::test_case(SessionType::Acp; "acp")]
+#[test_case::test_case(SessionType::User; "user")]
+fn test_load_session_recovers_missing_working_directory(session_type: SessionType) {
+    run_test(async move {
+        let data_root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let original = workspace.path().join("original");
+        let replacement = workspace.path().join("renamed");
+        std::fs::create_dir(&original).unwrap();
+        let manager = SessionManager::new(data_root.path().to_path_buf());
+        let mut session = manager
+            .create_session(
+                original.clone(),
+                "History".to_string(),
+                session_type,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let mcp = McpFixture::new().await;
+        EnabledExtensionsState::new(vec![ExtensionConfig::streamable_http(
+            "mcp-fixture",
+            &mcp.url,
+            "Context fixture",
+            30_u64,
+        )])
+        .to_extension_data(&mut session.extension_data)
+        .unwrap();
+        manager
+            .update(&session.id)
+            .extension_data(session.extension_data.clone())
+            .apply()
+            .await
+            .unwrap();
+        manager
+            .add_message(&session.id, &Message::user().with_text("Saved history"))
+            .await
+            .unwrap();
+        std::fs::rename(&original, &replacement).unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let id = SessionId::new(session.id.clone());
+
+        let error = conn
+            .cx()
+            .send_request(LoadSessionRequest::new(id.clone(), &original))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!({
+                "reason": "working_directory_missing",
+                "path": original,
+            }))
+        );
+        assert!(conn.session_updates().is_empty());
+        assert_eq!(
+            manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap()
+                .working_dir,
+            original
+        );
+
+        let file = workspace.path().join("file");
+        std::fs::write(&file, "not a directory").unwrap();
+        for invalid in [
+            workspace.path().join("absent"),
+            file,
+            std::path::PathBuf::from("relative"),
+        ] {
+            let error = conn
+                .cx()
+                .send_request(LoadSessionRequest::new(id.clone(), invalid))
+                .block_task()
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidParams);
+            assert!(error.data.as_ref().unwrap().is_string());
+            assert!(conn.session_updates().is_empty());
+            assert_eq!(
+                manager
+                    .get_session(&session.id, false)
+                    .await
+                    .unwrap()
+                    .working_dir,
+                original
+            );
+        }
+
+        std::fs::write(&original, "not a directory").unwrap();
+        let error = conn
+            .cx()
+            .send_request(LoadSessionRequest::new(id.clone(), &original))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!("invalid directory path"))
+        );
+        assert!(conn.session_updates().is_empty());
+        std::fs::remove_file(&original).unwrap();
+        assert_eq!(mcp.request_count(), 0);
+
+        let error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(&original))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!("invalid directory path"))
+        );
+        let error = conn
+            .cx()
+            .send_request(ForkSessionRequest::new(id.clone(), &original))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!("invalid directory path"))
+        );
+        assert_eq!(conn.list_sessions().await.unwrap().sessions.len(), 1);
+
+        let response = conn
+            .cx()
+            .send_request(LoadSessionRequest::new(id.clone(), &replacement))
+            .block_task()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.meta.as_ref().unwrap()["workingDir"],
+            serde_json::json!(replacement)
+        );
+        assert_eq!(
+            manager
+                .get_session(&session.id, false)
+                .await
+                .unwrap()
+                .working_dir,
+            replacement
+        );
+        assert!(conn.session_updates().iter().any(|update| matches!(
+            update,
+            SessionUpdate::UserMessageChunk(chunk) if matches!(
+                &chunk.content, ContentBlock::Text(text) if text.text == "Saved history"
+            )
+        )));
+
+        let result = conn
+            .cx()
+            .send_request(GooseToolCallRequest {
+                session_id: session.id.clone(),
+                extension_name: "mcp-fixture".to_string(),
+                name: "mcp-fixture__inspect_context".to_string(),
+                arguments: serde_json::json!({}),
+            })
+            .block_task()
+            .await
+            .unwrap();
+        assert!(!result.is_error);
+        let context: ContextReport =
+            serde_json::from_str(result.content[0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(context.request_working_dir.as_deref(), replacement.to_str());
+        assert_eq!(
+            context.request_session_id.as_deref(),
+            Some(session.id.as_str())
+        );
+
+        conn.cx()
+            .send_request(LoadSessionRequest::new(id, &replacement))
+            .block_task()
+            .await
+            .unwrap();
+    });
 }
 
 #[test]

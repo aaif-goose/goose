@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "代理程式迴圈"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "工作目錄已不存在：{path}。請選擇其他目錄以開啟此工作階段。"
   }
 }

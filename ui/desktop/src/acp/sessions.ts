@@ -183,13 +183,16 @@ export async function acpGetSessionListItem(sessionId: string): Promise<SessionL
   return sessionInfoToListItem(response.session);
 }
 
-export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionResult> {
+export async function acpLoadSession(
+  sessionId: string,
+  workingDir?: string
+): Promise<AcpLoadSessionResult> {
   const pendingLoad = inFlightSessionLoads.get(sessionId);
   if (pendingLoad) {
     return pendingLoad;
   }
 
-  const loadPromise = loadAcpSession(sessionId);
+  const loadPromise = loadAcpSession(sessionId, workingDir);
   inFlightSessionLoads.set(sessionId, loadPromise);
   try {
     return await loadPromise;
@@ -204,17 +207,23 @@ export function isAcpSessionLoadInFlight(sessionId: string): boolean {
   return inFlightSessionLoads.has(sessionId);
 }
 
-async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> {
+async function loadAcpSession(
+  sessionId: string,
+  workingDir?: string
+): Promise<AcpLoadSessionResult> {
   const client = await getAcpClient();
   const initialSessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
   const initialSessionInfo = initialSessionInfoResponse.session;
   const response = await client.connection.agent.request(methods.agent.session.load, {
     sessionId,
-    cwd: initialSessionInfo.cwd,
+    cwd: workingDir ?? initialSessionInfo.cwd,
     mcpServers: [],
   });
   // Loading can populate missing provider/model metadata.
   const sessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
+  if (workingDir !== undefined) {
+    window.electron.addRecentDir(sessionInfoResponse.session.cwd);
+  }
 
   return {
     sessionInfo: sessionInfoResponse.session,

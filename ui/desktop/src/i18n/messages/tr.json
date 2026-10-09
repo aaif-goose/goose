@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Ajan döngüsü"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Çalışma dizini artık mevcut değil: {path}. Bu oturumu açmak için başka bir dizin seçin."
   }
 }

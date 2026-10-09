@@ -32,6 +32,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import { WorkingDirectoryRecovery } from './WorkingDirectoryRecovery';
 import { isAcpRecovering, subscribeToAcpRecovery } from '../acp/acpConnection';
 import type { LiveVoiceAvailabilityResponse_unstable } from '@aaif/goose-acp-client';
 import { acpGetLiveVoiceAvailability } from '../acp/liveVoice';
@@ -452,12 +453,22 @@ export default function BaseChat({
                   <h3 className="font-semibold mb-2">
                     {intl.formatMessage(i18n.failedToLoadSession)}
                   </h3>
-                  <p className="text-sm">{sessionLoadError}</p>
+                  {typeof sessionLoadError === 'string' ? (
+                    <p className="text-sm">{sessionLoadError}</p>
+                  ) : (
+                    <WorkingDirectoryRecovery
+                      key={sessionId}
+                      error={sessionLoadError}
+                      onReplace={retrySessionLoad}
+                    />
+                  )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => void retrySessionLoad()}>
-                    {intl.formatMessage(i18n.retry)}
-                  </Button>
+                  {typeof sessionLoadError === 'string' && (
+                    <Button variant="outline" onClick={() => void retrySessionLoad()}>
+                      {intl.formatMessage(i18n.retry)}
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setView('chat')}>
                     {intl.formatMessage(i18n.goHome)}
                   </Button>

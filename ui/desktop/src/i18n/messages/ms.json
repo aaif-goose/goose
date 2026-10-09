@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Gelung ejen"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Direktori kerja tidak lagi wujud: {path}. Pilih direktori pengganti untuk membuka sesi ini."
   }
 }

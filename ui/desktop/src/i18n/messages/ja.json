@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "エージェントループ"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "作業ディレクトリが存在しません: {path}。このセッションを開くには、別のディレクトリを選択してください。"
   }
 }

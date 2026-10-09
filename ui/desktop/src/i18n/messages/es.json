@@ -4744,5 +4744,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Bucle del agente"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "El directorio de trabajo ya no existe: {path}. Elige otro directorio para abrir esta sesión."
   }
 }

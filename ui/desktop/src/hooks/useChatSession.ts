@@ -148,7 +148,8 @@ export function useChatSession({
   );
 
   const retrySessionLoad = useCallback(
-    () => acpChatSessionController.loadSession(sessionId, { onSessionLoaded }),
+    (workingDir?: string) =>
+      acpChatSessionController.loadSession(sessionId, { onSessionLoaded, workingDir }),
     [sessionId, onSessionLoaded]
   );
 

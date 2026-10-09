@@ -19,6 +19,7 @@ import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
 import {
   formatAcpError,
   parseAcpCreditsExhaustedError,
+  parseAcpWorkingDirectoryMissingError,
   type AcpCreditsExhaustedError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
@@ -35,6 +36,7 @@ import {
 
 export interface AcpLoadSessionOptions {
   onSessionLoaded?: () => void;
+  workingDir?: string;
 }
 
 export interface AcpSnapshotOptions {
@@ -131,7 +133,7 @@ async function createSession(
 
 async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {}): Promise<void> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
-  if (cached?.session && !cached.sessionLoadError) {
+  if (cached?.session && !cached.sessionLoadError && options.workingDir === undefined) {
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
@@ -150,12 +152,13 @@ async function loadSessionFromServer(
   sessionId: string,
   options: AcpLoadSessionOptions = {}
 ): Promise<void> {
+  const previousLoadError = acpChatSessionStore.getSnapshot(sessionId)?.sessionLoadError;
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
 
   try {
-    const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const { sessionInfo, meta } = await acpLoadSession(sessionId, options.workingDir);
 
     showExtensionLoadResults(meta.extensionResults);
     window.dispatchEvent(
@@ -165,7 +168,16 @@ async function loadSessionFromServer(
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);
-    acpChatSessionActions.failSessionLoad(sessionId, formatAcpError(error));
+    const missingDirectory = parseAcpWorkingDirectoryMissingError(error);
+    acpChatSessionActions.failSessionLoad(
+      sessionId,
+      missingDirectory ??
+        (options.workingDir !== undefined &&
+        previousLoadError &&
+        typeof previousLoadError !== 'string'
+          ? { ...previousLoadError, recoveryError: formatAcpError(error) }
+          : formatAcpError(error))
+    );
   }
 }
 
