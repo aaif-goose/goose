@@ -11,11 +11,11 @@ use crate::declarative::{DeclarativeProviderConfig, KeyResolver};
 use crate::errors::ProviderError;
 use crate::formats::openai::is_openai_responses_model;
 use crate::formats::openai::{
-    create_request_with_options, get_cost, get_usage, is_reserved_request_param_key,
-    record_response_metadata, response_to_message, OpenAiFormatOptions,
+    create_request_for_model_with_context, get_cost, get_usage, is_reserved_request_param_key,
+    record_response_metadata, response_to_message, OpenAiFormatOptions, OpenAiRequestContext,
 };
 use crate::formats::openai_responses::{
-    create_responses_request_for_model, get_responses_usage, responses_api_to_message,
+    create_responses_request_for_model_with_context, get_responses_usage, responses_api_to_message,
     ResponsesApiResponse,
 };
 use crate::http_status::read_json_response;
@@ -137,6 +137,7 @@ pub struct OpenAiProvider {
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
     native_openai: bool,
+    catalog_provider_id: Option<String>,
     #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
 }
@@ -159,6 +160,7 @@ pub struct OpenAiProviderBuilder {
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
     native_openai: bool,
+    catalog_provider_id: Option<String>,
 }
 
 impl OpenAiProviderBuilder {
@@ -176,6 +178,7 @@ impl OpenAiProviderBuilder {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            catalog_provider_id: None,
         }
     }
 
@@ -247,6 +250,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn catalog_provider_id(mut self, catalog_provider_id: Option<String>) -> Self {
+        self.catalog_provider_id = catalog_provider_id;
+        self
+    }
+
     pub fn native_openai(mut self, native_openai: bool) -> Self {
         self.native_openai = native_openai;
         self
@@ -266,12 +274,21 @@ impl OpenAiProviderBuilder {
             skip_canonical_filtering: self.skip_canonical_filtering,
             preserve_thinking_context: self.preserve_thinking_context,
             native_openai: self.native_openai,
+            catalog_provider_id: self.catalog_provider_id,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
 impl OpenAiProvider {
+    fn request_context(&self) -> OpenAiRequestContext<'_> {
+        OpenAiRequestContext {
+            provider_name: &self.name,
+            catalog_provider_id: self.catalog_provider_id.as_deref(),
+            native_openai: self.native_openai,
+        }
+    }
+
     pub async fn stream_for_model(
         &self,
         model_config: &ModelConfig,
@@ -291,13 +308,14 @@ impl OpenAiProvider {
             request_config.reasoning =
                 Some(canonical.and_then(|model| model.reasoning).unwrap_or(true));
         }
-        let mut payload = create_responses_request_for_model(
+        let mut payload = create_responses_request_for_model_with_context(
             &request_config,
             wire_model,
             capability_model,
             system,
             messages,
             tools,
+            self.request_context(),
         )?;
         payload["stream"] = serde_json::Value::Bool(self.supports_streaming);
         self.stream_responses_payload(model_config, payload).await
@@ -376,6 +394,7 @@ impl OpenAiProvider {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -815,8 +834,12 @@ impl Provider for OpenAiProvider {
                 declared_model.and_then(|m| m.thinking_preservation_format);
             let supports_vision = self.vision_support(model_config).unwrap_or_default();
 
-            let mut payload = create_request_with_options(
+            let (wire_model, _) =
+                crate::formats::openai::extract_reasoning_effort(&model_config.model_name);
+            let mut payload = create_request_for_model_with_context(
                 model_config,
+                &wire_model,
+                &model_config.model_name,
                 system,
                 messages,
                 tools,
@@ -828,6 +851,7 @@ impl Provider for OpenAiProvider {
                     supports_vision,
                     thinking_preservation_format,
                 },
+                self.request_context(),
             )?;
 
             if let Some(params) = declared_model.and_then(|m| m.request_params.as_ref()) {
@@ -980,6 +1004,7 @@ pub fn from_declarative_config(
         .custom_headers(config.headers)
         .supports_streaming(config.supports_streaming.unwrap_or(true))
         .name(config.name.clone())
+        .catalog_provider_id(config.catalog_provider_id)
         .custom_models(custom_models)
         .dynamic_models(config.dynamic_models)
         .skip_canonical_filtering(config.skip_canonical_filtering)
@@ -1042,6 +1067,7 @@ mod tests {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -1594,6 +1620,7 @@ mod tests {
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
             native_openai: false,
+            catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }

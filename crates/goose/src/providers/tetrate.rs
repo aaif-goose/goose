@@ -13,7 +13,9 @@ use futures::future::BoxFuture;
 use goose_providers::errors::ProviderError;
 use goose_providers::images::ImageFormat;
 
-use goose_providers::formats::openai::create_request;
+use goose_providers::formats::openai::{
+    create_request_with_context, OpenAiFormatOptions, OpenAiRequestContext,
+};
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
@@ -137,13 +139,23 @@ impl Provider for TetrateProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let payload = create_request(
+        let payload = create_request_with_context(
             model_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             true,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: TETRATE_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
         )?;
 
         let mut log = start_log(model_config, &payload)?;

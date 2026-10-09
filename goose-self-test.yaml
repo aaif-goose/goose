@@ -11,6 +11,7 @@ activities:
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
   - Validate declared vision through persisted custom-provider configuration and outbound requests
+  - Validate catalog reasoning without native OpenAI request conventions on compatible providers
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -28,7 +29,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, catalog-reasoning, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
 
   - key: test_depth
     input_type: string
@@ -361,6 +362,24 @@ prompt: |
   this phase as SKIPPED.
 
   Log results to: {{ workspace_dir }}/declared_vision.md
+  {% endif %}
+
+  {% if test_phases == "all" or "catalog-reasoning" in test_phases %}
+  ## Catalog Reasoning and Compatible Request Conventions
+
+  When running from a goose source checkout with a Rust toolchain:
+  1. Run `cargo test -p goose-providers --test catalog_reasoning`.
+  2. Verify compatible Chat requests use system messages, max_tokens, and explicit
+     temperature even for catalog reasoning models. Effort selection must use the
+     selected provider's accepted levels, not a publisher inferred from the model name.
+  3. Verify compatible Responses retain max_output_tokens and explicit temperature,
+     while native OpenAI retains its reasoning-specific request conventions.
+  4. Verify raw effort overrides, explicit reasoning disablement, provider catalog IDs,
+     unknown models, and xAI's fixed and adjustable reasoning restrictions.
+  These tests use local HTTP mocks and require no provider credentials. If the source
+  checkout or toolchain is unavailable, mark this phase as SKIPPED.
+
+  Log results to: {{ workspace_dir }}/catalog_reasoning.md
   {% endif %}
 
   {% if test_phases == "all" or "vision" in test_phases %}

@@ -32,8 +32,7 @@
 
 #[cfg(feature = "local-inference")]
 use super::local_inference::LOCAL_LLM_MODEL_CONFIG_KEY;
-use super::ollama::OLLAMA_DEFAULT_PORT;
-use super::ollama::OLLAMA_HOST;
+use super::ollama::{OLLAMA_DEFAULT_PORT, OLLAMA_HOST, OLLAMA_PROVIDER_NAME};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::model_config::model_config_from_user_config;
@@ -41,7 +40,9 @@ use crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use anyhow::Result;
 use futures::StreamExt;
 use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai::create_request;
+use goose_providers::formats::openai::{
+    create_request_with_context, OpenAiFormatOptions, OpenAiRequestContext,
+};
 use goose_providers::images::ImageFormat;
 use reqwest::Client;
 use rmcp::model::{object, CallToolRequestParams, ContentBlock, Tool};
@@ -1014,13 +1015,23 @@ impl OllamaInterpreter {
 
         let model_config = model_config_from_user_config("ollama", model)?;
 
-        let mut payload = create_request(
+        let mut payload = create_request_with_context(
             &model_config,
             system_prompt,
             &messages,
             &[], // No tools
             &ImageFormat::OpenAi,
             false,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: OLLAMA_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
         )?;
 
         payload["stream"] = json!(false); // needed for the /api/chat endpoint to work

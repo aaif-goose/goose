@@ -1,5 +1,8 @@
 use crate::formats::anthropic::{AnthropicFormatOptions, ANTHROPIC_PROVIDER_NAME};
-use crate::formats::openai::{self, extract_reasoning_effort, is_openai_responses_model};
+use crate::formats::openai::{
+    self, extract_reasoning_effort, is_openai_responses_model, OpenAiFormatOptions,
+    OpenAiRequestContext,
+};
 use crate::http_status::{read_error_body, read_json_response};
 use crate::images::ImageFormat;
 use anyhow::{anyhow, Result};
@@ -342,8 +345,17 @@ impl DatabricksV2Provider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload =
-            openai_responses::create_responses_request(model_config, system, messages, tools)?;
+        let mut payload = openai_responses::create_responses_request_with_context(
+            model_config,
+            system,
+            messages,
+            tools,
+            OpenAiRequestContext {
+                provider_name: DATABRICKS_V2_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
+        )?;
         payload["stream"] = Value::Bool(true);
         let mut log = start_log(model_config, &payload)?;
 
@@ -379,13 +391,23 @@ impl DatabricksV2Provider {
             // Keep UC namespace text out of OpenAI format heuristics.
             format_config.model_name = "model-service".to_string();
         }
-        let mut payload = openai::create_request(
+        let mut payload = openai::create_request_with_context(
             &format_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             true,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: format_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: DATABRICKS_V2_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
         )?;
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());

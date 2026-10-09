@@ -75,6 +75,96 @@ pub struct OpenAiFormatOptions {
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
 }
 
+/// Separates endpoint-specific request conventions from catalog model capabilities.
+#[derive(Debug, Clone, Copy)]
+pub struct OpenAiRequestContext<'a> {
+    pub provider_name: &'a str,
+    pub catalog_provider_id: Option<&'a str>,
+    pub native_openai: bool,
+}
+
+impl OpenAiRequestContext<'_> {
+    pub(crate) fn uses_openai_reasoning_parameters(
+        self,
+        model_config: &ModelConfig,
+        model_name: &str,
+    ) -> bool {
+        self.native_openai && model_config.openai_reasoning_for_model(model_name)
+    }
+
+    pub(crate) fn reasoning_effort(
+        self,
+        model_config: &ModelConfig,
+        model_name: &str,
+        legacy_effort: Option<String>,
+    ) -> Option<String> {
+        if self.native_openai {
+            if model_config.openai_reasoning_for_model(model_name) {
+                return model_config
+                    .thinking_effort()
+                    .map_or(legacy_effort, |effort| {
+                        openai_reasoning_effort_for_thinking(model_name, effort)
+                    });
+            }
+            if supports_xai_reasoning_effort(model_name) {
+                return model_config
+                    .thinking_effort()
+                    .and_then(|effort| xai_reasoning_effort_for_thinking(model_name, effort));
+            }
+            return None;
+        }
+
+        if model_config.reasoning == Some(false) {
+            return None;
+        }
+        let effort = model_config.thinking_effort()?;
+        if matches!(self.provider_name, "xai" | "xai_oauth" | "x-ai") {
+            if supports_xai_reasoning_effort(model_name) {
+                return xai_reasoning_effort_for_thinking(model_name, effort);
+            }
+            return None;
+        }
+
+        // A publisher's capability does not establish support on a compatible endpoint.
+        let registry = crate::canonical::CanonicalModelRegistry::bundled().ok()?;
+        let model = registry.get(
+            crate::canonical::map_provider_name(
+                self.catalog_provider_id.unwrap_or(self.provider_name),
+            ),
+            model_name,
+        )?;
+        if model.reasoning == Some(false) {
+            return None;
+        }
+        let supported = model.reasoning_efforts.as_deref()?;
+        reasoning_effort_for_supported_levels(effort, supported).or_else(|| {
+            let fallback: &[&str] = match effort {
+                ThinkingEffort::Off | ThinkingEffort::Low => {
+                    &["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+                }
+                ThinkingEffort::Medium | ThinkingEffort::High | ThinkingEffort::Max => {
+                    &["max", "xhigh", "high", "medium", "low", "minimal", "none"]
+                }
+            };
+            fallback
+                .iter()
+                .find(|level| supported.iter().any(|value| value == **level))
+                .map(|level| (*level).to_string())
+        })
+    }
+
+    pub(crate) fn suppresses_temperature(
+        self,
+        model_config: &ModelConfig,
+        model_name: &str,
+    ) -> bool {
+        self.uses_openai_reasoning_parameters(model_config, model_name)
+            || (self.native_openai && supports_xai_reasoning_effort(model_name))
+            || (matches!(self.provider_name, "xai" | "xai_oauth" | "x-ai")
+                && supports_xai_reasoning_effort(model_name))
+    }
+}
+
 fn merge_reasoning_text(prefix: &str, suffix: &str) -> String {
     if prefix.is_empty() {
         return suffix.to_string();
@@ -1741,6 +1831,32 @@ pub fn create_request_with_options(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub fn create_request_with_context(
+    model_config: &ModelConfig,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    image_format: &ImageFormat,
+    for_streaming: bool,
+    format_options: OpenAiFormatOptions,
+    context: OpenAiRequestContext<'_>,
+) -> anyhow::Result<Value, Error> {
+    let (wire_model_name, _) = extract_reasoning_effort(&model_config.model_name);
+    create_request_for_model_with_context(
+        model_config,
+        &wire_model_name,
+        &model_config.model_name,
+        system,
+        messages,
+        tools,
+        image_format,
+        for_streaming,
+        format_options,
+        context,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn create_request_for_model_with_options(
     model_config: &ModelConfig,
     wire_model_name: &str,
@@ -1752,22 +1868,41 @@ pub fn create_request_for_model_with_options(
     for_streaming: bool,
     format_options: OpenAiFormatOptions,
 ) -> anyhow::Result<Value, Error> {
+    create_request_for_model_with_context(
+        model_config,
+        wire_model_name,
+        capability_model_name,
+        system,
+        messages,
+        tools,
+        image_format,
+        for_streaming,
+        format_options,
+        OpenAiRequestContext {
+            provider_name: "openai",
+            catalog_provider_id: None,
+            native_openai: true,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_request_for_model_with_context(
+    model_config: &ModelConfig,
+    wire_model_name: &str,
+    capability_model_name: &str,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    image_format: &ImageFormat,
+    for_streaming: bool,
+    format_options: OpenAiFormatOptions,
+    context: OpenAiRequestContext<'_>,
+) -> anyhow::Result<Value, Error> {
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
-    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
-    let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
-    let reasoning_effort = if is_reasoning_model {
-        model_config
-            .thinking_effort()
-            .map_or(legacy_reasoning_effort, |effort| {
-                openai_reasoning_effort_for_thinking(&model_name, effort)
-            })
-    } else if supports_xai_effort {
-        model_config
-            .thinking_effort()
-            .and_then(|effort| xai_reasoning_effort_for_thinking(&model_name, effort))
-    } else {
-        None
-    };
+    let is_reasoning_model = context.uses_openai_reasoning_parameters(model_config, &model_name);
+    let reasoning_effort =
+        context.reasoning_effort(model_config, &model_name, legacy_reasoning_effort);
 
     let system_message = serde_json::to_value(OpenAiMessage {
         role: if is_reasoning_model {
@@ -1801,7 +1936,7 @@ pub fn create_request_for_model_with_options(
         payload["tools"] = json!(tools_spec);
     }
 
-    if !is_reasoning_model && !supports_xai_effort {
+    if !context.suppresses_temperature(model_config, &model_name) {
         if let Some(temp) = model_config.temperature {
             payload["temperature"] = json!(temp);
         }
@@ -1940,6 +2075,19 @@ pub fn openai_reasoning_effort_for_thinking(
         .as_ref()
         .and_then(|model| model.reasoning_efforts.as_deref());
 
+    match catalog_efforts {
+        Some(supported) => reasoning_effort_for_supported_levels(effort, supported),
+        None => reasoning_effort_for_supported_levels(
+            effort,
+            openai_reasoning_efforts_for_model(model_name),
+        ),
+    }
+}
+
+fn reasoning_effort_for_supported_levels(
+    effort: ThinkingEffort,
+    supported: &[impl AsRef<str>],
+) -> Option<String> {
     let preferred: &[&str] = match effort {
         ThinkingEffort::Off => &["none", "minimal", "low"],
         ThinkingEffort::Low => &["low", "minimal", "medium", "high", "xhigh"],
@@ -1950,10 +2098,7 @@ pub fn openai_reasoning_effort_for_thinking(
 
     preferred
         .iter()
-        .find(|level| match catalog_efforts {
-            Some(values) => values.iter().any(|value| value == **level),
-            None => openai_reasoning_efforts_for_model(model_name).contains(level),
-        })
+        .find(|level| supported.iter().any(|value| value.as_ref() == **level))
         .map(|level| (*level).to_string())
 }
 

@@ -7,6 +7,7 @@ use crate::documents::{
 use crate::errors::ProviderError;
 use crate::formats::openai::{
     extract_reasoning_effort, openai_reasoning_effort_for_thinking, sanitize_function_name,
+    OpenAiRequestContext,
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
@@ -623,6 +624,25 @@ pub fn create_responses_request(
     )
 }
 
+pub fn create_responses_request_with_context(
+    model_config: &ModelConfig,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    context: OpenAiRequestContext<'_>,
+) -> anyhow::Result<Value, Error> {
+    let (wire_model_name, _) = extract_reasoning_effort(&model_config.model_name);
+    create_responses_request_for_model_with_context(
+        model_config,
+        &wire_model_name,
+        &model_config.model_name,
+        system,
+        messages,
+        tools,
+        context,
+    )
+}
+
 pub fn create_responses_request_for_model(
     model_config: &ModelConfig,
     wire_model_name: &str,
@@ -630,6 +650,30 @@ pub fn create_responses_request_for_model(
     system: &str,
     messages: &[Message],
     tools: &[Tool],
+) -> anyhow::Result<Value, Error> {
+    create_responses_request_for_model_with_context(
+        model_config,
+        wire_model_name,
+        capability_model_name,
+        system,
+        messages,
+        tools,
+        OpenAiRequestContext {
+            provider_name: "openai",
+            catalog_provider_id: None,
+            native_openai: true,
+        },
+    )
+}
+
+pub fn create_responses_request_for_model_with_context(
+    model_config: &ModelConfig,
+    wire_model_name: &str,
+    capability_model_name: &str,
+    system: &str,
+    messages: &[Message],
+    tools: &[Tool],
+    context: OpenAiRequestContext<'_>,
 ) -> anyhow::Result<Value, Error> {
     let mut input_items = Vec::new();
 
@@ -651,11 +695,7 @@ pub fn create_responses_request_for_model(
     );
 
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
-    // All models routed here are responses-capable; temperature is rejected
-    // by the API for reasoning models regardless of whether an explicit
-    // effort suffix was provided.
-    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
-    let reasoning_effort = if is_reasoning_model {
+    let reasoning_effort = if context.uses_openai_reasoning_parameters(model_config, &model_name) {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {
                 legacy_reasoning_effort
@@ -671,8 +711,10 @@ pub fn create_responses_request_for_model(
                 .thinking_effort()
                 .and_then(|effort| openai_reasoning_effort_for_thinking(&model_name, effort))
         }
-    } else {
+    } else if context.native_openai {
         None
+    } else {
+        context.reasoning_effort(model_config, &model_name, legacy_reasoning_effort)
     };
     let reasoning_effort = model_config
         .request_param::<String>("reasoning_effort")
@@ -739,7 +781,7 @@ pub fn create_responses_request_for_model(
             .insert("tools".to_string(), json!(tools_spec));
     }
 
-    if !is_reasoning_model {
+    if !context.suppresses_temperature(model_config, &model_name) {
         if let Some(temp) = model_config.temperature {
             payload
                 .as_object_mut()

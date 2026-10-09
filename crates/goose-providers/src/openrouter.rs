@@ -13,7 +13,9 @@ use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
 use crate::conversation::message::Message;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
-use crate::formats::openai::create_request;
+use crate::formats::openai::{
+    create_request_with_context, OpenAiFormatOptions, OpenAiRequestContext,
+};
 use crate::http_status::read_json_response;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{handle_status, stream_openai_compat};
@@ -538,13 +540,32 @@ impl Provider for OpenRouterProvider {
             model_config
         };
 
-        let mut payload = create_request(
-            model_config,
+        // Non-OpenAI Off uses OpenRouter's toggle and mandatory-reasoning retry, not an effort clamp.
+        let mut format_config = model_config.clone();
+        if !crate::formats::openai::is_openai_responses_model(&model_config.model_name)
+            && model_config.thinking_effort() == Some(crate::thinking::ThinkingEffort::Off)
+        {
+            if let Some(params) = format_config.request_params.as_mut() {
+                params.remove("thinking_effort");
+            }
+        }
+        let mut payload = create_request_with_context(
+            &format_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             true,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: OPENROUTER_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
         )?;
 
         if !session_id.is_empty() {
