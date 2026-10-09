@@ -104,9 +104,6 @@ async fn relay_to_direct_upgrade_loses_no_data() {
         .await
         .expect("connect through relay");
 
-    // Watch path events on the client side of the connection.
-    let mut path_events = stream.conn.path_events();
-
     // Prove we really started on the relay: the dial address was relay-only,
     // so a relay path must exist on the connection right now. Without this
     // the test could silently pass on a direct-from-the-start connection and
@@ -125,20 +122,22 @@ async fn relay_to_direct_upgrade_loses_no_data() {
     let mut counter: u64 = 0;
     exchange_frames(&mut stream, &mut counter, 50).await;
 
-    // Wait for a direct (IP) path to open and be selected, pumping traffic
-    // the whole time so the migration happens under load.
+    // Wait for a direct (IP) path to be selected, pumping traffic the whole
+    // time so the migration happens under load. Holepunching races the roam
+    // handshake inside `connect_with_addr`, so the upgrade may already be
+    // done by now; `paths_stream` starts with the current snapshot where a
+    // `path_events` subscription would miss an earlier `Selected` event.
+    let conn = stream.conn.clone();
+    let mut paths = conn.paths_stream();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     let mut direct_selected = false;
     while !direct_selected {
         tokio::select! {
-            event = futures::StreamExt::next(&mut path_events) => {
-                match event {
-                    Some(iroh::endpoint::PathEvent::Selected { remote_addr: TransportAddr::Ip(_), .. }) => {
-                        direct_selected = true;
-                    }
-                    Some(_) => {}
-                    None => panic!("path event stream ended before direct upgrade"),
-                }
+            list = futures::StreamExt::next(&mut paths) => {
+                let list = list.expect("connection closed before direct upgrade");
+                direct_selected = list
+                    .iter()
+                    .any(|p| p.is_selected() && matches!(p.remote_addr(), TransportAddr::Ip(_)));
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
                 exchange_frames(&mut stream, &mut counter, 5).await;
