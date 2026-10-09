@@ -70,7 +70,7 @@ interface ModelsBottomBarProps {
   latestInference?: Message['metadata']['inference'] | null;
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
-  modelChangeLocked?: boolean;
+  modelChangeLocked: boolean;
 }
 
 type ModelMenuModal = 'switch-model' | 'local-model-settings';
@@ -84,7 +84,7 @@ export default function ModelsBottomBar({
   latestInference,
   onModelChanged,
   sessionLoaded,
-  modelChangeLocked = false,
+  modelChangeLocked,
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
@@ -103,6 +103,13 @@ export default function ModelsBottomBar({
   );
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const pendingModalRef = useRef<ModelMenuModal | null>(null);
+  // Mirror of modelChangeLocked for async continuations: the prop value a
+  // click handler closes over goes stale while lookups are pending, so
+  // re-check the ref (not the render-time prop) before mutating.
+  const modelChangeLockedRef = useRef(modelChangeLocked);
+  useEffect(() => {
+    modelChangeLockedRef.current = modelChangeLocked;
+  }, [modelChangeLocked]);
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
   const [isLocalModelSettingsOpen, setIsLocalModelSettingsOpen] = useState(false);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
@@ -196,7 +203,7 @@ export default function ModelsBottomBar({
   };
 
   const handleRecentModelClick = async (recent: RecentModel) => {
-    if (modelChangeLocked) return;
+    if (modelChangeLockedRef.current) return;
 
     const previousModel = currentModel;
     const previousProvider = currentProvider;
@@ -212,6 +219,9 @@ export default function ModelsBottomBar({
           request_params: { thinking_effort: savedEffort ?? 'off' },
         }
       : { name: recent.model, provider: recent.provider };
+    // A turn may have started while the lookups above were pending; the
+    // in-flight turn keeps its original provider and model.
+    if (modelChangeLockedRef.current) return;
     const success = await changeModel(sessionId, modelArg);
     if (success) {
       trackModelChanged(recent.provider, recent.model);
