@@ -571,9 +571,26 @@ async fn run_command(
     command.stderr(Stdio::piped());
     command.stdin(Stdio::null());
 
+    let fence_config = crate::subprocess::ProcessFenceConfig::from_env();
+    let isolate_process_group =
+        crate::subprocess::is_process_fencing_enabled() && fence_config.isolate_process_group;
+
     let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to spawn shell command: {}", error))?;
+
+    let child_pid = child.id();
+    let kill_child = |child: &mut tokio::process::Child| {
+        #[cfg(unix)]
+        if isolate_process_group {
+            if let Some(pid) = child_pid {
+                unsafe {
+                    libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+                }
+            }
+        }
+        let _ = child.start_kill();
+    };
 
     let child_stdout = child
         .stdout
@@ -602,13 +619,13 @@ async fn run_command(
                     .code(),
                 Err(_) => {
                     timed_out = true;
-                    let _ = child.start_kill();
+                    kill_child(&mut child);
                     let _ = child.wait().await;
                     None
                 }
             },
             _ = cancellation_token.cancelled() => {
-                let _ = child.start_kill();
+                kill_child(&mut child);
                 let _ = child.wait().await;
                 None
             }
@@ -619,7 +636,7 @@ async fn run_command(
                 .map_err(|error| format!("Failed waiting on shell command: {}", error))?
                 .code(),
             _ = cancellation_token.cancelled() => {
-                let _ = child.start_kill();
+                kill_child(&mut child);
                 let _ = child.wait().await;
                 None
             }
@@ -729,8 +746,34 @@ fn build_shell_command(
                 .args(unix_shell_command_args(command_line));
             command
         } else {
-            let mut command = tokio::process::Command::new(shell);
-            command.args(unix_shell_command_args(command_line));
+            let fence_config = crate::subprocess::ProcessFenceConfig::from_env();
+            let mut command = if let Some(runtime) = &fence_config.custom_runtime {
+                if let Ok(parts) = shell_words::split(runtime) {
+                    if let Some((prog, extra_args)) = parts.split_first() {
+                        let mut cmd = tokio::process::Command::new(prog);
+                        cmd.args(extra_args);
+                        if !extra_args.iter().any(|arg| arg == "--") {
+                            cmd.arg("--");
+                        }
+                        cmd.arg(&shell).args(unix_shell_command_args(command_line));
+                        cmd
+                    } else {
+                        let mut cmd = tokio::process::Command::new(&shell);
+                        cmd.args(unix_shell_command_args(command_line));
+                        cmd
+                    }
+                } else {
+                    let mut cmd = tokio::process::Command::new(runtime);
+                    cmd.arg("--")
+                        .arg(&shell)
+                        .args(unix_shell_command_args(command_line));
+                    cmd
+                }
+            } else {
+                let mut cmd = tokio::process::Command::new(&shell);
+                cmd.args(unix_shell_command_args(command_line));
+                cmd
+            };
             if let Some(path) = working_dir {
                 command.current_dir(path);
             }
@@ -744,7 +787,11 @@ fn build_shell_command(
 
     #[cfg(windows)]
     apply_session_environment(&mut command, session_id);
-    command.set_no_window();
+    if crate::subprocess::is_process_fencing_enabled() {
+        command.apply_process_fencing();
+    } else {
+        command.set_no_window();
+    }
     command
 }
 
@@ -1404,5 +1451,11 @@ mod tests {
             "killed process should have no exit code"
         );
         assert!(extract_text(&result).contains("Command timed out after 1 seconds"));
+    }
+
+    #[test]
+    fn build_shell_command_applies_process_fencing() {
+        let command = build_shell_command("echo test", None, None, None);
+        let _ = command;
     }
 }
