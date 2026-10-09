@@ -13,6 +13,7 @@ pub(crate) mod declarative_providers {
     use super::*;
 
     expose_declarative_providers!(
+        aigateway,
         aimlapi,
         alibaba,
         atomic_chat,
