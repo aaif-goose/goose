@@ -99,16 +99,16 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
+          sudo apt install -y libdbus-1-dev libxcb1-dev
 
       - name: Build and Test
         run: |
-          gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
           cargo test --locked
         working-directory: crates
         env:
           RUST_MIN_STACK: 8388608
+          GOOSE_DISABLE_KEYRING: 1
 
   rust-build-lean:
     name: Build Lean ACP Binary
@@ -187,6 +187,7 @@ jobs:
           cargo test -p goose-sdk --features uniffi --locked
         env:
           RUST_MIN_STACK: 8388608
+          GOOSE_DISABLE_KEYRING: 1
 
   kotlin-gdk-smoke-test:
     name: Test Kotlin GDK package
@@ -219,7 +220,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
+          sudo apt install -y libdbus-1-dev libxcb1-dev
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
@@ -228,13 +229,13 @@ jobs:
 
       - name: Build and Test with ${{ matrix.tls-feature }}
         run: |
-          gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
           cargo test -p goose --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
           cargo test -p goose-providers --no-default-features --features ${{ matrix.tls-feature }},live-websocket
           cargo test -p goose-cli --no-default-features --features ${{ matrix.tls-feature }},code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
         env:
           RUST_MIN_STACK: 8388608
+          GOOSE_DISABLE_KEYRING: 1
 
 
   rust-build-and-test-roaming:
@@ -251,7 +252,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
+          sudo apt install -y libdbus-1-dev libxcb1-dev
 
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
@@ -260,13 +261,13 @@ jobs:
 
       - name: Build and Test with roaming
         run: |
-          gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
           cargo test -p goose-roaming
           cargo build -p goose-cli --features roaming
           cargo test -p goose-cli --features roaming --test roam_acp_client
         env:
           RUST_MIN_STACK: 8388608
+          GOOSE_DISABLE_KEYRING: 1
 
   rust-build-windows:
     name: Build Rust Project on Windows
