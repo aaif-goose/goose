@@ -17,17 +17,50 @@
   "dynamic_models": false,
   "skip_canonical_filtering": true,
   "models": [
-    {"name": "xsparkx2", "context_limit": 131072},
-    {"name": "xsparkx2flash", "context_limit": 131072},
-    {"name": "xopglm51", "context_limit": 204800},
-    {"name": "xopglm5", "context_limit": 204800},
-    {"name": "xopdeepseekv4pro", "context_limit": 131072},
-    {"name": "xopdeepseekv4flash", "context_limit": 131072},
-    {"name": "xopdeepseekv32", "context_limit": 131072},
-    {"name": "xopkimik26", "context_limit": 262144},
-    {"name": "xminimaxm25", "context_limit": 131072},
-    {"name": "xopqwen35397b", "context_limit": 262144},
-    {"name": "astron-code-latest", "context_limit": 131072}
+    {
+      "name": "spark-x2.5",
+      "context_limit": 262144
+    },
+    {
+      "name": "xsparkx2flash",
+      "context_limit": 262144
+    },
+    {
+      "name": "xopglm51",
+      "context_limit": 204800
+    },
+    {
+      "name": "xopglm5",
+      "context_limit": 204800
+    },
+    {
+      "name": "xopdeepseekv4pro",
+      "context_limit": 131072
+    },
+    {
+      "name": "xopdeepseekv4flash",
+      "context_limit": 131072
+    },
+    {
+      "name": "xopdeepseekv32",
+      "context_limit": 131072
+    },
+    {
+      "name": "xopkimik26",
+      "context_limit": 262144
+    },
+    {
+      "name": "xminimaxm25",
+      "context_limit": 131072
+    },
+    {
+      "name": "xopqwen35397b",
+      "context_limit": 262144
+    },
+    {
+      "name": "astron-code-latest",
+      "context_limit": 131072
+    }
   ],
   "supports_streaming": true,
   "preserves_thinking": true,
