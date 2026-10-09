@@ -40,9 +40,7 @@ const FLATPAK_HOST_ARGS: [&str; 2] = ["--host", "--watch-bus"];
 pub(crate) async fn flatpak_spawn_command() -> tokio::process::Command {
     static HOST_LOGIN_PATH: tokio::sync::OnceCell<Option<String>> =
         tokio::sync::OnceCell::const_new();
-    let host_path = HOST_LOGIN_PATH
-        .get_or_init(|| resolve_host_login_path("flatpak-spawn"))
-        .await;
+    let host_path = HOST_LOGIN_PATH.get_or_init(resolve_host_login_path).await;
 
     let mut command = tokio::process::Command::new("flatpak-spawn");
     command.args(FLATPAK_HOST_ARGS);
@@ -55,19 +53,19 @@ pub(crate) async fn flatpak_spawn_command() -> tokio::process::Command {
 /// Flatpak sets `SHELL=/bin/sh` inside the sandbox, so the login shell has to come
 /// from the host's account database.
 #[cfg(not(windows))]
-async fn resolve_host_login_path(flatpak_spawn: &str) -> Option<String> {
-    let passwd = run_on_host(flatpak_spawn, &["sh", "-c", r#"getent passwd "$(id -un)""#]).await;
+async fn resolve_host_login_path() -> Option<String> {
+    let passwd = run_on_host(&["sh", "-c", r#"getent passwd "$(id -un)""#]).await;
     let shell = passwd
         .as_deref()
         .and_then(|entry| entry.split(':').nth(6))
         .filter(|shell| !shell.is_empty())
         .unwrap_or("bash");
-    run_on_host(flatpak_spawn, &[shell, "-l", "-i", "-c", "printenv PATH"]).await
+    run_on_host(&[shell, "-l", "-i", "-c", "printenv PATH"]).await
 }
 
 #[cfg(not(windows))]
-async fn run_on_host(flatpak_spawn: &str, args: &[&str]) -> Option<String> {
-    let mut command = tokio::process::Command::new(flatpak_spawn);
+async fn run_on_host(args: &[&str]) -> Option<String> {
+    let mut command = tokio::process::Command::new("flatpak-spawn");
     command
         .args(FLATPAK_HOST_ARGS)
         .args(args)
@@ -570,15 +568,7 @@ async fn build_shell_command(
         let shell = unix_shell();
 
         if is_flatpak() {
-            let mut command = flatpak_spawn_command().await;
-            if let Some(dir) = working_dir {
-                command.arg(format!("--directory={}", dir.display()));
-            }
-            apply_flatpak_session_environment(&mut command, session_id);
-            command
-                .arg(&shell)
-                .args(unix_shell_command_args(command_line));
-            command
+            flatpak_shell_command(&shell, command_line, working_dir, session_id).await
         } else {
             let mut command = tokio::process::Command::new(shell);
             command.args(unix_shell_command_args(command_line));
@@ -593,6 +583,24 @@ async fn build_shell_command(
     #[cfg(windows)]
     apply_session_environment(&mut command, session_id);
     command.set_no_window();
+    command
+}
+
+#[cfg(not(windows))]
+async fn flatpak_shell_command(
+    shell: &str,
+    command_line: &str,
+    working_dir: Option<&std::path::Path>,
+    session_id: Option<&str>,
+) -> tokio::process::Command {
+    let mut command = flatpak_spawn_command().await;
+    if let Some(dir) = working_dir {
+        command.arg(format!("--directory={}", dir.display()));
+    }
+    apply_flatpak_session_environment(&mut command, session_id);
+    command
+        .arg(shell)
+        .args(unix_shell_command_args(command_line));
     command
 }
 
@@ -975,47 +983,49 @@ mod tests {
 
     #[cfg(not(windows))]
     #[tokio::test]
-    async fn host_login_path_uses_the_host_accounts_login_shell() {
+    async fn flatpak_commands_carry_the_host_accounts_login_path() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
         let login_shell = dir.path().join("login-shell");
+        let fake_spawn = dir.path().join("flatpak-spawn");
         std::fs::write(
             &login_shell,
             "#!/bin/sh\n[ \"$*\" = '-l -i -c printenv PATH' ] || exit 1\necho 'Welcome back!'\necho\necho /home/me/.cargo/bin:/usr/bin\n",
         )
         .unwrap();
-        let fake_spawn = |name: &str, passwd_shell: &std::path::Path| {
-            let spawn = dir.path().join(name);
-            std::fs::write(
-                &spawn,
-                format!(
-                    "#!/bin/sh\n[ \"$1 $2\" = '--host --watch-bus' ] || exit 1\nshift 2\nif [ \"$1\" = sh ]; then echo 'me:x:1000:1000::/home/me:{}'; exit; fi\nexec \"$@\"\n",
-                    passwd_shell.display()
-                ),
-            )
-            .unwrap();
-            spawn
-        };
-        let working = fake_spawn("flatpak-spawn", &login_shell);
-        let broken = fake_spawn(
-            "flatpak-spawn-broken",
-            std::path::Path::new("/usr/bin/false"),
-        );
-        for script in [&login_shell, &working, &broken] {
+        std::fs::write(
+            &fake_spawn,
+            format!(
+                "#!/bin/sh\n[ \"$1 $2\" = '--host --watch-bus' ] || exit 1\nshift 2\nif [ \"$1\" = sh ]; then echo 'me:x:1000:1000::/home/me:{}'; exit; fi\nexec \"$@\"\n",
+                login_shell.display()
+            ),
+        )
+        .unwrap();
+        for script in [&login_shell, &fake_spawn] {
             std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
+        let path = format!(
+            "{}:{}",
+            dir.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let _guard = env_lock::lock_env([("PATH", Some(path.as_str()))]);
 
-        assert_eq!(
-            resolve_host_login_path(working.to_str().unwrap())
-                .await
-                .as_deref(),
-            Some("/home/me/.cargo/bin:/usr/bin")
-        );
-        assert_eq!(
-            resolve_host_login_path(broken.to_str().unwrap()).await,
-            None
-        );
+        let shell_command =
+            flatpak_shell_command("bash", "echo hi", Some(dir.path()), Some("session-1")).await;
+        let hook_command = crate::hooks::flatpak_hook_command("echo hi", dir.path()).await;
+
+        for command in [&shell_command, &hook_command] {
+            let command = command.as_std();
+            let args: Vec<_> = command.get_args().collect();
+            assert_eq!(command.get_program(), "flatpak-spawn");
+            assert!(
+                args.iter()
+                    .any(|arg| *arg == "--env=PATH=/home/me/.cargo/bin:/usr/bin"),
+                "{args:?}"
+            );
+        }
     }
 
     #[cfg(not(windows))]

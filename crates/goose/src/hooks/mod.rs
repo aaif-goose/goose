@@ -1086,11 +1086,7 @@ async fn hook_command(command: &str, plugin_root: &Path) -> Command {
     #[cfg(not(windows))]
     {
         if crate::agents::platform_extensions::developer::shell::is_flatpak() {
-            let mut process =
-                crate::agents::platform_extensions::developer::shell::flatpak_spawn_command().await;
-            process.arg(format!("--env=PLUGIN_ROOT={}", plugin_root.display()));
-            process.arg("sh").arg("-c").arg(command);
-            return process;
+            return flatpak_hook_command(command, plugin_root).await;
         }
     }
 
@@ -1099,6 +1095,15 @@ async fn hook_command(command: &str, plugin_root: &Path) -> Command {
         .arg("-c")
         .arg(command)
         .env("PLUGIN_ROOT", plugin_root);
+    process
+}
+
+#[cfg(not(windows))]
+pub(crate) async fn flatpak_hook_command(command: &str, plugin_root: &Path) -> Command {
+    let mut process =
+        crate::agents::platform_extensions::developer::shell::flatpak_spawn_command().await;
+    process.arg(format!("--env=PLUGIN_ROOT={}", plugin_root.display()));
+    process.arg("sh").arg("-c").arg(command);
     process
 }
 
@@ -2077,6 +2082,46 @@ mod tests {
                 plugin: "p".into(),
             }
         );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn developer_shell_and_hooks_inherit_process_path() {
+        use crate::agents::platform_extensions::developer::shell::{ShellParams, ShellTool};
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let probe = tmp.path().join("path-probe");
+        std::fs::write(&probe, "#!/bin/sh\nprintf '%s\\n' \"$PATH\"\n").unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let sentinel = format!(
+            "{}:{}",
+            tmp.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let _guard = env_lock::lock_env([("PATH", Some(sentinel.as_str()))]);
+
+        let hook = run_command_hook("path-probe", tmp.path(), "{}", Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&hook.output.stdout).trim(),
+            sentinel
+        );
+
+        let shell = ShellTool::new()
+            .unwrap()
+            .shell(ShellParams {
+                command: "path-probe".to_string(),
+                timeout_secs: None,
+            })
+            .await;
+        let stdout = shell.structured_content.unwrap()["stdout"]
+            .as_str()
+            .unwrap()
+            .trim()
+            .to_string();
+        assert_eq!(stdout, sentinel);
     }
 
     #[tokio::test]
