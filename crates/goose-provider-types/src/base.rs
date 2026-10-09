@@ -366,13 +366,6 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         .and_then(|model| model.reasoning)
         .unwrap_or_else(|| ModelConfig::new(model_name).is_reasoning_model());
 
-    let supports_vision = canonical.as_ref().map(|model| {
-        model
-            .modalities
-            .input
-            .contains(&crate::canonical::Modality::Image)
-    });
-
     ModelInfo {
         name: model_name.to_string(),
         resolved_model: None,
@@ -382,7 +375,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         currency: None,
         supports_cache_control: None,
         reasoning,
-        supports_vision,
+        supports_vision: None,
         thinking_preservation_format: None,
         request_params: None,
     }

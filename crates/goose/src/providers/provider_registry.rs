@@ -469,6 +469,27 @@ mod tests {
     }
 
     #[test]
+    fn canonical_metadata_preserves_explicit_vision_overrides() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<OpenAiProviderDef>(false);
+        let entry = &registry.entries["openai"];
+
+        for (name, canonical_vision) in [("gpt-4o", true), ("gpt-4", false)] {
+            let detected = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(detected.supports_vision, Some(canonical_vision));
+
+            let overridden = entry
+                .normalize_model_config(
+                    ModelConfig::new(name).with_vision_support(!canonical_vision),
+                )
+                .unwrap();
+            assert_eq!(overridden.supports_vision, Some(!canonical_vision));
+        }
+    }
+
+    #[test]
     fn declared_supports_vision_overrides_detected_value() {
         let mut registry = ProviderRegistry::new(None);
         let mut config = test_config();
