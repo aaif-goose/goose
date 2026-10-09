@@ -1,0 +1,70 @@
+{
+  "instruction_compliance": true,
+  "model": "gpt-6-luna",
+  "provider": "openai",
+  "requested_thinking_effort": "medium",
+  "requests": [
+    {
+      "endpoint": "https://api.openai.com/v1/responses",
+      "label": "thinking_medium",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-6-luna",
+        "reasoning": true,
+        "request_params": {
+          "thinking_effort": "medium"
+        },
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "input": [
+          {
+            "content": [
+              {
+                "text": "You are a helpful assistant.",
+                "type": "input_text"
+              }
+            ],
+            "role": "system",
+            "type": "message"
+          },
+          {
+            "content": [
+              {
+                "text": "Reply with the single word hello.",
+                "type": "input_text"
+              }
+            ],
+            "role": "user",
+            "type": "message"
+          }
+        ],
+        "max_output_tokens": 12288,
+        "model": "gpt-6-luna",
+        "reasoning": {
+          "effort": "medium",
+          "summary": "auto"
+        },
+        "store": false,
+        "stream": true
+      },
+      "wire_controls": {
+        "reasoning": {
+          "effort": "medium",
+          "summary": "auto"
+        }
+      }
+    }
+  ],
+  "scenario": "thinking_medium",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

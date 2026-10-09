@@ -1,0 +1,80 @@
+{
+  "instruction_compliance": true,
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "requested_thinking_effort": "low",
+  "requests": [
+    {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "label": "thinking_low",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "claude-haiku-5-5",
+        "reasoning": true,
+        "request_params": {
+          "thinking_effort": "low"
+        },
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Reply with the single word hello.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-haiku-5-5",
+        "output_config": {
+          "effort": "low"
+        },
+        "stream": true,
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": "You are a helpful assistant.",
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      },
+      "wire_controls": {
+        "output_config": {
+          "effort": "low"
+        },
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      }
+    }
+  ],
+  "scenario": "thinking_low",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

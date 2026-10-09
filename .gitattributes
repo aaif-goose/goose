@@ -1,1 +1,2 @@
 crates/goose/src/agents/snapshots/*.snap linguist-language=Text
+crates/goose-providers/tests/snapshots/provider_compatibility/**/*.json linguist-generated=true

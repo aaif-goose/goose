@@ -1,0 +1,215 @@
+{
+  "instruction_compliance": true,
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "label": "tool_call",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "claude-haiku-5-5",
+        "reasoning": true,
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-haiku-5-5",
+        "output_config": {
+          "effort": "high"
+        },
+        "stream": true,
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": "You are a helpful assistant.",
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        },
+        "tools": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "description": "Return a deterministic compatibility-matrix result.",
+            "input_schema": {
+              "additionalProperties": false,
+              "properties": {
+                "value": {
+                  "enum": [
+                    "matrix-input"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "name": "matrix_echo"
+          }
+        ]
+      },
+      "wire_controls": {
+        "output_config": {
+          "effort": "high"
+        },
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      }
+    },
+    {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "label": "tool_result",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "claude-haiku-5-5",
+        "reasoning": true,
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "id": "toolu_01MaW1gHMPiv76PMmTfFBHQn",
+                "input": {
+                  "value": "matrix-input"
+                },
+                "name": "matrix_echo",
+                "type": "tool_use"
+              }
+            ],
+            "role": "assistant"
+          },
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "content": "matrix-result-731",
+                "tool_use_id": "toolu_01MaW1gHMPiv76PMmTfFBHQn",
+                "type": "tool_result"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-haiku-5-5",
+        "output_config": {
+          "effort": "high"
+        },
+        "stream": true,
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": "You are a helpful assistant.",
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        },
+        "tools": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "description": "Return a deterministic compatibility-matrix result.",
+            "input_schema": {
+              "additionalProperties": false,
+              "properties": {
+                "value": {
+                  "enum": [
+                    "matrix-input"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            },
+            "name": "matrix_echo"
+          }
+        ]
+      },
+      "wire_controls": {
+        "output_config": {
+          "effort": "high"
+        },
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      }
+    }
+  ],
+  "scenario": "tool_continuation",
+  "status": "verified",
+  "synthetic_history": false,
+  "tool_selection": "prompt_directed",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

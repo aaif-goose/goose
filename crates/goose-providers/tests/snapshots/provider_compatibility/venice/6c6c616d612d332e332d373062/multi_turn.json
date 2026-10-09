@@ -1,0 +1,56 @@
+{
+  "instruction_compliance": true,
+  "model": "llama-3.3-70b",
+  "provider": "venice",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.venice.ai/api/v1/chat/completions",
+      "label": "multi_turn",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 4096,
+        "model_name": "llama-3.3-70b",
+        "reasoning": false,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 4096,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "system"
+          },
+          {
+            "content": "Remember the secret word: cobalt.",
+            "role": "user"
+          },
+          {
+            "content": "I will remember it.",
+            "role": "assistant"
+          },
+          {
+            "content": "Reply with only the secret word from my earlier message.",
+            "role": "user"
+          }
+        ],
+        "model": "llama-3.3-70b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "wire_controls": {}
+    }
+  ],
+  "scenario": "multi_turn",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

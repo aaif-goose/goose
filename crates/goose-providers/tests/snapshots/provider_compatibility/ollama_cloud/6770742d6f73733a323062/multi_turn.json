@@ -1,0 +1,56 @@
+{
+  "instruction_compliance": true,
+  "model": "gpt-oss:20b",
+  "provider": "ollama_cloud",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://ollama.com/v1/chat/completions",
+      "label": "multi_turn",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-oss:20b",
+        "reasoning": true,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_completion_tokens": 12288,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "developer"
+          },
+          {
+            "content": "Remember the secret word: cobalt.",
+            "role": "user"
+          },
+          {
+            "content": "I will remember it.",
+            "role": "assistant"
+          },
+          {
+            "content": "Reply with only the secret word from my earlier message.",
+            "role": "user"
+          }
+        ],
+        "model": "gpt-oss:20b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "wire_controls": {}
+    }
+  ],
+  "scenario": "multi_turn",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

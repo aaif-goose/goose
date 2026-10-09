@@ -1,0 +1,153 @@
+{
+  "instruction_compliance": true,
+  "model": "gpt-oss:20b",
+  "provider": "ollama_cloud",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://ollama.com/v1/chat/completions",
+      "label": "tool_call",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-oss:20b",
+        "reasoning": true,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_completion_tokens": 12288,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "developer"
+          },
+          {
+            "content": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+            "role": "user"
+          }
+        ],
+        "model": "gpt-oss:20b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "function": {
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "wire_controls": {}
+    },
+    {
+      "endpoint": "https://ollama.com/v1/chat/completions",
+      "label": "tool_result",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-oss:20b",
+        "reasoning": true,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_completion_tokens": 12288,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "developer"
+          },
+          {
+            "content": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+            "role": "user"
+          },
+          {
+            "content": null,
+            "reasoning_content": "The user wants me to call matrix_echo function with JSON {\"value\":\"matrix-input\"}. I must do exactly once. Then after receiving its result, reply with exactly the result text and do not call another tool. So I need to output the response from the function.\n\nLet's call the function.",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"value\":\"matrix-input\"}",
+                  "name": "matrix_echo"
+                },
+                "id": "call_b54n1ynu",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "content": "matrix-result-731",
+            "role": "tool",
+            "tool_call_id": "call_b54n1ynu"
+          }
+        ],
+        "model": "gpt-oss:20b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "function": {
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "wire_controls": {}
+    }
+  ],
+  "scenario": "tool_continuation",
+  "status": "verified",
+  "synthetic_history": false,
+  "tool_selection": "prompt_directed",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

@@ -1,0 +1,98 @@
+{
+  "instruction_compliance": true,
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "label": "multi_turn",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "claude-haiku-5-5",
+        "reasoning": true,
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Remember the secret word: cobalt.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          },
+          {
+            "content": [
+              {
+                "text": "I will remember it.",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          },
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Reply with only the secret word from my earlier message.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-haiku-5-5",
+        "output_config": {
+          "effort": "high"
+        },
+        "stream": true,
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": "You are a helpful assistant.",
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      },
+      "wire_controls": {
+        "output_config": {
+          "effort": "high"
+        },
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      }
+    }
+  ],
+  "scenario": "multi_turn",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}
