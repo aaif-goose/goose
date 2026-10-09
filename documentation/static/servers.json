@@ -79,6 +79,18 @@
     "environmentVariables": []
   },
   {
+    "id": "bankbridge",
+    "name": "BankBridge",
+    "description": "Read-only access to your bank accounts, card transactions and investment holdings (US banks)",
+    "url": "https://bankbridge.money/api/mcp",
+    "link": "https://bankbridge.money",
+    "installation_notes": "Hosted remote server. Sign in to BankBridge via OAuth on first connect. Paid subscription per connected bank.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "beads",
     "name": "Beads",
     "description": "Git-backed issue tracker for AI agent task management",
