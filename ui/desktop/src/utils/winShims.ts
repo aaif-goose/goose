@@ -3,6 +3,15 @@ import path from 'node:path';
 import os from 'node:os';
 import log from './logger';
 
+/** Append `dir` so tools the user installed win; leave PATH alone if `dir` is already on it. */
+export function appendToWindowsPath(currentPath: string, dir: string): string {
+  const entries = currentPath.split(';').filter(Boolean);
+  if (entries.some((entry) => entry.toLowerCase() === dir.toLowerCase())) {
+    return currentPath;
+  }
+  return [...entries, dir].join(';');
+}
+
 /**
  * Ensures Windows shims are available in %LOCALAPPDATA%\Goose\bin
  * This allows the bundled executables to be found via PATH regardless of where Goose is installed
@@ -38,13 +47,8 @@ export async function ensureWinShims(): Promise<void> {
       })
     );
 
-    // Append to PATH for this process and its children only, so tools the user
-    // installed win. This does not modify the user's permanent PATH.
-    const currentPath = process.env.PATH ?? '';
-    if (!currentPath.toLowerCase().includes(tgtDir.toLowerCase())) {
-      process.env.PATH = `${currentPath}${path.delimiter}${tgtDir}`;
-      log.info(`Added ${tgtDir} to PATH for Goose processes only`);
-    }
+    // For this process and its children only; the user's permanent PATH is untouched.
+    process.env.PATH = appendToWindowsPath(process.env.PATH ?? '', tgtDir);
   } catch (error) {
     log.error('Failed to ensure Windows shims:', error);
   }
