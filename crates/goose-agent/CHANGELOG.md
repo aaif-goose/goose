@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-09
+
+### Other
+
+- changed yield_to_customer to next enum ([#12789](https://github.com/aaif-goose/goose/pull/12789))
+- rename to finalize_cancellation and make Emitter sync ([#12786](https://github.com/aaif-goose/goose/pull/12786))
+- agent loop: make Stop end the run promptly and save what it produced ([#12765](https://github.com/aaif-goose/goose/pull/12765))
+- Delete the legacy agent loop ([#12760](https://github.com/aaif-goose/goose/pull/12760))
+- Resolve extensions into a per-inference lease ([#12161](https://github.com/aaif-goose/goose/pull/12161))
+- Run the GDK agent loop on wasm32 ([#12569](https://github.com/aaif-goose/goose/pull/12569))
+
 ## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
 
 ### Other

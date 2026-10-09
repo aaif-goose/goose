@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-09
+
+### Added
+
+- *(providers)* honor supports_vision declared on custom provider mo… ([#12769](https://github.com/aaif-goose/goose/pull/12769))
+- Use live model metadata for OpenAI reasoning and prefer the Responses API ([#12568](https://github.com/aaif-goose/goose/pull/12568))
+- fetch model metadata from models.dev live with bundled fallback ([#12560](https://github.com/aaif-goose/goose/pull/12560))
+
+### Fixed
+
+- *(cost)* apply long-context price tiers to cost estimates ([#12787](https://github.com/aaif-goose/goose/pull/12787))
+- adaptive thinking for Claude Sonnet and Haiku 5.5 ([#12761](https://github.com/aaif-goose/goose/pull/12761))
+- *(anthropic)* forward unknown request_params to wire, mirroring openai engine ([#12720](https://github.com/aaif-goose/goose/pull/12720))
+- support hyphenated GPT 6.1 Sol effort aliases ([#12689](https://github.com/aaif-goose/goose/pull/12689))
+- *(cost)* price Databricks GLM aliases from the zhipuai catalog ([#12673](https://github.com/aaif-goose/goose/pull/12673))
+- *(bedrock)* preserve the service total when folding cache input tokens ([#12586](https://github.com/aaif-goose/goose/pull/12586))
+- session naming/"none" reasoning effort fails for gpt-6.1-sol ([#12605](https://github.com/aaif-goose/goose/pull/12605))
+- *(providers)* read cache write tokens from Responses API usage ([#12509](https://github.com/aaif-goose/goose/pull/12509))
+- keep tool results consecutive when OpenAI-compatible tool images are emitted ([#12233](https://github.com/aaif-goose/goose/pull/12233))
+
+### Other
+
+- Delete the legacy agent loop ([#12760](https://github.com/aaif-goose/goose/pull/12760))
+- use typed structs for openai message formatting ([#12725](https://github.com/aaif-goose/goose/pull/12725))
+- Refresh the model catalog on the blocking pool ([#12727](https://github.com/aaif-goose/goose/pull/12727))
+- *(release)* bump version to 1.54.0 (minor) ([#12701](https://github.com/aaif-goose/goose/pull/12701))
+- upgrade rust to 1.99.0 ([#12714](https://github.com/aaif-goose/goose/pull/12714))
+- *(release)* bump version to 1.53.0 (minor) ([#12565](https://github.com/aaif-goose/goose/pull/12565))
+- Run the GDK agent loop on wasm32 ([#12569](https://github.com/aaif-goose/goose/pull/12569))
+- Add Meta Muse Code provider ([#11765](https://github.com/aaif-goose/goose/pull/11765))
+
 ## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
 
 ### Added
