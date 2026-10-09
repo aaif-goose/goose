@@ -1249,12 +1249,6 @@ impl Config {
         service: &str,
         fallback_values: Option<&HashMap<String, Value>>,
     ) -> Result<T, ConfigError> {
-        if env::var("GOOSE_FAIL_ON_KEYRING").is_ok() {
-            return Err(ConfigError::KeyringError(
-                "keyring access is not allowed when GOOSE_FAIL_ON_KEYRING is set".to_string(),
-            ));
-        }
-
         // Try to get the keyring entry and perform the operation
         let entry = match Self::get_keyring_entry(service) {
             Ok(entry) => entry,
