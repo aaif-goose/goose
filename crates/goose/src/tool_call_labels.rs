@@ -1,4 +1,4 @@
-use crate::agents::Agent;
+use crate::agents::StateMachineServices;
 use crate::conversation::message::{
     Message, MessageContent, ToolChainSummary, ToolRequest, TOOL_META_CHAIN_SUMMARY_KEY,
     TOOL_META_TITLE_KEY,
@@ -28,7 +28,7 @@ const LABEL_GENERATION_MAX_ATTEMPTS: usize = 2;
 const LABEL_GENERATION_RETRY_DELAY: Duration = Duration::from_millis(150);
 
 pub(crate) async fn generate_tool_title(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_manager: &SessionManager,
     session_id: &str,
     tool_request: &ToolRequest,
@@ -62,7 +62,7 @@ pub(crate) async fn generate_tool_title(
 }
 
 pub(crate) async fn generate_tool_chain_summary(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_manager: &SessionManager,
     session_id: &str,
     tool_requests: &[ToolRequest],
@@ -227,7 +227,7 @@ async fn complete_label(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::{AgentConfig, GoosePlatform};
+    use crate::agents::{GoosePlatform, StateMachineServicesConfig};
     use crate::config::{GooseMode, PermissionManager};
     use crate::providers::base::{MessageStream, ProviderUsage, Usage};
     use crate::session::{SessionManager, SessionType};
@@ -480,7 +480,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
@@ -553,7 +553,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
@@ -708,7 +708,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
@@ -752,7 +752,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,
@@ -796,7 +796,7 @@ mod tests {
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
             let permission_manager =
                 Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
+            let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
                 session_manager.clone(),
                 permission_manager,
                 None,

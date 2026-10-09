@@ -221,7 +221,7 @@ impl GooseAcpAgent {
     fn resend_pending_tool_permissions(
         &self,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
         cancel_token: Option<CancellationToken>,
@@ -251,7 +251,7 @@ impl GooseAcpAgent {
     async fn start_resumed_state_machine_turn(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
     ) -> Result<(), agent_client_protocol::Error> {

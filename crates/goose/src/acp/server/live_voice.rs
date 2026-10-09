@@ -125,7 +125,7 @@ impl GooseAcpAgent {
     fn live_main_agent(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> LiveMainAgent {
         let start_owner = Arc::clone(self);
         let start_connection = cx.clone();
@@ -202,7 +202,7 @@ impl GooseAcpAgent {
         session_id: String,
         input: String,
         cx: ConnectionTo<Client>,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> Result<BoxFuture<'static, String>, String> {
         let cancel_token = CancellationToken::new();
         let run_id = format!("run_{}", Uuid::new_v4());
@@ -239,7 +239,7 @@ impl GooseAcpAgent {
         input: String,
         cancel_token: CancellationToken,
         cx: ConnectionTo<Client>,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
         run_id: String,
     ) -> String {
         let acp_session_id = SessionId::new(session_id.clone());
@@ -378,7 +378,10 @@ impl GooseAcpAgent {
         )
     }
 
-    async fn prepare_live_agent(&self, session_id: &str) -> Result<Arc<Agent>, String> {
+    async fn prepare_live_agent(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<StateMachineServices>, String> {
         self.get_session_agent(session_id)
             .await
             .map_err(|_| "Goose could not activate the coding agent.".to_string())

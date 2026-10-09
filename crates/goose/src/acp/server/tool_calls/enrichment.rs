@@ -1,5 +1,5 @@
 use crate::acp::tool_call_notifier::ToolCallNotifier;
-use crate::agents::Agent;
+use crate::agents::StateMachineServices;
 use crate::conversation::message::{ToolChainSummary, ToolRequest};
 use crate::session::SessionManager;
 use crate::tool_call_labels::{generate_tool_chain_summary, generate_tool_title};
@@ -32,7 +32,7 @@ fn build_chain_summary_update(
 }
 
 pub(crate) fn spawn_tool_title_enrichment(
-    agent: &Arc<Agent>,
+    agent: &Arc<StateMachineServices>,
     tool_call_notifier: ToolCallNotifier,
     session_manager: &Arc<SessionManager>,
     session_id: &str,
@@ -61,7 +61,7 @@ pub(crate) fn spawn_tool_title_enrichment(
 }
 
 pub(crate) fn spawn_chain_summary_enrichment(
-    agent: &Arc<Agent>,
+    agent: &Arc<StateMachineServices>,
     session_id: &SessionId,
     tool_call_notifier: ToolCallNotifier,
     session_manager: &Arc<SessionManager>,

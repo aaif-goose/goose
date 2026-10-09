@@ -1,4 +1,4 @@
-use crate::agents::{Agent, AgentConfig, GoosePlatform};
+use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
 use crate::config::permission::PermissionManager;
 use crate::config::Config;
 use crate::scheduler_trait::SchedulerTrait;
@@ -17,7 +17,7 @@ static AGENT_MANAGER: OnceCell<Arc<AgentManager>> = OnceCell::const_new();
 /// Serves every session from one `Agent`. A session's first use restores its provider;
 /// once more than `max_sessions` are loaded the least recently used idle one is released.
 pub struct AgentManager {
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
     max_sessions: usize,
     loaded_sessions: Mutex<LruCache<String, ()>>,
     /// Concurrent first requests for a session restore its provider once.
@@ -25,9 +25,9 @@ pub struct AgentManager {
 }
 
 impl AgentManager {
-    pub fn new(agent_config: AgentConfig, max_sessions: Option<usize>) -> Self {
+    pub fn new(agent_config: StateMachineServicesConfig, max_sessions: Option<usize>) -> Self {
         Self {
-            agent: Arc::new(Agent::with_config(agent_config)),
+            agent: Arc::new(StateMachineServices::with_config(agent_config)),
             max_sessions: max_sessions.unwrap_or(DEFAULT_MAX_SESSION).max(1),
             loaded_sessions: Mutex::new(LruCache::unbounded()),
             load_locks: Mutex::new(HashMap::new()),
@@ -42,7 +42,7 @@ impl AgentManager {
                     .get_goose_max_active_agents()
                     .unwrap_or(DEFAULT_MAX_SESSION);
                 let session_manager = Arc::new(SessionManager::instance());
-                let agent_config = AgentConfig::new(
+                let agent_config = StateMachineServicesConfig::new(
                     session_manager,
                     PermissionManager::instance(),
                     None,
@@ -55,7 +55,7 @@ impl AgentManager {
             .cloned()
     }
 
-    pub fn agent(&self) -> &Arc<Agent> {
+    pub fn agent(&self) -> &Arc<StateMachineServices> {
         &self.agent
     }
 
@@ -67,7 +67,7 @@ impl AgentManager {
         &self.agent.config.session_manager
     }
 
-    pub async fn agent_for_session(&self, session_id: &str) -> Result<Arc<Agent>> {
+    pub async fn agent_for_session(&self, session_id: &str) -> Result<Arc<StateMachineServices>> {
         if self.loaded_sessions.lock().await.get(session_id).is_none() {
             let load_lock = Arc::clone(
                 self.load_locks
@@ -151,7 +151,7 @@ mod tests {
     use tokio::sync::Barrier;
 
     use crate::agents::extension::ExtensionConfig;
-    use crate::agents::{AgentConfig, GoosePlatform};
+    use crate::agents::{GoosePlatform, StateMachineServicesConfig};
     use crate::config::permission::PermissionManager;
     use crate::config::GooseMode;
     use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
@@ -160,7 +160,7 @@ mod tests {
 
     fn test_manager(temp_dir: &TempDir, max_sessions: usize) -> AgentManager {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let agent_config = AgentConfig::new(
+        let agent_config = StateMachineServicesConfig::new(
             session_manager,
             PermissionManager::instance(),
             None,

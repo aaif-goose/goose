@@ -1449,7 +1449,7 @@ enum McpProbeElicitation {
 
 async fn handle_mcp_probe(extension_command: String, script_path: Option<String>) -> Result<()> {
     use goose::agents::extension_manager::CallRequest;
-    use goose::agents::{Agent, AgentConfig};
+    use goose::agents::{StateMachineServices, StateMachineServicesConfig};
     use goose::config::ExtensionConfig;
     use rmcp::model::{ElicitRequestParams, ElicitResult, ElicitationAction};
     use tokio_util::sync::CancellationToken;
@@ -1504,7 +1504,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     }
 
     let config = goose::config::Config::global();
-    let mut agent_config = AgentConfig::new(
+    let mut agent_config = StateMachineServicesConfig::new(
         std::sync::Arc::new(SessionManager::instance()),
         goose::config::permission::PermissionManager::instance(),
         None,
@@ -1548,7 +1548,7 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
                 McpProbeElicitation::Cancel => ElicitResult::new(ElicitationAction::Cancel),
             }));
     }
-    let agent = Agent::with_config(agent_config);
+    let agent = StateMachineServices::with_config(agent_config);
     let session = agent
         .config
         .session_manager

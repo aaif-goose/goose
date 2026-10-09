@@ -3,7 +3,10 @@ use dotenvy::dotenv;
 use futures::StreamExt;
 use goose::acp::ACP_CURRENT_MODEL;
 use goose::agents::extension_manager::CallRequest;
-use goose::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, PromptManager, SessionConfig};
+use goose::agents::{
+    AgentEvent, GoosePlatform, PromptManager, SessionConfig, StateMachineServices,
+    StateMachineServicesConfig,
+};
 use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
 use goose::permission::Permission;
@@ -103,7 +106,7 @@ struct ProviderFixture {
     context_length_exceeded: usize,
     provider: Arc<dyn Provider>,
     model_config: goose_providers::model::ModelConfig,
-    agent: Agent,
+    agent: StateMachineServices,
     session_id: String,
     _mcp: McpFixture,
     _guard: env_lock::EnvGuard<'static>,
@@ -256,7 +259,7 @@ impl ProviderFixture {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
 
-        let agent = Agent::with_config(AgentConfig::new(
+        let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
             session_manager.clone(),
             permission_manager,
             None,

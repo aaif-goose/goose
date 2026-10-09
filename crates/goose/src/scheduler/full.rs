@@ -11,7 +11,9 @@ use tokio::sync::Mutex;
 use tokio_cron_scheduler::{job::JobId, Job, JobScheduler as TokioJobScheduler};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
+use crate::agents::{
+    AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
+};
 use crate::config::permission::PermissionManager;
 use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
 use crate::conversation::message::Message;
@@ -857,7 +859,7 @@ async fn execute_job(
     )
     .map_err(|e| anyhow!(e.to_string()))?;
 
-    let agent = Agent::with_config(AgentConfig::new(
+    let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
         session_manager,
         PermissionManager::instance(),
         None,

@@ -6,7 +6,7 @@ use super::{
 };
 use console::style;
 use goose::agents::final_output_tool::FinalOutputTool;
-use goose::agents::{Agent, Container, ExtensionError};
+use goose::agents::{Container, ExtensionError, StateMachineServices};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
@@ -235,7 +235,7 @@ pub struct ExtensionFailure {
 }
 
 async fn load_extensions(
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
     session_id: &str,
 ) -> anyhow::Result<Vec<ExtensionFailure>> {
     Ok(agent
@@ -496,7 +496,11 @@ async fn resolve_session_id(
     }
 }
 
-async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
+async fn handle_resumed_session_workdir(
+    agent: &StateMachineServices,
+    session_id: &str,
+    interactive: bool,
+) {
     let session = agent
         .config
         .session_manager
@@ -559,7 +563,7 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
 }
 
 async fn collect_extension_configs(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_config: &SessionBuilderConfig,
     recipe: Option<&Recipe>,
     session_id: &str,
@@ -650,7 +654,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     goose::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();
-    let agent: Agent = Agent::new();
+    let agent: StateMachineServices = StateMachineServices::new();
 
     let session_manager = agent.config.session_manager.clone();
 

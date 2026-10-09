@@ -17,7 +17,8 @@ use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
 use crate::agents::{
-    Agent, AgentConfig, ExtensionConfig, ExtensionLoadResult, GoosePlatform, SessionConfig,
+    ExtensionConfig, ExtensionLoadResult, GoosePlatform, SessionConfig, StateMachineServices,
+    StateMachineServicesConfig,
 };
 use crate::config::base::CONFIG_YAML_NAME;
 use crate::config::extensions::{configured_enabled_state, get_enabled_extensions_with_config};
@@ -232,7 +233,7 @@ const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 /// The ACP session ID maps directly to a `sessions` row. The `sessions` HashMap
 /// below is keyed by session ID.
 struct GooseAcpSession {
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
 }
 
 struct AgentStreamOutcome {
@@ -324,7 +325,7 @@ pub fn new_acp_agent_manager(
         let _ = storage.pool().await;
     });
     Arc::new(AgentManager::new(
-        AgentConfig::new(
+        StateMachineServicesConfig::new(
             session_manager,
             Arc::new(PermissionManager::new(config_dir)),
             scheduler,
@@ -766,7 +767,7 @@ fn prompt_stop_reason(was_cancelled: bool, output_token_limit_reached: bool) -> 
 
 #[derive(Clone)]
 struct SessionAgentTarget {
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
     session_id: String,
     cancel_token: Option<CancellationToken>,
 }
@@ -858,7 +859,7 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         run_id: String,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
         self.start_active_run(session_id, run_id, CancellationToken::new(), agent)
             .await
@@ -879,7 +880,7 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         expected_run_id: &str,
-    ) -> Result<(String, Arc<Agent>), agent_client_protocol::Error> {
+    ) -> Result<(String, Arc<StateMachineServices>), agent_client_protocol::Error> {
         self.require_active_run(session_id, expected_run_id).await
     }
 
@@ -1028,7 +1029,11 @@ impl GooseAcpAgent {
     /// `session/new` critical path avoids stalling session creation on slow or
     /// blocking work such as a synchronous keychain read while resolving the
     /// provider's inventory identity.
-    fn spawn_provider_inventory_refresh(&self, goose_session: &Session, agent: &Arc<Agent>) {
+    fn spawn_provider_inventory_refresh(
+        &self,
+        goose_session: &Session,
+        agent: &Arc<StateMachineServices>,
+    ) {
         let Some(provider_name) = goose_session.provider_name.clone() else {
             return;
         };
@@ -1067,7 +1072,7 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         session_id: String,
-    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
+    ) -> Result<Arc<StateMachineServices>, agent_client_protocol::Error> {
         let agent = self
             .agent_manager
             .agent_for_session(&session_id)
@@ -1091,7 +1096,7 @@ impl GooseAcpAgent {
     async fn apply_acp_extension_overrides(
         &self,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         session: &Session,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_fs_capabilities = self
@@ -1156,7 +1161,8 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
-    ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
+    ) -> Result<(Arc<StateMachineServices>, Vec<ExtensionLoadResult>), agent_client_protocol::Error>
+    {
         let agent = self
             .get_or_create_session_agent(cx, session.id.clone())
             .await?;
@@ -1252,7 +1258,7 @@ impl GooseAcpAgent {
         enabled_extensions_data(session, extensions)
     }
 
-    async fn register_acp_session(&self, session_id: String, agent: Arc<Agent>) {
+    async fn register_acp_session(&self, session_id: String, agent: Arc<StateMachineServices>) {
         let acp_session = GooseAcpSession {
             agent: agent.clone(),
         };
@@ -1264,7 +1270,11 @@ impl GooseAcpAgent {
             .await;
     }
 
-    async fn subscribe_thinking_effort_updates(&self, session_id: &str, agent: &Arc<Agent>) {
+    async fn subscribe_thinking_effort_updates(
+        &self,
+        session_id: &str,
+        agent: &Arc<StateMachineServices>,
+    ) {
         let Ok(provider) = agent.provider(session_id).await else {
             return;
         };
@@ -1323,7 +1333,8 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
-    ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
+    ) -> Result<(Arc<StateMachineServices>, Vec<ExtensionLoadResult>), agent_client_protocol::Error>
+    {
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, session).await?;
         self.register_acp_session(session.id.clone(), agent.clone())
             .await;
@@ -1510,7 +1521,7 @@ impl GooseAcpAgent {
     fn spawn_ready_chain_summary(
         &self,
         chain: ReadyToolChain,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         session_id: &SessionId,
         cx: &ConnectionTo<Client>,
     ) {
@@ -1533,7 +1544,7 @@ impl GooseAcpAgent {
         tool_request: &ToolRequest,
         message: &Message,
         session_id: &SessionId,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_requests_label_enrichment = self.requests_tool_call_label_enrichment();
@@ -1874,7 +1885,7 @@ impl GooseAcpAgent {
     async fn get_session_agent(
         &self,
         session_id: &str,
-    ) -> Result<Arc<Agent>, agent_client_protocol::Error> {
+    ) -> Result<Arc<StateMachineServices>, agent_client_protocol::Error> {
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
                 session_id.to_string(),
@@ -1910,7 +1921,7 @@ impl GooseAcpAgent {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
@@ -1954,7 +1965,7 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         expected_run_id: &str,
-    ) -> Result<(String, Arc<Agent>), agent_client_protocol::Error> {
+    ) -> Result<(String, Arc<StateMachineServices>), agent_client_protocol::Error> {
         if expected_run_id.is_empty() {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("expectedRunId must not be empty"));
@@ -2033,7 +2044,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
         let Ok(provider) = agent.provider(session_id).await else {
             return Ok(());
@@ -2068,7 +2079,7 @@ impl GooseAcpAgent {
 
     async fn resolve_context_limit(
         session: &Session,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
     ) -> Result<usize, agent_client_protocol::Error> {
         let provider = agent
             .provider(&session.id)
@@ -2089,7 +2100,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         cached_context_limit: &mut Option<usize>,
     ) -> Result<Session, agent_client_protocol::Error> {
         let session = self
@@ -2127,7 +2138,7 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         acp_session_id: &SessionId,
         session_id: &str,
-        agent: &Arc<Agent>,
+        agent: &Arc<StateMachineServices>,
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
@@ -3806,13 +3817,15 @@ print(\"hello, world\")
             )
             .await
             .unwrap();
-        let session_agent = Arc::new(Agent::with_config(AgentConfig::new(
-            server.session_manager.clone(),
-            server.permission_manager.clone(),
-            None,
-            true,
-            GoosePlatform::GooseCli,
-        )));
+        let session_agent = Arc::new(StateMachineServices::with_config(
+            StateMachineServicesConfig::new(
+                server.session_manager.clone(),
+                server.permission_manager.clone(),
+                None,
+                true,
+                GoosePlatform::GooseCli,
+            ),
+        ));
         let provider = Arc::new(AsyncEffortProvider::new());
         session_agent
             .update_provider(

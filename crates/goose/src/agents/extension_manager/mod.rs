@@ -21,11 +21,11 @@ use super::extension::{
 };
 use super::tool_execution::ToolCallResult;
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::agent::GoosePlatform;
 use crate::agents::mcp_client::{
     ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
 };
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
+use crate::agents::services::GoosePlatform;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;

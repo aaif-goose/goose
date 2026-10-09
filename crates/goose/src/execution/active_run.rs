@@ -1,4 +1,4 @@
-use crate::agents::Agent;
+use crate::agents::StateMachineServices;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -9,7 +9,7 @@ struct ActiveRun {
     run_id: String,
     cancel_token: CancellationToken,
     /// Routes steering from another roaming connection to the run owner.
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
 }
 
 struct SessionRunState {
@@ -34,7 +34,7 @@ impl ActiveRunRegistry {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> Result<(), StartRunError> {
         let mut runs = self
             .runs_by_session
@@ -69,7 +69,7 @@ impl ActiveRunRegistry {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
     ) -> Result<(), StartRunError> {
         let mut runs = self
             .runs_by_session
@@ -91,7 +91,10 @@ impl ActiveRunRegistry {
         Ok(())
     }
 
-    pub(crate) fn agent_run(&self, session_id: &str) -> Option<(String, Arc<Agent>)> {
+    pub(crate) fn agent_run(
+        &self,
+        session_id: &str,
+    ) -> Option<(String, Arc<StateMachineServices>)> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
@@ -115,7 +118,11 @@ impl ActiveRunRegistry {
         }
     }
 
-    pub(crate) fn remove_agent_run(&self, session_id: &str, run_id: &str) -> Option<Arc<Agent>> {
+    pub(crate) fn remove_agent_run(
+        &self,
+        session_id: &str,
+        run_id: &str,
+    ) -> Option<Arc<StateMachineServices>> {
         let mut runs = self
             .runs_by_session
             .lock()
@@ -195,7 +202,7 @@ mod tests {
                 "session",
                 "run".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Arc::new(StateMachineServices::new()),
             )
             .is_ok());
         assert!(!registry.start_live("session"));
@@ -207,7 +214,7 @@ mod tests {
                 "session",
                 "run".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Arc::new(StateMachineServices::new()),
             ),
             Err(StartRunError::LiveVoiceInteractionExists)
         ));
@@ -222,7 +229,7 @@ mod tests {
                 "session",
                 "delegated".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Arc::new(StateMachineServices::new()),
             )
             .is_ok());
         assert!(matches!(
@@ -230,7 +237,7 @@ mod tests {
                 "session",
                 "prompt".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Arc::new(StateMachineServices::new()),
             ),
             Err(StartRunError::AgentRunExists { .. })
         ));

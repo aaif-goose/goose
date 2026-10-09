@@ -7,7 +7,7 @@ use futures::StreamExt;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{Agent, AgentEvent, ExtensionConfig, SessionConfig};
+use crate::agents::{AgentEvent, ExtensionConfig, SessionConfig, StateMachineServices};
 use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::config::Config;
@@ -40,7 +40,7 @@ fn resolve_gateway_max_turns(gateway_override: Option<u32>, global_max_turns: Op
 }
 
 struct PendingConfirmation {
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
     session_id: String,
     request_ids: VecDeque<String>,
     cancel_token: CancellationToken,

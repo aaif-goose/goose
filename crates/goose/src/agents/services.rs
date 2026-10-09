@@ -98,7 +98,7 @@ impl fmt::Display for GoosePlatform {
 }
 
 #[derive(Clone)]
-pub struct AgentConfig {
+pub struct StateMachineServicesConfig {
     pub session_manager: Arc<SessionManager>,
     pub permission_manager: Arc<PermissionManager>,
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
@@ -110,7 +110,7 @@ pub struct AgentConfig {
     pub providers: Arc<ProviderManager>,
 }
 
-impl AgentConfig {
+impl StateMachineServicesConfig {
     pub fn new(
         session_manager: Arc<SessionManager>,
         permission_manager: Arc<PermissionManager>,
@@ -132,9 +132,8 @@ impl AgentConfig {
     }
 }
 
-/// The main goose Agent
-pub struct Agent {
-    pub config: AgentConfig,
+pub struct StateMachineServices {
+    pub config: StateMachineServicesConfig,
 
     pub extension_manager: Arc<ExtensionManager>,
     tool_confirmation_coordinator: ToolConfirmationCoordinator,
@@ -165,16 +164,16 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
-impl Default for Agent {
+impl Default for StateMachineServices {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Agent {
+impl StateMachineServices {
     pub fn new() -> Self {
         let config = Config::global();
-        Self::with_config(AgentConfig::new(
+        Self::with_config(StateMachineServicesConfig::new(
             Arc::new(SessionManager::instance()),
             PermissionManager::instance(),
             None,
@@ -183,7 +182,7 @@ impl Agent {
         ))
     }
 
-    pub fn with_config(config: AgentConfig) -> Self {
+    pub fn with_config(config: StateMachineServicesConfig) -> Self {
         let providers = config.providers.clone();
 
         let mut default_client = ClientContext::new(&config.goose_platform, None);
@@ -1425,11 +1424,15 @@ mod tests {
         }
     }
 
-    async fn session_context_agent() -> (Agent, Arc<SessionContextProvider>, SessionConfig, TempDir)
-    {
+    async fn session_context_agent() -> (
+        StateMachineServices,
+        Arc<SessionContextProvider>,
+        SessionConfig,
+        TempDir,
+    ) {
         let temp_dir = TempDir::new().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
             None,
@@ -1542,11 +1545,11 @@ mod tests {
         );
     }
 
-    async fn tracing_test_agent_and_session() -> (Agent, Session, TempDir) {
+    async fn tracing_test_agent_and_session() -> (StateMachineServices, Session, TempDir) {
         let data_dir = TempDir::new().unwrap();
         let data_path = data_dir.path().to_path_buf();
         let session_manager = Arc::new(SessionManager::new(data_path.clone()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(data_path)),
             None,
@@ -1752,7 +1755,7 @@ mod tests {
 
     async fn effort_test_agent(
         outcome: EffortOutcome,
-    ) -> (Agent, String, Arc<EffortProvider>, TempDir) {
+    ) -> (StateMachineServices, String, Arc<EffortProvider>, TempDir) {
         let (agent, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
         agent
@@ -1766,7 +1769,10 @@ mod tests {
         (agent, session.id, provider, data_dir)
     }
 
-    async fn persisted_thinking_effort(agent: &Agent, session_id: &str) -> Option<String> {
+    async fn persisted_thinking_effort(
+        agent: &StateMachineServices,
+        session_id: &str,
+    ) -> Option<String> {
         agent
             .model_config_for_session(session_id)
             .await
@@ -2319,17 +2325,17 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         data_dir: PathBuf,
         hook_manager: crate::hooks::HookManager,
         provider: Arc<dyn crate::providers::base::Provider>,
-    ) -> Result<(Agent, String)> {
+    ) -> Result<(StateMachineServices, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
-        let config = AgentConfig::new(
+        let config = StateMachineServicesConfig::new(
             session_manager.clone(),
             permission_manager,
             None,
             true,
             GoosePlatform::GooseCli,
         );
-        let mut agent = Agent::with_config(config);
+        let mut agent = StateMachineServices::with_config(config);
         agent.set_hook_manager_for_test(hook_manager);
         let session = session_manager
             .create_session(
@@ -2352,7 +2358,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn create_stop_hook_test_agent(
         env: &StopHookTestEnv,
         stop_hook_block_cap: u32,
-    ) -> Result<(Agent, String, Arc<CountingTextProvider>)> {
+    ) -> Result<(StateMachineServices, String, Arc<CountingTextProvider>)> {
         let provider = Arc::new(CountingTextProvider::new());
         let (mut agent, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
@@ -2361,7 +2367,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     async fn run_stop_hook_test_turn(
-        agent: &Agent,
+        agent: &StateMachineServices,
         session_id: &str,
         text: &str,
     ) -> Result<Vec<Message>> {
@@ -2607,7 +2613,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     #[tokio::test]
     async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
-        let agent = Agent::new();
+        let agent = StateMachineServices::new();
 
         // Verify that the tool inspection manager has all expected inspectors
         let inspector_names = agent.tool_inspection_manager.inspector_names();

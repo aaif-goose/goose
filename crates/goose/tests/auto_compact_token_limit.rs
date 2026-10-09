@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::agents::{Agent, SessionConfig};
+use goose::agents::{SessionConfig, StateMachineServices};
 use goose::config::{Config, GooseMode};
 use goose::context_mgmt::auto_compact_threshold;
 use goose::conversation::message::Message;
@@ -78,7 +78,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
     assert_eq!(auto_compact_threshold(200_000), 0.8);
     assert_eq!(auto_compact_threshold(0), 0.8);
 
-    let agent = Agent::new();
+    let agent = StateMachineServices::new();
     let session = agent
         .config
         .session_manager
@@ -120,7 +120,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
 }
 
 async fn verify_reply(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_id: &str,
     context: usize,
     tokens: i32,

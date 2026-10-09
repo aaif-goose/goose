@@ -226,7 +226,7 @@ mod tests {
         let running = server.create_agent().await.unwrap();
         let steering = server.create_agent().await.unwrap();
 
-        let owner = Arc::new(crate::agents::Agent::new());
+        let owner = Arc::new(crate::agents::StateMachineServices::new());
         running
             .test_start_active_run("session-1", "run-1".to_string(), owner.clone())
             .await
@@ -251,7 +251,7 @@ mod tests {
         let server = server(root.path().to_path_buf(), false);
 
         let running = server.create_agent().await.unwrap();
-        let owner = Arc::new(crate::agents::Agent::new());
+        let owner = Arc::new(crate::agents::StateMachineServices::new());
         running
             .test_start_active_run("session-1", "run-1".to_string(), owner)
             .await

@@ -3,7 +3,7 @@ use cliclack::spinner;
 use console::style;
 use goose::agents::extension::{ToolInfo, PLATFORM_EXTENSIONS};
 use goose::agents::extension_manager::get_parameter_names;
-use goose::agents::Agent;
+use goose::agents::StateMachineServices;
 use goose::agents::{extension::Envs, ExtensionConfig};
 use goose::config::declarative_providers::{
     create_custom_provider, remove_custom_provider, AuthConfig, CreateCustomProviderParams,
@@ -1785,7 +1785,7 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         .expect("No model configured. Please set model first");
     let model_config = goose::model_config::model_config_from_user_config(&provider_name, &model)?;
 
-    let agent = Agent::new();
+    let agent = StateMachineServices::new();
 
     let session = agent
         .config

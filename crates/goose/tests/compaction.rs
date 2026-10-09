@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::agents::{Agent, AgentEvent, SessionConfig};
+use goose::agents::{AgentEvent, SessionConfig, StateMachineServices};
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageContent};
 use goose::conversation::Conversation;
@@ -210,7 +210,7 @@ impl ProviderDef for MockCompactionProvider {
 
 /// Helper: Set up a test session with initial messages and token counts
 async fn setup_test_session(
-    agent: &Agent,
+    agent: &StateMachineServices,
     temp_dir: &TempDir,
     session_name: &str,
     messages: Vec<Message>,
@@ -249,7 +249,7 @@ async fn setup_test_session(
 #[tokio::test]
 async fn test_auto_compaction_during_reply() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let agent = Agent::new();
+    let agent = StateMachineServices::new();
 
     // Setup session with many messages to have substantial context
     // 20 exchanges = 40 messages * 100 tokens = ~4000 tokens in conversation

@@ -2,7 +2,7 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, AgentConfig, GoosePlatform, SessionConfig,
+        GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
     },
     config::permission::PermissionManager,
     conversation::{message::Message, Conversation},
@@ -28,7 +28,7 @@ pub struct SubagentPromptContext {
 pub(crate) async fn from_foreground_subagent_session(
     session_manager: Arc<SessionManager>,
     session: &Session,
-) -> Result<(Agent, SessionConfig)> {
+) -> Result<(StateMachineServices, SessionConfig)> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
@@ -58,7 +58,7 @@ pub(crate) async fn from_foreground_subagent_session(
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
 
-    let mut config = AgentConfig::new(
+    let mut config = StateMachineServicesConfig::new(
         session_manager,
         PermissionManager::instance(),
         None,
@@ -66,7 +66,7 @@ pub(crate) async fn from_foreground_subagent_session(
         GoosePlatform::GooseCli,
     );
     config.is_subagent = true;
-    let agent = Agent::with_config(config);
+    let agent = StateMachineServices::with_config(config);
     agent
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
@@ -213,7 +213,7 @@ fn failure_reason(messages: &[Message]) -> String {
 pub const SUBAGENT_TOOL_REQUEST_TYPE: &str = "subagent_tool_request";
 
 async fn build_subagent_prompt(
-    agent: &Agent,
+    agent: &StateMachineServices,
     max_turns: usize,
     session_id: &str,
 ) -> Result<String> {

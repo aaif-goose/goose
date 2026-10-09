@@ -21,7 +21,9 @@ use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
-use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
+use crate::agents::{
+    AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
+};
 use crate::config::permission::PermissionManager;
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -30,7 +32,12 @@ use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
 use goose_providers::model::ModelConfig;
 
-async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfile::TempDir)> {
+async fn agent_with_dummy_api() -> Result<(
+    StateMachineServices,
+    Arc<DummyApi>,
+    String,
+    tempfile::TempDir,
+)> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
     let api_client = goose_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
@@ -55,7 +62,7 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
             GooseMode::Auto,
         )
         .await?;
-    let agent = Agent::with_config(AgentConfig::new(
+    let agent = StateMachineServices::with_config(StateMachineServicesConfig::new(
         session_manager,
         Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
         None,
@@ -75,7 +82,7 @@ async fn agent_with_dummy_api() -> Result<(Agent, Arc<DummyApi>, String, tempfil
 }
 
 async fn agent_with_calculator() -> Result<(
-    Agent,
+    StateMachineServices,
     Arc<DummyApi>,
     String,
     Arc<CalculatorExtension>,
@@ -100,7 +107,7 @@ async fn agent_with_calculator() -> Result<(
     Ok((agent, api, session_id, calculator, temp_dir))
 }
 
-async fn enable_developer(agent: &Agent, session_id: &str) -> Result<()> {
+async fn enable_developer(agent: &StateMachineServices, session_id: &str) -> Result<()> {
     agent
         .add_extension(
             ExtensionConfig::Platform {
@@ -769,7 +776,7 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
 }
 
 async fn reply_messages(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_id: String,
     message: Message,
 ) -> Result<Vec<Message>> {

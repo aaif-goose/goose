@@ -34,7 +34,7 @@ use anyhow::Result;
 use completion::GooseCompleter;
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
 use goose::agents::{
-    context_management_unsupported_message, Agent, SessionConfig, COMPACT_TRIGGERS,
+    context_management_unsupported_message, SessionConfig, StateMachineServices, COMPACT_TRIGGERS,
 };
 use goose::config::extensions::name_to_key;
 use goose::config::{Config, GooseMode};
@@ -232,7 +232,7 @@ impl HistoryManager {
 }
 
 pub struct CliSession {
-    agent: Arc<Agent>,
+    agent: Arc<StateMachineServices>,
     messages: Conversation,
     session_id: String,
     completion_cache: Arc<std::sync::RwLock<CompletionCache>>,
@@ -284,7 +284,7 @@ impl CompletionCache {
 impl CliSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        agent: Arc<Agent>,
+        agent: Arc<StateMachineServices>,
         session_id: String,
         debug: bool,
         scheduled_job_id: Option<String>,
@@ -1753,7 +1753,7 @@ impl CliSession {
     }
 
     async fn refresh_completion_cache(
-        agent: &Agent,
+        agent: &StateMachineServices,
         session_id: &str,
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
@@ -2011,7 +2011,7 @@ impl CliSession {
 /// The provider `session_id` would get with `provider_name`, without switching
 /// the session to it.
 pub(crate) async fn session_provider(
-    agent: &Agent,
+    agent: &StateMachineServices,
     session_id: &str,
     provider_name: &str,
 ) -> anyhow::Result<Arc<dyn Provider>> {
@@ -3236,15 +3236,17 @@ mod tests {
             .await
             .unwrap();
 
-        let agent = goose::agents::Agent::with_config(goose::agents::AgentConfig::new(
-            Arc::new(session_manager),
-            Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
-            None,
-            // Disable background session naming so the test agent starts no
-            // provider-dependent tasks.
-            true,
-            goose::agents::GoosePlatform::GooseCli,
-        ));
+        let agent = goose::agents::StateMachineServices::with_config(
+            goose::agents::StateMachineServicesConfig::new(
+                Arc::new(session_manager),
+                Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
+                None,
+                // Disable background session naming so the test agent starts no
+                // provider-dependent tasks.
+                true,
+                goose::agents::GoosePlatform::GooseCli,
+            ),
+        );
         agent
             .update_provider(
                 Arc::new(StubProvider),
