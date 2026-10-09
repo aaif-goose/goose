@@ -22,8 +22,8 @@ use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
-/// Keeps requests below OpenAI's long-context price tier (above 272k input
-/// tokens), leaving room for a turn's tool output and the compaction request.
+/// Starts compaction with headroom below OpenAI's long-context price tier
+/// (above 272k input tokens). This is not a maximum request size.
 pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
