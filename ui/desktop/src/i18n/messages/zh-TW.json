@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "返回"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,one{未顯示前面的 # 則訊息} other{未顯示前面的 # 則訊息}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "無法載入工作階段"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "重試"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "全部顯示"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "擴充功能已更新"
