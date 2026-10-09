@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Ambang %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Had token"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Merumuskan permintaan dan respons alat lama untuk menjimatkan konteks. Had ditetapkan secara automatik jika dibiarkan kosong."
   },

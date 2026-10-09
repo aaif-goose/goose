@@ -53,6 +53,7 @@ just release-binary           # release binary
 
 ### Test
 ```bash
+export GOOSE_DISABLE_KEYRING=1  # avoid system keyring prompts
 cargo test                   # all tests
 cargo test -p goose          # specific crate
 cargo test --package goose --test mcp_integration_test
@@ -91,7 +92,7 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ### Run these only if the user has asked you to build/test your changes:
 ```
 # 1. cargo build
-# 2. cargo test -p <crate>
+# 2. GOOSE_DISABLE_KEYRING=1 cargo test -p <crate>
 # 3. cargo clippy --all-targets -- -D warnings
 ```
 

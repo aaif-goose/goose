@@ -51,6 +51,7 @@ pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, Stri
 pub struct RecipeOperation {
     provider: Arc<dyn Provider>,
     hook_manager: HookManager,
+    response: std::sync::Mutex<Option<Message>>,
 }
 
 impl RecipeOperation {
@@ -58,7 +59,12 @@ impl RecipeOperation {
         Self {
             provider,
             hook_manager,
+            response: std::sync::Mutex::default(),
         }
+    }
+
+    fn take_response(&self) -> Option<Message> {
+        self.response.lock().unwrap().take()
     }
 
     async fn command_error(
@@ -97,6 +103,18 @@ impl RecipeOperation {
 impl Operation<Session, GooseEffect> for RecipeOperation {
     fn name(&self) -> &'static str {
         "recipe"
+    }
+
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
+        match self.take_response() {
+            Some(response) => vec![emit.message(response).await.into()],
+            None => Vec::new(),
+        }
     }
 
     async fn run_command(
@@ -222,7 +240,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 .arguments
                 .as_ref()
                 .map(|arguments| serde_json::Value::Object(arguments.clone()));
-            let output = match run_pre_tool_hooks(
+            let pre_tool = run_pre_tool_hooks(
                 &self.hook_manager,
                 session,
                 &request.id,
@@ -230,12 +248,12 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 tool_input.as_ref(),
             )
             .instrument(span.clone())
-            .await
-            {
+            .await;
+            let output = match &pre_tool {
                 // A denial returns before execution and emits no post event, the
                 // same shape ToolExecutionOperation has: its dispatch returns the
                 // denial before the post-hook wrapper is ever applied.
-                Err(denial) => Err(denial),
+                Err(denial) => Err(denial.clone()),
                 Ok(()) => {
                     let result = final_output
                         .execute_tool_call(tool_call.clone())
@@ -251,26 +269,34 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                         }
                         _ => {}
                     }
-                    // Post event carries the same tool_call_id as the pre events.
-                    // The large-response rewrite ToolExecutionOperation applies is
-                    // deliberately not reused: the recipe's structured output is
-                    // the deliverable, not a payload to offload to a temp file.
-                    emit_post_tool_use(
-                        &self.hook_manager,
-                        &session.id,
-                        &session.working_dir.to_string_lossy(),
-                        &tool_call.name,
-                        &request.id,
-                        tool_input.as_ref(),
-                        &output,
-                    )
-                    .instrument(span.clone())
-                    .await;
                     output
                 }
             };
-            let mut response = Message::user();
-            response.add_tool_response_with_metadata(request.id, output, request.metadata.as_ref());
+            let mut response = Message::user().with_generated_id_if_missing();
+            response.add_tool_response_with_metadata(
+                request.id.clone(),
+                output.clone(),
+                request.metadata.as_ref(),
+            );
+            *self.response.lock().unwrap() = Some(response);
+            if pre_tool.is_ok() {
+                // Post event carries the same tool_call_id as the pre events.
+                // The large-response rewrite ToolExecutionOperation applies is
+                // deliberately not reused: the recipe's structured output is
+                // the deliverable, not a payload to offload to a temp file.
+                emit_post_tool_use(
+                    &self.hook_manager,
+                    &session.id,
+                    &session.working_dir.to_string_lossy(),
+                    &tool_call.name,
+                    &request.id,
+                    tool_input.as_ref(),
+                    &output,
+                )
+                .instrument(span.clone())
+                .await;
+            }
+            let response = self.take_response().expect("recipe response held");
             let response = emit.message(response).await;
             return applied([response.into()]);
         }

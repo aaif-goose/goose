@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Umbral %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Límite de tokens"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Resume solicitudes y respuestas de herramientas antiguas para ahorrar contexto. El límite es automático si se deja vacío."
   },

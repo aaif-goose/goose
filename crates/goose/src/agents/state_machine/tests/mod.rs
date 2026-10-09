@@ -10,6 +10,7 @@ use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, Exte
 
 mod agent_reply;
 mod calculator_extension;
+mod cancellation;
 mod compaction_lifecycle;
 mod dummy_api;
 mod hooks_lifecycle;
@@ -53,7 +54,7 @@ async fn capture_state_machine_trace_fields(
 
     let cancel = CancellationToken::new();
     let machine = pipeline.machine(cancel.clone());
-    let (tx, _rx) = mpsc::channel(1024);
+    let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let span = tracing::info_span!(
         "state_machine_security_trace",
@@ -65,6 +66,7 @@ async fn capture_state_machine_trace_fields(
     super::session::run(
         &machine,
         pipeline.session_manager.as_ref(),
+        &pipeline.hook_manager,
         &pipeline.session_id,
         &emit,
     )

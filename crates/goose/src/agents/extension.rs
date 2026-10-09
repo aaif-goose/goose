@@ -52,6 +52,8 @@ pub enum ExtensionError {
     InitializeError(#[from] Box<ClientInitializeError>),
     #[error("{0}")]
     ProcessExit(#[source] Box<ProcessExit>),
+    #[error("{0}")]
+    StartFailed(String),
 }
 
 impl From<ClientInitializeError> for ExtensionError {

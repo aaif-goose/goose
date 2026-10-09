@@ -538,13 +538,21 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     }
 }
 
+fn mcp_server_configs(
+    mcp_servers: Vec<McpServer>,
+) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+    mcp_servers
+        .into_iter()
+        .map(mcp_server_to_extension_config)
+        .collect::<Result<_, _>>()
+        .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))
+}
+
 fn add_mcp_servers(
     extensions: &mut Vec<ExtensionConfig>,
     mcp_servers: Vec<McpServer>,
 ) -> Result<(), agent_client_protocol::Error> {
-    for mcp_server in mcp_servers {
-        let extension = mcp_server_to_extension_config(mcp_server)
-            .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))?;
+    for extension in mcp_server_configs(mcp_servers)? {
         push_or_replace_extension(extensions, extension);
     }
     Ok(())
@@ -1194,14 +1202,15 @@ impl GooseAcpAgent {
         }
 
         if !mcp_servers.is_empty() {
-            let mut stored_extensions =
-                EnabledExtensionsState::from_extension_data(&session.extension_data)
-                    .unwrap_or_else(|| EnabledExtensionsState::new(Vec::new()));
-            add_mcp_servers(&mut stored_extensions.extensions, mcp_servers)?;
-            builder = builder.extension_data(enabled_extensions_data(
-                &session,
-                stored_extensions.extensions,
-            )?);
+            let extensions = mcp_server_configs(mcp_servers)?;
+            self.session_manager
+                .update_enabled_extensions(&session.id, |selected| {
+                    for extension in extensions {
+                        push_or_replace_extension(selected, extension);
+                    }
+                })
+                .await
+                .internal_err_ctx("Failed to add the client's MCP servers")?;
             session_needs_update = true;
         }
 
@@ -2122,7 +2131,6 @@ impl GooseAcpAgent {
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
-        let mut was_cancelled = false;
         let mut output_token_limit_reached = false;
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
@@ -2135,8 +2143,7 @@ impl GooseAcpAgent {
 
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
-                was_cancelled = true;
-                break;
+                continue;
             }
 
             match event {
@@ -2232,12 +2239,7 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            was_cancelled = true;
-            drop(stream);
-            agent.cancel_foreground_subagents(session_id).await;
-        }
-
+        let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
             if let Some(chain) = chain_tracker.close_current_chain() {
                 self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);

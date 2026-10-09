@@ -1,5 +1,8 @@
 use super::api_client::TlsConfig;
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::base::{
+    find_declared_model, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata,
+    ProviderType,
+};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -73,6 +76,14 @@ impl ProviderEntry {
     pub fn normalize_model_config(&self, mut model: ModelConfig) -> Result<ModelConfig> {
         if self.toolshim_enabled(model.toolshim) {
             model = model.with_toolshim(true);
+        }
+        // Declared model metadata is authoritative over canonical detection, which
+        // may already have populated supports_vision earlier in materialization.
+        if let Some(supports_vision) =
+            find_declared_model(&self.metadata.known_models, &model.model_name)
+                .and_then(|m| m.supports_vision)
+        {
+            model.supports_vision = Some(supports_vision);
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -462,5 +473,93 @@ mod tests {
         assert!(registry.entries["custom_toolshim"].toolshim_enabled(false));
         assert!(registry.entries["custom_default"].toolshim_enabled(true));
         assert!(!registry.entries["custom_default"].toolshim_enabled(false));
+    }
+
+    #[test]
+    fn canonical_metadata_preserves_explicit_vision_overrides() {
+        let mut registry = ProviderRegistry::new(None);
+        registry.register::<OpenAiProviderDef>(false);
+        let entry = &registry.entries["openai"];
+
+        for (name, canonical_vision) in [("gpt-4o", true), ("gpt-4", false)] {
+            let detected = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(detected.supports_vision, Some(canonical_vision));
+
+            let overridden = entry
+                .normalize_model_config(
+                    ModelConfig::new(name).with_vision_support(!canonical_vision),
+                )
+                .unwrap();
+            assert_eq!(overridden.supports_vision, Some(!canonical_vision));
+        }
+    }
+
+    #[test]
+    fn case_collisions_do_not_change_the_selected_models_vision() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("Foo").with_vision_support(false),
+            ModelInfo::new("foo").with_vision_support(true),
+            ModelInfo::new("Bar").with_vision_support(true),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        for (name, expected) in [
+            ("Foo", Some(false)),
+            ("foo", Some(true)),
+            ("FOO", None),
+            ("bar", None),
+        ] {
+            let model = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(model.supports_vision, expected);
+        }
+    }
+
+    #[test]
+    fn declared_supports_vision_overrides_detected_value() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("vision-model").with_vision_support(true),
+            ModelInfo::new("text-model").with_vision_support(false),
+            ModelInfo::new("undeclared-model"),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        let mut detected_without_vision = ModelConfig::new("vision-model");
+        detected_without_vision.supports_vision = Some(false);
+        let mut detected_with_vision = ModelConfig::new("text-model");
+        detected_with_vision.supports_vision = Some(true);
+
+        let vision = entry
+            .normalize_model_config(detected_without_vision)
+            .unwrap();
+        let text = entry.normalize_model_config(detected_with_vision).unwrap();
+        let undeclared = entry
+            .normalize_model_config(ModelConfig::new("undeclared-model"))
+            .unwrap();
+
+        assert_eq!(vision.supports_vision, Some(true));
+        assert_eq!(text.supports_vision, Some(false));
+        assert_eq!(undeclared.supports_vision, None);
     }
 }

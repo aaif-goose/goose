@@ -10,6 +10,7 @@ activities:
   - Validate shell command execution and error handling
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
+  - Validate declared vision through persisted custom-provider configuration and outbound requests
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -18,6 +19,7 @@ activities:
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
+  - Validate capped and uncapped auto-compaction thresholds and Desktop editing
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -26,7 +28,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
 
   - key: test_depth
     input_type: string
@@ -194,6 +196,29 @@ prompt: |
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
   {% endif %}
 
+  {% if test_phases == "all" or "compaction" in test_phases %}
+  ## Auto-Compaction Threshold Validation
+
+  **Prerequisites**: Run this phase from a goose source checkout with the Rust toolchain
+  and installed Desktop dependencies. Record unavailable checks as SKIPPED.
+
+  1. Run `cargo test -p goose --test auto_compact_token_limit`.
+  2. Verify the effective trigger is the minimum of the percentage budget and token cap:
+     defaults produce 225,000 tokens for a 1M-token context and 160,000 for a 200,000-token
+     context. Verify actual agent replies compact only after crossing the trigger.
+  3. Verify changing model context size in the same session recalculates the trigger and
+     that disabled auto-compaction remains disabled regardless of the cap.
+  4. Run `cd ui/desktop && pnpm exec vitest run src/components/alerts/__tests__/AlertBox.test.tsx`.
+  5. Verify the inline editor saves the displayed token cap in capped contexts and the
+     percentage in uncapped contexts, including cancellation and model changes during editing.
+  6. Confirm the smart context management guide describes when compaction starts, rather
+     than promising a maximum request size. New messages, tool output, and compaction
+     requests can exceed the trigger between checks.
+
+  Log command results and failures to: {{ workspace_dir }}/compaction.md
+  Do not modify source files or configuration to make these checks pass.
+  {% endif %}
+
   {% if test_phases == "all" or "extensions" in test_phases %}
   ## 🔧 PHASE 2: Extension System Testing
 
@@ -318,6 +343,24 @@ prompt: |
   Each delegate runs independently but the tasks are sequentially dependent.
 
   Log results to: {{ workspace_dir }}/phase3_delegation.md
+  {% endif %}
+
+  {% if test_phases == "all" or "declared-vision" in test_phases %}
+  ## Declared Custom-Provider Vision
+
+  When running from a goose source checkout with a Rust toolchain:
+  1. Run `cargo test -p goose --features rustls-tls --test declared_vision_registry`.
+  2. Verify saved custom-provider declarations survive registry reload and control actual
+     image forwarding on both chat completions and Responses. Declared true and false
+     override opposing model settings; an absent declaration preserves those settings.
+  3. Run `cargo test -p goose-providers --features rustls-tls --test declared_vision`.
+  4. Verify actual user and tool-result image requests follow the same precedence and
+     undeclared case variants never inherit another model's declaration.
+  These tests use a local HTTP mock and isolated configuration, requiring no credentials
+  or downloaded vision model. If the source checkout or toolchain is unavailable, mark
+  this phase as SKIPPED.
+
+  Log results to: {{ workspace_dir }}/declared_vision.md
   {% endif %}
 
   {% if test_phases == "all" or "vision" in test_phases %}

@@ -13,8 +13,8 @@ use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
 use crate::agents::mcp_client::{GooseMcpClientCapabilities, McpClientTrait};
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
-    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
+    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
     StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
@@ -92,7 +92,7 @@ pub(super) struct TestPipeline {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
-    hook_manager: HookManager,
+    pub(super) hook_manager: HookManager,
     stop_hook_block_cap: u32,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
@@ -188,13 +188,11 @@ impl TestPipeline {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let steps = std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
-            as Arc<dyn Operation<Session, GooseEffect> + '_>)
-        .chain(std::iter::once(command_operation))
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+        let steps = std::iter::once(command_operation)
+            .chain(operations)
+            .map(Step::Operation)
+            .chain(std::iter::once(Step::Inference(inference)))
+            .collect();
 
         StateMachine::new(steps, cancel)
     }
@@ -431,10 +429,11 @@ impl TestPipeline {
             .await?;
 
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -475,6 +474,14 @@ impl TestPipeline {
         Ok(())
     }
 
+    pub(super) async fn start_turn(&self) -> Result<()> {
+        crate::agents::state_machine::session::run_turn_start_hooks(
+            &self.hook_manager,
+            &self.session().await?,
+        )
+        .await
+    }
+
     pub(super) async fn resume(&self) -> Result<TestRun> {
         let events = run_machine(self).await?;
         Ok(TestRun::new(self.session().await?, events))
@@ -495,6 +502,17 @@ impl TestPipeline {
 
     pub(super) fn set_permission(&self, tool: &str, level: PermissionLevel) {
         self.permission_manager.update_user_permission(tool, level);
+    }
+
+    pub(super) async fn leased_extensions(&self) -> Result<Vec<String>> {
+        Ok(self
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .configs()
+            .iter()
+            .map(ExtensionConfig::key)
+            .collect())
     }
 
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {
@@ -523,18 +541,7 @@ impl TestPipeline {
     pub(super) async fn resume_cancelled(&self) -> Result<TestRun> {
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
-        let emit = Emitter::new(tx, cancel);
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
-        drop(emit);
-        let mut events = Vec::new();
-        while let Some(event) = rx.recv().await {
-            events.push(event);
-        }
-        Ok(TestRun::new(session, events))
+        self.run_turn(cancel).await
     }
 
     pub(super) async fn run_with_cancel(
@@ -546,12 +553,21 @@ impl TestPipeline {
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
+        self.run_turn(cancel).await
+    }
+
+    async fn run_turn(&self, cancel: CancellationToken) -> Result<TestRun> {
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
+        let session = crate::agents::state_machine::session::run(
+            &machine,
+            self.session_manager.as_ref(),
+            &self.hook_manager,
+            &self.session_id,
+            &emit,
+        )
+        .await?;
         drop(emit);
         let mut events = Vec::new();
         while let Some(event) = rx.recv().await {
@@ -572,10 +588,11 @@ impl TestPipeline {
             .await?;
         let cancel = CancellationToken::new();
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -1105,9 +1122,10 @@ impl TestRun {
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
     let cancel = CancellationToken::new();
     let machine = pipeline.machine(cancel.clone());
-    let (tx, mut rx) = mpsc::channel(1024);
+    let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
+    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let Some(mut result) = machine.step(&session, &emit).await? else {
