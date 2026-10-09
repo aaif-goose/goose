@@ -33,7 +33,7 @@ export interface StartGooseServeOptions extends FindGooseBinaryOptions {
   serverSecret: string;
   tls?: boolean;
   env?: Record<string, string | undefined>;
-  /** PATH from the user's login shell, appended so goosed can find CLI providers. */
+  /** PATH from the user's login shell, put ahead of the inherited PATH so goose finds user tools. */
   loginShellPath?: string | null;
   logger?: Logger;
   diagnosticsDir?: string;
