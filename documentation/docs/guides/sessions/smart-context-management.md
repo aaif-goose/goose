@@ -26,7 +26,8 @@ This layered approach lets goose handle token and context limits gracefully.
 
 ## Automatic Compaction
 goose automatically compacts older parts of your conversation into a summary when approaching token limits, allowing you to maintain long-running sessions without manual intervention.
-Auto-compaction is triggered by default when you reach 80% of the token limit in goose Desktop and the goose CLI.
+Auto-compaction is triggered by default when you reach 80% of the token limit or 225,000 tokens, whichever comes first, in goose Desktop and the goose CLI.
+The 225,000-token cap keeps long sessions on 1M-context models below OpenAI's long-context price tier (above 272,000 input tokens); change it with `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`.
 
 Control the auto-compaction behavior with the `GOOSE_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
 Disable this feature by setting the value to `0.0`.

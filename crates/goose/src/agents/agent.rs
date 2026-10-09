@@ -35,7 +35,6 @@ use crate::agents::AgentEvent;
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
-use crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -885,9 +884,7 @@ impl Agent {
         let stop_hook_block_cap = Config::global()
             .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
             .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP);
-        let compaction_threshold = Config::global()
-            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+        let compaction_threshold = crate::context_mgmt::auto_compact_threshold(context_limit);
         let tool_call_cutoff = Config::global()
             .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
             .unwrap_or_else(|_| {
