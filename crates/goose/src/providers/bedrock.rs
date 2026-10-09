@@ -549,10 +549,9 @@ impl BedrockProvider {
                         err
                     ))
                 }
-                ConverseError::ValidationException(err) => ProviderError::ExecutionError(format!(
-                    "Bedrock validation error: {}",
-                    err.message().unwrap_or("unknown validation error")
-                )),
+                ConverseError::ValidationException(err) => {
+                    ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+                }
                 ConverseError::ModelErrorException(err) => {
                     ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
                 }
@@ -1160,10 +1159,9 @@ fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
         {
             ProviderError::ContextLengthExceeded(format!("Failed to call Bedrock: {:?}", err))
         }
-        ConverseStreamError::ValidationException(err) => ProviderError::ExecutionError(format!(
-            "Bedrock validation error: {}",
-            err.message().unwrap_or("unknown validation error")
-        )),
+        ConverseStreamError::ValidationException(err) => {
+            ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+        }
         ConverseStreamError::ModelErrorException(err) => {
             ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
         }
@@ -1236,6 +1234,28 @@ mod tests {
             ProviderError::ContextLengthExceeded(_)
         ));
     }
+
+    #[test]
+    fn stream_validation_error_preserves_aws_diagnostics() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("invalid tool schema")
+                .meta(
+                    aws_smithy_types::error::ErrorMetadata::builder()
+                        .code("ValidationException")
+                        .custom("request_id", "bedrock-validation-request-id")
+                        .build(),
+                )
+                .build(),
+        );
+        let mapped = map_converse_stream_error(err);
+        assert!(matches!(mapped, ProviderError::ExecutionError(_)));
+        let details = mapped.to_string();
+        assert!(details.contains("invalid tool schema"));
+        assert!(details.contains("ValidationException"));
+        assert!(details.contains("bedrock-validation-request-id"));
+    }
+
     #[test]
     fn test_metadata_config_keys_have_expected_flags() {
         let meta = BedrockProvider::metadata();
