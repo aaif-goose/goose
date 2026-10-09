@@ -3,6 +3,7 @@ use rmcp::model::ElicitationAction;
 use serde_json::Value;
 
 use crate::action_required_manager::ElicitationOutcome;
+use crate::agents::subagent_handler::answered_request;
 use crate::conversation::message::{Message, MessageContent};
 use crate::session::SessionManager;
 
@@ -42,10 +43,11 @@ pub(crate) async fn complete_elicitation_with_message(
     response: ElicitationOutcome,
     response_message: &Message,
 ) -> Result<()> {
-    let session_id = answering_session(session_manager, session_id, elicitation_id).await?;
+    let (session_id, elicitation_id) =
+        answered_request(session_manager, session_id, elicitation_id).await?;
     let claim = session_manager
         .action_required()
-        .claim_response(&session_id, elicitation_id)
+        .claim_response(&session_id, &elicitation_id)
         .await?;
 
     session_manager
@@ -55,43 +57,19 @@ pub(crate) async fn complete_elicitation_with_message(
     claim.submit(response)
 }
 
-async fn answering_session(
-    session_manager: &SessionManager,
-    session_id: &str,
-    elicitation_id: &str,
-) -> Result<String> {
-    let Some(owner) = session_manager
-        .action_required()
-        .pending_session(elicitation_id)
-        .await
-    else {
-        return Ok(session_id.to_string());
-    };
-    let owner_is_a_subagent = owner != session_id
-        && session_manager
-            .get_session(&owner, false)
-            .await?
-            .parent_session_id
-            .as_deref()
-            == Some(session_id);
-    Ok(if owner_is_a_subagent {
-        owner
-    } else {
-        session_id.to_string()
-    })
-}
-
 pub async fn complete_elicitation_with_generated_message(
     session_manager: &SessionManager,
     session_id: &str,
     elicitation_id: &str,
     response: ElicitationOutcome,
 ) -> Result<()> {
-    let response_message = generated_elicitation_response_message(elicitation_id, &response);
+    let (session_id, elicitation_id) =
+        answered_request(session_manager, session_id, elicitation_id).await?;
+    let response_message = generated_elicitation_response_message(&elicitation_id, &response);
     complete_elicitation_with_message(
         session_manager,
-        session_id,
-        elicitation_id,
+        &session_id,
+        &elicitation_id,
         response,
         &response_message,
     )

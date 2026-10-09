@@ -16,7 +16,6 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
 use crate::agents::provider_manager::ProviderManager;
-use crate::agents::state_machine::is_forwarded_from_subagent;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -28,7 +27,7 @@ use crate::agents::state_machine::{
     StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
     ToolPairCompactionOperation, UnknownToolOperation,
 };
-use crate::agents::subagent_handler::SubagentRunner;
+use crate::agents::subagent_handler::{answered_request, is_forwarded_request, SubagentRunner};
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
@@ -328,8 +327,14 @@ impl Agent {
         self.steer_queues.lock().await.remove(session_id);
     }
 
+    #[cfg(test)]
+    pub(crate) fn tracks_confirmations_for(&self, session_id: &str) -> bool {
+        self.tool_confirmation_coordinator.tracks(session_id)
+    }
+
     pub async fn release_session(&self, session_id: &str) {
         self.discard_pending_steers(session_id).await;
+        self.tool_confirmation_coordinator.release(session_id);
         self.extension_manager.release(session_id).await;
         self.config.providers.release(session_id);
     }
@@ -487,27 +492,10 @@ impl Agent {
             .get_session(session_id, false)
             .await?;
 
+        let (session_id, request_id) =
+            answered_request(&self.config.session_manager, session_id, request_id).await?;
+        let (session_id, request_id) = (session_id.as_str(), request_id.as_str());
         let state = self.tool_confirmation_coordinator.session(session_id);
-        if !state.contains_request(request_id) {
-            if let Some(subagent_id) = self
-                .tool_confirmation_coordinator
-                .session_waiting_on(request_id)
-            {
-                let subagent = self
-                    .config
-                    .session_manager
-                    .get_session(&subagent_id, false)
-                    .await?;
-                if subagent.parent_session_id.as_deref() == Some(session_id) {
-                    return Box::pin(self.submit_tool_confirmation(
-                        &subagent_id,
-                        request_id,
-                        permission,
-                    ))
-                    .await;
-                }
-            }
-        }
         let _confirmation_submission_guard = state.confirmation_submission_lock.lock().await;
         let state_machine_permission = if permission == Permission::Cancel {
             Permission::DenyOnce
@@ -862,9 +850,6 @@ impl Agent {
         let AgentEvent::Message(message) = event else {
             return Vec::new();
         };
-        if is_forwarded_from_subagent(message) {
-            return Vec::new();
-        }
 
         message
             .content
@@ -876,7 +861,7 @@ impl Agent {
                 let ActionRequiredData::ToolConfirmation { id, .. } = &action.data else {
                     return None;
                 };
-                Some(id.clone())
+                (!is_forwarded_request(id)).then(|| id.clone())
             })
             .collect()
     }

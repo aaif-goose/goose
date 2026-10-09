@@ -24,7 +24,6 @@ const OPERATION_NAME: &str = "foreground_subagent";
 pub(crate) const DELEGATED_META_KEY: &str = "foreground_subagent";
 const DELIVERED: &str = "delivered";
 const CANCELLED: &str = "cancelled";
-const FORWARDED_FROM: &str = "forwarded_from";
 const TASK_SNIPPET_CHARS: usize = 160;
 
 fn inline_notice(text: String) -> Message {
@@ -43,22 +42,6 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
         })
         .unwrap_or_default();
     format!("Running subagent {subagent_id}{snippet}")
-}
-
-pub(crate) fn forwarded_from_subagent(mut message: Message, subagent_id: &str) -> Message {
-    message.metadata.set_operation_note(
-        OPERATION_NAME,
-        FORWARDED_FROM,
-        serde_json::json!(subagent_id),
-    );
-    message
-}
-
-pub(crate) fn is_forwarded_from_subagent(message: &Message) -> bool {
-    message
-        .metadata
-        .operation_note(OPERATION_NAME, FORWARDED_FROM)
-        .is_some()
 }
 
 fn delegated_subagent_ids(content: &[MessageContent]) -> impl Iterator<Item = &str> {

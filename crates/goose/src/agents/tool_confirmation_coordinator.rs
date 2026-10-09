@@ -191,13 +191,19 @@ impl ToolConfirmationCoordinator {
             .clone()
     }
 
-    pub(super) fn session_waiting_on(&self, request_id: &str) -> Option<String> {
+    #[cfg(test)]
+    pub(super) fn tracks(&self, session_id: &str) -> bool {
         self.sessions
             .lock()
             .expect("tool confirmation coordinator unavailable")
-            .iter()
-            .find(|(_, state)| state.contains_request(request_id))
-            .map(|(session_id, _)| session_id.clone())
+            .contains_key(session_id)
+    }
+
+    pub(super) fn release(&self, session_id: &str) {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .remove(session_id);
     }
 }
 

@@ -937,7 +937,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
     std::fs::create_dir_all(plugin_dir.join("hooks"))?;
     std::fs::write(
         plugin_dir.join("hooks/hooks.json"),
-        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
     )?;
     agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
         crate::plugins::discovery::DiscoveredPlugin {
@@ -981,23 +981,33 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
     .await?;
 
     let hook_log = std::fs::read_to_string(plugin_dir.join("hook.log"))?;
-    let subagent_shell_calls: Vec<String> = hook_log
+    let payloads = hook_log
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
-        .collect::<serde_json::Result<Vec<_>>>()?
-        .into_iter()
-        .filter(|payload| payload["tool_name"].as_str() == Some("shell"))
-        .map(|payload| {
-            payload["session_id"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string()
-        })
-        .collect();
+        .collect::<serde_json::Result<Vec<_>>>()?;
+    let sessions_where = |event: &str, tool: Option<&str>| -> Vec<String> {
+        payloads
+            .iter()
+            .filter(|payload| payload["event"].as_str() == Some(event))
+            .filter(|payload| payload["tool_name"].as_str() == tool)
+            .map(|payload| {
+                payload["session_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect()
+    };
+    let subagent_shell_calls = sessions_where("PreToolUse", Some("shell"));
     let [subagent_id] = subagent_shell_calls.as_slice() else {
         panic!("expected one shell call through the hook, got {subagent_shell_calls:?}");
     };
     assert_ne!(subagent_id, &session_id);
+    assert_eq!(
+        sessions_where("SessionEnd", None),
+        std::slice::from_ref(subagent_id)
+    );
+    assert!(!agent.tracks_confirmations_for(subagent_id));
     assert!(agent
         .extension_manager
         .scope_lease(subagent_id)
@@ -1189,5 +1199,124 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
 
     assert_eq!(elicitations, 1);
     assert!(texts.concat().ends_with("Ada asked"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() -> Result<()> {
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    agent
+        .config
+        .session_manager
+        .update(&session_id)
+        .goose_mode(GooseMode::Approve)
+        .apply()
+        .await?;
+    enable_developer(&agent, &session_id).await?;
+    agent
+        .extension_manager
+        .enable(
+            &session_id,
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        )
+        .await?;
+
+    api.on("hand both off").calls([
+        (
+            "call_first",
+            "delegate",
+            json!({ "instructions": "the approved task", "max_turns": 3 }),
+        ),
+        (
+            "call_second",
+            "delegate",
+            json!({ "instructions": "the denied task", "max_turns": 3 }),
+        ),
+    ]);
+    api.on("the approved task").calls([(
+        "call_shell",
+        "shell",
+        json!({ "command": "printf 'ran-%s' approved" }),
+    )]);
+    api.on("the denied task").calls([(
+        "call_shell",
+        "shell",
+        json!({ "command": "printf 'ran-%s' denied" }),
+    )]);
+    api.on("ran-approved").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "approved one ran" }),
+    );
+    api.on(crate::agents::tool_execution::DECLINED_RESPONSE)
+        .call(
+            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+            json!({ "summary": "denied one stopped" }),
+        );
+    api.on("denied one stopped").reply("both are back");
+
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("hand both off"),
+            SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(3),
+            },
+            None,
+        )
+        .await?;
+    let mut shell_request_ids = Vec::new();
+    while let Some(event) = stream.next().await {
+        let AgentEvent::Message(message) = event? else {
+            continue;
+        };
+        for content in &message.content {
+            let MessageContent::ActionRequired(action) = content else {
+                continue;
+            };
+            let ActionRequiredData::ToolConfirmation {
+                id,
+                tool_name,
+                arguments,
+                ..
+            } = &action.data
+            else {
+                continue;
+            };
+            let denied = arguments
+                .get("command")
+                .is_some_and(|command| command.to_string().contains("denied"));
+            let permission = if denied {
+                Permission::DenyOnce
+            } else {
+                Permission::AllowOnce
+            };
+            if tool_name == "shell" {
+                shell_request_ids.push(id.clone());
+            }
+            agent
+                .submit_tool_confirmation(&session_id, id, permission)
+                .await?;
+        }
+    }
+
+    assert_eq!(shell_request_ids.len(), 2);
+    assert_ne!(shell_request_ids[0], shell_request_ids[1]);
+    let calls = api.calls();
+    assert!(calls.iter().any(|call| call.input_contains("ran-approved")));
+    assert!(!calls.iter().any(|call| call.input_contains("ran-denied")));
     Ok(())
 }

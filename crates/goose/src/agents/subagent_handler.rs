@@ -1,7 +1,7 @@
 use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
-        state_machine::{forwarded_from_subagent, trailing_error, MAX_TURNS_MESSAGE},
+        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
         Agent, AgentEvent, SessionConfig,
     },
     conversation::{
@@ -155,7 +155,7 @@ impl SubagentRunner {
         while let Some(event) = events.next().await {
             if let AgentEvent::Message(message) = event? {
                 if asks_for_a_decision(&message) {
-                    let _ = forward.send(forwarded_from_subagent(message, &subagent.id));
+                    let _ = forward.send(forwarded(message, &subagent.id));
                 }
             }
         }
@@ -169,6 +169,9 @@ impl SubagentRunner {
         forward: mpsc::UnboundedSender<Message>,
     ) -> SubagentOutcome {
         let run_result = self.run_to_end(&subagent, cancel.clone(), forward).await;
+        self.agent
+            .emit_hook(crate::hooks::HookEvent::SessionEnd, &subagent.id)
+            .await;
         self.agent.release_session(&subagent.id).await;
         let stopped = cancel.is_cancelled();
         let subagent = match self.session_manager().get_session(&subagent.id, true).await {
@@ -194,6 +197,45 @@ impl SubagentRunner {
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
     }
+}
+
+const FORWARDED_PREFIX: &str = "subagent:";
+
+pub(crate) fn is_forwarded_request(request_id: &str) -> bool {
+    request_id.starts_with(FORWARDED_PREFIX)
+}
+
+pub(crate) async fn answered_request(
+    session_manager: &SessionManager,
+    session_id: &str,
+    request_id: &str,
+) -> Result<(String, String)> {
+    let Some((subagent_id, subagent_request_id)) = request_id
+        .strip_prefix(FORWARDED_PREFIX)
+        .and_then(|request| request.split_once(':'))
+    else {
+        return Ok((session_id.to_string(), request_id.to_string()));
+    };
+    let subagent = session_manager.get_session(subagent_id, false).await?;
+    if subagent.parent_session_id.as_deref() != Some(session_id) {
+        return Err(anyhow!(
+            "Session {subagent_id} is not a subagent of {session_id}"
+        ));
+    }
+    Ok((subagent_id.to_string(), subagent_request_id.to_string()))
+}
+
+fn forwarded(mut message: Message, subagent_id: &str) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ActionRequired(action) = content {
+            if let ActionRequiredData::ToolConfirmation { id, .. }
+            | ActionRequiredData::Elicitation { id, .. } = &mut action.data
+            {
+                *id = format!("{FORWARDED_PREFIX}{subagent_id}:{id}");
+            }
+        }
+    }
+    message
 }
 
 fn asks_for_a_decision(message: &Message) -> bool {
