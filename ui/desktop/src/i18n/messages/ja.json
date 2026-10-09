@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "ローカルモデル設定 — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "モデルの変更はこのターン終了後に適用されます。今すぐ切り替えるには実行を停止してください。"
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "解決済みモデル"
   },

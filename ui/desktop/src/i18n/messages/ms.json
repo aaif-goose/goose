@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Tetapan Model Tempatan — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "Perubahan model digunakan selepas giliran ini tamat. Hentikan larian untuk bertukar sekarang."
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Model diselesaikan"
   },
