@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Порог %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Лимит токенов"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Сводит старые запросы и ответы инструментов для экономии контекста. Если поле пусто, порог выбирается автоматически."
   },

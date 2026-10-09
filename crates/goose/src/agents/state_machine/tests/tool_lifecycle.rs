@@ -384,7 +384,7 @@ async fn execution_recovers_from_timeout_cancellation_and_filtered_output() -> R
         .await?;
     let pipeline = pipeline.reconstruct().await?;
     let result = pipeline.resume_cancelled().await?;
-    result.assert_message(-1, ToolResponse, "cancelled before execution");
+    result.assert_message(-1, ToolResponse, "interrupted before completing");
     assert_eq!(pipeline.calculator_total(), 0);
     let request_ids = result
         .conversation()

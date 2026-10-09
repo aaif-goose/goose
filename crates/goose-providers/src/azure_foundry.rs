@@ -417,6 +417,7 @@ fn model_info_for_deployment(deployment_name: &str, model_name: &str) -> ModelIn
         reasoning: canonical
             .and_then(|model| model.reasoning)
             .unwrap_or_else(|| ModelConfig::new(model_name).is_reasoning_model()),
+        supports_vision: None,
         thinking_preservation_format: None,
         request_params: None,
     }

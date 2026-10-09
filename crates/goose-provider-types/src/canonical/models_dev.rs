@@ -1,6 +1,6 @@
 use super::{
     canonical_name, CanonicalModel, CanonicalModelRegistry, Limit, Modalities, Modality, Pricing,
-    ThinkingMode,
+    PricingTier, ThinkingMode,
 };
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -62,6 +62,25 @@ fn parse_modalities(model_data: &Value, field: &str) -> Vec<Modality> {
         .unwrap_or_else(|| vec![Modality::Text])
 }
 
+fn parse_context_tiers(cost: &Value) -> Vec<PricingTier> {
+    let Some(tiers) = cost.get("tiers").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    tiers
+        .iter()
+        .filter(|t| t["tier"]["type"] == "context")
+        .filter_map(|t| {
+            Some(PricingTier {
+                above_input_tokens: t["tier"]["size"].as_u64()?,
+                input: t.get("input").and_then(|v| v.as_f64()),
+                output: t.get("output").and_then(|v| v.as_f64()),
+                cache_read: t.get("cache_read").and_then(|v| v.as_f64()),
+                cache_write: t.get("cache_write").and_then(|v| v.as_f64()),
+            })
+        })
+        .collect()
+}
+
 fn process_model(
     model_id: &str,
     model_data: &Value,
@@ -84,13 +103,9 @@ fn process_model(
             output: c.get("output").and_then(|v| v.as_f64()),
             cache_read: c.get("cache_read").and_then(|v| v.as_f64()),
             cache_write: c.get("cache_write").and_then(|v| v.as_f64()),
+            tiers: parse_context_tiers(c),
         },
-        _ => Pricing {
-            input: None,
-            output: None,
-            cache_read: None,
-            cache_write: None,
-        },
+        _ => Pricing::default(),
     };
 
     let limit = Limit {

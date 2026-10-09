@@ -274,7 +274,7 @@ impl GooseAcpAgent {
         };
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
-                break;
+                continue;
             }
             match event {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
@@ -350,10 +350,6 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            drop(stream);
-            agent.cancel_foreground_subagents(&session_id).await;
-        }
         self.clear_active_run(&session_id, &run_id).await;
         let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
         if cancel_token.is_cancelled() {

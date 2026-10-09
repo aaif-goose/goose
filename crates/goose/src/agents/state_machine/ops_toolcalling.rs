@@ -19,7 +19,9 @@ use crate::agents::tool_execution::{
 };
 use crate::agents::AgentEvent;
 use crate::config::GooseMode;
-use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
+use crate::conversation::message::{
+    ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest,
+};
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookChainOutcome, HookContext, HookEvent, HookManager};
@@ -234,21 +236,50 @@ pub(super) async fn emit_post_tool_use(
     event
 }
 
+#[derive(Default)]
+struct ToolBatch {
+    actions: Vec<Message>,
+    response: Option<Message>,
+}
+
+impl ToolBatch {
+    fn record(
+        &mut self,
+        request_id: &str,
+        result: std::result::Result<CallToolResult, ErrorData>,
+        metadata: Option<&ProviderMetadata>,
+    ) {
+        let response = self
+            .response
+            .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
+        if !response.get_tool_response_ids().contains(&request_id) {
+            response.add_tool_response_with_metadata(request_id, result, metadata);
+        }
+    }
+
+    fn take(&mut self) -> (Vec<Message>, Option<Message>) {
+        (std::mem::take(&mut self.actions), self.response.take())
+    }
+}
+
 /// Wraps a tool result so the post-tool event fires once the call completes,
 /// carrying the same `tool_call_id` the pre events carried.
-pub(super) fn with_post_tool_hooks(
+fn with_post_tool_hooks(
     hook_manager: &HookManager,
+    batch: &Arc<StdMutex<ToolBatch>>,
     result: ToolCallResult,
     tool_call: &CallToolRequestParams,
     session: &Session,
     span: tracing::Span,
-    tool_call_id: &str,
+    request: &ToolRequest,
 ) -> ToolCallResult {
     let hook_manager = hook_manager.clone();
+    let batch = Arc::clone(batch);
     let session_id = session.id.clone();
     let working_dir = session.working_dir.to_string_lossy().to_string();
     let tool_name = tool_call.name.to_string();
-    let tool_call_id = tool_call_id.to_string();
+    let tool_call_id = request.id.clone();
+    let metadata = request.metadata.clone();
     let tool_input = tool_call
         .arguments
         .as_ref()
@@ -257,6 +288,10 @@ pub(super) fn with_post_tool_hooks(
     let future = async move {
         let result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
+        batch
+            .lock()
+            .unwrap()
+            .record(&tool_call_id, result.clone(), metadata.as_ref());
         crate::agents::gen_ai_telemetry::record_tool_result(&tracing::Span::current(), &result);
         match &result {
             Ok(result) if result.is_error == Some(true) => {
@@ -318,6 +353,7 @@ pub struct ToolExecutionOperation {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    batch: Arc<StdMutex<ToolBatch>>,
 }
 
 impl ToolExecutionOperation {
@@ -330,7 +366,12 @@ impl ToolExecutionOperation {
             extension_manager,
             hook_manager,
             lease,
+            batch: Arc::default(),
         }
+    }
+
+    fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
+        self.batch.lock().unwrap().take()
     }
 
     async fn lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
@@ -357,10 +398,11 @@ impl ToolExecutionOperation {
         &self,
         lease: Arc<ExtensionLease>,
         tool_call: CallToolRequestParams,
-        request_id: String,
+        request: &ToolRequest,
         cancellation_token: CancellationToken,
         session: &Session,
     ) -> std::result::Result<ToolCallResult, ErrorData> {
+        let request_id = request.id.clone();
         let span = tool_span(&tool_call.name, &request_id, &session.id);
         crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
         let result_span = span.clone();
@@ -415,11 +457,12 @@ impl ToolExecutionOperation {
                 .applying_mutation(result, &session.id);
             Ok(with_post_tool_hooks(
                 &self.hook_manager,
+                &self.batch,
                 result,
                 &tool_call,
                 session,
                 result_span,
-                &request_id,
+                request,
             ))
         }
         .instrument(span)
@@ -766,6 +809,24 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         "tool_execution"
     }
 
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
+        let (actions, response) = self.take_batch();
+        if let Some(response) = &response {
+            emit.emit(AgentEvent::Message(response.user_visible_content()))
+                .await;
+        }
+        actions
+            .into_iter()
+            .chain(response)
+            .map(GooseEffect::from)
+            .collect()
+    }
+
     async fn run_command(
         &self,
         command: &SlashCommand<'_>,
@@ -965,7 +1026,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 .dispatch_tool_call(
                     Arc::clone(&lease),
                     tool_call,
-                    request.id.clone(),
+                    request,
                     emit.cancel_token().clone(),
                     session,
                 )
@@ -987,14 +1048,13 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
 
         let mut combined = futures::stream::select_all(tool_streams);
-        let mut response = Message::user();
-        let mut effects = Vec::new();
         for (request, disposition) in &pending {
+            let mut batch = self.batch.lock().unwrap();
             match disposition {
                 ToolDisposition::Execute => {}
                 ToolDisposition::Decline => {
-                    response.add_tool_response_with_metadata(
-                        request.id.clone(),
+                    batch.record(
+                        &request.id,
                         Ok(CallToolResult::error(vec![ContentBlock::text(
                             DECLINED_RESPONSE,
                         )])),
@@ -1002,8 +1062,8 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     );
                 }
                 ToolDisposition::ParseError(parse_error) => {
-                    response.add_tool_response_with_metadata(
-                        request.id.clone(),
+                    batch.record(
+                        &request.id,
                         Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                             "The tool call could not be parsed: {parse_error}. \
                              Correct the arguments and try again."
@@ -1014,64 +1074,44 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             }
         }
 
-        loop {
-            tokio::select! {
-                biased;
-                item = combined.next() => {
-                    let Some((request_id, item)) = item else { break };
-                    match item {
-                        ToolStreamItem::Result(output) => {
-                            if let Ok(result) = &output {
-                                if let Some(notification) = platform_notification(result) {
-                                    emit.emit(AgentEvent::McpNotification((
-                                        request_id.clone(),
-                                        notification,
-                                    )))
-                                    .await;
-                                }
-                            }
-                            let metadata = requests
-                                .iter()
-                                .find(|r| r.id == request_id)
-                                .and_then(|r| r.metadata.as_ref());
-                            response.add_tool_response_with_metadata(request_id, output, metadata);
-                        }
-                        ToolStreamItem::Message(msg) => {
-                            emit.emit(AgentEvent::McpNotification((request_id, msg)))
-                                .await;
-                        }
-                        ToolStreamItem::ActionRequired(msg) => {
-                            let msg = emit.message(msg).await;
-                            effects.push(msg.into());
+        while let Some((request_id, item)) = combined.next().await {
+            match item {
+                ToolStreamItem::Result(output) => {
+                    if let Ok(result) = &output {
+                        if let Some(notification) = platform_notification(result) {
+                            emit.emit(AgentEvent::McpNotification((
+                                request_id.clone(),
+                                notification,
+                            )))
+                            .await;
                         }
                     }
-                },
-                _ = emit.cancelled() => break,
+                    let metadata = requests
+                        .iter()
+                        .find(|r| r.id == request_id)
+                        .and_then(|r| r.metadata.as_ref());
+                    self.batch
+                        .lock()
+                        .unwrap()
+                        .record(&request_id, output, metadata);
+                }
+                ToolStreamItem::Message(msg) => {
+                    emit.emit(AgentEvent::McpNotification((request_id, msg)))
+                        .await;
+                }
+                ToolStreamItem::ActionRequired(msg) => {
+                    let msg = msg.with_generated_id_if_missing();
+                    self.batch.lock().unwrap().actions.push(msg.clone());
+                    emit.message(msg).await;
+                }
             }
         }
 
-        let answered: HashSet<String> = response
-            .get_tool_response_ids()
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-        for request in &requests {
-            if !answered.contains(request.id.as_str()) {
-                response.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    Ok(CallToolResult::error(vec![ContentBlock::text(
-                        "Tool call was interrupted before completing",
-                    )])),
-                    request.metadata.as_ref(),
-                );
-            }
-        }
-
-        let response = response.with_generated_id_if_missing();
+        let (actions, response) = self.take_batch();
+        let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
         emit.emit(AgentEvent::Message(response.user_visible_content()))
             .await;
-        effects.push(response.into());
-        applied(effects)
+        applied(actions.into_iter().chain([response]).map(GooseEffect::from))
     }
 }
 

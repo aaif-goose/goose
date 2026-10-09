@@ -4031,6 +4031,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Threshold %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Token limit"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Summarizes older tool requests and responses to save context. The cutoff is automatic when blank."
   },

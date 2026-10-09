@@ -1339,7 +1339,6 @@ impl CliSession {
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
         let mut stream_error = None;
-        let mut failed_before_stop = false;
 
         use futures::StreamExt;
         loop {
@@ -1361,7 +1360,7 @@ impl CliSession {
                                     let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
                                     if goose_mode == GooseMode::Approve || goose_mode == GooseMode::SmartApprove {
                                         cancel_token_clone.cancel();
-                                        drop(stream);
+                                        drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                         return Err(anyhow::anyhow!(
                                             "Tool approval required in non-interactive mode with GooseMode::{goose_mode}. \
                                              This is an invalid configuration — Approve/SmartApprove modes require an \
@@ -1386,25 +1385,27 @@ impl CliSession {
                                     )
                                     .await?;
                                 if cancelled_by_user {
-                                    let mut response_message = Message::user();
-                                    response_message.content.push(MessageContent::tool_response(
-                                        confirmation_request.id,
-                                        Err(ErrorData {
-                                            code: ErrorCode::INVALID_REQUEST,
-                                            message: std::borrow::Cow::from(
-                                                "Tool call cancelled by user",
-                                            ),
-                                            data: None,
-                                        }),
-                                    ));
-                                    self.agent
-                                        .config
-                                        .session_manager
-                                        .add_message(&self.session_id, &response_message)
-                                        .await?;
-                                    self.messages.push(response_message);
                                     cancel_token_clone.cancel();
-                                    drop(stream);
+                                    drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
+                                    if !has_tool_response(&self.messages, &confirmation_request.id) {
+                                        let mut response_message = Message::user();
+                                        response_message.content.push(MessageContent::tool_response(
+                                            confirmation_request.id,
+                                            Err(ErrorData {
+                                                code: ErrorCode::INVALID_REQUEST,
+                                                message: std::borrow::Cow::from(
+                                                    "Tool call cancelled by user",
+                                                ),
+                                                data: None,
+                                            }),
+                                        ));
+                                        self.agent
+                                            .config
+                                            .session_manager
+                                            .add_message(&self.session_id, &response_message)
+                                            .await?;
+                                        self.messages.push(response_message);
+                                    }
                                     break;
                                 }
                             } else if let Some((elicitation_id, elicitation_message, schema)) = find_elicitation_request(&message) {
@@ -1414,7 +1415,7 @@ impl CliSession {
                                         "Elicitation requested in non-interactive mode, cancelling"
                                     );
                                     cancel_token_clone.cancel();
-                                    drop(stream);
+                                    drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                     return Err(anyhow::anyhow!(
                                         "Elicitation requested but no interactive terminal is available to collect user input"
                                     ));
@@ -1453,14 +1454,14 @@ impl CliSession {
                                         let _ = self.agent.reply(response_message, session_config.clone(), Some(cancel_token.clone())).await?;
                                         if should_cancel {
                                             cancel_token_clone.cancel();
-                                            drop(stream);
+                                            drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                             break;
                                         }
                                     }
                                     Err(e) => {
                                         output::render_error(&format!("Failed to collect input: {}", e));
                                         cancel_token_clone.cancel();
-                                        drop(stream);
+                                        drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                                         break;
                                     }
                                 }
@@ -1505,7 +1506,6 @@ impl CliSession {
                             if interactive || !is_stream_json_mode {
                                 handle_agent_error(&e, is_stream_json_mode);
                             }
-                            failed_before_stop = !cancel_token_clone.is_cancelled();
                             cancel_token_clone.cancel();
                             drop(stream);
                             if let Err(e) = self.handle_interrupted_messages(false).await {
@@ -1525,6 +1525,7 @@ impl CliSession {
                     }
                 }
                 _ = cancel_token_clone.cancelled() => {
+                    drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
                     drop(stream);
                     if let Err(e) = self.handle_interrupted_messages(true).await {
                         eprintln!("Error handling interruption: {}", e);
@@ -1532,12 +1533,6 @@ impl CliSession {
                     break;
                 }
             }
-        }
-
-        if cancel_token_clone.is_cancelled() && !failed_before_stop {
-            self.agent
-                .cancel_foreground_subagents(&self.session_id)
-                .await;
         }
 
         let terminal_error = headless_run_error(
@@ -2064,6 +2059,44 @@ async fn create_successor_session(
     builder.apply().await?;
 
     Ok(new_session.id)
+}
+
+async fn drain_stopped_run(
+    stream: &mut (impl futures::Stream<Item = Result<AgentEvent>> + Unpin),
+    messages: &mut Conversation,
+    last_usage: &mut Option<ProviderUsage>,
+) {
+    use futures::StreamExt;
+    let interrupted_again = ctrl_c();
+    tokio::pin!(interrupted_again);
+    loop {
+        let event = tokio::select! {
+            event = stream.next() => event,
+            Ok(()) = &mut interrupted_again => return,
+        };
+        let Some(event) = event else {
+            return;
+        };
+        match event {
+            Ok(AgentEvent::Message(message))
+                if find_tool_confirmation(&message).is_none()
+                    && find_elicitation_request(&message).is_none() =>
+            {
+                messages.push(message);
+            }
+            Ok(AgentEvent::HistoryReplaced(conversation)) => *messages = conversation,
+            Ok(AgentEvent::Usage(usage)) => *last_usage = Some(usage),
+            _ => {}
+        }
+    }
+}
+
+fn has_tool_response(messages: &Conversation, request_id: &str) -> bool {
+    messages.iter().any(|message| {
+        message.content.iter().any(
+            |content| matches!(content, MessageContent::ToolResponse(response) if response.id == request_id),
+        )
+    })
 }
 
 fn message_has_text(message: &Message) -> bool {

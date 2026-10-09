@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Eşik %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Jeton sınırı"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Bağlamdan tasarruf etmek için eski araç isteklerini ve yanıtlarını özetler. Boş bırakıldığında kesme noktası otomatik belirlenir."
   },

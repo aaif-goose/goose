@@ -6,6 +6,7 @@ use crate::agents::state_machine::usage;
 use crate::agents::AgentEvent;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::hooks::{HookContext, HookEvent, HookManager};
 use crate::session::{Session, SessionManager};
 use goose_agent::machine::{EffectHandler, EffectUsage, MachineSession, SessionLoader};
 use goose_agent::operation::{ConversationEffect, Emitter, MachineEffect};
@@ -156,6 +157,39 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
     }
 }
 
+struct TurnRuntime<'a> {
+    session_manager: &'a SessionManager,
+    usage: std::sync::Mutex<goose_providers::conversation::token_usage::Usage>,
+}
+
+#[async_trait]
+impl SessionLoader<Session> for TurnRuntime<'_> {
+    async fn load(&self, session_id: &str) -> Result<Session> {
+        self.session_manager.load(session_id).await
+    }
+}
+
+#[async_trait]
+impl EffectHandler<Session, GooseEffect> for TurnRuntime<'_> {
+    async fn apply_effects(
+        &self,
+        session: &Session,
+        effects: &mut [GooseEffect],
+        emit: &Emitter,
+    ) -> Result<()> {
+        self.session_manager
+            .apply_effects(session, effects, emit)
+            .await?;
+        let mut turn_usage = self.usage.lock().unwrap();
+        for effect in effects.iter() {
+            if let Some(usage) = self.session_manager.usage(effect) {
+                *turn_usage += usage;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Clients swap in the replaced history, so it includes what the same batch appends
 /// after the replacement; those messages were already shown live and would otherwise
 /// vanish (a `/clear` would leave nothing).
@@ -196,13 +230,89 @@ impl EffectUsage<GooseEffect> for SessionManager {
     }
 }
 
+const ENTRY_HOOK_NOTE_SCOPE: &str = "entry_hook";
+const SESSION_START_NOTE: &str = "session_start";
+
+/// Records that a client fired `SessionStart` when it opened the session, so the first
+/// turn does not fire it again. Hidden from the user when the hooks printed no banner.
+pub(crate) fn session_start_message(banners: &[String]) -> Message {
+    let mut message = Message::assistant();
+    if !banners.is_empty() {
+        message = message.with_text(banners.join("\n"));
+    }
+    let mut message = message.with_visibility(!banners.is_empty(), false);
+    message
+        .metadata
+        .set_operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE, true.into());
+    message
+}
+
+fn is_session_start_message(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(ENTRY_HOOK_NOTE_SCOPE, SESSION_START_NOTE)
+        .is_some()
+}
+
+pub(crate) async fn run_turn_start_hooks(
+    hook_manager: &HookManager,
+    session: &Session,
+) -> Result<()> {
+    let conversation = session
+        .conversation()
+        .ok_or_else(|| anyhow::anyhow!("state-machine session loaded without conversation"))?;
+    let messages = crate::agents::state_machine::messages_since_kickoff(conversation)?;
+    if messages.iter().any(|message| {
+        message.role == rmcp::model::Role::Assistant
+            && ((message.is_user_visible() && message.is_agent_visible())
+                || message.error_kind().is_some())
+    }) {
+        return Ok(());
+    }
+
+    let working_dir = session.working_dir.to_string_lossy().to_string();
+    let messages_before_kickoff = &conversation.messages()[..conversation.len() - messages.len()];
+    if !messages_before_kickoff.iter().any(|message| {
+        is_session_start_message(message)
+            || (message.role == rmcp::model::Role::User
+                && message.is_user_visible()
+                && !message.is_tool_response())
+    }) {
+        hook_manager
+            .emit(
+                HookEvent::SessionStart,
+                HookContext::new(HookEvent::SessionStart, &session.id)
+                    .with_working_dir(working_dir.clone()),
+            )
+            .await;
+    }
+
+    let prompt = messages
+        .first()
+        .map(|message| message.agent_visible_content().as_concat_text())
+        .unwrap_or_default();
+    if !prompt.is_empty() {
+        hook_manager
+            .emit(
+                HookEvent::UserPromptSubmit,
+                HookContext::new(HookEvent::UserPromptSubmit, &session.id)
+                    .with_message(prompt)
+                    .with_working_dir(working_dir),
+            )
+            .await;
+    }
+    Ok(())
+}
+
 pub(crate) async fn run(
     machine: &crate::agents::state_machine::StateMachine<'_, Session, GooseEffect>,
     runtime: &SessionManager,
+    hook_manager: &HookManager,
     session_id: &str,
     emit: &Emitter,
 ) -> Result<Session> {
     let entry_session = runtime.load(session_id).await?;
+    run_turn_start_hooks(hook_manager, &entry_session).await?;
     tracing::Span::current().record(
         "gen_ai.agent.name",
         crate::agents::gen_ai_telemetry::agent_name(&entry_session),
@@ -224,25 +334,24 @@ pub(crate) async fn run(
         tracing::Span::current().record("trace_input", input.as_str());
     }
 
-    let mut turn_usage = goose_providers::conversation::token_usage::Usage::default();
+    let runtime = TurnRuntime {
+        session_manager: runtime,
+        usage: Default::default(),
+    };
     loop {
         let session = runtime.load(session_id).await?;
         let Some(mut result) = machine.step(&session, emit).await? else {
             break;
         };
         tracing::debug!(target: "goose::state_machine", step = result.applied_step, "applied step");
-        for effect in &result.effects {
-            if let Some(usage) = runtime.usage(effect) {
-                turn_usage += usage;
-            }
-        }
-        machine.apply(runtime, &session, &mut result, emit).await?;
+        machine.apply(&runtime, &session, &mut result, emit).await?;
         if result.yield_to_client {
             break;
         }
     }
 
-    let session = runtime.load(session_id).await?;
+    let session = machine.finalize(&runtime, session_id, emit).await?;
+    let turn_usage = runtime.usage.into_inner().unwrap();
     let last_assistant_text = session
         .conversation()
         .and_then(|conversation| {

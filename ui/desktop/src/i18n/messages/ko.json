@@ -4730,6 +4730,9 @@
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "임계값 %"
   },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "토큰 한도"
+  },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "이전 도구 요청과 응답을 요약하여 컨텍스트를 절약합니다. 비워 두면 컷오프가 자동으로 설정됩니다."
   },

@@ -389,6 +389,64 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
 }
 
 #[tokio::test]
+async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
+    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let agent = Arc::new(agent);
+    api.on("add one").calls([("call_add", ADD, value(1))]);
+
+    let cancel = CancellationToken::new();
+    let session_config = SessionConfig {
+        id: session_id.clone(),
+        schedule_id: None,
+        max_turns: Some(2),
+    };
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            session_config,
+            Some(cancel.clone()),
+        )
+        .await?;
+    loop {
+        let event = stream
+            .next()
+            .await
+            .expect("state machine should request confirmation")?;
+        if let AgentEvent::Message(message) = event {
+            if !confirmation_ids(std::slice::from_ref(&message)).is_empty() {
+                break;
+            }
+        }
+    }
+    while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(50), stream.next()).await {}
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
+
+    let session = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?;
+    let conversation = session.conversation.expect("session conversation");
+    let add_response = conversation
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_response)
+        .find(|response| response.id == "call_add")
+        .expect("the waiting call is answered");
+    assert_eq!(
+        add_response.tool_result.as_ref().unwrap().content[0]
+            .as_text()
+            .unwrap()
+            .text,
+        "Tool call was interrupted before completing"
+    );
+    assert_eq!(calculator.total(), 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
     let (agent, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
     install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
