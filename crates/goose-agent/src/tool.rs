@@ -303,7 +303,12 @@ where
         "tools"
     }
 
-    async fn cancel(&self, _session: &S, _conversation: &Conversation, emit: &Emitter) -> Vec<E> {
+    async fn finalize_cancellation(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<E> {
         let response = self.response.lock().unwrap().take();
         match response {
             Some(response) => vec![E::from(emit.message(response).await)],

@@ -148,7 +148,7 @@ impl Operation<Session> for Recorder {
         }
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,

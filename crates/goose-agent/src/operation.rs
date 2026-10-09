@@ -92,7 +92,12 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         message.metadata.operation_note(self.name(), key)
     }
 
-    async fn cancel(&self, _session: &S, _conversation: &Conversation, _emit: &Emitter) -> Vec<E> {
+    async fn finalize_cancellation(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<E> {
         Vec::new()
     }
 

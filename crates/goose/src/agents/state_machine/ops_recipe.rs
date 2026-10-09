@@ -105,7 +105,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
         "recipe"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,

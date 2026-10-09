@@ -188,7 +188,7 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
         OPERATION_NAME
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         session: &Session,
         conversation: &Conversation,
@@ -679,7 +679,7 @@ mod tests {
             .get_session(&fixture.parent_id, true)
             .await?;
         let effects = operation
-            .cancel(&parent, parent.conversation.as_ref().unwrap(), emit)
+            .finalize_cancellation(&parent, parent.conversation.as_ref().unwrap(), emit)
             .await;
         Ok((parent, effects))
     }

@@ -48,7 +48,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         "steer"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,

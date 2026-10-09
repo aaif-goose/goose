@@ -815,7 +815,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         "tool_execution"
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &Session,
         _conversation: &Conversation,
