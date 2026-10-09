@@ -45,8 +45,6 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
     format!("Running subagent {subagent_id}{snippet}")
 }
 
-/// A subagent's request for a decision, shown in the parent's turn because only the parent's
-/// client can answer it.
 pub(crate) fn forwarded_from_subagent(mut message: Message, subagent_id: &str) -> Message {
     message.metadata.set_operation_note(
         OPERATION_NAME,

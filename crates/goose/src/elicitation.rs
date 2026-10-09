@@ -55,8 +55,6 @@ pub(crate) async fn complete_elicitation_with_message(
     claim.submit(response)
 }
 
-/// A subagent's elicitations are shown in its parent's turn, so the parent's client answers
-/// them on the parent's session.
 async fn answering_session(
     session_manager: &SessionManager,
     session_id: &str,

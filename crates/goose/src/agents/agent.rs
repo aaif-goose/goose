@@ -328,8 +328,6 @@ impl Agent {
         self.steer_queues.lock().await.remove(session_id);
     }
 
-    /// Stops the session's extensions and drops its provider and pending steers. A turn
-    /// still running keeps what it already leased.
     pub async fn release_session(&self, session_id: &str) {
         self.discard_pending_steers(session_id).await;
         self.extension_manager.release(session_id).await;
