@@ -1144,7 +1144,7 @@ mod tests {
             .body_json()
             .unwrap();
         assert_eq!(payload["model"], "production-chat");
-        assert!(payload.get("temperature").is_none());
+        assert_eq!(payload["temperature"], json!(0.7_f32));
         assert!(payload.get("capability_model").is_none());
         assert!(config.request_params.is_none());
         assert!(serde_json::to_value(&config)

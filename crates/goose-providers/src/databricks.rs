@@ -1,5 +1,5 @@
 use crate::formats::openai::{
-    extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
+    extract_reasoning_effort, is_openai_responses_model, OpenAiRequestContext,
 };
 use crate::images::ImageFormat;
 use anyhow::Result;
@@ -21,7 +21,7 @@ use crate::databricks_auth::{
 use crate::errors::ProviderError;
 use crate::formats::databricks::create_request_for_provider;
 pub use crate::formats::databricks::DATABRICKS_PROVIDER_NAME;
-use crate::formats::openai_responses::create_responses_request;
+use crate::formats::openai_responses::create_responses_request_with_context;
 use crate::model::ModelConfig;
 use crate::openai_compatible::{
     handle_status, map_http_error_to_provider_error, sanitize_url, stream_openai_compat,
@@ -627,33 +627,38 @@ impl Provider for DatabricksProvider {
         let client_request_id = self.build_client_request_id(&session_id);
 
         if is_responses_model {
+            let catalog_model_name = crate::canonical::CanonicalModelRegistry::bundled()
+                .ok()
+                .filter(|registry| {
+                    registry
+                        .get(DATABRICKS_PROVIDER_NAME, &endpoint_name)
+                        .is_some()
+                })
+                .map(|_| endpoint_name.as_str())
+                .unwrap_or(effective_model_name);
             let responses_model_config;
-            let request_model_config = if effective_model_name != model_config.model_name {
+            let request_model_config = if catalog_model_name != model_config.model_name {
                 responses_model_config = {
                     let mut config = model_config.clone();
-                    config.model_name = effective_model_name.to_string();
+                    config.model_name = catalog_model_name.to_string();
                     config
                 };
                 &responses_model_config
             } else {
                 model_config
             };
-            let mut payload =
-                create_responses_request(request_model_config, system, messages, tools)?;
+            let mut payload = create_responses_request_with_context(
+                request_model_config,
+                system,
+                messages,
+                tools,
+                OpenAiRequestContext {
+                    provider_name: self.get_name(),
+                    catalog_provider_id: None,
+                    native_openai: false,
+                },
+            )?;
             payload["model"] = Value::String(endpoint_name.clone());
-            if payload.get("reasoning").is_none() {
-                if let Some(effort) = model_config.thinking_effort().and_then(|effort| {
-                    openai_reasoning_effort_for_thinking(effective_model_name, effort)
-                }) {
-                    payload.as_object_mut().unwrap().insert(
-                        "reasoning".to_string(),
-                        json!({
-                            "effort": effort,
-                            "summary": "auto",
-                        }),
-                    );
-                }
-            }
             payload["stream"] = Value::Bool(true);
             if let Some(ref client_request_id) = client_request_id {
                 payload["client_request_id"] = Value::String(client_request_id.clone());

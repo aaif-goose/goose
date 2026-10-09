@@ -33,8 +33,11 @@ use super::base::{
 use super::openai_compatible::handle_response_openai_compat;
 use super::retry::ProviderRetry;
 use super::utils::get_model;
-use goose_providers::formats::openai::{create_request, get_usage, response_to_message};
-use goose_providers::formats::openai_responses::create_responses_request;
+use goose_providers::formats::openai::{
+    create_request_with_context, get_usage, response_to_message, OpenAiFormatOptions,
+    OpenAiRequestContext,
+};
+use goose_providers::formats::openai_responses::create_responses_request_with_context;
 
 use crate::config::{Config, ConfigError};
 use crate::conversation::message::{Message, MessageContent};
@@ -501,8 +504,18 @@ impl GithubCopilotProvider {
         tools: &[Tool],
         has_images: bool,
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = create_responses_request(model_config, system, messages, tools)
-            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        let mut payload = create_responses_request_with_context(
+            model_config,
+            system,
+            messages,
+            tools,
+            OpenAiRequestContext {
+                provider_name: "github-copilot",
+                catalog_provider_id: None,
+                native_openai: false,
+            },
+        )
+        .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
         payload["stream"] = serde_json::Value::Bool(true);
 
         let mut log = start_log(model_config, &payload)?;
@@ -544,13 +557,23 @@ impl GithubCopilotProvider {
             .any(|prefix| model_config.model_name.starts_with(prefix));
 
         if supports_streaming {
-            let payload = create_request(
+            let payload = create_request_with_context(
                 model_config,
                 system,
                 messages,
                 tools,
                 &ImageFormat::OpenAi,
                 true,
+                OpenAiFormatOptions {
+                    preserve_thinking_context: true,
+                    supports_vision: model_config.supports_vision.unwrap_or_default(),
+                    ..Default::default()
+                },
+                OpenAiRequestContext {
+                    provider_name: "github-copilot",
+                    catalog_provider_id: None,
+                    native_openai: false,
+                },
             )?;
             let mut log = start_log(model_config, &payload)?;
 
@@ -575,13 +598,23 @@ impl GithubCopilotProvider {
 
             stream_openai_compat(response, log)
         } else {
-            let payload = create_request(
+            let payload = create_request_with_context(
                 model_config,
                 system,
                 messages,
                 tools,
                 &ImageFormat::OpenAi,
                 false,
+                OpenAiFormatOptions {
+                    preserve_thinking_context: true,
+                    supports_vision: model_config.supports_vision.unwrap_or_default(),
+                    ..Default::default()
+                },
+                OpenAiRequestContext {
+                    provider_name: "github-copilot",
+                    catalog_provider_id: None,
+                    native_openai: false,
+                },
             )?;
             let mut log = start_log(model_config, &payload)?;
 

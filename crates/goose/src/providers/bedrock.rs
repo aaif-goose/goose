@@ -20,8 +20,8 @@ use base64::Engine;
 use futures::future::BoxFuture;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
-use goose_providers::formats::openai::extract_reasoning_effort;
-use goose_providers::formats::openai_responses::create_responses_request;
+use goose_providers::formats::openai::{extract_reasoning_effort, OpenAiRequestContext};
+use goose_providers::formats::openai_responses::create_responses_request_for_model_with_context;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
@@ -978,13 +978,19 @@ impl Provider for BedrockProvider {
 
         if let Some(entry) = find_model_entry(&model_config.model_name) {
             if entry.endpoint == BedrockEndpoint::MantleResponses {
-                let capability_model_name =
-                    entry.name.strip_prefix("openai.").unwrap_or(entry.name);
-                let mut normalized_config = model_config.clone();
-                normalized_config.model_name = capability_model_name.to_string();
-                let mut payload =
-                    create_responses_request(&normalized_config, system, messages, tools)?;
-                payload["model"] = Value::String(entry.wire_model_id.to_string());
+                let mut payload = create_responses_request_for_model_with_context(
+                    model_config,
+                    entry.wire_model_id,
+                    entry.name,
+                    system,
+                    messages,
+                    tools,
+                    OpenAiRequestContext {
+                        provider_name: "amazon-bedrock",
+                        catalog_provider_id: None,
+                        native_openai: false,
+                    },
+                )?;
                 payload["stream"] = Value::Bool(true);
                 if entry.name.starts_with("google.gemma-4-") {
                     payload["parallel_tool_calls"] = Value::Bool(false);

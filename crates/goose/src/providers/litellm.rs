@@ -4,6 +4,9 @@ use futures::future::BoxFuture;
 use goose_providers::cache_semantics::apply_chat_payload_breakpoints;
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
+use goose_providers::formats::openai::{
+    create_request_with_context, OpenAiFormatOptions, OpenAiRequestContext,
+};
 use goose_providers::images::ImageFormat;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -303,13 +306,23 @@ impl Provider for LiteLLMProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = goose_providers::formats::openai::create_request(
+        let mut payload = create_request_with_context(
             model_config,
             system,
             messages,
             tools,
             &ImageFormat::OpenAi,
             self.supports_streaming,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: model_config.supports_vision.unwrap_or_default(),
+                ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: LITELLM_PROVIDER_NAME,
+                catalog_provider_id: None,
+                native_openai: false,
+            },
         )?;
 
         if !model_config.prompt_cache_disabled() && self.supports_cache_control(model_config).await

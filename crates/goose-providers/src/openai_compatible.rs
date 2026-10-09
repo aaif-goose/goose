@@ -19,9 +19,9 @@ use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
 use crate::formats::openai::{
-    create_request, create_request_for_model_with_options, get_cost, get_usage,
+    create_request_for_model_with_context, extract_reasoning_effort, get_cost, get_usage,
     record_response_metadata, response_to_message, response_to_streaming_message,
-    OpenAiFormatOptions,
+    OpenAiFormatOptions, OpenAiRequestContext,
 };
 use crate::formats::openai_responses::responses_api_to_streaming_message;
 use crate::model::ModelConfig;
@@ -63,7 +63,7 @@ impl OpenAiCompatibleProvider {
         tools: &[Tool],
         for_streaming: bool,
     ) -> Result<Value, ProviderError> {
-        create_request_for_model_with_options(
+        create_request_for_model_with_context(
             model_config,
             wire_model,
             capability_model,
@@ -76,6 +76,11 @@ impl OpenAiCompatibleProvider {
                 preserve_thinking_context: true,
                 supports_vision: model_config.supports_vision.unwrap_or_default(),
                 ..Default::default()
+            },
+            OpenAiRequestContext {
+                provider_name: &self.name,
+                catalog_provider_id: None,
+                native_openai: false,
             },
         )
         .map_err(|e| ProviderError::RequestFailed(format!("Failed to create request: {}", e)))
@@ -155,15 +160,16 @@ impl OpenAiCompatibleProvider {
         tools: &[Tool],
         for_streaming: bool,
     ) -> Result<Value, ProviderError> {
-        create_request(
+        let (wire_model, _) = extract_reasoning_effort(&model_config.model_name);
+        self.build_request_for_model(
             model_config,
+            &wire_model,
+            &model_config.model_name,
             system,
             messages,
             tools,
-            &ImageFormat::OpenAi,
             for_streaming,
         )
-        .map_err(|e| ProviderError::RequestFailed(format!("Failed to create request: {}", e)))
     }
 }
 
