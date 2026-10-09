@@ -551,6 +551,15 @@ fn anthropic_flavored_input_schema(input_schema: Arc<JsonObject>) -> Arc<JsonObj
             "type": "object",
         }));
     }
+    // The Anthropic Messages API rejects `oneOf`/`allOf`/`anyOf` at the top
+    // level of a tool input_schema; normalise them away so one MCP tool with a
+    // top-level combinator does not 400 every request in the session.
+    let mut value = Value::Object(input_schema.as_ref().clone());
+    if super::schema::normalize_tool_input_schema(&mut value) {
+        if let Some(obj) = value.as_object() {
+            return Arc::new(obj.clone());
+        }
+    }
     input_schema
 }
 

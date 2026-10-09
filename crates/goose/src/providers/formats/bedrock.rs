@@ -370,6 +370,15 @@ pub fn to_bedrock_tool(tool: &Tool) -> Result<bedrock::Tool> {
     if !input_schema.contains_key("type") {
         input_schema.insert("type".to_string(), Value::String("object".to_string()));
     }
+    // Bedrock rejects `oneOf`/`allOf`/`anyOf` at the top level of a tool
+    // input_schema; normalise them away so one MCP tool with a top-level
+    // combinator does not fail every request in the session.
+    let mut value = Value::Object(input_schema);
+    goose_providers::formats::schema::normalize_tool_input_schema(&mut value);
+    let input_schema = value
+        .as_object()
+        .cloned()
+        .unwrap_or_else(|| json!({"type": "object"}).as_object().unwrap().clone());
     let input_schema = sanitize_json_unicode_tags(Value::Object(input_schema))?;
 
     Ok(bedrock::Tool::ToolSpec(
