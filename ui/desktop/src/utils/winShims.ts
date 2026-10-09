@@ -38,23 +38,12 @@ export async function ensureWinShims(): Promise<void> {
       })
     );
 
-    // Prepend to PATH **for this process & all children only**.
-    // This does NOT modify the user's permanent system PATH.
+    // Append to PATH for this process and its children only, so tools the user
+    // installed win. This does not modify the user's permanent PATH.
     const currentPath = process.env.PATH ?? '';
     if (!currentPath.toLowerCase().includes(tgtDir.toLowerCase())) {
-      process.env.PATH = `${tgtDir}${path.delimiter}${currentPath}`;
+      process.env.PATH = `${currentPath}${path.delimiter}${tgtDir}`;
       log.info(`Added ${tgtDir} to PATH for Goose processes only`);
-    } else {
-      // If it's already in PATH, make sure it's at the beginning
-      const pathParts = currentPath.split(path.delimiter);
-      const binDirIndex = pathParts.findIndex((p) => p.toLowerCase() === tgtDir.toLowerCase());
-
-      if (binDirIndex > 0) {
-        // Remove it from its current position and add to beginning
-        pathParts.splice(binDirIndex, 1);
-        process.env.PATH = `${tgtDir}${path.delimiter}${pathParts.join(path.delimiter)}`;
-        log.info(`Moved ${tgtDir} to beginning of PATH for Goose processes only`);
-      }
     }
   } catch (error) {
     log.error('Failed to ensure Windows shims:', error);
