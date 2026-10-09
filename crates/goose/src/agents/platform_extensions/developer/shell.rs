@@ -33,11 +33,53 @@ pub(crate) fn is_flatpak() -> bool {
 #[cfg(not(windows))]
 const FLATPAK_HOST_ARGS: [&str; 2] = ["--host", "--watch-bus"];
 
+/// `flatpak-spawn --host` runs commands with the session helper's environment, not
+/// ours, and nothing outside the sandbox can resolve the host's login-shell PATH
+/// for us, so pass it along explicitly.
 #[cfg(not(windows))]
-pub(crate) fn flatpak_spawn_command() -> tokio::process::Command {
+pub(crate) async fn flatpak_spawn_command() -> tokio::process::Command {
+    static HOST_LOGIN_PATH: tokio::sync::OnceCell<Option<String>> =
+        tokio::sync::OnceCell::const_new();
+    let host_path = HOST_LOGIN_PATH
+        .get_or_init(|| {
+            resolve_host_login_path(
+                "flatpak-spawn",
+                std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string()),
+            )
+        })
+        .await;
+
     let mut command = tokio::process::Command::new("flatpak-spawn");
     command.args(FLATPAK_HOST_ARGS);
+    if let Some(path) = host_path {
+        command.arg(format!("--env=PATH={path}"));
+    }
     command
+}
+
+#[cfg(not(windows))]
+async fn resolve_host_login_path(flatpak_spawn: &str, shell: String) -> Option<String> {
+    let mut command = tokio::process::Command::new(flatpak_spawn);
+    command
+        .args(FLATPAK_HOST_ARGS)
+        .arg(shell)
+        .args(["-l", "-i", "-c", "printenv PATH"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(not(windows))]
@@ -374,7 +416,7 @@ async fn run_command(
 ) -> Result<ExecutionOutput, String> {
     let timeout_secs = Some(resolve_shell_timeout(timeout_secs));
 
-    let mut command = build_shell_command(command_line, working_dir, session_id);
+    let mut command = build_shell_command(command_line, working_dir, session_id).await;
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -488,7 +530,7 @@ async fn run_command(
 ///
 /// On Unix the default shell (`bash`, falling back to `sh`) is likewise invoked
 /// as `<shell> -c <line>`.
-fn build_shell_command(
+async fn build_shell_command(
     command_line: &str,
     working_dir: Option<&std::path::Path>,
     session_id: Option<&str>,
@@ -521,7 +563,7 @@ fn build_shell_command(
         let shell = unix_shell();
 
         if is_flatpak() {
-            let mut command = flatpak_spawn_command();
+            let mut command = flatpak_spawn_command().await;
             if let Some(dir) = working_dir {
                 command.arg(format!("--directory={}", dir.display()));
             }
@@ -921,6 +963,43 @@ mod tests {
         assert!(
             shell_output.exit_code.is_none(),
             "cancelled process should have no exit code"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn host_login_path_runs_login_shell_on_host_and_skips_profile_noise() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let fake_spawn = dir.path().join("flatpak-spawn");
+        let fake_shell = dir.path().join("login-shell");
+        std::fs::write(
+            &fake_spawn,
+            "#!/bin/sh\n[ \"$1 $2\" = '--host --watch-bus' ] || exit 1\nshift 2\nexec \"$@\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &fake_shell,
+            "#!/bin/sh\n[ \"$*\" = '-l -i -c printenv PATH' ] || exit 1\necho 'Welcome back!'\necho\necho /home/me/.cargo/bin:/usr/bin\n",
+        )
+        .unwrap();
+        for script in [&fake_spawn, &fake_shell] {
+            std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        assert_eq!(
+            resolve_host_login_path(
+                fake_spawn.to_str().unwrap(),
+                fake_shell.display().to_string()
+            )
+            .await
+            .as_deref(),
+            Some("/home/me/.cargo/bin:/usr/bin")
+        );
+        assert_eq!(
+            resolve_host_login_path(fake_spawn.to_str().unwrap(), "false".to_string()).await,
+            None
         );
     }
 
