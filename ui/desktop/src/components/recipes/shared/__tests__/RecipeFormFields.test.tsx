@@ -67,11 +67,6 @@ describe('RecipeFormFields', () => {
   });
 
   describe('Basic Rendering', () => {
-    it('renders the component without crashing', () => {
-      renderWithIntl(<TestWrapper />);
-      expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
-    });
-
     it('renders required form fields', async () => {
       const user = userEvent.setup();
       renderWithIntl(<TestWrapper />);

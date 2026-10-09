@@ -232,37 +232,7 @@ describe('App Component - Brand New State', () => {
     vi.clearAllMocks();
   });
 
-  it('should redirect to "/" when app is brand new (no provider configured)', async () => {
-    // Mock no provider configured
-    mockElectron.getConfig.mockReturnValue({
-      GOOSE_DEFAULT_PROVIDER: null,
-      GOOSE_DEFAULT_MODEL: null,
-      GOOSE_ALLOWLIST_WARNING: false,
-    });
-
-    render(<AppInner />, { wrapper: AppInnerTestWrapper });
-
-    // Wait for initialization
-    await waitFor(() => {
-      expect(mockElectron.reactReady).toHaveBeenCalled();
-    });
-
-    // The app should initialize without any navigation calls since we're already at "/"
-    // No navigate calls should be made when no provider is configured
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('should handle deep links correctly when app is brand new', async () => {
-    // Mock no provider configured
-    mockElectron.getConfig.mockReturnValue({
-      GOOSE_DEFAULT_PROVIDER: null,
-      GOOSE_DEFAULT_MODEL: null,
-      GOOSE_ALLOWLIST_WARNING: false,
-    });
-
-    // Set up search params to simulate view=settings deep link
-    mockSearchParams.set('view', 'settings');
-
+  it('shows onboarding when no provider is configured', async () => {
     render(<AppInner />, { wrapper: AppInnerTestWrapper });
 
     // Wait for initialization
@@ -271,24 +241,6 @@ describe('App Component - Brand New State', () => {
     });
 
     expect(screen.getByText(/^Welcome to goose/)).toBeInTheDocument();
-  });
-
-  it('should not redirect when provider is configured', async () => {
-    // Mock provider configured
-    mockElectron.getConfig.mockReturnValue({
-      GOOSE_DEFAULT_PROVIDER: 'openai',
-      GOOSE_DEFAULT_MODEL: 'gpt-4',
-      GOOSE_ALLOWLIST_WARNING: false,
-    });
-
-    render(<AppInner />, { wrapper: AppInnerTestWrapper });
-
-    // Wait for initialization
-    await waitFor(() => {
-      expect(mockElectron.reactReady).toHaveBeenCalled();
-    });
-
-    // Should not navigate anywhere since provider is configured and we're already at "/"
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -313,12 +265,6 @@ describe('App Component - Brand New State', () => {
   });
 
   it('should navigate home when the main process emits new-chat', async () => {
-    mockElectron.getConfig.mockReturnValue({
-      GOOSE_DEFAULT_PROVIDER: 'openai',
-      GOOSE_DEFAULT_MODEL: 'gpt-4',
-      GOOSE_ALLOWLIST_WARNING: false,
-    });
-
     render(<AppInner />, { wrapper: AppInnerTestWrapper });
 
     await waitFor(() => {

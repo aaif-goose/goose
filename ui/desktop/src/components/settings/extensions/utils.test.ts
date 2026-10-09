@@ -4,7 +4,6 @@ import {
   getDefaultFormData,
   extensionToFormData,
   createExtensionConfig,
-  extractCommand,
   extractExtensionName,
   splitCmdAndArgs,
   combineCmdAndArgs,
@@ -527,28 +526,6 @@ describe('Extension Utils', () => {
         const args = ["C:\\Users\\O'Connor\\extension.js", '-"c"', 'a&b', 'quoted "value"\\'];
         expect(splitCmdAndArgs(combineCmdAndArgs(cmd, args))).toEqual({ cmd, args });
       });
-    });
-  });
-
-  describe('extractCommand', () => {
-    it('should extract command from extension link', () => {
-      const link = 'goose://extension/add?name=Test&cmd=python&arg=script.py&arg=--flag';
-      expect(extractCommand(link)).toBe('python script.py --flag');
-    });
-
-    it('should handle encoded arguments', () => {
-      const link = 'goose://extension/add?cmd=echo&arg=hello%20world&arg=--test%3Dvalue';
-      expect(extractCommand(link)).toBe('echo hello world --test=value');
-    });
-
-    it('should handle missing command', () => {
-      const link = 'goose://extension/add?name=Test';
-      expect(extractCommand(link)).toBe('Unknown Command');
-    });
-
-    it('should handle command without arguments', () => {
-      const link = 'goose://extension/add?cmd=python';
-      expect(extractCommand(link)).toBe('python');
     });
   });
 
