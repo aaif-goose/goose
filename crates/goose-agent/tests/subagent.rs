@@ -330,6 +330,15 @@ async fn stop_delivers_finished_subagents_and_cancels_the_rest() {
     messages.extend(saved);
     assert!(run_once(&operation, &messages).await.is_empty());
     assert_eq!(runner.started(), ["a", "b"]);
+
+    let stopped_again = Operation::<Parent, ConversationEffect>::cancel(
+        &operation,
+        &Parent,
+        &Conversation::new_unvalidated(messages),
+        &emitter(),
+    )
+    .await;
+    assert!(stopped_again.is_empty());
 }
 
 #[tokio::test]
