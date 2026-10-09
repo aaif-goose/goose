@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Acesse"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Use o loop do agente baseado em operações. Desative-o para usar o loop legado."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Limite %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite de tokens"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Resume solicitações e respostas antigas de ferramentas para economizar contexto. O limite é automático quando deixado em branco."

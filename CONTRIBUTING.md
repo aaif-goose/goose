@@ -60,12 +60,6 @@ Pull requests that do not implement a Ready issue will be closed. Automated depe
 
 Don't open many pull requests in quick succession. Submit them in order of preference and wait for them to land before opening more.
 
-## Agent Loop Migration
-
-We are replacing the legacy agent loop in `crates/goose/src/agents/agent.rs` with the state machine in `crates/goose/src/agents/state_machine/`. The state-machine path is enabled with `GOOSE_STATE_MACHINE=1`.
-
-Until the migration is complete, changes to agent-loop behavior must be implemented and tested in both paths. Pull requests should explain how parity between the two paths was verified.
-
 ## AI Code Reviews
 
 We use codex as an AI code reviewer. AI code reviewing has come a long way and more often than not points

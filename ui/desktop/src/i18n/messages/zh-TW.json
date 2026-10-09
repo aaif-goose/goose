@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "前往"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "使用以操作為基礎的代理程式迴圈。關閉後將使用舊版迴圈。"
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "閾值 %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "詞元上限"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "摘要較早的工具請求和回應以節省內容。留空時自動設定截斷值。"

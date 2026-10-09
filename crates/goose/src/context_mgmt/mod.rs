@@ -22,7 +22,26 @@ use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
+/// Starts compaction with headroom below OpenAI's long-context price tier
+/// (above 272k input tokens). This is not a maximum request size.
+pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
+
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
+
+/// The configured threshold, lowered so compaction starts by the token limit.
+pub fn auto_compact_threshold(context_limit: usize) -> f64 {
+    let config = Config::global();
+    let threshold = config
+        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+    if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
+        return threshold;
+    }
+    let token_limit = config
+        .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+        .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
+    threshold.min(token_limit as f64 / context_limit as f64)
+}
 
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
     Config::global()

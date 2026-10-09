@@ -1,18 +1,13 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useConfig } from '../ConfigContext';
 import { Input } from '../ui/input';
-import { Switch } from '../ui/switch';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { defineMessages, useIntl } from '../../i18n';
 
 const i18n = defineMessages({
   title: {
     id: 'settings.agentLoop.title',
     defaultMessage: 'Agent Loop',
-  },
-  description: {
-    id: 'settings.agentLoop.description',
-    defaultMessage: 'Use the operation-based agent loop. Turn this off to use the legacy loop.',
   },
   operationsHeading: {
     id: 'settings.agentLoop.operations.heading',
@@ -79,6 +74,10 @@ const i18n = defineMessages({
     id: 'settings.agentLoop.operations.threshold.label',
     defaultMessage: 'Threshold %',
   },
+  tokenLimitLabel: {
+    id: 'settings.agentLoop.operations.tokenLimit.label',
+    defaultMessage: 'Token limit',
+  },
   cutoffLabel: {
     id: 'settings.agentLoop.operations.cutoff.label',
     defaultMessage: 'Cutoff',
@@ -104,6 +103,7 @@ const i18n = defineMessages({
 type NumberSetting =
   | 'maxTurns'
   | 'compactionThreshold'
+  | 'compactionTokenLimit'
   | 'toolCallCutoff'
   | 'retryTimeout'
   | 'failureTimeout'
@@ -114,6 +114,7 @@ type NumberSettings = Record<NumberSetting, string>;
 const defaultNumberSettings: NumberSettings = {
   maxTurns: '1000',
   compactionThreshold: '80',
+  compactionTokenLimit: '225000',
   toolCallCutoff: '',
   retryTimeout: '300',
   failureTimeout: '600',
@@ -204,7 +205,6 @@ function NumberInput({
 export default function AgentLoopSettings() {
   const intl = useIntl();
   const { read, remove, upsert } = useConfig();
-  const [enabled, setEnabled] = useState(true);
   const [slashCommandsEnabled, setSlashCommandsEnabled] = useState(true);
   const [toolPairCompactionEnabled, setToolPairCompactionEnabled] = useState(false);
   const [numbers, setNumbers] = useState(defaultNumberSettings);
@@ -213,9 +213,9 @@ export default function AgentLoopSettings() {
     let active = true;
 
     Promise.all([
-      window.electron.getSetting('useLegacyAgentLoop'),
       read('GOOSE_MAX_TURNS', false),
       read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
+      read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
       read('GOOSE_SLASH_COMMANDS_ENABLED', false),
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
       read('GOOSE_TOOL_CALL_CUTOFF', false),
@@ -224,9 +224,9 @@ export default function AgentLoopSettings() {
       read('GOOSE_STOP_HOOK_BLOCK_CAP', false),
     ]).then(
       ([
-        useLegacyAgentLoop,
         maxTurns,
         compactionThreshold,
+        compactionTokenLimit,
         slashCommands,
         toolPairCompaction,
         toolCallCutoff,
@@ -236,7 +236,6 @@ export default function AgentLoopSettings() {
       ]) => {
         if (!active) return;
 
-        setEnabled(!useLegacyAgentLoop);
         setSlashCommandsEnabled(typeof slashCommands === 'boolean' ? slashCommands : true);
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
@@ -246,6 +245,7 @@ export default function AgentLoopSettings() {
           compactionThreshold: String(
             Number((readNumber(compactionThreshold, 0.8) * 100).toFixed(2))
           ),
+          compactionTokenLimit: String(readNumber(compactionTokenLimit, 225000)),
           toolCallCutoff:
             typeof toolCallCutoff === 'number' && Number.isFinite(toolCallCutoff)
               ? String(toolCallCutoff)
@@ -281,11 +281,6 @@ export default function AgentLoopSettings() {
     await upsert(configKey, serialize(value), false);
   };
 
-  const handleAgentLoopToggle = async (checked: boolean) => {
-    setEnabled(checked);
-    await window.electron.setSetting('useLegacyAgentLoop', !checked);
-  };
-
   const handleToolPairCompactionToggle = async (checked: boolean) => {
     setToolPairCompactionEnabled(checked);
     await upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false);
@@ -308,48 +303,40 @@ export default function AgentLoopSettings() {
     <section className="pr-4">
       <Card className="rounded-xl">
         <CardHeader>
-          <div className="flex items-center justify-between gap-6">
-            <div>
-              <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
-              <CardDescription className="mt-1">
-                {intl.formatMessage(i18n.description)}
-              </CardDescription>
-            </div>
-            <Switch checked={enabled} onCheckedChange={handleAgentLoopToggle} variant="mono" />
-          </div>
+          <CardTitle>{intl.formatMessage(i18n.title)}</CardTitle>
         </CardHeader>
 
-        {enabled && (
-          <CardContent className="px-4">
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">
-              {intl.formatMessage(i18n.operationsHeading)}
-            </h3>
+        <CardContent className="px-4">
+          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            {intl.formatMessage(i18n.operationsHeading)}
+          </h3>
 
-            <OperationRow
-              title={intl.formatMessage(i18n.slashCommandsTitle)}
-              description={intl.formatMessage(i18n.slashCommandsDescription)}
-              enabled={slashCommandsEnabled}
-              onEnabledChange={handleSlashCommandsToggle}
+          <OperationRow
+            title={intl.formatMessage(i18n.slashCommandsTitle)}
+            description={intl.formatMessage(i18n.slashCommandsDescription)}
+            enabled={slashCommandsEnabled}
+            onEnabledChange={handleSlashCommandsToggle}
+          />
+
+          <OperationRow
+            title={intl.formatMessage(i18n.maxTurnsTitle)}
+            description={intl.formatMessage(i18n.maxTurnsDescription)}
+          >
+            <NumberInput
+              label={intl.formatMessage(i18n.turnsLabel)}
+              value={numbers.maxTurns}
+              min={1}
+              max={10000}
+              onChange={(value) => setNumber('maxTurns', value)}
+              onBlur={() => saveNumber('maxTurns', 'GOOSE_MAX_TURNS', 1, 10000)}
             />
+          </OperationRow>
 
-            <OperationRow
-              title={intl.formatMessage(i18n.maxTurnsTitle)}
-              description={intl.formatMessage(i18n.maxTurnsDescription)}
-            >
-              <NumberInput
-                label={intl.formatMessage(i18n.turnsLabel)}
-                value={numbers.maxTurns}
-                min={1}
-                max={10000}
-                onChange={(value) => setNumber('maxTurns', value)}
-                onBlur={() => saveNumber('maxTurns', 'GOOSE_MAX_TURNS', 1, 10000)}
-              />
-            </OperationRow>
-
-            <OperationRow
-              title={intl.formatMessage(i18n.contextCompactionTitle)}
-              description={intl.formatMessage(i18n.contextCompactionDescription)}
-            >
+          <OperationRow
+            title={intl.formatMessage(i18n.contextCompactionTitle)}
+            description={intl.formatMessage(i18n.contextCompactionDescription)}
+          >
+            <div className="flex flex-wrap items-center gap-4">
               <NumberInput
                 label={intl.formatMessage(i18n.thresholdLabel)}
                 value={numbers.compactionThreshold}
@@ -368,71 +355,87 @@ export default function AgentLoopSettings() {
                   )
                 }
               />
-            </OperationRow>
-
-            <OperationRow
-              title={intl.formatMessage(i18n.toolPairCompactionTitle)}
-              description={intl.formatMessage(i18n.toolPairCompactionDescription)}
-              enabled={toolPairCompactionEnabled}
-              onEnabledChange={handleToolPairCompactionToggle}
-            >
-              <div className="flex flex-wrap items-center gap-4">
-                <NumberInput
-                  label={intl.formatMessage(i18n.cutoffLabel)}
-                  value={numbers.toolCallCutoff}
-                  min={1}
-                  max={100000}
-                  placeholder={intl.formatMessage(i18n.autoPlaceholder)}
-                  disabled={!toolPairCompactionEnabled}
-                  onChange={(value) => setNumber('toolCallCutoff', value)}
-                  onBlur={saveToolCallCutoff}
-                />
-              </div>
-            </OperationRow>
-
-            <OperationRow
-              title={intl.formatMessage(i18n.recipeRetryTitle)}
-              description={intl.formatMessage(i18n.recipeRetryDescription)}
-            >
-              <div className="flex flex-col gap-2">
-                <NumberInput
-                  label={intl.formatMessage(i18n.retryTimeoutLabel)}
-                  value={numbers.retryTimeout}
-                  min={1}
-                  max={3600}
-                  onChange={(value) => setNumber('retryTimeout', value)}
-                  onBlur={() =>
-                    saveNumber('retryTimeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', 1, 3600)
-                  }
-                />
-                <NumberInput
-                  label={intl.formatMessage(i18n.failureTimeoutLabel)}
-                  value={numbers.failureTimeout}
-                  min={1}
-                  max={3600}
-                  onChange={(value) => setNumber('failureTimeout', value)}
-                  onBlur={() =>
-                    saveNumber('failureTimeout', 'GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS', 1, 3600)
-                  }
-                />
-              </div>
-            </OperationRow>
-
-            <OperationRow
-              title={intl.formatMessage(i18n.stopHooksTitle)}
-              description={intl.formatMessage(i18n.stopHooksDescription)}
-            >
               <NumberInput
-                label={intl.formatMessage(i18n.blockLimitLabel)}
-                value={numbers.stopHookBlockCap}
-                min={1}
-                max={100}
-                onChange={(value) => setNumber('stopHookBlockCap', value)}
-                onBlur={() => saveNumber('stopHookBlockCap', 'GOOSE_STOP_HOOK_BLOCK_CAP', 1, 100)}
+                label={intl.formatMessage(i18n.tokenLimitLabel)}
+                value={numbers.compactionTokenLimit}
+                min={1000}
+                max={10000000}
+                step={1000}
+                onChange={(value) => setNumber('compactionTokenLimit', value)}
+                onBlur={() =>
+                  saveNumber(
+                    'compactionTokenLimit',
+                    'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+                    1000,
+                    10000000
+                  )
+                }
               />
-            </OperationRow>
-          </CardContent>
-        )}
+            </div>
+          </OperationRow>
+
+          <OperationRow
+            title={intl.formatMessage(i18n.toolPairCompactionTitle)}
+            description={intl.formatMessage(i18n.toolPairCompactionDescription)}
+            enabled={toolPairCompactionEnabled}
+            onEnabledChange={handleToolPairCompactionToggle}
+          >
+            <div className="flex flex-wrap items-center gap-4">
+              <NumberInput
+                label={intl.formatMessage(i18n.cutoffLabel)}
+                value={numbers.toolCallCutoff}
+                min={1}
+                max={100000}
+                placeholder={intl.formatMessage(i18n.autoPlaceholder)}
+                disabled={!toolPairCompactionEnabled}
+                onChange={(value) => setNumber('toolCallCutoff', value)}
+                onBlur={saveToolCallCutoff}
+              />
+            </div>
+          </OperationRow>
+
+          <OperationRow
+            title={intl.formatMessage(i18n.recipeRetryTitle)}
+            description={intl.formatMessage(i18n.recipeRetryDescription)}
+          >
+            <div className="flex flex-col gap-2">
+              <NumberInput
+                label={intl.formatMessage(i18n.retryTimeoutLabel)}
+                value={numbers.retryTimeout}
+                min={1}
+                max={3600}
+                onChange={(value) => setNumber('retryTimeout', value)}
+                onBlur={() =>
+                  saveNumber('retryTimeout', 'GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS', 1, 3600)
+                }
+              />
+              <NumberInput
+                label={intl.formatMessage(i18n.failureTimeoutLabel)}
+                value={numbers.failureTimeout}
+                min={1}
+                max={3600}
+                onChange={(value) => setNumber('failureTimeout', value)}
+                onBlur={() =>
+                  saveNumber('failureTimeout', 'GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS', 1, 3600)
+                }
+              />
+            </div>
+          </OperationRow>
+
+          <OperationRow
+            title={intl.formatMessage(i18n.stopHooksTitle)}
+            description={intl.formatMessage(i18n.stopHooksDescription)}
+          >
+            <NumberInput
+              label={intl.formatMessage(i18n.blockLimitLabel)}
+              value={numbers.stopHookBlockCap}
+              min={1}
+              max={100}
+              onChange={(value) => setNumber('stopHookBlockCap', value)}
+              onBlur={() => saveNumber('stopHookBlockCap', 'GOOSE_STOP_HOOK_BLOCK_CAP', 1, 100)}
+            />
+          </OperationRow>
+        </CardContent>
       </Card>
     </section>
   );

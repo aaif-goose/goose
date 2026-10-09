@@ -48,6 +48,8 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     let first_manual = pipeline.run(["/compact"]).await?;
     let second_manual = pipeline.run(["/compact"]).await?;
     first_manual.assert_emitted("Compaction complete");
+    let (replaced, stored) = first_manual.replaced_and_stored_ids();
+    assert_eq!(replaced, stored);
     assert_eq!(first_manual.history_replacements(), 1);
     assert_eq!(second_manual.history_replacements(), 1);
 
@@ -69,6 +71,8 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     let cleared = pipeline.run(["/clear"]).await?;
     assert_eq!(cleared.history_replacements(), 1);
     assert_eq!(cleared.conversation().messages().len(), 2);
+    let (replaced, stored) = cleared.replaced_and_stored_ids();
+    assert_eq!(replaced, stored);
     assert!(cleared
         .conversation()
         .messages()
@@ -80,7 +84,7 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
     pipeline.set_total_tokens(100).await;
     let machine =
         state_machine::StateMachine::new(Vec::new(), tokio_util::sync::CancellationToken::new());
-    let (tx, _rx) = tokio::sync::mpsc::channel(4);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let emit = state_machine::Emitter::new(tx, tokio_util::sync::CancellationToken::new());
     let apply = async |effects: Vec<state_machine::GooseEffect>| -> Result<()> {
         let session = pipeline.session().await?;
@@ -234,13 +238,41 @@ async fn text_that_looks_like_a_context_error_does_not_compact() -> Result<()> {
 }
 
 #[tokio::test]
-async fn a_context_error_compacts_and_the_session_survives_a_failed_retry() -> Result<()> {
+async fn context_errors_compact_and_retry() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    api.on("real error").context_limit_error("too long");
+    api.on("overflow once").context_limit_error("too long");
     api.on(SUMMARIZE_HISTORY).reply("summary");
     api.on("Your context was compacted")
-        .server_error("provider unavailable");
+        .reply("recovered after compaction");
 
+    let recovered = pipeline.run(["overflow once"]).await?;
+    recovered.assert_message(-1, Agent, "recovered after compaction");
+    assert_eq!(recovered.history_replacements(), 1);
+
+    let calls = api.calls();
+    assert_eq!(calls.len(), 3);
+    let (summary, retry) = (&calls[1], &calls[2]);
+    let usage = &recovered.session.usage;
+    let output_tokens = "recovered after compaction".chars().count() as i32;
+    assert_eq!(usage.input_tokens, Some(retry.input_tokens()));
+    assert_eq!(usage.output_tokens, Some(output_tokens));
+    assert_eq!(
+        usage.total_tokens,
+        Some(retry.input_tokens() + output_tokens)
+    );
+    assert_eq!(
+        recovered.session.accumulated_usage.total_tokens,
+        Some(
+            summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
+        )
+    );
+
+    api.on("Your context was compacted")
+        .server_error("provider unavailable");
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("real error")
+        .context_limit_error("too long")
+        .times(1);
     let failed_after_compaction = pipeline.run(["real error"]).await?;
     assert_eq!(failed_after_compaction.history_replacements(), 1);
     assert_eq!(

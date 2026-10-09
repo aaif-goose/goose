@@ -23,6 +23,7 @@ pub struct ToolPairCompactionOperation {
     model_config: ModelConfig,
     cutoff: usize,
     enabled: bool,
+    output: std::sync::Mutex<Vec<GooseEffect>>,
 }
 
 impl ToolPairCompactionOperation {
@@ -37,7 +38,12 @@ impl ToolPairCompactionOperation {
             model_config,
             cutoff,
             enabled,
+            output: std::sync::Mutex::default(),
         }
+    }
+
+    fn take_output(&self) -> Vec<GooseEffect> {
+        std::mem::take(&mut *self.output.lock().unwrap())
     }
 }
 
@@ -45,6 +51,15 @@ impl ToolPairCompactionOperation {
 impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
     fn name(&self) -> &'static str {
         "tool_pair_compaction"
+    }
+
+    async fn cancel(
+        &self,
+        _session: &Session,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Vec<GooseEffect> {
+        self.take_output()
     }
 
     async fn run(
@@ -66,7 +81,6 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
         if tool_ids.is_empty() {
             return not_applicable();
         }
-        let mut effects: Vec<GooseEffect> = Vec::new();
         let mut hidden_messages: std::collections::HashSet<String> = Default::default();
         for tool_id in tool_ids {
             let pair: Vec<_> = conversation
@@ -141,6 +155,7 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
                 }
             };
 
+            let mut effects = self.output.lock().unwrap();
             for message in pair {
                 let Some(message_id) = message.id.clone() else {
                     continue;
@@ -158,6 +173,7 @@ impl Operation<Session, GooseEffect> for ToolPairCompactionOperation {
             effects.push(summary.into());
         }
 
+        let effects = self.take_output();
         if effects.is_empty() {
             not_applicable()
         } else {

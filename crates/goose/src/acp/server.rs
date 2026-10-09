@@ -411,13 +411,6 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
         .and_then(|v| v.as_u64())
 }
 
-fn use_state_machine_from_meta(meta: Option<&Meta>) -> bool {
-    meta.and_then(|meta| meta.get("goose"))
-        .and_then(|goose| goose.get("unrolledAgentLoop"))
-        .and_then(|value| value.as_bool())
-        .unwrap_or_else(crate::agents::state_machine::enabled)
-}
-
 #[derive(Debug, Default, Deserialize)]
 struct ClientCapabilitiesMeta {
     #[serde(default)]
@@ -958,7 +951,6 @@ impl GooseAcpAgent {
             Arc::clone(&session_manager),
             Arc::clone(&permission_manager),
             options.scheduler,
-            Config::global().get_goose_mode().unwrap_or_default(),
             options.disable_session_naming,
             options.goose_platform.clone(),
         );
@@ -1085,7 +1077,7 @@ impl GooseAcpAgent {
 
         if !agent
             .extension_manager
-            .is_extension_enabled("developer")
+            .is_extension_enabled(&session.id, "developer")
             .await
         {
             return;
@@ -1114,7 +1106,7 @@ impl GooseAcpAgent {
 
         let developer_config = agent
             .extension_manager
-            .get_extension_configs()
+            .get_extension_configs(&session.id)
             .await
             .into_iter()
             .find(|extension| extension.name() == "developer")
@@ -1122,7 +1114,7 @@ impl GooseAcpAgent {
 
         agent
             .extension_manager
-            .add_client(developer_config, client, info)
+            .add_client(&session.id, developer_config, client, info)
             .await;
     }
 
@@ -2112,7 +2104,6 @@ impl GooseAcpAgent {
         cancel_token: &CancellationToken,
         mut stream: BoxStream<'_, Result<crate::agents::AgentEvent>>,
     ) -> Result<AgentStreamOutcome, agent_client_protocol::Error> {
-        let mut was_cancelled = false;
         let mut output_token_limit_reached = false;
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
@@ -2125,8 +2116,7 @@ impl GooseAcpAgent {
 
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
-                was_cancelled = true;
-                break;
+                continue;
             }
 
             match event {
@@ -2222,12 +2212,7 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            was_cancelled = true;
-            drop(stream);
-            agent.cancel_foreground_subagents(session_id).await;
-        }
-
+        let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
             if let Some(chain) = chain_tracker.close_current_chain() {
                 self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
@@ -2302,21 +2287,14 @@ impl GooseAcpAgent {
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
-        let use_state_machine = use_state_machine_from_meta(args.meta.as_ref());
         let session_config = SessionConfig {
             id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
 
         let stream = match agent
-            .reply(
-                user_message,
-                session_config,
-                use_state_machine,
-                Some(cancel_token.clone()),
-            )
+            .reply(user_message, session_config, Some(cancel_token.clone()))
             .await
         {
             Ok(stream) => stream,
@@ -2467,7 +2445,10 @@ impl GooseAcpAgent {
             .await
             .internal_err_ctx("Failed to resolve model config")?;
         let current_model = current_model_config.model_name.clone();
-        let goose_mode = agent.goose_mode().await;
+        let goose_mode = agent
+            .goose_mode(&session_id.0)
+            .await
+            .internal_err_ctx("Failed to read goose mode")?;
         let inventory = self
             .provider_inventory
             .entry_for_provider(&provider_name)
@@ -3799,7 +3780,6 @@ print(\"hello, world\")
             server.session_manager.clone(),
             server.permission_manager.clone(),
             None,
-            GooseMode::Auto,
             true,
             GoosePlatform::GooseCli,
         )));

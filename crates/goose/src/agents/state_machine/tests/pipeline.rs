@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::Result;
 use rmcp::model::ElicitationAction;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::CalculatorExtension;
@@ -15,10 +14,9 @@ use crate::agents::extension_manager::{
     ExtensionLease, ExtensionManager, ExtensionManagerCapabilities,
 };
 use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::prompt_manager::PromptManager;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, EntryHookOperation,
-    ExitOnErrorOperation, ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
+    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
+    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
     GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
     StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
@@ -94,11 +92,9 @@ pub(super) struct TestPipeline {
     model_config: ModelConfig,
     extension_manager: Arc<ExtensionManager>,
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    goose_mode: TokioMutex<GooseMode>,
-    prompt_manager: TokioMutex<PromptManager>,
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
-    hook_manager: HookManager,
+    pub(super) hook_manager: HookManager,
     stop_hook_block_cap: u32,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
@@ -142,10 +138,7 @@ impl TestPipeline {
                 tool_call_cutoff,
                 !self.provider_features.manages_own_context,
             )),
-            Arc::new(ToolApprovalOperation::new(
-                &self.goose_mode,
-                &self.tool_inspection_manager,
-            )),
+            Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
@@ -161,7 +154,6 @@ impl TestPipeline {
                 self.hook_manager.clone(),
             )),
             Arc::new(ToolExecutionOperation::new(
-                &self.goose_mode,
                 self.extension_manager.clone(),
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
@@ -182,8 +174,6 @@ impl TestPipeline {
         let request_preparer = GooseInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
-            goose_mode: &self.goose_mode,
-            prompt_manager: &self.prompt_manager,
             tool_inspection_manager: &self.tool_inspection_manager,
             context_limit: self.model_config.context_limit(),
         };
@@ -200,19 +190,16 @@ impl TestPipeline {
         command_handlers.push(status_operation);
         let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
             Arc::new(SlashCommandOperation::new(command_handlers));
-        let steps = std::iter::once(Arc::new(EntryHookOperation::new(self.hook_manager.clone()))
-            as Arc<dyn Operation<Session, GooseEffect> + '_>)
-        .chain(std::iter::once(command_operation))
-        .chain(operations)
-        .map(Step::Operation)
-        .chain(std::iter::once(Step::Inference(inference)))
-        .collect();
+        let steps = std::iter::once(command_operation)
+            .chain(operations)
+            .map(Step::Operation)
+            .chain(std::iter::once(Step::Inference(inference)))
+            .collect();
 
         StateMachine::new(steps, cancel)
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
-        *self.goose_mode.lock().await = mode;
         self.session_manager
             .update(&self.session_id)
             .goose_mode(mode)
@@ -298,7 +285,7 @@ impl TestPipeline {
                     extension,
                     Some(self.working_dir.clone()),
                     None,
-                    Some(&self.session_id),
+                    &self.session_id,
                 )
                 .await?;
         }
@@ -315,6 +302,15 @@ impl TestPipeline {
 
     pub(super) async fn get_goal(&self) -> Option<String> {
         GoalState::of(&self.session().await.unwrap()).goal
+    }
+
+    pub(super) async fn set_goal(&self, goal: Option<String>) {
+        let mut state = GoalState::of(&self.session().await.unwrap());
+        state.goal = goal;
+        self.session_manager
+            .set_extension_state(&self.session_id, &state)
+            .await
+            .unwrap();
     }
 
     pub(super) async fn set_grind(&self, grind: Option<String>) {
@@ -440,10 +436,11 @@ impl TestPipeline {
             .await?;
 
         let cancel = CancellationToken::new();
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel.clone());
         let mut events = Vec::new();
         let mut applied_steps = 0;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -484,6 +481,14 @@ impl TestPipeline {
         Ok(())
     }
 
+    pub(super) async fn start_turn(&self) -> Result<()> {
+        crate::agents::state_machine::session::run_turn_start_hooks(
+            &self.hook_manager,
+            &self.session().await?,
+        )
+        .await
+    }
+
     pub(super) async fn resume(&self) -> Result<TestRun> {
         let events = run_machine(self).await?;
         Ok(TestRun::new(self.session().await?, events))
@@ -508,7 +513,7 @@ impl TestPipeline {
 
     pub(super) async fn remove_extension(&self, name: &str) -> Result<()> {
         self.extension_manager
-            .remove_extension(name)
+            .remove_extension(&self.session_id, name)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -525,7 +530,7 @@ impl TestPipeline {
                 },
                 Some(self.working_dir.clone()),
                 None,
-                Some(&self.session_id),
+                &self.session_id,
             )
             .await
             .map_err(anyhow::Error::from)
@@ -534,18 +539,7 @@ impl TestPipeline {
     pub(super) async fn resume_cancelled(&self) -> Result<TestRun> {
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
-        let emit = Emitter::new(tx, cancel);
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
-        drop(emit);
-        let mut events = Vec::new();
-        while let Some(event) = rx.recv().await {
-            events.push(event);
-        }
-        Ok(TestRun::new(session, events))
+        self.run_turn(cancel).await
     }
 
     pub(super) async fn run_with_cancel(
@@ -557,12 +551,21 @@ impl TestPipeline {
         self.session_manager
             .add_message(&self.session_id, &Message::user().with_text(message))
             .await?;
+        self.run_turn(cancel).await
+    }
+
+    async fn run_turn(&self, cancel: CancellationToken) -> Result<TestRun> {
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
-        let session = machine
-            .run(self.session_manager.as_ref(), &self.session_id, &emit)
-            .await?;
+        let session = crate::agents::state_machine::session::run(
+            &machine,
+            self.session_manager.as_ref(),
+            &self.hook_manager,
+            &self.session_id,
+            &emit,
+        )
+        .await?;
         drop(emit);
         let mut events = Vec::new();
         while let Some(event) = rx.recv().await {
@@ -583,10 +586,11 @@ impl TestPipeline {
             .await?;
         let cancel = CancellationToken::new();
         let machine = self.machine(cancel.clone());
-        let (tx, mut rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, cancel);
         let mut events = Vec::new();
         let mut answered = false;
+        self.start_turn().await?;
 
         loop {
             let session = self.session().await?;
@@ -819,8 +823,6 @@ async fn build_test_pipeline(
         model_config,
         extension_manager,
         extension_lease: Arc::new(StdMutex::new(None)),
-        goose_mode: TokioMutex::new(session.goose_mode),
-        prompt_manager: TokioMutex::new(PromptManager::new()),
         tool_inspection_manager,
         permission_manager,
         hook_manager: HookManager::default(),
@@ -862,6 +864,7 @@ async fn build_test_pipeline(
         if extension.name() == "calculator" {
             extension_manager
                 .add_client(
+                    &session_id,
                     extension,
                     calculator.clone(),
                     calculator.get_info().cloned(),
@@ -873,7 +876,7 @@ async fn build_test_pipeline(
                     extension,
                     Some(session.working_dir.clone()),
                     None,
-                    Some(&session_id),
+                    &session_id,
                 )
                 .await?;
         }
@@ -944,6 +947,27 @@ impl TestRun {
             }
         }
         Self { session, events }
+    }
+
+    /// Ids of the last history a client was told to swap in, and of what was stored.
+    pub(super) fn replaced_and_stored_ids(&self) -> (Vec<String>, Vec<String>) {
+        let ids = |conversation: &Conversation| {
+            conversation
+                .messages()
+                .iter()
+                .map(|message| message.id.clone().unwrap())
+                .collect()
+        };
+        let replaced = self
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                AgentEvent::HistoryReplaced(conversation) => Some(conversation),
+                _ => None,
+            })
+            .expect("history replaced");
+        (ids(replaced), ids(self.conversation()))
     }
 
     pub(super) fn conversation(&self) -> &Conversation {
@@ -1088,9 +1112,10 @@ impl TestRun {
 pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEvent>> {
     let cancel = CancellationToken::new();
     let machine = pipeline.machine(cancel.clone());
-    let (tx, mut rx) = mpsc::channel(1024);
+    let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let mut events = Vec::new();
+    pipeline.start_turn().await?;
     loop {
         let session = pipeline.session().await?;
         let Some(mut result) = machine.step(&session, &emit).await? else {

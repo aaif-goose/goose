@@ -662,7 +662,6 @@ impl ExtensionLease {
             tool_call_id,
             notification_emitter,
             container,
-            from_state_machine,
         } = request;
         let client = resolved.extension.client.clone();
         let action_required_stream = self.action_required_stream(tool_call_id.as_deref()).await;
@@ -671,17 +670,17 @@ impl ExtensionLease {
             notification_emitter,
             tool_call_id.as_deref(),
         );
-        let mut call_context = ToolCallContext::new(
+        let call_context = ToolCallContext::new(
             self.scope_id.clone(),
             self.working_dir.clone(),
             tool_call_id,
         )
         .with_container(container)
         .with_extension_lease(Arc::new(self.clone()));
-        call_context.from_state_machine = from_state_machine;
-        if let Some(emitter) = emitter {
-            call_context = call_context.with_notification_emitter(emitter);
-        }
+        let call_context = match emitter {
+            Some(emitter) => call_context.with_notification_emitter(emitter),
+            None => call_context,
+        };
 
         let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let server_name = resolved.server_name.to_string();
@@ -770,7 +769,6 @@ pub struct CallRequest {
     pub(crate) tool_call_id: Option<String>,
     pub(crate) notification_emitter: Option<ToolCallNotificationEmitter>,
     pub(crate) container: Option<Container>,
-    pub(crate) from_state_machine: bool,
 }
 
 impl CallRequest {
@@ -785,11 +783,6 @@ impl CallRequest {
         self.container = container;
         self
     }
-
-    pub(crate) fn with_state_machine(mut self) -> Self {
-        self.from_state_machine = true;
-        self
-    }
 }
 
 impl From<&ToolCallContext> for CallRequest {
@@ -798,7 +791,6 @@ impl From<&ToolCallContext> for CallRequest {
             tool_call_id: ctx.tool_call_request_id.clone(),
             notification_emitter: ctx.notification_emitter().cloned(),
             container: ctx.container().cloned(),
-            from_state_machine: ctx.from_state_machine,
         }
     }
 }

@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Lawati"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Gunakan gelung ejen berasaskan operasi. Matikan untuk menggunakan gelung legasi."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatik"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Ambang %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Had token"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Merumuskan permintaan dan respons alat lama untuk menjimatkan konteks. Had ditetapkan secara automatik jika dibiarkan kosong."

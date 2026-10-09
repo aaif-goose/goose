@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "访问"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "使用基于操作的代理循环。关闭后将使用旧版循环。"
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自动"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "阈值 %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "词元上限"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "汇总较早的工具请求和响应以节省上下文。留空时自动设置截断值。"

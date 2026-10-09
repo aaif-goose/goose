@@ -1,10 +1,8 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::subagent_handler::{run_subagent_task, SubagentRunParams};
-use crate::agents::subagent_task_config::{TaskConfig, DEFAULT_SUBAGENT_MAX_TURNS};
-use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
-use crate::agents::AgentConfig;
+use crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS;
+use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::Message;
@@ -21,11 +19,10 @@ use async_trait::async_trait;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
-    MetaObject, ServerCapabilities, ServerNotification, Tool,
+    MetaObject, ServerCapabilities, Tool,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -65,13 +62,6 @@ struct SubagentConfig {
     extensions: Vec<crate::config::ExtensionConfig>,
     working_dir: PathBuf,
     max_turns: usize,
-}
-async fn yield_to_outer_tool_stream() {
-    // The outer select may have polled its receiver before this future queues a
-    // notification. Keep the result pending for the following select pass so
-    // the now-ready receiver is observed before the terminal result.
-    tokio::task::yield_now().await;
-    tokio::task::yield_now().await;
 }
 
 fn merge_subrecipe_parameters(
@@ -430,41 +420,6 @@ impl SummonClient {
         }
 
         Ok(session)
-    }
-
-    async fn run_subagent_with_notifications<Run, RunFuture>(
-        emitter: Option<ToolCallNotificationEmitter>,
-        run_subagent: Run,
-    ) -> Result<String>
-    where
-        Run: FnOnce(tokio::sync::mpsc::UnboundedSender<ServerNotification>) -> RunFuture,
-        RunFuture: Future<Output = Result<String>>,
-    {
-        let (notification_tx, mut notification_rx) = tokio::sync::mpsc::unbounded_channel();
-        let run = run_subagent(notification_tx);
-        tokio::pin!(run);
-
-        loop {
-            tokio::select! {
-                biased;
-                result = &mut run => {
-                    while let Ok(notification) = notification_rx.try_recv() {
-                        if let Some(emitter) = &emitter {
-                            emitter.emit_best_effort(notification);
-                        }
-                        yield_to_outer_tool_stream().await;
-                    }
-                    yield_to_outer_tool_stream().await;
-                    return result;
-                }
-                Some(notification) = notification_rx.recv() => {
-                    if let Some(emitter) = &emitter {
-                        emitter.emit_best_effort(notification);
-                    }
-                    yield_to_outer_tool_stream().await;
-                }
-            }
-        }
     }
 
     fn create_load_tool(&self) -> Tool {
@@ -865,9 +820,6 @@ impl SummonClient {
         session_id: &str,
         working_dir: &Path,
         arguments: Option<JsonObject>,
-        cancellation_token: CancellationToken,
-        notification_emitter: Option<ToolCallNotificationEmitter>,
-        from_state_machine: bool,
     ) -> Result<CallToolResult, String> {
         let params: DelegateParams = arguments
             .map(|args| serde_json::from_value(serde_json::Value::Object(args)))
@@ -889,76 +841,7 @@ impl SummonClient {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
-        if from_state_machine {
-            return self.handle_foreground_delegate(params, &session).await;
-        }
-
-        let recipe = self
-            .build_delegate_recipe(&params, session_id, working_dir)
-            .await?;
-
-        let task_config = self
-            .build_task_config(&params, &recipe, &session)
-            .await
-            .map_err(|e| format!("Failed to build task config: {}", e))?;
-
-        // Subagents must use Auto until get_agent_messages forwards
-        // ActionRequired messages to the parent. Until then, any mode
-        // that requires approval will hang on the subagent's confirmation_rx.
-        let mut agent_config = AgentConfig::new(
-            self.context.session_manager.clone(),
-            crate::config::permission::PermissionManager::instance(),
-            None,
-            GooseMode::Auto,
-            true, // disable session naming for subagents
-            crate::agents::GoosePlatform::GooseCli,
-        )
-        .with_use_login_shell_path(self.context.use_login_shell_path);
-        agent_config.is_subagent = true;
-
-        let subagent_session = self
-            .create_subagent_session(
-                &task_config.parent_working_dir,
-                &task_config.parent_session_id,
-                "Delegated task".to_string(),
-            )
-            .await?;
-
-        let subagent_session_id = subagent_session.id.clone();
-
-        let params = SubagentRunParams {
-            config: agent_config,
-            recipe,
-            task_config,
-            return_last_only: true,
-            session_id: subagent_session.id,
-            cancellation_token: Some(cancellation_token),
-            notification_tx: None,
-        };
-        let result =
-            Self::run_subagent_with_notifications(notification_emitter, move |notification_tx| {
-                let mut params = params;
-                params.notification_tx = Some(notification_tx);
-                run_subagent_task(params)
-            })
-            .await;
-
-        let mut meta = MetaObject::new();
-        meta.0.insert(
-            "subagent_session_id".to_string(),
-            serde_json::Value::String(subagent_session_id),
-        );
-
-        match result {
-            Ok(text) => {
-                Ok(CallToolResult::success(vec![ContentBlock::text(text)]).with_meta(Some(meta)))
-            }
-            Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "Delegation failed: {}",
-                e
-            ))])
-            .with_meta(Some(meta))),
-        }
+        self.handle_foreground_delegate(params, &session).await
     }
 
     async fn handle_foreground_delegate(
@@ -1262,37 +1145,6 @@ impl SummonClient {
             .map_err(|e| format!("Failed to build recipe from agent: {}", e))
     }
 
-    async fn build_task_config(
-        &self,
-        params: &DelegateParams,
-        recipe: &Recipe,
-        session: &crate::session::Session,
-    ) -> Result<TaskConfig, anyhow::Error> {
-        let config = self
-            .resolve_subagent_config(params, recipe, session)
-            .await?;
-        let provider = match providers::get_from_registry(&config.provider_name).await {
-            Ok(entry) => entry.create(config.extensions.clone()).await?,
-            Err(error) => match self.context.providers.provider_for(session).await {
-                Ok(provider)
-                    if provider.get_name() == config.provider_name
-                        && !provider.manages_own_context() =>
-                {
-                    provider
-                }
-                _ => return Err(error),
-            },
-        };
-        Ok(TaskConfig {
-            provider,
-            model_config: config.model_config,
-            parent_session_id: session.id.clone(),
-            parent_working_dir: config.working_dir,
-            extensions: config.extensions,
-            max_turns: Some(config.max_turns),
-        })
-    }
-
     async fn resolve_subagent_config(
         &self,
         params: &DelegateParams,
@@ -1541,7 +1393,7 @@ impl McpClientTrait for SummonClient {
         ctx: &ToolCallContext,
         name: &str,
         arguments: Option<JsonObject>,
-        cancellation_token: CancellationToken,
+        _cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, Error> {
         let session_id = &ctx.session_id;
         let working_dir = self.working_dir(ctx);
@@ -1555,14 +1407,7 @@ impl McpClientTrait for SummonClient {
             },
             "delegate" => {
                 match self
-                    .handle_delegate(
-                        session_id,
-                        &working_dir,
-                        arguments,
-                        cancellation_token,
-                        ctx.notification_emitter().cloned(),
-                        ctx.from_state_machine,
-                    )
+                    .handle_delegate(session_id, &working_dir, arguments)
                     .await
                 {
                     Ok(result) => Ok(result),
@@ -1621,8 +1466,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::{Message, MessageContent};
-    use futures::StreamExt;
+    use crate::conversation::message::MessageContent;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -1693,14 +1537,7 @@ mod tests {
                 env_lock::lock_env([("OPENAI_HOST", None), ("OPENAI_BASE_URL", Some("http://"))]);
             assert!(providers::create("openai", Vec::new()).await.is_err());
             client
-                .handle_delegate(
-                    &parent.id,
-                    temp_dir.path(),
-                    Some(args),
-                    CancellationToken::new(),
-                    None,
-                    true,
-                )
+                .handle_delegate(&parent.id, temp_dir.path(), Some(args))
                 .await
                 .unwrap()
         };
@@ -2452,78 +2289,6 @@ You review code."#;
         }
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_legacy_reuses_unregistered_provider_but_foreground_rejects_it() {
-        let temp_dir = TempDir::new().unwrap();
-        let parent_provider: Arc<dyn crate::providers::base::Provider> = Arc::new(
-            crate::providers::testprovider::TestProvider::new_replaying(
-                temp_dir.path().join("records.json").display().to_string(),
-            )
-            .unwrap(),
-        );
-        let context = create_test_context();
-        let providers = context.providers.clone();
-        let client = SummonClient::new(context).unwrap();
-        let session = crate::session::Session {
-            id: "unregistered-parent".to_string(),
-            provider_name: Some(parent_provider.get_name().to_string()),
-            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
-            working_dir: temp_dir.path().to_path_buf(),
-            ..Default::default()
-        };
-        providers
-            .set_provider(&session.id, Arc::clone(&parent_provider))
-            .await;
-
-        let params = DelegateParams {
-            instructions: Some("Review the change".to_string()),
-            extensions: Some(Vec::new()),
-            provider: Some(parent_provider.get_name().to_string()),
-            model: Some("test-model".to_string()),
-            ..Default::default()
-        };
-        let task_config = client
-            .build_task_config(&params, &empty_recipe(), &session)
-            .await
-            .unwrap();
-
-        assert!(Arc::ptr_eq(&parent_provider, &task_config.provider));
-        let error = client
-            .handle_foreground_delegate(params, &session)
-            .await
-            .unwrap_err();
-        assert!(error.contains("cannot be reconstructed for a foreground subagent"));
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_build_task_config_recreates_registered_parent_provider() {
-        let temp_dir = TempDir::new().unwrap();
-        let parent_provider = providers::create("openai", Vec::new()).await.unwrap();
-        let client = SummonClient::new(create_test_context()).unwrap();
-        let session = crate::session::Session {
-            provider_name: Some(parent_provider.get_name().to_string()),
-            model_config: Some(goose_providers::model::ModelConfig::new("test-model")),
-            working_dir: temp_dir.path().to_path_buf(),
-            ..Default::default()
-        };
-        let params = DelegateParams {
-            extensions: Some(Vec::new()),
-            provider: Some(parent_provider.get_name().to_string()),
-            model: Some("test-model".to_string()),
-            ..Default::default()
-        };
-
-        let task_config = client
-            .build_task_config(&params, &empty_recipe(), &session)
-            .await
-            .unwrap();
-
-        assert!(!Arc::ptr_eq(&parent_provider, &task_config.provider));
-        assert!(task_config.extensions.is_empty());
-    }
-
     const PARENT_MODEL: &str = "claude-3-5-sonnet-20241022";
     const OVERRIDE_MODEL: &str = "claude-opus-4-6";
     const PROVIDER: &str = "anthropic";
@@ -2882,151 +2647,5 @@ You review code."#;
         assert!(error
             .to_string()
             .contains("No model configured for provider 'lmstudio'"));
-    }
-
-    fn test_tool_notification(request_id: &str, subagent_id: &str) -> ServerNotification {
-        use crate::agents::subagent_handler::create_tool_notification;
-        use crate::conversation::message::MessageContent;
-        use rmcp::model::CallToolRequestParams;
-
-        let tool_call = CallToolRequestParams::new("developer__shell").with_arguments(
-            serde_json::json!({"command": request_id})
-                .as_object()
-                .unwrap()
-                .clone(),
-        );
-        let content = MessageContent::tool_request(request_id, Ok(tool_call));
-        create_tool_notification(&content, subagent_id).unwrap()
-    }
-
-    fn notification_subagent_id(notification: &ServerNotification) -> Option<String> {
-        let ServerNotification::LoggingMessageNotification(log) = notification else {
-            return None;
-        };
-        serde_json::to_value(&log.params)
-            .ok()?
-            .get("data")?
-            .get("subagent_id")?
-            .as_str()
-            .map(str::to_string)
-    }
-
-    fn notification_command(notification: &ServerNotification) -> Option<String> {
-        let ServerNotification::LoggingMessageNotification(log) = notification else {
-            return None;
-        };
-        serde_json::to_value(&log.params)
-            .ok()?
-            .get("data")?
-            .get("tool_call")?
-            .get("arguments")?
-            .get("command")?
-            .as_str()
-            .map(str::to_string)
-    }
-
-    fn notification_channel() -> (
-        ToolCallNotificationEmitter,
-        tokio::sync::mpsc::Receiver<ServerNotification>,
-    ) {
-        let (sender, receiver) = tokio::sync::mpsc::channel(32);
-        (ToolCallNotificationEmitter::new(sender), receiver)
-    }
-
-    #[tokio::test]
-    async fn test_notification_sinks_isolate_concurrent_delegate_calls() {
-        let (emitter_a, mut notifications_a) = notification_channel();
-        let (emitter_b, mut notifications_b) = notification_channel();
-
-        let (result_a, result_b) = tokio::join!(
-            SummonClient::run_subagent_with_notifications(
-                Some(emitter_a),
-                |notification_tx| async move {
-                    notification_tx
-                        .send(test_tool_notification("inner-a", "subagent-a"))
-                        .unwrap();
-                    tokio::task::yield_now().await;
-                    Ok("delegate-a".to_string())
-                }
-            ),
-            SummonClient::run_subagent_with_notifications(
-                Some(emitter_b),
-                |notification_tx| async move {
-                    notification_tx
-                        .send(test_tool_notification("inner-b", "subagent-b"))
-                        .unwrap();
-                    tokio::task::yield_now().await;
-                    Ok("delegate-b".to_string())
-                }
-            )
-        );
-        assert_eq!(result_a.unwrap(), "delegate-a");
-        assert_eq!(result_b.unwrap(), "delegate-b");
-
-        let notification_a = notifications_a.recv().await.unwrap();
-        let notification_b = notifications_b.recv().await.unwrap();
-        assert_eq!(
-            notification_subagent_id(&notification_a).as_deref(),
-            Some("subagent-a")
-        );
-        assert_eq!(
-            notification_subagent_id(&notification_b).as_deref(),
-            Some("subagent-b")
-        );
-        assert!(notifications_a.try_recv().is_err());
-        assert!(notifications_b.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn test_live_notifications_precede_delegate_result() {
-        use crate::agents::tool_execution::{tool_stream, ToolStreamItem};
-        use tokio_stream::wrappers::ReceiverStream;
-
-        for _ in 0..32 {
-            let (emitter, notifications) = notification_channel();
-            let mut output = tool_stream(
-                ReceiverStream::new(notifications),
-                futures::stream::empty(),
-                async move {
-                    let result = SummonClient::run_subagent_with_notifications(
-                        Some(emitter),
-                        |notification_tx| async move {
-                            for command in ["inner-live-0", "inner-live-1", "inner-live-2"] {
-                                notification_tx
-                                    .send(test_tool_notification(command, "subagent-live"))
-                                    .unwrap();
-                            }
-                            Ok("delegate-result".to_string())
-                        },
-                    )
-                    .await
-                    .unwrap();
-                    Ok::<_, rmcp::model::ErrorData>(CallToolResult::success(vec![
-                        ContentBlock::text(result),
-                    ]))
-                },
-            );
-
-            let mut commands = Vec::new();
-            let result = loop {
-                match output.next().await.unwrap() {
-                    ToolStreamItem::Message(notification) => {
-                        assert_eq!(
-                            notification_subagent_id(&notification).as_deref(),
-                            Some("subagent-live")
-                        );
-                        commands.push(notification_command(&notification).unwrap());
-                    }
-                    ToolStreamItem::Result(result) => break result,
-                    ToolStreamItem::ActionRequired(_) => {
-                        panic!("delegate must not request an action")
-                    }
-                }
-            };
-
-            assert_eq!(commands, ["inner-live-0", "inner-live-1", "inner-live-2"]);
-            assert!(result.is_ok());
-            assert!(output.next().await.is_none());
-        }
     }
 }

@@ -289,11 +289,11 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             conversation
         };
 
-        let threshold_percentage = (self.threshold * 100.0) as u32;
+        let threshold_k_tokens = (self.context_limit as f64 * self.threshold / 1000.0) as usize;
         emit.message(Message::assistant().with_system_notification(
             SystemNotificationType::InlineMessage,
             format!(
-                "Exceeded auto-compact threshold of {threshold_percentage}%. \
+                "Exceeded auto-compact threshold of {threshold_k_tokens}k tokens. \
                      Performing auto-compaction..."
             ),
         ))

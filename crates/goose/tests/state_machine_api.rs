@@ -107,7 +107,7 @@ async fn custom_pipeline_supports_step_apply_run_and_usage() -> Result<()> {
         .await?;
 
     let cancel = CancellationToken::new();
-    let (tx, mut rx) = mpsc::channel(16);
+    let (tx, mut rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel.clone());
     let machine = StateMachine::new(
         vec![

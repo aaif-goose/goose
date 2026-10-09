@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visitez"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Utilise la boucle d’agent basée sur les opérations. Désactivez-la pour utiliser la boucle héritée."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatique"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Seuil %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite de tokens"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Résume les anciennes requêtes et réponses d’outils pour économiser le contexte. Le seuil est automatique si le champ est vide."

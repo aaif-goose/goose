@@ -4676,9 +4676,6 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Usa il ciclo agente basato sulle operazioni. Disattivalo per usare il ciclo legacy."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatico"
   },
@@ -4732,6 +4729,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Soglia %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite di token"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Riassume le richieste e le risposte meno recenti degli strumenti per risparmiare contesto. La soglia è automatica se il campo è vuoto."

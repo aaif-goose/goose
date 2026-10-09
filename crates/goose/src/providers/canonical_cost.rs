@@ -139,6 +139,7 @@ fn pricing_from_model_info(info: &ModelInfo) -> Option<Pricing> {
         output: Some(info.output_token_cost.map(|c| c * 1_000_000.0)?),
         cache_read: None,
         cache_write: None,
+        tiers: Vec::new(),
     })
 }
 
@@ -207,12 +208,13 @@ mod tests {
         }
     }
 
-    /// Prices 1M input + 1M output tokens, so `expected` reads as the model's
-    /// input-plus-output rate per million tokens.
+    /// `expected` reads as the model's base input-plus-output rate per million
+    /// tokens; the prompt stays below every long-context tier.
     fn assert_cost(provider: &str, model: &str, expected: f64) {
-        let used = usage(Some(1_000_000), Some(1_000_000), None);
+        let used = usage(Some(10_000), Some(10_000), None);
         let actual = estimate_model_cost(provider, model, &used)
-            .unwrap_or_else(|| panic!("{provider}/{model} should have public pricing"));
+            .unwrap_or_else(|| panic!("{provider}/{model} should have public pricing"))
+            * 100.0;
         assert!((actual - expected).abs() < 1e-9, "got {actual}");
     }
 
@@ -296,12 +298,14 @@ mod tests {
                 output: Some(6.0),
                 cache_read: None,
                 cache_write: None,
+                ..Default::default()
             },
             &Pricing {
                 input: Some(3.0),
                 output: Some(15.0),
                 cache_read: Some(0.3),
                 cache_write: Some(3.75),
+                ..Default::default()
             },
         );
         assert_eq!(merged.input, Some(2.0));
@@ -320,12 +324,14 @@ mod tests {
                 output: Some(0.0),
                 cache_read: None,
                 cache_write: None,
+                ..Default::default()
             },
             &Pricing {
                 input: Some(3.0),
                 output: Some(15.0),
                 cache_read: Some(0.3),
                 cache_write: Some(3.75),
+                ..Default::default()
             },
         );
         assert_eq!(merged.cache_read, None);
@@ -344,12 +350,14 @@ mod tests {
                 output: Some(15.0),
                 cache_read: None,
                 cache_write: None,
+                ..Default::default()
             },
             &Pricing {
                 input: Some(3.0),
                 output: Some(15.0),
                 cache_read: Some(0.3),
                 cache_write: None,
+                ..Default::default()
             },
         );
         let usage = usage(Some(1_000_000), Some(0), Some(1_000_000));

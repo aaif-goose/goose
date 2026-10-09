@@ -38,6 +38,15 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
     assert!(!calls[calls.len() - 2].system_contains("NESTED_PROJECT_INSTRUCTION"));
     assert!(calls[calls.len() - 1].system_contains("NESTED_PROJECT_INSTRUCTION"));
 
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("after compaction").reply("continuing");
+    pipeline.run(["after compaction"]).await?;
+    let after_compaction = api.calls().pop().unwrap();
+    assert!(after_compaction.system_contains("ROOT_PROJECT_INSTRUCTION"));
+    assert!(!after_compaction.system_contains("NESTED_PROJECT_INSTRUCTION"));
+
     let skill_dir = pipeline.working_dir().join(".agents/skills/review");
     std::fs::create_dir_all(&skill_dir)?;
     std::fs::write(

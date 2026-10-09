@@ -10,7 +10,7 @@ mod inference_preparation;
 mod ops_bang_shell;
 mod ops_compaction;
 mod ops_doctor;
-mod ops_entry_hook;
+mod ops_empty_response;
 mod ops_exit_on_error;
 mod ops_foreground_subagent;
 mod ops_llm;
@@ -29,6 +29,7 @@ mod ops_toolcalling;
 mod ops_unknown_tool;
 mod session;
 pub(crate) use session::run as run_goose;
+pub(crate) use session::session_start_message;
 mod tool_confirmation;
 mod usage;
 
@@ -73,9 +74,9 @@ pub(super) use inference_preparation::GooseInferenceRequestPreparer;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
-pub(super) use ops_entry_hook::EntryHookOperation;
+pub(super) use ops_empty_response::EmptyResponseOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_foreground_subagent::{subagent_cancelled_message, ForegroundSubagentOperation};
+pub(super) use ops_foreground_subagent::ForegroundSubagentOperation;
 pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
@@ -90,9 +91,3 @@ pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
 pub(super) use ops_unknown_tool::UnknownToolOperation;
-
-pub fn enabled() -> bool {
-    std::env::var("GOOSE_STATE_MACHINE")
-        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes"))
-        .unwrap_or(false)
-}

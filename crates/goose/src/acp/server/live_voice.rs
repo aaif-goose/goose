@@ -31,12 +31,6 @@ impl GooseAcpAgent {
         &self,
         req: LiveVoiceAvailabilityRequest,
     ) -> Result<LiveVoiceAvailabilityResponse, agent_client_protocol::Error> {
-        if !use_state_machine_from_meta(req.meta.as_ref()) {
-            return Ok(LiveVoiceAvailabilityResponse {
-                status: LiveVoiceStatus::Unavailable,
-                message: "Live voice is unavailable while Use Legacy Agent Loop is enabled".into(),
-            });
-        }
         let mode = match req.session_id.as_deref() {
             Some(session_id) => self.load_live_voice_session(session_id).await?.goose_mode,
             None => crate::config::Config::global()
@@ -65,9 +59,6 @@ impl GooseAcpAgent {
         cx: &ConnectionTo<Client>,
         req: LiveVoiceStartRequest,
     ) -> Result<LiveVoiceStartResponse, agent_client_protocol::Error> {
-        if !use_state_machine_from_meta(req.meta.as_ref()) {
-            return Err(map_live_voice_error(LiveVoiceError::Unavailable));
-        }
         let offer = WebRtcOffer::new(req.offer_sdp)
             .ok_or_else(agent_client_protocol::Error::invalid_params)?;
         let session_id = req.session_id.clone();
@@ -258,7 +249,6 @@ impl GooseAcpAgent {
             id: session_id.clone(),
             schedule_id: None,
             max_turns: None,
-            retry_config: None,
         };
         let input_message =
             Message::user().with_text(format!("{LIVE_DELEGATION_INSTRUCTION}\n\n{input}"));
@@ -284,7 +274,7 @@ impl GooseAcpAgent {
         };
         while let Some(event) = stream.next().await {
             if cancel_token.is_cancelled() {
-                break;
+                continue;
             }
             match event {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
@@ -360,10 +350,6 @@ impl GooseAcpAgent {
             }
         }
 
-        if cancel_token.is_cancelled() {
-            drop(stream);
-            agent.cancel_foreground_subagents(&session_id).await;
-        }
         self.clear_active_run(&session_id, &run_id).await;
         let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
         if cancel_token.is_cancelled() {

@@ -19,6 +19,7 @@ activities:
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
+  - Validate capped and uncapped auto-compaction thresholds and Desktop editing
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -27,7 +28,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
 
   - key: test_depth
     input_type: string
@@ -193,6 +194,29 @@ prompt: |
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
+  {% endif %}
+
+  {% if test_phases == "all" or "compaction" in test_phases %}
+  ## Auto-Compaction Threshold Validation
+
+  **Prerequisites**: Run this phase from a goose source checkout with the Rust toolchain
+  and installed Desktop dependencies. Record unavailable checks as SKIPPED.
+
+  1. Run `cargo test -p goose --test auto_compact_token_limit`.
+  2. Verify the effective trigger is the minimum of the percentage budget and token cap:
+     defaults produce 225,000 tokens for a 1M-token context and 160,000 for a 200,000-token
+     context. Verify actual agent replies compact only after crossing the trigger.
+  3. Verify changing model context size in the same session recalculates the trigger and
+     that disabled auto-compaction remains disabled regardless of the cap.
+  4. Run `cd ui/desktop && pnpm exec vitest run src/components/alerts/__tests__/AlertBox.test.tsx`.
+  5. Verify the inline editor saves the displayed token cap in capped contexts and the
+     percentage in uncapped contexts, including cancellation and model changes during editing.
+  6. Confirm the smart context management guide describes when compaction starts, rather
+     than promising a maximum request size. New messages, tool output, and compaction
+     requests can exceed the trigger between checks.
+
+  Log command results and failures to: {{ workspace_dir }}/compaction.md
+  Do not modify source files or configuration to make these checks pass.
   {% endif %}
 
   {% if test_phases == "all" or "extensions" in test_phases %}
