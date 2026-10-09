@@ -269,42 +269,50 @@ export function registerUpdateIpcHandlers() {
   });
 
   ipcMain.handle('install-update', async () => {
-    if (isUsingGitHubFallback) {
-      log.info('Installing update from GitHub fallback...');
+    try {
+      if (isUsingGitHubFallback) {
+        log.info('Installing update from GitHub fallback...');
 
-      const downloadPath = githubUpdateInfo.downloadPath;
-      if (!downloadPath) {
-        throw new Error('Update file path not found. Please download the update first.');
+        const downloadPath = githubUpdateInfo.downloadPath;
+        if (!downloadPath) {
+          throw new Error('Update file path not found. Please download the update first.');
+        }
+
+        try {
+          await fs.access(downloadPath);
+        } catch {
+          throw new Error('Update file not found. Please download the update first.');
+        }
+
+        trackUpdateInstallInitiated(
+          githubUpdateInfo.latestVersion || 'unknown',
+          'github-fallback',
+          'auto_swap_and_relaunch'
+        );
+
+        const result = await githubUpdater.installUpdate(downloadPath);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to install update');
+        }
+
+        log.info('Quitting app so the update swap can complete...');
+        setTimeout(() => app.quit(), 0);
+      } else {
+        // Use electron-updater's built-in install
+        trackUpdateInstallInitiated(
+          lastUpdateState?.latestVersion || 'unknown',
+          'electron-updater',
+          'quit_and_install'
+        );
+        autoUpdater.quitAndInstall(false, true);
       }
-
-      try {
-        await fs.access(downloadPath);
-      } catch {
-        throw new Error('Update file not found. Please download the update first.');
-      }
-
-      trackUpdateInstallInitiated(
-        githubUpdateInfo.latestVersion || 'unknown',
-        'github-fallback',
-        'auto_swap_and_relaunch'
-      );
-
-      const result = await githubUpdater.installUpdate(downloadPath);
-      if (!result.success) {
-        log.error('Error installing GitHub update:', result.error);
-        throw new Error(result.error || 'Failed to install update');
-      }
-
-      log.info('Quitting app so the update swap can complete...');
-      setTimeout(() => app.quit(), 0);
-    } else {
-      // Use electron-updater's built-in install
-      trackUpdateInstallInitiated(
-        lastUpdateState?.latestVersion || 'unknown',
-        'electron-updater',
-        'quit_and_install'
-      );
-      autoUpdater.quitAndInstall(false, true);
+      return { success: true, error: null };
+    } catch (error) {
+      log.error('Error installing update:', error);
+      return {
+        success: false,
+        error: errorMessage(error, 'Unknown error'),
+      };
     }
   });
 
