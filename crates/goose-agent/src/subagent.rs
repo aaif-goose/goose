@@ -93,7 +93,9 @@ fn subagent_result_message(
     let text = match outcome {
         SubagentOutcome::Completed(output) => format!("{label} completed: {output}"),
         SubagentOutcome::Failed(reason) => format!("{label} failed: {reason}"),
-        SubagentOutcome::Cancelled => return None,
+        SubagentOutcome::Cancelled => {
+            return subagent_cancelled_message(&[subagent_session_id.to_string()])
+        }
     };
     let mut message = Message::user().with_text(text).with_visibility(false, true);
     message.metadata.set_operation_note(
@@ -185,6 +187,9 @@ where
         let interrupted = stopped.delivering.take();
         let finished = std::iter::from_fn(|| stopped.subagent_runs.next().now_or_never().flatten());
         for (subagent_session_id, outcome) in interrupted.into_iter().chain(finished) {
+            if outcome == SubagentOutcome::Cancelled {
+                continue;
+            }
             let remaining = pending.len().saturating_sub(delivered.len() + 1);
             if let Some(effect) = self
                 .deliver(&subagent_session_id, &outcome, remaining, emit)
