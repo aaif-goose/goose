@@ -1,5 +1,8 @@
 use super::api_client::TlsConfig;
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::base::{
+    find_declared_model, ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata,
+    ProviderType,
+};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -71,12 +74,9 @@ impl ProviderEntry {
         }
         // Declared model metadata is authoritative over canonical detection, which
         // may already have populated supports_vision earlier in materialization.
-        if let Some(supports_vision) = self
-            .metadata
-            .known_models
-            .iter()
-            .find(|m| m.name.eq_ignore_ascii_case(&model.model_name))
-            .and_then(|m| m.supports_vision)
+        if let Some(supports_vision) =
+            find_declared_model(&self.metadata.known_models, &model.model_name)
+                .and_then(|m| m.supports_vision)
         {
             model.supports_vision = Some(supports_vision);
         }
@@ -486,6 +486,31 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(overridden.supports_vision, Some(!canonical_vision));
+        }
+    }
+
+    #[test]
+    fn case_collisions_do_not_change_the_selected_models_vision() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.models = vec![
+            ModelInfo::new("Foo").with_vision_support(false),
+            ModelInfo::new("foo").with_vision_support(true),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || Ok(InventoryIdentityInput::new("custom_hf", "custom_hf")),
+        );
+        let entry = &registry.entries["custom_hf"];
+
+        for (name, expected) in [("Foo", Some(false)), ("foo", Some(true)), ("FOO", None)] {
+            let model = entry
+                .normalize_model_config(ModelConfig::new(name))
+                .unwrap();
+            assert_eq!(model.supports_vision, expected);
         }
     }
 

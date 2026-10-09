@@ -381,6 +381,19 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
     }
 }
 
+/// Prefer exact model IDs; a case-insensitive fallback must identify only one model.
+pub fn find_declared_model<'a>(models: &'a [ModelInfo], model_name: &str) -> Option<&'a ModelInfo> {
+    if let Some(model) = models.iter().find(|model| model.name == model_name) {
+        return Some(model);
+    }
+
+    let mut matches = models
+        .iter()
+        .filter(|model| model.name.eq_ignore_ascii_case(model_name));
+    let model = matches.next()?;
+    matches.next().is_none().then_some(model)
+}
+
 /// Build `ModelInfo` for discovered model names, preferring metadata declared in
 /// provider configuration over the canonical registry.
 ///

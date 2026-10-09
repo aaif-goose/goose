@@ -1,5 +1,8 @@
 use super::api_client::ApiClient;
-use super::base::{known_models_from_registry, ConfigKey, ModelInfo, Provider, ProviderMetadata};
+use super::base::{
+    find_declared_model, known_models_from_registry, ConfigKey, ModelInfo, Provider,
+    ProviderMetadata,
+};
 use super::retry::ProviderRetry;
 use crate::api_client::{AuthMethod, TlsConfig};
 use crate::conversation::message::Message;
@@ -463,10 +466,7 @@ impl OpenAiProvider {
     }
 
     fn declared_model(&self, model_name: &str) -> Option<&ModelInfo> {
-        self.custom_models
-            .as_ref()?
-            .iter()
-            .find(|m| m.name == model_name)
+        find_declared_model(self.custom_models.as_deref()?, model_name)
     }
 
     fn sanitize_request_for_compat(
