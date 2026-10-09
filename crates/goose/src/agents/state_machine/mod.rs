@@ -12,7 +12,6 @@ mod ops_compaction;
 mod ops_doctor;
 mod ops_empty_response;
 mod ops_exit_on_error;
-mod ops_foreground_subagent;
 mod ops_llm;
 mod ops_maxturns;
 mod ops_project;
@@ -23,6 +22,7 @@ mod ops_slash_command;
 mod ops_status;
 mod ops_steer;
 mod ops_stop_hook;
+mod ops_subagent;
 mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
@@ -76,9 +76,6 @@ pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_empty_response::EmptyResponseOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_foreground_subagent::{
-    forwarded_from_subagent, is_forwarded_from_subagent, ForegroundSubagentOperation,
-};
 pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
@@ -89,6 +86,9 @@ pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
 pub(super) use ops_stop_hook::StopHookOperation;
+pub(super) use ops_subagent::{
+    forwarded_from_subagent, is_forwarded_from_subagent, SubagentOperation, DELEGATED_META_KEY,
+};
 pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;

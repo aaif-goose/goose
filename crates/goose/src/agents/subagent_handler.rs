@@ -28,10 +28,7 @@ pub struct SubagentPromptContext {
     pub available_tools: String,
 }
 
-pub(crate) async fn prepare_foreground_subagent(
-    agent: &Agent,
-    session: &Session,
-) -> Result<SessionConfig> {
+pub(crate) async fn prepare_subagent(agent: &Agent, session: &Session) -> Result<SessionConfig> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
@@ -95,11 +92,11 @@ pub(crate) enum SubagentStart {
 }
 
 #[derive(Clone)]
-pub(crate) struct ForegroundSubagentRunner {
+pub(crate) struct SubagentRunner {
     agent: Arc<Agent>,
 }
 
-impl ForegroundSubagentRunner {
+impl SubagentRunner {
     pub(crate) fn new(agent: Arc<Agent>) -> Self {
         Self { agent }
     }
@@ -150,7 +147,7 @@ impl ForegroundSubagentRunner {
         cancel: CancellationToken,
         forward: mpsc::UnboundedSender<Message>,
     ) -> Result<()> {
-        let session_config = prepare_foreground_subagent(&self.agent, subagent).await?;
+        let session_config = prepare_subagent(&self.agent, subagent).await?;
         let mut events = self
             .agent
             .stream_subagent_turn(session_config, cancel)

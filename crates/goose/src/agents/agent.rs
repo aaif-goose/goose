@@ -21,14 +21,14 @@ use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EmptyResponseOperation, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
+    DoctorOperation, Emitter, EmptyResponseOperation, ExitOnErrorOperation, GooseEffect,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation,
+    Operation, ProjectOperation, RecipeOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation, UnknownToolOperation,
 };
-use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::subagent_handler::SubagentRunner;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
@@ -658,8 +658,8 @@ impl Agent {
             // Before RecipeOperation: a `delegate` response only means the subagent
             // started, so a final output from the same batch must not be shown until
             // the subagents have run.
-            Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(Arc::clone(self)),
+            Arc::new(SubagentOperation::new(
+                SubagentRunner::new(Arc::clone(self)),
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
