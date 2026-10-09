@@ -156,6 +156,28 @@ impl ApiCall {
         self.body["model"].as_str() == Some(model)
     }
 
+    pub(super) fn answers_every_tool_call_next(&self) -> bool {
+        let messages: Vec<_> = self.body["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .collect();
+        messages.iter().enumerate().all(|(index, message)| {
+            let requested = message["tool_calls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|call| call["id"].as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let answered = messages[index + 1..]
+                .iter()
+                .take_while(|next| next["role"] == "tool")
+                .filter_map(|next| next["tool_call_id"].as_str())
+                .collect::<std::collections::HashSet<_>>();
+            requested.is_subset(&answered)
+        })
+    }
+
     pub(super) fn input_occurrences(&self, needle: &str) -> usize {
         request_input(&self.body).matches(needle).count()
     }

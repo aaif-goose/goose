@@ -9,8 +9,8 @@ use tokio::sync::Mutex;
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::{
-    applied, ends_turn, last_effective_role, messages_since_kickoff, not_applicable, Emitter,
-    Operation, OperationResult,
+    applied, awaits_tool_responses, ends_turn, last_effective_role, messages_since_kickoff,
+    not_applicable, Emitter, Operation, OperationResult,
 };
 use crate::conversation::message::Message;
 use crate::conversation::{Conversation, EffectiveRole};
@@ -66,7 +66,7 @@ impl Operation<Session, GooseEffect> for SteerOperation {
         let messages = messages_since_kickoff(conversation)?;
         let between_turns =
             ends_turn(messages) || last_effective_role(messages)? == EffectiveRole::Tool;
-        if !between_turns {
+        if !between_turns || awaits_tool_responses(messages) {
             return not_applicable();
         }
 
