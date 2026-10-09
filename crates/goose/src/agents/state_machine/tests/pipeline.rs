@@ -17,8 +17,8 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
     ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Next, Operation,
-    ProjectOperation, RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RetryOperation, RunStatus, SkillOperation, SlashCommandOperation,
     StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
     ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
     UnknownToolOperation,
@@ -464,7 +464,7 @@ impl TestPipeline {
 
             drop(machine);
             self = self.reconstruct().await?;
-            if result.next != Next::Continue {
+            if result.status != RunStatus::Continuing {
                 break;
             }
         }
@@ -660,7 +660,7 @@ impl TestPipeline {
             while let Ok(event) = rx.try_recv() {
                 events.push(event);
             }
-            if result.next != Next::Continue {
+            if result.status != RunStatus::Continuing {
                 break;
             }
         }
@@ -1137,7 +1137,7 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
         while let Ok(event) = rx.try_recv() {
             events.push(event);
         }
-        if result.next != Next::Continue {
+        if result.status != RunStatus::Continuing {
             break;
         }
     }

@@ -300,7 +300,7 @@ mod tests {
 
     use super::*;
     use crate::agents::final_output_tool::{FINAL_OUTPUT_SUCCESS_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
-    use crate::agents::state_machine::{ConversationEffect, Next};
+    use crate::agents::state_machine::{ConversationEffect, RunStatus};
     use crate::config::GooseMode;
     use crate::session::SessionManager;
     use goose_agent::machine::EffectHandler;
@@ -419,7 +419,7 @@ mod tests {
         let OperationResult::Applied(step) = result else {
             panic!("expected the operation to apply");
         };
-        assert_eq!(step.next, Next::Continue);
+        assert_eq!(step.status, RunStatus::Continuing);
         step.effects
     }
 

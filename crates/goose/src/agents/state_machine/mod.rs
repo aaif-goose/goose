@@ -63,7 +63,7 @@ pub use goose_agent::machine::{
 pub use goose_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
-    InferenceInput, MachineEffect, Next, Operation, OperationResult, SlashCommand, StepResult,
+    InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
 };
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,

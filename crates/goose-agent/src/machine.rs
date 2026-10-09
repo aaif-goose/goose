@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
-    Next, Operation, OperationResult, StepResult,
+    Operation, OperationResult, RunStatus, StepResult,
 };
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
@@ -58,11 +58,11 @@ pub struct StateMachine<'a, S, E = ConversationEffect> {
     interrupted_step: Mutex<Option<usize>>,
 }
 
-fn empty_result<E>(next: Next) -> StepResult<E> {
+fn empty_result<E>(status: RunStatus) -> StepResult<E> {
     StepResult {
         effects: Vec::new(),
         applied_step: None,
-        next,
+        status,
     }
 }
 
@@ -126,7 +126,7 @@ where
         for (index, step) in self.steps.iter().enumerate() {
             let name = step.operation().name();
             if self.cancel.is_cancelled() {
-                return Ok(empty_result(Next::Cancel));
+                return Ok(empty_result(RunStatus::Cancelled));
             }
             let execution = async {
                 match step {
@@ -166,7 +166,7 @@ where
                 Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
                 _ => {
                     *self.interrupted_step.lock().unwrap() = Some(index);
-                    return Ok(empty_result(Next::Cancel));
+                    return Ok(empty_result(RunStatus::Cancelled));
                 }
             };
 
@@ -179,14 +179,14 @@ where
                         effect.ensure_message_ids();
                     }
                     if self.cancel.is_cancelled() {
-                        result.next = Next::Cancel;
+                        result.status = RunStatus::Cancelled;
                     }
                     return Ok(result);
                 }
             }
         }
 
-        Ok(empty_result(Next::Yield))
+        Ok(empty_result(RunStatus::Yielded))
     }
 
     pub async fn apply<R>(
@@ -217,9 +217,9 @@ where
             let mut result = self.step(&session, emit).await?;
             self.apply(runtime, &session, &mut result.effects, emit)
                 .await?;
-            match result.next {
-                Next::Continue => {}
-                Next::Yield | Next::Cancel => break,
+            match result.status {
+                RunStatus::Continuing => {}
+                RunStatus::Yielded | RunStatus::Cancelled => break,
             }
         }
         self.finalize(runtime, session_id, emit).await

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose::agents::state_machine::{
-    yielded_with, Emitter, GooseEffect, Inference, InferenceInput, Next, Operation,
-    OperationResult, StateMachine, Step,
+    yielded_with, Emitter, GooseEffect, Inference, InferenceInput, Operation, OperationResult,
+    RunStatus, StateMachine, Step,
 };
 use goose::agents::AgentEvent;
 use goose::config::GooseMode;
@@ -128,7 +128,7 @@ async fn custom_pipeline_supports_step_apply_run_and_usage() -> Result<()> {
     machine
         .apply(&session_manager, &session, &mut result.effects, &emit)
         .await?;
-    assert_eq!(result.next, Next::Yield);
+    assert_eq!(result.status, RunStatus::Yielded);
     let session = session_manager.get_session(&session.id, true).await?;
     let persisted = session
         .conversation
