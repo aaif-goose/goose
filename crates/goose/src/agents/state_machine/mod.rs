@@ -65,7 +65,7 @@ pub use goose_agent::operation::{
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, SlashCommand, StepResult,
 };
-pub(super) use goose_agent::subagent::SubagentOperation;
+pub(super) use goose_agent::subagent::ForegroundSubagentOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,

@@ -155,7 +155,7 @@ mod tests {
     use std::sync::Arc;
 
     use goose_agent::events::AgentEvent;
-    use goose_agent::subagent::SubagentOperation;
+    use goose_agent::subagent::ForegroundSubagentOperation;
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, MetaObject};
     use tempfile::TempDir;
     use tokio::sync::mpsc;
@@ -186,8 +186,8 @@ mod tests {
             ForegroundSubagentRunner::new(self.manager.clone(), false)
         }
 
-        fn operation(&self) -> SubagentOperation<Session> {
-            SubagentOperation::new(Arc::new(self.runner()))
+        fn operation(&self) -> ForegroundSubagentOperation<Session> {
+            ForegroundSubagentOperation::new(Arc::new(self.runner()))
         }
     }
 
@@ -272,7 +272,7 @@ mod tests {
     }
 
     async fn run_step(
-        operation: &SubagentOperation<Session>,
+        operation: &ForegroundSubagentOperation<Session>,
         fixture: &Fixture,
         emit: &Emitter,
     ) -> Result<(Session, OperationResult<GooseEffect>)> {
@@ -533,7 +533,7 @@ mod tests {
     }
 
     async fn cancel_step(
-        operation: &SubagentOperation<Session>,
+        operation: &ForegroundSubagentOperation<Session>,
         fixture: &Fixture,
         emit: &Emitter,
     ) -> Result<(Session, Vec<GooseEffect>)> {

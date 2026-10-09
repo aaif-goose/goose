@@ -133,12 +133,12 @@ struct Running {
     subagent_runs: FuturesUnordered<OperationFuture<'static, (String, SubagentOutcome)>>,
 }
 
-pub struct SubagentOperation<S> {
+pub struct ForegroundSubagentOperation<S> {
     runner: Arc<dyn SubagentRunner<S>>,
     running: Mutex<Running>,
 }
 
-impl<S> SubagentOperation<S> {
+impl<S> ForegroundSubagentOperation<S> {
     pub fn new(runner: Arc<dyn SubagentRunner<S>>) -> Self {
         Self {
             runner,
@@ -163,7 +163,7 @@ impl<S> SubagentOperation<S> {
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S, E> Operation<S, E> for SubagentOperation<S>
+impl<S, E> Operation<S, E> for ForegroundSubagentOperation<S>
 where
     S: MaybeSend + MaybeSync + 'static,
     E: From<Message> + MaybeSend + 'static,
