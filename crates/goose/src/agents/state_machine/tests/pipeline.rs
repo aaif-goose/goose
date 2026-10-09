@@ -146,10 +146,9 @@ impl TestPipeline {
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
             )),
-            Arc::new(ForegroundSubagentOperation::new(
+            Arc::new(ForegroundSubagentOperation::new(Arc::new(
                 ForegroundSubagentRunner::new(self.session_manager.clone(), false),
-                cancel.clone(),
-            )),
+            ))),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
                 self.hook_manager.clone(),

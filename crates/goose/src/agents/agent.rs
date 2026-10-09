@@ -637,13 +637,12 @@ impl Agent {
             // Before RecipeOperation: a `delegate` response only means the subagent
             // started, so a final output from the same batch must not be shown until
             // the subagents have run.
-            Arc::new(ForegroundSubagentOperation::new(
+            Arc::new(ForegroundSubagentOperation::new(Arc::new(
                 ForegroundSubagentRunner::new(
                     self.config.session_manager.clone(),
                     self.config.resolve_use_login_shell_path(),
                 ),
-                cancel.clone(),
-            )),
+            ))),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
                 self.hook_manager.clone(),

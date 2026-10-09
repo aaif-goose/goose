@@ -65,6 +65,7 @@ pub use goose_agent::operation::{
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
 };
+pub(super) use goose_agent::subagent::ForegroundSubagentOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,
@@ -76,7 +77,6 @@ pub(super) use ops_compaction::CompactionOperation;
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_empty_response::EmptyResponseOperation;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_foreground_subagent::ForegroundSubagentOperation;
 pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
