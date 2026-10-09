@@ -16,10 +16,10 @@ use crate::agents::extension_manager::{
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
     ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -145,10 +145,9 @@ impl TestPipeline {
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
             )),
-            Arc::new(ForegroundSubagentOperation::new(
+            Arc::new(SubagentOperation::new(Arc::new(
                 ForegroundSubagentRunner::new(self.session_manager.clone(), false),
-                cancel.clone(),
-            )),
+            ))),
             Arc::new(RecipeOperation::new(
                 provider.clone(),
                 self.hook_manager.clone(),
