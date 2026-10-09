@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
-    Operation, OperationResult, StepResult,
+    Operation, OperationResult, RunStatus, StepResult,
 };
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
@@ -56,6 +56,14 @@ pub struct StateMachine<'a, S, E = ConversationEffect> {
     steps: Vec<Step<'a, S, E>>,
     cancel: CancellationToken,
     interrupted_step: Mutex<Option<usize>>,
+}
+
+fn empty_result<E>(status: RunStatus) -> StepResult<E> {
+    StepResult {
+        effects: Vec::new(),
+        applied_step: None,
+        status,
+    }
 }
 
 fn interrupted_response(messages: &[Message]) -> Option<Message> {
@@ -110,7 +118,7 @@ where
         }
     }
 
-    pub async fn step(&self, session: &S, emit: &Emitter) -> Result<Option<StepResult<E>>> {
+    pub async fn step(&self, session: &S, emit: &Emitter) -> Result<StepResult<E>> {
         let conversation = session
             .conversation()
             .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
@@ -118,7 +126,7 @@ where
         for (index, step) in self.steps.iter().enumerate() {
             let name = step.operation().name();
             if self.cancel.is_cancelled() {
-                return Ok(None);
+                return Ok(empty_result(RunStatus::Cancelled));
             }
             let execution = async {
                 match step {
@@ -158,44 +166,46 @@ where
                 Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
                 _ => {
                     *self.interrupted_step.lock().unwrap() = Some(index);
-                    return Ok(None);
+                    return Ok(empty_result(RunStatus::Cancelled));
                 }
             };
 
             match result {
                 OperationResult::NotApplicable => {}
                 OperationResult::Applied(mut result) => {
+                    tracing::debug!(step = name, "applied step");
                     result.applied_step = Some(name);
                     for effect in &mut result.effects {
                         effect.ensure_message_ids();
                     }
                     if self.cancel.is_cancelled() {
-                        result.yield_to_client = true;
+                        result.status = RunStatus::Cancelled;
                     }
-                    return Ok(Some(result));
+                    return Ok(result);
                 }
             }
         }
 
-        Ok(None)
+        Ok(empty_result(RunStatus::Yielded))
     }
 
     pub async fn apply<R>(
         &self,
         runtime: &R,
         session: &S,
-        result: &mut StepResult<E>,
+        effects: &mut [E],
         emit: &Emitter,
     ) -> Result<()>
     where
         R: EffectHandler<S, E>,
     {
-        for effect in &mut result.effects {
+        if effects.is_empty() {
+            return Ok(());
+        }
+        for effect in effects.iter_mut() {
             effect.ensure_message_ids();
         }
-        runtime
-            .apply_effects(session, &mut result.effects, emit)
-            .await
+        runtime.apply_effects(session, effects, emit).await
     }
 
     pub async fn run<R>(&self, runtime: &R, session_id: &str, emit: &Emitter) -> Result<S>
@@ -204,12 +214,12 @@ where
     {
         loop {
             let session = runtime.load(session_id).await?;
-            let Some(mut result) = self.step(&session, emit).await? else {
-                break;
-            };
-            self.apply(runtime, &session, &mut result, emit).await?;
-            if result.yield_to_client {
-                break;
+            let mut result = self.step(&session, emit).await?;
+            self.apply(runtime, &session, &mut result.effects, emit)
+                .await?;
+            match result.status {
+                RunStatus::Continuing => {}
+                RunStatus::Yielded | RunStatus::Cancelled => break,
             }
         }
         self.finalize(runtime, session_id, emit).await
@@ -278,7 +288,7 @@ where
         runtime: &R,
         session_id: &str,
         session: S,
-        effects: Vec<E>,
+        mut effects: Vec<E>,
         emit: &Emitter,
     ) -> Result<S>
     where
@@ -287,12 +297,7 @@ where
         if effects.is_empty() {
             return Ok(session);
         }
-        let mut result = StepResult {
-            effects,
-            applied_step: None,
-            yield_to_client: true,
-        };
-        self.apply(runtime, &session, &mut result, emit).await?;
+        self.apply(runtime, &session, &mut effects, emit).await?;
         runtime.load(session_id).await
     }
 }

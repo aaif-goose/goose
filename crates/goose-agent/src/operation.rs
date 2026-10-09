@@ -164,10 +164,17 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
     ) -> Result<OperationResult<E>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    Continuing,
+    Yielded,
+    Cancelled,
+}
+
 pub struct StepResult<E = ConversationEffect> {
     pub effects: Vec<E>,
     pub applied_step: Option<&'static str>,
-    pub yield_to_client: bool,
+    pub status: RunStatus,
 }
 
 pub enum OperationResult<E = ConversationEffect> {
@@ -183,7 +190,7 @@ pub fn applied<E>(effects: impl IntoIterator<Item = E>) -> Result<OperationResul
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: false,
+        status: RunStatus::Continuing,
     }))
 }
 
@@ -191,7 +198,7 @@ pub fn yielded<E>() -> Result<OperationResult<E>> {
     Ok(OperationResult::Applied(StepResult {
         effects: Vec::new(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
@@ -199,7 +206,7 @@ pub fn yielded_with<E>(effects: impl IntoIterator<Item = E>) -> Result<Operation
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
