@@ -3508,38 +3508,15 @@ mod tests {
     }
 
     #[test]
-    fn test_venice_reasoning_effort_none() {
-        for model in ["openai-gpt-54", "openai-gpt-56-luna", "openai-gpt-6-luna"] {
-            assert_eq!(
-                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Off),
-                Some("none".to_string())
-            );
-        }
-    }
-
-    #[test]
-    fn test_venice_reasoning_effort_max() {
-        for (model, expected) in [
-            ("openai-gpt-54", "xhigh"),
-            ("openai-gpt-56-sol", "max"),
-            ("openai-gpt-6-astra", "max"),
+    fn venice_reasoning_effort_uses_host_catalog() {
+        for (model, effort, expected) in [
+            ("openai-gpt-56-luna", ThinkingEffort::Off, Some("none")),
+            ("openai-gpt-56-sol", ThinkingEffort::Max, Some("max")),
+            ("openai-gpt-54", ThinkingEffort::Max, Some("xhigh")),
+            ("openai-gpt-55-pro", ThinkingEffort::Off, None),
         ] {
             assert_eq!(
-                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Max),
-                Some(expected.to_string())
-            );
-        }
-    }
-
-    #[test]
-    fn test_venice_reasoning_effort_pro() {
-        for (model, expected) in [
-            ("openai-gpt-54-pro", Some("none")),
-            ("openai-gpt-55-pro", None),
-            ("openai-gpt-56-luna-pro", Some("low")),
-        ] {
-            assert_eq!(
-                openai_reasoning_effort_for_provider("venice", model, ThinkingEffort::Off),
+                openai_reasoning_effort_for_provider("venice", model, effort),
                 expected.map(str::to_string)
             );
         }

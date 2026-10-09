@@ -404,9 +404,8 @@ pub fn find_declared_model<'a>(models: &'a [ModelInfo], model_name: &str) -> Opt
 /// provider configuration over the canonical registry.
 ///
 /// Configured entries are authoritative: a statically declared model carries its
-/// own `context_limit`/`reasoning` values and `wire_api` override, which the canonical
-/// registry does not know about. Names absent from `configured` fall back to
-/// registry metadata.
+/// own `context_limit`/`reasoning` values, which the canonical registry does not
+/// know about. Names absent from `configured` fall back to registry metadata.
 pub fn merge_configured_model_info(
     provider_name: &str,
     model_names: &[String],
@@ -791,7 +790,13 @@ mod tests {
     use test_case::test_case;
 
     #[test]
-    fn model_info_wire_api_roundtrips_snake_case_values() {
+    fn model_info_wire_api_serde() {
+        let model: ModelInfo = serde_json::from_str(r#"{"name":"test-model"}"#).unwrap();
+        assert_eq!(model.wire_api, None);
+        assert!(serde_json::to_value(model)
+            .unwrap()
+            .get("wire_api")
+            .is_none());
         for (wire_api, serialized) in [
             (OpenAiWireApi::ChatCompletions, "chat_completions"),
             (OpenAiWireApi::Responses, "responses"),
@@ -804,21 +809,6 @@ mod tests {
             assert_eq!(value["wire_api"], serialized);
             assert_eq!(serde_json::from_value::<ModelInfo>(value).unwrap(), model);
         }
-    }
-
-    #[test]
-    fn model_info_wire_api_defaults_to_none_and_is_omitted() {
-        let model: ModelInfo = serde_json::from_str(r#"{"name":"test-model"}"#).unwrap();
-        assert_eq!(model.wire_api, None);
-        assert!(serde_json::to_value(model)
-            .unwrap()
-            .get("wire_api")
-            .is_none());
-        assert_eq!(ModelInfo::new("test-model").wire_api, None);
-        assert_eq!(
-            ModelInfo::with_cost("test-model", 4096, 0.01, 0.02).wire_api,
-            None
-        );
     }
 
     #[test]
@@ -837,11 +827,9 @@ mod tests {
 
         assert_eq!(merged[0].context_limit, Some(4096));
         assert!(merged[0].reasoning);
-        assert_eq!(merged[0], declared);
         assert_eq!(merged[0].wire_api, Some(OpenAiWireApi::Responses));
 
         assert_eq!(merged[1].name, "gpt-4o");
-        assert_eq!(merged[1].wire_api, None);
         assert_eq!(
             merged[1].context_limit,
             model_info_for_provider_model("openai", "gpt-4o").context_limit

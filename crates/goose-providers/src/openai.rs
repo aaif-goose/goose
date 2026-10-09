@@ -139,7 +139,6 @@ pub struct OpenAiProvider {
     preserve_thinking_context: bool,
     native_openai: bool,
     wire_api: Option<OpenAiWireApi>,
-    explicit_base_path: bool,
     catalog_provider_id: Option<String>,
     #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
@@ -164,7 +163,6 @@ pub struct OpenAiProviderBuilder {
     preserve_thinking_context: bool,
     native_openai: bool,
     wire_api: Option<OpenAiWireApi>,
-    explicit_base_path: bool,
     catalog_provider_id: Option<String>,
 }
 
@@ -184,7 +182,6 @@ impl OpenAiProviderBuilder {
             preserve_thinking_context: false,
             native_openai: false,
             wire_api: None,
-            explicit_base_path: false,
             catalog_provider_id: None,
         }
     }
@@ -209,7 +206,6 @@ impl OpenAiProviderBuilder {
 
     pub fn base_path(mut self, base_path: impl Into<String>) -> Self {
         self.base_path = base_path.into();
-        self.explicit_base_path = true;
         self
     }
 
@@ -263,11 +259,6 @@ impl OpenAiProviderBuilder {
         self
     }
 
-    pub fn explicit_base_path(mut self, explicit_base_path: bool) -> Self {
-        self.explicit_base_path = explicit_base_path;
-        self
-    }
-
     pub fn native_openai(mut self, native_openai: bool) -> Self {
         self.native_openai = native_openai;
         self
@@ -288,7 +279,6 @@ impl OpenAiProviderBuilder {
             preserve_thinking_context: self.preserve_thinking_context,
             native_openai: self.native_openai,
             wire_api: self.wire_api,
-            explicit_base_path: self.explicit_base_path,
             catalog_provider_id: self.catalog_provider_id,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -297,43 +287,19 @@ impl OpenAiProviderBuilder {
 
 impl OpenAiProvider {
     fn catalog_provider(&self) -> &str {
-        self.catalog_provider_id.as_deref().unwrap_or(&self.name)
-    }
-
-    fn is_openai_model(&self, model_name: &str) -> bool {
-        fn openai_name(name: &str) -> bool {
-            let name = name.to_ascii_lowercase();
-            let short = name.rsplit('/').next().unwrap_or(&name);
-            name.starts_with("openai/")
-                || short.starts_with("openai-")
-                || short.starts_with("gpt-")
-                || short.starts_with("chatgpt-")
-                || short
-                    .strip_prefix('o')
-                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
-        }
-        goose_provider_types::canonical::maybe_get_canonical_model(
-            self.catalog_provider(),
-            model_name,
-        )
-        .is_some_and(|model| {
-            model.id.starts_with("openai/")
-                || model
-                    .family
-                    .as_deref()
-                    .is_some_and(|family| family == "gpt" || family.starts_with("gpt-"))
-                || openai_name(&model.id)
-        }) || openai_name(model_name)
+        self.catalog_provider_id.as_deref().unwrap_or("openai")
     }
 
     fn request_config(&self, config: &ModelConfig) -> ModelConfig {
-        if self.catalog_provider_id.is_some() && self.is_openai_model(&config.model_name) {
-            config
-                .clone()
-                .with_canonical_limits(self.catalog_provider())
-        } else {
-            config.clone()
+        let mut config = config.clone();
+        if config.reasoning.is_none() && self.catalog_provider_id.is_some() {
+            config.reasoning = goose_provider_types::canonical::maybe_get_canonical_model(
+                self.catalog_provider(),
+                &config.model_name,
+            )
+            .and_then(|model| model.reasoning);
         }
+        config
     }
 
     pub async fn stream_for_model(
@@ -346,12 +312,6 @@ impl OpenAiProvider {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let mut request_config = self.request_config(model_config);
-        if let Some(params) = self
-            .declared_model(&model_config.model_name)
-            .and_then(|model| model.request_params.as_ref())
-        {
-            request_config = request_config.with_merged_request_params(params.clone());
-        }
         request_config.supports_vision = self.vision_support(model_config);
         if self.native_openai && request_config.reasoning.is_none() {
             let canonical = goose_provider_types::canonical::maybe_get_canonical_model(
@@ -380,16 +340,15 @@ impl OpenAiProvider {
         payload: serde_json::Value,
     ) -> Result<MessageStream, ProviderError> {
         let mut log = start_log(model_config, &payload)?;
-        let responses_path = if self.explicit_base_path {
-            self.base_path.clone()
-        } else {
-            Self::map_base_path(&self.base_path, "responses", OPEN_AI_DEFAULT_RESPONSES_PATH)
-        };
         let response = self
             .with_retry(|| async {
                 handle_status(
                     self.api_client
-                        .request(&responses_path)
+                        .request(&Self::map_base_path(
+                            &self.base_path,
+                            "responses",
+                            OPEN_AI_DEFAULT_RESPONSES_PATH,
+                        ))
                         .model_headers(model_config)?
                         .streaming(self.supports_streaming)
                         .response_post(&payload)
@@ -449,7 +408,6 @@ impl OpenAiProvider {
             preserve_thinking_context: false,
             native_openai: false,
             wire_api: None,
-            explicit_base_path: false,
             catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -463,23 +421,39 @@ impl OpenAiProvider {
         }
     }
 
+    fn is_chat_completions_path(base_path: &str) -> bool {
+        let normalized = Self::normalize_base_path(base_path).to_ascii_lowercase();
+        normalized.contains("chat/completions")
+    }
+
+    fn is_responses_path(base_path: &str) -> bool {
+        let normalized = Self::normalize_base_path(base_path).to_ascii_lowercase();
+        normalized.ends_with("responses") || normalized.contains("/responses")
+    }
+
     fn is_responses_model(model_name: &str) -> bool {
         is_openai_responses_model(model_name)
     }
 
-    fn endpoint_wire_api(base_path: &str) -> Option<OpenAiWireApi> {
-        let path = base_path
-            .split(['?', '#'])
-            .next()
-            .unwrap_or(base_path)
-            .trim_matches('/');
-        if path == "responses" || path.ends_with("/responses") {
-            Some(OpenAiWireApi::Responses)
-        } else if path == "chat/completions" || path.ends_with("/chat/completions") {
-            Some(OpenAiWireApi::ChatCompletions)
-        } else {
-            None
+    fn should_use_responses_api(model_name: &str, base_path: &str) -> bool {
+        let normalized_base_path = Self::normalize_base_path(base_path);
+        // Only the standard "v1/chat/completions" is treated as a default
+        // path that defers to model-based routing.  The versionless
+        // "chat/completions" (derived from an OPENAI_BASE_URL without /v1)
+        // is treated as custom because versionless gateways typically do not
+        // support the Responses API.
+        let has_custom_base_path = normalized_base_path != OPEN_AI_DEFAULT_BASE_PATH;
+
+        if has_custom_base_path {
+            if Self::is_responses_path(&normalized_base_path) {
+                return true;
+            }
+            if Self::is_chat_completions_path(&normalized_base_path) {
+                return false;
+            }
         }
+
+        Self::is_responses_model(model_name)
     }
 
     /// Providers known to reject `max_completion_tokens` and require
@@ -590,58 +564,37 @@ impl OpenAiProvider {
         payload
     }
 
-    fn validate_endpoint_wire_api(
-        base_path: &str,
-        wire_api: Option<OpenAiWireApi>,
-        models: &[ModelInfo],
-        provider_name: &str,
-    ) -> Result<()> {
-        if let Some(endpoint_api) = Self::endpoint_wire_api(base_path) {
-            if wire_api.is_some_and(|api| api != endpoint_api)
-                || models
-                    .iter()
-                    .any(|model| model.wire_api.is_some_and(|api| api != endpoint_api))
-            {
-                anyhow::bail!(
-                    "Provider '{}' sets wire_api conflicting with explicit endpoint '{}'",
-                    provider_name,
-                    base_path
-                );
-            }
-        }
-        Ok(())
-    }
-
     fn should_use_responses_api_for_provider(&self, model_name: &str) -> bool {
-        let pinned_api = self
-            .explicit_base_path
-            .then(|| Self::endpoint_wire_api(&self.base_path))
-            .flatten();
-        let api = pinned_api
-            .or_else(|| {
-                self.declared_model(model_name)
-                    .and_then(|model| model.wire_api)
-            })
+        if let Some(api) = self
+            .declared_model(model_name)
+            .and_then(|model| model.wire_api)
             .or(self.wire_api)
-            .unwrap_or(if self.native_openai && !self.explicit_base_path {
-                OpenAiWireApi::Responses
-            } else {
-                OpenAiWireApi::ChatCompletions
-            });
-        api == OpenAiWireApi::Responses
+        {
+            return api == OpenAiWireApi::Responses;
+        }
+        if Self::PROVIDERS_NEEDING_STANDARD_CHAT_PARAMS.contains(&self.name.as_str()) {
+            return false;
+        }
+
+        let base_path = Self::normalize_base_path(&self.base_path);
+        if self.native_openai && base_path == OPEN_AI_DEFAULT_BASE_PATH {
+            return true;
+        }
+        Self::should_use_responses_api(model_name, &self.base_path)
     }
 
     fn map_base_path(base_path: &str, target: &str, fallback: &str) -> String {
         let normalized = Self::normalize_base_path(base_path);
-        if normalized == target || normalized.ends_with(&format!("/{target}")) {
+        if normalized.ends_with(target) || normalized.contains(&format!("/{target}")) {
             return normalized;
         }
 
-        if let Some(prefix) = normalized.strip_suffix("chat/completions") {
-            return format!("{prefix}{target}");
+        if Self::is_chat_completions_path(&normalized) {
+            return normalized.replacen("chat/completions", target, 1);
         }
-        if let Some(prefix) = normalized.strip_suffix("responses") {
-            return format!("{prefix}{target}");
+
+        if Self::is_responses_path(&normalized) {
+            return normalized.replacen("responses", target, 1);
         }
 
         if normalized.starts_with('/') {
@@ -884,15 +837,6 @@ impl Provider for OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        if self.explicit_base_path {
-            Self::validate_endpoint_wire_api(
-                &self.base_path,
-                self.wire_api,
-                self.custom_models.as_deref().unwrap_or_default(),
-                &self.name,
-            )
-            .map_err(|error| ProviderError::InvalidValue(error.to_string()))?;
-        }
         if self.should_use_responses_api_for_provider(&model_config.model_name) {
             let (wire_model, _) =
                 crate::formats::openai::extract_reasoning_effort(&model_config.model_name);
@@ -929,11 +873,7 @@ impl Provider for OpenAiProvider {
                     supports_vision,
                     thinking_preservation_format,
                 },
-                if self.is_openai_model(&model_config.model_name) {
-                    self.catalog_provider()
-                } else {
-                    "openai"
-                },
+                self.catalog_provider(),
             )?;
 
             if let Some(params) = declared_model.and_then(|m| m.request_params.as_ref()) {
@@ -943,20 +883,24 @@ impl Provider for OpenAiProvider {
             let payload = self.sanitize_request_for_compat(payload, model_config);
             let mut log = start_log(model_config, &payload)?;
 
-            let chat_path = Self::map_base_path(
-                &self.base_path,
-                "chat/completions",
-                OPEN_AI_DEFAULT_BASE_PATH,
-            );
+            let has_wire_api = declared_model
+                .and_then(|model| model.wire_api)
+                .or(self.wire_api)
+                .is_some();
+            let chat_path = if has_wire_api && Self::is_responses_path(&self.base_path) {
+                Self::map_base_path(
+                    &self.base_path,
+                    "chat/completions",
+                    OPEN_AI_DEFAULT_BASE_PATH,
+                )
+            } else {
+                self.base_path.clone()
+            };
             let response = self
                 .with_retry(|| async {
                     let resp = self
                         .api_client
-                        .request(if !self.explicit_base_path {
-                            &chat_path
-                        } else {
-                            &self.base_path
-                        })
+                        .request(&chat_path)
                         .model_headers(model_config)?
                         .streaming(self.supports_streaming)
                         .response_post(&payload)
@@ -1036,28 +980,6 @@ pub fn from_declarative_config(
 
     config.validate_auth()?;
 
-    let normalized_base_url = ensure_url_scheme(&config.base_url);
-    let url = url::Url::parse(&normalized_base_url)
-        .map_err(|e| anyhow::anyhow!("Invalid base URL '{}': {}", config.base_url, e))?;
-
-    let host = url[..url::Position::BeforePath].to_string();
-    let base_path = if let Some(ref explicit_path) = config.base_path {
-        explicit_path.trim_start_matches('/').to_string()
-    } else {
-        derive_base_path(url.path())
-    };
-
-    let explicit_base_path =
-        config.base_path.is_some() || OpenAiProvider::endpoint_wire_api(url.path()).is_some();
-    if explicit_base_path {
-        OpenAiProvider::validate_endpoint_wire_api(
-            &base_path,
-            config.wire_api,
-            &config.models,
-            &config.name,
-        )?;
-    }
-
     let api_key = if config.api_key_env.is_empty() {
         None
     } else {
@@ -1070,6 +992,21 @@ pub fn from_declarative_config(
                 None
             }
         }
+    };
+
+    let normalized_base_url = ensure_url_scheme(&config.base_url);
+    let url = url::Url::parse(&normalized_base_url)
+        .map_err(|e| anyhow::anyhow!("Invalid base URL '{}': {}", config.base_url, e))?;
+
+    let host = url[..url::Position::BeforePath].to_string();
+    let base_path = if let Some(ref explicit_path) = config.base_path {
+        explicit_path.trim_start_matches('/').to_string()
+    } else if url.path().trim_end_matches('/').ends_with("/responses")
+        && (config.wire_api.is_some() || config.models.iter().any(|model| model.wire_api.is_some()))
+    {
+        url.path().trim_matches('/').to_string()
+    } else {
+        derive_base_path(url.path())
     };
 
     let timeout_secs = config.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
@@ -1112,7 +1049,6 @@ pub fn from_declarative_config(
         .skip_canonical_filtering(config.skip_canonical_filtering)
         .preserve_thinking_context(config.preserves_thinking);
     builder.wire_api = config.wire_api;
-    builder.explicit_base_path = explicit_base_path;
     builder.catalog_provider_id = config.catalog_provider_id;
     Ok(builder)
 }
@@ -1133,8 +1069,8 @@ pub fn derive_base_path(url_path: &str) -> String {
     let normalized = stripped.trim_end_matches('/');
     if normalized.is_empty() {
         "v1/chat/completions".to_string()
-    } else if OpenAiProvider::endpoint_wire_api(normalized).is_some() {
-        normalized.to_string()
+    } else if normalized.ends_with("chat/completions") {
+        stripped.to_string()
     } else if ends_with_version_segment(normalized) {
         format!("{}/chat/completions", normalized)
     } else {
@@ -1174,7 +1110,6 @@ mod tests {
             preserve_thinking_context: false,
             native_openai: false,
             wire_api: None,
-            explicit_base_path: false,
             catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -1413,43 +1348,45 @@ mod tests {
     fn native_openai_prefers_responses_without_changing_gateway_routing() {
         let mut provider = make_provider("openai");
         provider.native_openai = true;
-        for model in ["gpt-4o", "gpt-6-astra", "future-model"] {
+        for model in [
+            "gpt-4",
+            "gpt-4o",
+            "gpt-5-chat-latest",
+            "gpt-6-astra",
+            "future-model",
+        ] {
             assert!(
                 provider.should_use_responses_api_for_provider(model),
                 "{model}"
             );
         }
-        provider.explicit_base_path = true;
-        for path in ["chat/completions", "v1/chat/completions"] {
-            provider.base_path = path.to_string();
-            assert!(!provider.should_use_responses_api_for_provider("gpt-6-astra"));
-        }
+        provider.base_path = "chat/completions".to_string();
+        assert!(!provider.should_use_responses_api_for_provider("gpt-4o"));
+        provider.base_path = "v1/chat/completions".to_string();
+        assert!(provider.should_use_responses_api_for_provider("gpt-5.6-terra"));
+        assert!(provider.should_use_responses_api_for_provider("gpt-4o"));
         provider.base_path = "v1/responses".to_string();
         assert!(provider.should_use_responses_api_for_provider("gpt-4o"));
-        provider.base_path = "custom/inference".to_string();
-        assert!(!provider.should_use_responses_api_for_provider("gpt-4o"));
-        provider.wire_api = Some(OpenAiWireApi::Responses);
-        assert!(provider.should_use_responses_api_for_provider("gpt-4o"));
-        provider.wire_api = None;
-        provider.explicit_base_path = false;
         provider.base_path = "v1/chat/completions".to_string();
         provider.native_openai = false;
-        assert!(!provider.should_use_responses_api_for_provider("gpt-6-astra"));
+        assert!(!provider.should_use_responses_api_for_provider("gpt-4o"));
     }
 
     #[test]
-    fn compatible_models_default_to_chat_regardless_of_model_family() {
-        let provider = make_provider("custom_gateway");
-        for model in [
-            "gpt-5.4",
-            "gpt-5.4-xhigh",
-            "gpt-6-astra",
-            "openai/o3",
-            "unknown",
+    fn responses_api_routing_uses_model_family_unless_path_forces_chat() {
+        for (model_name, base_path, expected) in [
+            ("gpt-5.4", "v1/chat/completions", true),
+            ("gpt-5.4-xhigh", "v1/chat/completions", true),
+            ("gpt-5.6-sol", "v1/chat/completions", true),
+            ("gpt-5.6-terra-xhigh", "v1/chat/completions", true),
+            ("gpt-5.2-pro-2025-12-11", "v1/chat/completions", true),
+            ("gpt-4o", "v1/chat/completions", false),
+            ("gpt-5.2-codex", "openai/v1/chat/completions", false),
         ] {
-            assert!(
-                !provider.should_use_responses_api_for_provider(model),
-                "{model}"
+            assert_eq!(
+                OpenAiProvider::should_use_responses_api(model_name, base_path),
+                expected,
+                "unexpected routing for {model_name} via {base_path}"
             );
         }
     }
@@ -1519,6 +1456,28 @@ mod tests {
         let models_path = OpenAiProvider::map_base_path("/custom/path", "models", "v1/models");
         assert_eq!(models_path, "/v1/models");
     }
+    #[test]
+    fn versionless_base_path_opts_out_of_responses_for_codex_models() {
+        assert!(!OpenAiProvider::should_use_responses_api(
+            "gpt-5-codex",
+            "chat/completions"
+        ));
+    }
+
+    #[test]
+    fn custom_host_with_chat_completions_path_avoids_responses_routing() {
+        // Custom hosts must use versionless "chat/completions" to keep should_use_responses_api
+        // returning false — the path is detected as custom AND matches chat completions.
+        assert!(!OpenAiProvider::should_use_responses_api(
+            "o3",
+            "chat/completions"
+        ));
+        assert!(!OpenAiProvider::should_use_responses_api(
+            "gpt-5",
+            "chat/completions"
+        ));
+    }
+
     #[test]
     fn ensure_url_scheme_adds_http_for_local_hosts() {
         assert_eq!(ensure_url_scheme("localhost:1234"), "http://localhost:1234");
@@ -1706,7 +1665,6 @@ mod tests {
             preserve_thinking_context: false,
             native_openai: false,
             wire_api: None,
-            explicit_base_path: false,
             catalog_provider_id: None,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -2131,131 +2089,5 @@ mod tests {
                 .any(|model| model.name == "gpt-4"),
             "registry-only list should include models the old hardcoded list had drifted past"
         );
-    }
-    #[test]
-    fn venice_uses_chat_for_all_models() {
-        let mut config =
-            crate::declarative::deserialize_provider_config(crate::venice::JSON).unwrap();
-        assert_eq!(config.wire_api, Some(OpenAiWireApi::ChatCompletions));
-        config.requires_auth = false;
-        config.api_key_env.clear();
-        let provider = from_declarative_config(config, None, crate::declarative::EnvKeyResolver)
-            .unwrap()
-            .build();
-        assert_eq!(provider.catalog_provider(), "venice");
-        for model in [
-            "openai-gpt-56-luna",
-            "openai-gpt-56-luna-pro",
-            "gpt-4o",
-            "openai/o3",
-            "claude-opus-4.6",
-            "deepseek-v4-pro",
-            "llama-3.3-70b",
-            "unknown",
-        ] {
-            assert!(
-                !provider.should_use_responses_api_for_provider(model),
-                "{model}"
-            );
-        }
-    }
-
-    #[test]
-    fn declarative_endpoint_overrides_preserve_prefixes() {
-        for (base_url, explicit, expected) in [
-            ("https://example.com/api/v1/chat/completions", None, false),
-            (
-                "https://example.com/api/v1",
-                Some("api/v1/chat/completions"),
-                false,
-            ),
-            ("https://example.com/v1", Some("v1/chat/completions"), false),
-            ("https://example.com/api/v1/responses", None, true),
-            (
-                "https://example.com/api/v1",
-                Some("proxy/v4/responses"),
-                true,
-            ),
-            ("https://example.com/v1", None, false),
-        ] {
-            let mut config = custom_config(base_url);
-            config.base_path = explicit.map(str::to_string);
-            let provider =
-                from_declarative_config(config, None, crate::declarative::EnvKeyResolver)
-                    .unwrap()
-                    .build();
-            assert_eq!(
-                provider.should_use_responses_api_for_provider("gpt-5.4"),
-                expected
-            );
-        }
-        assert_eq!(derive_base_path("/responses"), "responses");
-        assert_eq!(derive_base_path("/api/v1/responses"), "api/v1/responses");
-        assert_eq!(
-            OpenAiProvider::map_base_path("api/v1/chat/completions", "responses", "v1/responses"),
-            "api/v1/responses"
-        );
-    }
-
-    #[tokio::test]
-    async fn venice_openai_alias_uses_catalog_effort_on_both_endpoints() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        for responses in [true, false] {
-            let server = MockServer::start().await;
-            let mut config = custom_config(&format!("{}/api/v1?tenant=test", server.uri()));
-            config.catalog_provider_id = Some("venice".to_string());
-            config.wire_api = Some(if responses {
-                OpenAiWireApi::Responses
-            } else {
-                OpenAiWireApi::ChatCompletions
-            });
-            config.supports_streaming = Some(false);
-            let response = if responses {
-                json!({"id":"r", "object":"response", "created_at":0, "status":"completed",
-                    "model":"openai-gpt-56-luna", "output":[{"type":"message", "role":"assistant",
-                    "content":[{"type":"output_text", "text":"ok"}]}]})
-            } else {
-                json!({"id":"r", "model":"openai-gpt-56-luna", "choices":[{"index":0,
-                    "message":{"role":"assistant", "content":"ok"}, "finish_reason":"stop"}],
-                    "usage":{"prompt_tokens":1, "completion_tokens":1, "total_tokens":2}})
-            };
-            let endpoint = if responses {
-                "/api/v1/responses"
-            } else {
-                "/api/v1/chat/completions"
-            };
-            Mock::given(method("POST"))
-                .and(path(endpoint))
-                .respond_with(ResponseTemplate::new(200).set_body_json(response))
-                .expect(1)
-                .mount(&server)
-                .await;
-            let provider =
-                from_declarative_config(config, None, crate::declarative::EnvKeyResolver {})
-                    .unwrap()
-                    .build();
-            let model =
-                ModelConfig::new("openai-gpt-56-luna").with_thinking_effort(ThinkingEffort::Off);
-            provider.complete(&model, "system", &[], &[]).await.unwrap();
-            let requests = server.received_requests().await.unwrap();
-            let payload: serde_json::Value = requests[0].body_json().unwrap();
-            assert_eq!(payload["model"], "openai-gpt-56-luna");
-            assert_eq!(
-                payload
-                    .pointer(if responses {
-                        "/reasoning/effort"
-                    } else {
-                        "/reasoning_effort"
-                    })
-                    .unwrap(),
-                "none"
-            );
-            assert!(requests[0]
-                .url
-                .query_pairs()
-                .any(|(k, v)| k == "tenant" && v == "test"));
-            server.verify().await;
-        }
     }
 }

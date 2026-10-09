@@ -11,6 +11,7 @@ activities:
   - Validate Azure AI Foundry provider routing and deployment aliases
   - Validate the configurable Databricks AI Gateway path across all inference routes
   - Validate declared vision through persisted custom-provider configuration and outbound requests
+  - Validate Venice Chat routing, wire API overrides, and unchanged native OpenAI routing
   - Analyze code structure and parsing capabilities
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
@@ -353,7 +354,10 @@ prompt: |
   2. Verify saved custom-provider declarations survive registry reload and control actual
      image forwarding on both chat completions and Responses. Declared true and false
      override opposing model settings; an absent declaration preserves those settings.
-  3. Run `cargo test -p goose-providers --features rustls-tls --test declared_vision`.
+  3. Run `cargo test -p goose-providers --features rustls-tls --test declared_vision` and
+     `cargo test -p goose-providers --features rustls-tls --test wire_api`.
+     Verify Venice stays on Chat with Off mapped to `none`, exact-model wire API overrides
+     work, and native OpenAI routing is unchanged when no override is declared.
   4. Verify actual user and tool-result image requests follow the same precedence and
      undeclared case variants never inherit another model's declaration.
   These tests use a local HTTP mock and isolated configuration, requiring no credentials
