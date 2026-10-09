@@ -300,7 +300,7 @@ const buildGooseServeEnv = (
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: homeDir,
-    [pathKey]: [path.dirname(binaryPath), currentPath, loginShellPath]
+    [pathKey]: [path.dirname(binaryPath), loginShellPath, currentPath]
       .filter(Boolean)
       .join(path.delimiter),
   };

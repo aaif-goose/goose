@@ -1051,8 +1051,7 @@ async fn run_command_hook_inner(
     payload: &str,
 ) -> Result<HookRun> {
     let command = expand_plugin_root(raw_command, plugin_root);
-    let path = crate::agents::platform_extensions::developer::shell::login_path().await;
-    let mut process = hook_command(&command, plugin_root, path);
+    let mut process = hook_command(&command, plugin_root);
     process
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1083,16 +1082,13 @@ async fn run_command_hook_inner(
     })
 }
 
-fn hook_command(command: &str, plugin_root: &Path, path: Option<&str>) -> Command {
+fn hook_command(command: &str, plugin_root: &Path) -> Command {
     #[cfg(not(windows))]
     {
         if crate::agents::platform_extensions::developer::shell::is_flatpak() {
             let mut process =
                 crate::agents::platform_extensions::developer::shell::flatpak_spawn_command();
             process.arg(format!("--env=PLUGIN_ROOT={}", plugin_root.display()));
-            if let Some(path) = path {
-                process.arg(format!("--env=PATH={path}"));
-            }
             process.arg("sh").arg("-c").arg(command);
             return process;
         }
@@ -1103,9 +1099,6 @@ fn hook_command(command: &str, plugin_root: &Path, path: Option<&str>) -> Comman
         .arg("-c")
         .arg(command)
         .env("PLUGIN_ROOT", plugin_root);
-    if let Some(path) = path {
-        process.env("PATH", path);
-    }
     process
 }
 

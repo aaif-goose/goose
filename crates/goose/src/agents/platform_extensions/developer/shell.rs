@@ -9,8 +9,6 @@ use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
-#[cfg(not(windows))]
-use tokio::sync::OnceCell;
 use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 
@@ -40,44 +38,6 @@ pub(crate) fn flatpak_spawn_command() -> tokio::process::Command {
     let mut command = tokio::process::Command::new("flatpak-spawn");
     command.args(FLATPAK_HOST_ARGS);
     command
-}
-
-#[cfg(not(windows))]
-fn flatpak_spawn_process() -> std::process::Command {
-    let mut command = std::process::Command::new("flatpak-spawn");
-    command.args(FLATPAK_HOST_ARGS);
-    command
-}
-
-#[cfg(not(windows))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UnixShellFlavor {
-    Posix,
-    Nushell,
-}
-
-#[cfg(not(windows))]
-fn unix_shell_flavor(shell: &str) -> UnixShellFlavor {
-    let name = std::path::Path::new(shell)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or(shell)
-        .to_ascii_lowercase();
-
-    match name.as_str() {
-        "nu" | "nushell" => UnixShellFlavor::Nushell,
-        _ => UnixShellFlavor::Posix,
-    }
-}
-
-#[cfg(not(windows))]
-fn unix_login_shell_command_args(shell: &str) -> [&'static str; 4] {
-    let probe = match unix_shell_flavor(shell) {
-        UnixShellFlavor::Nushell => "print ($env.PATH | str join (char esep))",
-        UnixShellFlavor::Posix => "echo $PATH",
-    };
-
-    ["-l", "-i", "-c", probe]
 }
 
 #[cfg(not(windows))]
@@ -200,108 +160,6 @@ pub struct ShellOutput {
     pub output_collection_error: Option<String>,
 }
 
-/// Resolve the user's full PATH by running a login shell.
-///
-/// When goosed is launched from a desktop app (e.g. Electron), it may inherit
-/// a minimal PATH like `/usr/bin:/bin`. This function spawns a login shell to
-/// source the user's profile and recover the full PATH.
-#[cfg(not(windows))]
-fn resolve_login_shell_path(shell: &str) -> Option<String> {
-    use process_wrap::std::{CommandWrap, ProcessSession};
-
-    let login_args = unix_login_shell_command_args(shell);
-
-    // Build the command, varying only the flatpak vs direct invocation.
-    let mut cmd = if is_flatpak() {
-        let mut c = flatpak_spawn_process();
-        c.arg(shell).args(login_args);
-        CommandWrap::from(c)
-    } else {
-        let mut c = std::process::Command::new(shell);
-        c.args(login_args);
-        CommandWrap::from(c)
-    };
-
-    cmd.command_mut()
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-
-    // Spawn in a new session so that bash's interactive job-control setup
-    // (TIOCSPGRP) cannot steal the terminal foreground from goose, which
-    // would cause goose to receive SIGTTIN and be suspended on startup.
-    cmd.wrap(ProcessSession);
-
-    let mut child = cmd.spawn().ok()?;
-
-    let mut stdout = child.stdout().take()?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        use std::io::Read;
-        if stdout.read_to_end(&mut buf).is_ok() {
-            let _ = tx.send(buf);
-        }
-    });
-
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf)
-            if child
-                .wait()
-                .is_ok_and(|s: std::process::ExitStatus| s.success()) =>
-        {
-            // Take the last non-empty line — interactive shells may emit
-            // extra output from profile scripts before our echo.
-            String::from_utf8_lossy(&buf)
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .map(|line| line.trim().to_string())
-                .filter(|path| !path.is_empty())
-        }
-        _ => {
-            let _ = child.kill();
-            None
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn merged_login_path(shell: &str, current: &str) -> Option<String> {
-    let login = resolve_login_shell_path(shell)?;
-    let mut seen = std::collections::HashSet::new();
-    let entries: Vec<&str> = login
-        .split(':')
-        .chain(current.split(':'))
-        .filter(|entry| !entry.is_empty() && seen.insert(*entry))
-        .collect();
-    Some(entries.join(":"))
-}
-
-/// A goose started from the Dock inherits launchd's minimal PATH; in a terminal the merge
-/// changes nothing.
-pub(crate) async fn login_path() -> Option<&'static str> {
-    #[cfg(not(windows))]
-    {
-        static LOGIN_PATH: OnceCell<Option<String>> = OnceCell::const_new();
-        LOGIN_PATH
-            .get_or_init(|| async {
-                tokio::task::spawn_blocking(|| {
-                    merged_login_path(&unix_shell(), &std::env::var("PATH").unwrap_or_default())
-                })
-                .await
-                .ok()
-                .flatten()
-            })
-            .await
-            .as_deref()
-    }
-    #[cfg(windows)]
-    {
-        None
-    }
-}
-
 pub struct ShellTool {
     output_dir: tempfile::TempDir,
     call_index: AtomicUsize,
@@ -363,7 +221,6 @@ impl ShellTool {
             &params.command,
             params.timeout_secs,
             working_dir,
-            login_path().await,
             session_id,
             notification_emitter,
             cancellation_token,
@@ -511,14 +368,13 @@ async fn run_command(
     command_line: &str,
     timeout_secs: Option<u64>,
     working_dir: Option<&std::path::Path>,
-    login_path: Option<&str>,
     session_id: Option<&str>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
     cancellation_token: CancellationToken,
 ) -> Result<ExecutionOutput, String> {
     let timeout_secs = Some(resolve_shell_timeout(timeout_secs));
 
-    let mut command = build_shell_command(command_line, working_dir, login_path, session_id);
+    let mut command = build_shell_command(command_line, working_dir, session_id);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -635,7 +491,6 @@ async fn run_command(
 fn build_shell_command(
     command_line: &str,
     working_dir: Option<&std::path::Path>,
-    login_path: Option<&str>,
     session_id: Option<&str>,
 ) -> tokio::process::Command {
     #[cfg(windows)]
@@ -658,9 +513,6 @@ fn build_shell_command(
         if let Some(path) = working_dir {
             command.current_dir(path);
         }
-        if let Some(path) = login_path {
-            command.env("PATH", path);
-        }
         command
     };
 
@@ -673,9 +525,6 @@ fn build_shell_command(
             if let Some(dir) = working_dir {
                 command.arg(format!("--directory={}", dir.display()));
             }
-            if let Some(path) = login_path {
-                command.arg(format!("--env=PATH={}", path));
-            }
             apply_flatpak_session_environment(&mut command, session_id);
             command
                 .arg(&shell)
@@ -686,9 +535,6 @@ fn build_shell_command(
             command.args(unix_shell_command_args(command_line));
             if let Some(path) = working_dir {
                 command.current_dir(path);
-            }
-            if let Some(path) = login_path {
-                command.env("PATH", path);
             }
             apply_session_environment(&mut command, session_id);
             command
@@ -1075,53 +921,6 @@ mod tests {
         assert!(
             shell_output.exit_code.is_none(),
             "cancelled process should have no exit code"
-        );
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn unix_shell_flavor_detects_nushell_names() {
-        assert_eq!(unix_shell_flavor("nu"), UnixShellFlavor::Nushell);
-        assert_eq!(unix_shell_flavor("nushell"), UnixShellFlavor::Nushell);
-        assert_eq!(
-            unix_shell_flavor("/etc/profiles/per-user/can/bin/nu"),
-            UnixShellFlavor::Nushell
-        );
-        assert_eq!(unix_shell_flavor("/bin/bash"), UnixShellFlavor::Posix);
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn unix_login_shell_command_args_use_nushell_probe() {
-        assert_eq!(
-            unix_login_shell_command_args("nu"),
-            ["-l", "-i", "-c", "print ($env.PATH | str join (char esep))"]
-        );
-        assert_eq!(
-            unix_login_shell_command_args("/bin/bash"),
-            ["-l", "-i", "-c", "echo $PATH"]
-        );
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn login_path_puts_login_shell_entries_ahead_of_the_process_path() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let fake_shell = tmp.path().join("fake-login-shell");
-        std::fs::write(
-            &fake_shell,
-            "#!/bin/sh\necho 'profile noise'\necho /opt/homebrew/bin:/usr/bin\n",
-        )
-        .unwrap();
-        let mut perms = std::fs::metadata(&fake_shell).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&fake_shell, perms).unwrap();
-
-        assert_eq!(
-            merged_login_path(&fake_shell.to_string_lossy(), "/usr/bin:/bin:/app/bin").as_deref(),
-            Some("/opt/homebrew/bin:/usr/bin:/bin:/app/bin")
         );
     }
 
