@@ -282,6 +282,7 @@ impl OpenAiProvider {
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let mut request_config = model_config.clone();
+        request_config.supports_vision = self.vision_support(model_config);
         if self.native_openai && request_config.reasoning.is_none() {
             let canonical = goose_provider_types::canonical::maybe_get_canonical_model(
                 "openai",
@@ -467,6 +468,12 @@ impl OpenAiProvider {
 
     fn declared_model(&self, model_name: &str) -> Option<&ModelInfo> {
         find_declared_model(self.custom_models.as_deref()?, model_name)
+    }
+
+    fn vision_support(&self, model_config: &ModelConfig) -> Option<bool> {
+        self.declared_model(&model_config.model_name)
+            .and_then(|model| model.supports_vision)
+            .or(model_config.supports_vision)
     }
 
     fn sanitize_request_for_compat(
@@ -806,10 +813,7 @@ impl Provider for OpenAiProvider {
             let declared_model = self.declared_model(&model_config.model_name);
             let thinking_preservation_format =
                 declared_model.and_then(|m| m.thinking_preservation_format);
-            let supports_vision = declared_model
-                .and_then(|m| m.supports_vision)
-                .or(model_config.supports_vision)
-                .unwrap_or_default();
+            let supports_vision = self.vision_support(model_config).unwrap_or_default();
 
             let mut payload = create_request_with_options(
                 model_config,
