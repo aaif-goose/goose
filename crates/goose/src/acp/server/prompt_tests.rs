@@ -385,3 +385,72 @@ async fn disconnect_during_activation_releases_pending_run() {
     .expect("disconnected prompt retained its reservation");
     assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn shared_registry_cancel_survives_closed_session_lock_contention() {
+    let (root, server, session, provider) = server_with_session(false).await;
+    let other = connection_with_services(root.path(), server.services.clone()).await;
+    let closed_sessions = server.closed_session_ids.lock().await;
+    let mut reservation = Box::pin(server.reserve_prompt_run(&session.id));
+    assert!(reservation.as_mut().now_or_never().is_none());
+    other
+        .on_cancel(CancelNotification::new(SessionId::new(session.id.clone())))
+        .await
+        .unwrap();
+    assert!(server
+        .runs()
+        .agent_cancel_token(&session.id)
+        .is_some_and(|token| token.is_cancelled()));
+    drop(closed_sessions);
+    let run = reservation.await.unwrap();
+    assert!(run.cancel_token.is_cancelled());
+    SacpAgent
+        .builder()
+        .connect_with(Client.builder(), async |cx| {
+            let response = server.on_prompt(&cx, prompt(&session.id), run).await?;
+            assert_eq!(response.stop_reason, StopReason::Cancelled);
+            assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+            assert!(!server.runs().is_active(&session.id));
+            Ok(())
+        })
+        .await
+        .unwrap();
+    Client
+        .builder()
+        .connect_with(
+            SacpAgent.builder().with_handler(AcpConnectionHandler {
+                connection: server.clone(),
+            }),
+            async |cx| {
+                let response = cx.send_request(prompt(&session.id)).block_task().await?;
+                assert_eq!(response.stop_reason, StopReason::EndTurn);
+                assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn closed_session_rejection_releases_pending_reservation() {
+    let (_root, server, session, provider) = server_with_session(false).await;
+    server
+        .closed_session_ids
+        .lock()
+        .await
+        .insert(session.id.clone());
+    assert!(server.reserve_prompt_run(&session.id).await.is_err());
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.runs().is_active(&session.id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("closed session retained its reservation");
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    server.closed_session_ids.lock().await.remove(&session.id);
+    let run = server.reserve_prompt_run(&session.id).await.unwrap();
+    assert!(!run.cancel_token.is_cancelled());
+    server.clear_active_run(&session.id, &run.run_id).await;
+}
