@@ -5,16 +5,16 @@ import type { Logger } from './gooseServe';
 const RESOLVE_TIMEOUT_MS = 5000;
 
 /**
- * Resolve the user's full PATH by running their login shell (bash/zsh).
+ * Resolve the user's PATH by running their interactive login shell.
  *
- * The desktop app launched from Finder/Dock inherits a minimal PATH from
- * launchd, so goosed can't find CLI-backed providers (claude, etc.). Sourcing
- * the user's profile via a login+interactive shell recovers the real PATH.
- * Doing this here rather than in goosed keeps the plain `goose` CLI on the
- * ambient PATH. Returns null on non-macOS platforms, timeout, or any failure.
+ * Apps launched from Finder, the Dock or a Linux app menu get the session's
+ * PATH, which misses what shell profiles add (Homebrew, nvm, pyenv, ...).
+ * Resolving it here rather than in goose keeps the goose CLI on the PATH it
+ * was started with. Inside Flatpak this would run the sandbox's shell, so goose
+ * resolves the host's PATH itself there.
  */
 const resolveLoginShellPath = (logger?: Logger): Promise<string | null> => {
-  if (process.platform !== 'darwin') {
+  if (process.platform === 'win32' || process.env.FLATPAK_ID) {
     return Promise.resolve(null);
   }
 
