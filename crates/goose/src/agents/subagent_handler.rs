@@ -204,7 +204,11 @@ fn asks_for_a_decision(message: &Message) -> bool {
         matches!(
             content,
             MessageContent::ActionRequired(action)
-                if matches!(action.data, ActionRequiredData::ToolConfirmation { .. })
+                if matches!(
+                    action.data,
+                    ActionRequiredData::ToolConfirmation { .. }
+                        | ActionRequiredData::Elicitation { .. }
+                )
         )
     })
 }

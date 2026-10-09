@@ -1094,3 +1094,100 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
     assert!(texts.concat().ends_with("the subagent printed it"));
     Ok(())
 }
+
+fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+    use rmcp::ServiceExt;
+    tokio::spawn(async move {
+        let running = goose_test_support::mcp::McpFixtureServer::new()
+            .serve((read, write))
+            .await
+            .unwrap();
+        let _ = running.waiting().await;
+    });
+}
+
+#[tokio::test]
+async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<()> {
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    crate::builtin_extension::register_builtin_extension("asks_a_name", serve_elicit_fixture);
+    for config in [
+        ExtensionConfig::Builtin {
+            name: "asks_a_name".to_string(),
+            display_name: None,
+            description: "Asks for a name".to_string(),
+            timeout: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        },
+        ExtensionConfig::Platform {
+            name: "summon".to_string(),
+            description: "Delegate work".to_string(),
+            display_name: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        },
+    ] {
+        agent.extension_manager.enable(&session_id, config).await?;
+    }
+
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "find out who is asking", "max_turns": 3 }),
+    );
+    api.on("find out who is asking")
+        .call("asks_a_name__elicit", json!({ "echo_meta": true }));
+    api.on("Ada Lovelace").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "it was Ada" }),
+    );
+    api.on("it was Ada").reply("Ada asked");
+
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("hand this off"),
+            SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(3),
+            },
+            None,
+        )
+        .await?;
+    let mut elicitations = 0;
+    let mut texts = Vec::new();
+    while let Some(event) = stream.next().await {
+        let AgentEvent::Message(message) = event? else {
+            continue;
+        };
+        texts.push(message.as_concat_text());
+        for content in &message.content {
+            let MessageContent::ActionRequired(action) = content else {
+                continue;
+            };
+            let ActionRequiredData::Elicitation { id, .. } = &action.data else {
+                continue;
+            };
+            elicitations += 1;
+            crate::elicitation::complete_elicitation_with_generated_message(
+                &agent.config.session_manager,
+                &session_id,
+                id,
+                crate::action_required_manager::ElicitationOutcome::Accept(
+                    json!({ "name": "Ada Lovelace" }),
+                ),
+            )
+            .await?;
+        }
+    }
+
+    assert_eq!(elicitations, 1);
+    assert!(texts.concat().ends_with("Ada asked"));
+    Ok(())
+}

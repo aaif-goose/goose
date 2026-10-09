@@ -149,6 +149,12 @@ impl ActionRequiredManager {
         })
     }
 
+    pub(crate) async fn pending_session(&self, request_id: &str) -> Option<String> {
+        let pending = self.pending_request(request_id).await.ok()?;
+        let session_id = pending.lock().await.session_id.clone();
+        Some(session_id)
+    }
+
     async fn pending_request(&self, request_id: &str) -> Result<Arc<Mutex<PendingRequest>>> {
         let pending = self.pending.read().await;
         pending

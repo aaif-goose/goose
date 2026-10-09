@@ -42,16 +42,45 @@ pub(crate) async fn complete_elicitation_with_message(
     response: ElicitationOutcome,
     response_message: &Message,
 ) -> Result<()> {
+    let session_id = answering_session(session_manager, session_id, elicitation_id).await?;
     let claim = session_manager
         .action_required()
-        .claim_response(session_id, elicitation_id)
+        .claim_response(&session_id, elicitation_id)
         .await?;
 
     session_manager
-        .add_message(session_id, response_message)
+        .add_message(&session_id, response_message)
         .await?;
 
     claim.submit(response)
+}
+
+/// A subagent's elicitations are shown in its parent's turn, so the parent's client answers
+/// them on the parent's session.
+async fn answering_session(
+    session_manager: &SessionManager,
+    session_id: &str,
+    elicitation_id: &str,
+) -> Result<String> {
+    let Some(owner) = session_manager
+        .action_required()
+        .pending_session(elicitation_id)
+        .await
+    else {
+        return Ok(session_id.to_string());
+    };
+    let owner_is_a_subagent = owner != session_id
+        && session_manager
+            .get_session(&owner, false)
+            .await?
+            .parent_session_id
+            .as_deref()
+            == Some(session_id);
+    Ok(if owner_is_a_subagent {
+        owner
+    } else {
+        session_id.to_string()
+    })
 }
 
 pub async fn complete_elicitation_with_generated_message(
