@@ -33,7 +33,6 @@ export interface StartGooseServeOptions extends FindGooseBinaryOptions {
   serverSecret: string;
   tls?: boolean;
   env?: Record<string, string | undefined>;
-  /** PATH from the user's login shell, put ahead of the inherited PATH so goose finds user tools. */
   loginShellPath?: string | null;
   logger?: Logger;
   diagnosticsDir?: string;
@@ -300,7 +299,9 @@ const buildGooseServeEnv = (
   const env: Record<string, string | undefined> = {
     ...process.env,
     HOME: homeDir,
-    [pathKey]: [path.dirname(binaryPath), loginShellPath, currentPath]
+    // The bundled goose and node/npx/uvx launchers are only a fallback; whatever
+    // the user has installed wins.
+    [pathKey]: [loginShellPath, currentPath, path.dirname(binaryPath)]
       .filter(Boolean)
       .join(path.delimiter),
   };
