@@ -61,6 +61,7 @@ pub struct StateMachine<'a, S, E = ConversationEffect> {
 fn empty_result<E>(next: Next) -> StepResult<E> {
     StepResult {
         effects: Vec::new(),
+        applied_step: None,
         next,
     }
 }
@@ -125,7 +126,7 @@ where
         for (index, step) in self.steps.iter().enumerate() {
             let name = step.operation().name();
             if self.cancel.is_cancelled() {
-                return Ok(empty_result(Next::Cancelled));
+                return Ok(empty_result(Next::Cancel));
             }
             let execution = async {
                 match step {
@@ -165,7 +166,7 @@ where
                 Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
                 _ => {
                     *self.interrupted_step.lock().unwrap() = Some(index);
-                    return Ok(empty_result(Next::Cancelled));
+                    return Ok(empty_result(Next::Cancel));
                 }
             };
 
@@ -173,11 +174,12 @@ where
                 OperationResult::NotApplicable => {}
                 OperationResult::Applied(mut result) => {
                     tracing::debug!(step = name, "applied step");
+                    result.applied_step = Some(name);
                     for effect in &mut result.effects {
                         effect.ensure_message_ids();
                     }
                     if self.cancel.is_cancelled() {
-                        result.next = Next::Cancelled;
+                        result.next = Next::Cancel;
                     }
                     return Ok(result);
                 }
@@ -217,7 +219,7 @@ where
                 .await?;
             match result.next {
                 Next::Continue => {}
-                Next::Yield | Next::Cancelled => break,
+                Next::Yield | Next::Cancel => break,
             }
         }
         self.finalize(runtime, session_id, emit).await

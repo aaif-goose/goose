@@ -455,7 +455,7 @@ impl TestPipeline {
                     &emit,
                 )
                 .await?;
-            if !result.effects.is_empty() {
+            if result.applied_step.is_some() {
                 applied_steps += 1;
             }
             while let Ok(event) = rx.try_recv() {

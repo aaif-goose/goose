@@ -470,7 +470,7 @@ async fn cancellation_interrupts_inference_discovery() {
     }
     cancel.cancel();
 
-    assert_eq!(step.await.unwrap().unwrap().next, Next::Cancelled);
+    assert_eq!(step.await.unwrap().unwrap().next, Next::Cancel);
 }
 
 #[tokio::test]
