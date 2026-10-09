@@ -1006,3 +1006,91 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         .is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -> Result<()> {
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    agent
+        .config
+        .session_manager
+        .update(&session_id)
+        .goose_mode(GooseMode::Approve)
+        .apply()
+        .await?;
+    enable_developer(&agent, &session_id).await?;
+    agent
+        .extension_manager
+        .enable(
+            &session_id,
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        )
+        .await?;
+
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "print the subagent marker", "max_turns": 3 }),
+    );
+    api.on("print the subagent marker")
+        .call("shell", json!({ "command": "echo marker-from-subagent" }));
+    api.on("marker-from-subagent").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "printed it" }),
+    );
+    api.on("printed it").reply("the subagent printed it");
+
+    let mut stream = agent
+        .reply(
+            Message::user().with_text("hand this off"),
+            SessionConfig {
+                id: session_id.clone(),
+                schedule_id: None,
+                max_turns: Some(3),
+            },
+            None,
+        )
+        .await?;
+    let mut approved_tools = Vec::new();
+    let mut texts = Vec::new();
+    while let Some(event) = stream.next().await {
+        let AgentEvent::Message(message) = event? else {
+            continue;
+        };
+        texts.push(message.as_concat_text());
+        for content in &message.content {
+            let MessageContent::ActionRequired(action) = content else {
+                continue;
+            };
+            let ActionRequiredData::ToolConfirmation { id, tool_name, .. } = &action.data else {
+                continue;
+            };
+            approved_tools.push(tool_name.clone());
+            agent
+                .submit_tool_confirmation(&session_id, id, Permission::AllowOnce)
+                .await?;
+        }
+    }
+
+    assert_eq!(
+        approved_tools,
+        vec![
+            "delegate",
+            "shell",
+            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        ]
+    );
+    assert!(texts.concat().ends_with("the subagent printed it"));
+    Ok(())
+}

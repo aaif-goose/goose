@@ -16,6 +16,7 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult};
 use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
 use crate::agents::provider_manager::ProviderManager;
+use crate::agents::state_machine::is_forwarded_from_subagent;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -489,6 +490,26 @@ impl Agent {
             .await?;
 
         let state = self.tool_confirmation_coordinator.session(session_id);
+        if !state.contains_request(request_id) {
+            if let Some(subagent_id) = self
+                .tool_confirmation_coordinator
+                .session_waiting_on(request_id)
+            {
+                let subagent = self
+                    .config
+                    .session_manager
+                    .get_session(&subagent_id, false)
+                    .await?;
+                if subagent.parent_session_id.as_deref() == Some(session_id) {
+                    return Box::pin(self.submit_tool_confirmation(
+                        &subagent_id,
+                        request_id,
+                        permission,
+                    ))
+                    .await;
+                }
+            }
+        }
         let _confirmation_submission_guard = state.confirmation_submission_lock.lock().await;
         let state_machine_permission = if permission == Permission::Cancel {
             Permission::DenyOnce
@@ -843,6 +864,9 @@ impl Agent {
         let AgentEvent::Message(message) = event else {
             return Vec::new();
         };
+        if is_forwarded_from_subagent(message) {
+            return Vec::new();
+        }
 
         message
             .content
@@ -903,6 +927,29 @@ impl Agent {
                 );
             }
         })
+    }
+
+    pub(super) async fn stream_subagent_turn(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let turn_guard = self
+            .tool_confirmation_coordinator
+            .session(&session_config.id)
+            .try_start_turn()?;
+        turn_guard.state().start_new_turn();
+        let initial_stream = self
+            .stream_state_machine_session(session_config.clone(), cancel.clone())
+            .await?;
+        Ok(
+            self.stream_state_machine_turn(
+                session_config,
+                cancel,
+                turn_guard,
+                Some(initial_stream),
+            ),
+        )
     }
 
     pub(super) async fn stream_state_machine_session(

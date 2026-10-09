@@ -1,10 +1,13 @@
 use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
-        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, SessionConfig,
+        state_machine::{forwarded_from_subagent, trailing_error, MAX_TURNS_MESSAGE},
+        Agent, AgentEvent, SessionConfig,
     },
-    conversation::{message::Message, Conversation},
+    conversation::{
+        message::{ActionRequiredData, Message, MessageContent},
+        Conversation,
+    },
     prompt_template::render_template,
     session::extension_data::{EnabledExtensionsState, ExtensionState},
     session::{Session, SessionManager, SessionType},
@@ -15,6 +18,7 @@ use futures::StreamExt;
 use rmcp::model::Role;
 use serde::Serialize;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Serialize)]
@@ -109,6 +113,7 @@ impl ForegroundSubagentRunner {
         parent_id: &str,
         subagent_id: &str,
         cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
     ) -> SubagentStart {
         let subagent = match self.session_manager().get_session(subagent_id, true).await {
             Ok(subagent) => subagent,
@@ -135,24 +140,38 @@ impl ForegroundSubagentRunner {
                 .recipe
                 .as_ref()
                 .and_then(|recipe| recipe.prompt.clone()),
-            run: Box::pin(self.clone().run(subagent, cancel)),
+            run: Box::pin(self.clone().run(subagent, cancel, forward)),
         }
     }
 
-    async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
+    async fn run_to_end(
+        &self,
+        subagent: &Session,
+        cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
+    ) -> Result<()> {
         let session_config = prepare_foreground_subagent(&self.agent, subagent).await?;
         let mut events = self
             .agent
-            .stream_state_machine_session(session_config, cancel)
+            .stream_subagent_turn(session_config, cancel)
             .await?;
         while let Some(event) = events.next().await {
-            event?;
+            if let AgentEvent::Message(message) = event? {
+                if asks_for_a_decision(&message) {
+                    let _ = forward.send(forwarded_from_subagent(message, &subagent.id));
+                }
+            }
         }
         Ok(())
     }
 
-    async fn run(self, subagent: Session, cancel: CancellationToken) -> SubagentOutcome {
-        let run_result = self.run_to_end(&subagent, cancel.clone()).await;
+    async fn run(
+        self,
+        subagent: Session,
+        cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
+    ) -> SubagentOutcome {
+        let run_result = self.run_to_end(&subagent, cancel.clone(), forward).await;
         self.agent.release_session(&subagent.id).await;
         let stopped = cancel.is_cancelled();
         let subagent = match self.session_manager().get_session(&subagent.id, true).await {
@@ -178,6 +197,16 @@ impl ForegroundSubagentRunner {
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
     }
+}
+
+fn asks_for_a_decision(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::ActionRequired(action)
+                if matches!(action.data, ActionRequiredData::ToolConfirmation { .. })
+        )
+    })
 }
 
 fn failure_reason(messages: &[Message]) -> String {

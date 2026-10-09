@@ -397,6 +397,16 @@ impl SummonClient {
         parent_session_id: &str,
         name: String,
     ) -> Result<crate::session::Session, String> {
+        let goose_mode = if parent_session_id.is_empty() {
+            GooseMode::Auto
+        } else {
+            self.context
+                .session_manager
+                .get_session(parent_session_id, false)
+                .await
+                .map_err(|e| format!("Failed to read the parent session: {}", e))?
+                .goose_mode
+        };
         let session = self
             .context
             .session_manager
@@ -404,7 +414,7 @@ impl SummonClient {
                 working_dir.to_path_buf(),
                 name,
                 SessionType::SubAgent,
-                GooseMode::Auto,
+                goose_mode,
             )
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;

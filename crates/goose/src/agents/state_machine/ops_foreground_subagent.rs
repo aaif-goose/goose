@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio::task::{self, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -20,6 +20,7 @@ use crate::utils::safe_truncate;
 const OPERATION_NAME: &str = "foreground_subagent";
 const DELIVERED: &str = "delivered";
 const CANCELLED: &str = "cancelled";
+const FORWARDED_FROM: &str = "forwarded_from";
 const TASK_SNIPPET_CHARS: usize = 160;
 
 fn inline_notice(text: String) -> Message {
@@ -38,6 +39,24 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
         })
         .unwrap_or_default();
     format!("Running subagent {subagent_id}{snippet}")
+}
+
+/// A subagent's request for a decision, shown in the parent's turn because only the parent's
+/// client can answer it.
+pub(crate) fn forwarded_from_subagent(mut message: Message, subagent_id: &str) -> Message {
+    message.metadata.set_operation_note(
+        OPERATION_NAME,
+        FORWARDED_FROM,
+        serde_json::json!(subagent_id),
+    );
+    message
+}
+
+pub(crate) fn is_forwarded_from_subagent(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(OPERATION_NAME, FORWARDED_FROM)
+        .is_some()
 }
 
 fn delegated_subagent_ids(content: &[MessageContent]) -> impl Iterator<Item = &str> {
@@ -170,14 +189,19 @@ pub struct ForegroundSubagentOperation {
     runner: ForegroundSubagentRunner,
     cancel: CancellationToken,
     running: Mutex<RunningSubagents>,
+    forward_tx: mpsc::UnboundedSender<Message>,
+    forwarded: Mutex<mpsc::UnboundedReceiver<Message>>,
 }
 
 impl ForegroundSubagentOperation {
     pub fn new(runner: ForegroundSubagentRunner, cancel: CancellationToken) -> Self {
+        let (forward_tx, forwarded) = mpsc::unbounded_channel();
         Self {
             runner,
             cancel,
             running: Mutex::default(),
+            forward_tx,
+            forwarded: Mutex::new(forwarded),
         }
     }
 }
@@ -247,7 +271,12 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
             }
             match self
                 .runner
-                .start(&session.id, subagent_id, self.cancel.clone())
+                .start(
+                    &session.id,
+                    subagent_id,
+                    self.cancel.clone(),
+                    self.forward_tx.clone(),
+                )
                 .await
             {
                 SubagentStart::HasOutcome(outcome) => {
@@ -268,11 +297,16 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
             }
         }
 
-        let finished = running
-            .tasks
-            .join_next_with_id()
-            .await
-            .ok_or_else(|| anyhow!("No foreground subagent is running"))?;
+        let mut forwarded = self.forwarded.lock().await;
+        let finished = loop {
+            tokio::select! {
+                Some(message) = forwarded.recv() => {
+                    emit.message(message).await;
+                }
+                finished = running.tasks.join_next_with_id() => break finished,
+            }
+        }
+        .ok_or_else(|| anyhow!("No foreground subagent is running"))?;
         let (task_id, outcome) = match finished {
             Ok(finished) => finished,
             Err(error) => (error.id(), SubagentOutcome::Failed(error.to_string())),
@@ -786,7 +820,12 @@ mod tests {
         cancel.cancel();
         let runner = fixture.runner();
         let SubagentStart::Started { run, .. } = runner
-            .start(&fixture.parent_id, &fixture.subagent_id, cancel)
+            .start(
+                &fixture.parent_id,
+                &fixture.subagent_id,
+                cancel,
+                mpsc::unbounded_channel().0,
+            )
             .await
         else {
             panic!("expected the subagent to start");
