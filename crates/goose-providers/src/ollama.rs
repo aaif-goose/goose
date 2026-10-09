@@ -352,6 +352,8 @@ pub fn from_declarative_config(
     tls_config: Option<TlsConfig>,
     key_resolver: impl KeyResolver,
 ) -> Result<OllamaProviderBuilder> {
+    config.validate_wire_api()?;
+
     let custom_models = if !config.models.is_empty() {
         Some(config.models.clone())
     } else {
@@ -677,7 +679,7 @@ mod tests {
             session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: None,
-            supports_responses: false,
+            wire_api: None,
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,

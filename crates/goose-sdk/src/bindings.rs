@@ -1320,7 +1320,7 @@ pub fn openai_provider(
     let raw = base_url.unwrap_or_else(|| "https://api.openai.com".to_string());
 
     let (host, query_params, has_v1) = parse_openai_base_url(&raw)?;
-    let is_openai = is_direct_openai_host(&raw);
+    let is_openai = is_direct_openai_host(&host);
 
     let auth = if api_key.is_empty() {
         AuthMethod::NoAuth
@@ -1353,6 +1353,7 @@ pub fn openai_provider(
 
     let provider = OpenAiProviderBuilder::new(api_client)
         .base_path(base_path)
+        .explicit_base_path(!is_openai || !has_v1)
         .native_openai(is_openai)
         .preserve_thinking_context(!is_openai)
         .build();

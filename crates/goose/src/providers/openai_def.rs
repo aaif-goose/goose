@@ -84,13 +84,13 @@ pub async fn from_env(
             OPEN_AI_VERSIONLESS_BASE_PATH.to_string()
         }
     };
-    let base_path: String = if parsed.from_base_url {
-        std::env::var("OPENAI_BASE_PATH").unwrap_or_else(|_| default_bp())
+    let configured_base_path: Option<String> = if parsed.from_base_url {
+        std::env::var("OPENAI_BASE_PATH").ok()
     } else {
-        config
-            .get_param("OPENAI_BASE_PATH")
-            .unwrap_or_else(|_| default_bp())
+        config.get_param("OPENAI_BASE_PATH").ok()
     };
+    let explicit_base_path = configured_base_path.is_some() || !parsed.has_v1;
+    let base_path = configured_base_path.unwrap_or_else(default_bp);
 
     let is_openai = is_direct_openai_host(&parsed.host);
     let secrets = config
@@ -144,6 +144,7 @@ pub async fn from_env(
 
     let provider = OpenAiProviderBuilder::new(api_client)
         .base_path(base_path)
+        .explicit_base_path(explicit_base_path)
         .organization(organization)
         .project(project)
         .custom_headers(custom_headers)

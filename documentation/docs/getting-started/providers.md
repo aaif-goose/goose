@@ -549,6 +549,48 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
   </TabItem>
 </Tabs>
 
+### Choosing an OpenAI-Compatible Wire API
+
+For custom providers with `"engine": "openai"`, the optional `wire_api` field chooses the request and response format. Set it in the provider's JSON configuration file; it is not a Desktop or CLI configuration prompt, environment variable, or per-session model setting.
+
+The allowed values are:
+
+- `"chat_completions"`: sends Chat Completions requests with `messages` and nested function tool definitions.
+- `"responses"`: sends Responses requests with `input` and flat function tool definitions.
+
+OpenAI-compatible providers default to `"chat_completions"` when `wire_api` is omitted, including unknown or newly released GPT models. The built-in native OpenAI provider defaults to Responses unless `OPENAI_BASE_PATH` pins a Chat Completions endpoint. A saved `OPENAI_BASE_PATH` value also counts as explicit. goose does not infer the API from model-name patterns, probe for support, or retry a failed request using the other API.
+
+Set `wire_api` on the provider to choose its default, and on individual entries in `models` to override that default. Model overrides match the exact, case-sensitive model ID; they are not wildcard patterns. Models without an override, including newly discovered models, inherit the provider setting.
+
+For example, this provider uses Chat Completions except for `responses-model`:
+
+```json
+{
+  "name": "custom_mixed_api",
+  "engine": "openai",
+  "display_name": "Mixed API",
+  "api_key_env": "CUSTOM_MIXED_API_KEY",
+  "base_url": "https://api.company.com/proxy/v1",
+  "wire_api": "chat_completions",
+  "models": [
+    { "name": "chat-model", "context_limit": 128000 },
+    {
+      "name": "responses-model",
+      "context_limit": 128000,
+      "wire_api": "responses"
+    }
+  ],
+  "supports_streaming": true,
+  "requires_auth": true
+}
+```
+
+Use an API root such as `/v1` or `/proxy/v2` when models need different wire APIs. goose preserves the root's path prefix, version, and query parameters when selecting `/chat/completions` or `/responses`.
+
+A full endpoint suffix in `base_url`, such as `/v1/chat/completions` or `/v1/responses`, pins that API. An explicit `base_path` can also pin the endpoint. Any provider or model `wire_api` that conflicts with the pinned API causes a provider construction error, even if the conflicting model is not selected. For example, `"base_url": "https://api.company.com/v1/chat/completions"` cannot be combined with `"wire_api": "responses"`. Remove the endpoint suffix and use the API root to enable mixed APIs.
+
+`wire_api` is only valid for the `openai` engine. Setting it on a provider or model using the `anthropic` or `ollama` engine is rejected. The dedicated Hugging Face provider supports Chat Completions only and rejects `responses`. It replaces the former `supports_responses` configuration field; use an explicit `wire_api` value rather than that boolean.
+
 ### Command-Based Authentication
 
 Instead of a static `api_key_env`, a custom provider can be configured to run a command to obtain its credential. This is useful for short-lived credentials issued by an IdP or key vault: goose re-runs the command to refresh the credential instead of requiring a restart when it expires.

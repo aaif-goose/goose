@@ -245,6 +245,14 @@ pub enum ThinkingPreservationFormat {
     ReasoningContent,
 }
 
+/// Selects the request protocol for an OpenAI-compatible provider.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiWireApi {
+    ChatCompletions,
+    Responses,
+}
+
 /// Information about a model's capabilities
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelInfo {
@@ -271,6 +279,9 @@ pub struct ModelInfo {
     pub supports_vision: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
+    /// Overrides the provider's OpenAI wire API for this model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire_api: Option<OpenAiWireApi>,
     /// Static params merged into the request body for this model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_params: Option<HashMap<String, Value>>,
@@ -290,6 +301,7 @@ impl ModelInfo {
             supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
+            wire_api: None,
         }
     }
 
@@ -327,6 +339,7 @@ impl ModelInfo {
             supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
+            wire_api: None,
         }
     }
 }
@@ -378,6 +391,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         supports_vision: None,
         thinking_preservation_format: None,
         request_params: None,
+        wire_api: None,
     }
 }
 
@@ -390,8 +404,9 @@ pub fn find_declared_model<'a>(models: &'a [ModelInfo], model_name: &str) -> Opt
 /// provider configuration over the canonical registry.
 ///
 /// Configured entries are authoritative: a statically declared model carries its
-/// own `context_limit`/`reasoning` values, which the canonical registry does not
-/// know about. Names absent from `configured` fall back to registry metadata.
+/// own `context_limit`/`reasoning` values and `wire_api` override, which the canonical
+/// registry does not know about. Names absent from `configured` fall back to
+/// registry metadata.
 pub fn merge_configured_model_info(
     provider_name: &str,
     model_names: &[String],
@@ -776,9 +791,41 @@ mod tests {
     use test_case::test_case;
 
     #[test]
+    fn model_info_wire_api_roundtrips_snake_case_values() {
+        for (wire_api, serialized) in [
+            (OpenAiWireApi::ChatCompletions, "chat_completions"),
+            (OpenAiWireApi::Responses, "responses"),
+        ] {
+            let model = ModelInfo {
+                wire_api: Some(wire_api),
+                ..ModelInfo::new("test-model")
+            };
+            let value = serde_json::to_value(&model).unwrap();
+            assert_eq!(value["wire_api"], serialized);
+            assert_eq!(serde_json::from_value::<ModelInfo>(value).unwrap(), model);
+        }
+    }
+
+    #[test]
+    fn model_info_wire_api_defaults_to_none_and_is_omitted() {
+        let model: ModelInfo = serde_json::from_str(r#"{"name":"test-model"}"#).unwrap();
+        assert_eq!(model.wire_api, None);
+        assert!(serde_json::to_value(model)
+            .unwrap()
+            .get("wire_api")
+            .is_none());
+        assert_eq!(ModelInfo::new("test-model").wire_api, None);
+        assert_eq!(
+            ModelInfo::with_cost("test-model", 4096, 0.01, 0.02).wire_api,
+            None
+        );
+    }
+
+    #[test]
     fn merge_configured_model_info_falls_back_to_registry_for_undeclared_models() {
         let declared = ModelInfo {
             reasoning: true,
+            wire_api: Some(OpenAiWireApi::Responses),
             ..ModelInfo::new("declared-model").with_context_limit(4096)
         };
 
@@ -790,8 +837,11 @@ mod tests {
 
         assert_eq!(merged[0].context_limit, Some(4096));
         assert!(merged[0].reasoning);
+        assert_eq!(merged[0], declared);
+        assert_eq!(merged[0].wire_api, Some(OpenAiWireApi::Responses));
 
         assert_eq!(merged[1].name, "gpt-4o");
+        assert_eq!(merged[1].wire_api, None);
         assert_eq!(
             merged[1].context_limit,
             model_info_for_provider_model("openai", "gpt-4o").context_limit
@@ -1121,6 +1171,7 @@ mod tests {
             supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
+            wire_api: None,
         };
         assert_eq!(info.context_limit, Some(1000));
 
@@ -1137,6 +1188,7 @@ mod tests {
             supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
+            wire_api: None,
         };
         assert_eq!(info, info2);
 
@@ -1153,6 +1205,7 @@ mod tests {
             supports_vision: None,
             thinking_preservation_format: None,
             request_params: None,
+            wire_api: None,
         };
         assert_ne!(info, info3);
     }

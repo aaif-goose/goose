@@ -1,12 +1,12 @@
 {
   "name": "venice",
   "engine": "openai",
-  "supports_responses": true,
+  "wire_api": "chat_completions",
   "catalog_provider_id": "venice",
   "display_name": "Venice.ai",
   "description": "Venice.ai models (Llama, DeepSeek, Mistral) with function calling",
   "api_key_env": "VENICE_API_KEY",
-  "base_url": "https://api.venice.ai/api/v1/chat/completions",
+  "base_url": "https://api.venice.ai/api/v1",
   "models": [
     {
       "name": "llama-3.3-70b",

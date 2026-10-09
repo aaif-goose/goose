@@ -155,7 +155,7 @@ mod tests {
             session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
-            supports_responses: false,
+            wire_api: None,
             requires_auth: false,
             catalog_provider_id: None,
             base_path: None,

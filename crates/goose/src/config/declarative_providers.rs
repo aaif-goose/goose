@@ -227,7 +227,7 @@ pub fn create_custom_provider(
         session_id_header_override: None,
         timeout_seconds: None,
         supports_streaming: params.supports_streaming,
-        supports_responses: false,
+        wire_api: None,
         requires_auth: params.requires_auth,
         catalog_provider_id: params.catalog_provider_id,
         base_path: params.base_path,
@@ -243,6 +243,7 @@ pub fn create_custom_provider(
         setup: None,
     };
 
+    provider_config.validate_wire_api()?;
     persist_custom_provider(&provider_config)?;
 
     Ok(provider_config)
@@ -299,6 +300,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                     .iter()
                     .find(|existing| existing.name == model.name)
                 {
+                    model.wire_api = model.wire_api.or(existing.wire_api);
                     model.resolved_model = model.resolved_model.or(existing.resolved_model.clone());
                     model.context_limit = model.context_limit.or(existing.context_limit);
                     model.input_token_cost = model.input_token_cost.or(existing.input_token_cost);
@@ -344,7 +346,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             session_id_header_override: existing_config.session_id_header_override,
             timeout_seconds: existing_config.timeout_seconds,
             supports_streaming: params.supports_streaming,
-            supports_responses: existing_config.supports_responses,
+            wire_api: existing_config.wire_api,
             requires_auth: params.requires_auth,
             catalog_provider_id: params.catalog_provider_id,
             base_path: params.base_path,
@@ -360,6 +362,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             setup: existing_config.setup,
         };
 
+        updated_config.validate_wire_api()?;
         persist_custom_provider(&updated_config)?;
     }
     Ok(())
@@ -615,6 +618,7 @@ mod tests {
                 supports_cache_control: None,
                 reasoning: false,
                 supports_vision: None,
+                wire_api: None,
                 thinking_preservation_format: None,
                 request_params: None,
             }],
@@ -622,7 +626,7 @@ mod tests {
             session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
-            supports_responses: false,
+            wire_api: None,
             requires_auth: true,
             catalog_provider_id: Some("huggingface".to_string()),
             base_path: None,
@@ -806,11 +810,12 @@ mod tests {
 
         let mut model = ModelInfo::with_cost("large-model", 1_048_576, 0.000002, 0.000006)
             .with_vision_support(true);
+        model.wire_api = Some(goose_providers::base::OpenAiWireApi::Responses);
         model.request_params = Some(HashMap::from([(
             "temperature".to_string(),
             serde_json::json!(0.25),
         )]));
-        let created = create_custom_provider(CreateCustomProviderParams {
+        let mut created = create_custom_provider(CreateCustomProviderParams {
             engine: "openai".to_string(),
             display_name: "Large Context".to_string(),
             api_url: "https://example.invalid/v1".to_string(),
@@ -826,6 +831,9 @@ mod tests {
             auth: None,
         })
         .unwrap();
+
+        created.wire_api = Some(goose_providers::base::OpenAiWireApi::ChatCompletions);
+        persist_custom_provider(&created).unwrap();
 
         for (declared, expected) in [
             (None, true),
@@ -855,6 +863,11 @@ mod tests {
 
             let loaded = load_provider(&created.name).unwrap();
             assert_eq!(loaded.config.models[0].supports_vision, Some(expected));
+            assert_eq!(loaded.config.wire_api, created.wire_api);
+            assert_eq!(
+                loaded.config.models[0].wire_api,
+                Some(goose_providers::base::OpenAiWireApi::Responses)
+            );
         }
 
         let loaded = load_provider(&created.name).unwrap();

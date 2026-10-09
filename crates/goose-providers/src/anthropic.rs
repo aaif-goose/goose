@@ -503,6 +503,8 @@ pub fn from_declarative_config(
     tls_config: Option<TlsConfig>,
     key_resolver: impl KeyResolver,
 ) -> Result<AnthropicProviderBuilder> {
+    config.validate_wire_api()?;
+
     let custom_models = if !config.models.is_empty() {
         Some(config.models.clone())
     } else {

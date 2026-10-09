@@ -79,6 +79,16 @@ impl HuggingFaceProvider {
         config: DeclarativeProviderConfig,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> Result<Self> {
+        config.validate_wire_api()?;
+        if config.wire_api == Some(goose_providers::base::OpenAiWireApi::Responses)
+            || config.models.iter().any(|model| {
+                model.wire_api == Some(goose_providers::base::OpenAiWireApi::Responses)
+            })
+        {
+            return Err(anyhow!(
+                "Hugging Face's dedicated provider only supports wire_api: chat_completions"
+            ));
+        }
         let custom_models = static_models(&config);
         if config.dynamic_models == Some(false) && custom_models.is_none() {
             return Err(anyhow!(
@@ -566,6 +576,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn custom_config_rejects_responses_before_authentication() {
+        for model_override in [false, true] {
+            let mut config = test_config();
+            if model_override {
+                let mut model = ModelInfo::new("test-model");
+                model.wire_api = Some(goose_providers::base::OpenAiWireApi::Responses);
+                config.models = vec![model];
+            } else {
+                config.wire_api = Some(goose_providers::base::OpenAiWireApi::Responses);
+            }
+            let error = HuggingFaceProvider::from_custom_config(config, None)
+                .err()
+                .expect("dedicated chat provider must reject Responses");
+            assert!(error
+                .to_string()
+                .contains("only supports wire_api: chat_completions"));
+        }
+    }
+
     fn test_config() -> DeclarativeProviderConfig {
         DeclarativeProviderConfig {
             name: "custom_provider".to_string(),
@@ -579,7 +609,7 @@ mod tests {
             session_id_header_override: None,
             timeout_seconds: None,
             supports_streaming: Some(true),
-            supports_responses: false,
+            wire_api: None,
             requires_auth: true,
             catalog_provider_id: None,
             base_path: None,

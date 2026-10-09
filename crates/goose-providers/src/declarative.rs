@@ -67,7 +67,7 @@ pub(crate) mod declarative_providers {
 use crate::{
     anthropic,
     api_client::TlsConfig,
-    base::{ModelInfo, Provider},
+    base::{ModelInfo, OpenAiWireApi, Provider},
     ollama, openai,
 };
 
@@ -162,8 +162,8 @@ pub struct DeclarativeProviderConfig {
     pub session_id_header_override: Option<String>,
     pub timeout_seconds: Option<u64>,
     pub supports_streaming: Option<bool>,
-    #[serde(default)]
-    pub supports_responses: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire_api: Option<OpenAiWireApi>,
     #[serde(default = "default_requires_auth")]
     pub requires_auth: bool,
     #[serde(default)]
@@ -229,6 +229,18 @@ impl DeclarativeProviderConfig {
 
     pub fn models(&self) -> &[ModelInfo] {
         &self.models
+    }
+
+    pub fn validate_wire_api(&self) -> anyhow::Result<()> {
+        if self.engine != ProviderEngine::OpenAI
+            && (self.wire_api.is_some() || self.models.iter().any(|model| model.wire_api.is_some()))
+        {
+            anyhow::bail!(
+                "Provider '{}': wire_api is only supported by the openai engine",
+                self.name
+            );
+        }
+        Ok(())
     }
 
     /// Errors if both `api_key_env` and `auth.command` are set; they're
@@ -322,6 +334,7 @@ pub fn deserialize_provider_config(json: &str) -> Result<DeclarativeProviderConf
     let raw: serde_json::Value = serde_json::from_str(json)?;
     let preserves_thinking_was_set = raw.get("preserves_thinking").is_some();
     let mut config: DeclarativeProviderConfig = serde_json::from_value(raw)?;
+    config.validate_wire_api()?;
 
     if !preserves_thinking_was_set {
         config.preserves_thinking = should_preserve_thinking_by_default(&config.engine);
@@ -389,6 +402,198 @@ mod tests {
             "supports_cache_control": null,
             "reasoning": false
         })
+    }
+
+    fn provider_json(engine: &str) -> serde_json::Value {
+        json!({
+            "name": "test-provider",
+            "engine": engine,
+            "display_name": "Test Provider",
+            "base_url": "http://localhost:1234",
+            "models": [model_json()],
+            "requires_auth": false,
+            "dynamic_models": false
+        })
+    }
+
+    #[test]
+    fn openai_accepts_provider_and_model_wire_api() {
+        for wire_api in ["chat_completions", "responses"] {
+            for model_override in [false, true] {
+                let mut definition = provider_json("openai");
+                if model_override {
+                    definition["models"][0]["wire_api"] = json!(wire_api);
+                } else {
+                    definition["wire_api"] = json!(wire_api);
+                }
+
+                let config = deserialize_provider_config(&definition.to_string()).unwrap();
+                let expected = serde_json::from_value::<OpenAiWireApi>(json!(wire_api)).unwrap();
+                if model_override {
+                    assert_eq!(config.models[0].wire_api, Some(expected));
+                    assert_eq!(config.wire_api, None);
+                } else {
+                    assert_eq!(config.wire_api, Some(expected));
+                    assert_eq!(config.models[0].wire_api, None);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn non_openai_engines_reject_provider_and_model_wire_api() {
+        for engine in [
+            "anthropic",
+            "ollama",
+            "anthropic_compatible",
+            "ollama_compatible",
+        ] {
+            for wire_api in ["chat_completions", "responses"] {
+                for model_override in [false, true] {
+                    let mut definition = provider_json(engine);
+                    if model_override {
+                        definition["models"]
+                            .as_array_mut()
+                            .unwrap()
+                            .push(model_json());
+                        definition["models"][1]["wire_api"] = json!(wire_api);
+                    } else {
+                        definition["wire_api"] = json!(wire_api);
+                    }
+
+                    let error = deserialize_provider_config(&definition.to_string()).unwrap_err();
+                    assert!(
+                        error
+                            .to_string()
+                            .contains("wire_api is only supported by the openai engine"),
+                        "{engine}, {wire_api}, model_override={model_override}: {error}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wire_api_omission_is_valid_and_not_serialized_for_all_engines() {
+        for engine in ["openai", "anthropic", "ollama"] {
+            let config = deserialize_provider_config(&provider_json(engine).to_string()).unwrap();
+            assert_eq!(config.wire_api, None);
+            assert_eq!(config.models[0].wire_api, None);
+
+            let serialized = serde_json::to_value(config).unwrap();
+            assert!(serialized.get("wire_api").is_none());
+            assert!(serialized["models"][0].get("wire_api").is_none());
+            deserialize_provider_config(&serialized.to_string()).unwrap();
+        }
+    }
+
+    #[test]
+    fn wire_api_rejects_invalid_values_at_provider_and_model_levels() {
+        for engine in ["openai", "anthropic", "ollama"] {
+            for invalid in [
+                json!("chat"),
+                json!("Responses"),
+                json!(""),
+                json!(true),
+                json!(42),
+            ] {
+                for model_override in [false, true] {
+                    let mut definition = provider_json(engine);
+                    if model_override {
+                        definition["models"][0]["wire_api"] = invalid.clone();
+                    } else {
+                        definition["wire_api"] = invalid.clone();
+                    }
+
+                    assert!(deserialize_provider_config(&definition.to_string()).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wire_api_roundtrip_preserves_provider_default_and_model_override() {
+        let mut definition = provider_json("openai_compatible");
+        definition["wire_api"] = json!("responses");
+        definition["models"][0]["wire_api"] = json!("chat_completions");
+
+        let config = deserialize_provider_config(&definition.to_string()).unwrap();
+        let serialized = serde_json::to_value(config).unwrap();
+        assert_eq!(serialized["wire_api"], "responses");
+        assert_eq!(serialized["models"][0]["wire_api"], "chat_completions");
+
+        let roundtrip = deserialize_provider_config(&serialized.to_string()).unwrap();
+        assert_eq!(roundtrip.wire_api, Some(OpenAiWireApi::Responses));
+        assert_eq!(
+            roundtrip.models[0].wire_api,
+            Some(OpenAiWireApi::ChatCompletions)
+        );
+    }
+
+    struct UnexpectedKeyResolver;
+
+    impl KeyResolver for UnexpectedKeyResolver {
+        type Error = std::convert::Infallible;
+
+        fn resolve_key(&self, _key: &str) -> std::result::Result<String, Self::Error> {
+            panic!("wire_api validation must run before credential resolution")
+        }
+    }
+
+    #[test]
+    fn from_json_validates_wire_api_before_resolving_configuration() {
+        for engine in ["anthropic", "ollama"] {
+            let mut definition = provider_json(engine);
+            definition["wire_api"] = json!("responses");
+            definition["api_key_env"] = json!("TEST_API_KEY");
+            definition["base_url"] = json!("${MISSING_WIRE_API_TEST_HOST}");
+            definition["env_vars"] = json!([{
+                "name": "MISSING_WIRE_API_TEST_HOST",
+                "required": true
+            }]);
+
+            let error = from_json(&definition.to_string(), None, UnexpectedKeyResolver)
+                .err()
+                .expect("non-openai wire_api must be rejected");
+            assert!(error
+                .to_string()
+                .contains("wire_api is only supported by the openai engine"));
+        }
+    }
+
+    #[test]
+    fn direct_non_openai_construction_validates_wire_api_before_other_effects() {
+        for engine in ["anthropic", "ollama"] {
+            for model_override in [false, true] {
+                let mut definition = provider_json(engine);
+                definition["api_key_env"] = json!("TEST_API_KEY");
+                definition["base_url"] = json!("://invalid-url");
+                if model_override {
+                    definition["models"][0]["wire_api"] = json!("responses");
+                } else {
+                    definition["wire_api"] = json!("responses");
+                    definition["models"] = json!([]);
+                }
+                let config =
+                    serde_json::from_value::<DeclarativeProviderConfig>(definition).unwrap();
+
+                let result = match config.engine {
+                    ProviderEngine::Anthropic => {
+                        anthropic::from_declarative_config(config, None, UnexpectedKeyResolver)
+                            .map(|_| ())
+                    }
+                    ProviderEngine::Ollama => {
+                        ollama::from_declarative_config(config, None, UnexpectedKeyResolver)
+                            .map(|_| ())
+                    }
+                    ProviderEngine::OpenAI => unreachable!(),
+                };
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("wire_api is only supported by the openai engine"));
+            }
+        }
     }
 
     #[test]
