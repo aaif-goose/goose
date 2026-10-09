@@ -59,32 +59,53 @@ fn skill_tool() -> Result<Tool> {
     ))
 }
 
-fn skill_instructions(working_dir: &Path) -> Option<String> {
-    let sources = crate::skills::discover_skills(Some(working_dir));
-    let mut skills: Vec<&SourceEntry> = sources
-        .iter()
+fn skill_entries(
+    working_dir: &Path,
+    mcp: Vec<crate::skills::mcp::SkillRecord>,
+) -> Vec<SourceEntry> {
+    let filesystem = crate::skills::discover_skills(Some(working_dir));
+    crate::skills::mcp::merge_skill_entries(filesystem, mcp)
+        .into_iter()
         .filter(|source| {
             matches!(
                 source.source_type,
                 SourceType::Skill | SourceType::BuiltinSkill
             )
         })
-        .collect();
-    skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
+        .collect()
+}
+
+fn render_skill_instructions(skills: &[&SourceEntry]) -> Option<String> {
     if skills.is_empty() {
         return None;
     }
-
+    let mut ordered: Vec<&SourceEntry> = skills.to_vec();
+    ordered.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
     let mut instructions = String::from(
         "# Skills\n\nYou have these skills at your disposal. Load one when it can help with the task or when the user asks for it:",
     );
-    for skill in skills {
+    for skill in ordered {
         instructions.push_str(&format!("\n- {}: {}", skill.name, skill.description));
     }
     Some(instructions)
 }
 
-fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolResult {
+fn current_lease(
+    extension_lease: &Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+    session: &Session,
+) -> Option<Arc<ExtensionLease>> {
+    let lease = extension_lease
+        .lock()
+        .expect("extension lease unavailable")
+        .clone()?;
+    (lease.scope_id() == session.id.as_str()).then_some(lease)
+}
+
+async fn execute_skill(
+    working_dir: &Path,
+    arguments: Option<JsonObject>,
+    lease: Option<&ExtensionLease>,
+) -> CallToolResult {
     let params = arguments
         .map(Value::Object)
         .ok_or_else(|| "Missing arguments".to_string())
@@ -96,30 +117,34 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
         Ok(params) => params,
         Err(error) => return CallToolResult::error(vec![ContentBlock::text(error)]),
     };
-    let skill_name = params.name.as_str();
+    let requested = params.name.as_str();
+    let (skill_name, relative_file) = match requested.split_once('/') {
+        Some((name, path)) => (name, Some(path.replace('\\', "/"))),
+        None => (requested, None),
+    };
     let args = params.args.as_deref();
-    let skills = crate::skills::discover_skills(Some(working_dir));
+    let mcp = match lease {
+        Some(lease) => lease.list_mcp_skills().await,
+        None => Vec::new(),
+    };
+    let skills = skill_entries(working_dir, mcp);
 
     if let Some(skill) = skills.iter().find(|skill| skill.name == skill_name) {
+        if let Some(relative_path) = relative_file.as_deref() {
+            if crate::skills::mcp::is_mcp_skill(skill) {
+                return load_mcp_supporting_file(skill, relative_path, lease).await;
+            }
+            return load_supporting_file(skill, requested, relative_path);
+        }
+        if crate::skills::mcp::is_mcp_skill(skill) {
+            return load_mcp_skill(skill, args, lease).await;
+        }
         return match crate::skills::loaded_skill_context_with_args(skill, args) {
             Ok(rendered) => CallToolResult::success(vec![ContentBlock::text(rendered)]),
             Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
                 "Failed to parse skill arguments: {error}"
             ))]),
         };
-    }
-
-    if let Some((parent_skill_name, raw_relative_path)) = skill_name.split_once('/') {
-        let relative_path = raw_relative_path.replace('\\', "/");
-        if let Some(skill) = skills.iter().find(|skill| {
-            skill.name == parent_skill_name
-                && matches!(
-                    skill.source_type,
-                    SourceType::Skill | SourceType::BuiltinSkill
-                )
-        }) {
-            return load_supporting_file(skill, skill_name, &relative_path);
-        }
     }
 
     let suggestions: Vec<&str> = skills
@@ -146,6 +171,93 @@ fn execute_skill(working_dir: &Path, arguments: Option<JsonObject>) -> CallToolR
             suggestions.join(", ")
         ))])
     }
+}
+
+fn skill_error(message: impl std::fmt::Display) -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text(message.to_string())])
+}
+
+async fn load_mcp_skill(
+    skill: &SourceEntry,
+    args: Option<&str>,
+    lease: Option<&ExtensionLease>,
+) -> CallToolResult {
+    let Some(lease) = lease else {
+        return skill_error("Skill server is not connected.");
+    };
+    let Some(extension_name) = skill
+        .properties
+        .get("mcpExtension")
+        .and_then(|value| value.as_str())
+    else {
+        return skill_error(format!("Skill '{}' has no serving extension.", skill.name));
+    };
+    let got = match lease.send_skill_get(extension_name, &skill.path).await {
+        Ok(record) => record,
+        Err(error) => return skill_error(error),
+    };
+    if got.name != skill.name {
+        return skill_error(crate::skills::mcp::SkillLoadError::InvalidName {
+            uri: skill.path.clone(),
+        });
+    }
+    let bytes = match lease.read_skill_text(extension_name, &skill.path).await {
+        Ok(text) => text,
+        Err(error) => return skill_error(error),
+    };
+    if let Err(error) = crate::skills::mcp::verify_file(&got, &skill.path, bytes.as_bytes()) {
+        return skill_error(error);
+    }
+    let mut loaded = skill.clone();
+    loaded.description = got.description;
+    loaded.content = bytes;
+    loaded.supporting_files.clear();
+    match crate::skills::loaded_skill_context_with_args(&loaded, args) {
+        Ok(rendered) => CallToolResult::success(vec![ContentBlock::text(rendered)]),
+        Err(error) => skill_error(format!("Failed to parse skill arguments: {error}")),
+    }
+}
+
+async fn load_mcp_supporting_file(
+    skill: &SourceEntry,
+    relative_path: &str,
+    lease: Option<&ExtensionLease>,
+) -> CallToolResult {
+    let Some(lease) = lease else {
+        return skill_error("Skill server is not connected.");
+    };
+    let Some(extension_name) = skill
+        .properties
+        .get("mcpExtension")
+        .and_then(|value| value.as_str())
+    else {
+        return skill_error(format!("Skill '{}' has no serving extension.", skill.name));
+    };
+    if relative_path
+        .split('/')
+        .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return skill_error(format!("File '{relative_path}' is not a skill file."));
+    }
+    let got = match lease.send_skill_get(extension_name, &skill.path).await {
+        Ok(record) => record,
+        Err(error) => return skill_error(error),
+    };
+    let Some((skill_path, _)) = crate::skills::mcp::parse_skill_uri(&skill.path) else {
+        return skill_error(format!("Skill '{}' has no skill URI.", skill.name));
+    };
+    let uri = format!("skill://{skill_path}/{relative_path}");
+    if let Err(error) = crate::skills::mcp::listed_file(&got, &uri) {
+        return skill_error(error);
+    }
+    let bytes = match lease.read_skill_text(extension_name, &uri).await {
+        Ok(text) => text,
+        Err(error) => return skill_error(error),
+    };
+    if let Err(error) = crate::skills::mcp::verify_file(&got, &uri, bytes.as_bytes()) {
+        return skill_error(error);
+    }
+    CallToolResult::success(vec![ContentBlock::text(bytes)])
 }
 
 fn load_supporting_file(
@@ -313,7 +425,13 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         session: &Session,
         _conversation: &Conversation,
     ) -> Result<Vec<(String, String)>> {
-        Ok(skill_instructions(&session.working_dir)
+        let mcp = match current_lease(&self.extension_lease, session) {
+            Some(lease) => lease.list_mcp_skills().await,
+            None => Vec::new(),
+        };
+        let skills = skill_entries(&session.working_dir, mcp);
+        let skills: Vec<&SourceEntry> = skills.iter().collect();
+        Ok(render_skill_instructions(&skills)
             .map(|instructions| ("skills".to_string(), instructions))
             .into_iter()
             .collect())
@@ -387,10 +505,14 @@ impl Operation<Session, GooseEffect> for SkillOperation {
                         // is ever applied.
                         Err(denial) => Err(denial),
                         Ok(()) => {
-                            let result = {
-                                let _entered = span.enter();
-                                execute_skill(&session.working_dir, tool_call.arguments.clone())
-                            };
+                            let lease = current_lease(&self.extension_lease, session);
+                            let result = execute_skill(
+                                &session.working_dir,
+                                tool_call.arguments.clone(),
+                                lease.as_deref(),
+                            )
+                            .instrument(span.clone())
+                            .await;
                             if result.is_error == Some(true) {
                                 span.record("error.type", "tool_error");
                             }
