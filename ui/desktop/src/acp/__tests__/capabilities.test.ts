@@ -34,6 +34,26 @@ describe('ACP capabilities', () => {
       expect(hasEmptyExtensionSelectionCapability(initializeResponseWithMeta(meta))).toBe(false);
     }
   });
+
+  it('accepts empty-selection capability objects with fields', () => {
+    expect(
+      hasEmptyExtensionSelectionCapability(
+        initializeResponseWithMeta({
+          goose: { emptyExtensionSelection: { version: 1 } },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    [],
+    { goose: [] },
+    { goose: { emptyExtensionSelection: [] } },
+    { goose: { emptyExtensionSelection: ['supported'] } },
+  ])('rejects array capability metadata: %j', (meta) => {
+    expect(hasEmptyExtensionSelectionCapability(initializeResponseWithMeta(meta))).toBe(false);
+  });
+
   it('detects local inference support from Goose metadata', () => {
     expect(
       hasLocalInferenceCapability(
