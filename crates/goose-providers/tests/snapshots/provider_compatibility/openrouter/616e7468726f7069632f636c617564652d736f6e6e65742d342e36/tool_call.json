@@ -1,0 +1,101 @@
+{
+  "model": "anthropic/claude-sonnet-4.6",
+  "provider": "openrouter",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "label": "tool_call",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "anthropic/claude-sonnet-4.6",
+        "reasoning": true,
+        "request_params": {
+          "tool_choice": "required"
+        },
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "You are a helpful assistant.",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "anthropic/claude-sonnet-4.6",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tool_choice": "required",
+        "tools": [
+          {
+            "function": {
+              "cache_control": {
+                "type": "ephemeral"
+              },
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ],
+        "usage": {
+          "include": true
+        }
+      },
+      "wire_controls": {
+        "tool_choice": "required"
+      }
+    }
+  ],
+  "scenario": "tool_call",
+  "status": "verified",
+  "tool_selection": "required",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

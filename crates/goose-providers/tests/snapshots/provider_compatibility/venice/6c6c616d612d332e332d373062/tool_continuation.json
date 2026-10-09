@@ -1,0 +1,158 @@
+{
+  "instruction_compliance": true,
+  "model": "llama-3.3-70b",
+  "provider": "venice",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.venice.ai/api/v1/chat/completions",
+      "label": "tool_call",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 4096,
+        "model_name": "llama-3.3-70b",
+        "reasoning": false,
+        "request_params": {
+          "tool_choice": "required"
+        },
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 4096,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "system"
+          },
+          {
+            "content": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+            "role": "user"
+          }
+        ],
+        "model": "llama-3.3-70b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tool_choice": "required",
+        "tools": [
+          {
+            "function": {
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "wire_controls": {
+        "tool_choice": "required"
+      }
+    },
+    {
+      "endpoint": "https://api.venice.ai/api/v1/chat/completions",
+      "label": "tool_result",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 4096,
+        "model_name": "llama-3.3-70b",
+        "reasoning": false,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 4096,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "system"
+          },
+          {
+            "content": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+            "role": "user"
+          },
+          {
+            "content": null,
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"value\":\"matrix-input\"}",
+                  "name": "matrix_echo"
+                },
+                "id": "chatcmpl-tool-814e3279fda520dd",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "content": "matrix-result-731",
+            "role": "tool",
+            "tool_call_id": "chatcmpl-tool-814e3279fda520dd"
+          }
+        ],
+        "model": "llama-3.3-70b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "function": {
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "wire_controls": {}
+    }
+  ],
+  "scenario": "tool_continuation",
+  "status": "verified",
+  "synthetic_history": false,
+  "tool_selection": "required",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

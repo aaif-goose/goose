@@ -1,0 +1,77 @@
+{
+  "instruction_compliance": true,
+  "model": "anthropic/claude-sonnet-4.6",
+  "provider": "openrouter",
+  "requested_thinking_effort": "medium",
+  "requests": [
+    {
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "label": "thinking_medium",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "anthropic/claude-sonnet-4.6",
+        "reasoning": true,
+        "request_params": {
+          "thinking_effort": "medium"
+        },
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "You are a helpful assistant.",
+                "type": "text"
+              }
+            ],
+            "role": "system"
+          },
+          {
+            "content": [
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "text": "Reply with the single word hello.",
+                "type": "text"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "anthropic/claude-sonnet-4.6",
+        "reasoning": {
+          "effort": "medium"
+        },
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "usage": {
+          "include": true
+        }
+      },
+      "wire_controls": {
+        "reasoning": {
+          "effort": "medium"
+        }
+      }
+    }
+  ],
+  "scenario": "thinking_medium",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

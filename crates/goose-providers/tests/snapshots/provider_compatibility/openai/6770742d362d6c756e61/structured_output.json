@@ -1,0 +1,127 @@
+{
+  "instruction_compliance": true,
+  "model": "gpt-6-luna",
+  "provider": "openai",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.openai.com/v1/responses",
+      "label": "structured_output",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-6-luna",
+        "reasoning": true,
+        "request_params": {
+          "response_format": {
+            "json_schema": {
+              "name": "matrix_greeting",
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "greeting": {
+                    "enum": [
+                      "hello"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "greeting"
+                ],
+                "type": "object"
+              },
+              "strict": true
+            },
+            "type": "json_schema"
+          }
+        },
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "input": [
+          {
+            "content": [
+              {
+                "text": "You are a helpful assistant.",
+                "type": "input_text"
+              }
+            ],
+            "role": "system",
+            "type": "message"
+          },
+          {
+            "content": [
+              {
+                "text": "Return a JSON object with greeting set to hello.",
+                "type": "input_text"
+              }
+            ],
+            "role": "user",
+            "type": "message"
+          }
+        ],
+        "max_output_tokens": 12288,
+        "model": "gpt-6-luna",
+        "store": false,
+        "stream": true,
+        "text": {
+          "format": {
+            "name": "matrix_greeting",
+            "schema": {
+              "additionalProperties": false,
+              "properties": {
+                "greeting": {
+                  "enum": [
+                    "hello"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "greeting"
+              ],
+              "type": "object"
+            },
+            "strict": true,
+            "type": "json_schema"
+          }
+        }
+      },
+      "wire_controls": {
+        "text": {
+          "format": {
+            "name": "matrix_greeting",
+            "schema": {
+              "additionalProperties": false,
+              "properties": {
+                "greeting": {
+                  "enum": [
+                    "hello"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "greeting"
+              ],
+              "type": "object"
+            },
+            "strict": true,
+            "type": "json_schema"
+          }
+        }
+      }
+    }
+  ],
+  "scenario": "structured_output",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

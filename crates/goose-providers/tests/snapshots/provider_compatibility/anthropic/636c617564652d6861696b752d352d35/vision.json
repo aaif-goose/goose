@@ -1,0 +1,85 @@
+{
+  "instruction_compliance": true,
+  "model": "claude-haiku-5-5",
+  "provider": "anthropic",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "label": "vision",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "claude-haiku-5-5",
+        "reasoning": true,
+        "supports_vision": true,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_tokens": 12288,
+        "messages": [
+          {
+            "content": [
+              {
+                "text": "Name the dominant color of this image. Reply with one color word.",
+                "type": "text"
+              },
+              {
+                "cache_control": {
+                  "type": "ephemeral"
+                },
+                "source": {
+                  "data": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGP4z8BAEiJN9aiGUQ1DSgMAkPn/Afnh+ngAAAAASUVORK5CYII=",
+                  "media_type": "image/png",
+                  "type": "base64"
+                },
+                "type": "image"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "model": "claude-haiku-5-5",
+        "output_config": {
+          "effort": "high"
+        },
+        "stream": true,
+        "system": [
+          {
+            "cache_control": {
+              "type": "ephemeral"
+            },
+            "text": "You are a helpful assistant.",
+            "type": "text"
+          }
+        ],
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      },
+      "wire_controls": {
+        "output_config": {
+          "effort": "high"
+        },
+        "thinking": {
+          "block_binding": {
+            "prefix_mismatch_behavior": "drop_block"
+          },
+          "type": "adaptive"
+        }
+      }
+    }
+  ],
+  "scenario": "vision",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

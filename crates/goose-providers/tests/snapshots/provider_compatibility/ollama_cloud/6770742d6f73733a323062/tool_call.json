@@ -1,0 +1,73 @@
+{
+  "model": "gpt-oss:20b",
+  "provider": "ollama_cloud",
+  "requested_thinking_effort": null,
+  "requests": [
+    {
+      "endpoint": "https://ollama.com/v1/chat/completions",
+      "label": "tool_call",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-oss:20b",
+        "reasoning": true,
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_completion_tokens": 12288,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "developer"
+          },
+          {
+            "content": "Call matrix_echo exactly once with {\"value\":\"matrix-input\"}. After receiving its result, reply with exactly the result text and do not call another tool.",
+            "role": "user"
+          }
+        ],
+        "model": "gpt-oss:20b",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "tools": [
+          {
+            "function": {
+              "description": "Return a deterministic compatibility-matrix result.",
+              "name": "matrix_echo",
+              "parameters": {
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "enum": [
+                      "matrix-input"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value"
+                ],
+                "type": "object"
+              },
+              "strict": false
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "wire_controls": {}
+    }
+  ],
+  "scenario": "tool_call",
+  "status": "verified",
+  "tool_selection": "prompt_directed",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}

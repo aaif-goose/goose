@@ -1,0 +1,54 @@
+{
+  "instruction_compliance": true,
+  "model": "gpt-oss:20b",
+  "provider": "ollama_cloud",
+  "requested_thinking_effort": "medium",
+  "requests": [
+    {
+      "endpoint": "https://ollama.com/v1/chat/completions",
+      "label": "thinking_medium",
+      "method": "POST",
+      "model_config": {
+        "max_tokens": 12288,
+        "model_name": "gpt-oss:20b",
+        "reasoning": true,
+        "request_params": {
+          "thinking_effort": "medium"
+        },
+        "supports_vision": false,
+        "temperature": null,
+        "toolshim": false,
+        "toolshim_model": null
+      },
+      "payload": {
+        "max_completion_tokens": 12288,
+        "messages": [
+          {
+            "content": "You are a helpful assistant.",
+            "role": "developer"
+          },
+          {
+            "content": "Reply with the single word hello.",
+            "role": "user"
+          }
+        ],
+        "model": "gpt-oss:20b",
+        "reasoning_effort": "medium",
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      "wire_controls": {
+        "reasoning_effort": "medium"
+      }
+    }
+  ],
+  "scenario": "thinking_medium",
+  "status": "verified",
+  "verification": {
+    "live": true,
+    "scenario_assertions": "passed"
+  },
+  "version": 1
+}
