@@ -390,7 +390,7 @@ impl ShellTool {
         }
 
         #[cfg(windows)]
-        if shell_basename(&windows_shell()) == "cmd" && params.command.contains(['\n', '\r']) {
+        if shell_basename(&windows_shell()) == "cmd" && cmd_truncates_at_newlines(&params.command) {
             return Self::error_result(
                 "cmd.exe silently truncates commands at newlines — only the first line executes, \
                  with exit code 0. Use `&` to chain commands on one line \
@@ -946,10 +946,39 @@ fn save_full_output(
     Ok(path)
 }
 
+/// cmd.exe silently truncates commands at newlines: only the first line
+/// executes, with exit code 0. The guard that rejects newlines (#11537 /
+/// #11259) must ignore leading and trailing line breaks, which cmd.exe runs
+/// fine, and reject only a line break between two pieces of command text
+/// (#12538).
+///
+/// The only call site is `#[cfg(windows)]`, so allow dead_code on other
+/// targets (the unit tests below exercise the logic on every platform).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn cmd_truncates_at_newlines(command: &str) -> bool {
+    command.trim().contains(['\n', '\r'])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rmcp::model::ContentBlock;
+
+    #[test]
+    fn cmd_truncates_at_newlines_only_for_interior_line_breaks() {
+        // Leading/trailing line breaks are harmless under cmd.exe (#12538);
+        // only a line break between two pieces of command text truncates.
+        assert!(!cmd_truncates_at_newlines("echo a"));
+        assert!(!cmd_truncates_at_newlines("echo a\n"));
+        assert!(!cmd_truncates_at_newlines("echo a\r\n"));
+        assert!(!cmd_truncates_at_newlines("\necho a"));
+        assert!(!cmd_truncates_at_newlines("\r\necho a"));
+        assert!(!cmd_truncates_at_newlines("\necho a\n"));
+        assert!(!cmd_truncates_at_newlines("  echo a  \n"));
+        assert!(cmd_truncates_at_newlines("echo a\necho b"));
+        assert!(cmd_truncates_at_newlines("echo a\r\necho b"));
+        assert!(cmd_truncates_at_newlines("\necho a\necho b\n"));
+    }
 
     fn extract_text(result: &CallToolResult) -> &str {
         match &result.content[0] {
