@@ -47,7 +47,10 @@ vi.mock('../acp/capabilities', () => ({
   getAcpFeatureCapabilities: vi.fn(),
 }));
 
-const testRecipe = vi.hoisted(() => ({ title: 'Test recipe', description: 'Recipe used in tests' }));
+const testRecipe = vi.hoisted(() => ({
+  title: 'Test recipe',
+  description: 'Recipe used in tests',
+}));
 
 const testSession: Session = {
   id: 'session-1',
