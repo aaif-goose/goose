@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
 use async_trait::async_trait;
 use futures::future;
 use futures::FutureExt;
@@ -28,7 +27,6 @@ struct FakeRunner {
     started: Mutex<Vec<String>>,
     events: Mutex<Vec<String>>,
     started_subagent_session_ids: Vec<String>,
-    blocked: bool,
     stall_next_hook: AtomicBool,
 }
 
@@ -66,10 +64,6 @@ impl SubagentRunner<Parent> for FakeRunner {
         _conversation: &Conversation,
     ) -> Vec<String> {
         self.started_subagent_session_ids.clone()
-    }
-
-    fn ready(&self, _parent_session: &Parent, _conversation: &Conversation) -> Result<bool> {
-        Ok(!self.blocked)
     }
 
     async fn start(
@@ -190,21 +184,6 @@ async fn stop(
         )
         .await,
     )
-}
-
-#[tokio::test]
-async fn nothing_starts_until_the_runner_is_ready() {
-    let runner = Arc::new(FakeRunner {
-        blocked: true,
-        ..fake(&["a"])
-    });
-    runner.finished("a", SubagentOutcome::Completed("done".into()));
-
-    let delivered = run_once(&operation(&runner), &[kickoff()]).await;
-
-    assert!(delivered.is_empty());
-    assert!(runner.started().is_empty());
-    assert!(runner.events().is_empty());
 }
 
 #[tokio::test]

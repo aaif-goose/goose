@@ -34,8 +34,6 @@ pub trait SubagentRunner<S>: MaybeSend + MaybeSync {
         conversation: &Conversation,
     ) -> Vec<String>;
 
-    fn ready(&self, parent_session: &S, conversation: &Conversation) -> Result<bool>;
-
     async fn start(
         &self,
         parent_session: &S,
@@ -220,10 +218,7 @@ where
             self.runner
                 .started_subagent_session_ids(session, conversation),
         );
-        if pending.is_empty() || !self.runner.ready(session, conversation)? {
-            return not_applicable();
-        }
-        let remaining = pending.len() - 1;
+        let remaining = pending.len().saturating_sub(1);
 
         let mut running = self.running.lock().await;
         for subagent_session_id in &pending {

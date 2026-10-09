@@ -1,4 +1,3 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::{self, BoxFuture};
 use goose_agent::subagent::{SubagentOutcome, SubagentRunner};
@@ -86,7 +85,9 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
         parent_session: &Session,
         conversation: &Conversation,
     ) -> Vec<String> {
-        if parent_session.session_type == SessionType::SubAgent {
+        let all_tool_calls_answered = messages_since_kickoff(conversation)
+            .is_ok_and(|messages| !awaits_tool_responses(messages));
+        if parent_session.session_type == SessionType::SubAgent || !all_tool_calls_answered {
             return Vec::new();
         }
         conversation
@@ -95,12 +96,6 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
             .flat_map(|message| delegated_subagent_ids(&message.content))
             .map(str::to_owned)
             .collect()
-    }
-
-    fn ready(&self, _parent_session: &Session, conversation: &Conversation) -> Result<bool> {
-        Ok(!awaits_tool_responses(messages_since_kickoff(
-            conversation,
-        )?))
     }
 
     async fn start(
@@ -154,6 +149,7 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
 mod tests {
     use std::sync::Arc;
 
+    use anyhow::Result;
     use goose_agent::events::AgentEvent;
     use goose_agent::subagent::ForegroundSubagentOperation;
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, MetaObject};
@@ -308,6 +304,7 @@ mod tests {
         let mut failed_delegate = delegate_result("failed", true);
         failed_delegate.is_error = Some(true);
         let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("delegate"),
             Message::user()
                 .with_tool_response("a", Ok(delegate_result("first", true)))
                 .with_tool_response("b", Ok(delegate_result("background", false)))
@@ -351,13 +348,18 @@ mod tests {
             requests,
             delegate_message("s1"),
         ];
-        assert!(!runner.ready(&parent, &Conversation::new_unvalidated(messages.clone()))?);
+        assert!(runner
+            .started_subagent_session_ids(&parent, &Conversation::new_unvalidated(messages.clone()))
+            .is_empty());
 
         messages.push(Message::user().with_tool_response(
             "other-call",
             Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
         ));
-        assert!(runner.ready(&parent, &Conversation::new_unvalidated(messages))?);
+        assert_eq!(
+            runner.started_subagent_session_ids(&parent, &Conversation::new_unvalidated(messages)),
+            ["s1"]
+        );
         Ok(())
     }
 
