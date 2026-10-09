@@ -1930,12 +1930,6 @@ impl GooseAcpAgent {
             run_id: format!("run_{}", Uuid::new_v4()),
             cancel_token: CancellationToken::new(),
         };
-        if self.closed_session_ids.lock().await.contains(session_id) {
-            return Err(agent_client_protocol::Error::resource_not_found(Some(
-                session_id.to_string(),
-            ))
-            .data(format!("Session not found: {}", session_id)));
-        }
         self.active_runs
             .reserve_prompt_run(session_id, run.run_id.clone(), run.cancel_token.clone())
             .map_err(|error| match error {
@@ -1949,6 +1943,12 @@ impl GooseAcpAgent {
                     .data("session already has an active Live run"),
                 StartRunError::LiveVoiceInteractionMissing => unreachable!("prompt runs do not require Live"),
             })?;
+        if self.closed_session_ids.lock().await.contains(session_id) {
+            return Err(agent_client_protocol::Error::resource_not_found(Some(
+                session_id.to_string(),
+            ))
+            .data(format!("Session not found: {}", session_id)));
+        }
         Ok(run)
     }
 

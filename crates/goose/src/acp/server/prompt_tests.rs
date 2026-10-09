@@ -42,25 +42,19 @@ impl Provider for CountingProvider {
     }
 }
 
-async fn server_with_session(
-    lazy: bool,
-) -> (
-    tempfile::TempDir,
-    Arc<GooseAcpAgent>,
-    Session,
-    Arc<CountingProvider>,
-) {
-    let root = tempfile::tempdir().unwrap();
-    let active_runs = Arc::new(ActiveRunRegistry::default());
+async fn server_with_registry(
+    root: &Path,
+    active_runs: Arc<ActiveRunRegistry>,
+) -> Arc<GooseAcpAgent> {
     let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
-    let server = Arc::new(
+    Arc::new(
         GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory: Arc::new(|_| {
                 Box::pin(async { anyhow::bail!("unexpected provider construction") })
             }),
             builtin_selection: AcpBuiltinSelection::default(),
-            data_dir: root.path().to_path_buf(),
-            config_dir: root.path().to_path_buf(),
+            data_dir: root.to_path_buf(),
+            config_dir: root.to_path_buf(),
             disable_session_naming: true,
             goose_platform: GoosePlatform::GooseCli,
             additional_source_roots: Vec::new(),
@@ -71,7 +65,19 @@ async fn server_with_session(
         })
         .await
         .unwrap(),
-    );
+    )
+}
+
+async fn server_with_session(
+    lazy: bool,
+) -> (
+    tempfile::TempDir,
+    Arc<GooseAcpAgent>,
+    Session,
+    Arc<CountingProvider>,
+) {
+    let root = tempfile::tempdir().unwrap();
+    let server = server_with_registry(root.path(), Arc::new(ActiveRunRegistry::default())).await;
     let session = server
         .session_manager
         .create_session(
@@ -393,4 +399,73 @@ async fn disconnect_during_activation_releases_pending_run() {
     .await
     .expect("disconnected prompt retained its reservation");
     assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn shared_registry_cancel_survives_closed_session_lock_contention() {
+    let (root, server, session, provider) = server_with_session(false).await;
+    let other = server_with_registry(root.path(), server.active_runs.clone()).await;
+    let closed_sessions = server.closed_session_ids.lock().await;
+    let mut reservation = Box::pin(server.reserve_prompt_run(&session.id));
+    assert!(reservation.as_mut().now_or_never().is_none());
+    other
+        .on_cancel(CancelNotification::new(SessionId::new(session.id.clone())))
+        .await
+        .unwrap();
+    assert!(server
+        .active_runs
+        .agent_cancel_token(&session.id)
+        .is_some_and(|token| token.is_cancelled()));
+    drop(closed_sessions);
+    let run = reservation.await.unwrap();
+    assert!(run.cancel_token.is_cancelled());
+    SacpAgent
+        .builder()
+        .connect_with(Client.builder(), async |cx| {
+            let response = server.on_prompt(&cx, prompt(&session.id), run).await?;
+            assert_eq!(response.stop_reason, StopReason::Cancelled);
+            assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+            assert!(!server.active_runs.is_active(&session.id));
+            Ok(())
+        })
+        .await
+        .unwrap();
+    Client
+        .builder()
+        .connect_with(
+            SacpAgent.builder().with_handler(GooseAcpHandler {
+                agent: server.clone(),
+            }),
+            async |cx| {
+                let response = cx.send_request(prompt(&session.id)).block_task().await?;
+                assert_eq!(response.stop_reason, StopReason::EndTurn);
+                assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn closed_session_rejection_releases_pending_reservation() {
+    let (_root, server, session, provider) = server_with_session(false).await;
+    server
+        .closed_session_ids
+        .lock()
+        .await
+        .insert(session.id.clone());
+    assert!(server.reserve_prompt_run(&session.id).await.is_err());
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.active_runs.is_active(&session.id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("closed session retained its reservation");
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+    server.closed_session_ids.lock().await.remove(&session.id);
+    let run = server.reserve_prompt_run(&session.id).await.unwrap();
+    assert!(!run.cancel_token.is_cancelled());
+    server.clear_active_run(&session.id, &run.run_id).await;
 }
