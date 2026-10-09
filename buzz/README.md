@@ -137,7 +137,6 @@ The current roster is:
 
 - Douwe Osinga as an owner
     - Doose as their bot
-- Alex Hancock as a member
 - filip as a member
 - jasper as a member
 - Mic as a member

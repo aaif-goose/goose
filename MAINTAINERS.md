@@ -1,6 +1,5 @@
 # Core Maintainers
 
-* [Alex Hancock (@alexhancock)](https://github.com/alexhancock)
 * [Bradley Axen (@baxen)](https://github.com/baxen)
 * [Douwe Osinga (@DOsinga)](https://github.com/DOsinga)
 * [Jack Amadeo (@jamadeo)](https://github.com/jamadeo)
