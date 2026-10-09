@@ -369,6 +369,10 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
     scopes: Mutex<HashMap<String, IndexMap<String, Arc<ExtensionSlot>>>>,
+    /// Slots `enable` has started but not yet selected. A lease resolved from
+    /// the old selection in the meantime must not lose them, or the next
+    /// lease would start a second process.
+    enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
     context: PlatformExtensionContext,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
@@ -593,6 +597,7 @@ impl ExtensionManager {
     ) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
+            enabling: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -668,15 +673,19 @@ impl ExtensionManager {
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
         let slots = {
             let mut scopes = self.scopes.lock().await;
+            let enabling = self.enabling.lock().await;
             let current = scopes.remove(set.scope_id()).unwrap_or_default();
             let selected = set
                 .extensions()
                 .iter()
                 .map(|config| {
                     let key = config.key();
+                    let pending = enabling.get(&(set.scope_id().to_string(), key.clone()));
                     let slot = current
                         .get(&key)
-                        .filter(|slot| {
+                        .into_iter()
+                        .chain(pending)
+                        .find(|slot| {
                             slot.config == *config
                                 && slot.serves(set.working_dir.as_deref(), set.container.as_ref())
                         })
@@ -912,32 +921,53 @@ impl ExtensionManager {
         config: ExtensionConfig,
     ) -> ExtensionResult<()> {
         let session = self.session(session_id).await?;
+        let pending_key = (session_id.to_string(), config.key());
         let slot = {
-            let mut scopes = self.scopes.lock().await;
-            let slots = scopes.entry(session_id.to_string()).or_default();
-            let reusable = slots.get(&config.key()).filter(|slot| {
-                slot.config == config
-                    && slot.serves(Some(&session.working_dir), session.container.as_ref())
-                    && !matches!(slot.runtime.get(), Some(Runtime::Failed(_)))
-            });
-            match reusable {
+            let scopes = self.scopes.lock().await;
+            let mut enabling = self.enabling.lock().await;
+            let selected = scopes
+                .get(session_id)
+                .and_then(|slots| slots.get(&pending_key.1));
+            let reusable = enabling
+                .get(&pending_key)
+                .into_iter()
+                .chain(selected)
+                .find(|slot| {
+                    slot.config == config
+                        && slot.serves(Some(&session.working_dir), session.container.as_ref())
+                        && !matches!(slot.runtime.get(), Some(Runtime::Failed(_)))
+                });
+            let slot = match reusable {
                 Some(slot) => Arc::clone(slot),
-                None => {
-                    let slot = Arc::new(self.new_slot(
-                        session_id,
-                        &config,
-                        Some(&session.working_dir),
-                        session.container.as_ref(),
-                    ));
-                    slots.insert(config.key(), Arc::clone(&slot));
-                    slot
-                }
-            }
+                None => Arc::new(self.new_slot(
+                    session_id,
+                    &config,
+                    Some(&session.working_dir),
+                    session.container.as_ref(),
+                )),
+            };
+            enabling.insert(pending_key.clone(), Arc::clone(&slot));
+            slot
         };
-        if let Runtime::Failed(error) = slot.runtime().await {
-            return Err(ExtensionError::StartFailed(error.clone()));
+        let result = match slot.runtime().await {
+            Runtime::Failed(error) => Err(ExtensionError::StartFailed(error.clone())),
+            Runtime::Running(_) | Runtime::Declined => self.select(session_id, config).await,
+        };
+        let mut scopes = self.scopes.lock().await;
+        let mut enabling = self.enabling.lock().await;
+        if enabling
+            .get(&pending_key)
+            .is_some_and(|pending| Arc::ptr_eq(pending, &slot))
+        {
+            enabling.remove(&pending_key);
         }
-        self.select(session_id, config).await
+        if result.is_ok() {
+            scopes
+                .entry(pending_key.0)
+                .or_default()
+                .insert(pending_key.1, slot);
+        }
+        result
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
@@ -1687,6 +1717,18 @@ mod tests {
         serve_fixture(read, write);
     }
 
+    static GATED_FIXTURE_STARTS: AtomicUsize = AtomicUsize::new(0);
+    static GATED_FIXTURE_GATE: Semaphore = Semaphore::const_new(0);
+
+    fn serve_gated_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+        GATED_FIXTURE_STARTS.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(async move {
+            GATED_FIXTURE_GATE.acquire().await.unwrap().forget();
+            let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+            let _ = running.waiting().await;
+        });
+    }
+
     /// A real MCP server that runs in-process, so starting it reads no
     /// secrets; an HTTP server would look up OAuth credentials in the keyring.
     fn fixture_config(
@@ -1870,6 +1912,33 @@ mod tests {
             manager.list_extensions(&session.id).await.unwrap(),
             vec!["enabled_fixture"]
         );
+    }
+
+    #[tokio::test]
+    async fn a_lease_resolved_while_enabling_keeps_the_started_process() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        let session = session_selecting(&manager, temp_dir.path(), vec![]).await;
+        let config = fixture_config("gated_fixture", serve_gated_fixture);
+
+        let enable = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            let session_id = session.id.clone();
+            async move { manager.enable(&session_id, config).await }
+        });
+        while GATED_FIXTURE_STARTS.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+        let during = manager.current_lease(&session.id).await.unwrap();
+        assert!(!during.is_enabled("gated_fixture"));
+        GATED_FIXTURE_GATE.add_permits(2);
+        enable.await.unwrap().unwrap();
+
+        let after = manager.current_lease(&session.id).await.unwrap();
+        assert!(after.start().await.iter().all(|result| result.success));
+        assert_eq!(GATED_FIXTURE_STARTS.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
