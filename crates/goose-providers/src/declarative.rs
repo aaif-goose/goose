@@ -58,6 +58,7 @@ pub(crate) mod declarative_providers {
         trustedrouter,
         venice,
         vercel_ai_gateway,
+        wallaby,
         zai,
         zai_coding_plan,
         zhipu,
