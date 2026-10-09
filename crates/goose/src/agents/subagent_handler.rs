@@ -13,7 +13,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use futures::future::BoxFuture;
 use futures::StreamExt;
-use goose_agent::subagent::{SubagentOutcome, SubagentRequest, SubagentResult, SubagentStart};
+use goose_agent::subagent::SubagentOutcome;
 use rmcp::model::Role;
 use serde::Serialize;
 use std::future::Future;
@@ -114,42 +114,16 @@ impl ForegroundSubagentRunner {
         }
     }
 
-    pub(crate) async fn start_subagent(
+    pub(crate) async fn load(&self, subagent_id: &str) -> Result<Session> {
+        self.session_manager.get_session(subagent_id, true).await
+    }
+
+    pub(crate) fn spawn(
         &self,
-        parent_id: &str,
-        request: SubagentRequest,
-    ) -> SubagentStart {
-        let subagent = match self
-            .session_manager
-            .get_session(&request.subagent_id, true)
-            .await
-        {
-            Ok(subagent) => subagent,
-            Err(error) => {
-                return SubagentStart::Finished(SubagentResult::Failed(error.to_string()))
-            }
-        };
-        if subagent.session_type != SessionType::SubAgent
-            || subagent.parent_session_id.as_deref() != Some(parent_id)
-        {
-            return SubagentStart::Finished(SubagentResult::Failed(
-                "it does not belong to this session".to_string(),
-            ));
-        }
-        if let Some(output) = subagent
-            .conversation
-            .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
-        {
-            return SubagentStart::Finished(SubagentResult::Completed(output));
-        }
-        SubagentStart::Started {
-            task: subagent
-                .recipe
-                .as_ref()
-                .and_then(|recipe| recipe.prompt.clone()),
-            run: spawn_run(self.clone().run(subagent, request.cancel)),
-        }
+        subagent: Session,
+        cancel: CancellationToken,
+    ) -> BoxFuture<'static, SubagentOutcome> {
+        spawn_run(self.clone().run(subagent, cancel))
     }
 
     async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
@@ -173,28 +147,26 @@ impl ForegroundSubagentRunner {
         let stopped = cancel.is_cancelled();
         let subagent = match self.session_manager.get_session(&subagent.id, true).await {
             Ok(subagent) => subagent,
-            Err(error) => {
-                return SubagentOutcome::Finished(SubagentResult::Failed(error.to_string()))
-            }
+            Err(error) => return SubagentOutcome::Failed(error.to_string()),
         };
         let messages = subagent.conversation.as_ref().map(Conversation::messages);
         if let Some(output) =
             messages.and_then(|messages| FinalOutputTool::successful_output(messages))
         {
-            return SubagentOutcome::Finished(SubagentResult::Completed(output));
+            return SubagentOutcome::Completed(output);
         }
         if stopped {
             return SubagentOutcome::Cancelled;
         }
         if let Err(error) = run_result {
-            return SubagentOutcome::Finished(SubagentResult::Failed(error.to_string()));
+            return SubagentOutcome::Failed(error.to_string());
         }
         if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
-            return SubagentOutcome::Finished(SubagentResult::Failed(format!("{error:?}")));
+            return SubagentOutcome::Failed(format!("{error:?}"));
         }
-        SubagentOutcome::Finished(SubagentResult::Failed(failure_reason(
+        SubagentOutcome::Failed(failure_reason(
             messages.map(Vec::as_slice).unwrap_or_default(),
-        )))
+        ))
     }
 }
 
@@ -203,9 +175,8 @@ fn spawn_run(
 ) -> BoxFuture<'static, SubagentOutcome> {
     let task = AbortOnDropHandle::new(tokio::spawn(run.in_current_span()));
     Box::pin(async move {
-        task.await.unwrap_or_else(|error| {
-            SubagentOutcome::Finished(SubagentResult::Failed(error.to_string()))
-        })
+        task.await
+            .unwrap_or_else(|error| SubagentOutcome::Failed(error.to_string()))
     })
 }
 

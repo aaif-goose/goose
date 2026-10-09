@@ -1,7 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::subagent::{SubagentRequest, SubagentResult, SubagentRunner, SubagentStart};
+use futures::future::{self, BoxFuture};
+use goose_agent::subagent::{SubagentOutcome, SubagentRunner};
 
+use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::{awaits_tool_responses, messages_since_kickoff, Emitter};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
@@ -25,20 +27,30 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
     format!("Running subagent {subagent_id}{snippet}")
 }
 
-fn finished_notice(subagent_id: &str, result: &SubagentResult, show_output: bool) -> String {
-    match result {
-        SubagentResult::Completed(output) if show_output => {
+fn finished_notice(
+    subagent_id: &str,
+    outcome: &SubagentOutcome,
+    show_output: bool,
+) -> Option<String> {
+    let notice = match outcome {
+        SubagentOutcome::Completed(output) if show_output => {
             format!(
                 "Subagent {subagent_id} completed\n\n{}",
                 readable_output(output)
             )
         }
-        SubagentResult::Completed(_) => format!("Subagent {subagent_id} completed"),
-        SubagentResult::Failed(reason) => format!(
+        SubagentOutcome::Completed(_) => format!("Subagent {subagent_id} completed"),
+        SubagentOutcome::Failed(reason) => format!(
             "Subagent {subagent_id} failed: {}",
             reason.lines().next().unwrap_or_default()
         ),
-    }
+        SubagentOutcome::Cancelled => return None,
+    };
+    Some(notice)
+}
+
+fn ended(outcome: SubagentOutcome) -> BoxFuture<'static, SubagentOutcome> {
+    Box::pin(future::ready(outcome))
 }
 
 fn delegated_subagent_ids(content: &[MessageContent]) -> impl Iterator<Item = &str> {
@@ -69,8 +81,12 @@ fn readable_output(output: &str) -> String {
 
 #[async_trait]
 impl SubagentRunner<Session> for ForegroundSubagentRunner {
-    fn started_subagent_ids(&self, parent: &Session, conversation: &Conversation) -> Vec<String> {
-        if parent.session_type == SessionType::SubAgent {
+    fn started_subagent_session_ids(
+        &self,
+        parent_session: &Session,
+        conversation: &Conversation,
+    ) -> Vec<String> {
+        if parent_session.session_type == SessionType::SubAgent {
             return Vec::new();
         }
         conversation
@@ -81,35 +97,56 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
             .collect()
     }
 
-    fn ready(&self, _parent: &Session, conversation: &Conversation) -> Result<bool> {
+    fn ready(&self, _parent_session: &Session, conversation: &Conversation) -> Result<bool> {
         Ok(!awaits_tool_responses(messages_since_kickoff(
             conversation,
         )?))
     }
 
-    async fn start(&self, parent: &Session, request: SubagentRequest) -> SubagentStart {
-        self.start_subagent(&parent.id, request).await
-    }
-
-    async fn on_subagent_started(&self, subagent_id: &str, task: Option<&str>, emit: &Emitter) {
-        emit.message(inline_notice(start_notice(subagent_id, task)))
+    async fn start(
+        &self,
+        parent_session: &Session,
+        subagent_session_id: &str,
+        emit: &Emitter,
+    ) -> BoxFuture<'static, SubagentOutcome> {
+        let subagent = match self.load(subagent_session_id).await {
+            Ok(subagent) => subagent,
+            Err(error) => return ended(SubagentOutcome::Failed(error.to_string())),
+        };
+        if subagent.session_type != SessionType::SubAgent
+            || subagent.parent_session_id.as_deref() != Some(parent_session.id.as_str())
+        {
+            return ended(SubagentOutcome::Failed(
+                "it does not belong to this session".to_string(),
+            ));
+        }
+        if let Some(output) = subagent
+            .conversation
+            .as_ref()
+            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+        {
+            return ended(SubagentOutcome::Completed(output));
+        }
+        let task = subagent
+            .recipe
+            .as_ref()
+            .and_then(|recipe| recipe.prompt.as_deref());
+        emit.message(inline_notice(start_notice(subagent_session_id, task)))
             .await;
+        self.spawn(subagent, emit.cancel_token().clone())
     }
 
     async fn on_subagent_finished(
         &self,
-        subagent_id: &str,
-        result: &SubagentResult,
+        subagent_session_id: &str,
+        outcome: &SubagentOutcome,
         remaining: usize,
         emit: &Emitter,
     ) {
         let show_output = remaining > 0 || emit.cancel_token().is_cancelled();
-        emit.message(inline_notice(finished_notice(
-            subagent_id,
-            result,
-            show_output,
-        )))
-        .await;
+        if let Some(notice) = finished_notice(subagent_session_id, outcome, show_output) {
+            emit.message(inline_notice(notice)).await;
+        }
     }
 }
 
@@ -118,7 +155,7 @@ mod tests {
     use std::sync::Arc;
 
     use goose_agent::events::AgentEvent;
-    use goose_agent::subagent::{SubagentOperation, SubagentOutcome};
+    use goose_agent::subagent::SubagentOperation;
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, MetaObject};
     use tempfile::TempDir;
     use tokio::sync::mpsc;
@@ -292,12 +329,12 @@ mod tests {
         let runner = fixture.runner();
 
         assert_eq!(
-            runner.started_subagent_ids(&parent, &conversation),
+            runner.started_subagent_session_ids(&parent, &conversation),
             ["first", "second"]
         );
         parent.session_type = SessionType::SubAgent;
         assert!(runner
-            .started_subagent_ids(&parent, &conversation)
+            .started_subagent_session_ids(&parent, &conversation)
             .is_empty());
         Ok(())
     }
@@ -542,7 +579,7 @@ mod tests {
             .runner()
             .on_subagent_finished(
                 &fixture.subagent_id,
-                &SubagentResult::Completed(r#"{"summary":"done"}"#.to_string()),
+                &SubagentOutcome::Completed(r#"{"summary":"done"}"#.to_string()),
                 0,
                 &emit,
             )
@@ -563,17 +600,17 @@ mod tests {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let SubagentStart::Started { run, .. } = fixture
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let emit = Emitter::new(tx, cancel);
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, false)
+            .await?;
+        let run = fixture
             .runner()
-            .start_subagent(
-                &fixture.parent_id,
-                SubagentRequest::new(fixture.subagent_id.clone(), cancel),
-            )
-            .await
-        else {
-            panic!("expected the subagent to start");
-        };
-        assert!(matches!(run.await, SubagentOutcome::Cancelled));
+            .start(&parent, &fixture.subagent_id, &emit)
+            .await;
+        assert_eq!(run.await, SubagentOutcome::Cancelled);
         Ok(())
     }
 
