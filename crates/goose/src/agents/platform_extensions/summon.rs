@@ -1,6 +1,7 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
@@ -397,6 +398,16 @@ impl SummonClient {
         parent_session_id: &str,
         name: String,
     ) -> Result<crate::session::Session, String> {
+        let goose_mode = if parent_session_id.is_empty() {
+            GooseMode::Auto
+        } else {
+            self.context
+                .session_manager
+                .get_session(parent_session_id, false)
+                .await
+                .map_err(|e| format!("Failed to read the parent session: {}", e))?
+                .goose_mode
+        };
         let session = self
             .context
             .session_manager
@@ -404,7 +415,7 @@ impl SummonClient {
                 working_dir.to_path_buf(),
                 name,
                 SessionType::SubAgent,
-                GooseMode::Auto,
+                goose_mode,
             )
             .await
             .map_err(|e| format!("Failed to create subagent session: {}", e))?;
@@ -841,10 +852,10 @@ impl SummonClient {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
-        self.handle_foreground_delegate(params, &session).await
+        self.create_subagent(params, &session).await
     }
 
-    async fn handle_foreground_delegate(
+    async fn create_subagent(
         &self,
         params: DelegateParams,
         parent: &Session,
@@ -860,7 +871,7 @@ impl SummonClient {
             .await
             .map_err(|_| {
                 format!(
-                    "Provider '{}' cannot be reconstructed for a foreground subagent",
+                    "Provider '{}' cannot be reconstructed for a subagent",
                     subagent_config.provider_name
                 )
             })?;
@@ -934,11 +945,11 @@ impl SummonClient {
             serde_json::Value::String(child.id.clone()),
         );
         meta.0.insert(
-            "foreground_subagent".to_string(),
+            DELEGATED_META_KEY.to_string(),
             serde_json::Value::Bool(true),
         );
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Delegated to foreground subagent {}",
+            "Delegated to subagent {}",
             child.id
         ))])
         .with_meta(Some(meta)))
@@ -1493,7 +1504,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn foreground_delegate_persists_child_without_creating_provider() {
+    async fn delegate_persists_child_without_creating_provider() {
         let temp_dir = TempDir::new().unwrap();
         let child_dir = temp_dir.path().join("child");
         fs::create_dir(&child_dir).unwrap();
@@ -1543,7 +1554,7 @@ mod tests {
         };
         let meta = result.meta.as_ref().unwrap();
         assert_eq!(
-            meta.0.get("foreground_subagent"),
+            meta.0.get(DELEGATED_META_KEY),
             Some(&serde_json::json!(true))
         );
         let child_id = meta.0["subagent_session_id"].as_str().unwrap().to_string();
@@ -1601,7 +1612,7 @@ mod tests {
                     MessageContent::ToolResponse(response)
                         if response.tool_result.as_ref().is_ok_and(|result|
                             result.meta.as_ref().is_some_and(|meta|
-                                meta.0.get("foreground_subagent") == Some(&serde_json::json!(true))
+                                meta.0.get(DELEGATED_META_KEY) == Some(&serde_json::json!(true))
                                     && meta.0.get("subagent_session_id").and_then(serde_json::Value::as_str)
                                         == Some(child_id.as_str())
                             )
@@ -1610,12 +1621,14 @@ mod tests {
             })
         }));
 
-        let (reloaded_agent, _) =
-            crate::agents::subagent_handler::from_foreground_subagent_session(
-                Arc::new(reloaded),
-                &child,
-                false,
-            )
+        let reloaded_agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+            Arc::new(reloaded),
+            crate::config::permission::PermissionManager::instance(),
+            None,
+            true,
+            crate::agents::GoosePlatform::GooseCli,
+        ));
+        crate::agents::subagent_handler::prepare_subagent(&reloaded_agent, &child)
             .await
             .unwrap();
         assert_eq!(

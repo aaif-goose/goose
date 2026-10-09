@@ -3796,13 +3796,13 @@ print(\"hello, world\")
             )
             .await
             .unwrap();
-        let session_agent = Arc::new(Agent::with_config(AgentConfig::new(
+        let session_agent = Agent::with_config(AgentConfig::new(
             server.session_manager.clone(),
             server.permission_manager.clone(),
             None,
             true,
             GoosePlatform::GooseCli,
-        )));
+        ));
         let provider = Arc::new(AsyncEffortProvider::new());
         session_agent
             .update_provider(

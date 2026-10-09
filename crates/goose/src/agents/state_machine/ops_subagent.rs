@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio::task::{self, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -11,13 +11,17 @@ use crate::agents::state_machine::{
     applied, awaits_tool_responses, messages_since_kickoff, not_applicable, Emitter, GooseEffect,
     Operation, OperationResult,
 };
-use crate::agents::subagent_handler::{ForegroundSubagentRunner, SubagentOutcome, SubagentStart};
+use crate::agents::subagent_handler::{SubagentOutcome, SubagentRunner, SubagentStart};
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 use crate::conversation::Conversation;
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
 
+// Both keys predate background subagents' removal and live on in session histories:
+// renaming the note scope would deliver every past subagent's result again, and older
+// histories still hold background delegations marked `false`.
 const OPERATION_NAME: &str = "foreground_subagent";
+pub(crate) const DELEGATED_META_KEY: &str = "foreground_subagent";
 const DELIVERED: &str = "delivered";
 const CANCELLED: &str = "cancelled";
 const TASK_SNIPPET_CHARS: usize = 160;
@@ -48,7 +52,7 @@ fn delegated_subagent_ids(content: &[MessageContent]) -> impl Iterator<Item = &s
         let result = response.tool_result.as_ref().ok()?;
         let meta = result.meta.as_ref()?;
         if result.is_error == Some(true)
-            || meta.0.get("foreground_subagent") != Some(&serde_json::Value::Bool(true))
+            || meta.0.get(DELEGATED_META_KEY) != Some(&serde_json::Value::Bool(true))
         {
             return None;
         }
@@ -166,24 +170,29 @@ impl RunningSubagents {
     }
 }
 
-pub struct ForegroundSubagentOperation {
-    runner: ForegroundSubagentRunner,
+pub struct SubagentOperation {
+    runner: SubagentRunner,
     cancel: CancellationToken,
     running: Mutex<RunningSubagents>,
+    forward_tx: mpsc::UnboundedSender<Message>,
+    forwarded: Mutex<mpsc::UnboundedReceiver<Message>>,
 }
 
-impl ForegroundSubagentOperation {
-    pub fn new(runner: ForegroundSubagentRunner, cancel: CancellationToken) -> Self {
+impl SubagentOperation {
+    pub fn new(runner: SubagentRunner, cancel: CancellationToken) -> Self {
+        let (forward_tx, forwarded) = mpsc::unbounded_channel();
         Self {
             runner,
             cancel,
             running: Mutex::default(),
+            forward_tx,
+            forwarded: Mutex::new(forwarded),
         }
     }
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
+impl Operation<Session, GooseEffect> for SubagentOperation {
     fn name(&self) -> &'static str {
         OPERATION_NAME
     }
@@ -246,7 +255,12 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
             }
             match self
                 .runner
-                .start(&session.id, subagent_id, self.cancel.clone())
+                .start(
+                    &session.id,
+                    subagent_id,
+                    self.cancel.clone(),
+                    self.forward_tx.clone(),
+                )
                 .await
             {
                 SubagentStart::HasOutcome(outcome) => {
@@ -266,11 +280,16 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
             }
         }
 
-        let finished = running
-            .tasks
-            .join_next_with_id()
-            .await
-            .ok_or_else(|| anyhow!("No foreground subagent is running"))?;
+        let mut forwarded = self.forwarded.lock().await;
+        let finished = loop {
+            tokio::select! {
+                Some(message) = forwarded.recv() => {
+                    emit.message(message);
+                }
+                finished = running.tasks.join_next_with_id() => break finished,
+            }
+        }
+        .ok_or_else(|| anyhow!("No subagent is running"))?;
         let (task_id, outcome) = match finished {
             Ok(finished) => finished,
             Err(error) => (error.id(), SubagentOutcome::Failed(error.to_string())),
@@ -278,7 +297,7 @@ impl Operation<Session, GooseEffect> for ForegroundSubagentOperation {
         let subagent_id = running
             .subagent_ids
             .remove(&task_id)
-            .ok_or_else(|| anyhow!("Unknown foreground subagent task {task_id}"))?;
+            .ok_or_else(|| anyhow!("Unknown subagent task {task_id}"))?;
         match subagent_result_message(&subagent_id, outcome, pending.len() > 1, emit) {
             Some(message) => applied([message]),
             None => not_applicable(),
@@ -311,11 +330,20 @@ mod tests {
     }
 
     impl Fixture {
-        fn operation(&self, cancel: CancellationToken) -> ForegroundSubagentOperation {
-            ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.manager.clone(), false),
-                cancel,
-            )
+        fn runner(&self) -> SubagentRunner {
+            let mut agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+                self.manager.clone(),
+                crate::config::permission::PermissionManager::instance(),
+                None,
+                true,
+                crate::agents::GoosePlatform::GooseCli,
+            ));
+            agent.set_hook_manager_for_test(crate::hooks::HookManager::default());
+            SubagentRunner::new(agent)
+        }
+
+        fn operation(&self, cancel: CancellationToken) -> SubagentOperation {
+            SubagentOperation::new(self.runner(), cancel)
         }
     }
 
@@ -369,7 +397,7 @@ mod tests {
     fn delegate_result(subagent_id: &str, foreground: bool) -> CallToolResult {
         let mut meta = MetaObject::new();
         meta.0.insert(
-            "foreground_subagent".to_string(),
+            DELEGATED_META_KEY.to_string(),
             serde_json::Value::Bool(foreground),
         );
         meta.0.insert(
@@ -377,7 +405,7 @@ mod tests {
             serde_json::Value::String(subagent_id.to_string()),
         );
         CallToolResult::success(vec![ContentBlock::text(format!(
-            "Delegated to foreground subagent {subagent_id}"
+            "Delegated to subagent {subagent_id}"
         ))])
         .with_meta(Some(meta))
     }
@@ -400,7 +428,7 @@ mod tests {
     }
 
     async fn run_step(
-        operation: &ForegroundSubagentOperation,
+        operation: &SubagentOperation,
         fixture: &Fixture,
         emit: &Emitter,
     ) -> Result<(Session, OperationResult<GooseEffect>)> {
@@ -423,7 +451,7 @@ mod tests {
 
     fn delivered(effect: &GooseEffect) -> (&str, &Message) {
         let GooseEffect::Conversation(ConversationEffect::AppendMessage(message)) = effect else {
-            panic!("expected a foreground subagent delivery");
+            panic!("expected a subagent delivery");
         };
         let subagent_id = message
             .metadata
@@ -668,7 +696,7 @@ mod tests {
     }
 
     async fn cancel_step(
-        operation: &ForegroundSubagentOperation,
+        operation: &SubagentOperation,
         fixture: &Fixture,
         emit: &Emitter,
     ) -> Result<(Session, Vec<GooseEffect>)> {
@@ -773,9 +801,14 @@ mod tests {
         let fixture = fixture().await?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let runner = ForegroundSubagentRunner::new(fixture.manager.clone(), false);
+        let runner = fixture.runner();
         let SubagentStart::Started { run, .. } = runner
-            .start(&fixture.parent_id, &fixture.subagent_id, cancel)
+            .start(
+                &fixture.parent_id,
+                &fixture.subagent_id,
+                cancel,
+                mpsc::unbounded_channel().0,
+            )
             .await
         else {
             panic!("expected the subagent to start");

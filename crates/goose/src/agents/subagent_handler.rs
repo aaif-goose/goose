@@ -2,10 +2,12 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, AgentConfig, GoosePlatform, SessionConfig,
+        Agent, AgentEvent, SessionConfig,
     },
-    config::permission::PermissionManager,
-    conversation::{message::Message, Conversation},
+    conversation::{
+        message::{ActionRequiredData, Message, MessageContent},
+        Conversation,
+    },
     prompt_template::render_template,
     session::extension_data::{EnabledExtensionsState, ExtensionState},
     session::{Session, SessionManager, SessionType},
@@ -16,6 +18,7 @@ use futures::StreamExt;
 use rmcp::model::Role;
 use serde::Serialize;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Serialize)]
@@ -25,11 +28,7 @@ pub struct SubagentPromptContext {
     pub available_tools: String,
 }
 
-pub(crate) async fn from_foreground_subagent_session(
-    session_manager: Arc<SessionManager>,
-    session: &Session,
-    use_login_shell_path: bool,
-) -> Result<(Agent, SessionConfig)> {
+pub(crate) async fn prepare_subagent(agent: &Agent, session: &Session) -> Result<SessionConfig> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
@@ -59,21 +58,11 @@ pub(crate) async fn from_foreground_subagent_session(
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
 
-    let mut config = AgentConfig::new(
-        session_manager,
-        PermissionManager::instance(),
-        None,
-        true,
-        GoosePlatform::GooseCli,
-    )
-    .with_use_login_shell_path(use_login_shell_path);
-    config.is_subagent = true;
-    let agent = Agent::with_config(config);
     agent
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
 
-    let subagent_prompt = build_subagent_prompt(&agent, max_turns, session_id).await?;
+    let subagent_prompt = build_subagent_prompt(agent, max_turns, session_id).await?;
     agent
         .config
         .session_manager
@@ -81,12 +70,11 @@ pub(crate) async fn from_foreground_subagent_session(
         .system_prompt_override(Some(subagent_prompt))
         .apply()
         .await?;
-    let session_config = SessionConfig {
+    Ok(SessionConfig {
         id: session_id.to_string(),
         schedule_id: None,
         max_turns: Some(max_turns as u32),
-    };
-    Ok((agent, session_config))
+    })
 }
 
 pub(crate) enum SubagentOutcome {
@@ -104,17 +92,17 @@ pub(crate) enum SubagentStart {
 }
 
 #[derive(Clone)]
-pub(crate) struct ForegroundSubagentRunner {
-    session_manager: Arc<SessionManager>,
-    use_login_shell_path: bool,
+pub(crate) struct SubagentRunner {
+    agent: Arc<Agent>,
 }
 
-impl ForegroundSubagentRunner {
-    pub(crate) fn new(session_manager: Arc<SessionManager>, use_login_shell_path: bool) -> Self {
-        Self {
-            session_manager,
-            use_login_shell_path,
-        }
+impl SubagentRunner {
+    pub(crate) fn new(agent: Arc<Agent>) -> Self {
+        Self { agent }
+    }
+
+    fn session_manager(&self) -> &SessionManager {
+        &self.agent.config.session_manager
     }
 
     pub(crate) async fn start(
@@ -122,8 +110,9 @@ impl ForegroundSubagentRunner {
         parent_id: &str,
         subagent_id: &str,
         cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
     ) -> SubagentStart {
-        let subagent = match self.session_manager.get_session(subagent_id, true).await {
+        let subagent = match self.session_manager().get_session(subagent_id, true).await {
             Ok(subagent) => subagent,
             Err(error) => {
                 return SubagentStart::HasOutcome(SubagentOutcome::Failed(error.to_string()))
@@ -148,30 +137,44 @@ impl ForegroundSubagentRunner {
                 .recipe
                 .as_ref()
                 .and_then(|recipe| recipe.prompt.clone()),
-            run: Box::pin(self.clone().run(subagent, cancel)),
+            run: Box::pin(self.clone().run(subagent, cancel, forward)),
         }
     }
 
-    async fn run_to_end(&self, subagent: &Session, cancel: CancellationToken) -> Result<()> {
-        let (agent, session_config) = from_foreground_subagent_session(
-            self.session_manager.clone(),
-            subagent,
-            self.use_login_shell_path,
-        )
-        .await?;
-        let mut events = agent
-            .stream_state_machine_session(session_config, cancel)
+    async fn run_to_end(
+        &self,
+        subagent: &Session,
+        cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
+    ) -> Result<()> {
+        let session_config = prepare_subagent(&self.agent, subagent).await?;
+        let mut events = self
+            .agent
+            .stream_subagent_turn(session_config, cancel)
             .await?;
         while let Some(event) = events.next().await {
-            event?;
+            if let AgentEvent::Message(message) = event? {
+                if asks_for_a_decision(&message) {
+                    let _ = forward.send(forwarded(message, &subagent.id));
+                }
+            }
         }
         Ok(())
     }
 
-    async fn run(self, subagent: Session, cancel: CancellationToken) -> SubagentOutcome {
-        let run_result = self.run_to_end(&subagent, cancel.clone()).await;
+    async fn run(
+        self,
+        subagent: Session,
+        cancel: CancellationToken,
+        forward: mpsc::UnboundedSender<Message>,
+    ) -> SubagentOutcome {
+        let run_result = self.run_to_end(&subagent, cancel.clone(), forward).await;
+        self.agent
+            .emit_hook(crate::hooks::HookEvent::SessionEnd, &subagent.id)
+            .await;
+        self.agent.release_session(&subagent.id).await;
         let stopped = cancel.is_cancelled();
-        let subagent = match self.session_manager.get_session(&subagent.id, true).await {
+        let subagent = match self.session_manager().get_session(&subagent.id, true).await {
             Ok(subagent) => subagent,
             Err(error) => return SubagentOutcome::Failed(error.to_string()),
         };
@@ -194,6 +197,59 @@ impl ForegroundSubagentRunner {
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
     }
+}
+
+const FORWARDED_PREFIX: &str = "subagent:";
+
+pub(crate) fn is_forwarded_request(request_id: &str) -> bool {
+    request_id.starts_with(FORWARDED_PREFIX)
+}
+
+pub(crate) async fn answered_request(
+    session_manager: &SessionManager,
+    session_id: &str,
+    request_id: &str,
+) -> Result<(String, String)> {
+    let Some((subagent_id, subagent_request_id)) = request_id
+        .strip_prefix(FORWARDED_PREFIX)
+        .and_then(|request| request.split_once(':'))
+    else {
+        return Ok((session_id.to_string(), request_id.to_string()));
+    };
+    let subagent = session_manager.get_session(subagent_id, false).await?;
+    if subagent.parent_session_id.as_deref() != Some(session_id) {
+        return Err(anyhow!(
+            "Session {subagent_id} is not a subagent of {session_id}"
+        ));
+    }
+    Ok((subagent_id.to_string(), subagent_request_id.to_string()))
+}
+
+fn forwarded(mut message: Message, subagent_id: &str) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ActionRequired(action) = content {
+            if let ActionRequiredData::ToolConfirmation { id, .. }
+            | ActionRequiredData::Elicitation { id, .. } = &mut action.data
+            {
+                *id = format!("{FORWARDED_PREFIX}{subagent_id}:{id}");
+            }
+        }
+    }
+    message
+}
+
+fn asks_for_a_decision(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::ActionRequired(action)
+                if matches!(
+                    action.data,
+                    ActionRequiredData::ToolConfirmation { .. }
+                        | ActionRequiredData::Elicitation { .. }
+                )
+        )
+    })
 }
 
 fn failure_reason(messages: &[Message]) -> String {

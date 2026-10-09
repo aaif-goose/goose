@@ -190,6 +190,21 @@ impl ToolConfirmationCoordinator {
             .or_insert_with(|| Arc::new(SessionToolConfirmationState::new()))
             .clone()
     }
+
+    #[cfg(test)]
+    pub(super) fn tracks(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .contains_key(session_id)
+    }
+
+    pub(super) fn release(&self, session_id: &str) {
+        self.sessions
+            .lock()
+            .expect("tool confirmation coordinator unavailable")
+            .remove(session_id);
+    }
 }
 
 #[cfg(test)]

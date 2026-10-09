@@ -195,7 +195,7 @@ mod tests {
                 "session",
                 "run".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Agent::new(),
             )
             .is_ok());
         assert!(!registry.start_live("session"));
@@ -207,7 +207,7 @@ mod tests {
                 "session",
                 "run".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Agent::new(),
             ),
             Err(StartRunError::LiveVoiceInteractionExists)
         ));
@@ -222,7 +222,7 @@ mod tests {
                 "session",
                 "delegated".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Agent::new(),
             )
             .is_ok());
         assert!(matches!(
@@ -230,7 +230,7 @@ mod tests {
                 "session",
                 "prompt".into(),
                 CancellationToken::new(),
-                Arc::new(Agent::new()),
+                Agent::new(),
             ),
             Err(StartRunError::AgentRunExists { .. })
         ));

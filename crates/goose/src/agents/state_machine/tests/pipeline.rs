@@ -16,14 +16,13 @@ use crate::agents::extension_manager::{
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
-    ForegroundSubagentOperation, GooseEffect, GooseInferenceProvider,
-    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, RunStatus, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, InferenceRunner,
+    MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation, RetryOperation, RunStatus,
+    SkillOperation, SlashCommandOperation, StateMachine, StatusOperation, SteerOperation,
+    SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
 };
-use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::subagent_handler::SubagentRunner;
 use crate::agents::AgentEvent;
 use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::GooseMode;
@@ -103,6 +102,7 @@ pub(super) struct TestPipeline {
     steer_queue: SteerQueue,
     max_turns: u32,
     scheduler: Option<Arc<crate::scheduler::Scheduler>>,
+    subagent_host: Arc<crate::agents::Agent>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
@@ -146,8 +146,8 @@ impl TestPipeline {
                 self.hook_manager.clone(),
                 Arc::clone(&extension_lease),
             )),
-            Arc::new(ForegroundSubagentOperation::new(
-                ForegroundSubagentRunner::new(self.session_manager.clone(), false),
+            Arc::new(SubagentOperation::new(
+                SubagentRunner::new(Arc::clone(&self.subagent_host)),
                 cancel.clone(),
             )),
             Arc::new(RecipeOperation::new(
@@ -826,6 +826,14 @@ async fn build_test_pipeline(
         .clone()
         .expect("test session has a model config");
     let calculator = Arc::new(CalculatorExtension::new(session_manager.action_required()));
+    let mut subagent_host = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+        session_manager.clone(),
+        permission_manager.clone(),
+        None,
+        true,
+        crate::agents::GoosePlatform::GooseCli,
+    ));
+    subagent_host.set_hook_manager_for_test(HookManager::default());
     let pipeline = TestPipeline {
         session_manager,
         api,
@@ -844,6 +852,7 @@ async fn build_test_pipeline(
         steer_queue: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         max_turns: MAX_TURNS,
         scheduler,
+        subagent_host,
         _temp_dir: temp_dir,
     };
     let extension_manager = pipeline.extension_manager.clone();

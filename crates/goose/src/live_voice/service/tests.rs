@@ -424,7 +424,7 @@ async fn session_stop_waits_for_cleanup_after_interaction_completion() {
             &session_id,
             "delegated".into(),
             cancel_token.clone(),
-            Arc::new(Agent::new()),
+            Agent::new(),
         )
         .is_ok());
     connection
