@@ -204,12 +204,64 @@ mod tests {
         expected: Option<Vec<ExtensionConfig>>,
     ) {
         let config = test_config();
+        config
+            .set_param(
+                "extensions",
+                json!({"developer": {"enabled": true, "type": "builtin", "name": "developer", "description": "dev"}}),
+            )
+            .unwrap();
+        assert!(
+            crate::config::extensions::get_enabled_extensions_with_config(&config)
+                .iter()
+                .any(|extension| extension.name() == "developer"),
+        );
         let expected = expected.unwrap_or_else(|| {
             crate::config::extensions::get_enabled_extensions_with_config(&config)
         });
         assert_eq!(
             EnabledExtensionsState::extensions_or_default(extension_data.as_ref(), &config),
             expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn persisted_empty_extensions_override_configured_defaults() {
+        let config = test_config();
+        config
+            .set_param(
+                "extensions",
+                json!({"developer": {"enabled": true, "type": "builtin", "name": "developer", "description": "dev"}}),
+            )
+            .unwrap();
+        let defaults = crate::config::extensions::get_enabled_extensions_with_config(&config);
+        assert!(defaults
+            .iter()
+            .any(|extension| extension.name() == "developer"));
+        let directory = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(directory.path().to_path_buf());
+        let session = manager
+            .create_session(
+                directory.path().to_path_buf(),
+                "extension selection".to_string(),
+                crate::session::SessionType::User,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            EnabledExtensionsState::for_session(&manager, &session.id, &config).await,
+            defaults,
+        );
+        manager
+            .update(&session.id)
+            .extension_data(extension_data_with(vec![]))
+            .apply()
+            .await
+            .unwrap();
+        assert!(
+            EnabledExtensionsState::for_session(&manager, &session.id, &config)
+                .await
+                .is_empty()
         );
     }
 

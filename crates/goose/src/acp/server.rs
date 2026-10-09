@@ -2925,7 +2925,9 @@ extensions:
 
     #[test]
     fn empty_recipe_extensions_do_not_override_explicit_empty_extensions() {
-        let (config, _c, _s) = config_with_yaml("");
+        let (config, _c, _s) = config_with_yaml(
+            "extensions:\n  developer:\n    enabled: true\n    type: builtin\n    name: developer\n",
+        );
         let project_root = tempfile::tempdir().unwrap();
         let extensions = initial_session_extensions(
             &config,
@@ -2937,6 +2939,16 @@ extensions:
         )
         .unwrap();
         assert!(extensions.is_empty());
+        let defaults = initial_session_extensions(
+            &config,
+            &default_builtin("developer"),
+            project_root.path(),
+            vec![],
+            None,
+            Some(&[]),
+        )
+        .unwrap();
+        assert!(has_developer(&defaults));
     }
 
     #[test]
