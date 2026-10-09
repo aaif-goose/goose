@@ -90,6 +90,17 @@
     "environmentVariables": []
   },
   {
+    "id": "bestax",
+    "name": "Bestax",
+    "description": "Props, examples, CSS variables and skills for Bestax, React components for Bulma v1",
+    "command": "npx -y bestax-mcp@1",
+    "link": "https://github.com/allxsmith/bestax/tree/main/bestax-mcp",
+    "installation_notes": "Install using npx package manager. Runs offline with no API key.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "blender-mcp",
     "name": "Blender",
     "description": "3D modeling and animation integration (requires local server setup)",
