@@ -2,7 +2,6 @@ mod fake_live_voice_provider;
 
 use super::super::interaction::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
 use super::*;
-use crate::agents::StateMachineServices;
 use fake_live_voice_provider::{provider_channel, FakeConnectionDriver};
 use goose_providers::{live_voice_provider::ProviderConnectionEvent, model::ModelConfig};
 use rmcp::model::Role;
@@ -420,12 +419,7 @@ async fn session_stop_waits_for_cleanup_after_interaction_completion() {
     let active_runs = service.active_runs.clone();
     let cancel_token = CancellationToken::new();
     assert!(active_runs
-        .start_live_delegation(
-            &session_id,
-            "delegated".into(),
-            cancel_token.clone(),
-            Arc::new(StateMachineServices::new()),
-        )
+        .start_live_delegation(&session_id, "delegated".into(), cancel_token.clone(),)
         .is_ok());
     connection
         .send_event(ProviderConnectionEvent::TranscriptDelta {

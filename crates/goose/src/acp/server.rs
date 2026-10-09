@@ -242,6 +242,7 @@ struct AgentStreamOutcome {
 /// because the entry (matched by run id) is already gone.
 struct ActiveRunDropGuard {
     registry: Arc<ActiveRunRegistry>,
+    services: Arc<StateMachineServices>,
     session_id: String,
     run_id: String,
     cancel_token: CancellationToken,
@@ -252,13 +253,14 @@ impl Drop for ActiveRunDropGuard {
         self.cancel_token.cancel();
         let session_id = std::mem::take(&mut self.session_id);
         let run_id = std::mem::take(&mut self.run_id);
-        let agent = self.registry.remove_agent_run(&session_id, &run_id);
+        if !self.registry.remove_agent_run(&session_id, &run_id) {
+            return;
+        }
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            if let Some(agent) = agent {
-                handle.spawn(async move {
-                    agent.discard_pending_steers(&session_id).await;
-                });
-            }
+            let services = Arc::clone(&self.services);
+            handle.spawn(async move {
+                services.discard_pending_steers(&session_id).await;
+            });
         }
     }
 }
@@ -849,9 +851,8 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         run_id: String,
-        agent: Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
-        self.start_active_run(session_id, run_id, CancellationToken::new(), agent)
+        self.start_active_run(session_id, run_id, CancellationToken::new())
             .await
     }
 
@@ -859,6 +860,7 @@ impl GooseAcpAgent {
     pub(crate) fn test_drop_active_run_guard(&self, session_id: &str, run_id: &str) {
         drop(ActiveRunDropGuard {
             registry: self.active_runs.clone(),
+            services: Arc::clone(&self.services),
             session_id: session_id.to_string(),
             run_id: run_id.to_string(),
             cancel_token: CancellationToken::new(),
@@ -870,7 +872,7 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         expected_run_id: &str,
-    ) -> Result<(String, Arc<StateMachineServices>), agent_client_protocol::Error> {
+    ) -> Result<String, agent_client_protocol::Error> {
         self.require_active_run(session_id, expected_run_id).await
     }
 
@@ -1916,7 +1918,6 @@ impl GooseAcpAgent {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<StateMachineServices>,
     ) -> Result<(), agent_client_protocol::Error> {
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
@@ -1926,7 +1927,7 @@ impl GooseAcpAgent {
         }
 
         self.active_runs
-            .start_prompt_run(session_id, run_id, cancel_token, agent)
+            .start_prompt_run(session_id, run_id, cancel_token)
             .map_err(|error| match error {
                 StartRunError::AgentRunExists { run_id } => {
                     let message = format!(
@@ -1942,12 +1943,8 @@ impl GooseAcpAgent {
     }
 
     async fn clear_active_run(&self, session_id: &str, run_id: &str) {
-        let agent = self.active_runs.remove_agent_run(session_id, run_id);
-
-        // Discard steers on the agent that owned the run; under roaming it may
-        // not be this connection's agent.
-        if let Some(agent) = agent {
-            agent.discard_pending_steers(session_id).await;
+        if self.active_runs.remove_agent_run(session_id, run_id) {
+            self.services.discard_pending_steers(session_id).await;
         }
 
         if self.closed_session_ids.lock().await.contains(session_id) {
@@ -1960,13 +1957,13 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
         expected_run_id: &str,
-    ) -> Result<(String, Arc<StateMachineServices>), agent_client_protocol::Error> {
+    ) -> Result<String, agent_client_protocol::Error> {
         if expected_run_id.is_empty() {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("expectedRunId must not be empty"));
         }
 
-        let (active_run_id, agent) = self.active_runs.agent_run(session_id).ok_or_else(|| {
+        let active_run_id = self.active_runs.agent_run_id(session_id).ok_or_else(|| {
             agent_client_protocol::Error::invalid_params().data("no active run to steer")
         })?;
         if active_run_id != expected_run_id {
@@ -1981,7 +1978,7 @@ impl GooseAcpAgent {
                 })),
             );
         }
-        Ok((active_run_id, agent))
+        Ok(active_run_id)
     }
 
     fn active_run_meta(active_run_id: Option<&str>) -> Meta {
@@ -2277,23 +2274,16 @@ impl GooseAcpAgent {
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
 
-        // Resolve the agent before claiming the run so the registry can record
-        // which agent owns it; registration stays atomic, so the cross-connection
-        // guard still admits only one run per session.
         let agent = self.get_session_agent(&session_id).await?;
-        self.start_active_run(
-            &session_id,
-            run_id.clone(),
-            cancel_token.clone(),
-            agent.clone(),
-        )
-        .await?;
+        self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
+            .await?;
 
         // Frees the run if this future is dropped mid-prompt (e.g. the roaming
         // connection carrying it is revoked or lost); a normal completion's
         // explicit clear wins and makes the guard's cleanup a no-op.
         let _run_guard = ActiveRunDropGuard {
             registry: self.active_runs.clone(),
+            services: Arc::clone(&self.services),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
             cancel_token: cancel_token.clone(),
@@ -2376,10 +2366,7 @@ impl GooseAcpAgent {
             );
         }
 
-        // Route to the agent that owns the run, not this connection's agent:
-        // under roaming the steering client may be a different connection than
-        // the one running the prompt.
-        let (active_run_id, agent) = self
+        let active_run_id = self
             .require_active_run(&req.session_id, &req.expected_run_id)
             .await?;
 
@@ -2391,7 +2378,7 @@ impl GooseAcpAgent {
 
         let message_id = format!("steer_{}", Uuid::new_v4());
         let message = message.with_id(message_id.clone());
-        agent.steer(&req.session_id, message).await;
+        self.services.steer(&req.session_id, message).await;
 
         if let Some(cx) = self.client_cx.get() {
             let _ = Self::send_queued_steer_update(

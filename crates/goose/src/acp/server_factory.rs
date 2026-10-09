@@ -216,30 +216,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn steer_routes_to_the_agent_that_owns_the_run() {
+    async fn a_steer_on_another_connection_finds_the_run() {
         let root = tempfile::tempdir().unwrap();
         let server = server(root.path().to_path_buf(), false);
 
         let running = server.create_agent().await.unwrap();
         let steering = server.create_agent().await.unwrap();
 
-        let owner = Arc::new(crate::agents::StateMachineServices::new());
         running
-            .test_start_active_run("session-1", "run-1".to_string(), owner.clone())
+            .test_start_active_run("session-1", "run-1".to_string())
             .await
             .unwrap();
 
-        let (run_id, resolved) = steering
+        let run_id = steering
             .test_require_active_run("session-1", "run-1")
             .await
             .unwrap();
 
         assert_eq!(run_id, "run-1");
-        assert!(
-            Arc::ptr_eq(&resolved, &owner),
-            "a steer arriving on a second roaming connection must resolve the \
-             agent running the prompt, not the caller's connection-local agent"
-        );
     }
 
     #[tokio::test]
@@ -248,9 +242,8 @@ mod tests {
         let server = server(root.path().to_path_buf(), false);
 
         let running = server.create_agent().await.unwrap();
-        let owner = Arc::new(crate::agents::StateMachineServices::new());
         running
-            .test_start_active_run("session-1", "run-1".to_string(), owner)
+            .test_start_active_run("session-1", "run-1".to_string())
             .await
             .unwrap();
 

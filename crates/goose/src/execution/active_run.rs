@@ -1,15 +1,9 @@
-use crate::agents::StateMachineServices;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 
 struct ActiveRun {
     run_id: String,
     cancel_token: CancellationToken,
-    /// Routes steering from another roaming connection to the run owner.
-    agent: Arc<StateMachineServices>,
 }
 
 struct SessionRunState {
@@ -34,7 +28,6 @@ impl ActiveRunRegistry {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<StateMachineServices>,
     ) -> Result<(), StartRunError> {
         let mut runs = self
             .runs_by_session
@@ -56,7 +49,6 @@ impl ActiveRunRegistry {
                 agent_run: Some(ActiveRun {
                     run_id,
                     cancel_token,
-                    agent,
                 }),
                 live_active: false,
             },
@@ -69,7 +61,6 @@ impl ActiveRunRegistry {
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-        agent: Arc<StateMachineServices>,
     ) -> Result<(), StartRunError> {
         let mut runs = self
             .runs_by_session
@@ -86,21 +77,17 @@ impl ActiveRunRegistry {
         state.agent_run = Some(ActiveRun {
             run_id,
             cancel_token,
-            agent,
         });
         Ok(())
     }
 
-    pub(crate) fn agent_run(
-        &self,
-        session_id: &str,
-    ) -> Option<(String, Arc<StateMachineServices>)> {
+    pub(crate) fn agent_run_id(&self, session_id: &str) -> Option<String> {
         self.runs_by_session
             .lock()
             .expect("active run lock poisoned")
             .get(session_id)
             .and_then(|state| state.agent_run.as_ref())
-            .map(|run| (run.run_id.clone(), run.agent.clone()))
+            .map(|run| run.run_id.clone())
     }
 
     pub(crate) fn agent_cancel_token(&self, session_id: &str) -> Option<CancellationToken> {
@@ -118,24 +105,27 @@ impl ActiveRunRegistry {
         }
     }
 
-    pub(crate) fn remove_agent_run(
-        &self,
-        session_id: &str,
-        run_id: &str,
-    ) -> Option<Arc<StateMachineServices>> {
+    /// Whether the session's run was `run_id` and is now removed.
+    pub(crate) fn remove_agent_run(&self, session_id: &str, run_id: &str) -> bool {
         let mut runs = self
             .runs_by_session
             .lock()
             .expect("active run lock poisoned");
-        let state = runs.get_mut(session_id)?;
-        if state.agent_run.as_ref()?.run_id != run_id {
-            return None;
+        let Some(state) = runs.get_mut(session_id) else {
+            return false;
+        };
+        if state
+            .agent_run
+            .as_ref()
+            .is_none_or(|run| run.run_id != run_id)
+        {
+            return false;
         }
-        let agent = state.agent_run.take()?.agent;
+        state.agent_run = None;
         if !state.live_active {
             runs.remove(session_id);
         }
-        Some(agent)
+        true
     }
 
     pub(crate) fn start_live(&self, session_id: &str) -> bool {
@@ -198,24 +188,14 @@ mod tests {
         let registry = ActiveRunRegistry::default();
 
         assert!(registry
-            .start_prompt_run(
-                "session",
-                "run".into(),
-                CancellationToken::new(),
-                Arc::new(StateMachineServices::new()),
-            )
+            .start_prompt_run("session", "run".into(), CancellationToken::new(),)
             .is_ok());
         assert!(!registry.start_live("session"));
 
         registry.remove_agent_run("session", "run");
         assert!(registry.start_live("session"));
         assert!(matches!(
-            registry.start_prompt_run(
-                "session",
-                "run".into(),
-                CancellationToken::new(),
-                Arc::new(StateMachineServices::new()),
-            ),
+            registry.start_prompt_run("session", "run".into(), CancellationToken::new(),),
             Err(StartRunError::LiveVoiceInteractionExists)
         ));
     }
@@ -225,27 +205,14 @@ mod tests {
         let registry = ActiveRunRegistry::default();
         assert!(registry.start_live("session"));
         assert!(registry
-            .start_live_delegation(
-                "session",
-                "delegated".into(),
-                CancellationToken::new(),
-                Arc::new(StateMachineServices::new()),
-            )
+            .start_live_delegation("session", "delegated".into(), CancellationToken::new(),)
             .is_ok());
         assert!(matches!(
-            registry.start_prompt_run(
-                "session",
-                "prompt".into(),
-                CancellationToken::new(),
-                Arc::new(StateMachineServices::new()),
-            ),
+            registry.start_prompt_run("session", "prompt".into(), CancellationToken::new(),),
             Err(StartRunError::AgentRunExists { .. })
         ));
 
         registry.finish_live("session");
-        assert_eq!(
-            registry.agent_run("session").map(|(run_id, _)| run_id),
-            Some("delegated".into())
-        );
+        assert_eq!(registry.agent_run_id("session"), Some("delegated".into()));
     }
 }

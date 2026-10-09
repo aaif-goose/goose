@@ -257,13 +257,8 @@ impl GooseAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         let run_id = format!("resume_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
-        self.start_active_run(
-            session_id,
-            run_id.clone(),
-            cancel_token.clone(),
-            agent.clone(),
-        )
-        .await?;
+        self.start_active_run(session_id, run_id.clone(), cancel_token.clone())
+            .await?;
 
         let acp_session_id = SessionId::new(session_id.to_string());
         if let Err(error) = Self::send_active_run_update(cx, &acp_session_id, Some(&run_id)) {
@@ -305,6 +300,7 @@ impl GooseAcpAgent {
         if let Err(error) = cx.spawn(async move {
             let _run_guard = ActiveRunDropGuard {
                 registry: server.active_runs.clone(),
+                services: Arc::clone(&server.services),
                 session_id: task_session_id.clone(),
                 run_id: task_run_id.clone(),
                 cancel_token: task_cancel_token.clone(),
