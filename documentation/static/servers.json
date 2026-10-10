@@ -751,10 +751,10 @@
   {
     "id": "vendwiser",
     "name": "Vendwiser",
-    "description": "Run your eMAG Marketplace Romania shop and Oblio invoicing, with your approval on every change",
+    "description": "Run your eMAG Marketplace Romania and Trendyol shops and Oblio invoicing, with your approval on every change",
     "url": "https://app.vendwiser.ai/mcp",
     "link": "https://github.com/cadarsergiu/vendwiser-mcp",
-    "installation_notes": "Hosted remote server. Sign in with your Vendwiser account via OAuth on first connect. Requires an eMAG Marketplace seller account connected in the Vendwiser dashboard at https://app.vendwiser.ai.",
+    "installation_notes": "Hosted remote server. Sign in with your Vendwiser account via OAuth on first connect. Requires an eMAG Marketplace Romania or Trendyol seller account connected in the Vendwiser dashboard at https://app.vendwiser.ai.",
     "is_builtin": false,
     "endorsed": false,
     "environmentVariables": [],
