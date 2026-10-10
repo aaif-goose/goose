@@ -37,6 +37,7 @@ use tokio_util::io::StreamReader;
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const ISSUER: &str = "https://auth.openai.com";
 const CODEX_API_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex";
+const CODEX_MODELS_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/models";
 const OAUTH_SCOPES: &[&str] = &["openid", "profile", "email", "offline_access"];
 // Canonical localhost callback port for Codex OAuth (default localhost:1455 per OpenAI docs).
 // https://developers.openai.com/codex/auth/
@@ -95,6 +96,44 @@ pub fn reasoning_levels_for_model(model_name: &str) -> &'static [&'static str] {
 
 fn known_model_names() -> Vec<&'static str> {
     CHATGPT_CODEX_KNOWN_MODELS.iter().map(|m| m.name).collect()
+}
+
+/// The Codex catalog endpoint requires a semver `client_version` and withholds
+/// entries whose minimum client version the caller does not satisfy. goose
+/// reports its own version, which is ahead of the Codex CLI release line, so the
+/// account's whole catalog is listed rather than a snapshot of it.
+fn codex_client_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexCatalogEntry {
+    slug: String,
+    #[serde(default)]
+    visibility: Option<String>,
+    #[serde(default)]
+    supported_in_api: Option<bool>,
+    #[serde(default)]
+    priority: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexCatalog {
+    #[serde(default)]
+    models: Vec<CodexCatalogEntry>,
+}
+
+/// Entries marked `hide` are Codex-internal (legacy or review-only models) and
+/// are not offered to users, so they are left out of the selectable list.
+fn selectable_model_names(catalog: CodexCatalog) -> Vec<String> {
+    let mut entries: Vec<CodexCatalogEntry> = catalog
+        .models
+        .into_iter()
+        .filter(|model| model.visibility.as_deref() != Some("hide"))
+        .filter(|model| model.supported_in_api.unwrap_or(true))
+        .collect();
+    entries.sort_by_key(|model| (model.priority.unwrap_or(i64::MAX), model.slug.clone()));
+    entries.into_iter().map(|model| model.slug).collect()
 }
 
 #[derive(Debug)]
@@ -829,6 +868,37 @@ impl ChatGptCodexAuthProvider {
         self.cache.clear();
     }
 
+    async fn refresh_token(&self, token_data: &mut TokenData) -> Result<()> {
+        let new_tokens =
+            refresh_access_token_with_issuer(ISSUER, &token_data.refresh_token).await?;
+        token_data.access_token = new_tokens.access_token;
+        token_data.refresh_token = new_tokens.refresh_token;
+        if new_tokens.id_token.is_some() {
+            token_data.id_token = new_tokens.id_token;
+        }
+        token_data.expires_at =
+            Utc::now() + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
+        if token_data.account_id.is_none() {
+            token_data.account_id = extract_account_id(token_data, self.state.as_ref()).await;
+        }
+        self.cache.save(token_data)?;
+        Ok(())
+    }
+
+    /// Token for read-only model discovery: refreshes an expired token but never
+    /// starts the interactive OAuth flow, so listing models cannot open a browser.
+    async fn get_cached_token(&self) -> Result<TokenData, ProviderError> {
+        let Some(mut token_data) = self.cache.load() else {
+            return Err(ProviderError::NotConfigured);
+        };
+        if token_data.expires_at <= Utc::now() + chrono::Duration::seconds(60) {
+            self.refresh_token(&mut token_data)
+                .await
+                .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+        }
+        Ok(token_data)
+    }
+
     async fn get_valid_token(&self) -> Result<TokenData> {
         if let Some(mut token_data) = self.cache.load() {
             if token_data.expires_at > Utc::now() + chrono::Duration::seconds(60) {
@@ -836,20 +906,8 @@ impl ChatGptCodexAuthProvider {
             }
 
             tracing::debug!("Token expired, attempting refresh");
-            match refresh_access_token_with_issuer(ISSUER, &token_data.refresh_token).await {
-                Ok(new_tokens) => {
-                    token_data.access_token = new_tokens.access_token;
-                    token_data.refresh_token = new_tokens.refresh_token;
-                    if new_tokens.id_token.is_some() {
-                        token_data.id_token = new_tokens.id_token;
-                    }
-                    token_data.expires_at = Utc::now()
-                        + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
-                    if token_data.account_id.is_none() {
-                        token_data.account_id =
-                            extract_account_id(&token_data, self.state.as_ref()).await;
-                    }
-                    self.cache.save(&token_data)?;
+            match self.refresh_token(&mut token_data).await {
+                Ok(()) => {
                     tracing::info!("Token refreshed successfully");
                     return Ok(token_data);
                 }
@@ -885,6 +943,8 @@ pub struct ChatGptCodexProvider {
     #[serde(skip)]
     name: String,
     #[serde(skip)]
+    models_endpoint: String,
+    #[serde(skip)]
     request_builder: RequestBuilderDecorator,
 }
 
@@ -904,8 +964,40 @@ impl ChatGptCodexProvider {
         Ok(Self {
             auth_provider,
             name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
+            models_endpoint: CODEX_MODELS_ENDPOINT.to_string(),
             request_builder: crate::session_context::session_id_request_builder(),
         })
+    }
+
+    async fn fetch_catalog(&self) -> Result<Vec<String>, ProviderError> {
+        let token_data = self.auth_provider.get_cached_token().await?;
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(
+                DEFAULT_PROVIDER_TIMEOUT_SECS,
+            ))
+            .build()
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+
+        let mut url = reqwest::Url::parse(&self.models_endpoint)
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+        url.query_pairs_mut()
+            .append_pair("client_version", codex_client_version());
+
+        let mut request = client.get(url).bearer_auth(&token_data.access_token);
+        if let Some(account_id) = &token_data.account_id {
+            request = request.header("chatgpt-account-id", account_id);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
+        let response = handle_status(response).await?;
+        let catalog: CodexCatalog =
+            goose_providers::http_status::read_json_response(response).await?;
+        Ok(selectable_model_names(catalog))
     }
 
     async fn post_streaming(&self, payload: &Value) -> Result<reqwest::Response, ProviderError> {
@@ -1060,7 +1152,7 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(known_model_names().into_iter().map(String::from).collect())
+        self.fetch_catalog().await
     }
 }
 
@@ -1466,5 +1558,161 @@ mod tests {
         let payload = create_codex_request(&model, "system prompt", &[], &[]).unwrap();
         let instructions = payload["instructions"].as_str().unwrap();
         assert_eq!(instructions, "system prompt");
+    }
+
+    fn provider_with_endpoint(
+        server_uri: &str,
+        cache_path: std::path::PathBuf,
+    ) -> ChatGptCodexProvider {
+        ChatGptCodexProvider {
+            auth_provider: Arc::new(ChatGptCodexAuthProvider {
+                cache: TokenCache { cache_path },
+                state: ChatGptCodexAuthState::instance(),
+            }),
+            name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
+            models_endpoint: format!("{}/models", server_uri),
+            request_builder: crate::session_context::session_id_request_builder(),
+        }
+    }
+
+    fn save_token(cache_path: &std::path::Path) {
+        TokenCache {
+            cache_path: cache_path.to_path_buf(),
+        }
+        .save(&TokenData {
+            access_token: "access-token".to_string(),
+            refresh_token: "refresh-token".to_string(),
+            id_token: None,
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            account_id: Some("account-1".to_string()),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn selectable_model_names_hides_internal_entries_and_orders_by_priority() {
+        let catalog = CodexCatalog {
+            models: vec![
+                CodexCatalogEntry {
+                    slug: "gpt-6-luna".to_string(),
+                    visibility: Some("list".to_string()),
+                    supported_in_api: Some(true),
+                    priority: Some(4),
+                },
+                CodexCatalogEntry {
+                    slug: "codex-auto-review".to_string(),
+                    visibility: Some("hide".to_string()),
+                    supported_in_api: Some(true),
+                    priority: Some(43),
+                },
+                CodexCatalogEntry {
+                    slug: "gpt-6-astra".to_string(),
+                    visibility: Some("list".to_string()),
+                    supported_in_api: Some(true),
+                    priority: Some(2),
+                },
+                CodexCatalogEntry {
+                    slug: "not-served-over-the-api".to_string(),
+                    visibility: Some("list".to_string()),
+                    supported_in_api: Some(false),
+                    priority: Some(1),
+                },
+                CodexCatalogEntry {
+                    slug: "unranked".to_string(),
+                    visibility: None,
+                    supported_in_api: None,
+                    priority: None,
+                },
+            ],
+        };
+
+        assert_eq!(
+            selectable_model_names(catalog),
+            vec![
+                "gpt-6-astra".to_string(),
+                "gpt-6-luna".to_string(),
+                "unranked".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_reads_the_codex_catalog() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(wiremock::matchers::query_param(
+                "client_version",
+                codex_client_version(),
+            ))
+            .and(wiremock::matchers::header(
+                "authorization",
+                "Bearer access-token",
+            ))
+            .and(wiremock::matchers::header(
+                "chatgpt-account-id",
+                "account-1",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "models": [
+                    {
+                        "slug": "gpt-6.1-sol",
+                        "visibility": "list",
+                        "supported_in_api": true,
+                        "priority": 1
+                    },
+                    {
+                        "slug": "gpt-5.5",
+                        "visibility": "hide",
+                        "supported_in_api": true,
+                        "priority": 13
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let directory = tempfile::tempdir().unwrap();
+        let cache_path = directory.path().join("tokens.json");
+        save_token(&cache_path);
+        let provider = provider_with_endpoint(&server.uri(), cache_path);
+
+        let models = provider.fetch_supported_models().await.unwrap();
+
+        assert_eq!(models, vec!["gpt-6.1-sol".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_is_not_configured_without_a_cached_token() {
+        let server = MockServer::start().await;
+        let directory = tempfile::tempdir().unwrap();
+        let provider = provider_with_endpoint(&server.uri(), directory.path().join("missing.json"));
+
+        let error = provider.fetch_supported_models().await.unwrap_err();
+
+        assert_eq!(error, ProviderError::NotConfigured);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fetch_supported_models_propagates_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+
+        let directory = tempfile::tempdir().unwrap();
+        let cache_path = directory.path().join("tokens.json");
+        save_token(&cache_path);
+        let provider = provider_with_endpoint(&server.uri(), cache_path);
+
+        let error = provider.fetch_supported_models().await.unwrap_err();
+
+        assert!(
+            matches!(error, ProviderError::ServerError(_)),
+            "expected ServerError, got {error:?}"
+        );
     }
 }
