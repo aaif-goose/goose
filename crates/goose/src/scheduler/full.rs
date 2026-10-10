@@ -163,7 +163,7 @@ impl Scheduler {
 
         let local_tz = Local::now().timezone();
 
-        Job::new_async_tz(&cron, local_tz, move |_uuid, _l| {
+        Job::new_async_tz(&cron, local_tz, move |triggered_uuid, _l| {
             tracing::info!("Cron task triggered for job '{}'", job_for_task.id);
             let task_job_id = job_for_task.id.clone();
             let current_jobs_arc = jobs_arc.clone();
@@ -177,7 +177,7 @@ impl Scheduler {
                     let jobs_guard = current_jobs_arc.lock().await;
                     jobs_guard
                         .get(&task_job_id)
-                        .map(|(_, j)| !j.paused)
+                        .map(|(registered_uuid, j)| *registered_uuid == triggered_uuid && !j.paused)
                         .unwrap_or(false)
                 };
 
@@ -729,43 +729,44 @@ impl Scheduler {
         sched_id: &str,
         new_cron: String,
     ) -> Result<(), SchedulerError> {
-        let (old_uuid, updated_job) = {
-            let mut jobs_guard = self.jobs.lock().await;
-            match jobs_guard.get_mut(sched_id) {
-                Some((uuid, job)) => {
-                    if job.currently_running {
-                        return Err(SchedulerError::AnyhowError(anyhow!(
-                            "Cannot update running schedule '{}'",
-                            sched_id
-                        )));
-                    }
-                    if new_cron == job.cron {
-                        return Ok(());
-                    }
-                    job.cron = new_cron.clone();
-                    (*uuid, job.clone())
-                }
-                None => return Err(SchedulerError::JobNotFound(sched_id.to_string())),
-            }
-        };
-
-        self.tokio_scheduler
-            .remove(&old_uuid)
-            .await
-            .map_err(|e| SchedulerError::SchedulerInternalError(e.to_string()))?;
-
-        let cron_task = self.create_cron_task(updated_job)?;
-        let new_uuid = self
-            .tokio_scheduler
-            .add(cron_task)
-            .await
-            .map_err(|e| SchedulerError::SchedulerInternalError(e.to_string()))?;
-
         {
             let mut jobs_guard = self.jobs.lock().await;
-            if let Some((uuid, _)) = jobs_guard.get_mut(sched_id) {
-                *uuid = new_uuid;
+            let (uuid, job) = jobs_guard
+                .get_mut(sched_id)
+                .ok_or_else(|| SchedulerError::JobNotFound(sched_id.to_string()))?;
+            if job.currently_running {
+                return Err(SchedulerError::AnyhowError(anyhow!(
+                    "Cannot update running schedule '{}'",
+                    sched_id
+                )));
             }
+            if new_cron == job.cron {
+                return Ok(());
+            }
+
+            let mut updated_job = job.clone();
+            updated_job.cron = new_cron.clone();
+            let cron_task = self.create_cron_task(updated_job)?;
+            let new_uuid = self
+                .tokio_scheduler
+                .add(cron_task)
+                .await
+                .map_err(|e| SchedulerError::SchedulerInternalError(e.to_string()))?;
+
+            if let Err(error) = self.tokio_scheduler.remove(uuid).await {
+                self.tokio_scheduler
+                    .remove(&new_uuid)
+                    .await
+                    .map_err(|rollback_error| {
+                        SchedulerError::SchedulerInternalError(format!(
+                            "{error}; failed to remove replacement schedule: {rollback_error}"
+                        ))
+                    })?;
+                return Err(SchedulerError::SchedulerInternalError(error.to_string()));
+            }
+
+            *uuid = new_uuid;
+            job.cron = new_cron;
         }
 
         persist_jobs(&self.storage_path, &self.jobs).await
@@ -1340,6 +1341,123 @@ mod tests {
             fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[tokio::test]
+    async fn test_update_schedule_rejects_invalid_cron_without_changing_job() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("schedule.json");
+        let recipe_path = create_test_recipe(temp_dir.path(), "update_job");
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(storage_path.clone(), session_manager)
+            .await
+            .unwrap();
+        let original_cron = "0 0 0 1 1 *";
+        let job = ScheduledJob {
+            id: "update_job".to_string(),
+            source: recipe_path.to_string_lossy().into_owned(),
+            cron: original_cron.to_string(),
+            last_run: None,
+            currently_running: false,
+            paused: false,
+            current_session_id: None,
+            process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
+        };
+        scheduler.add_scheduled_job(job, false).await.unwrap();
+        let original_uuid = scheduler.jobs.lock().await["update_job"].0;
+        let mut cron_scheduler = scheduler.tokio_scheduler.clone();
+        let original_tick = cron_scheduler
+            .next_tick_for_job(original_uuid)
+            .await
+            .unwrap();
+        assert!(original_tick.is_some());
+        let original_storage = fs::read(&storage_path).unwrap();
+
+        for invalid_cron in ["invalid", "0 0 25 * * *", "0 25 * * *"] {
+            for _ in 0..2 {
+                let error = scheduler
+                    .update_schedule("update_job", invalid_cron.to_string())
+                    .await
+                    .unwrap_err();
+                assert!(matches!(error, SchedulerError::CronParseError(_)));
+                let jobs = scheduler.list_scheduled_jobs().await;
+                assert_eq!(jobs.len(), 1);
+                assert_eq!(jobs[0].cron, original_cron);
+                assert_eq!(scheduler.jobs.lock().await["update_job"].0, original_uuid);
+                assert_eq!(
+                    cron_scheduler
+                        .next_tick_for_job(original_uuid)
+                        .await
+                        .unwrap(),
+                    original_tick
+                );
+                assert_eq!(fs::read(&storage_path).unwrap(), original_storage);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_schedule_replaces_registration_and_persists_cron() {
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("schedule.json");
+        let recipe_path = create_test_recipe(temp_dir.path(), "update_job");
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(storage_path.clone(), session_manager)
+            .await
+            .unwrap();
+        let job = ScheduledJob {
+            id: "update_job".to_string(),
+            source: recipe_path.to_string_lossy().into_owned(),
+            cron: "0 0 0 1 1 *".to_string(),
+            last_run: None,
+            currently_running: false,
+            paused: true,
+            current_session_id: None,
+            process_start_time: None,
+            parameters: vec![("name".to_string(), "value".to_string())],
+            recipe_base_dir: Some(temp_dir.path().to_string_lossy().into_owned()),
+        };
+        scheduler
+            .add_scheduled_job(job.clone(), false)
+            .await
+            .unwrap();
+        let mut old_uuid = scheduler.jobs.lock().await["update_job"].0;
+        let mut cron_scheduler = scheduler.tokio_scheduler.clone();
+
+        for new_cron in ["0 0 0 2 1 *", "0 0 3 1 *"] {
+            scheduler
+                .update_schedule("update_job", new_cron.to_string())
+                .await
+                .unwrap();
+            let new_uuid = scheduler.jobs.lock().await["update_job"].0;
+            assert_ne!(new_uuid, old_uuid);
+            assert!(cron_scheduler
+                .next_tick_for_job(new_uuid)
+                .await
+                .unwrap()
+                .is_some());
+            assert!(cron_scheduler
+                .next_tick_for_job(old_uuid)
+                .await
+                .unwrap()
+                .is_none());
+            let persisted_jobs: Vec<ScheduledJob> =
+                serde_json::from_slice(&fs::read(&storage_path).unwrap()).unwrap();
+            assert_eq!(persisted_jobs.len(), 1);
+            assert_eq!(persisted_jobs[0].cron, new_cron);
+            assert!(persisted_jobs[0].paused);
+            assert_eq!(persisted_jobs[0].parameters, job.parameters);
+            assert_eq!(persisted_jobs[0].recipe_base_dir, job.recipe_base_dir);
+
+            scheduler
+                .update_schedule("update_job", new_cron.to_string())
+                .await
+                .unwrap();
+            assert_eq!(scheduler.jobs.lock().await["update_job"].0, new_uuid);
+            old_uuid = new_uuid;
+        }
     }
 
     #[tokio::test]
