@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Simpan"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Selalu"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Diciutkan"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Tampilkan pemikiran model di obrolan. Dengan opsi \"Diciutkan\", pemikiran tetap tertutup sampai Anda membukanya."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Tidak pernah"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Tampilkan Pemikiran"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Tambah Keterampilan"
   },

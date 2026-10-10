@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "सहेजें"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "हमेशा"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "क्लिक करने पर"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "चैट में मॉडल की सोच दिखाएँ। \"क्लिक करने पर\" विकल्प में यह तब तक बंद रहती है जब तक आप इसे खोलते नहीं।"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "कभी नहीं"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "सोच दिखाएँ"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "कौशल जोड़ें"
   },

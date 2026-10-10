@@ -4256,6 +4256,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Save"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Always"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Collapsed"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Show the model's thinking in chat. \"Collapsed\" keeps it closed until you open it."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Never"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Show Thinking"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Add Skill"
   },

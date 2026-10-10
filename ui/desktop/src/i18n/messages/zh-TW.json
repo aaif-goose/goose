@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "儲存"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "一律展開"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "收合"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "在聊天中顯示模型的思考過程。選擇「收合」時，會保持收合，直到您展開為止。"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "不顯示"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "顯示思考過程"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "新增技能"
   },

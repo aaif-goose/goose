@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Guardar"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Siempre"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Contraído"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Muestra el pensamiento del modelo en el chat. Con \"Contraído\", se queda cerrado hasta que lo abras."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nunca"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Mostrar pensamiento"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Agregar Skill"
   },

@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "저장"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "항상 펼치기"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "접기"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "채팅에 모델의 추론을 표시합니다. \"접기\"를 선택하면 직접 열기 전까지 닫혀 있습니다."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "표시 안 함"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "추론 표시"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "스킬 추가"
   },

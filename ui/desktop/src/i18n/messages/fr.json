@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Enregistrer"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Toujours"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Réduite"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Afficher la réflexion du modèle dans la discussion. Avec « Réduite », elle reste fermée jusqu'à ce que vous l'ouvriez."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Jamais"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Afficher la réflexion"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Ajouter une compétence"
   },

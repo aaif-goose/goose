@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Kaydet"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Her zaman"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Daraltılmış"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Modelin düşünmesini sohbette gösterin. \"Daraltılmış\" seçeneğinde, siz açana kadar kapalı kalır."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Asla"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Düşünmeyi Göster"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Beceri Ekle"
   },

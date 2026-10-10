@@ -97,17 +97,7 @@ function GooseMessage({
   return (
     <div className="goose-message flex w-[90%] justify-start min-w-0">
       <div className="flex flex-col w-full min-w-0">
-        {thinkingContent && (
-          <ThinkingContent
-            content={thinkingContent}
-            isExpanded={
-              isStreaming &&
-              !displayText.trim() &&
-              imagePaths.length === 0 &&
-              toolRequests.length === 0
-            }
-          />
-        )}
+        {thinkingContent && <ThinkingContent content={thinkingContent} />}
 
         {(displayText.trim() || imagePaths.length > 0) && (
           <div className="flex flex-col group">

@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Guardar"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Sempre"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Recolhido"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Mostrar o raciocínio do modelo na conversa. Com \"Recolhido\", fica fechado até ser aberto."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nunca"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Mostrar Raciocínio"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Adicionar Competência"
   },

@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "保存"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "常に展開"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "折りたたむ"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "チャットにモデルの思考を表示します。「折りたたむ」を選択すると、開くまで閉じたままです。"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "表示しない"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "思考を表示"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "スキルを追加"
   },

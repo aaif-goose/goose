@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Salva"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Sempre"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Compresso"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Mostra il ragionamento del modello nella chat. Con \"Compresso\", resta chiuso finché non lo apri."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Mai"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Mostra ragionamento"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Aggiungi competenza"
   },

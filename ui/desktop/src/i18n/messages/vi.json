@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Lưu"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Luôn luôn"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Thu gọn"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Hiển thị suy nghĩ của mô hình trong cuộc trò chuyện. Với \"Thu gọn\", phần này sẽ đóng cho đến khi bạn mở ra."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Không bao giờ"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Hiển thị suy nghĩ"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Thêm kỹ năng"
   },

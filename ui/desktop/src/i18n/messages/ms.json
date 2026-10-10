@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Simpan"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Sentiasa"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Diruntuhkan"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Tunjukkan pemikiran model dalam sembang. Dengan pilihan \"Diruntuhkan\", pemikiran kekal tertutup sehingga anda membukanya."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Tidak pernah"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Tunjukkan Pemikiran"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Tambah Kemahiran"
   },

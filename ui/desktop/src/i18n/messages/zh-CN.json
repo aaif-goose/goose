@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "保存"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "始终展开"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "折叠"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "在聊天中显示模型的思考过程。选择“折叠”时，它会保持收起，直到你展开。"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "不显示"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "显示思考过程"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "添加技能"
   },

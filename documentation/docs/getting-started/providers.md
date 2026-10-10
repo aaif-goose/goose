@@ -1657,7 +1657,7 @@ Some models expose their internal reasoning or "chain of thought" as part of the
 
 <Tabs groupId="interface">
   <TabItem value="ui" label="goose Desktop" default>
-    Reasoning output appears automatically in a collapsible **"Show reasoning"** toggle above the model's response. Click it to expand and view the model's thought process.
+    Reasoning output appears in a collapsible **Thinking** block above the model's response. Click it to expand and view the model's thought process. To change this, set `Show Thinking` in `Settings` > `Chat` to `Always` (open), `Collapsed` (default), or `Never` (hidden).
   </TabItem>
 
   <TabItem value="cli" label="goose CLI">

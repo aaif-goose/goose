@@ -4139,6 +4139,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Speichern"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Immer"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Eingeklappt"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Das Nachdenken des Modells im Chat anzeigen. Bei „Eingeklappt“ bleibt es geschlossen, bis Sie es öffnen."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nie"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Nachdenken anzeigen"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Skill hinzufügen"
   },
