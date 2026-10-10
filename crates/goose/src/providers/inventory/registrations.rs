@@ -205,12 +205,7 @@ pub fn muse_code_inventory() -> InventoryRegistration {
 }
 
 pub fn chatgpt_codex_inventory() -> InventoryRegistration {
-    InventoryRegistration {
-        supports_refresh: false,
-        identity: default_inventory_identity_resolver(),
-        configured: None,
-    }
-    .with_configured(|| ChatGptCodexTokenCache::new().has_token())
+    refresh_only().with_configured(|| ChatGptCodexTokenCache::new().has_token())
 }
 
 pub fn gemini_oauth_inventory() -> InventoryRegistration {
