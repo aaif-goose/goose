@@ -255,6 +255,14 @@ impl DatabricksV2Provider {
         model_name.contains("claude")
     }
 
+    fn is_gemini_model_service(model_name: &str) -> bool {
+        Self::is_model_service_fqn(model_name)
+            && model_name
+                .rsplit('.')
+                .next()
+                .is_some_and(|service| service.to_lowercase().contains("gemini"))
+    }
+
     fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
         if !model_config.is_reasoning_model()
             || !(model_config.is_glm_5_3_reasoning_model()
@@ -389,6 +397,12 @@ impl DatabricksV2Provider {
         )?;
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
+        }
+        // The gateway maps `stream_options` into Gemini's `generation_config`, which rejects it.
+        if Self::is_gemini_model_service(&model_config.model_name) {
+            if let Some(object) = payload.as_object_mut() {
+                object.remove("stream_options");
+            }
         }
         if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
             payload["reasoning_effort"] = Value::String(effort.to_string());
@@ -796,6 +810,19 @@ mod tests {
     }
 
     #[test]
+    fn detects_gemini_only_from_the_model_service_name() {
+        assert!(DatabricksV2Provider::is_gemini_model_service(
+            "catalog.schema.goose-Gemini-3-pro"
+        ));
+        for model in ["team.gemini.kimi-chat", "databricks-gemini-3-pro"] {
+            assert!(
+                !DatabricksV2Provider::is_gemini_model_service(model),
+                "{model} is not a Gemini model service"
+            );
+        }
+    }
+
+    #[test]
     fn routes_model_service_fqns_to_mlflow() {
         for model in ["team.claude.kimi-chat", "gpt-5.schema.kimi-chat"] {
             assert_eq!(
@@ -999,6 +1026,71 @@ mod tests {
                 )
                 .await
                 .expect("model service should receive reasoning effort");
+        }
+
+        #[tokio::test]
+        async fn gemini_model_service_omits_stream_options_and_keeps_usage() {
+            let model = "catalog.schema.goose-gemini-3-pro";
+            let delta = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{"content":"Hello"}},"finish_reason":null}}]}}"#
+            );
+            let last = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}}}"#
+            );
+            let body = format!("{delta}\n\n{last}\n\ndata: [DONE]\n\n");
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({"model": model, "stream": true})))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let (message, usage) = provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("Gemini model service should stream without stream_options");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("stream_options").is_none());
+            assert_eq!(message.as_concat_text(), "Hello");
+            assert_eq!(usage.usage.input_tokens, Some(7));
+            assert_eq!(usage.usage.output_tokens, Some(2));
+            assert_eq!(usage.usage.total_tokens, Some(9));
+        }
+
+        #[tokio::test]
+        async fn non_gemini_model_service_keeps_stream_options() {
+            let model = "catalog.schema.goose-kimi-k3";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "stream_options": {"include_usage": true}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("non-Gemini model service should keep stream_options");
         }
 
         #[tokio::test]
