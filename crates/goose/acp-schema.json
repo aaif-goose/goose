@@ -5879,6 +5879,12 @@
               "type": "null"
             }
           ]
+        },
+        "localFilePath": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5938,7 +5944,8 @@
       "enum": [
         "NotDownloaded",
         "Downloading",
-        "Downloaded"
+        "Downloaded",
+        "Unavailable"
       ]
     },
     "LocalInferenceModelSettingsDto": {
@@ -6650,6 +6657,45 @@
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/local-inference/huggingface/repo/variants"
+    },
+    "LocalInferenceModelRegisterLocalRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/local-inference/models/register-local"
+    },
+    "LocalInferenceModelRegisterLocalResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/local-inference/models/register-local"
+    },
+    "LocalInferenceModelUnregisterLocalRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "modelId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "modelId"
+      ],
+      "x-side": "agent",
+      "x-method": "_goose/unstable/local-inference/models/unregister-local"
     },
     "LocalInferenceBuiltinChatTemplatesListRequest_unstable": {
       "type": "object",
@@ -8043,6 +8089,24 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/LocalInferenceModelRegisterLocalRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/local-inference/models/register-local",
+                  "title": "LocalInferenceModelRegisterLocalRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/LocalInferenceModelUnregisterLocalRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _goose/unstable/local-inference/models/unregister-local",
+                  "title": "LocalInferenceModelUnregisterLocalRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/LocalInferenceBuiltinChatTemplatesListRequest_unstable"
                     }
                   ],
@@ -8678,6 +8742,14 @@
                         }
                       ],
                       "title": "LocalInferenceHuggingFaceRepoVariantsResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/LocalInferenceModelRegisterLocalResponse_unstable"
+                        }
+                      ],
+                      "title": "LocalInferenceModelRegisterLocalResponse_unstable"
                     },
                     {
                       "allOf": [

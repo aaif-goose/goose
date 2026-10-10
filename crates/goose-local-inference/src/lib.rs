@@ -3,6 +3,7 @@ pub mod config_resolver;
 pub use goose_download_manager as download_manager;
 #[cfg(feature = "hf-hub")]
 pub mod huggingface_auth;
+pub mod local_files;
 pub mod paths;
 pub mod prompt_template;
 pub mod provider_utils;
@@ -593,7 +594,9 @@ fn strip_image_parts_from_messages(messages: &mut [Value]) {
         }
     }
     if stripped {
-        tracing::warn!("Stripped image content parts from messages — vision encoder not available for this model");
+        tracing::warn!(
+            "Stripped image content parts from messages — vision encoder not available for this model"
+        );
     }
 }
 

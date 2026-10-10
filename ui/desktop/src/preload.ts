@@ -120,6 +120,7 @@ type ElectronAPI = {
   } | null>;
   getBinaryPath: (binaryName: string) => Promise<string>;
   selectRecipeFile: () => Promise<FileResponse | null>;
+  ggufFilePicker: () => Promise<string | null>;
   readGoosehints: () => Promise<FileResponse>;
   writeGoosehints: (content: string) => Promise<boolean>;
   writeFile: (directory: string, content: string) => Promise<boolean>;
@@ -220,6 +221,7 @@ const electronAPI: ElectronAPI = {
   selectImportSessionFile: () => ipcRenderer.invoke('select-import-session-file'),
   getBinaryPath: (binaryName: string) => ipcRenderer.invoke('get-binary-path', binaryName),
   selectRecipeFile: () => ipcRenderer.invoke('select-recipe-file'),
+  ggufFilePicker: () => ipcRenderer.invoke('gguf-file-picker'),
   readGoosehints: () => ipcRenderer.invoke('read-goosehints'),
   writeGoosehints: (content: string) => ipcRenderer.invoke('write-goosehints', content),
   writeFile: (filePath: string, content: string) =>

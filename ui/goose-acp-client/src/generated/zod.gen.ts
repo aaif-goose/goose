@@ -1932,7 +1932,8 @@ export const zLocalInferenceModelsListRequest_unstable = z.record(z.string(), z.
 export const zLocalInferenceDownloadState = z.enum([
     'NotDownloaded',
     'Downloading',
-    'Downloaded'
+    'Downloaded',
+    'Unavailable'
 ]);
 
 export const zLocalInferenceModelDownloadStatusDto = z.object({
@@ -2023,7 +2024,8 @@ export const zLocalInferenceModelDto = z.object({
     isLoaded: z.boolean(),
     settings: zLocalInferenceModelSettingsDto,
     visionCapable: z.boolean(),
-    mmprojStatus: zLocalInferenceModelDownloadStatusDto.nullish()
+    mmprojStatus: zLocalInferenceModelDownloadStatusDto.nullish(),
+    localFilePath: z.string().nullish()
 });
 
 export const zLocalInferenceModelsListResponse_unstable = z.object({
@@ -2168,6 +2170,18 @@ export const zLocalInferenceHuggingFaceRepoVariantsResponse_unstable = z.object(
     availableMemoryBytes: z.int().gte(0),
     downloadedQuants: z.array(z.string()),
     downloadedVariants: z.array(z.string())
+});
+
+export const zLocalInferenceModelRegisterLocalRequest_unstable = z.object({
+    path: z.string()
+});
+
+export const zLocalInferenceModelRegisterLocalResponse_unstable = z.object({
+    modelId: z.string()
+});
+
+export const zLocalInferenceModelUnregisterLocalRequest_unstable = z.object({
+    modelId: z.string()
 });
 
 /**
@@ -2416,6 +2430,8 @@ export const zExtRequest = z.object({
             zLocalInferenceModelSettingsUpdateRequest_unstable,
             zLocalInferenceHuggingFaceSearchRequest_unstable,
             zLocalInferenceHuggingFaceRepoVariantsRequest_unstable,
+            zLocalInferenceModelRegisterLocalRequest_unstable,
+            zLocalInferenceModelUnregisterLocalRequest_unstable,
             zLocalInferenceBuiltinChatTemplatesListRequest_unstable
         ]),
         z.record(z.string(), z.unknown())
@@ -2502,6 +2518,7 @@ export const zExtResponse = z.union([
                 zLocalInferenceModelSettingsUpdateResponse_unstable,
                 zLocalInferenceHuggingFaceSearchResponse_unstable,
                 zLocalInferenceHuggingFaceRepoVariantsResponse_unstable,
+                zLocalInferenceModelRegisterLocalResponse_unstable,
                 zLocalInferenceBuiltinChatTemplatesListResponse_unstable
             ]),
             z.unknown()

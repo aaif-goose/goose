@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trash2, X, Settings2, Eye, RefreshCw, Cpu, PowerOff } from 'lucide-react';
+import { Trash2, X, Settings2, Eye, RefreshCw, Cpu, PowerOff, Plus, FolderOpen } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { useModelAndProvider } from '../../ModelAndProviderContext';
 import { defineMessages, useIntl } from '../../../i18n';
@@ -10,6 +10,8 @@ import {
   cancelLocalModelDownload,
   deleteLocalModel,
   evictLocalModel,
+  registerLocalModel,
+  unregisterLocalModel,
   type DownloadProgress,
   type DownloadModelRequest,
   type LocalModelResponse,
@@ -106,6 +108,34 @@ const i18n = defineMessages({
     id: 'localInferenceSettings.huggingFaceSignInNote',
     defaultMessage:
       'Sign in to increase rate limits when searching and downloading models, and to access private or gated Hugging Face repositories.',
+  },
+  addLocalFile: {
+    id: 'localInferenceSettings.addLocalFile',
+    defaultMessage: 'Add local GGUF file...',
+  },
+  localFiles: {
+    id: 'localInferenceSettings.localFiles',
+    defaultMessage: 'Local Files',
+  },
+  unavailableModels: {
+    id: 'localInferenceSettings.unavailableModels',
+    defaultMessage: 'Unavailable',
+  },
+  removeLocalFile: {
+    id: 'localInferenceSettings.removeLocalFile',
+    defaultMessage: 'Remove',
+  },
+  locateFile: {
+    id: 'localInferenceSettings.locateFile',
+    defaultMessage: 'Locate...',
+  },
+  removeLocalConfirm: {
+    id: 'localInferenceSettings.removeLocalConfirm',
+    defaultMessage: 'Remove this file from the list? The file will not be deleted.',
+  },
+  unavailableNote: {
+    id: 'localInferenceSettings.unavailableNote',
+    defaultMessage: 'File not found at original path.',
   },
 });
 
@@ -358,9 +388,57 @@ export const LocalInferenceSettings = () => {
     scrollToDownloads();
   };
 
+  const handleAddLocalFile = async () => {
+    const filePath = await window.electron.ggufFilePicker();
+    if (!filePath) return;
+    try {
+      await registerLocalModel(filePath);
+      await loadModels();
+    } catch (error) {
+      console.error('Failed to register local model:', error);
+    }
+  };
+
+  const handleUnregisterModel = async (modelId: string) => {
+    if (!window.confirm(intl.formatMessage(i18n.removeLocalConfirm))) return;
+    try {
+      await unregisterLocalModel(modelId);
+      const updatedModels = await loadModels();
+      if (selectedModelId === modelId && updatedModels) {
+        const remainingDownloaded = updatedModels.filter(
+          (m) => m.id !== modelId && m.status.state === 'Downloaded'
+        );
+        if (remainingDownloaded.length > 0) {
+          selectModel(remainingDownloaded[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to unregister local model:', error);
+    }
+  };
+
+  const handleLocateFile = async (oldModelId: string) => {
+    const filePath = await window.electron.ggufFilePicker();
+    if (!filePath) return;
+    try {
+      await registerLocalModel(filePath);
+      await unregisterLocalModel(oldModelId);
+      await loadModels();
+    } catch (error) {
+      console.error('Failed to locate model:', error);
+    }
+  };
+
   const isDownloaded = (model: LocalModelResponse) => model.status.state === 'Downloaded';
 
-  const downloadedModels = models.filter(isDownloaded);
+  const localFileModels = models.filter((m) => m.localFilePath != null);
+  const unavailableModels = localFileModels.filter(
+    (m) => (m.status.state as string) === 'Unavailable'
+  );
+  const downloadedModels = models.filter(
+    (m) => isDownloaded(m) && m.localFilePath == null
+  );
+  const localFileDownloadedModels = localFileModels.filter(isDownloaded);
   const activeDownloadIds = new Set(
     Array.from(downloads.entries())
       .filter(([, progress]) => progress.status === 'downloading')
@@ -482,7 +560,7 @@ export const LocalInferenceSettings = () => {
         </div>
       )}
 
-      {/* Downloaded Models */}
+      {/* Downloaded Models (HuggingFace) */}
       {downloadedModels.length > 0 && (
         <div>
           <h4 className="text-sm font-medium text-text-default mb-2">
@@ -563,6 +641,140 @@ export const LocalInferenceSettings = () => {
           </div>
         </div>
       )}
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium text-text-default">
+            {intl.formatMessage(i18n.localFiles)}
+          </h4>
+          <Button variant="outline" size="sm" onClick={handleAddLocalFile}>
+            <Plus className="w-3 h-3 mr-1" />
+            {intl.formatMessage(i18n.addLocalFile)}
+          </Button>
+        </div>
+        {localFileDownloadedModels.length > 0 && (
+          <div className="space-y-2">
+            {localFileDownloadedModels.map((model) => {
+              const isSelected = selectedModelId === model.id;
+              return (
+                <div
+                  key={model.id}
+                  className={`border rounded-lg p-3 transition-colors ${
+                    isSelected
+                      ? 'border-accent-primary bg-accent-primary/5'
+                      : 'border-border-subtle bg-background-default hover:border-border-default'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2 flex-wrap">
+                      <input
+                        type="radio"
+                        checked={isSelected}
+                        onChange={() => selectModel(model.id)}
+                        className="cursor-pointer"
+                      />
+                      <span
+                        className="text-sm font-medium text-text-default truncate"
+                        title={model.id}
+                      >
+                        {model.filename}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {formatBytes(model.sizeBytes)}
+                      </span>
+                      {model.isLoaded && (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-400 bg-green-500/10 px-2 py-0.5 rounded">
+                          <Cpu className="w-3 h-3" />
+                          {intl.formatMessage(i18n.loadedInMemory)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSettingsOpenFor(model.id)}
+                        title={intl.formatMessage(i18n.modelSettingsTitle)}
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </Button>
+                      {model.isLoaded && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEvictModel(model.id)}
+                          disabled={evictingModelId === model.id}
+                          title={intl.formatMessage(i18n.evictFromMemory)}
+                        >
+                          <PowerOff className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleUnregisterModel(model.id)}
+                        className="text-destructive hover:text-destructive"
+                        title={intl.formatMessage(i18n.removeLocalFile)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {unavailableModels.length > 0 && (
+          <div className={localFileDownloadedModels.length > 0 ? 'mt-3' : undefined}>
+            <h5 className="text-xs font-medium text-text-muted mb-2">
+              {intl.formatMessage(i18n.unavailableModels)}
+            </h5>
+            <div className="space-y-2">
+              {unavailableModels.map((model) => (
+                <div
+                  key={model.id}
+                  className="border rounded-lg p-3 border-border-subtle bg-background-default opacity-60"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2 flex-wrap">
+                      <span
+                        className="text-sm font-medium text-text-default truncate"
+                        title={model.id}
+                      >
+                        {model.filename}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {intl.formatMessage(i18n.unavailableNote)}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleLocateFile(model.id)}
+                      >
+                        <FolderOpen className="w-3 h-3 mr-1" />
+                        {intl.formatMessage(i18n.locateFile)}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleUnregisterModel(model.id)}
+                        className="text-destructive hover:text-destructive"
+                        title={intl.formatMessage(i18n.removeLocalFile)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* HuggingFace Search */}
       <div className="border-t border-border-subtle pt-4">

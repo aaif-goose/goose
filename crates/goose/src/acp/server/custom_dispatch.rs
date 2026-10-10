@@ -902,6 +902,22 @@ impl GooseAcpAgent {
         self.on_local_inference_huggingface_repo_variants(req).await
     }
 
+    #[custom_method(LocalInferenceModelRegisterLocalRequest)]
+    async fn dispatch_local_inference_model_register_local(
+        &self,
+        req: LocalInferenceModelRegisterLocalRequest,
+    ) -> Result<LocalInferenceModelRegisterLocalResponse, agent_client_protocol::Error> {
+        self.on_local_inference_model_register_local(req)
+    }
+
+    #[custom_method(LocalInferenceModelUnregisterLocalRequest)]
+    async fn dispatch_local_inference_model_unregister_local(
+        &self,
+        req: LocalInferenceModelUnregisterLocalRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_local_inference_model_unregister_local(req)
+    }
+
     #[custom_method(LocalInferenceBuiltinChatTemplatesListRequest)]
     async fn dispatch_local_inference_builtin_chat_templates_list(
         &self,
