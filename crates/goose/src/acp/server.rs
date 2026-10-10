@@ -821,12 +821,12 @@ pub(super) fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_proto
 }
 
 impl GooseAcpAgent {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) fn active_run_registry(&self) -> &Arc<ActiveRunRegistry> {
         &self.active_runs
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) async fn test_start_active_run(
         &self,
         session_id: &str,
@@ -837,7 +837,7 @@ impl GooseAcpAgent {
             .await
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) fn test_drop_active_run_guard(&self, session_id: &str, run_id: &str) {
         drop(ActiveRunDropGuard {
             registry: self.active_runs.clone(),
@@ -847,7 +847,7 @@ impl GooseAcpAgent {
         });
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) async fn test_require_active_run(
         &self,
         session_id: &str,

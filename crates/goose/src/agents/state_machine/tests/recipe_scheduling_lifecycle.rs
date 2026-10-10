@@ -1,13 +1,18 @@
 use anyhow::Result;
 use serde_json::json;
 
-use super::dummy_api::{DummyApi, ProviderFeatures};
+#[cfg(feature = "scheduler")]
+use super::dummy_api::DummyApi;
+use super::dummy_api::ProviderFeatures;
+#[cfg(feature = "scheduler")]
+use super::pipeline::test_pipeline_with_scheduler;
 use super::pipeline::{
-    test_pipeline, test_pipeline_with, test_pipeline_with_scheduler, MessageKind::Agent,
-    MessageKind::Error, MessageKind::ToolResponse,
+    test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error,
+    MessageKind::ToolResponse,
 };
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+#[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
 #[cfg(feature = "code-mode")]
 use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
@@ -18,9 +23,11 @@ use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 #[cfg(feature = "code-mode")]
 use crate::conversation::message::MessageContent;
+#[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
 
+#[cfg(feature = "tree-sitter")]
 #[tokio::test]
 async fn inherited_recipe_parameters_instructions_and_extensions_reach_inference() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -490,6 +497,7 @@ async fn structured_output_fails_fast_when_provider_manages_own_context() -> Res
     Ok(())
 }
 
+#[cfg(feature = "scheduler")]
 #[tokio::test]
 async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -646,6 +654,7 @@ async fn boolean_final_output_schema_stops_before_inference() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "scheduler")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn scheduled_run_attaches_recipe_to_session_before_inference() -> Result<()> {
     let api = DummyApi::start(ProviderFeatures::default()).await;
