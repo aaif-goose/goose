@@ -2,9 +2,11 @@
 //! built-ins) and the runtime MCP client (`client` submodule). User-facing
 //! CRUD lives in `crate::sources`, which generalizes across source types.
 
+pub mod approval;
 mod arguments;
 mod builtin;
 pub mod client;
+pub mod mcp;
 mod supporting_files;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
