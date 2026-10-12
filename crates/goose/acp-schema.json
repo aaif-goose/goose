@@ -5203,6 +5203,7 @@
       "enum": [
         "skill",
         "builtinSkill",
+        "mcpSkill",
         "recipe",
         "subrecipe",
         "agent",
