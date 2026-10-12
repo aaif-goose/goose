@@ -174,7 +174,14 @@ pnpm run make --targets=@electron-forge/maker-flatpak
 Output: `out/make/flatpak/x86_64/*.flatpak`
 
 #### Snap
-Building as Snap packages is not currently supported but may be added in the future.
+goose is available from the [Snap Store](https://snapcraft.io/goose). Install it with:
+```bash
+sudo snap install goose --classic
+```
+
+The snap provides the desktop app as `goose` and the CLI as `goose.cli`. Its
+recipe and packaging automation are maintained in the
+[goose-snap](https://github.com/gabelluardo/goose-snap) repository.
 
 ## Development Workflow
 
