@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -8,13 +8,11 @@ use futures::{StreamExt, TryStreamExt};
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
-use super::mcp_client::GooseMcpHostInfo;
 use super::tool_confirmation_coordinator::{
     ActiveTurnGuard, ConfirmationAnswer, ToolConfirmationCoordinator,
 };
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use crate::agents::extension_manager::{ClientContext, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
@@ -32,7 +30,6 @@ use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
 use crate::agents::AgentEvent;
-use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -48,7 +45,7 @@ use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
-use rmcp::model::{ElicitationAction, GetPromptResult, Prompt, Tool};
+use rmcp::model::{ElicitationAction, Tool};
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
@@ -99,20 +96,33 @@ impl fmt::Display for GoosePlatform {
 }
 
 #[derive(Clone)]
-pub struct AgentConfig {
+pub struct StateMachineServicesConfig {
     pub session_manager: Arc<SessionManager>,
     pub permission_manager: Arc<PermissionManager>,
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub mcp_host_info: Option<GooseMcpHostInfo>,
     pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
-    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub providers: Arc<ProviderManager>,
+    /// Sessions kept loaded before the least recently used idle one is released.
+    pub max_sessions: usize,
 }
 
-impl AgentConfig {
+impl StateMachineServicesConfig {
+    /// What a CLI process runs on: the process's session store and permissions.
+    pub fn cli() -> Self {
+        Self::new(
+            Arc::new(SessionManager::instance()),
+            PermissionManager::instance(),
+            None,
+            Config::global()
+                .get_goose_disable_session_naming()
+                .unwrap_or(false),
+            GoosePlatform::GooseCli,
+        )
+    }
+
     pub fn new(
         session_manager: Arc<SessionManager>,
         permission_manager: Arc<PermissionManager>,
@@ -126,31 +136,27 @@ impl AgentConfig {
             scheduler_service,
             disable_session_naming,
             goose_platform,
-            mcp_host_info: None,
             elicitation_handler: None,
             mcp_protocol_version: None,
-            session_name_update_tx: None,
             providers: Arc::default(),
+            max_sessions: Config::global()
+                .get_goose_max_active_agents()
+                .unwrap_or(DEFAULT_MAX_SESSIONS),
         }
-    }
-
-    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
-        self.mcp_host_info = mcp_host_info;
-        self
-    }
-
-    pub fn with_session_name_update_tx(
-        mut self,
-        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
-    ) -> Self {
-        self.session_name_update_tx = tx;
-        self
     }
 }
 
-/// The main goose Agent
-pub struct Agent {
-    pub config: AgentConfig,
+const DEFAULT_MAX_SESSIONS: usize = 100;
+
+pub struct StateMachineServices {
+    pub session_manager: Arc<SessionManager>,
+    pub permission_manager: Arc<PermissionManager>,
+    pub providers: Arc<ProviderManager>,
+    pub scheduler: Option<Arc<dyn SchedulerTrait>>,
+    pub goose_platform: GoosePlatform,
+    pub disable_session_naming: bool,
+    max_sessions: usize,
+    loaded_sessions: Mutex<lru::LruCache<String, ()>>,
 
     pub extension_manager: Arc<ExtensionManager>,
     tool_confirmation_coordinator: ToolConfirmationCoordinator,
@@ -160,6 +166,7 @@ pub struct Agent {
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
+    session_name_updates: StdMutex<HashMap<String, mpsc::UnboundedSender<SessionNameUpdate>>>,
 }
 
 fn user_event(event: AgentEvent) -> Option<AgentEvent> {
@@ -180,64 +187,37 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
-impl Agent {
-    pub fn new() -> Arc<Self> {
-        let config = Config::global();
-        Self::with_config(AgentConfig::new(
-            Arc::new(SessionManager::instance()),
-            PermissionManager::instance(),
-            None,
-            config.get_goose_disable_session_naming().unwrap_or(false),
-            GoosePlatform::GooseCli,
-        ))
-    }
-
-    pub fn with_config(config: AgentConfig) -> Arc<Self> {
-        let providers = config.providers.clone();
-
-        let goose_platform = config.goose_platform.clone();
-        let explicit_mcp_host_info = config.mcp_host_info.clone();
-        let mcpui = explicit_mcp_host_info
-            .as_ref()
-            .filter(|host_info| host_info.explicit_extensions)
-            .map(GooseMcpHostInfo::mcpui_enabled)
-            .unwrap_or_else(|| match config.goose_platform {
-                GoosePlatform::GooseDesktop => true,
-                GoosePlatform::GooseCli => false,
-            });
-        let capabilities = ExtensionManagerCapabilities {
-            mcpui,
-            host_info: explicit_mcp_host_info.clone(),
-            elicitation_handler: config.elicitation_handler.clone(),
-            protocol_version: config.mcp_protocol_version.clone(),
-        };
-        let client_name = explicit_mcp_host_info
-            .as_ref()
-            .and_then(|host_info| host_info.client_name.clone())
-            .unwrap_or_else(|| goose_platform.to_string());
-        let session_manager = Arc::clone(&config.session_manager);
-        let scheduler = config.scheduler_service.clone();
-        let inspection_session_manager = Arc::clone(&config.session_manager);
-        let permission_manager = Arc::clone(&config.permission_manager);
+impl StateMachineServices {
+    pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
+        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        default_client.capabilities.elicitation_handler = config.elicitation_handler;
+        default_client.capabilities.protocol_version = config.mcp_protocol_version;
         Arc::new(Self {
-            config,
             extension_manager: Arc::new(ExtensionManager::new(
-                providers.clone(),
-                session_manager,
-                scheduler,
-                client_name,
-                capabilities,
+                config.providers.clone(),
+                config.session_manager.clone(),
+                config.scheduler_service.clone(),
+                default_client,
             )),
-            tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
-                permission_manager,
-                providers,
-                inspection_session_manager,
+                config.permission_manager.clone(),
+                config.providers.clone(),
+                config.session_manager.clone(),
             ),
+            session_manager: config.session_manager,
+            permission_manager: config.permission_manager,
+            providers: config.providers,
+            scheduler: config.scheduler_service,
+            goose_platform: config.goose_platform,
+            disable_session_naming: config.disable_session_naming,
+            max_sessions: config.max_sessions,
+            loaded_sessions: Mutex::new(lru::LruCache::unbounded()),
+            tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
             #[cfg(test)]
             stop_hook_block_cap_override: None,
             steer_queues: Mutex::new(HashMap::new()),
+            session_name_updates: StdMutex::new(HashMap::new()),
         })
     }
 
@@ -248,7 +228,9 @@ impl Agent {
         self: &mut Arc<Self>,
         hook_manager: crate::hooks::HookManager,
     ) {
-        Arc::get_mut(self).expect("agent is shared").hook_manager = hook_manager;
+        Arc::get_mut(self)
+            .expect("services are shared")
+            .hook_manager = hook_manager;
     }
 
     #[cfg(test)]
@@ -261,7 +243,7 @@ impl Agent {
     #[cfg(test)]
     pub(crate) fn set_stop_hook_block_cap_for_test(self: &mut Arc<Self>, cap: u32) {
         Arc::get_mut(self)
-            .expect("agent is shared")
+            .expect("services are shared")
             .stop_hook_block_cap_override = Some(cap);
     }
 
@@ -285,8 +267,7 @@ impl Agent {
             .hook_manager
             .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
             .await;
-        self.config
-            .session_manager
+        self.session_manager
             .add_message(
                 session_id,
                 &crate::agents::state_machine::session_start_message(&banners),
@@ -307,20 +288,75 @@ impl Agent {
         self.steer_queues.lock().await.remove(session_id);
     }
 
+    /// Generated names for the session go to `tx`, replacing whoever subscribed before.
+    pub fn subscribe_session_name_updates(
+        &self,
+        session_id: &str,
+        tx: mpsc::UnboundedSender<SessionNameUpdate>,
+    ) {
+        self.session_name_updates
+            .lock()
+            .expect("session name subscribers unavailable")
+            .insert(session_id.to_string(), tx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_turn_for_test(&self, session_id: &str) -> impl Drop {
+        self.tool_confirmation_coordinator
+            .session(session_id)
+            .try_start_turn()
+            .unwrap()
+    }
+
+    pub fn has_active_turn(&self, session_id: &str) -> bool {
+        self.tool_confirmation_coordinator
+            .has_active_turn(session_id)
+    }
+
+    /// Marks the session as in use. Once more than `max_sessions` are, the least recently
+    /// used one without a turn in flight is released.
+    pub async fn touch_session(&self, session_id: &str) {
+        let evicted = {
+            let mut loaded = self.loaded_sessions.lock().await;
+            loaded.put(session_id.to_string(), ());
+            let excess = loaded.len().saturating_sub(self.max_sessions.max(1));
+            let evicted: Vec<String> = loaded
+                .iter()
+                .rev()
+                .map(|(id, ())| id.clone())
+                .filter(|id| !self.has_active_turn(id))
+                .take(excess)
+                .collect();
+            for id in &evicted {
+                loaded.pop(id);
+            }
+            evicted
+        };
+        for id in evicted {
+            self.release_session(&id).await;
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn tracks_confirmations_for(&self, session_id: &str) -> bool {
         self.tool_confirmation_coordinator.tracks(session_id)
     }
 
+    /// Stops the session's extensions and drops its provider and pending state. A turn
+    /// still running keeps what it already leased.
     pub async fn release_session(&self, session_id: &str) {
+        self.loaded_sessions.lock().await.pop(session_id);
         self.discard_pending_steers(session_id).await;
         self.tool_confirmation_coordinator.release(session_id);
-        self.config
-            .session_manager
+        self.session_manager
             .action_required()
             .forget_forwarded_from(session_id);
+        self.session_name_updates
+            .lock()
+            .expect("session name subscribers unavailable")
+            .remove(session_id);
         self.extension_manager.release(session_id).await;
-        self.config.providers.release(session_id);
+        self.providers.release(session_id);
     }
 
     async fn steer_queue(&self, session_id: &str) -> SteerQueue {
@@ -364,23 +400,15 @@ impl Agent {
     }
 
     pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
-        self.config.providers.provider_for(&session).await
+        let session = self.session_manager.get_session(session_id, false).await?;
+        self.providers.provider_for(&session).await
     }
 
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
     ) -> Result<goose_providers::model::ModelConfig> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        let session = self.session_manager.get_session(session_id, false).await?;
         crate::agents::provider_manager::model_config_for(&session)
     }
 
@@ -398,26 +426,6 @@ impl Agent {
         }
     }
 
-    /// Save the provided extension configuration to session metadata.
-    pub async fn persist_extension_configs(
-        &self,
-        session_id: &str,
-        extensions: Vec<ExtensionConfig>,
-    ) -> Result<()> {
-        self.config
-            .session_manager
-            .update_enabled_extensions(session_id, |selected| *selected = extensions)
-            .await
-    }
-
-    pub async fn add_extension(
-        &self,
-        extension: ExtensionConfig,
-        session_id: &str,
-    ) -> ExtensionResult<()> {
-        self.extension_manager.enable(session_id, extension).await
-    }
-
     pub async fn list_tools(
         &self,
         session_id: &str,
@@ -432,7 +440,6 @@ impl Agent {
 
         if include_final_output {
             let final_output_tool = self
-                .config
                 .session_manager
                 .get_session(session_id, false)
                 .await
@@ -445,39 +452,15 @@ impl Agent {
         Ok(prefixed_tools)
     }
 
-    pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
-        self.remove_extension_by_key(&name_to_key(name), session_id)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn remove_extension_by_key(&self, key: &str, session_id: &str) -> Result<bool> {
-        Ok(self.extension_manager.disable(session_id, key).await?)
-    }
-
-    pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
-        self.extension_manager.list_extensions(session_id).await
-    }
-
-    pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
-        self.extension_manager
-            .get_extension_configs(session_id)
-            .await
-    }
-
     pub async fn submit_tool_confirmation(
         &self,
         session_id: &str,
         request_id: &str,
         permission: Permission,
     ) -> Result<()> {
-        self.config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        self.session_manager.get_session(session_id, false).await?;
 
         let (session_id, request_id) = self
-            .config
             .session_manager
             .action_required()
             .answered_request(session_id, request_id)?;
@@ -522,7 +505,7 @@ impl Agent {
 
         if state.contains_request(request_id) {
             persist_tool_confirmation_decision(
-                self.config.session_manager.as_ref(),
+                self.session_manager.as_ref(),
                 session_id,
                 request_id,
                 &state_machine_permission,
@@ -622,7 +605,7 @@ impl Agent {
                 tool_pair_compaction_enabled,
             )),
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
-            Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
+            Arc::new(DoctorOperation::new(self.session_manager.clone())),
             Arc::new(ProjectOperation),
             Arc::new(SkillOperation::new(
                 self.hook_manager.clone(),
@@ -684,32 +667,104 @@ impl Agent {
         StateMachine::new(steps, cancel)
     }
 
-    pub(crate) async fn reply_with_state_machine(
+    #[instrument(
+        skip(self, user_message, session_config, cancel_token),
+        fields(
+            user_message,
+            trace_input,
+            trace_output = tracing::field::Empty,
+            session.id = %session_config.id,
+            gen_ai.operation.name = "invoke_agent",
+            gen_ai.agent.name = tracing::field::Empty,
+            gen_ai.input.messages = tracing::field::Empty,
+            gen_ai.output.messages = tracing::field::Empty,
+            gen_ai.usage.input_tokens = tracing::field::Empty,
+            gen_ai.usage.output_tokens = tracing::field::Empty,
+        )
+    )]
+    pub async fn reply(
         self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let reply_span = tracing::Span::current();
         let session_id = session_config.id.clone();
         let events = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.reply_with_state_machine_inner(user_message, session_config, cancel_token),
+            Some(session_id),
+            self.start_reply(
+                user_message,
+                session_config,
+                cancel_token.unwrap_or_default(),
+            ),
         )
         .await?;
-        Ok(crate::session_context::with_session_id_stream(
-            Some(session_id),
-            events,
+        // This is the single live-event boundary. Callers that intentionally stream
+        // multiple events for one logical message must assign their shared ID before this point.
+        Ok(Box::pin(
+            events
+                .try_filter_map(|event| async move { Ok(user_event(event)) })
+                .instrument(reply_span),
         ))
     }
 
-    async fn reply_with_state_machine_inner(
+    async fn start_reply(
         self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
+        cancel: CancellationToken,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let session_manager = self.config.session_manager.clone();
+        let user_message = user_message.with_generated_id_if_missing();
+        let session_manager = self.session_manager.clone();
         let session_id = session_config.id.clone();
+
+        let message_text_for_trace = agent_visible_message_text(&user_message);
+        if gen_ai_telemetry::capture_message_content() {
+            tracing::Span::current().record("user_message", message_text_for_trace.as_str());
+            tracing::Span::current().record("trace_input", message_text_for_trace.as_str());
+            tracing::Span::current().record(
+                "gen_ai.input.messages",
+                gen_ai_telemetry::simple_input_json(&message_text_for_trace).as_str(),
+            );
+        }
+
+        for content in &user_message.content {
+            if let MessageContent::ActionRequired(action_required) = content {
+                if let ActionRequiredData::ElicitationResponse {
+                    id,
+                    user_data,
+                    action,
+                } = &action_required.data
+                {
+                    // Surface stale/cancelled/timed-out elicitations as a hard
+                    // error so callers (e.g. the HTTP handler) can propagate
+                    // failure to the client instead of silently reporting
+                    // success while the blocked tool call stays unblocked.
+                    // The success path returns an empty stream after the MCP
+                    // server receives the user's accept/decline/cancel action.
+                    let response = match action {
+                        ElicitationAction::Accept => ElicitationOutcome::Accept(user_data.clone()),
+                        ElicitationAction::Decline => ElicitationOutcome::Decline,
+                        ElicitationAction::Cancel => ElicitationOutcome::Cancel,
+                        _ => ElicitationOutcome::Cancel,
+                    };
+                    crate::elicitation::complete_elicitation_with_message(
+                        &session_manager,
+                        &session_config.id,
+                        id,
+                        response,
+                        &user_message,
+                    )
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to submit elicitation response: {}", e);
+                        anyhow!("Failed to submit elicitation response: {}", e)
+                    })?;
+                    return Ok(Box::pin(futures::stream::empty()));
+                }
+            }
+        }
+
         let turn_guard = self
             .tool_confirmation_coordinator
             .session(&session_id)
@@ -727,10 +782,15 @@ impl Agent {
             .add_message(&session_config.id, &user_message)
             .await?;
 
-        if !self.config.disable_session_naming {
+        if !self.disable_session_naming {
             let provider = self.provider(&session_config.id).await?;
             let manager = session_manager.clone();
-            let tx = self.config.session_name_update_tx.clone();
+            let tx = self
+                .session_name_updates
+                .lock()
+                .expect("session name subscribers unavailable")
+                .get(&session_id)
+                .cloned();
             let id = session_id.clone();
             let provider = provider.clone();
             tokio::spawn(async move {
@@ -748,42 +808,30 @@ impl Agent {
             });
         }
 
-        let cancel = cancel_token.unwrap_or_default();
-        let initial_stream = self
-            .stream_state_machine_session(session_config.clone(), cancel.clone())
-            .await?;
-        Ok(
-            self.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                Some(initial_stream),
-            ),
-        )
+        Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
-    pub(crate) async fn resume_state_machine_turn(
+    /// Runs a subagent on the conversation saved for it.
+    pub(super) fn run_subagent_turn(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
-    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
-        let session_id = session_config.id.clone();
-        let stream = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.resume_state_machine_turn_inner(session_config, cancel),
-        )
-        .await?;
-        Ok(stream
-            .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
+    ) -> Result<BoxStream<'static, Result<AgentEvent>>> {
+        let turn_guard = self
+            .tool_confirmation_coordinator
+            .session(&session_config.id)
+            .try_start_turn()?;
+        turn_guard.state().start_new_turn();
+        Ok(self.turn(session_config, cancel, turn_guard, true))
     }
 
-    async fn resume_state_machine_turn_inner(
+    /// Continues a turn that stopped for tool confirmations, or `None` when there is none.
+    pub(crate) async fn resume_turn(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
     ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
         let session = self
-            .config
             .session_manager
             .get_session(&session_config.id, true)
             .await?;
@@ -805,32 +853,12 @@ impl Agent {
         for request in pending_confirmations {
             turn_guard.state().register_request(request.id);
         }
-
-        let agent = Arc::clone(self);
-        let stream = Box::pin(async_stream::try_stream! {
-            let initial_stream = if resume_from_persisted_response {
-                Some(
-                    agent
-                        .stream_state_machine_session(
-                            session_config.clone(),
-                            cancel.clone(),
-                        )
-                        .await?,
-                )
-            } else {
-                None
-            };
-            let mut stream = agent.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                initial_stream,
-            );
-            while let Some(event) = stream.next().await {
-                yield event?;
-            }
-        });
-        Ok(Some(stream))
+        Ok(Some(self.turn(
+            session_config,
+            cancel,
+            turn_guard,
+            resume_from_persisted_response,
+        )))
     }
 
     fn tool_confirmation_request_ids(&self, event: &AgentEvent) -> Vec<String> {
@@ -848,91 +876,64 @@ impl Agent {
                 let ActionRequiredData::ToolConfirmation { id, .. } = &action.data else {
                     return None;
                 };
-                let forwarded = self
-                    .config
-                    .session_manager
-                    .action_required()
-                    .is_forwarded(id);
+                let forwarded = self.session_manager.action_required().is_forwarded(id);
                 (!forwarded).then(|| id.clone())
             })
             .collect()
     }
 
-    fn stream_state_machine_turn<'a>(
-        self: &'a Arc<Self>,
+    /// Runs the state machine, and again each time the confirmations it stopped for are
+    /// all answered. `run_first` is false when the turn starts by waiting for answers.
+    fn turn(
+        self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
         turn_guard: ActiveTurnGuard,
-        initial_stream: Option<BoxStream<'a, Result<AgentEvent>>>,
-    ) -> BoxStream<'a, Result<AgentEvent>> {
-        Box::pin(async_stream::try_stream! {
-            let mut stream = initial_stream;
+        run_first: bool,
+    ) -> BoxStream<'static, Result<AgentEvent>> {
+        let session_id = session_config.id.clone();
+        let services = Arc::clone(self);
+        let events = async_stream::try_stream! {
+            let mut run = run_first;
             loop {
-                if let Some(active_stream) = stream.as_mut() {
+                if run {
+                    let mut stream = services
+                        .run_machine(session_config.clone(), cancel.clone())
+                        .await?;
                     let mut has_confirmations = false;
-                    while let Some(event) = active_stream.next().await {
+                    while let Some(event) = stream.next().await {
                         let event = event?;
-                        for request_id in self.tool_confirmation_request_ids(&event) {
+                        for request_id in services.tool_confirmation_request_ids(&event) {
                             turn_guard.state().register_request(request_id);
                             has_confirmations = true;
                         }
                         yield event;
                     }
-
                     if !has_confirmations {
                         turn_guard.state().clear_confirmations();
                         return;
                     }
                 }
-
-                let resume = turn_guard
+                if !turn_guard
                     .state()
                     .wait_for_all_confirmation_answers(&cancel)
-                    .await;
-                if !resume {
+                    .await
+                {
                     turn_guard.state().clear_confirmations();
                     return;
                 }
-                stream = Some(
-                    self.stream_state_machine_session(
-                        session_config.clone(),
-                        cancel.clone(),
-                    )
-                    .await?,
-                );
+                run = true;
             }
-        })
+        };
+        crate::session_context::with_session_id_stream(Some(session_id), Box::pin(events))
     }
 
-    pub(super) async fn stream_subagent_turn(
+    async fn run_machine(
         self: &Arc<Self>,
         session_config: SessionConfig,
         cancel: CancellationToken,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let turn_guard = self
-            .tool_confirmation_coordinator
-            .session(&session_config.id)
-            .try_start_turn()?;
-        turn_guard.state().start_new_turn();
-        let initial_stream = self
-            .stream_state_machine_session(session_config.clone(), cancel.clone())
-            .await?;
-        Ok(
-            self.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                Some(initial_stream),
-            ),
-        )
-    }
-
-    pub(super) async fn stream_state_machine_session(
-        self: &Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let session_manager = self.config.session_manager.clone();
+        let session_manager = self.session_manager.clone();
         let session_id = session_config.id.clone();
         let provider = self.provider(&session_id).await?;
         let model_config = self.effective_model_config_for_session(&session_id).await?;
@@ -988,120 +989,6 @@ impl Agent {
         ))
     }
 
-    pub(crate) async fn reply_live_delegation(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: CancellationToken,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let user_message = user_message.agent_only();
-        let events = self
-            .reply_with_state_machine(user_message, session_config, Some(cancel_token))
-            .await?;
-        Ok(Box::pin(events.try_filter_map(|event| async move {
-            Ok(user_event(event))
-        })))
-    }
-
-    #[instrument(
-        skip(self, user_message, session_config, cancel_token),
-        fields(
-            user_message,
-            trace_input,
-            trace_output = tracing::field::Empty,
-            session.id = %session_config.id,
-            gen_ai.operation.name = "invoke_agent",
-            gen_ai.agent.name = tracing::field::Empty,
-            gen_ai.input.messages = tracing::field::Empty,
-            gen_ai.output.messages = tracing::field::Empty,
-            gen_ai.usage.input_tokens = tracing::field::Empty,
-            gen_ai.usage.output_tokens = tracing::field::Empty,
-        )
-    )]
-    pub async fn reply(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let reply_span = tracing::Span::current();
-        let session_id = session_config.id.clone();
-        let events = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.reply_impl(user_message, session_config, cancel_token),
-        )
-        .await?;
-        let events = crate::session_context::with_session_id_stream(Some(session_id), events);
-
-        // This is the single live-event boundary. Callers that intentionally stream
-        // multiple events for one logical message must assign their shared ID before this point.
-        Ok(Box::pin(
-            events
-                .try_filter_map(|event| async move { Ok(user_event(event)) })
-                .instrument(reply_span),
-        ))
-    }
-
-    async fn reply_impl(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let user_message = user_message.with_generated_id_if_missing();
-        let session_manager = self.config.session_manager.clone();
-
-        let message_text_for_trace = agent_visible_message_text(&user_message);
-        if gen_ai_telemetry::capture_message_content() {
-            tracing::Span::current().record("user_message", message_text_for_trace.as_str());
-            tracing::Span::current().record("trace_input", message_text_for_trace.as_str());
-            tracing::Span::current().record(
-                "gen_ai.input.messages",
-                gen_ai_telemetry::simple_input_json(&message_text_for_trace).as_str(),
-            );
-        }
-
-        for content in &user_message.content {
-            if let MessageContent::ActionRequired(action_required) = content {
-                if let ActionRequiredData::ElicitationResponse {
-                    id,
-                    user_data,
-                    action,
-                } = &action_required.data
-                {
-                    // Surface stale/cancelled/timed-out elicitations as a hard
-                    // error so callers (e.g. the HTTP handler) can propagate
-                    // failure to the client instead of silently reporting
-                    // success while the blocked tool call stays unblocked.
-                    // The success path returns an empty stream after the MCP
-                    // server receives the user's accept/decline/cancel action.
-                    let response = match action {
-                        ElicitationAction::Accept => ElicitationOutcome::Accept(user_data.clone()),
-                        ElicitationAction::Decline => ElicitationOutcome::Decline,
-                        ElicitationAction::Cancel => ElicitationOutcome::Cancel,
-                        _ => ElicitationOutcome::Cancel,
-                    };
-                    crate::elicitation::complete_elicitation_with_message(
-                        &session_manager,
-                        &session_config.id,
-                        id,
-                        response,
-                        &user_message,
-                    )
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to submit elicitation response: {}", e);
-                        anyhow!("Failed to submit elicitation response: {}", e)
-                    })?;
-                    return Ok(Box::pin(futures::stream::empty()));
-                }
-            }
-        }
-
-        self.reply_with_state_machine(user_message, session_config, cancel_token)
-            .await
-    }
-
     /// Pins `provider` to the session instead of letting the provider manager
     /// build one.
     pub async fn update_provider(
@@ -1111,10 +998,7 @@ impl Agent {
         session_id: &str,
     ) -> Result<()> {
         let provider_name = provider.get_name().to_string();
-        self.config
-            .providers
-            .set_provider(session_id, provider)
-            .await;
+        self.providers.set_provider(session_id, provider).await;
         self.switch_provider(session_id, &provider_name, model_config)
             .await
     }
@@ -1125,11 +1009,7 @@ impl Agent {
         provider_name: &str,
         model_config: goose_providers::model::ModelConfig,
     ) -> Result<()> {
-        let mut session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        let mut session = self.session_manager.get_session(session_id, false).await?;
         let registry_entry = crate::providers::get_from_registry(provider_name)
             .await
             .ok();
@@ -1143,7 +1023,6 @@ impl Agent {
         session.provider_name = Some(provider_name.to_string());
         session.model_config = Some(model_config.clone());
         let provider = self
-            .config
             .providers
             .provider_for(&session)
             .await
@@ -1170,8 +1049,7 @@ impl Agent {
             warn!("Failed to apply model selection to provider: {e}");
         }
 
-        self.config
-            .session_manager
+        self.session_manager
             .clone()
             .update(session_id)
             .provider_name(provider_name)
@@ -1188,23 +1066,13 @@ impl Agent {
                 .await
                 .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
         }
-        self.config
-            .session_manager
+        self.session_manager
             .clone()
             .update(session_id)
             .goose_mode(mode)
             .apply()
             .await
             .context("Failed to persist goose_mode to session")
-    }
-
-    pub async fn goose_mode(&self, session_id: &str) -> Result<GooseMode> {
-        Ok(self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?
-            .goose_mode)
     }
 
     /// Apply a thinking-effort selection. `effort` is the raw option value: a
@@ -1228,7 +1096,6 @@ impl Agent {
                 Value::String(effort.to_string()),
             )]));
             return self
-                .config
                 .session_manager
                 .clone()
                 .update(session_id)
@@ -1334,45 +1201,178 @@ impl Agent {
             })?;
         Ok(true)
     }
-
-    pub async fn list_extension_prompts(
-        &self,
-        session_id: &str,
-    ) -> Result<HashMap<String, Vec<Prompt>>> {
-        Ok(self
-            .extension_manager
-            .current_lease(session_id)
-            .await?
-            .list_prompts(CancellationToken::default())
-            .await)
-    }
-
-    pub async fn get_prompt(
-        &self,
-        session_id: &str,
-        name: &str,
-        arguments: Value,
-    ) -> Result<GetPromptResult> {
-        let lease = self.extension_manager.current_lease(session_id).await?;
-        let prompts = lease.list_prompts(CancellationToken::default()).await;
-
-        if let Some(extension) = prompts
-            .iter()
-            .find(|(_, prompt_list)| prompt_list.iter().any(|p| p.name == name))
-            .map(|(extension, _)| extension)
-        {
-            return lease
-                .get_prompt(extension, name, arguments, CancellationToken::default())
-                .await;
-        }
-
-        Err(anyhow!("Prompt '{}' not found", name))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod session_lru {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        use goose_test_support::mcp::McpFixtureServer;
+        use rmcp::ServiceExt;
+        use tokio::sync::Barrier;
+
+        use crate::agents::extension::ExtensionConfig;
+        use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
+        use crate::config::permission::PermissionManager;
+        use crate::config::GooseMode;
+        use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
+
+        fn test_services(temp_dir: &TempDir, max_sessions: usize) -> Arc<StateMachineServices> {
+            let mut config = StateMachineServicesConfig::new(
+                Arc::new(SessionManager::new(temp_dir.path().to_path_buf())),
+                PermissionManager::instance(),
+                None,
+                true,
+                GoosePlatform::GooseDesktop,
+            );
+            config.max_sessions = max_sessions;
+            StateMachineServices::with_config(config)
+        }
+
+        fn serve_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            tokio::spawn(async move {
+                let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+                let _ = running.waiting().await;
+            });
+        }
+
+        static CONCURRENT_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_concurrent_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            CONCURRENT_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        static EVICTION_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_eviction_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            EVICTION_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        async fn session_with_fixture(
+            services: &StateMachineServices,
+            temp_dir: &TempDir,
+            fixture: &'static str,
+            serve: crate::builtin_extension::SpawnServerFn,
+        ) -> String {
+            crate::builtin_extension::register_builtin_extension(fixture, serve);
+            let session_manager = &services.session_manager;
+            let session = session_manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "fixture".to_string(),
+                    SessionType::User,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap();
+            let extension = ExtensionConfig::Builtin {
+                name: fixture.to_string(),
+                display_name: None,
+                description: String::new(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            };
+            let mut extension_data = session.extension_data.clone();
+            EnabledExtensionsState::new(vec![extension])
+                .to_extension_data(&mut extension_data)
+                .unwrap();
+            session_manager
+                .update(&session.id)
+                .extension_data(extension_data)
+                .apply()
+                .await
+                .unwrap();
+            session.id
+        }
+
+        async fn use_session(services: &StateMachineServices, session_id: &str) {
+            services.touch_session(session_id).await;
+            services
+                .extension_manager
+                .current_lease(session_id)
+                .await
+                .unwrap()
+                .start()
+                .await;
+        }
+
+        #[tokio::test]
+        async fn concurrent_first_requests_start_extensions_once() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            let session_id = session_with_fixture(
+                &services,
+                &temp_dir,
+                "concurrent_fixture",
+                serve_concurrent_fixture,
+            )
+            .await;
+
+            let callers = 20;
+            let barrier = Arc::new(Barrier::new(callers));
+            let handles = (0..callers).map(|_| {
+                let services = Arc::clone(&services);
+                let session_id = session_id.clone();
+                let barrier = Arc::clone(&barrier);
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    use_session(&services, &session_id).await;
+                })
+            });
+            for handle in futures::future::join_all(handles).await {
+                handle.unwrap();
+            }
+
+            assert_eq!(CONCURRENT_STARTS.load(Ordering::SeqCst), 1);
+        }
+
+        #[tokio::test]
+        async fn eviction_releases_the_least_recently_used_idle_session() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 2);
+            let mut sessions = Vec::new();
+            for _ in 0..3 {
+                sessions.push(
+                    session_with_fixture(
+                        &services,
+                        &temp_dir,
+                        "eviction_fixture",
+                        serve_eviction_fixture,
+                    )
+                    .await,
+                );
+            }
+            let [busy, idle, recent] = <[String; 3]>::try_from(sessions).unwrap();
+            for session_id in [&busy, &idle] {
+                use_session(&services, session_id).await;
+            }
+            let _turn = services.hold_turn_for_test(&busy);
+            let starts_before = EVICTION_STARTS.load(Ordering::SeqCst);
+
+            use_session(&services, &recent).await;
+            use_session(&services, &busy).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                1,
+                "only the new session starts; the busy one keeps its extensions"
+            );
+
+            use_session(&services, &idle).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                2,
+                "the evicted idle session starts its extensions again"
+            );
+        }
+    }
 
     use crate::conversation::message::InferenceMetadata;
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
@@ -1459,14 +1459,14 @@ mod tests {
     }
 
     async fn session_context_agent() -> (
-        Arc<Agent>,
+        Arc<StateMachineServices>,
         Arc<SessionContextProvider>,
         SessionConfig,
         TempDir,
     ) {
         let temp_dir = TempDir::new().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
             None,
@@ -1483,7 +1483,7 @@ mod tests {
             .await
             .unwrap();
         let provider = Arc::new(SessionContextProvider::default());
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
@@ -1516,7 +1516,7 @@ mod tests {
             max_turns: Some(1),
         };
 
-        (agent, provider, session_config, temp_dir)
+        (services, provider, session_config, temp_dir)
     }
 
     fn assert_session_context_calls(
@@ -1538,9 +1538,9 @@ mod tests {
 
     #[tokio::test]
     async fn reply_scopes_resume_model_info_and_stream_to_session() {
-        let (agent, provider, session_config, _temp_dir) = session_context_agent().await;
+        let (services, provider, session_config, _temp_dir) = session_context_agent().await;
         let session_id = session_config.id.clone();
-        let mut events = agent
+        let mut events = services
             .reply(Message::user().with_text("continue"), session_config, None)
             .await
             .unwrap();
@@ -1556,15 +1556,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_delegation_scopes_state_machine_setup_and_stream_to_session() {
-        let (agent, provider, mut session_config, _temp_dir) = session_context_agent().await;
+    async fn an_agent_only_reply_scopes_state_machine_setup_and_stream_to_session() {
+        let (services, provider, mut session_config, _temp_dir) = session_context_agent().await;
         session_config.max_turns = Some(2);
         let session_id = session_config.id.clone();
-        let mut events = agent
-            .reply_live_delegation(
-                Message::user().with_text("continue"),
+        let mut events = services
+            .reply(
+                Message::user().with_text("continue").agent_only(),
                 session_config,
-                CancellationToken::new(),
+                Some(CancellationToken::new()),
             )
             .await
             .unwrap();
@@ -1579,11 +1579,11 @@ mod tests {
         );
     }
 
-    async fn tracing_test_agent_and_session() -> (Arc<Agent>, Session, TempDir) {
+    async fn tracing_test_agent_and_session() -> (Arc<StateMachineServices>, Session, TempDir) {
         let data_dir = TempDir::new().unwrap();
         let data_path = data_dir.path().to_path_buf();
         let session_manager = Arc::new(SessionManager::new(data_path.clone()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(data_path)),
             None,
@@ -1599,7 +1599,7 @@ mod tests {
             )
             .await
             .unwrap();
-        (agent, session, data_dir)
+        (services, session, data_dir)
     }
 
     #[test]
@@ -1668,9 +1668,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_tool_confirmation_routes_to_provider() {
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(ActionRequiredProvider::new());
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("test-model"),
@@ -1679,7 +1679,7 @@ mod tests {
             .await
             .unwrap();
 
-        agent
+        services
             .submit_tool_confirmation(
                 &session.id,
                 "known",
@@ -1689,7 +1689,7 @@ mod tests {
             .unwrap();
         assert_eq!(provider.handled.lock().await.len(), 1);
 
-        let error = agent
+        let error = services
             .submit_tool_confirmation(
                 &session.id,
                 "unknown",
@@ -1789,10 +1789,15 @@ mod tests {
 
     async fn effort_test_agent(
         outcome: EffortOutcome,
-    ) -> (Arc<Agent>, String, Arc<EffortProvider>, TempDir) {
-        let (agent, session, data_dir) = tracing_test_agent_and_session().await;
+    ) -> (
+        Arc<StateMachineServices>,
+        String,
+        Arc<EffortProvider>,
+        TempDir,
+    ) {
+        let (services, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
@@ -1800,11 +1805,14 @@ mod tests {
             )
             .await
             .unwrap();
-        (agent, session.id, provider, data_dir)
+        (services, session.id, provider, data_dir)
     }
 
-    async fn persisted_thinking_effort(agent: &Arc<Agent>, session_id: &str) -> Option<String> {
-        agent
+    async fn persisted_thinking_effort(
+        services: &Arc<StateMachineServices>,
+        session_id: &str,
+    ) -> Option<String> {
+        services
             .model_config_for_session(session_id)
             .await
             .unwrap()
@@ -1821,7 +1829,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_toolshim_is_effective_without_being_persisted() {
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider_root = TempDir::new().unwrap();
         let provider_root_path = provider_root.path().display().to_string();
         let _guard = env_lock::lock_env([
@@ -1852,7 +1860,7 @@ mod tests {
         let provider = crate::providers::create(&config.name, Vec::new())
             .await
             .unwrap();
-        agent
+        services
             .update_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("test-model"),
@@ -1862,14 +1870,14 @@ mod tests {
             .unwrap();
 
         assert!(
-            !agent
+            !services
                 .model_config_for_session(&session.id)
                 .await
                 .unwrap()
                 .toolshim
         );
         assert!(
-            agent
+            services
                 .effective_model_config_for_session(&session.id)
                 .await
                 .unwrap()
@@ -1898,7 +1906,7 @@ mod tests {
         crate::providers::refresh_custom_providers().await.unwrap();
 
         assert!(
-            !agent
+            !services
                 .effective_model_config_for_session(&session.id)
                 .await
                 .unwrap()
@@ -1912,20 +1920,20 @@ mod tests {
     #[tokio::test]
     async fn update_provider_replaces_harness_only_effort_for_legacy_provider() {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Unhandled));
         let model_config =
             goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
-        agent
+        services
             .update_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
         assert_eq!(
-            persisted_thinking_effort(&agent, &session.id)
+            persisted_thinking_effort(&services, &session.id)
                 .await
                 .as_deref(),
             Some("high")
@@ -1935,20 +1943,20 @@ mod tests {
     #[tokio::test]
     async fn update_provider_preserves_harness_only_effort_for_managed_provider() {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Applied));
         let model_config =
             goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
-        agent
+        services
             .update_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
         assert_eq!(
-            persisted_thinking_effort(&agent, &session.id)
+            persisted_thinking_effort(&services, &session.id)
                 .await
                 .as_deref(),
             Some("default")
@@ -1957,35 +1965,35 @@ mod tests {
 
     #[tokio::test]
     async fn update_thinking_effort_persists_the_raw_value_when_the_provider_applies_it() {
-        let (agent, session_id, provider, _data_dir) =
+        let (services, session_id, provider, _data_dir) =
             effort_test_agent(EffortOutcome::Applied).await;
 
         // "xhigh" is a harness value, not a ThinkingEffort member spelling.
-        agent
+        services
             .update_thinking_effort(&session_id, "xhigh")
             .await
             .unwrap();
 
         assert_eq!(provider.effort_calls(), ["xhigh"]);
         assert_eq!(
-            persisted_thinking_effort(&agent, &session_id)
+            persisted_thinking_effort(&services, &session_id)
                 .await
                 .as_deref(),
             Some("xhigh")
         );
         // The unregistered test provider was not respawned.
         assert_eq!(
-            agent.provider(&session_id).await.unwrap().get_name(),
+            services.provider(&session_id).await.unwrap().get_name(),
             "test-effort"
         );
     }
 
     #[tokio::test]
     async fn update_thinking_effort_rejects_an_unparseable_value_on_the_legacy_path() {
-        let (agent, session_id, provider, _data_dir) =
+        let (services, session_id, provider, _data_dir) =
             effort_test_agent(EffortOutcome::Unhandled).await;
 
-        let err = agent
+        let err = services
             .update_thinking_effort(&session_id, "bogus")
             .await
             .unwrap_err();
@@ -1996,17 +2004,17 @@ mod tests {
         ));
         assert!(err.to_string().contains("Invalid thinking effort"));
         assert_eq!(provider.effort_calls(), ["bogus"]);
-        assert!(persisted_thinking_effort(&agent, &session_id)
+        assert!(persisted_thinking_effort(&services, &session_id)
             .await
             .is_none());
     }
 
     #[tokio::test]
     async fn update_thinking_effort_surfaces_a_provider_rejection() {
-        let (agent, session_id, _provider, _data_dir) =
+        let (services, session_id, _provider, _data_dir) =
             effort_test_agent(EffortOutcome::Rejected).await;
 
-        let err = agent
+        let err = services
             .update_thinking_effort(&session_id, "high")
             .await
             .unwrap_err();
@@ -2018,7 +2026,7 @@ mod tests {
             err.downcast_ref::<ProviderError>(),
             Some(ProviderError::RequestFailed(_))
         ));
-        assert!(persisted_thinking_effort(&agent, &session_id)
+        assert!(persisted_thinking_effort(&services, &session_id)
             .await
             .is_none());
     }
@@ -2313,7 +2321,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             call_count: AtomicUsize::new(0),
         });
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
-        let (agent, session_id) =
+        let (services, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
 
         let session_config = SessionConfig {
@@ -2322,7 +2330,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             max_turns: Some(10),
         };
 
-        let reply_stream = agent
+        let reply_stream = services
             .reply(Message::user().with_text("hi"), session_config, None)
             .await?;
         tokio::pin!(reply_stream);
@@ -2356,18 +2364,18 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         data_dir: PathBuf,
         hook_manager: crate::hooks::HookManager,
         provider: Arc<dyn crate::providers::base::Provider>,
-    ) -> Result<(Arc<Agent>, String)> {
+    ) -> Result<(Arc<StateMachineServices>, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
-        let config = AgentConfig::new(
+        let config = StateMachineServicesConfig::new(
             session_manager.clone(),
             permission_manager,
             None,
             true,
             GoosePlatform::GooseCli,
         );
-        let mut agent = Agent::with_config(config);
-        agent.set_hook_manager_for_test(hook_manager);
+        let mut services = StateMachineServices::with_config(config);
+        services.set_hook_manager_for_test(hook_manager);
         let session = session_manager
             .create_session(
                 PathBuf::default(),
@@ -2376,29 +2384,29 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 GooseMode::Auto,
             )
             .await?;
-        agent
+        services
             .update_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await?;
-        Ok((agent, session.id))
+        Ok((services, session.id))
     }
 
     async fn create_stop_hook_test_agent(
         env: &StopHookTestEnv,
         stop_hook_block_cap: u32,
-    ) -> Result<(Arc<Agent>, String, Arc<CountingTextProvider>)> {
+    ) -> Result<(Arc<StateMachineServices>, String, Arc<CountingTextProvider>)> {
         let provider = Arc::new(CountingTextProvider::new());
-        let (mut agent, session_id) =
+        let (mut services, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
-        agent.set_stop_hook_block_cap_for_test(stop_hook_block_cap);
-        Ok((agent, session_id, provider))
+        services.set_stop_hook_block_cap_for_test(stop_hook_block_cap);
+        Ok((services, session_id, provider))
     }
 
     async fn run_stop_hook_test_turn(
-        agent: &Arc<Agent>,
+        services: &Arc<StateMachineServices>,
         session_id: &str,
         text: &str,
     ) -> Result<Vec<Message>> {
@@ -2407,7 +2415,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             schedule_id: None,
             max_turns: Some(10),
         };
-        let reply_stream = agent
+        let reply_stream = services
             .reply(Message::user().with_text(text), session_config, None)
             .await?;
         tokio::pin!(reply_stream);
@@ -2438,10 +2446,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let temp_dir = tempfile::tempdir()?;
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let provider = Arc::new(OutputLimitMarkerProvider::new(true));
-        let (agent, session_id) =
+        let (services, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let marker = messages
             .iter()
             .find(|message| message.metadata.output_token_limit_reached)
@@ -2449,8 +2457,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(marker.content.is_empty());
         assert_eq!(marker.id.as_deref(), Some("provider-output-limit"));
 
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2474,14 +2481,13 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let temp_dir = tempfile::tempdir()?;
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let provider = Arc::new(OutputLimitMarkerProvider::new(false));
-        let (agent, session_id) =
+        let (services, session_id) =
             create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
 
-        run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        run_stop_hook_test_turn(&services, &session_id, "hello").await?;
 
         assert_eq!(provider.call_count(), 1);
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2509,11 +2515,11 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn session_start_hook_emits_once_for_first_reply_turn() -> Result<()> {
         let env = SessionStartHookTestEnv::new()?;
         let provider = Arc::new(CountingTextProvider::new());
-        let (agent, session_id) =
+        let (services, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
 
-        run_stop_hook_test_turn(&agent, &session_id, "first").await?;
-        run_stop_hook_test_turn(&agent, &session_id, "second").await?;
+        run_stop_hook_test_turn(&services, &session_id, "first").await?;
+        run_stop_hook_test_turn(&services, &session_id, "second").await?;
 
         assert_eq!(env.hook_invocations(), 1);
         assert_eq!(provider.call_count(), 2);
@@ -2524,9 +2530,9 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides() -> Result<()>
     {
         let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
-        let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
+        let (services, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let texts = visible_texts(&messages);
 
         assert_eq!(
@@ -2553,8 +2559,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             })
         }));
 
-        let stored_session = agent
-            .config
+        let stored_session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2587,10 +2592,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     #[tokio::test]
     async fn stop_hook_block_cap_counts_only_consecutive_blocks() -> Result<()> {
         let env = StopHookTestEnv::new(ALTERNATE_BLOCK_ALLOW_SCRIPT)?;
-        let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
+        let (services, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
 
-        let first_turn = run_stop_hook_test_turn(&agent, &session_id, "first").await?;
-        let second_turn = run_stop_hook_test_turn(&agent, &session_id, "second").await?;
+        let first_turn = run_stop_hook_test_turn(&services, &session_id, "first").await?;
+        let second_turn = run_stop_hook_test_turn(&services, &session_id, "second").await?;
         let mut texts = visible_texts(&first_turn);
         texts.extend(visible_texts(&second_turn));
 
@@ -2618,10 +2623,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn stop_hook_payload_includes_streamed_assistant_reply_text() -> Result<()> {
         let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT)?;
         let provider = Arc::new(ChunkedTextProvider);
-        let (agent, session_id) =
+        let (services, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let texts = visible_texts(&messages);
         assert_eq!(texts.join(""), "streamed assistant reply");
 
@@ -2644,10 +2649,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     #[tokio::test]
     async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
-        let agent = Agent::new();
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
         // Verify that the tool inspection manager has all expected inspectors
-        let inspector_names = agent.tool_inspection_manager.inspector_names();
+        let inspector_names = services.tool_inspection_manager.inspector_names();
 
         assert!(
             inspector_names.contains(&"repetition"),

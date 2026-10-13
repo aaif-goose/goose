@@ -5,7 +5,7 @@ use crate::config::{Config, GooseMode};
 use crate::recipe::{Recipe, Settings};
 use crate::session::{ExtensionData, Session, SessionType};
 
-use super::GooseAcpAgent;
+use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use goose_providers::model::ModelConfig;
@@ -32,7 +32,7 @@ struct NewSessionMetaFields {
     client_title: Option<String>,
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
@@ -56,6 +56,7 @@ impl GooseAcpAgent {
             .unwrap_or_else(|| "New Chat".to_string());
 
         let session = self
+            .services
             .session_manager
             .create_session(args.cwd.clone(), session_name, session_type, current_mode)
             .await
@@ -85,39 +86,34 @@ impl GooseAcpAgent {
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
+        let extension_results = self.activate_acp_session(cx, &reloaded_session).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent, &reloaded_session.id).await,
+                &super::agent_thinking_effort_support(&self.services, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)
     }
 
     async fn cleanup_failed_new_session(&self, session_id: &str) {
-        if let Err(error) = self.session_manager.delete_session(session_id).await {
+        if let Err(error) = self
+            .services
+            .session_manager
+            .delete_session(session_id)
+            .await
+        {
             warn!(
                 session_id,
                 %error,
                 "Failed to delete session during new-session cleanup"
             );
         }
-        self.sessions.lock().await.remove(session_id);
-        if let Err(error) = self
-            .agent_manager
-            .remove_session_if_loaded(session_id)
-            .await
-        {
-            warn!(
-                session_id,
-                %error,
-                "Failed to remove in-memory agent during new-session cleanup"
-            );
-        }
+        self.open_sessions.lock().await.remove(session_id);
+        self.services.release_session(session_id).await;
     }
 
     async fn configure_new_session(
@@ -172,7 +168,8 @@ impl GooseAcpAgent {
         &self,
         session_id: &str,
     ) -> Result<Session, agent_client_protocol::Error> {
-        self.session_manager
+        self.services
+            .session_manager
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")
@@ -220,6 +217,7 @@ impl GooseAcpAgent {
         config: InitialSessionConfig,
     ) -> Result<(), agent_client_protocol::Error> {
         let mut builder = self
+            .services
             .session_manager
             .update(session_id)
             .provider_name(config.provider)

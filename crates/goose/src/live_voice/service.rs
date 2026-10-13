@@ -1,8 +1,8 @@
 use super::interaction::{LiveMainAgent, LiveVoiceInteraction, LiveVoiceInteractionId};
+use crate::agents::ActiveRunRegistry;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
-use crate::execution::ActiveRunRegistry;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};

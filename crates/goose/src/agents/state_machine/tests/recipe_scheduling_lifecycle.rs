@@ -693,6 +693,16 @@ prompt: check
         session_manager.clone(),
     )
     .await?;
+    let services = crate::agents::StateMachineServices::with_config(
+        crate::agents::StateMachineServicesConfig::new(
+            session_manager.clone(),
+            crate::config::permission::PermissionManager::instance(),
+            Some(scheduler.clone()),
+            true,
+            crate::agents::GoosePlatform::GooseCli,
+        ),
+    );
+    scheduler.attach_services(&services);
     let job = crate::scheduler::ScheduledJob {
         id: "ordering_guard".to_string(),
         source: recipe_path.to_string_lossy().into_owned(),

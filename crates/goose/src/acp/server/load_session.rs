@@ -217,11 +217,10 @@ fn replay_conversation_to_client(
     Ok(skipped)
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     fn resend_pending_tool_permissions(
         &self,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
         cancel_token: Option<CancellationToken>,
@@ -237,8 +236,7 @@ impl GooseAcpAgent {
                     arguments: request.arguments.clone(),
                     prompt: request.prompt.clone(),
                 },
-                SessionAgentTarget {
-                    agent: agent.clone(),
+                SessionTarget {
                     session_id: session_id.to_string(),
                     cancel_token: cancel_token.clone(),
                 },
@@ -251,19 +249,13 @@ impl GooseAcpAgent {
     async fn start_resumed_state_machine_turn(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
         session_id: &str,
         requests: &[ToolConfirmationRequest],
     ) -> Result<(), agent_client_protocol::Error> {
         let run_id = format!("resume_{}", Uuid::new_v4());
         let cancel_token = CancellationToken::new();
-        self.start_active_run(
-            session_id,
-            run_id.clone(),
-            cancel_token.clone(),
-            agent.clone(),
-        )
-        .await?;
+        self.start_active_run(session_id, run_id.clone(), cancel_token.clone())
+            .await?;
 
         let acp_session_id = SessionId::new(session_id.to_string());
         if let Err(error) = Self::send_active_run_update(cx, &acp_session_id, Some(&run_id)) {
@@ -276,8 +268,9 @@ impl GooseAcpAgent {
             schedule_id: None,
             max_turns: None,
         };
-        let stream = match agent
-            .resume_state_machine_turn(session_config, cancel_token.clone())
+        let stream = match self
+            .services
+            .resume_turn(session_config, cancel_token.clone())
             .await
         {
             Ok(Some(stream)) => stream,
@@ -297,7 +290,6 @@ impl GooseAcpAgent {
 
         let server = Arc::clone(self);
         let task_cx = cx.clone();
-        let task_agent = agent.clone();
         let task_session_id = session_id.to_string();
         let task_run_id = run_id.clone();
         let task_cancel_token = cancel_token.clone();
@@ -305,6 +297,7 @@ impl GooseAcpAgent {
         if let Err(error) = cx.spawn(async move {
             let _run_guard = ActiveRunDropGuard {
                 registry: server.active_runs.clone(),
+                services: Arc::clone(&server.services),
                 session_id: task_session_id.clone(),
                 run_id: task_run_id.clone(),
                 cancel_token: task_cancel_token.clone(),
@@ -314,7 +307,6 @@ impl GooseAcpAgent {
                     &task_cx,
                     &task_acp_session_id,
                     &task_session_id,
-                    &task_agent,
                     &task_cancel_token,
                     stream,
                 )
@@ -325,7 +317,6 @@ impl GooseAcpAgent {
                         &task_cx,
                         &task_acp_session_id,
                         &task_session_id,
-                        &task_agent,
                         &mut None,
                     )
                     .await
@@ -364,7 +355,6 @@ impl GooseAcpAgent {
 
         if let Err(error) = self.resend_pending_tool_permissions(
             cx,
-            agent,
             session_id,
             requests,
             Some(cancel_token.clone()),
@@ -388,6 +378,7 @@ impl GooseAcpAgent {
         let session_id_str = args.session_id.0.to_string();
 
         let mut session = self
+            .services
             .session_manager
             .get_session(&session_id_str, true)
             .await
@@ -411,15 +402,16 @@ impl GooseAcpAgent {
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
-        self.register_acp_session(session_id_str.clone(), agent.clone())
-            .await;
-        let provider = agent
+        let extension_results = self.prepare_acp_session(cx, &session).await?;
+        self.register_acp_session(session_id_str.clone()).await;
+        let provider = self
+            .services
             .provider(&session.id)
             .await
             .internal_err_ctx("Failed to get provider while loading ACP session")?;
         resume_saved_provider_session(&provider, session.conversation.as_ref()).await;
         session = self
+            .services
             .session_manager
             .get_session(&session_id_str, false)
             .await
@@ -428,7 +420,7 @@ impl GooseAcpAgent {
         let (mode_state, config_options) = build_session_setup_config(
             &self.provider_inventory,
             &session,
-            &agent_thinking_effort_support(&agent, &session.id).await,
+            &agent_thinking_effort_support(&self.services, &session.id).await,
         )
         .await?;
 
@@ -457,17 +449,11 @@ impl GooseAcpAgent {
                 .as_ref()
                 .is_some_and(has_unapplied_tool_confirmation_response);
         if should_resume_state_machine {
-            self.start_resumed_state_machine_turn(
-                cx,
-                &agent,
-                &session_id_str,
-                &pending_confirmations,
-            )
-            .await?;
+            self.start_resumed_state_machine_turn(cx, &session_id_str, &pending_confirmations)
+                .await?;
         } else {
             self.resend_pending_tool_permissions(
                 cx,
-                &agent,
                 &session_id_str,
                 &pending_confirmations,
                 None,

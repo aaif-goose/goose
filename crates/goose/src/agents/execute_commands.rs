@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::slash_commands::{recipe_slash_command, skill_slash_command};
 
-use super::Agent;
+use super::StateMachineServices;
 
 pub fn slash_commands_enabled() -> bool {
     crate::config::Config::global()
@@ -126,7 +126,7 @@ pub fn command_starts_turn(message_text: &str) -> bool {
         && !is_clear_goal_param(parsed.params_str)
 }
 
-impl Agent {}
+impl StateMachineServices {}
 
 #[cfg(test)]
 mod tests {

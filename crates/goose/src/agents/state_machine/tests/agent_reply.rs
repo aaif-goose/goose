@@ -17,11 +17,13 @@ use tokio_util::sync::CancellationToken;
 use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
 use super::dummy_api::{DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
-use crate::acp::server::GooseAcpAgent;
+use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
-use crate::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, SessionConfig};
+use crate::agents::{
+    AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
+};
 use crate::config::permission::PermissionManager;
 use crate::config::GooseMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -30,7 +32,12 @@ use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
 use goose_providers::model::ModelConfig;
 
-async fn agent_with_dummy_api() -> Result<(Arc<Agent>, Arc<DummyApi>, String, tempfile::TempDir)> {
+async fn agent_with_dummy_api() -> Result<(
+    Arc<StateMachineServices>,
+    Arc<DummyApi>,
+    String,
+    tempfile::TempDir,
+)> {
     let api = Arc::new(DummyApi::start(ProviderFeatures::default()).await);
     let api_client = goose_providers::api_client::ApiClient::new_with_tls(
         api.uri(),
@@ -55,14 +62,14 @@ async fn agent_with_dummy_api() -> Result<(Arc<Agent>, Arc<DummyApi>, String, te
             GooseMode::Auto,
         )
         .await?;
-    let agent = Agent::with_config(AgentConfig::new(
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
         session_manager,
         Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
         None,
         true,
         GoosePlatform::GooseCli,
     ));
-    agent
+    services
         .update_provider(
             provider,
             ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
@@ -71,24 +78,24 @@ async fn agent_with_dummy_api() -> Result<(Arc<Agent>, Arc<DummyApi>, String, te
         )
         .await?;
 
-    Ok((agent, api, session.id, temp_dir))
+    Ok((services, api, session.id, temp_dir))
 }
 
 async fn agent_with_calculator() -> Result<(
-    Arc<Agent>,
+    Arc<StateMachineServices>,
     Arc<DummyApi>,
     String,
     Arc<CalculatorExtension>,
     tempfile::TempDir,
 )> {
-    let (agent, api, session_id, temp_dir) = agent_with_dummy_api().await?;
-    agent
+    let (services, api, session_id, temp_dir) = agent_with_dummy_api().await?;
+    services
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
     let calculator = Arc::new(CalculatorExtension::new(
-        agent.config.session_manager.action_required(),
+        services.session_manager.action_required(),
     ));
-    agent
+    services
         .extension_manager
         .add_client(
             &session_id,
@@ -97,12 +104,14 @@ async fn agent_with_calculator() -> Result<(
             calculator.get_info().cloned(),
         )
         .await;
-    Ok((agent, api, session_id, calculator, temp_dir))
+    Ok((services, api, session_id, calculator, temp_dir))
 }
 
-async fn enable_developer(agent: &Arc<Agent>, session_id: &str) -> Result<()> {
-    agent
-        .add_extension(
+async fn enable_developer(services: &Arc<StateMachineServices>, session_id: &str) -> Result<()> {
+    services
+        .extension_manager
+        .enable(
+            session_id,
             ExtensionConfig::Platform {
                 name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
                 description: "Developer tools".to_string(),
@@ -110,7 +119,6 @@ async fn enable_developer(agent: &Arc<Agent>, session_id: &str) -> Result<()> {
                 bundled: None,
                 available_tools: Vec::new(),
             },
-            session_id,
         )
         .await?;
     Ok(())
@@ -154,7 +162,7 @@ async fn stream_messages(
 
 #[tokio::test]
 async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<()> {
-    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    let (mut services, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
     let hook_dir = tempfile::tempdir()?;
     let plugin_dir = hook_dir.path().join("test-plugin");
     std::fs::create_dir_all(plugin_dir.join("hooks"))?;
@@ -162,7 +170,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         plugin_dir.join("hooks/hooks.json"),
         r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
     )?;
-    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+    services.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
         crate::plugins::discovery::DiscoveredPlugin {
             name: "test-plugin".into(),
             root: plugin_dir.clone(),
@@ -178,7 +186,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("add one"),
             session_config.clone(),
@@ -202,8 +210,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     assert_eq!(calculator.total(), 0);
 
     let new_working_dir = tempfile::tempdir()?;
-    agent
-        .config
+    services
         .session_manager
         .update(&session_config.id)
         .working_dir(new_working_dir.path().to_path_buf())
@@ -211,8 +218,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .await?;
 
     {
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_config.id, true)
             .await?;
@@ -227,9 +233,9 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     }
 
     let replacement = Arc::new(CalculatorExtension::new(
-        agent.config.session_manager.action_required(),
+        services.session_manager.action_required(),
     ));
-    agent
+    services
         .extension_manager
         .add_client(
             &session_config.id,
@@ -239,12 +245,11 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         )
         .await;
 
-    agent
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
     {
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_config.id, true)
             .await?;
@@ -268,10 +273,10 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
                 })
             }));
     }
-    agent
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
-    assert!(agent
+    assert!(services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::DenyOnce)
         .await
         .is_err());
@@ -293,8 +298,8 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
     }
     assert_eq!(calculator.total(), 0);
     drop(stream);
-    let stream = agent
-        .resume_state_machine_turn(session_config.clone(), CancellationToken::new())
+    let stream = services
+        .resume_turn(session_config.clone(), CancellationToken::new())
         .await?
         .expect("persisted confirmation response should resume the state-machine turn");
     messages.extend(stream_messages(stream).await?);
@@ -332,19 +337,18 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         "initial and resumed provider requests must retain the session context"
     );
 
-    assert!(agent
+    assert!(services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await
         .is_err());
     assert_eq!(calculator.total(), 1);
 
-    assert!(agent
+    assert!(services
         .submit_tool_confirmation(&session_config.id, "stale-request", Permission::AllowOnce)
         .await
         .is_err());
 
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .get_session(&session_config.id, true)
         .await?;
@@ -389,7 +393,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
 
 #[tokio::test]
 async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
-    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let (services, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
     api.on("add one").calls([("call_add", ADD, value(1))]);
 
     let cancel = CancellationToken::new();
@@ -398,7 +402,7 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("add one"),
             session_config,
@@ -420,8 +424,7 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
     cancel.cancel();
     tokio::time::timeout(Duration::from_secs(5), stream_messages(stream)).await??;
 
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .get_session(&session_id, true)
         .await?;
@@ -446,9 +449,9 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
 
 #[tokio::test]
 async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()> {
-    let (agent, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, old_working_dir) = agent_with_dummy_api().await?;
     install_skill(old_working_dir.path(), "OLD_SKILL_CONTENT")?;
-    agent
+    services
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
 
@@ -461,7 +464,7 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("load review"),
             session_config.clone(),
@@ -482,14 +485,13 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
 
     let new_working_dir = tempfile::tempdir()?;
     install_skill(new_working_dir.path(), "NEW_SKILL_CONTENT")?;
-    agent
-        .config
+    services
         .session_manager
         .update(&session_config.id)
         .working_dir(new_working_dir.path().to_path_buf())
         .apply()
         .await?;
-    agent
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
     let messages = stream_messages(stream).await?;
@@ -510,9 +512,9 @@ async fn state_machine_skill_approval_uses_its_leased_working_dir() -> Result<()
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Result<()> {
-    let (agent, api, session_id, working_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, working_dir) = agent_with_dummy_api().await?;
     install_skill(working_dir.path(), "SKILL_MUST_NOT_LOAD")?;
-    agent
+    services
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
 
@@ -525,7 +527,7 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("load review"),
             session_config.clone(),
@@ -544,8 +546,8 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
         }
     };
 
-    agent.clear_extension_lease_for_test(&session_config.id);
-    agent
+    services.clear_extension_lease_for_test(&session_config.id);
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
     let messages = stream_messages(stream).await?;
@@ -565,7 +567,7 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
-    let (agent, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
+    let (services, api, session_id, calculator, _temp_dir) = agent_with_calculator().await?;
 
     api.on("add one").call(ADD, value(1));
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
@@ -575,7 +577,7 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("add one"),
             session_config.clone(),
@@ -595,15 +597,14 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
         }
     };
 
-    agent.clear_extension_lease_for_test(&session_config.id);
-    agent
+    services.clear_extension_lease_for_test(&session_config.id);
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
     stream_messages(stream).await?;
 
     assert_eq!(calculator.total(), 0);
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .get_session(&session_config.id, true)
         .await?;
@@ -626,10 +627,10 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
-    enable_developer(&agent, &session_id).await?;
-    agent
+    enable_developer(&services, &session_id).await?;
+    services
         .update_goose_mode(GooseMode::Approve, &session_id)
         .await?;
     let session_config = SessionConfig {
@@ -637,7 +638,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
         schedule_id: None,
         max_turns: Some(2),
     };
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("!echo should-not-run"),
             session_config.clone(),
@@ -656,14 +657,13 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
         }
     };
 
-    agent.clear_extension_lease_for_test(&session_config.id);
-    agent
+    services.clear_extension_lease_for_test(&session_config.id);
+    services
         .submit_tool_confirmation(&session_config.id, &confirmation_id, Permission::AllowOnce)
         .await?;
     stream_messages(stream).await?;
 
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .get_session(&session_config.id, true)
         .await?;
@@ -685,7 +685,7 @@ async fn state_machine_rejects_resumed_bang_shell_without_its_lease() -> Result<
 
 #[tokio::test]
 async fn reply_streams_the_turn_and_ends() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("are you there?").reply("still here");
 
     let session_config = SessionConfig {
@@ -693,8 +693,8 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
         schedule_id: None,
         max_turns: Some(1),
     };
-    let stream = agent
-        .reply_with_state_machine(
+    let stream = services
+        .reply(
             Message::user().with_text("are you there?"),
             session_config,
             Some(CancellationToken::new()),
@@ -721,14 +721,14 @@ async fn reply_streams_the_turn_and_ends() -> Result<()> {
 
 #[tokio::test]
 async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    enable_developer(&agent, &session_id).await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    enable_developer(&services, &session_id).await?;
     let session_config = SessionConfig {
         id: session_id,
         schedule_id: None,
         max_turns: Some(2),
     };
-    let stream = agent
+    let stream = services
         .reply(
             Message::user().with_text("!echo hello"),
             session_config,
@@ -763,11 +763,11 @@ async fn bang_shell_uses_state_machine_when_explicitly_enabled() -> Result<()> {
 }
 
 async fn reply_messages(
-    agent: &Arc<Agent>,
+    services: &Arc<StateMachineServices>,
     session_id: String,
     message: Message,
 ) -> Result<Vec<Message>> {
-    let stream = agent
+    let stream = services
         .reply(
             message,
             SessionConfig {
@@ -851,66 +851,66 @@ fn shell_commands(messages: &[Message]) -> Vec<&str> {
 }
 
 async fn assert_bang_shell_uses_only_user_visible_content() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let hidden_text_prefix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_text_prefix = AcpConnection::convert_acp_prompt_to_message(&[
         assistant_only_acp_text("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
-    let messages = reply_messages(&agent, session_id, hidden_text_prefix).await?;
+    let messages = reply_messages(&services, session_id, hidden_text_prefix).await?;
     assert!(shell_commands(&messages).is_empty());
     assert_eq!(api.call_count(), 1);
 
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let empty_audience_text = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let empty_audience_text = AcpConnection::convert_acp_prompt_to_message(&[
         empty_audience_acp_text("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
-    let messages = reply_messages(&agent, session_id, empty_audience_text).await?;
+    let messages = reply_messages(&services, session_id, empty_audience_text).await?;
     assert!(shell_commands(&messages).is_empty());
     assert_eq!(api.call_count(), 1);
 
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    let hidden_text_suffix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let hidden_text_suffix = AcpConnection::convert_acp_prompt_to_message(&[
         AcpContentBlock::Text(AcpTextContent::new("!echo visible")),
         assistant_only_acp_text("&& echo hidden"),
     ]);
-    let messages = reply_messages(&agent, session_id, hidden_text_suffix).await?;
+    let messages = reply_messages(&services, session_id, hidden_text_suffix).await?;
     assert_eq!(shell_commands(&messages), ["echo visible"]);
     assert_eq!(api.call_count(), 0);
 
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let hidden_resource_prefix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_resource_prefix = AcpConnection::convert_acp_prompt_to_message(&[
         assistant_only_embedded_resource("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
-    let messages = reply_messages(&agent, session_id, hidden_resource_prefix).await?;
+    let messages = reply_messages(&services, session_id, hidden_resource_prefix).await?;
     assert!(shell_commands(&messages).is_empty());
     assert_eq!(api.call_count(), 1);
 
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     api.on("benign visible input")
         .reply("handled as ordinary input");
-    let empty_audience_resource = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let empty_audience_resource = AcpConnection::convert_acp_prompt_to_message(&[
         empty_audience_embedded_resource("!echo hidden"),
         AcpContentBlock::Text(AcpTextContent::new("benign visible input")),
     ]);
-    let messages = reply_messages(&agent, session_id, empty_audience_resource).await?;
+    let messages = reply_messages(&services, session_id, empty_audience_resource).await?;
     assert!(shell_commands(&messages).is_empty());
     assert_eq!(api.call_count(), 1);
 
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let (hidden_link, _resource_file) = assistant_only_resource_link("&& echo hidden")?;
-    let hidden_link_suffix = GooseAcpAgent::convert_acp_prompt_to_message(&[
+    let hidden_link_suffix = AcpConnection::convert_acp_prompt_to_message(&[
         AcpContentBlock::Text(AcpTextContent::new("!echo visible")),
         hidden_link,
     ]);
-    let messages = reply_messages(&agent, session_id, hidden_link_suffix).await?;
+    let messages = reply_messages(&services, session_id, hidden_link_suffix).await?;
     assert_eq!(shell_commands(&messages), ["echo visible"]);
     assert_eq!(api.call_count(), 0);
 
@@ -924,7 +924,7 @@ async fn bang_shell_visibility_is_enforced_when_state_machine_is_enabled() -> Re
 
 #[tokio::test]
 async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() -> Result<()> {
-    let (mut agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (mut services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -939,15 +939,15 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         plugin_dir.join("hooks/hooks.json"),
         r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""}]}]}}"#,
     )?;
-    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+    services.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
         crate::plugins::discovery::DiscoveredPlugin {
             name: "test-plugin".into(),
             root: plugin_dir.clone(),
             scope: crate::plugins::discovery::PluginScope::Project,
         },
     ]));
-    enable_developer(&agent, &session_id).await?;
-    agent
+    enable_developer(&services, &session_id).await?;
+    services
         .extension_manager
         .enable(
             &session_id,
@@ -974,7 +974,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
     api.on("printed it").reply("the subagent printed it");
 
     reply_messages(
-        &agent,
+        &services,
         session_id.clone(),
         Message::user().with_text("hand this off"),
     )
@@ -1007,8 +1007,8 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         sessions_where("SessionEnd", None),
         std::slice::from_ref(subagent_id)
     );
-    assert!(!agent.tracks_confirmations_for(subagent_id));
-    assert!(agent
+    assert!(!services.tracks_confirmations_for(subagent_id));
+    assert!(services
         .extension_manager
         .scope_lease(subagent_id)
         .await
@@ -1019,7 +1019,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
 
 #[tokio::test]
 async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -1027,15 +1027,14 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
-    agent
-        .config
+    services
         .session_manager
         .update(&session_id)
         .goose_mode(GooseMode::Approve)
         .apply()
         .await?;
-    enable_developer(&agent, &session_id).await?;
-    agent
+    enable_developer(&services, &session_id).await?;
+    services
         .extension_manager
         .enable(
             &session_id,
@@ -1061,7 +1060,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
     );
     api.on("printed it").reply("the subagent printed it");
 
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("hand this off"),
             SessionConfig {
@@ -1087,7 +1086,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
                 continue;
             };
             approved_tools.push(tool_name.clone());
-            agent
+            services
                 .submit_tool_confirmation(&session_id, id, Permission::AllowOnce)
                 .await?;
         }
@@ -1118,7 +1117,7 @@ fn serve_elicit_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexS
 
 #[tokio::test]
 async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -1144,7 +1143,10 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
             available_tools: Vec::new(),
         },
     ] {
-        agent.extension_manager.enable(&session_id, config).await?;
+        services
+            .extension_manager
+            .enable(&session_id, config)
+            .await?;
     }
 
     api.on("hand this off").call(
@@ -1159,7 +1161,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
     );
     api.on("it was Ada").reply("Ada asked");
 
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("hand this off"),
             SessionConfig {
@@ -1186,7 +1188,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
             };
             elicitations += 1;
             crate::elicitation::complete_elicitation_with_generated_message(
-                &agent.config.session_manager,
+                &services.session_manager,
                 &session_id,
                 id,
                 crate::action_required_manager::ElicitationOutcome::Accept(
@@ -1204,7 +1206,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
 
 #[tokio::test]
 async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -1212,15 +1214,14 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
-    agent
-        .config
+    services
         .session_manager
         .update(&session_id)
         .goose_mode(GooseMode::Approve)
         .apply()
         .await?;
-    enable_developer(&agent, &session_id).await?;
-    agent
+    enable_developer(&services, &session_id).await?;
+    services
         .extension_manager
         .enable(
             &session_id,
@@ -1267,7 +1268,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         );
     api.on("denied one stopped").reply("both are back");
 
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("hand both off"),
             SessionConfig {
@@ -1307,7 +1308,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
             if tool_name == "shell" {
                 shell_request_ids.push(id.clone());
             }
-            agent
+            services
                 .submit_tool_confirmation(&session_id, id, permission)
                 .await?;
         }
@@ -1322,7 +1323,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
 }
 
 fn install_hook_log(
-    agent: &mut Arc<Agent>,
+    services: &mut Arc<StateMachineServices>,
     events: &[&str],
 ) -> Result<(tempfile::TempDir, std::path::PathBuf)> {
     let hook_dir = tempfile::tempdir()?;
@@ -1340,7 +1341,7 @@ fn install_hook_log(
         plugin_dir.join("hooks/hooks.json"),
         json!({ "hooks": hooks }).to_string(),
     )?;
-    agent.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
+    services.set_hook_manager_for_test(crate::hooks::HookManager::from_plugins_for_test(vec![
         crate::plugins::discovery::DiscoveredPlugin {
             name: "test-plugin".into(),
             root: plugin_dir.clone(),
@@ -1362,7 +1363,7 @@ fn hook_sessions(log: &std::path::Path, event: &str) -> Vec<String> {
 
 #[tokio::test]
 async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
-    let (mut agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let (mut services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
     let host = api.uri();
     let _guard = env_lock::lock_env([
         ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
@@ -1370,16 +1371,15 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
-    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["SessionEnd"])?;
-    agent
-        .config
+    let (_hook_dir, hook_log) = install_hook_log(&mut services, &["SessionEnd"])?;
+    services
         .session_manager
         .update(&session_id)
         .goose_mode(GooseMode::Approve)
         .apply()
         .await?;
-    enable_developer(&agent, &session_id).await?;
-    agent
+    enable_developer(&services, &session_id).await?;
+    services
         .extension_manager
         .enable(
             &session_id,
@@ -1400,7 +1400,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         .call("shell", json!({ "command": "echo never" }));
 
     let cancel = CancellationToken::new();
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("hand this off"),
             SessionConfig {
@@ -1425,7 +1425,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
             if tool_name == "shell" {
                 cancel.cancel();
             } else {
-                agent
+                services
                     .submit_tool_confirmation(&session_id, id, Permission::AllowOnce)
                     .await?;
             }
@@ -1442,8 +1442,8 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     })
     .await?;
     assert_ne!(subagent_id, session_id);
-    assert!(!agent.tracks_confirmations_for(&subagent_id));
-    assert!(agent
+    assert!(!services.tracks_confirmations_for(&subagent_id));
+    assert!(services
         .extension_manager
         .scope_lease(&subagent_id)
         .await
@@ -1454,15 +1454,14 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
 
 #[tokio::test]
 async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Result<()> {
-    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
-    agent
-        .config
+    let (services, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    services
         .session_manager
         .update(&session_id)
         .goose_mode(GooseMode::Approve)
         .apply()
         .await?;
-    enable_developer(&agent, &session_id).await?;
+    enable_developer(&services, &session_id).await?;
     api.on("run it").calls([(
         "subagent:not-a-session:call",
         "shell",
@@ -1470,7 +1469,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
     )]);
     api.on("ran-parent").reply("the parent ran it");
 
-    let mut stream = agent
+    let mut stream = services
         .reply(
             Message::user().with_text("run it"),
             SessionConfig {
@@ -1488,7 +1487,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
         };
         texts.push(message.as_concat_text());
         for id in confirmation_ids(std::slice::from_ref(&message)) {
-            agent
+            services
                 .submit_tool_confirmation(&session_id, &id, Permission::AllowOnce)
                 .await?;
         }

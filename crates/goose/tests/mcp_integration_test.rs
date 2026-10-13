@@ -16,8 +16,9 @@ use tokio_util::sync::CancellationToken;
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{
-    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionSet,
+    CallRequest, ClientContext, ExtensionLease, ExtensionManager, ExtensionSet,
 };
+use goose::agents::mcp_client::GooseMcpClientCapabilities;
 use goose::agents::GoosePlatform;
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
@@ -98,12 +99,15 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
         Default::default(),
         session_manager.clone(),
         None,
-        "extension-contract".to_string(),
-        ExtensionManagerCapabilities {
-            mcpui,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version,
+        ClientContext {
+            name: "extension-contract".to_string(),
+            capabilities: GooseMcpClientCapabilities {
+                mcpui,
+                host_info: None,
+                elicitation_handler: None,
+                protocol_version,
+            },
+            connection: None,
         },
     ));
     Fixture {
@@ -891,12 +895,15 @@ async fn test_replayed_session(
         Default::default(),
         session_manager,
         None,
-        GoosePlatform::GooseDesktop.to_string(),
-        ExtensionManagerCapabilities {
-            mcpui: true,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version: None,
+        ClientContext {
+            name: GoosePlatform::GooseDesktop.to_string(),
+            capabilities: GooseMcpClientCapabilities {
+                mcpui: true,
+                host_info: None,
+                elicitation_handler: None,
+                protocol_version: None,
+            },
+            connection: None,
         },
     ));
 
