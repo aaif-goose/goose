@@ -1,15 +1,17 @@
 name: Build goose release candidate
 
 on:
-  pull_request:
+  push:
+    branches:
+      - 'release/**'
 
 jobs:
   bundle-desktop:
-    if: startsWith(github.head_ref, 'release/')
     uses: ./.github/workflows/bundle-macos.yml
     permissions:
       contents: read
     with:
+      ref: ${{ github.sha }}
       target: aarch64-apple-darwin
       package_cli: false
       package_desktop: true
@@ -20,10 +22,23 @@ jobs:
     permissions:
       pull-requests: write
     steps:
+      - name: Find release PR
+        id: release-pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              ...context.repo,
+              state: 'open',
+              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+            });
+            core.setOutput('number', prs[0]?.number ?? '');
+
       - name: Comment with download link
+        if: steps.release-pr.outputs.number != ''
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9  # v5.0.0
         with:
-          issue-number: ${{ github.event.number }}
+          issue-number: ${{ steps.release-pr.outputs.number }}
           body: |
             ### macOS ARM64 Desktop App (Apple Silicon)
 
