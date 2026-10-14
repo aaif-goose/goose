@@ -239,6 +239,34 @@ Queue authors are only returned as `queue_requesters` when their public key is
 present in `core-team.json`. Other authors are reported as
 `ignored_queue_requesters` and cannot influence channel membership.
 
+### `phase_transitions`
+
+Handles phase-based shepherd changes for issues in the **Accepted / design** and
+**Ready** phases. Run once after the recipe each hour.
+
+- When an issue enters **Accepted / design**, the current shepherd is unassigned
+  once and remembered as the previous shepherd. A later intentional re-assignment
+  is left in place.
+- Once the first human comment appears after the **Accepted / design** transition,
+  the script assigns a design shepherd selected by interest match and normalized
+  load, with a small continuity preference toward the previous shepherd.
+- When an issue enters **Ready**, the current shepherd is unassigned once. If the
+  issue already has a linked open pull request, the issue is also moved to
+  **Verification**.
+
+All actions are idempotent: the script records each processed transition in
+`$GOOSE_BUZZ_HOME/phase-transitions.json` and skips issues it has already handled
+for the current transition timestamp.
+
+```sh
+./buzz/phase_transitions --dry-run
+./buzz/phase_transitions
+```
+
+Use `--repo`, `--project-owner`, `--project-number`, and `--project-limit` for
+another installation. `--dry-run` reports intended actions without changing
+GitHub or the state file.
+
 ### `syncissues`
 
 Fetches all open GitHub issues and all Buzz channels, matches issue channels by
