@@ -75,13 +75,19 @@ function consumeConfiguredParameters(): boolean {
   return scrubbedPendingRequest;
 }
 
-export function beginConfiguredRecipeParameterScope(): ConfiguredRecipeParameterScope | undefined {
+export function resetConfiguredRecipeParameters(): void {
+  configuredParameterState = { status: 'uninitialized' };
+}
+
+export function beginConfiguredRecipeParameterScope(
+  values?: Record<string, string>
+): ConfiguredRecipeParameterScope | undefined {
   if (configuredParameterState.status !== 'uninitialized') {
     return undefined;
   }
 
-  const configured = window.appConfig?.get('recipeParameters') as
-    Record<string, string> | undefined;
+  const configured = values ?? (window.appConfig?.get('recipeParameters') as
+    Record<string, string> | undefined);
   if (!configured || Object.keys(configured).length === 0) {
     configuredParameterState = { status: 'consumed' };
     return undefined;
