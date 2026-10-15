@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Pengaturan Model Lokal — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "Perubahan model berlaku setelah giliran ini selesai. Hentikan proses untuk beralih sekarang."
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Model yang diselesaikan"
   },

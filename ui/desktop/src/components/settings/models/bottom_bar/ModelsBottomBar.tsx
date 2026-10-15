@@ -55,6 +55,10 @@ const i18n = defineMessages({
     id: 'modelsBottomBar.recentModels',
     defaultMessage: 'Recent',
   },
+  modelChangeLocked: {
+    id: 'modelsBottomBar.modelChangeLocked',
+    defaultMessage: 'Model changes apply after this turn finishes. Stop the run to switch now.',
+  },
 });
 
 interface ModelsBottomBarProps {
@@ -66,6 +70,7 @@ interface ModelsBottomBarProps {
   latestInference?: Message['metadata']['inference'] | null;
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
+  modelChangeLocked: boolean;
 }
 
 type ModelMenuModal = 'switch-model' | 'local-model-settings';
@@ -79,6 +84,7 @@ export default function ModelsBottomBar({
   latestInference,
   onModelChanged,
   sessionLoaded,
+  modelChangeLocked,
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
@@ -97,6 +103,13 @@ export default function ModelsBottomBar({
   );
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const pendingModalRef = useRef<ModelMenuModal | null>(null);
+  // Mirror of modelChangeLocked for async continuations: the prop value a
+  // click handler closes over goes stale while lookups are pending, so
+  // re-check the ref (not the render-time prop) before mutating.
+  const modelChangeLockedRef = useRef(modelChangeLocked);
+  useEffect(() => {
+    modelChangeLockedRef.current = modelChangeLocked;
+  }, [modelChangeLocked]);
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
   const [isLocalModelSettingsOpen, setIsLocalModelSettingsOpen] = useState(false);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
@@ -171,6 +184,7 @@ export default function ModelsBottomBar({
   };
 
   const openModalAfterMenuCloses = (modal: ModelMenuModal) => {
+    if (modelChangeLocked) return;
     pendingModalRef.current = modal;
     setIsModelMenuOpen(false);
   };
@@ -189,6 +203,8 @@ export default function ModelsBottomBar({
   };
 
   const handleRecentModelClick = async (recent: RecentModel) => {
+    if (modelChangeLockedRef.current) return;
+
     const previousModel = currentModel;
     const previousProvider = currentProvider;
 
@@ -203,6 +219,9 @@ export default function ModelsBottomBar({
           request_params: { thinking_effort: savedEffort ?? 'off' },
         }
       : { name: recent.model, provider: recent.provider };
+    // A turn may have started while the lookups above were pending; the
+    // in-flight turn keeps its original provider and model.
+    if (modelChangeLockedRef.current) return;
     const success = await changeModel(sessionId, modelArg);
     if (success) {
       trackModelChanged(recent.provider, recent.model);
@@ -221,8 +240,23 @@ export default function ModelsBottomBar({
 
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
-      <DropdownMenu open={isModelMenuOpen} onOpenChange={setIsModelMenuOpen}>
-        <DropdownMenuTrigger className="flex items-center hover:cursor-pointer max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 hover:text-text-primary transition-colors">
+      <DropdownMenu
+        open={modelChangeLocked ? false : isModelMenuOpen}
+        onOpenChange={(open) => {
+          if (modelChangeLocked) return;
+          setIsModelMenuOpen(open);
+        }}
+      >
+        <DropdownMenuTrigger
+          disabled={modelChangeLocked}
+          aria-disabled={modelChangeLocked}
+          title={modelChangeLocked ? intl.formatMessage(i18n.modelChangeLocked) : undefined}
+          className={`flex items-center max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 transition-colors ${
+            modelChangeLocked
+              ? 'cursor-not-allowed opacity-60'
+              : 'hover:cursor-pointer hover:text-text-primary'
+          }`}
+        >
           <div className="flex items-center truncate max-w-[130px] md:max-w-[200px] lg:max-w-[360px] min-w-0">
             <Bot className="mr-1 h-4 w-4 flex-shrink-0" />
             {isModelLoading ? (
@@ -269,6 +303,7 @@ export default function ModelsBottomBar({
               {filteredRecentModels.map((recent) => (
                 <DropdownMenuItem
                   key={`${recent.provider}/${recent.model}`}
+                  disabled={modelChangeLocked}
                   onClick={() => void handleRecentModelClick(recent)}
                 >
                   <History className="mr-2 h-3.5 w-3.5 flex-shrink-0 text-text-secondary" />
@@ -280,12 +315,18 @@ export default function ModelsBottomBar({
               <DropdownMenuSeparator />
             </>
           )}
-          <DropdownMenuItem onSelect={() => openModalAfterMenuCloses('switch-model')}>
+          <DropdownMenuItem
+            disabled={modelChangeLocked}
+            onSelect={() => openModalAfterMenuCloses('switch-model')}
+          >
             <span>{intl.formatMessage(i18n.changeModel)}</span>
             <Sliders className="ml-auto h-4 w-4 rotate-90" />
           </DropdownMenuItem>
           {currentProvider === 'local' && currentModel && (
-            <DropdownMenuItem onSelect={() => openModalAfterMenuCloses('local-model-settings')}>
+            <DropdownMenuItem
+              disabled={modelChangeLocked}
+              onSelect={() => openModalAfterMenuCloses('local-model-settings')}
+            >
               <span>{intl.formatMessage(i18n.localModelSettings)}</span>
               <Settings className="ml-auto h-4 w-4" />
             </DropdownMenuItem>

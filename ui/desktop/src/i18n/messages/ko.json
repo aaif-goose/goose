@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "로컬 모델 설정 — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "모델 변경은 이 턴이 끝난 뒤에 적용됩니다. 지금 바꾸려면 실행을 중지하세요."
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "확인된 모델"
   },

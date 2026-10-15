@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "Yerel Model Ayarları — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "Model değişikliği bu tur bitince uygulanır. Şimdi değiştirmek için çalışmayı durdurun."
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "Çözümlenen model"
   },

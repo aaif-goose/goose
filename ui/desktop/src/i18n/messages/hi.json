@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "स्थानीय मॉडल Settings — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "मॉडल बदलाव इस टर्न के खत्म होने के बाद लागू होगा। अभी बदलने के लिए रन रोकें।"
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "हल किया गया मॉडल"
   },

@@ -2345,6 +2345,9 @@
   "modelsBottomBar.localModelSettingsTitle": {
     "defaultMessage": "本地模型设置 — {modelName}"
   },
+  "modelsBottomBar.modelChangeLocked": {
+    "defaultMessage": "模型更改会在本轮结束后生效。若要立即切换，请先停止运行。"
+  },
   "modelsBottomBar.resolvedModel": {
     "defaultMessage": "解析后的模型"
   },
