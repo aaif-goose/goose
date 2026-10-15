@@ -115,10 +115,13 @@ import type {
   LocalInferenceModelDownloadRequest_unstable,
   LocalInferenceModelDownloadResponse_unstable,
   LocalInferenceModelEvictRequest_unstable,
+  LocalInferenceModelRegisterLocalRequest_unstable,
+  LocalInferenceModelRegisterLocalResponse_unstable,
   LocalInferenceModelSettingsReadRequest_unstable,
   LocalInferenceModelSettingsReadResponse_unstable,
   LocalInferenceModelSettingsUpdateRequest_unstable,
   LocalInferenceModelSettingsUpdateResponse_unstable,
+  LocalInferenceModelUnregisterLocalRequest_unstable,
   LocalInferenceModelsListRequest_unstable,
   LocalInferenceModelsListResponse_unstable,
   OnboardingImportApplyRequest_unstable,
@@ -237,6 +240,7 @@ import {
   zLocalInferenceHuggingFaceSearchResponse_unstable,
   zLocalInferenceModelDownloadProgressResponse_unstable,
   zLocalInferenceModelDownloadResponse_unstable,
+  zLocalInferenceModelRegisterLocalResponse_unstable,
   zLocalInferenceModelSettingsReadResponse_unstable,
   zLocalInferenceModelSettingsUpdateResponse_unstable,
   zLocalInferenceModelsListResponse_unstable,
@@ -1380,6 +1384,27 @@ export class GooseExtClient {
     return zLocalInferenceHuggingFaceRepoVariantsResponse_unstable.parse(
       raw,
     ) as LocalInferenceHuggingFaceRepoVariantsResponse_unstable;
+  }
+
+  async localInferenceModelsRegisterLocal_unstable(
+    params: LocalInferenceModelRegisterLocalRequest_unstable,
+  ): Promise<LocalInferenceModelRegisterLocalResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/local-inference/models/register-local",
+      params,
+    );
+    return zLocalInferenceModelRegisterLocalResponse_unstable.parse(
+      raw,
+    ) as LocalInferenceModelRegisterLocalResponse_unstable;
+  }
+
+  async localInferenceModelsUnregisterLocal_unstable(
+    params: LocalInferenceModelUnregisterLocalRequest_unstable,
+  ): Promise<void> {
+    await this.conn.request(
+      "_goose/unstable/local-inference/models/unregister-local",
+      params,
+    );
   }
 
   async localInferenceChatTemplatesBuiltinList_unstable(

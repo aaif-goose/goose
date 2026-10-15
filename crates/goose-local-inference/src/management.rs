@@ -66,6 +66,11 @@ pub async fn list_models() -> Result<LocalInferenceModelsListResponse> {
             .into_iter()
             .map(|(model_id, progress)| active_download_to_dto(model_id, &progress)),
     );
+    models.extend(
+        crate::local_files::list()
+            .into_iter()
+            .map(|path| local_file_to_dto(&path, &loaded_model_ids)),
+    );
     models.sort_by(|a, b| a.id.cmp(&b.id));
 
     Ok(LocalInferenceModelsListResponse { models })
@@ -253,6 +258,14 @@ pub fn list_builtin_chat_templates() -> LocalInferenceBuiltinChatTemplatesListRe
     }
 }
 
+pub fn register_local_model(path: &str) -> Result<String> {
+    crate::local_files::register(path)
+}
+
+pub fn unregister_local_model(model_id: &str) -> Result<()> {
+    crate::local_files::unregister(model_id)
+}
+
 fn management_runtime() -> Result<Arc<InferenceRuntime>> {
     if let Some(runtime) = MANAGEMENT_RUNTIME.get() {
         return Ok(runtime.clone());
@@ -297,6 +310,7 @@ fn local_model_to_dto(
                 state: LocalInferenceDownloadState::Downloaded,
                 ..Default::default()
             }),
+        local_file_path: None,
     }
 }
 
@@ -319,6 +333,39 @@ fn active_download_to_dto(model_id: String, progress: &DownloadProgress) -> Loca
         settings: model_settings_to_dto(&settings),
         vision_capable: false,
         mmproj_status: None,
+        local_file_path: None,
+    }
+}
+
+fn local_file_to_dto(path: &str, loaded_model_ids: &HashSet<String>) -> LocalInferenceModelDto {
+    use std::path::Path;
+    let p = Path::new(path);
+    let filename = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let quantization = crate::hf_models::parse_quantization_from_filename(&filename);
+    let (size_bytes, state) = match p.metadata() {
+        Ok(m) => (m.len(), LocalInferenceDownloadState::Downloaded),
+        Err(_) => (0, LocalInferenceDownloadState::Unavailable),
+    };
+    let settings = crate::config_resolver::model_settings(path).unwrap_or_default();
+    LocalInferenceModelDto {
+        id: path.to_string(),
+        repo_id: String::new(),
+        filename,
+        quantization,
+        size_bytes,
+        status: LocalInferenceModelDownloadStatusDto {
+            state,
+            ..Default::default()
+        },
+        recommended: false,
+        is_loaded: loaded_model_ids.contains(path),
+        settings: model_settings_to_dto(&settings),
+        vision_capable: false,
+        mmproj_status: None,
+        local_file_path: Some(path.to_string()),
     }
 }
 

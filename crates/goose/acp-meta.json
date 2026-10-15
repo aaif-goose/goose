@@ -546,6 +546,16 @@
       "responseType": "LocalInferenceHuggingFaceRepoVariantsResponse_unstable"
     },
     {
+      "method": "_goose/unstable/local-inference/models/register-local",
+      "requestType": "LocalInferenceModelRegisterLocalRequest_unstable",
+      "responseType": "LocalInferenceModelRegisterLocalResponse_unstable"
+    },
+    {
+      "method": "_goose/unstable/local-inference/models/unregister-local",
+      "requestType": "LocalInferenceModelUnregisterLocalRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_goose/unstable/local-inference/chat-templates/builtin/list",
       "requestType": "LocalInferenceBuiltinChatTemplatesListRequest_unstable",
       "responseType": "LocalInferenceBuiltinChatTemplatesListResponse_unstable"

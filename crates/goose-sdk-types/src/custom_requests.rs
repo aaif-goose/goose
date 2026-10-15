@@ -1937,6 +1937,7 @@ pub enum LocalInferenceDownloadState {
     NotDownloaded,
     Downloading,
     Downloaded,
+    Unavailable,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1985,6 +1986,8 @@ pub struct LocalInferenceModelDto {
     pub vision_capable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmproj_status: Option<LocalInferenceModelDownloadStatusDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_file_path: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -2207,6 +2210,32 @@ pub struct LocalInferenceBuiltinChatTemplatesListRequest {}
 #[serde(rename_all = "camelCase")]
 pub struct LocalInferenceBuiltinChatTemplatesListResponse {
     pub templates: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/local-inference/models/register-local",
+    response = LocalInferenceModelRegisterLocalResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalInferenceModelRegisterLocalRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalInferenceModelRegisterLocalResponse {
+    pub model_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/local-inference/models/unregister-local",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalInferenceModelUnregisterLocalRequest {
+    pub model_id: String,
 }
 
 /// Empty success response for operations that return no data.
