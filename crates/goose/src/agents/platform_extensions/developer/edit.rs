@@ -103,6 +103,12 @@ impl EditTools {
                 return CallToolResult::error(vec![visible_text(msg)]);
             }
         };
+        if new_content == content {
+            return CallToolResult::error(vec![visible_text(format!(
+                "No change made to {}: the replacement text is identical to the matched text.",
+                params.path
+            ))]);
+        }
         match fs::write(&path, &new_content) {
             Ok(()) => {
                 let old_lines = params.before.lines().count();
@@ -388,6 +394,32 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.path().join("relative.txt")).unwrap(),
             "relative write"
+        );
+    }
+
+    #[test]
+    fn test_file_edit_identical_before_after_is_error() {
+        let dir = setup();
+        let path = dir.path().join("edit.txt");
+        let original = "hello world\n";
+        fs::write(&path, original).unwrap();
+        let tools = EditTools::new();
+
+        let result = tools.file_edit(FileEditParams {
+            path: path.to_string_lossy().to_string(),
+            before: "hello".to_string(),
+            after: "hello".to_string(),
+        });
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "expected an error for a no-op edit, got: {}",
+            extract_text(&result)
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            original,
+            "a no-op edit must not rewrite the file"
         );
     }
 
