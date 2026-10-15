@@ -1011,6 +1011,11 @@ pub fn list_sources_with_roots(
                     sources.push(check.to_source_entry(global));
                 }
             }
+            SourceType::McpSkill => {
+                return Err(Error::invalid_params().data(
+                    "MCP skills are live, lease-scoped sources and cannot be listed by the filesystem source API.",
+                ));
+            }
             SourceType::Recipe | SourceType::Subrecipe => {
                 return Err(Error::invalid_params()
                     .data(format!("Source type '{}' listing is not supported.", kind)));

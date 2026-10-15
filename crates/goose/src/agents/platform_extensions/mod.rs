@@ -208,7 +208,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |_| Some(Box::new(crate::skills::SkillsClient::default())),
+                client_factory: |ctx| Some(Box::new(crate::skills::SkillsClient::new(ctx))),
             },
         );
 
