@@ -236,4 +236,45 @@ describe('ACP recipe param requests', () => {
     requests.cancelAcpRecipeParamRequest(laterRequest.id);
     await laterResponse;
   });
+
+  it('reset allows a new scope to begin after consumption', async () => {
+    setRecipeParameters({ topic: 'first run' });
+    const firstScope = requests.beginConfiguredRecipeParameterScope()!;
+    firstScope.finish();
+
+    expect(requests.beginConfiguredRecipeParameterScope()).toBeUndefined();
+
+    requests.resetConfiguredRecipeParameters();
+
+    const secondScope = requests.beginConfiguredRecipeParameterScope({ topic: 'second run' })!;
+    expect(secondScope).toBeDefined();
+
+    const response = requests.requestAcpRecipeParams(recipeParamRequest('session-1', secondScope.id));
+    const [pending] = requests.getAcpRecipeParamRequestsSnapshot();
+    expect(pending.initialValues).toEqual({ topic: 'second run' });
+
+    requests.cancelAcpRecipeParamRequest(pending.id);
+    await response;
+    secondScope.finish();
+  });
+
+  it('uses provided values directly instead of reading window.appConfig', async () => {
+    const get = setRecipeParameters({ topic: 'from config' });
+    const scope = requests.beginConfiguredRecipeParameterScope({ topic: 'from deeplink' })!;
+
+    expect(get).not.toHaveBeenCalled();
+
+    const response = requests.requestAcpRecipeParams(recipeParamRequest('session-1', scope.id));
+    const [pending] = requests.getAcpRecipeParamRequestsSnapshot();
+    expect(pending.initialValues).toEqual({ topic: 'from deeplink' });
+
+    requests.cancelAcpRecipeParamRequest(pending.id);
+    await response;
+    scope.finish();
+  });
+
+  it('returns undefined when provided values are empty', async () => {
+    const scope = requests.beginConfiguredRecipeParameterScope({});
+    expect(scope).toBeUndefined();
+  });
 });
