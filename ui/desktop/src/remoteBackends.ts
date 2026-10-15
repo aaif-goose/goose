@@ -32,6 +32,7 @@ export interface RemoteBackendParams {
   pinnedHostname?: string | null;
   errorLog?: string[];
   request?: HopRequest;
+  partition?: string;
 }
 
 interface HopInit {
@@ -56,11 +57,13 @@ const headerValue = (headers: Record<string, string | string[]>, name: string): 
   return Array.isArray(value) ? (value[0] ?? null) : value;
 };
 
-// net.fetch reports an incorrect Response.url, so each hop is issued separately
-// with net.request and this module decides whether to follow it.
-const netHopRequest: HopRequest = (url, init) =>
-  new Promise<Hop>((resolve, reject) => {
-    const request = net.request({ method: 'GET', url, redirect: 'manual', credentials: 'omit' });
+function makeNetHopRequest(partition?: string): HopRequest {
+  return (url, init) =>
+    new Promise<Hop>((resolve, reject) => {
+      const requestInit = partition !== undefined
+        ? { method: 'GET' as const, url, redirect: 'manual' as const, credentials: 'omit' as const, partition }
+        : { method: 'GET' as const, url, redirect: 'manual' as const, credentials: 'omit' as const };
+      const request = net.request(requestInit);
     let settled = false;
 
     const abort = () => request.abort();
@@ -112,6 +115,7 @@ const netHopRequest: HopRequest = (url, init) =>
     }
     request.end();
   });
+}
 
 class RedirectError extends Error {}
 
@@ -292,10 +296,12 @@ export const connectRemoteBackend = async ({
   serverSecret,
   pinnedHostname = null,
   errorLog = [],
-  request = netHopRequest,
+  request,
+  partition,
 }: RemoteBackendParams): Promise<RemoteBackendConnection> => {
   const steps: RemoteBackendStep[] = [];
   const pin = pinnedHostname?.toLowerCase() ?? null;
+  const hopRequest = request ?? makeNetHopRequest(partition);
 
   const run = async (name: string, attempt: () => Promise<Probe>): Promise<Probe> => {
     const deadline = Date.now() + RETRY_BUDGET_MS;
@@ -326,7 +332,7 @@ export const connectRemoteBackend = async ({
       return null;
     }
 
-    const reachable = await run('Reachable', () => probeStatus(request, normalizedBaseUrl, pin));
+    const reachable = await run('Reachable', () => probeStatus(hopRequest, normalizedBaseUrl, pin));
     if (!reachable.ok || !reachable.resolvedUrl) {
       return null;
     }
@@ -345,7 +351,7 @@ export const connectRemoteBackend = async ({
     }
 
     const accepted = await run('Secret key', () =>
-      probeAcp(request, resolvedBaseUrl, serverSecret, pin)
+      probeAcp(hopRequest, resolvedBaseUrl, serverSecret, pin)
     );
     if (!accepted.ok || !accepted.resolvedUrl) {
       return null;

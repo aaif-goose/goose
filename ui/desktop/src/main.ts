@@ -8,7 +8,6 @@ import {
   ipcMain,
   Menu,
   MenuItem,
-  net,
   Notification,
   powerMonitor,
   powerSaveBlocker,
@@ -19,7 +18,6 @@ import {
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
 import { fetchAllowlistContent, parseAllowlistCommands } from './allowlistFetcher';
-import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -28,7 +26,11 @@ import os from 'node:os';
 import { execFileSync, spawn, execFile } from 'child_process';
 import 'dotenv/config';
 import { connectRemoteBackend } from './remoteBackends';
-import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
+import {
+  installScopedCertificateVerifier,
+  normalizeFingerprint,
+  type ScopedCertificateTrust,
+} from './backendCertificateVerifier';
 import { configureProxy } from './proxy';
 import { startGooseServe } from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
@@ -305,109 +307,42 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.electron.goose');
 }
 
-// Certificate trust for active backend leases. Renderer requests and
-// main-process net.fetch both pin to the exact cert fingerprint. Each backend
-// lease owns a trust record so old windows keep working after settings change.
-interface BackendCertificateTrust {
-  hostname: string;
-  fingerprint: string | null;
-}
+let backendPartitionCounter = 0;
+const windowCertTrusts = new Map<number, ScopedCertificateTrust>();
+const windowPartitions = new Map<number, string>();
 
-interface BackendCertificateTrustRegistration {
-  trust: BackendCertificateTrust;
-  release: () => void;
-}
-
-const trustedBackendCertificates = new Set<BackendCertificateTrust>();
-
-function normalizeHostname(hostname: string): string {
-  return hostname.toLowerCase();
-}
-
-function normalizeFingerprint(fp: string): string {
-  if (fp.startsWith('sha256/')) {
-    const b64 = fp.slice('sha256/'.length);
-    const buf = Buffer.from(b64, 'base64');
-    return Array.from(buf)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join(':')
-      .toUpperCase();
-  }
-  return fp.toUpperCase();
-}
-
-function trustBackendCertificate(
+function createBackendCertificateTrust(
   hostname: string,
   fingerprint: string | null
-): BackendCertificateTrustRegistration {
-  const trust: BackendCertificateTrust = {
-    hostname: normalizeHostname(hostname),
+): ScopedCertificateTrust {
+  return {
+    hostname: hostname.toLowerCase(),
     fingerprint: fingerprint ? normalizeFingerprint(fingerprint) : null,
   };
-  trustedBackendCertificates.add(trust);
-  return {
-    trust,
-    release: () => {
-      trustedBackendCertificates.delete(trust);
-    },
-  };
 }
 
-function getBackendCertificateTrusts(hostname: string): BackendCertificateTrust[] {
-  const normalizedHostname = normalizeHostname(hostname);
-  return [...trustedBackendCertificates].filter((trust) => trust.hostname === normalizedHostname);
-}
-
-function verifyBackendCertificate(hostname: string, fingerprint: string): boolean {
-  const normalizedFingerprint = normalizeFingerprint(fingerprint);
-  const trusts = getBackendCertificateTrusts(hostname);
-  if (trusts.length === 0) {
-    return false;
-  }
-
-  if (trusts.some((trust) => trust.fingerprint === normalizedFingerprint)) {
-    return true;
-  }
-
-  const tofuTrust = trusts.find((trust) => trust.fingerprint === null);
-  if (tofuTrust) {
-    // TOFU: pin the certificate from the first successful handshake.
-    tofuTrust.fingerprint = normalizedFingerprint;
-    return true;
-  }
-
-  return false;
-}
-
-function isTrustedHost(hostname: string): boolean {
-  return getBackendCertificateTrusts(hostname).length > 0;
-}
-
-// Renderer requests: pin to the exact cert once known.
-app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
+app.on('certificate-error', (event, webContents, url, _error, certificate, callback) => {
   const parsed = new URL(url);
-  if (!isTrustedHost(parsed.hostname)) {
+  const win = BrowserWindow.fromWebContents(webContents);
+  const trust = win ? windowCertTrusts.get(win.id) : undefined;
+
+  if (!trust || trust.hostname !== parsed.hostname.toLowerCase()) {
     callback(false);
     return;
   }
 
   event.preventDefault();
-  callback(verifyBackendCertificate(parsed.hostname, certificate.fingerprint));
+  const fp = normalizeFingerprint(certificate.fingerprint);
+  if (trust.fingerprint === null) {
+    trust.fingerprint = fp;
+    callback(true);
+    return;
+  }
+  callback(trust.fingerprint === fp);
 });
 
 app.whenReady().then(() => {
   appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
-});
-
-// Main-process net.fetch and renderer WebSockets: pin to the exact cert once known.
-app.whenReady().then(() => {
-  installBackendCertificateVerifiers(
-    [session.defaultSession, session.fromPartition('persist:goose')],
-    {
-      has: isTrustedHost,
-      verify: verifyBackendCertificate,
-    }
-  );
 });
 
 if (process.env.ENABLE_PLAYWRIGHT) {
@@ -1068,26 +1003,33 @@ const createChat = async (
   let workingDir = resolveWorkingDir(externalBackend?.workingDir, dir, os.homedir());
   let gooseServeLease: GooseServeLease | null = null;
 
+  const partitionKey = ++backendPartitionCounter;
+  const windowPartition = `persist:goose-${partitionKey}`;
+  const windowSession = session.fromPartition(windowPartition);
+  await configureProxy(session.defaultSession, windowSession);
+  let windowCertTrust: ScopedCertificateTrust | null = null;
+
   if (externalBackend) {
-    let externalCertificateTrust: BackendCertificateTrustRegistration | null = null;
+    let externalCertTrust: ScopedCertificateTrust | null = null;
 
     try {
       const externalBaseUrl = normalizeAcpHttpBaseUrl(externalBackend.url);
       const externalBase = new URL(externalBaseUrl);
       if (externalBase.protocol === 'https:') {
-        externalCertificateTrust = trustBackendCertificate(
+        externalCertTrust = createBackendCertificateTrust(
           externalBase.hostname,
           externalBackend.certFingerprint ?? null
         );
+        installScopedCertificateVerifier(windowSession, externalCertTrust);
       }
 
       const externalBackendCheck = await connectRemoteBackend({
         baseUrl: externalBaseUrl,
         serverSecret,
         pinnedHostname: externalBackend.certFingerprint ? externalBase.hostname : null,
+        partition: windowPartition,
       });
       if (!externalBackendCheck.ok) {
-        externalCertificateTrust?.release();
         log.error(`External backend check failed: ${externalBackendCheck.failure}`);
         const canDisableExternalBackend = externalBackend.source === 'settings';
         const response = dialog.showMessageBoxSync({
@@ -1121,14 +1063,12 @@ const createChat = async (
       }
 
       const originLease = leaseBackendOrigin(resolvedAcpUrl);
-      const leaseCertificateTrust = externalCertificateTrust;
-      externalCertificateTrust = null;
+      windowCertTrust = externalCertTrust;
+      externalCertTrust = null;
       gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
         originLease.release();
-        leaseCertificateTrust?.release();
       });
     } catch (error) {
-      externalCertificateTrust?.release();
       log.error('External ACP backend is misconfigured', error);
       const canDisableExternalBackend = externalBackend.source === 'settings';
       const response = dialog.showMessageBoxSync({
@@ -1156,7 +1096,8 @@ const createChat = async (
       return;
     }
   } else {
-    const localCertificateTrust = trustBackendCertificate('127.0.0.1', null);
+    const localCertTrust = createBackendCertificateTrust('127.0.0.1', null);
+    installScopedCertificateVerifier(windowSession, localCertTrust);
 
     const loginShellPath = await getLoginShellPath(log);
 
@@ -1174,7 +1115,7 @@ const createChat = async (
         resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
         logger: log,
         diagnosticsDir: STARTUP_LOGS_DIR,
-        readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
+        readinessFetch: windowSession.fetch.bind(windowSession) as unknown as typeof globalThis.fetch,
       });
       if (!gooseServeResult.certFingerprint) {
         await gooseServeResult.cleanup();
@@ -1185,15 +1126,15 @@ const createChat = async (
 
       const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
       if (
-        localCertificateTrust.trust.fingerprint &&
-        localCertificateTrust.trust.fingerprint !== localCertFingerprint
+        localCertTrust.fingerprint &&
+        localCertTrust.fingerprint !== localCertFingerprint
       ) {
         await gooseServeResult.cleanup();
         throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
       }
-      localCertificateTrust.trust.fingerprint = localCertFingerprint;
+      localCertTrust.fingerprint = localCertFingerprint;
+      windowCertTrust = localCertTrust;
     } catch (error) {
-      localCertificateTrust.release();
       log.error('goose serve failed to start', error);
       dialog.showMessageBoxSync({
         type: 'error',
@@ -1211,14 +1152,6 @@ const createChat = async (
     }
 
     workingDir = gooseServeResult.workingDir;
-    const cleanupGooseServe = gooseServeResult.cleanup;
-    gooseServeResult.cleanup = async () => {
-      try {
-        await cleanupGooseServe();
-      } finally {
-        localCertificateTrust.release();
-      }
-    };
     gooseServeLease = gooseServeLeases.create(gooseServeResult, serverSecret);
   }
 
@@ -1284,7 +1217,7 @@ const createChat = async (
               process.env.SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE,
           }),
         ],
-        partition: 'persist:goose',
+        partition: windowPartition,
       },
     });
   } catch (error) {
@@ -1294,11 +1227,19 @@ const createChat = async (
 
   if (gooseServeLease) {
     const lease = gooseServeLease;
+    const windowId = mainWindow.id;
     mainWindow.once('closed', () => {
-      void gooseServeLeases.releaseWindow(mainWindow.id);
+      windowCertTrusts.delete(windowId);
+      windowPartitions.delete(windowId);
+      void gooseServeLeases.releaseWindow(windowId);
     });
-    gooseServeLeases.attachWindow(mainWindow.id, lease);
+    gooseServeLeases.attachWindow(windowId, lease);
     gooseServeLease = null;
+  }
+
+  windowPartitions.set(mainWindow.id, windowPartition);
+  if (windowCertTrust) {
+    windowCertTrusts.set(mainWindow.id, windowCertTrust);
   }
 
   if (!app.isPackaged) {
@@ -2984,6 +2925,9 @@ async function appMain() {
         undefined,
         app.getPath('home')
       );
+      const launchingPartition = windowPartitions.get(launchingWindowId) ?? 'persist:goose';
+      const launchingCertTrust = windowCertTrusts.get(launchingWindowId);
+
       const appWindow = new BrowserWindow({
         title: formatAppName(gooseApp.name),
         width: gooseApp.width ?? 800,
@@ -3004,16 +2948,24 @@ async function appMain() {
               GOOSE_VERSION: version,
             }),
           ],
-          partition: 'persist:goose',
+          partition: launchingPartition,
         },
       });
 
-      gooseServeLeases.attachWindow(appWindow.id, launchingGooseServeLease);
+      const appWindowId = appWindow.id;
+      windowPartitions.set(appWindowId, launchingPartition);
+      if (launchingCertTrust) {
+        windowCertTrusts.set(appWindowId, launchingCertTrust);
+      }
+
+      gooseServeLeases.attachWindow(appWindowId, launchingGooseServeLease);
 
       appWindows.set(gooseApp.name, appWindow);
 
       appWindow.on('closed', () => {
-        void gooseServeLeases.releaseWindow(appWindow.id);
+        windowCertTrusts.delete(appWindowId);
+        windowPartitions.delete(appWindowId);
+        void gooseServeLeases.releaseWindow(appWindowId);
         appWindows.delete(gooseApp.name);
       });
 

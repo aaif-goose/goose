@@ -4,7 +4,9 @@ import type { Session } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import {
   installBackendCertificateVerifiers,
+  installScopedCertificateVerifier,
   type BackendCertificateTrustVerifier,
+  type ScopedCertificateTrust,
 } from './backendCertificateVerifier';
 
 type CertificateVerifyProc = Exclude<Parameters<Session['setCertificateVerifyProc']>[0], null>;
@@ -76,12 +78,11 @@ function createFixture(initialPins: Record<string, string | null>) {
 }
 
 describe('backend certificate verifier wiring', () => {
-  it('covers the renderer session that opens ACP WebSockets', () => {
+  it('installs a scoped verifier on each window session partition', () => {
     const source = fs.readFileSync(path.resolve('src/main.ts'), 'utf8');
 
-    expect(source).toMatch(
-      /installBackendCertificateVerifiers\([\s\S]{0,200}session\.defaultSession[\s\S]{0,200}session\.fromPartition\('persist:goose'\)/
-    );
+    expect(source).toMatch(/installScopedCertificateVerifier/);
+    expect(source).toMatch(/persist:goose-/);
   });
 
   it.each(['defaultSession', 'rendererSession'] as const)(
@@ -113,5 +114,56 @@ describe('backend certificate verifier wiring', () => {
     expect(fixture.defaultSession.verify('unrelated.example', 'ANY-PIN')).toBe(-3);
     expect(fixture.rendererSession.verify('unrelated.example', 'ANY-PIN')).toBe(-3);
     expect(fixture.trust.verify).not.toHaveBeenCalled();
+  });
+});
+
+describe('installScopedCertificateVerifier', () => {
+  function createScopedFixture(trust: ScopedCertificateTrust) {
+    const mock = createMockSession();
+    installScopedCertificateVerifier(mock.session, trust);
+    return mock;
+  }
+
+  it('allows an exact fingerprint match', () => {
+    const trust: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: 'AA:BB:CC' };
+    const mock = createScopedFixture(trust);
+
+    expect(mock.verify('backend.example', 'AA:BB:CC')).toBe(0);
+  });
+
+  it('rejects a fingerprint mismatch', () => {
+    const trust: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: 'AA:BB:CC' };
+    const mock = createScopedFixture(trust);
+
+    expect(mock.verify('backend.example', 'DD:EE:FF')).toBe(-2);
+  });
+
+  it('TOFU-learns the fingerprint on first connection and pins it', () => {
+    const trust: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: null };
+    const mock = createScopedFixture(trust);
+
+    expect(mock.verify('backend.example', 'AA:BB:CC')).toBe(0);
+    expect(trust.fingerprint).toBe('AA:BB:CC');
+    expect(mock.verify('backend.example', 'AA:BB:CC')).toBe(0);
+    expect(mock.verify('backend.example', 'DD:EE:FF')).toBe(-2);
+  });
+
+  it('delegates unrelated hostnames to Chromium default', () => {
+    const trust: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: 'AA:BB:CC' };
+    const mock = createScopedFixture(trust);
+
+    expect(mock.verify('other.example', 'AA:BB:CC')).toBe(-3);
+  });
+
+  it('does not allow one window trust to authorize another window on same hostname', () => {
+    const trustA: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: 'AA:BB:CC' };
+    const trustB: ScopedCertificateTrust = { hostname: 'backend.example', fingerprint: 'DD:EE:FF' };
+    const sessionA = createScopedFixture(trustA);
+    const sessionB = createScopedFixture(trustB);
+
+    expect(sessionA.verify('backend.example', 'AA:BB:CC')).toBe(0);
+    expect(sessionA.verify('backend.example', 'DD:EE:FF')).toBe(-2);
+    expect(sessionB.verify('backend.example', 'DD:EE:FF')).toBe(0);
+    expect(sessionB.verify('backend.example', 'AA:BB:CC')).toBe(-2);
   });
 });
