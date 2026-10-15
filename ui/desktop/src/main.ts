@@ -1006,8 +1006,8 @@ const createChat = async (
   const partitionKey = ++backendPartitionCounter;
   const windowPartition = `persist:goose-${partitionKey}`;
   const windowSession = session.fromPartition(windowPartition);
-  await configureProxy(session.defaultSession, windowSession);
-  let windowCertTrust: ScopedCertificateTrust | null = null;
+  await configureProxy(windowSession, windowSession);
+  let windowCertTrust: ScopedCertificateTrust | null;
 
   if (externalBackend) {
     let externalCertTrust: ScopedCertificateTrust | null = null;
@@ -2925,7 +2925,7 @@ async function appMain() {
         undefined,
         app.getPath('home')
       );
-      const launchingPartition = windowPartitions.get(launchingWindowId) ?? 'persist:goose';
+      const launchingPartition = windowPartitions.get(launchingWindowId)!;
       const launchingCertTrust = windowCertTrusts.get(launchingWindowId);
 
       const appWindow = new BrowserWindow({
