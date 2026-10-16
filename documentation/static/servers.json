@@ -437,6 +437,23 @@
     "environmentVariables": []
   },
   {
+    "id": "mnogoreels",
+    "name": "MnogoReels",
+    "description": "Turn long videos into captioned vertical clips, transcripts and articles",
+    "command": "npx -y mnogoreels-mcp@latest",
+    "link": "https://github.com/RealSatanyan/mnogoreels-mcp",
+    "installation_notes": "Requires a MnogoReels API key from https://mnogo-reels.ru/dashboard/developers?tab=keys",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "MNOGOREELS_API_KEY",
+        "description": "MnogoReels API key (mrfrt_usr_...)",
+        "required": true
+      }
+    ]
+  },
+  {
     "id": "mongodb",
     "name": "MongoDB",
     "description": "MongoDB database integration",
