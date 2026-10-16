@@ -1,4 +1,5 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { isEqual } from 'lodash';
 import { defineMessages, useIntl } from '../i18n';
 import GooseMessage from './GooseMessage';
@@ -38,6 +39,14 @@ const i18n = defineMessages({
 
 const emptyToolCallNotifications = new Map<string, NotificationEvent[]>();
 const emptyAppend = () => {};
+
+function getInitialFirstRenderedIndex(
+  messageCount: number,
+  batchSize: number,
+  showLoadingThreshold: number
+): number {
+  return messageCount <= showLoadingThreshold ? 0 : Math.max(0, messageCount - batchSize);
+}
 
 function getResolvedModel(message: Message): string | null {
   if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
@@ -187,26 +196,51 @@ export default function ProgressiveMessageList({
   submitElicitationResponse,
 }: ProgressiveMessageListProps) {
   const intl = useIntl();
-  const [renderedCount, setRenderedCount] = useState(() =>
-    messages.length <= showLoadingThreshold ? messages.length : Math.min(batchSize, messages.length)
+  // Batches reveal older history above the newest messages. Messages that arrive while
+  // older batches load are appended below, so the rows already on screen stay in place.
+  const [firstRenderedIndex, setFirstRenderedIndex] = useState(() =>
+    getInitialFirstRenderedIndex(messages.length, batchSize, showLoadingThreshold)
   );
+  // A different session, or a conversation that reloads into an empty list, starts again
+  // from its newest messages.
+  const conversationKey = messages.length > 0 ? sessionId : null;
+  const [renderedConversationKey, setRenderedConversationKey] = useState(conversationKey);
+  if (conversationKey !== renderedConversationKey) {
+    setRenderedConversationKey(conversationKey);
+    setFirstRenderedIndex(
+      getInitialFirstRenderedIndex(messages.length, batchSize, showLoadingThreshold)
+    );
+  }
+  const loadingBannerRef = useRef<HTMLDivElement>(null);
   const completedMessageKeyRef = useRef<string | null>(null);
-  const isLoading = renderedCount < messages.length;
+  const isLoading = firstRenderedIndex > 0;
 
-  useEffect(() => {
-    if (messages.length <= showLoadingThreshold) {
-      setRenderedCount(messages.length);
+  const renderMessagesFrom = useCallback((index: number) => {
+    // Older rows go in between the loading banner and the rows on screen. The browser does
+    // not keep the view in place for that while the banner is visible, so move the scroll
+    // position by however far the first row on screen was pushed down. The render is
+    // flushed synchronously so that a user scroll cannot land between the two measurements.
+    const firstRow = loadingBannerRef.current?.nextElementSibling;
+    const scrollContainer = firstRow?.closest('[data-radix-scroll-area-viewport]');
+    if (!firstRow || !scrollContainer) {
+      setFirstRenderedIndex(index);
       return;
     }
 
+    const topBefore = firstRow.getBoundingClientRect().top;
+    flushSync(() => setFirstRenderedIndex(index));
+    scrollContainer.scrollTop += firstRow.getBoundingClientRect().top - topBefore;
+  }, []);
+
+  useEffect(() => {
     if (!isLoading) return;
 
     const timeout = window.setTimeout(() => {
-      setRenderedCount((current) => Math.min(current + batchSize, messages.length));
+      renderMessagesFrom(Math.max(0, firstRenderedIndex - batchSize));
     }, batchDelay);
 
     return () => window.clearTimeout(timeout);
-  }, [batchDelay, batchSize, isLoading, messages.length, renderedCount, showLoadingThreshold]);
+  }, [batchDelay, batchSize, firstRenderedIndex, isLoading, renderMessagesFrom]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -230,18 +264,19 @@ export default function ProgressiveMessageList({
       const isSearchShortcut = (isMac ? event.metaKey : event.ctrlKey) && event.key === 'f';
 
       if (isSearchShortcut) {
-        setRenderedCount(messages.length);
+        renderMessagesFrom(0);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, messages.length]);
+  }, [isLoading, renderMessagesFrom]);
 
   const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
-  const messagesToRender = messages.slice(0, renderedCount);
-  const messageRows = messagesToRender
-    .map((message, index) => {
+  const messageRows = messages
+    .slice(firstRenderedIndex)
+    .map((message, renderedIndex) => {
+      const index = firstRenderedIndex + renderedIndex;
       if (!message.metadata.userVisible) return null;
       if (renderMessage) return renderMessage(message, index);
 
@@ -273,7 +308,7 @@ export default function ProgressiveMessageList({
           isStreaming={
             isStreamingMessage &&
             !isUser &&
-            index === messagesToRender.length - 1 &&
+            index === messages.length - 1 &&
             message.role === 'assistant'
           }
           isUser={isUser}
@@ -291,13 +326,11 @@ export default function ProgressiveMessageList({
 
   return (
     <>
-      {messageRows}
-
       {isLoading && (
-        <div className="flex flex-col items-center justify-center py-8">
+        <div ref={loadingBannerRef} className="flex flex-col items-center justify-center py-8">
           <LoadingGoose
             message={intl.formatMessage(i18n.loadingMessages, {
-              renderedCount,
+              renderedCount: messages.length - firstRenderedIndex,
               totalCount: messages.length,
             })}
           />
@@ -306,6 +339,8 @@ export default function ProgressiveMessageList({
           </div>
         </div>
       )}
+
+      {messageRows}
     </>
   );
 }

@@ -111,9 +111,10 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(
       const { scrollTop } = viewport;
       const currentIsAtBottom = isAtBottom();
 
-      // detect if this is a user-initiated scroll (position changed from last known position)
-      const scrollDelta = Math.abs(scrollTop - lastScrollTopRef.current);
-      if (scrollDelta > 0) {
+      // Only a scroll up moves the user away from new content. The position also moves down
+      // when the view is re-pinned or when older messages load above it, and that must not
+      // stop the view from following.
+      if (scrollTop < lastScrollTopRef.current) {
         // Mark that user is actively scrolling immediately
         isActivelyScrollingRef.current = true;
 

@@ -206,13 +206,16 @@ describe('ProgressiveMessageList batching', () => {
     vi.useRealTimers();
   });
 
-  function renderBatchedList(onRenderingComplete = vi.fn()) {
-    render(
+  function batchedList(
+    listMessages: Message[],
+    { sessionId = 'test-session', onRenderingComplete = vi.fn() } = {}
+  ) {
+    return (
       <StrictMode>
         <IntlTestWrapper>
           <ProgressiveMessageList
-            messages={messages}
-            sessionId="test-session"
+            messages={listMessages}
+            sessionId={sessionId}
             append={append}
             isUserMessage={isUserMessage}
             batchSize={2}
@@ -223,34 +226,117 @@ describe('ProgressiveMessageList batching', () => {
         </IntlTestWrapper>
       </StrictMode>
     );
-    return onRenderingComplete;
   }
 
-  it('renders exactly one batch per delay in StrictMode', () => {
-    renderBatchedList();
+  function renderedMessageIds() {
+    return screen.queryAllByTestId('message-container').map((row) => row.textContent);
+  }
 
-    expect(screen.queryByText('assistant-1')).not.toBeNull();
-    expect(screen.queryByText('assistant-2')).toBeNull();
+  function messageIds(prefix: string, from: number, to: number) {
+    return Array.from({ length: to - from + 1 }, (_, offset) => `${prefix}-${from + offset}`);
+  }
+
+  it('renders the newest batch first, then one older batch per delay in StrictMode', () => {
+    render(batchedList(messages));
+
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 8, 9));
 
     act(() => vi.advanceTimersByTime(20));
-    expect(screen.queryByText('assistant-3')).not.toBeNull();
-    expect(screen.queryByText('assistant-4')).toBeNull();
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 6, 9));
 
     act(() => vi.advanceTimersByTime(20));
-    expect(screen.queryByText('assistant-5')).not.toBeNull();
-    expect(screen.queryByText('assistant-6')).toBeNull();
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 4, 9));
+  });
+
+  it('shows the loading banner above the rendered messages', () => {
+    render(batchedList(messages));
+
+    const banner = screen.getByText('Loading messages... (2/10)');
+    const newestMessage = screen.getByText('assistant-8');
+
+    expect(banner.compareDocumentPosition(newestMessage)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('reports completion once after the final batch', () => {
-    const onRenderingComplete = renderBatchedList();
+    const onRenderingComplete = vi.fn();
+    render(batchedList(messages, { onRenderingComplete }));
 
     for (let batch = 0; batch < 4; batch++) {
       act(() => vi.advanceTimersByTime(20));
     }
-    expect(screen.queryByText('assistant-9')).not.toBeNull();
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 0, 9));
     expect(onRenderingComplete).not.toHaveBeenCalled();
 
     act(() => vi.advanceTimersByTime(50));
     expect(onRenderingComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the rendered messages when a new message arrives while older batches load', () => {
+    const { rerender } = render(batchedList(messages));
+    act(() => vi.advanceTimersByTime(20));
+
+    rerender(
+      batchedList([
+        ...messages,
+        message('assistant-10', 'assistant', [{ type: 'text', text: 'New message' }]),
+      ])
+    );
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 6, 10));
+    expect(screen.queryByText('Loading messages... (5/11)')).not.toBeNull();
+
+    act(() => vi.advanceTimersByTime(20));
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 4, 10));
+  });
+
+  it('starts again from the newest messages when the session changes', () => {
+    const { rerender } = render(batchedList(messages));
+    for (let batch = 0; batch < 4; batch++) {
+      act(() => vi.advanceTimersByTime(20));
+    }
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 0, 9));
+
+    const otherSessionMessages = Array.from({ length: 10 }, (_, index) =>
+      message(`other-${index}`, 'assistant', [{ type: 'text', text: `Other ${index}` }])
+    );
+    rerender(batchedList(otherSessionMessages, { sessionId: 'other-session' }));
+
+    expect(renderedMessageIds()).toEqual(messageIds('other', 8, 9));
+  });
+
+  it('starts again from the newest messages when the conversation reloads', () => {
+    const { rerender } = render(batchedList(messages));
+    for (let batch = 0; batch < 4; batch++) {
+      act(() => vi.advanceTimersByTime(20));
+    }
+
+    rerender(batchedList([]));
+    rerender(batchedList(messages));
+
+    expect(renderedMessageIds()).toEqual(messageIds('assistant', 8, 9));
+  });
+
+  it('shows a model change at the message where it happened', () => {
+    const modelChangeIndex = 7;
+    const messagesWithModels = messages.map((item, index) => ({
+      ...item,
+      metadata: {
+        ...item.metadata,
+        inference: {
+          provider: 'test-provider',
+          requestedModel: 'model-a',
+          resolvedModel: index < modelChangeIndex ? 'model-a' : 'model-b',
+        },
+      },
+    }));
+    render(batchedList(messagesWithModels));
+
+    expect(screen.queryByText('Model changed: model-a → model-b')).toBeNull();
+
+    act(() => vi.advanceTimersByTime(20));
+    const modelChange = screen.getAllByText('Model changed: model-a → model-b');
+    expect(modelChange).toHaveLength(1);
+    expect(modelChange[0].compareDocumentPosition(screen.getByText('assistant-7'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 });

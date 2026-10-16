@@ -320,23 +320,13 @@ export default function BaseChat({
     return null;
   }, [messages]);
 
-  // Track if this is the initial render for session resuming
-  const initialRenderRef = useRef(true);
-
-  // Auto-scroll when messages are loaded (for session resuming)
+  // The newest messages render first, so a resumed session is already at the bottom unless
+  // the user scrolled away while older messages were loading.
   const handleRenderingComplete = React.useCallback(() => {
-    // Only force scroll on the very first render
-    if (initialRenderRef.current && messages.length > 0) {
-      initialRenderRef.current = false;
-      if (scrollRef.current?.scrollToBottom) {
-        scrollRef.current.scrollToBottom();
-      }
-    } else if (scrollRef.current?.isFollowing) {
-      if (scrollRef.current?.scrollToBottom) {
-        scrollRef.current.scrollToBottom();
-      }
+    if (scrollRef.current?.isFollowing) {
+      scrollRef.current.scrollToBottom();
     }
-  }, [messages.length]);
+  }, []);
 
   // Listen for global scroll-to-bottom requests (e.g., from MCP App message actions)
   useEffect(() => {
