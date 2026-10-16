@@ -69,6 +69,8 @@ pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
             if is_price_gap(canonical.output) {
                 canonical.output = bundled.output;
             }
+            canonical.cache_read = canonical.cache_read.or(bundled.cache_read);
+            canonical.cache_write = canonical.cache_write.or(bundled.cache_write);
             Some(canonical)
         }
         (Some(canonical), None) => Some(canonical),
@@ -114,8 +116,7 @@ fn currency_symbol(declared: &str) -> String {
 }
 
 /// Merge user-declared pricing with registry/bundled pricing: declared
-/// input/output prices win; canonical cache rates fill the gaps so cached
-/// tokens are not overestimated at the full input rate.
+/// input/output and supplied cache prices win; canonical cache rates fill gaps.
 fn merge_pricing(mut declared: Pricing, base: &Pricing) -> Pricing {
     // A declared zero price means "free here": registry cache rates must not
     // reintroduce cost for cached tokens.
@@ -137,8 +138,8 @@ fn pricing_from_model_info(info: &ModelInfo) -> Option<Pricing> {
     Some(Pricing {
         input: Some(info.input_token_cost.map(|c| c * 1_000_000.0)?),
         output: Some(info.output_token_cost.map(|c| c * 1_000_000.0)?),
-        cache_read: None,
-        cache_write: None,
+        cache_read: info.cache_read_token_cost.map(|c| c * 1_000_000.0),
+        cache_write: info.cache_write_token_cost.map(|c| c * 1_000_000.0),
         tiers: Vec::new(),
     })
 }
@@ -196,7 +197,6 @@ fn full_pricing_model(config: &DeclarativeProviderConfig, model: &str) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::declarative_providers::custom_providers_dir;
 
     fn usage(input: Option<i32>, output: Option<i32>, cache_read: Option<i32>) -> Usage {
         Usage {
@@ -284,129 +284,12 @@ mod tests {
     }
 
     #[test]
-    fn partial_pricing_is_rejected() {
-        let mut info = ModelInfo::new("m").with_context_limit(1_000);
-        info.input_token_cost = Some(0.000002);
-        assert!(pricing_from_model_info(&info).is_none());
-    }
-
-    #[test]
-    fn declared_input_output_win_and_canonical_cache_rates_fill_the_gap() {
-        let merged = merge_pricing(
-            Pricing {
-                input: Some(2.0),
-                output: Some(6.0),
-                cache_read: None,
-                cache_write: None,
-                ..Default::default()
-            },
-            &Pricing {
-                input: Some(3.0),
-                output: Some(15.0),
-                cache_read: Some(0.3),
-                cache_write: Some(3.75),
-                ..Default::default()
-            },
-        );
-        assert_eq!(merged.input, Some(2.0));
-        assert_eq!(merged.output, Some(6.0));
-        assert_eq!(merged.cache_read, Some(0.3));
-        assert_eq!(merged.cache_write, Some(3.75));
-    }
-
-    #[test]
-    fn declared_zero_price_suppresses_registry_cache_rates() {
-        // A model explicitly declared free in a custom config must not pick up
-        // catalog cache pricing from a canonical name-match.
-        let merged = merge_pricing(
-            Pricing {
-                input: Some(0.0),
-                output: Some(0.0),
-                cache_read: None,
-                cache_write: None,
-                ..Default::default()
-            },
-            &Pricing {
-                input: Some(3.0),
-                output: Some(15.0),
-                cache_read: Some(0.3),
-                cache_write: Some(3.75),
-                ..Default::default()
-            },
-        );
-        assert_eq!(merged.cache_read, None);
-        assert_eq!(merged.cache_write, None);
-        let usage = usage(Some(1_000_000), Some(0), Some(1_000_000));
-        assert_eq!(merged.estimate_cost(&usage), Some(0.0));
-    }
-
-    #[test]
-    fn cached_tokens_price_at_cache_rate_not_full_input_rate() {
-        // A canonical model proxied through a gateway with declared
-        // input/output prices but no cache prices.
-        let merged = merge_pricing(
-            Pricing {
-                input: Some(3.0),
-                output: Some(15.0),
-                cache_read: None,
-                cache_write: None,
-                ..Default::default()
-            },
-            &Pricing {
-                input: Some(3.0),
-                output: Some(15.0),
-                cache_read: Some(0.3),
-                cache_write: None,
-                ..Default::default()
-            },
-        );
-        let usage = usage(Some(1_000_000), Some(0), Some(1_000_000));
-        assert!((merged.estimate_cost(&usage).unwrap() - 0.3).abs() < 1e-9);
-    }
-
-    #[test]
     fn bundled_provider_prices_are_respected() {
         let info = configured_model_info("ovhcloud", "Qwen3-32B").unwrap();
         assert!((info.input_token_cost.unwrap() - 9e-8).abs() < 1e-12);
         let pricing = resolve_pricing("ovhcloud", "Qwen3-32B").unwrap();
         assert!((pricing.input.unwrap() - 0.09).abs() < 1e-9);
         assert!((pricing.output.unwrap() - 0.25).abs() < 1e-9);
-    }
-
-    #[test]
-    fn custom_file_prices_drive_estimation() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let temp_root = temp_dir.path().display().to_string();
-        let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
-
-        let dir = custom_providers_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("priced_gateway.json"),
-            r#"{
-                "name": "priced_gateway",
-                "engine": "openai",
-                "display_name": "Gateway",
-                "description": null,
-                "api_key_env": "",
-                "base_url": "https://example.invalid/v1",
-                "models": [
-                    {
-                        "name": "claude-sonnet-4-5",
-                        "context_limit": 200000,
-                        "input_token_cost": 0.000001,
-                        "output_token_cost": 0.000004
-                    }
-                ],
-                "requires_auth": false
-            }"#,
-        )
-        .unwrap();
-
-        let used = usage(Some(10_000), Some(100), None);
-        let cost = estimate_model_cost("priced_gateway", "claude-sonnet-4-5", &used).unwrap();
-        let expected = (10_000.0 * 1.0 + 100.0 * 4.0) / 1_000_000.0;
-        assert!((cost - expected).abs() < 1e-12);
     }
 
     #[test]

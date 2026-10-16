@@ -517,6 +517,8 @@ impl DatabricksProvider {
             context_limit,
             input_token_cost: None,
             output_token_cost: None,
+            cache_read_token_cost: None,
+            cache_write_token_cost: None,
             currency: None,
             supports_cache_control: None,
             reasoning,

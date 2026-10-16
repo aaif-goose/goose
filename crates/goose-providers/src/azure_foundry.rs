@@ -412,6 +412,8 @@ fn model_info_for_deployment(deployment_name: &str, model_name: &str) -> ModelIn
         context_limit: canonical.as_ref().map(|model| model.limit.context),
         input_token_cost: None,
         output_token_cost: None,
+        cache_read_token_cost: None,
+        cache_write_token_cost: None,
         currency: None,
         supports_cache_control: None,
         reasoning: canonical

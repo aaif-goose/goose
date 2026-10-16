@@ -1206,9 +1206,6 @@ impl GooseAcpAgent {
         let model_info =
             crate::providers::canonical::maybe_get_canonical_model(&req.provider, &req.model)
                 .map(|canonical_model| {
-                    // Config-declared prices outrank the registry's catalog rates;
-                    // registry cache rates survive, so tooltip math matches
-                    // estimate_model_cost exactly.
                     let pricing = crate::providers::canonical_cost::resolve_pricing(
                         &req.provider,
                         &req.model,
