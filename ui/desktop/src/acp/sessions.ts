@@ -53,7 +53,13 @@ export interface LoadSessionMeta {
   userRecipeValues?: Record<string, string> | null;
   extensionResults?: ExtensionLoadResult[] | null;
   workingDir?: string;
+  replaySkipped?: number;
 }
+
+// Long conversations replay only their recent tail on load; the skipped prefix
+// stays in the session and the agent's context and can be loaded on request.
+export const REPLAY_TAIL_THRESHOLD = 250;
+export const REPLAY_TAIL = 200;
 
 export interface AcpLoadSessionResult {
   sessionInfo: SessionInfo;
@@ -70,6 +76,7 @@ function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
     userRecipeValues: meta.userRecipeValues,
     extensionResults: meta.extensionResults,
     workingDir: typeof meta.workingDir === 'string' ? meta.workingDir : undefined,
+    replaySkipped: typeof meta.replaySkipped === 'number' ? meta.replaySkipped : undefined,
   };
 }
 
@@ -183,13 +190,16 @@ export async function acpGetSessionListItem(sessionId: string): Promise<SessionL
   return sessionInfoToListItem(response.session);
 }
 
-export async function acpLoadSession(sessionId: string): Promise<AcpLoadSessionResult> {
+export async function acpLoadSession(
+  sessionId: string,
+  fullHistory = false
+): Promise<AcpLoadSessionResult> {
   const pendingLoad = inFlightSessionLoads.get(sessionId);
   if (pendingLoad) {
     return pendingLoad;
   }
 
-  const loadPromise = loadAcpSession(sessionId);
+  const loadPromise = loadAcpSession(sessionId, fullHistory);
   inFlightSessionLoads.set(sessionId, loadPromise);
   try {
     return await loadPromise;
@@ -204,14 +214,20 @@ export function isAcpSessionLoadInFlight(sessionId: string): boolean {
   return inFlightSessionLoads.has(sessionId);
 }
 
-async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> {
+async function loadAcpSession(
+  sessionId: string,
+  fullHistory: boolean
+): Promise<AcpLoadSessionResult> {
   const client = await getAcpClient();
   const initialSessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });
   const initialSessionInfo = initialSessionInfoResponse.session;
+  const messageCount = sessionInfoMeta(initialSessionInfo).messageCount ?? 0;
+  const replayTail = !fullHistory && messageCount > REPLAY_TAIL_THRESHOLD;
   const response = await client.connection.agent.request(methods.agent.session.load, {
     sessionId,
     cwd: initialSessionInfo.cwd,
     mcpServers: [],
+    ...(replayTail && { _meta: { replayTail: REPLAY_TAIL } }),
   });
   // Loading can populate missing provider/model metadata.
   const sessionInfoResponse = await client.goose.sessionInfo_unstable({ sessionId });

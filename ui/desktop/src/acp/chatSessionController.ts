@@ -52,6 +52,7 @@ export interface AcpChatSessionController {
     recipe?: AcpRecipeOptions
   ): Promise<Session>;
   loadSession(sessionId: string, options?: AcpLoadSessionOptions): Promise<void>;
+  loadFullSessionHistory(sessionId: string): Promise<void>;
   restoreSession(sessionId: string): Promise<void>;
   submitMessage(
     sessionId: string,
@@ -146,22 +147,31 @@ async function restoreSession(sessionId: string): Promise<void> {
   await loadSessionFromServer(sessionId);
 }
 
+function loadFullSessionHistory(sessionId: string): Promise<void> {
+  return loadSessionFromServer(sessionId, {}, true);
+}
+
 async function loadSessionFromServer(
   sessionId: string,
-  options: AcpLoadSessionOptions = {}
+  options: AcpLoadSessionOptions = {},
+  fullHistory = false
 ): Promise<void> {
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
 
   try {
-    const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const { sessionInfo, meta } = await acpLoadSession(sessionId, fullHistory);
 
     showExtensionLoadResults(meta.extensionResults);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
+    acpChatSessionActions.finishSessionLoad(
+      sessionId,
+      sessionInfoToSession(sessionInfo, meta),
+      meta.replaySkipped
+    );
     options.onSessionLoaded?.();
   } catch (error) {
     console.error('Failed to load ACP session:', error);
@@ -327,6 +337,7 @@ async function updateMessage(
 export const acpChatSessionController: AcpChatSessionController = {
   createSession,
   loadSession,
+  loadFullSessionHistory,
   restoreSession,
   submitMessage,
   stop,

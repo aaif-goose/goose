@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "Geri"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,other{# önceki mesaj gösterilmiyor}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Oturum Yüklenemedi"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "Yeniden dene"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "Tümünü göster"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Uzantı Güncellendi"

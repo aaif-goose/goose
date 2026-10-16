@@ -125,6 +125,9 @@
   "backButton.back": {
     "defaultMessage": "Indietro"
   },
+  "baseChat.earlierMessagesHidden": {
+    "defaultMessage": "{count,plural,one{# messaggio precedente non mostrato} other{# messaggi precedenti non mostrati}}"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Impossibile caricare la sessione"
   },
@@ -136,6 +139,9 @@
   },
   "baseChat.retry": {
     "defaultMessage": "Riprova"
+  },
+  "baseChat.showAllMessages": {
+    "defaultMessage": "Mostra tutto"
   },
   "bottomMenuExtensionSelection.extensionUpdated": {
     "defaultMessage": "Estensione aggiornata"

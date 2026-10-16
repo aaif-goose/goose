@@ -111,6 +111,7 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     progressMessage: undefined,
     chatState: activePromptAttemptId ? ChatState.Streaming : ChatState.Idle,
     sessionLoadError: undefined,
+    replaySkipped: 0,
     activePromptAttemptId,
     activeRunId: activePromptAttemptId ? 'run-1' : null,
     pendingCancelPromptAttemptId: null,
@@ -149,10 +150,11 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 
@@ -162,10 +164,11 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).not.toHaveBeenCalled();
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 
@@ -180,7 +183,16 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
+  });
+
+  it('lifts the replay cap when the user asks for the full history', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+
+    await acpChatSessionController.loadFullSessionHistory(SESSION_ID);
+
+    expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, true);
   });
 
   it('restores a cached session from the server', async () => {
@@ -193,10 +205,11 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.restoreSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, false);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
-      loadedSession()
+      loadedSession(),
+      undefined
     );
   });
 });
