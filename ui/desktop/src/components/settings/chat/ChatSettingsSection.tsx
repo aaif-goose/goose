@@ -2,6 +2,7 @@ import { ModeSection } from '../mode/ModeSection';
 import { DictationSettings } from '../dictation/DictationSettings';
 import { SecurityToggle } from '../security/SecurityToggle';
 import { ResponseStylesSection } from '../response_styles/ResponseStylesSection';
+import { ShowThinkingSetting } from '../response_styles/ShowThinkingSetting';
 import { GoosehintsSection } from './GoosehintsSection';
 import { LiveVoiceSettings } from './LiveVoiceSettings';
 import { SpellcheckToggle } from './SpellcheckToggle';
@@ -64,6 +65,7 @@ export default function ChatSettingsSection() {
         </CardHeader>
         <CardContent className="px-2">
           <ResponseStylesSection />
+          <ShowThinkingSetting />
         </CardContent>
       </Card>
 
