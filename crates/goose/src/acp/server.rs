@@ -8,7 +8,7 @@ pub(super) use crate::acp::response_builder::{
     session_response_meta, should_refresh_inventory_for_session_init,
 };
 use crate::acp::tool_call_notifier::ToolCallNotifier;
-use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
+use crate::acp::PermissionDecision;
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -328,6 +328,8 @@ pub struct GooseAcpAgent {
     client_cx: OnceCell<ConnectionTo<Client>>,
     thinking_effort_update_tx: mpsc::UnboundedSender<String>,
     thinking_effort_update_rx: Mutex<Option<mpsc::UnboundedReceiver<String>>>,
+    thinking_effort_subscriptions: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
+    thinking_effort_shutdown: CancellationToken,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
     permission_manager: Arc<PermissionManager>,
@@ -336,6 +338,12 @@ pub struct GooseAcpAgent {
     additional_source_roots: Vec<SourceRoot>,
     session_cwd: Option<PathBuf>,
     recipe_path_cache: Arc<Mutex<HashMap<String, PathBuf>>>,
+}
+
+impl Drop for GooseAcpAgent {
+    fn drop(&mut self) {
+        self.thinking_effort_shutdown.cancel();
+    }
 }
 
 fn meta_string(
@@ -613,6 +621,12 @@ fn resolve_default_provider_model_config(
         agent_client_protocol::Error::internal_error()
             .data(format!("Failed to resolve provider: {}", error))
     })?;
+    if resolved_provider == "chatgpt_codex"
+        && crate::providers::chatgpt_codex::default_model().is_none()
+    {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("ChatGPT Codex catalog contains no selectable models"));
+    }
     let resolved_model = config.get_goose_model().map_err(|error| {
         agent_client_protocol::Error::internal_error()
             .data(format!("Failed to resolve model: {}", error))
@@ -635,14 +649,20 @@ async fn resolve_provider_default_model_config(
             agent_client_protocol::Error::invalid_params()
                 .data(format!("Unknown provider '{}': {}", provider_name, error))
         })?;
-    crate::model_config::model_config_from_user_config(
-        provider_name,
-        &entry.metadata().default_model,
+    let default_model = if provider_name == "chatgpt_codex" {
+        crate::providers::chatgpt_codex::default_model().ok_or_else(|| {
+            agent_client_protocol::Error::invalid_params()
+                .data("ChatGPT Codex catalog contains no selectable models")
+        })?
+    } else {
+        entry.metadata().default_model.clone()
+    };
+    crate::model_config::model_config_from_user_config(provider_name, &default_model).map_err(
+        |error| {
+            agent_client_protocol::Error::internal_error()
+                .data(format!("Failed to resolve model: {}", error))
+        },
     )
-    .map_err(|error| {
-        agent_client_protocol::Error::internal_error()
-            .data(format!("Failed to resolve model: {}", error))
-    })
 }
 
 fn render_resource_link(link: &ResourceLink) -> String {
@@ -974,6 +994,8 @@ impl GooseAcpAgent {
             client_cx: OnceCell::new(),
             thinking_effort_update_tx,
             thinking_effort_update_rx: Mutex::new(Some(thinking_effort_update_rx)),
+            thinking_effort_subscriptions: Mutex::new(HashMap::new()),
+            thinking_effort_shutdown: CancellationToken::new(),
             config_dir: options.config_dir,
             session_manager,
             permission_manager,
@@ -1233,21 +1255,40 @@ impl GooseAcpAgent {
     }
 
     async fn subscribe_thinking_effort_updates(&self, session_id: &str, agent: &Arc<Agent>) {
+        if let Some(previous) = self
+            .thinking_effort_subscriptions
+            .lock()
+            .await
+            .remove(session_id)
+        {
+            previous.abort();
+        }
         let Ok(provider) = agent.provider(session_id).await else {
             return;
         };
         let Some(mut updates) = provider.subscribe_thinking_effort_support() else {
             return;
         };
-        let session_id = session_id.to_string();
+        let session_id_for_task = session_id.to_string();
         let tx = self.thinking_effort_update_tx.clone();
-        tokio::spawn(async move {
-            while updates.changed().await.is_ok() {
-                if tx.send(session_id.clone()).is_err() {
-                    break;
+        let shutdown = self.thinking_effort_shutdown.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = updates.changed() => {
+                        if changed.is_err() || tx.send(session_id_for_task.clone()).is_err() {
+                            break;
+                        }
+                    }
+                    _ = tx.closed() => break,
+                    _ = shutdown.cancelled() => break,
                 }
             }
         });
+        self.thinking_effort_subscriptions
+            .lock()
+            .await
+            .insert(session_id.to_string(), task);
     }
 
     async fn start_thinking_effort_update_forwarder(self: &Arc<Self>, cx: &ConnectionTo<Client>) {
@@ -1256,8 +1297,16 @@ impl GooseAcpAgent {
         };
         let agent = Arc::downgrade(self);
         let cx = cx.clone();
+        let shutdown = self.thinking_effort_shutdown.clone();
         tokio::spawn(async move {
-            while let Some(session_id) = updates.recv().await {
+            loop {
+                let session_id = tokio::select! {
+                    session_id = updates.recv() => match session_id {
+                        Some(session_id) => session_id,
+                        None => break,
+                    },
+                    _ = shutdown.cancelled() => break,
+                };
                 let Some(agent) = agent.upgrade() else {
                     break;
                 };
@@ -2444,6 +2493,8 @@ impl GooseAcpAgent {
             .switch_provider(session_id, &provider_name, model_config)
             .await
             .internal_err_ctx("Failed to switch provider")?;
+        self.subscribe_thinking_effort_updates(session_id, &agent)
+            .await;
         Ok(())
     }
 
@@ -2489,7 +2540,10 @@ impl GooseAcpAgent {
             &current_model_config,
             session_provider_selection(&session),
             provider_options,
-            &provider.thinking_effort_support(),
+            &crate::providers::chatgpt_codex::thinking_effort_support_for_model(
+                provider.as_ref(),
+                &current_model_config,
+            ),
         );
         let notification = SessionNotification::new(
             session_id.clone(),
@@ -2561,6 +2615,12 @@ impl GooseAcpAgent {
         } else {
             provider_name.to_string()
         };
+        if resolved_provider_name == "chatgpt_codex"
+            && crate::providers::chatgpt_codex::default_model().is_none()
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("ChatGPT Codex catalog contains no selectable models"));
+        }
         let is_changing_provider = resolved_provider_name != current_provider_name;
         let default_model = if let Some(model_name) = model_name {
             model_name.to_string()
@@ -2572,8 +2632,17 @@ impl GooseAcpAgent {
             crate::providers::get_from_registry(&resolved_provider_name)
                 .await
                 .ok()
-                .map(|entry| entry.metadata().default_model.clone())
-                .unwrap_or(ACP_CURRENT_MODEL.to_string())
+                .and_then(|entry| {
+                    if resolved_provider_name == "chatgpt_codex" {
+                        crate::providers::chatgpt_codex::default_model()
+                    } else {
+                        Some(entry.metadata().default_model.clone())
+                    }
+                })
+                .ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("Provider has no selectable default model")
+                })?
         } else {
             current_model
         };
@@ -2621,6 +2690,14 @@ impl GooseAcpAgent {
         let mut sessions = self.sessions.lock().await;
         sessions.remove(session_id);
         drop(sessions);
+        if let Some(subscription) = self
+            .thinking_effort_subscriptions
+            .lock()
+            .await
+            .remove(session_id)
+        {
+            subscription.abort();
+        }
 
         self.agent_manager
             .remove_session_if_loaded(session_id)

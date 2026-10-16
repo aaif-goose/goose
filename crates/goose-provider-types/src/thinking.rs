@@ -338,18 +338,18 @@ impl fmt::Display for ThinkingEffort {
     }
 }
 
-/// A single selectable effort value advertised by a provider-managed harness.
+/// A single selectable effort value advertised by a provider or its harness.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThinkingEffortOption {
     pub value: String,
     pub label: String,
 }
 
-/// A harness-advertised effort config option mirrored verbatim into goose's
-/// `thinking_effort` session option.
+/// Provider-advertised effort choices mirrored into goose's `thinking_effort`
+/// session option.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThinkingEffortCapability {
-    /// The harness's config option id, e.g. "effort".
+    /// The provider's config option id, e.g. "effort".
     pub option_id: String,
     pub values: Vec<ThinkingEffortOption>,
     pub current: Option<String>,

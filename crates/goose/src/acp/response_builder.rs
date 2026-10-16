@@ -239,9 +239,17 @@ pub(super) async fn agent_thinking_effort_support(
     agent: &Agent,
     session_id: &str,
 ) -> ThinkingEffortSupport {
-    match agent.provider(session_id).await {
-        Ok(provider) => provider.thinking_effort_support(),
-        Err(_) => ThinkingEffortSupport::Unspecified,
+    match (
+        agent.provider(session_id).await,
+        agent.model_config_for_session(session_id).await,
+    ) {
+        (Ok(provider), Ok(model_config)) => {
+            crate::providers::chatgpt_codex::thinking_effort_support_for_model(
+                provider.as_ref(),
+                &model_config,
+            )
+        }
+        _ => ThinkingEffortSupport::Unspecified,
     }
 }
 
@@ -351,7 +359,17 @@ fn build_thinking_effort_choices(
                     SessionConfigSelectOption::new(option.value.clone(), option.label.clone())
                 })
                 .collect(),
-            capability_thinking_effort_value(capability, model_config),
+            if capability.option_id == crate::providers::chatgpt_codex::CODEX_REASONING_OPTION_ID {
+                capability.current.clone().unwrap_or_else(|| {
+                    capability
+                        .values
+                        .first()
+                        .map(|option| option.value.clone())
+                        .unwrap_or_default()
+                })
+            } else {
+                capability_thinking_effort_value(capability, model_config)
+            },
         ),
         ThinkingEffortSupport::Unsupported => {
             let off = ThinkingEffort::Off.to_string();
@@ -926,6 +944,23 @@ mod tests {
                 SessionConfigSelectOption::new("default", "default"),
                 SessionConfigSelectOption::new("high", "high"),
                 SessionConfigSelectOption::new("xhigh", "xhigh"),
+            ]
+        );
+    }
+
+    #[test]
+    fn model_reasoning_choices_use_the_providers_effective_value() {
+        let mut capability = effort_capability(&["low", "medium"], "medium");
+        capability.option_id =
+            crate::providers::chatgpt_codex::CODEX_REASONING_OPTION_ID.to_string();
+        let support = ThinkingEffortSupport::Options(capability);
+        let (current, values) = build_effort_option("gpt-6-terra", Some("ultra"), &support);
+        assert_eq!(current, "medium");
+        assert_eq!(
+            values,
+            vec![
+                SessionConfigSelectOption::new("low", "low"),
+                SessionConfigSelectOption::new("medium", "medium"),
             ]
         );
     }
