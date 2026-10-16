@@ -99,6 +99,8 @@ pub mod utils;
 pub mod xai;
 pub mod xai_oauth;
 
+pub mod yolo_auto;
+
 pub use init::{
     cleanup_provider, create, create_with_default_model, get_from_registry, inventory_identity,
     providers, refresh_custom_providers,
