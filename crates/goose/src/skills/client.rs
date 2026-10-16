@@ -1,5 +1,4 @@
 use super::discover_skills_with_config;
-use super::loaded_skill_context_with_args;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use crate::config::Config;
@@ -50,6 +49,15 @@ impl SkillsClient {
 
     fn discover_skills(&self, working_dir: &Path) -> Vec<SourceEntry> {
         discover_skills_with_config(Some(working_dir), self.config)
+            .into_iter()
+            .filter(|skill| {
+                !self.exclude_builtin_skills || skill.source_type != SourceType::BuiltinSkill
+            })
+            .collect()
+    }
+
+    fn discover_skills_with_details(&self, working_dir: &Path) -> Vec<super::DiscoveredSkill> {
+        super::discover_skills_with_details_and_config(Some(working_dir), self.config)
             .into_iter()
             .filter(|skill| {
                 !self.exclude_builtin_skills || skill.source_type != SourceType::BuiltinSkill
@@ -136,10 +144,10 @@ impl McpClientTrait for SkillsClient {
             .working_dir
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        let skills = self.discover_skills(&working_dir);
+        let skills = self.discover_skills_with_details(&working_dir);
 
         if let Some(skill) = skills.iter().find(|s| s.name == skill_name) {
-            return match loaded_skill_context_with_args(skill, args) {
+            return match skill.loaded_context_with_args(args) {
                 Ok(rendered) => Ok(CallToolResult::success(vec![ContentBlock::text(rendered)])),
                 Err(e) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                     "Failed to parse skill arguments: {}",
@@ -155,15 +163,6 @@ impl McpClientTrait for SkillsClient {
                     && matches!(s.source_type, SourceType::Skill | SourceType::BuiltinSkill)
             }) {
                 let listed_skill_dir = PathBuf::from(&skill.path);
-                let load_skill_dir = match listed_skill_dir.canonicalize() {
-                    Ok(path) => path,
-                    Err(e) => {
-                        return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                            "Failed to resolve '{}': {}",
-                            parent_skill_name, e
-                        ))]));
-                    }
-                };
 
                 for file_path in &skill.supporting_files {
                     let file_path_buf = Path::new(file_path);
@@ -174,15 +173,7 @@ impl McpClientTrait for SkillsClient {
                         continue;
                     }
 
-                    let result = match super::load_supporting_file(&load_skill_dir, rel, skill_name)
-                    {
-                        Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
-                        Err(e) => CallToolResult::error(vec![ContentBlock::text(format!(
-                            "Failed to read '{}': {}",
-                            skill_name, e
-                        ))]),
-                    };
-                    return Ok(result);
+                    return Ok(load_supporting_file(skill, skill_name, rel));
                 }
 
                 let available: Vec<String> = skill
@@ -269,6 +260,20 @@ impl McpClientTrait for SkillsClient {
     }
 }
 
+pub(super) fn load_supporting_file(
+    skill: &super::DiscoveredSkill,
+    skill_name: &str,
+    relative: &Path,
+) -> CallToolResult {
+    match skill.load_supporting_file(relative, skill_name) {
+        Ok(content) => CallToolResult::success(vec![ContentBlock::text(content)]),
+        Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
+            "Failed to read '{}': {}",
+            skill_name, error
+        ))]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +337,24 @@ mod tests {
             ContentBlock::Text(text) => &text.text,
             _ => panic!("expected text"),
         }
+    }
+
+    #[cfg(unix)]
+    async fn load_skill(
+        client: &SkillsClient,
+        context: &ToolCallContext,
+        name: &str,
+    ) -> CallToolResult {
+        let arguments = serde_json::from_value(serde_json::json!({"name": name})).unwrap();
+        client
+            .call_tool(
+                context,
+                "load_skill",
+                Some(arguments),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -450,12 +473,155 @@ mod tests {
 
         assert!(!result.is_error.unwrap_or(false));
         assert!(result_text(&result).contains("Symlinked supporting guidance."));
+        let loaded = load_skill(&client, &ctx, "symlinked-skill").await;
+        let resolved = supporting_file.canonicalize().unwrap();
+        assert!(result_text(&loaded).contains(&format!(
+            "Skill directory: {}",
+            resolved.parent().unwrap().display()
+        )));
+        assert!(result_text(&loaded).contains(&format!("guide.md → {}", resolved.display())));
+        assert!(!result_text(&loaded).contains(&plugin_link.to_string_lossy().to_string()));
+        let listed = client.discover_skills(project.path());
+        assert_eq!(
+            listed
+                .iter()
+                .find(|skill| skill.name == "symlinked-skill")
+                .unwrap()
+                .path,
+            plugin_link.join("skills/symlinked-skill").to_string_lossy()
+        );
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn selected_working_directory_alias_preserves_skill_root_boundary() {
+        let root = TempDir::new().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let workspace = root_path.join("workspace");
+        let skill_directory = workspace.join(".goose/skills/alias-workspace-skill");
+        fs::create_dir_all(&skill_directory).unwrap();
+        fs::write(
+            skill_directory.join("SKILL.md"),
+            "---\nname: alias-workspace-skill\ndescription: Selected workspace description\n---\nSelected workspace body",
+        )
+        .unwrap();
+        fs::write(skill_directory.join("guide.md"), "Selected workspace guide").unwrap();
+        let outside = root_path.join("outside");
+        let outside_skill = outside.join("skills/escaped-alias-skill");
+        fs::create_dir_all(&outside_skill).unwrap();
+        fs::write(
+            outside_skill.join("SKILL.md"),
+            "---\nname: escaped-alias-skill\ndescription: Outside\n---\nOutside content",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join(".agents")).unwrap();
+        let alias = root_path.join("selected-alias");
+        std::os::unix::fs::symlink(&workspace, &alias).unwrap();
+
+        let client = SkillsClient::default().with_builtin_skills(false);
+        let instructions = client.get_instructions("test", &alias).await.unwrap();
+        assert!(instructions.contains("alias-workspace-skill"));
+        assert!(!instructions.contains("escaped-alias-skill"));
+        let context = ToolCallContext::new("test".to_string(), Some(alias), None);
+        for (name, expected_text, should_error) in [
+            ("alias-workspace-skill", "Selected workspace body", false),
+            (
+                "alias-workspace-skill/guide.md",
+                "Selected workspace guide",
+                false,
+            ),
+            ("escaped-alias-skill", "Outside content", true),
+        ] {
+            let arguments = serde_json::from_value(serde_json::json!({"name": name})).unwrap();
+            let result = client
+                .call_tool(
+                    &context,
+                    "load_skill",
+                    Some(arguments),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.is_error.unwrap_or(false), should_error);
+            assert_eq!(result_text(&result).contains(expected_text), !should_error);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn nested_skill_under_linked_root_loads_only_regular_supporting_files() {
+        let project = TempDir::new().unwrap();
+        let working_dir = project.path().canonicalize().unwrap();
+        let skill_root = working_dir.join(".agents/skills");
+        fs::create_dir_all(&skill_root).unwrap();
+        let external_skill = working_dir.join("external-skill");
+        fs::create_dir_all(external_skill.join("nested")).unwrap();
+        fs::write(
+            external_skill.join("SKILL.md"),
+            "---\nname: outer-skill\ndescription: Outer skill\n---\nOuter body",
+        )
+        .unwrap();
+        fs::write(
+            external_skill.join("nested/SKILL.md"),
+            "---\nname: nested-skill\ndescription: Nested skill\n---\nNested body",
+        )
+        .unwrap();
+        fs::write(external_skill.join("nested/guide.md"), "Nested guidance.").unwrap();
+        let escaped = working_dir.join("escaped");
+        fs::create_dir(&escaped).unwrap();
+        fs::write(escaped.join("secret.md"), "outside secret").unwrap();
+        std::os::unix::fs::symlink(&escaped, external_skill.join("nested/escaped")).unwrap();
+        std::os::unix::fs::symlink(&external_skill, skill_root.join("linked-skill")).unwrap();
+
+        let client = SkillsClient::default().with_builtin_skills(false);
+        let ctx = ToolCallContext::new("test".to_string(), Some(working_dir), None);
+
+        let guide_args = serde_json::from_value(serde_json::json!({
+            "name": "nested-skill/guide.md"
+        }))
+        .unwrap();
+        let guide = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(guide_args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(!guide.is_error.unwrap_or(false));
+        assert!(result_text(&guide).contains("Nested guidance."));
+        let loaded = load_skill(&client, &ctx, "nested-skill").await;
+        assert!(result_text(&loaded).contains(&format!(
+            "Skill directory: {}",
+            external_skill.join("nested").display()
+        )));
+        assert!(result_text(&loaded).contains(&format!(
+            "guide.md → {}",
+            external_skill.join("nested/guide.md").display()
+        )));
+
+        let escaped_args = serde_json::from_value(serde_json::json!({
+            "name": "nested-skill/escaped/secret.md"
+        }))
+        .unwrap();
+        let escaped = client
+            .call_tool(
+                &ctx,
+                "load_skill",
+                Some(escaped_args),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(escaped.is_error.unwrap_or(false));
+        assert!(!result_text(&escaped).contains("outside secret"));
+    }
     #[tokio::test]
     async fn test_load_filesystem_skill_without_builtin_skills() {
         let temp_dir = TempDir::new().unwrap();
-        let skill_dir = temp_dir.path().join(".goose/skills/my-skill");
+        let working_dir = temp_dir.path().canonicalize().unwrap();
+        let skill_dir = working_dir.join(".goose/skills/my-skill");
         fs::create_dir_all(&skill_dir).unwrap();
         fs::write(
             skill_dir.join("SKILL.md"),
