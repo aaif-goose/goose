@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use crate::agents::state_machine::{
     SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::config::Config;
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
@@ -82,7 +84,13 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_lease),
         )),
         Arc::new(RemainingToolCallsOperation::new(hook_manager.clone())),
-        Arc::new(SubagentOperation::new(Arc::new(subagent_runner))),
+        Arc::new(
+            SubagentOperation::new(Arc::new(subagent_runner)).with_max_concurrency(
+                Config::global()
+                    .get_param::<NonZeroUsize>("GOOSE_MAX_CONCURRENT_SUBAGENTS")
+                    .unwrap_or(NonZeroUsize::new(5).unwrap()),
+            ),
+        ),
         Arc::new(SteerOperation::new(steer_queue, hook_manager.clone())),
         Arc::new(BangShellOperation::new()),
     ];

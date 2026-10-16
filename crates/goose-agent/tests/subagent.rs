@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -314,19 +315,21 @@ async fn a_subagent_cancelled_elsewhere_is_reported_and_not_restarted() {
 }
 
 #[tokio::test]
-async fn stop_delivers_finished_subagents_and_cancels_the_rest() {
+async fn stop_delivers_finished_subagents_and_cancels_running_and_queued_children() {
     let runner = Arc::new(fake(&["a", "b", "c"]));
     let a = runner.running("a");
     let b = runner.running("b");
-    let c = runner.running("c");
-    let operation = operation(&runner);
+    runner.finished("c", SubagentOutcome::Completed("c done".into()));
+    let operation = operation(&runner).with_max_concurrency(NonZeroUsize::new(2).unwrap());
     let mut messages = vec![kickoff()];
 
     interrupt(&operation, &messages);
+    assert_eq!(runner.started(), ["a", "b"]);
     a.finish(SubagentOutcome::Completed("a done".into()));
     b.finish(SubagentOutcome::Cancelled);
     let saved = stop(&operation, &messages).await;
 
+    assert!(b.is_closed());
     assert_eq!(
         texts(&saved),
         [
@@ -335,20 +338,14 @@ async fn stop_delivers_finished_subagents_and_cancels_the_rest() {
              Subagent c was cancelled before it finished and will not run again.",
         ]
     );
-    assert!(c.is_closed());
     assert_eq!(
         runner.events(),
-        [
-            "started a",
-            "started b",
-            "started c",
-            "finished a, 2 remaining"
-        ]
+        ["started a", "started b", "finished a, 2 remaining"]
     );
 
     messages.extend(saved);
     assert!(run_once(&operation, &messages).await.is_empty());
-    assert_eq!(runner.started(), ["a", "b", "c"]);
+    assert_eq!(runner.started(), ["a", "b"]);
     assert!(stop(&operation, &messages).await.is_empty());
 }
 
@@ -447,4 +444,32 @@ async fn stop_skips_messages_queued_ahead_of_a_finished_result() {
 
     assert_eq!(texts(&saved), ["Subagent a completed: done"]);
     assert!(shown(&mut rx).is_empty());
+}
+
+#[tokio::test]
+async fn concurrency_limit_queues_subagents_until_a_slot_is_available() {
+    let runner = Arc::new(fake(&["a", "b", "c"]));
+    let a = runner.running("a");
+    let b = runner.running("b");
+    let c = runner.running("c");
+    let operation = operation(&runner).with_max_concurrency(NonZeroUsize::new(2).unwrap());
+    let mut messages = vec![kickoff()];
+
+    interrupt(&operation, &messages);
+    assert_eq!(runner.started(), ["a", "b"]);
+
+    b.finish(SubagentOutcome::Failed("boom".into()));
+    messages.extend(run_once(&operation, &messages).await);
+    assert_eq!(runner.started(), ["a", "b"]);
+
+    interrupt(&operation, &messages);
+    assert_eq!(runner.started(), ["a", "b", "c"]);
+
+    c.finish(SubagentOutcome::Completed("c done".into()));
+    messages.extend(run_once(&operation, &messages).await);
+    a.finish(SubagentOutcome::Completed("a done".into()));
+    messages.extend(run_once(&operation, &messages).await);
+
+    assert!(run_once(&operation, &messages).await.is_empty());
+    assert_eq!(runner.started(), ["a", "b", "c"]);
 }

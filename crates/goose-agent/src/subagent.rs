@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -165,6 +166,7 @@ struct Running {
 pub struct SubagentOperation<S> {
     runner: Arc<dyn SubagentRunner<S>>,
     running: Mutex<Running>,
+    max_concurrency: NonZeroUsize,
 }
 
 impl<S> SubagentOperation<S> {
@@ -172,7 +174,14 @@ impl<S> SubagentOperation<S> {
         Self {
             runner,
             running: Mutex::default(),
+            max_concurrency: NonZeroUsize::MAX,
         }
+    }
+
+    /// Limits how many subagents run at once; additional subagents remain pending.
+    pub fn with_max_concurrency(mut self, max_concurrency: NonZeroUsize) -> Self {
+        self.max_concurrency = max_concurrency;
+        self
     }
 
     fn deliver<E: From<Message>>(
@@ -257,6 +266,9 @@ where
 
         let mut running = self.running.lock().await;
         for subagent_session_id in &pending {
+            if running.subagent_session_ids.len() >= self.max_concurrency.get() {
+                break;
+            }
             if running.subagent_session_ids.contains(subagent_session_id) {
                 continue;
             }
