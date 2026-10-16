@@ -39,13 +39,18 @@ import { useConfig } from './components/ConfigContext';
 import { ModelAndProviderProvider } from './components/ModelAndProviderContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { FeaturesProvider } from './contexts/FeaturesContext';
+import { ClientExtensionsProvider } from './client-extensions/ClientExtensionsContext';
 import PermissionSettingsView from './components/settings/permission/PermissionSetting';
 
 import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/ExtensionsView';
 import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
+import PluginsView from './components/plugins/PluginsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
+import ClientExtensionPageView from './client-extensions/ClientExtensionPageView';
+import { ClientExtensionRegistrySync } from './client-extensions/ClientExtensionRegistrySync';
+import { NativePluginRuntime } from './client-extensions/NativePluginRuntime';
 import { View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
@@ -233,6 +238,10 @@ const RecipesRoute = () => {
 
 const SkillsRoute = () => {
   return <SkillsView />;
+};
+
+const PluginsRoute = () => {
+  return <PluginsView />;
 };
 
 const PermissionRoute = () => {
@@ -625,6 +634,8 @@ export function AppInner() {
       <div className="relative w-screen h-screen overflow-hidden bg-background-secondary flex flex-col">
         <div className="titlebar-drag-region" />
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+          <ClientExtensionRegistrySync />
+          <NativePluginRuntime />
           <Routes>
             <Route path="launcher" element={<LauncherView />} />
             <Route path="configure-providers" element={<ConfigureProvidersRoute />} />
@@ -666,7 +677,9 @@ export function AppInner() {
               <Route path="schedules" element={<SchedulesRoute />} />
               <Route path="recipes" element={<RecipesRoute />} />
               <Route path="skills" element={<SkillsRoute />} />
+              <Route path="plugins" element={<PluginsRoute />} />
               <Route path="permission" element={<PermissionRoute />} />
+              <Route path="ext/:extensionId/:viewId" element={<ClientExtensionPageView />} />
             </Route>
           </Routes>
         </div>
@@ -679,13 +692,15 @@ export default function App() {
   return (
     <ThemeProvider>
       <FeaturesProvider>
-        <ModelAndProviderProvider>
-          <HashRouter>
-            <AppInner />
-          </HashRouter>
-          <AnnouncementModal />
-          <TelemetryConsentPrompt />
-        </ModelAndProviderProvider>
+        <ClientExtensionsProvider>
+          <ModelAndProviderProvider>
+            <HashRouter>
+              <AppInner />
+            </HashRouter>
+            <AnnouncementModal />
+            <TelemetryConsentPrompt />
+          </ModelAndProviderProvider>
+        </ClientExtensionsProvider>
       </FeaturesProvider>
     </ThemeProvider>
   );

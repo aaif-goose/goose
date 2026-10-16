@@ -18,6 +18,7 @@ import type {
   McpUiStyleVariableKey,
   McpUiStyles,
 } from '@modelcontextprotocol/ext-apps/app-bridge';
+import type { RegisteredTheme } from '../client-extensions/types';
 
 type ThemeTokens = Record<McpUiStyleVariableKey, string>;
 
@@ -260,8 +261,10 @@ const auraColorTokens: ColorTokens = {
 
 // Aura is monospace-first — override the shared sans family.
 const auraFontTokens: Partial<Pick<ThemeTokens, BaseTokenKey>> = {
-  '--font-sans': 'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
-  '--font-mono': 'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
+  '--font-sans':
+    'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
+  '--font-mono':
+    'ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace',
 };
 
 // ---------------------------------------------------------------------------
@@ -277,7 +280,8 @@ export const auraTokens: ThemeTokens = { ...baseTokens, ...auraFontTokens, ...au
 // the token system; `tokens` is the map applied to :root. Adding a future theme
 // is a single entry here plus its token map above.
 // ---------------------------------------------------------------------------
-export type ThemeId = 'light' | 'dark' | 'aura';
+export type BuiltinThemeId = 'light' | 'dark' | 'aura';
+export type ThemeId = string;
 export type ThemeVariant = 'light' | 'dark';
 
 interface ThemeDefinition {
@@ -285,11 +289,84 @@ interface ThemeDefinition {
   tokens: ThemeTokens;
 }
 
-export const themes: Record<ThemeId, ThemeDefinition> = {
+export interface PluginThemeOption {
+  id: ThemeId;
+  label: string;
+  variant: ThemeVariant;
+}
+
+const builtinThemes: Record<BuiltinThemeId, ThemeDefinition> = {
   light: { variant: 'light', tokens: lightTokens },
   dark: { variant: 'dark', tokens: darkTokens },
   aura: { variant: 'dark', tokens: auraTokens },
 };
+
+const MAX_TOKEN_VALUE_LENGTH = 300;
+const UNSAFE_TOKEN_VALUE = /url\(|@import|expression\(|[;{}<>\\]/i;
+
+const pluginThemes = new Map<ThemeId, ThemeDefinition>();
+let pluginThemeOptions: PluginThemeOption[] = [];
+const pluginThemeListeners = new Set<() => void>();
+
+function isBuiltinTheme(id: ThemeId): id is BuiltinThemeId {
+  return Object.prototype.hasOwnProperty.call(builtinThemes, id);
+}
+
+function sanitizeThemeTokens(tokens: Record<string, string>): Partial<ThemeTokens> {
+  const allowedKeys = new Set<string>(Object.keys(lightTokens));
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(tokens)) {
+    if (
+      allowedKeys.has(key) &&
+      value.length <= MAX_TOKEN_VALUE_LENGTH &&
+      !UNSAFE_TOKEN_VALUE.test(value)
+    ) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized as Partial<ThemeTokens>;
+}
+
+export function pluginThemeId(extensionId: string, themeId: string): ThemeId {
+  return `${extensionId}:${themeId}`;
+}
+
+export function registerPluginThemes(registered: RegisteredTheme[]): void {
+  pluginThemes.clear();
+  const options: PluginThemeOption[] = [];
+  for (const theme of registered) {
+    const id = pluginThemeId(theme.extensionId, theme.id);
+    const base = theme.variant === 'dark' ? darkTokens : lightTokens;
+    pluginThemes.set(id, {
+      variant: theme.variant,
+      tokens: { ...base, ...sanitizeThemeTokens(theme.tokens) },
+    });
+    options.push({ id, label: theme.label, variant: theme.variant });
+  }
+  pluginThemeOptions = options;
+  for (const listener of pluginThemeListeners) {
+    listener();
+  }
+}
+
+export function subscribePluginThemes(listener: () => void): () => void {
+  pluginThemeListeners.add(listener);
+  return () => {
+    pluginThemeListeners.delete(listener);
+  };
+}
+
+export function getPluginThemeOptions(): PluginThemeOption[] {
+  return pluginThemeOptions;
+}
+
+export function hasTheme(id: ThemeId): boolean {
+  return pluginThemes.has(id) || isBuiltinTheme(id);
+}
+
+export function getThemeDefinition(id: ThemeId): ThemeDefinition {
+  return pluginThemes.get(id) ?? (isBuiltinTheme(id) ? builtinThemes[id] : builtinThemes.light);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -339,7 +416,7 @@ const HOST_FONT_CSS = `
  * css.fonts provides @font-face rules so sandboxed apps can load host fonts.
  */
 export function buildMcpHostStyles(themeId: ThemeId = 'light'): McpUiHostStyles {
-  const tokens = (themes[themeId] ?? themes.light).tokens;
+  const tokens = getThemeDefinition(themeId).tokens;
   const isBuiltinVariant = themeId === 'light' || themeId === 'dark';
   const variables: McpUiStyles = {} as McpUiStyles;
   for (const key of Object.keys(lightTokens) as McpUiStyleVariableKey[]) {
@@ -373,7 +450,7 @@ export function getResolvedTheme(): ThemeId {
  */
 export function applyThemeTokens(theme?: ThemeId): void {
   const resolved = theme ?? getResolvedTheme();
-  const { tokens } = themes[resolved] ?? themes.light;
+  const { tokens } = getThemeDefinition(resolved);
   const root = document.documentElement;
   for (const [key, value] of Object.entries(tokens)) {
     root.style.setProperty(key, value);

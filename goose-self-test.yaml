@@ -14,6 +14,7 @@ activities:
   - Analyze code structure and parsing capabilities
   - Validate Boa JavaScript discovery, batching, cancellation, and isolation
   - Test extension discovery and management
+  - Test client-extension CLI commands (install, list, enable, disable, uninstall)
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
