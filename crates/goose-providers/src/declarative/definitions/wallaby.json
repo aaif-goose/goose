@@ -1,0 +1,21 @@
+{
+  "name": "wallaby",
+  "engine": "openai",
+  "display_name": "Wallaby",
+  "description": "OpenAI-compatible API focused on Kimi K3 (1M token context). Supports adjustable reasoning effort via reasoning_effort; reasoning streams in the reasoning_content field.",
+  "api_key_env": "WALLABY_API_KEY",
+  "base_url": "https://api.wallabytoken.com/v1",
+  "catalog_provider_id": "wallaby",
+  "models": [
+    { "name": "kimi-k3", "context_limit": 1048576 }
+  ],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "preserves_thinking": true,
+  "model_doc_link": "https://wallabytoken.com/pricing",
+  "setup_steps": [
+    "Sign up at https://wallabytoken.com",
+    "Create an API key in the console",
+    "Paste the key above as WALLABY_API_KEY"
+  ]
+}
