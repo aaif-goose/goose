@@ -8,15 +8,18 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::pin;
 use tokio_util::io::StreamReader;
 
 use crate::api_client::{ApiClient, AuthMethod, TlsConfig};
-use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
+use crate::base::{
+    model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
+};
+use crate::canonical::maybe_get_canonical_model;
 const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 600;
 use crate::conversation::message::Message;
 use crate::databricks_auth::{
@@ -37,7 +40,7 @@ use crate::retry::{
 use crate::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 
-const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
+pub const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
 const DATABRICKS_V2_DEFAULT_GATEWAY_PATH: &str = "ai-gateway";
 const DATABRICKS_V2_ROUTE_SUFFIXES: [&str; 3] = [
     "openai/v1/responses",
@@ -51,6 +54,18 @@ const DATABRICKS_V2_CATALOG_PAGE_SIZE: usize = 100;
 const DATABRICKS_V2_MAX_CATALOG_PAGES: usize = 100;
 // Model-services intermittently uses 499 for transient gateway timeouts.
 const DATABRICKS_V2_TRANSIENT_GATEWAY_STATUS: u16 = 499;
+const MODEL_SERVICE_METADATA_TTL: Duration = Duration::from_secs(60);
+
+struct CachedModelServiceMetadata {
+    fetched_at: Instant,
+    metadata: Option<ModelServiceMetadata>,
+}
+
+#[derive(Clone)]
+struct ModelServiceMetadata {
+    model: Option<String>,
+    route: DatabricksV2Route,
+}
 
 #[derive(Clone, Copy)]
 struct ModelCatalog {
@@ -106,6 +121,8 @@ pub struct DatabricksV2Provider {
     refresh_hook: Option<DatabricksRefreshHook>,
     #[serde(skip)]
     gateway_path: String,
+    #[serde(skip)]
+    model_service_models: Mutex<HashMap<String, CachedModelServiceMetadata>>,
 }
 
 impl DatabricksV2Provider {
@@ -153,6 +170,7 @@ impl DatabricksV2Provider {
             token_cache,
             refresh_hook,
             gateway_path: DATABRICKS_V2_DEFAULT_GATEWAY_PATH.to_string(),
+            model_service_models: Mutex::new(HashMap::new()),
         })
     }
 
@@ -237,7 +255,153 @@ impl DatabricksV2Provider {
         }
     }
 
-    fn is_model_service_fqn(model_name: &str) -> bool {
+    async fn model_service_config(
+        &self,
+        model_config: &ModelConfig,
+    ) -> Result<(ModelConfig, DatabricksV2Route), ProviderError> {
+        let metadata = self
+            .model_service_metadata(&model_config.model_name)
+            .await
+            .ok()
+            .flatten();
+        let model_info = metadata.as_ref().map_or_else(
+            || model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, &model_config.model_name),
+            |metadata| Self::model_service_info(&model_config.model_name, Some(metadata)),
+        );
+        if model_config
+            .thinking_effort()
+            .is_some_and(|effort| effort != ThinkingEffort::Off)
+            && !model_info.reasoning
+        {
+            return Err(ProviderError::InvalidValue(format!(
+                "Thinking effort is not supported for the backing models of Databricks model service '{}'",
+                model_config.model_name
+            )));
+        }
+        let route = metadata.as_ref().map_or_else(
+            || Self::route_for_model(&model_config.model_name),
+            |metadata| metadata.route,
+        );
+        let mut config = model_config.clone();
+        config.model_name = metadata
+            .and_then(|metadata| metadata.model)
+            .unwrap_or_else(|| model_config.model_name.clone());
+        if route == DatabricksV2Route::OpenAiResponses {
+            config.temperature = None;
+        }
+        Ok((
+            config.with_canonical_limits(DATABRICKS_V2_PROVIDER_NAME),
+            route,
+        ))
+    }
+
+    fn model_service_metadata_from_value(value: &Value) -> Option<ModelServiceMetadata> {
+        let routing = value.pointer("/config/routing")?;
+        let primary = routing.get("destinations")?.as_array()?;
+        let fallback = routing
+            .pointer("/fallback/destinations")
+            .and_then(Value::as_array);
+        let models: Vec<String> = primary
+            .iter()
+            .chain(fallback.into_iter().flatten())
+            .map(Self::backing_model_name)
+            .collect::<Option<Vec<_>>>()?;
+        let model = models.first()?;
+        let first_route = Self::route_for_model(model);
+        let route = models
+            .iter()
+            .all(|model| Self::route_for_model(model) == first_route)
+            .then_some(first_route)
+            .unwrap_or(DatabricksV2Route::MlflowChatCompletions);
+        let model = models
+            .iter()
+            .all(|candidate| candidate == model)
+            .then(|| model.clone());
+        Some(ModelServiceMetadata { model, route })
+    }
+
+    fn backing_model_name(destination: &Value) -> Option<String> {
+        let model = destination
+            .pointer("/pay_per_token_config/model")
+            .or_else(|| destination.pointer("/provisioned_throughput_config/model"))
+            .or_else(|| destination.pointer("/external_model_config/target/model"))?
+            .as_str()?;
+        let model = model.strip_prefix("models/").unwrap_or(model);
+        let model = if Self::is_model_service_fqn(model) {
+            model.splitn(3, '.').nth(2).unwrap_or(model)
+        } else {
+            model
+        };
+        Some(
+            maybe_get_canonical_model(DATABRICKS_V2_PROVIDER_NAME, model)
+                .map_or_else(|| model.to_string(), |canonical| canonical.id),
+        )
+    }
+
+    async fn model_service_metadata(
+        &self,
+        name: &str,
+    ) -> Result<Option<ModelServiceMetadata>, ProviderError> {
+        if let Some(cached) = self.model_service_models.lock().unwrap().get(name) {
+            if cached.fetched_at.elapsed() < MODEL_SERVICE_METADATA_TTL {
+                return Ok(cached.metadata.clone());
+            }
+        }
+        let path = format!(
+            "{DATABRICKS_V2_LIST_MODEL_SERVICES_PATH}/{}",
+            urlencoding::encode(name)
+        );
+        let metadata = self
+            .with_retry_config(
+                || async {
+                    let response = self.api_client.response_get(&path).await?;
+                    if response.status().as_u16() == DATABRICKS_V2_TRANSIENT_GATEWAY_STATUS {
+                        let detail = read_error_body(response).await.unwrap_or_default();
+                        return Err(ProviderError::ServerError(format!(
+                            "Databricks model-service metadata returned {DATABRICKS_V2_TRANSIENT_GATEWAY_STATUS}: {detail}"
+                        )));
+                    }
+                    let value: Value = read_json_response(handle_status(response).await?).await?;
+                    Ok(Self::model_service_metadata_from_value(&value))
+                },
+                self.retry_config.clone().transient_only(),
+            )
+            .await?;
+        self.model_service_models.lock().unwrap().insert(
+            name.to_string(),
+            CachedModelServiceMetadata {
+                fetched_at: Instant::now(),
+                metadata: metadata.clone(),
+            },
+        );
+        Ok(metadata)
+    }
+
+    fn model_service_info(name: &str, metadata: Option<&ModelServiceMetadata>) -> ModelInfo {
+        match metadata {
+            Some(ModelServiceMetadata {
+                model: Some(model),
+                route,
+            }) => {
+                let mut info = model_info_for_provider_model(DATABRICKS_V2_PROVIDER_NAME, model);
+                info.name = name.to_string();
+                info.resolved_model = Some(model.to_string());
+                if *route == DatabricksV2Route::MlflowChatCompletions
+                    && !Self::mlflow_translates_effort(model)
+                {
+                    info.reasoning = false;
+                }
+                info
+            }
+            _ => ModelInfo::new(name),
+        }
+    }
+
+    fn mlflow_translates_effort(model: &str) -> bool {
+        Self::always_on_reasoning_effort(&ModelConfig::new(model)).is_some()
+    }
+
+    pub fn is_model_service_fqn(model_name: &str) -> bool {
         let Some((catalog, remainder)) = model_name.split_once('.') else {
             return false;
         };
@@ -338,12 +502,23 @@ impl DatabricksV2Provider {
     async fn stream_openai_responses(
         &self,
         model_config: &ModelConfig,
+        format_config: &ModelConfig,
         system: &str,
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload =
-            openai_responses::create_responses_request(model_config, system, messages, tools)?;
+        let mut payload = if Self::is_model_service_fqn(&model_config.model_name) {
+            openai_responses::create_responses_request_for_model(
+                format_config,
+                &model_config.model_name,
+                &format_config.model_name,
+                system,
+                messages,
+                tools,
+            )?
+        } else {
+            openai_responses::create_responses_request(model_config, system, messages, tools)?
+        };
         payload["stream"] = Value::Bool(true);
         let mut log = start_log(model_config, &payload)?;
 
@@ -369,12 +544,13 @@ impl DatabricksV2Provider {
     async fn stream_mlflow_chat_completions(
         &self,
         model_config: &ModelConfig,
+        resolved_config: &ModelConfig,
         system: &str,
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
         let is_model_service = Self::is_model_service_fqn(&model_config.model_name);
-        let mut format_config = model_config.clone();
+        let mut format_config = resolved_config.clone();
         if is_model_service {
             // Keep UC namespace text out of OpenAI format heuristics.
             format_config.model_name = "model-service".to_string();
@@ -390,11 +566,11 @@ impl DatabricksV2Provider {
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
         }
-        if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
+        if let Some(effort) = Self::always_on_reasoning_effort(resolved_config) {
             payload["reasoning_effort"] = Value::String(effort.to_string());
         }
         if payload.get("max_tokens").is_none() {
-            payload["max_tokens"] = Value::from(model_config.max_output_tokens());
+            payload["max_tokens"] = Value::from(format_config.max_output_tokens());
         }
         let mut log = start_log(model_config, &payload)?;
 
@@ -420,13 +596,15 @@ impl DatabricksV2Provider {
     async fn stream_anthropic_messages(
         &self,
         model_config: &ModelConfig,
+        format_config: &ModelConfig,
         system: &str,
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let mut payload = anthropic::create_request(
+        let mut payload = anthropic::create_request_for_model(
             ANTHROPIC_PROVIDER_NAME,
-            model_config,
+            format_config,
+            &model_config.model_name,
             system,
             messages,
             tools,
@@ -511,18 +689,38 @@ impl Provider for DatabricksV2Provider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        match Self::route_for_model(&model_config.model_name) {
+        let (format_config, route) = if Self::is_model_service_fqn(&model_config.model_name) {
+            self.model_service_config(model_config).await?
+        } else {
+            (
+                model_config.clone(),
+                Self::route_for_model(&model_config.model_name),
+            )
+        };
+        match route {
             DatabricksV2Route::OpenAiResponses => {
-                self.stream_openai_responses(model_config, system, messages, tools)
+                self.stream_openai_responses(model_config, &format_config, system, messages, tools)
                     .await
             }
             DatabricksV2Route::AnthropicMessages => {
-                self.stream_anthropic_messages(model_config, system, messages, tools)
-                    .await
+                self.stream_anthropic_messages(
+                    model_config,
+                    &format_config,
+                    system,
+                    messages,
+                    tools,
+                )
+                .await
             }
             DatabricksV2Route::MlflowChatCompletions => {
-                self.stream_mlflow_chat_completions(model_config, system, messages, tools)
-                    .await
+                self.stream_mlflow_chat_completions(
+                    model_config,
+                    &format_config,
+                    system,
+                    messages,
+                    tools,
+                )
+                .await
             }
         }
     }
@@ -567,6 +765,27 @@ impl Provider for DatabricksV2Provider {
         names.sort();
         names.dedup();
         Ok(names)
+    }
+
+    async fn fetch_model_info(&self, name: &str) -> Result<ModelInfo, ProviderError> {
+        if Self::is_model_service_fqn(name) {
+            let metadata = self.model_service_metadata(name).await.ok().flatten();
+            return Ok(Self::model_service_info(name, metadata.as_ref()));
+        }
+        Ok(model_info_for_provider_model(
+            DATABRICKS_V2_PROVIDER_NAME,
+            name,
+        ))
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        goose_provider_types::context_limit::ContextLimitResolver::new(self.get_name())
+            .resolve(model, override_limit, || async {
+                self.fetch_model_info(model)
+                    .await
+                    .map(|info| info.context_limit)
+            })
+            .await
     }
 }
 
@@ -826,6 +1045,21 @@ mod tests {
             .unwrap()
         }
 
+        async fn mount_model_service_metadata(server: &MockServer, service: &str, backing: &str) {
+            Mock::given(method("GET"))
+                .and(path(format!(
+                    "/{DATABRICKS_V2_LIST_MODEL_SERVICES_PATH}/{service}"
+                )))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "config": {"routing": {"destinations": [{
+                        "pay_per_token_config": {"model": format!("models/{backing}")}
+                    }]}}
+                })))
+                .expect(1)
+                .mount(server)
+                .await;
+        }
+
         fn all_route_paths(provider: &DatabricksV2Provider) -> Vec<String> {
             [
                 DatabricksV2Route::OpenAiResponses,
@@ -907,6 +1141,7 @@ mod tests {
             let body = format!("{completed}\n\ndata: [DONE]\n\n");
 
             let server = MockServer::start().await;
+            mount_model_service_metadata(&server, model, "system.ai.gpt-6-astra").await;
             Mock::given(method("POST"))
                 .and(path("/ai-gateway/openai/v1/responses"))
                 .and(body_partial_json(json!({"model": model})))
@@ -927,7 +1162,7 @@ mod tests {
 
         #[tokio::test]
         async fn model_service_claude_uses_messages_route_with_cache_breakpoints() {
-            let model = "data_workflow_tools.goose.goose-claude-fable-5-1";
+            let model = "data_workflow_tools.goose.writer";
             let body = concat!(
                 r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}"#,
                 "\n",
@@ -938,11 +1173,14 @@ mod tests {
             );
 
             let server = MockServer::start().await;
+            mount_model_service_metadata(&server, model, "system.ai.claude-fable-5-1").await;
             Mock::given(method("POST"))
                 .and(path("/ai-gateway/anthropic/v1/messages"))
                 .and(body_partial_json(json!({
                     "model": model,
-                    "system": [{"cache_control": {"type": "ephemeral"}}]
+                    "system": [{"cache_control": {"type": "ephemeral"}}],
+                    "thinking": {"type": "adaptive"},
+                    "output_config": {"effort": "low"}
                 })))
                 .respond_with(
                     ResponseTemplate::new(200)
@@ -955,7 +1193,7 @@ mod tests {
 
             provider(server.uri())
                 .complete(
-                    &ModelConfig::new(model),
+                    &ModelConfig::new(model).with_thinking_effort(ThinkingEffort::Low),
                     "system",
                     &[
                         Message::user().with_text("hi"),
@@ -968,13 +1206,14 @@ mod tests {
                 .expect("Claude model service should use the Anthropic Messages API");
         }
 
-        #[test_case::test_case("catalog.schema.goose-glm-5-3" ; "glm 5.3")]
-        #[test_case::test_case("catalog.schema.goose-kimi-k3" ; "kimi k3")]
+        #[test_case::test_case("catalog.schema.goose-glm-5-3", "system.ai.glm-5-3" ; "glm 5.3")]
+        #[test_case::test_case("catalog.schema.goose-kimi-k3", "system.ai.kimi-k3" ; "kimi k3")]
         #[tokio::test]
-        async fn model_service_forwards_reasoning_effort(model: &str) {
+        async fn model_service_forwards_reasoning_effort(model: &str, backing: &str) {
             let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
 
             let server = MockServer::start().await;
+            mount_model_service_metadata(&server, model, backing).await;
             Mock::given(method("POST"))
                 .and(path("/ai-gateway/mlflow/v1/chat/completions"))
                 .and(body_partial_json(json!({
