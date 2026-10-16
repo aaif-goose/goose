@@ -1,5 +1,7 @@
 import type { NavigateFunction } from 'react-router';
+import type { FixedExtensionEntry } from '../components/ConfigContext';
 import type { Recipe } from '../recipe';
+import type { ExtensionConfig } from '../types/extensions';
 import { UserInput } from '../types/message';
 
 export type View =
@@ -31,7 +33,22 @@ export type ViewOptions = {
   resumeSessionId?: string;
   startLiveVoice?: boolean;
   pendingScheduleDeepLink?: string;
+  workingDir?: string;
+  /** Set when the user picked a directory; otherwise Pair resolves the effective cwd. */
+  userSelectedWorkingDir?: boolean;
+  extensionConfigs?: ExtensionConfig[];
+  /** Set when the user customized next-chat extensions; otherwise Pair uses defaults. */
+  userCustomizedExtensions?: boolean;
+  allExtensions?: FixedExtensionEntry[];
 };
+
+/** Hub input plus the options a failed session/new must restore on remount. */
+export interface HubDraft extends UserInput {
+  userSelectedWorkingDir?: string;
+  extensionConfigs?: ExtensionConfig[];
+}
+
+export const emptyHubDraft = (): HubDraft => ({ msg: '', images: [] });
 
 export const createNavigationHandler = (navigate: NavigateFunction) => {
   return (view: View, options?: ViewOptions) => {
