@@ -360,6 +360,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "scheduler")]
     fn create_schedule_request(id: &str, prompt: &str) -> CreateScheduleRequest {
         let recipe = Recipe::builder()
             .title(format!("{id} recipe"))
@@ -375,6 +376,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "scheduler")]
     #[tokio::test]
     #[serial]
     async fn duplicate_schedule_does_not_overwrite_existing_recipe() {

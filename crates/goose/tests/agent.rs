@@ -9,7 +9,7 @@ use goose::config::extensions::{set_extension, ExtensionEntry};
 mod tests {
     use super::*;
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     mod schedule_tool_tests {
         use super::*;
         use async_trait::async_trait;
