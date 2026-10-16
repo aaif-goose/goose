@@ -132,7 +132,7 @@ impl ToolCatalog {
         let mut by_name = HashMap::new();
         for (extension, tools) in extensions.iter().zip(lists) {
             for tool in tools.iter() {
-                let name = tool.name.to_string();
+                let name = provider_safe_tool_name(&tool.name);
                 if by_name.contains_key(&name) {
                     warn!(
                         tool = %name,
@@ -155,9 +155,11 @@ impl ToolCatalog {
                 {
                     continue;
                 }
+                let mut tool = tool.clone();
+                tool.name = name.clone().into();
                 by_name.insert(name, entries.len());
                 entries.push(CatalogEntry {
-                    tool: tool.clone(),
+                    tool,
                     extension: Arc::clone(extension),
                     server_name,
                 });
@@ -169,6 +171,24 @@ impl ToolCatalog {
     fn get(&self, name: &str) -> Option<&CatalogEntry> {
         self.by_name.get(name).map(|&i| &self.entries[i])
     }
+}
+
+/// MCP allows tool names that providers reject (OpenAI requires
+/// `^[a-zA-Z0-9_-]{1,64}$`). A rewritten name carries a hash of the original
+/// so that `db.query` and `db_query`, or two names sharing their first 64
+/// characters, stay distinct tools.
+fn provider_safe_tool_name(name: &str) -> String {
+    let is_safe = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    if name.len() <= 64 && name.chars().all(is_safe) {
+        return name.to_string();
+    }
+    let sanitized: String = name
+        .chars()
+        .map(|c| if is_safe(c) { c } else { '_' })
+        .take(55)
+        .collect();
+    let hash = blake3::hash(name.as_bytes()).to_hex();
+    format!("{sanitized}_{:.8}", hash.as_str())
 }
 
 #[derive(Clone)]
