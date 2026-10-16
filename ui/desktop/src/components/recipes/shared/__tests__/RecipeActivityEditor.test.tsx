@@ -17,11 +17,6 @@ describe('RecipeActivityEditor', () => {
   });
 
   describe('Basic Rendering', () => {
-    it('renders without crashing', () => {
-      renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
-      expect(screen.getByText('Activities')).toBeInTheDocument();
-    });
-
     it('displays the activities label', () => {
       renderWithIntl(<RecipeActivityEditor activities={[]} setActivities={mockOnChange} />);
       expect(screen.getByText('Activities')).toBeInTheDocument();
