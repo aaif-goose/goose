@@ -6,6 +6,34 @@ export interface AcpCreditsExhaustedError {
   url?: string;
 }
 
+export interface AcpWorkingDirectoryMissingError {
+  reason: 'working_directory_missing';
+  path: string;
+  recoveryError?: string;
+}
+
+export type AcpSessionLoadError = string | AcpWorkingDirectoryMissingError;
+
+export function isAcpWorkingDirectoryValidationError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  const candidate = isRecord(error.error) ? error.error : error;
+  return (
+    candidate.code === -32602 &&
+    (candidate.data === 'invalid directory path' ||
+      candidate.data === 'cwd must be an absolute path')
+  );
+}
+
+export function parseAcpWorkingDirectoryMissingError(
+  error: unknown
+): AcpWorkingDirectoryMissingError | null {
+  const data = asAcpJsonRpcError(error)?.data;
+  if (data?.reason !== 'working_directory_missing' || typeof data.path !== 'string') {
+    return null;
+  }
+  return { reason: 'working_directory_missing', path: data.path };
+}
+
 const CREDITS_EXHAUSTED_REASON = 'credits_exhausted';
 const AUTH_REQUIRED_CODE = -32000;
 

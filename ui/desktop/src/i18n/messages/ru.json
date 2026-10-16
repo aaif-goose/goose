@@ -4738,5 +4738,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Цикл агента"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Рабочий каталог больше не существует: {path}. Выберите другой каталог, чтобы открыть эту сессию."
   }
 }

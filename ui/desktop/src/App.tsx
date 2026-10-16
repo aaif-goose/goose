@@ -422,6 +422,26 @@ export function AppInner() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleSessionMovedToWindow = (event: Event) => {
+      const { sessionId } = (event as CustomEvent<{ sessionId: string }>).detail;
+      if (!activeSessions.some((session) => session.sessionId !== sessionId)) {
+        window.electron.closeWindow();
+        return;
+      }
+      setActiveSessions((sessions) =>
+        sessions.filter((session) => session.sessionId !== sessionId)
+      );
+      if (new URLSearchParams(location.search).get('resumeSessionId') === sessionId) {
+        navigate('/sessions', { replace: true });
+      }
+    };
+    window.addEventListener(AppEvents.SESSION_MOVED_TO_WINDOW, handleSessionMovedToWindow);
+    return () => {
+      window.removeEventListener(AppEvents.SESSION_MOVED_TO_WINDOW, handleSessionMovedToWindow);
+    };
+  }, [activeSessions, location.search, navigate]);
+
   const { addExtension } = useConfig();
 
   useEffect(() => {

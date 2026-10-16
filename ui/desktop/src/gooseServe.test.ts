@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildLocalServeUrls, findGooseBinaryPath, startGooseServe } from './gooseServe';
+import {
+  buildLocalServeUrls,
+  findGooseBinaryPath,
+  resolveLocalResumeWorkingDir,
+  startGooseServe,
+} from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
 
 const binaryName = process.platform === 'win32' ? 'goose.exe' : 'goose';
@@ -39,6 +44,43 @@ async function waitForFileLines(filePath: string): Promise<string[]> {
   }
   throw new Error(`Timed out waiting for ${filePath}`);
 }
+
+describe('resolveLocalResumeWorkingDir', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    while (tempDirs.length > 0) {
+      const tempDir = tempDirs.pop();
+      if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps an existing project directory for a local resume', async () => {
+    const homeDir = makeTempDir();
+    const projectDir = path.join(homeDir, 'project with spaces');
+    fs.mkdirSync(projectDir);
+    await expect(resolveLocalResumeWorkingDir(projectDir, homeDir)).resolves.toBe(projectDir);
+  });
+
+  it('bootstraps from home only after the project directory is deleted', async () => {
+    const homeDir = makeTempDir();
+    const projectDir = path.join(homeDir, 'deleted project');
+    fs.mkdirSync(projectDir);
+    fs.rmdirSync(projectDir);
+    await expect(resolveLocalResumeWorkingDir(projectDir, homeDir)).resolves.toBe(homeDir);
+  });
+
+  it('does not hide filesystem permission failures', async () => {
+    const failure = Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+    vi.spyOn(fs.promises, 'stat').mockRejectedValueOnce(failure);
+    await expect(resolveLocalResumeWorkingDir('/project', '/home')).rejects.toBe(failure);
+  });
+
+  it('does not silently replace an existing file path', async () => {
+    const homeDir = makeTempDir();
+    const filePath = makeFile(path.join(homeDir, 'file'));
+    await expect(resolveLocalResumeWorkingDir(filePath, homeDir)).resolves.toBe(filePath);
+  });
+});
 
 describe('findGooseBinaryPath', () => {
   afterEach(() => {

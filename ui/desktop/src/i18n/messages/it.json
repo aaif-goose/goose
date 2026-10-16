@@ -4738,5 +4738,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Ciclo agente"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "La directory di lavoro non esiste più: {path}. Scegli una nuova directory per aprire questa sessione."
   }
 }

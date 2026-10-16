@@ -14,6 +14,7 @@ import type { ElicitationStatus } from './adapter/elicitations';
 import { cloneMessage } from './adapter/shared';
 import type { AcpElicitationRequest } from './elicitationRequests';
 import type { AcpPermissionRequest } from './permissionRequestTypes';
+import type { AcpSessionLoadError } from './errors';
 
 export interface AcpChatSessionSnapshot {
   session: Session | undefined;
@@ -22,7 +23,7 @@ export interface AcpChatSessionSnapshot {
   notifications: NotificationEvent[];
   progressMessage: string | undefined;
   chatState: ChatState;
-  sessionLoadError: string | undefined;
+  sessionLoadError: AcpSessionLoadError | undefined;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
   pendingCancelPromptAttemptId: string | null;
@@ -82,10 +83,10 @@ export interface AcpChatSessionActions {
   setSessionMetadata(sessionId: string, session: Session | undefined): AcpChatSessionSnapshot;
   startSessionLoad(sessionId: string): AcpChatSessionSnapshot;
   finishSessionLoad(sessionId: string, session: Session): AcpChatSessionSnapshot;
-  failSessionLoad(sessionId: string, sessionLoadError: string): AcpChatSessionSnapshot;
+  failSessionLoad(sessionId: string, sessionLoadError: AcpSessionLoadError): AcpChatSessionSnapshot;
   setSessionLoadError(
     sessionId: string,
-    sessionLoadError: string | undefined
+    sessionLoadError: AcpSessionLoadError | undefined
   ): AcpChatSessionSnapshot;
 
   setMessages(sessionId: string, messages: Message[]): AcpChatSessionSnapshot;

@@ -4,7 +4,7 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { screen, render, waitFor } from '@testing-library/react';
+import { act, screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner, PairRouteWrapper, resolveSessionInitialMessage } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
@@ -12,6 +12,8 @@ import { FeaturesProvider } from './contexts/FeaturesContext';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { createSession } from './sessions';
 import { RecipeParameterScopesUnsupportedError } from './acp/errors';
+import { AppEvents } from './constants/events';
+import { acpReadDefaults } from './acp/providers';
 
 const mockToastError = vi.hoisted(() => vi.fn());
 
@@ -84,6 +86,18 @@ vi.mock('./components/ConfigContext', () => ({
   ConfigProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+vi.mock('./components/Layout/AppLayout', () => ({
+  AppLayout: ({ activeSessions }: { activeSessions: Array<{ sessionId: string }> }) => (
+    <div>
+      {activeSessions.map(({ sessionId }) => (
+        <div key={sessionId} data-testid={sessionId}>
+          {sessionId}
+        </div>
+      ))}
+    </div>
+  ),
+}));
+
 // Mock other components to simplify testing
 vi.mock('./components/ErrorBoundary', () => ({
   ErrorUI: ({ error }: { error: Error }) => <div>Error: {error.message}</div>,
@@ -151,7 +165,7 @@ vi.mock('react-router', () => ({
   Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Route: ({ element }: { element: React.ReactNode }) => element,
   useNavigate: () => mockNavigate,
-  useLocation: () => ({ state: null, pathname: '/' }),
+  useLocation: () => ({ state: null, pathname: '/', search: mockSearchParams.toString() }),
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
   Outlet: () => null,
 }));
@@ -169,6 +183,7 @@ const mockElectron = {
   getAllowedExtensions: vi.fn().mockResolvedValue([]),
   platform: 'darwin',
   createChatWindow: vi.fn(),
+  closeWindow: vi.fn(),
   getSetting: vi.fn().mockResolvedValue(null),
   setSetting: vi.fn().mockResolvedValue(undefined),
 };
@@ -333,6 +348,42 @@ describe('App Component - Brand New State', () => {
     newChatHandler?.({} as any);
 
     expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('keeps unrelated mounted sessions when a recovered session moves to another window', async () => {
+    mockSearchParams.set('resumeSessionId', 'recovered');
+    vi.mocked(acpReadDefaults).mockResolvedValueOnce({ providerId: 'openai', modelId: 'test' });
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, { detail: { sessionId: 'background' } })
+      );
+    });
+    const background = await screen.findByTestId('background');
+    mockNavigate.mockClear();
+    mockNavigate.mockImplementationOnce(() => {
+      mockSearchParams.delete('resumeSessionId');
+    });
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_MOVED_TO_WINDOW, { detail: { sessionId: 'recovered' } })
+      );
+    });
+    expect(mockElectron.closeWindow).not.toHaveBeenCalled();
+    expect(screen.getByTestId('background')).toBe(background);
+    expect(screen.queryByTestId('recovered')).not.toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith('/sessions', { replace: true });
+  });
+
+  it('closes the old window after handoff when it contains only the recovered session', () => {
+    mockSearchParams.set('resumeSessionId', 'recovered');
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_MOVED_TO_WINDOW, { detail: { sessionId: 'recovered' } })
+      );
+    });
+    expect(mockElectron.closeWindow).toHaveBeenCalledOnce();
   });
 
   it('should reconnect ACP when the main process emits system-resume', async () => {

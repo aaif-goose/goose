@@ -105,6 +105,7 @@ type ElectronAPI = {
   hideWindow: () => void;
   directoryChooser: () => Promise<Electron.OpenDialogReturnValue>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
+  replaceChatWindow: (options: { dir: string; resumeSessionId: string }) => Promise<void>;
   logInfo: (txt: string) => void;
   showNotification: (data: NotificationData) => void;
   showMessageBox: (options: MessageBoxOptions) => Promise<MessageBoxResponse>;
@@ -206,6 +207,7 @@ const electronAPI: ElectronAPI = {
   directoryChooser: () => ipcRenderer.invoke('directory-chooser'),
   createChatWindow: (options?: CreateChatWindowOptions) =>
     ipcRenderer.send('create-chat-window', options || {}),
+  replaceChatWindow: (options) => ipcRenderer.invoke('replace-chat-window', options),
   logInfo: (txt: string) => ipcRenderer.send('logInfo', txt),
   showNotification: (data: NotificationData) => ipcRenderer.send('notify', data),
   showMessageBox: (options: MessageBoxOptions) => ipcRenderer.invoke('show-message-box', options),

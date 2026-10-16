@@ -29,8 +29,9 @@ import 'dotenv/config';
 import { connectRemoteBackend } from './remoteBackends';
 import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
 import { configureProxy } from './proxy';
-import { startGooseServe } from './gooseServe';
+import { resolveLocalResumeWorkingDir, startGooseServe } from './gooseServe';
 import { getLoginShellPath } from './loginShellPath';
+import { ChatWindowReplacer, handleChatWindowStartupFailure } from './chatWindowReplacement';
 import { GooseServeLeaseRegistry, type GooseServeLease } from './gooseServeLeaseRegistry';
 import { normalizeAcpHttpBaseUrl } from './acp/url';
 import { expandTilde, sanitizeGoosePathRoot } from './utils/pathUtils';
@@ -485,9 +486,7 @@ if (process.platform !== 'darwin') {
 
         if (parsedUrl.hostname === 'resume') {
           app.whenReady().then(async () => {
-            const recentDirs = loadRecentDirs();
-            const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-            await createResumeChatWindow(parsedUrl, openDir || undefined);
+            await createResumeChatWindow(parsedUrl);
           });
           return;
         }
@@ -569,14 +568,14 @@ function getResumeSessionId(parsedUrl: URL): string | null {
   }
 }
 
-async function createResumeChatWindow(parsedUrl: URL, dir?: string): Promise<boolean> {
+async function createResumeChatWindow(parsedUrl: URL): Promise<boolean> {
   const resumeSessionId = getResumeSessionId(parsedUrl);
   if (!resumeSessionId) {
     log.warn('[Main] Ignoring goose://resume URL without a session id');
     return false;
   }
 
-  await createChat(app, { dir, resumeSessionId });
+  await createChat(app, { resumeSessionId });
   return true;
 }
 
@@ -595,7 +594,7 @@ async function handleProtocolUrl(url: string, parsedUrl: URL) {
     });
     return;
   } else if (parsedUrl.hostname === 'resume') {
-    await createResumeChatWindow(parsedUrl, openDir || undefined);
+    await createResumeChatWindow(parsedUrl);
     return;
   } else if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
     const existingWindows = BrowserWindow.getAllWindows();
@@ -678,7 +677,7 @@ app.on('open-url', async (_event, url) => {
 
     if (parsedUrl.hostname === 'resume') {
       log.info('[Main] Detected resume URL, creating session resume window');
-      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl, openDir || undefined);
+      openUrlHandledLaunch = await createResumeChatWindow(parsedUrl);
       return;
     }
 
@@ -947,6 +946,7 @@ let appConfig = {
 };
 
 const windowMap = new Map<number, BrowserWindow>();
+const chatWindowReplacer = new ChatWindowReplacer();
 const appWindows = new Map<string, BrowserWindow>();
 const desktopFileAccess = new DesktopFileAccess();
 
@@ -1158,6 +1158,10 @@ const createChat = async (
 
     let gooseServeResult: Awaited<ReturnType<typeof startGooseServe>>;
     try {
+      if (resumeSessionId) {
+        const resumeDir = await resolveLocalResumeWorkingDir(workingDir, os.homedir());
+        workingDir = resumeDir;
+      }
       gooseServeResult = await startGooseServe({
         serverSecret,
         dir: workingDir,
@@ -1202,7 +1206,7 @@ const createChat = async (
         ].join('\n\n'),
         buttons: ['OK'],
       });
-      app.quit();
+      handleChatWindowStartupFailure(app, BrowserWindow.getAllWindows());
       return;
     }
 
@@ -2791,11 +2795,26 @@ async function appMain() {
     }
   });
 
+  ipcMain.handle(
+    'replace-chat-window',
+    async (event, options: { dir: string; resumeSessionId: string }) => {
+      const previousWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!previousWindow || previousWindow.isDestroyed()) return;
+      await chatWindowReplacer.replace(previousWindow, options.resumeSessionId, () =>
+        createChat(app, {
+          dir: options.dir,
+          resumeSessionId: options.resumeSessionId,
+          viewType: 'pair',
+        })
+      );
+    }
+  );
+
   ipcMain.on('create-chat-window', (event, options = {}) => {
     const { query, dir, resumeSessionId, viewType, recipeId } = options;
 
     let resolvedDir = dir;
-    if (!resolvedDir?.trim()) {
+    if (!resolvedDir?.trim() && !resumeSessionId) {
       const recentDirs = loadRecentDirs();
       resolvedDir = recentDirs.length > 0 ? recentDirs[0] : undefined;
     }
@@ -2820,13 +2839,13 @@ async function appMain() {
       }
     }
 
-    createChat(app, {
+    void createChat(app, {
       initialMessage: query,
       dir: resolvedDir,
       resumeSessionId,
       viewType,
       recipeId,
-    });
+    }).catch((error) => log.error('Failed to create chat window', error));
   });
 
   ipcMain.on('close-window', (event) => {

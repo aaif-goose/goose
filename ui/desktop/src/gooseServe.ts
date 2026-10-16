@@ -19,6 +19,21 @@ export const defaultLogger: Logger = {
   error: (...args) => console.error('[goose-serve]', ...args),
 };
 
+export const resolveLocalResumeWorkingDir = async (
+  requestedDir: string,
+  homeDir: string
+): Promise<string> => {
+  try {
+    await fs.promises.stat(requestedDir);
+    return requestedDir;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return homeDir;
+    }
+    throw error;
+  }
+};
+
 export interface FindGooseBinaryOptions {
   isPackaged?: boolean;
   resourcesPath?: string;

@@ -18,7 +18,9 @@ import {
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
 import {
   formatAcpError,
+  isAcpWorkingDirectoryValidationError,
   parseAcpCreditsExhaustedError,
+  parseAcpWorkingDirectoryMissingError,
   type AcpCreditsExhaustedError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
@@ -35,6 +37,7 @@ import {
 
 export interface AcpLoadSessionOptions {
   onSessionLoaded?: () => void;
+  workingDir?: string;
 }
 
 export interface AcpSnapshotOptions {
@@ -131,7 +134,12 @@ async function createSession(
 
 async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {}): Promise<void> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
-  if (cached?.session && !cached.sessionLoadError) {
+  if (
+    !pendingSessionLoads.has(sessionId) &&
+    cached?.session &&
+    !cached.sessionLoadError &&
+    options.workingDir === undefined
+  ) {
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
@@ -146,26 +154,79 @@ async function restoreSession(sessionId: string): Promise<void> {
   await loadSessionFromServer(sessionId);
 }
 
+const pendingSessionLoads = new Map<string, Promise<boolean>>();
+
 async function loadSessionFromServer(
   sessionId: string,
   options: AcpLoadSessionOptions = {}
 ): Promise<void> {
+  let pending = pendingSessionLoads.get(sessionId);
+  if (!pending) {
+    pending = performSessionLoad(sessionId, options.workingDir).finally(() => {
+      pendingSessionLoads.delete(sessionId);
+    });
+    pendingSessionLoads.set(sessionId, pending);
+  }
+  if (await pending) options.onSessionLoaded?.();
+}
+
+async function performSessionLoad(sessionId: string, workingDir?: string): Promise<boolean> {
+  const previousLoadError = acpChatSessionStore.getSnapshot(sessionId)?.sessionLoadError;
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
 
+  let deferredDirectoryRecovery = false;
   try {
-    const { sessionInfo, meta } = await acpLoadSession(sessionId);
+    const localBackend = window.appConfig?.get('GOOSE_EXTERNAL_BACKEND') !== true;
+    const recoveringDirectory =
+      workingDir !== undefined ||
+      (previousLoadError !== undefined && typeof previousLoadError !== 'string');
+    deferredDirectoryRecovery = localBackend && recoveringDirectory;
+    const deferActivation = localBackend;
+    let result = deferActivation
+      ? await acpLoadSession(sessionId, workingDir, true)
+      : await acpLoadSession(sessionId, workingDir);
+    const confirmedWorkingDir = result.meta.workingDir ?? result.sessionInfo.cwd;
 
+    if (
+      deferActivation &&
+      (recoveringDirectory || confirmedWorkingDir !== window.appConfig?.get('GOOSE_WORKING_DIR'))
+    ) {
+      await window.electron.replaceChatWindow({
+        dir: confirmedWorkingDir,
+        resumeSessionId: sessionId,
+      });
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_MOVED_TO_WINDOW, { detail: { sessionId } })
+      );
+      return false;
+    }
+
+    if (deferActivation) {
+      result = await acpLoadSession(sessionId);
+    }
+    const { sessionInfo, meta } = result;
     showExtensionLoadResults(meta.extensionResults);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
     acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
-    options.onSessionLoaded?.();
+    return true;
   } catch (error) {
     console.error('Failed to load ACP session:', error);
-    acpChatSessionActions.failSessionLoad(sessionId, formatAcpError(error));
+    const missingDirectory = parseAcpWorkingDirectoryMissingError(error);
+    acpChatSessionActions.failSessionLoad(
+      sessionId,
+      missingDirectory ??
+        ((deferredDirectoryRecovery ||
+          (workingDir !== undefined && isAcpWorkingDirectoryValidationError(error))) &&
+        previousLoadError &&
+        typeof previousLoadError !== 'string'
+          ? { ...previousLoadError, recoveryError: formatAcpError(error) }
+          : formatAcpError(error))
+    );
+    return false;
   }
 }
 

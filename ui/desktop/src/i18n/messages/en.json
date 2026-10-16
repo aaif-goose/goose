@@ -4738,5 +4738,8 @@
   },
   "userMessage.removeImageFromEdit": {
     "defaultMessage": "Remove image from message"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "The working directory no longer exists: {path}. Choose a replacement directory to open this session."
   }
 }

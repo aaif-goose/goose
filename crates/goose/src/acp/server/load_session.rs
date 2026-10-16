@@ -397,7 +397,44 @@ impl GooseAcpAgent {
             })?;
 
         let cwd = effective_session_cwd(self.session_cwd.as_deref(), &args.cwd);
+        if self.session_cwd.is_none()
+            && cwd == session.working_dir
+            && cwd.is_absolute()
+            && std::fs::metadata(&cwd)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                    "reason": "working_directory_missing",
+                    "path": cwd,
+                })),
+            );
+        }
         validate_absolute_cwd(&cwd)?;
+
+        // A temporary desktop backend must not resume tools before the window handoff.
+        if args
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("deferActivation"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            if cwd != session.working_dir {
+                self.session_manager
+                    .update(&session.id)
+                    .working_dir(cwd.clone())
+                    .apply()
+                    .await
+                    .internal_err_ctx("Failed to update session")?;
+            }
+            return Ok(
+                LoadSessionResponse::new().meta(serde_json::Map::from_iter([(
+                    "workingDir".to_string(),
+                    serde_json::json!(cwd),
+                )])),
+            );
+        }
 
         session = self
             .prepare_session_for_activation(session, cwd, args.mcp_servers, true)

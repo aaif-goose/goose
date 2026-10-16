@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RequestError } from '@agentclientprotocol/sdk';
 import type { Message } from '../../types/message';
 import { ChatState } from '../../types/chatState';
+import { AppEvents } from '../../constants/events';
 import type { Session } from '../../types/session';
 import { acpChatSessionController } from '../chatSessionController';
 import {
@@ -136,11 +138,19 @@ function pendingToolPermissionMessage(): Message & { id: string } {
 }
 
 describe('acpChatSessionController.loadSession', () => {
+  const originalAppConfig = window.appConfig;
+  afterEach(() => {
+    window.appConfig = originalAppConfig;
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
     vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
     vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/tmp' : false),
+      getAll: () => ({}),
+    };
   });
 
   it('starts a fresh session load before ACP replays notifications', async () => {
@@ -149,7 +159,8 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(1, SESSION_ID, undefined, true);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(2, SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
@@ -162,7 +173,8 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).not.toHaveBeenCalled();
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(1, SESSION_ID, undefined, true);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(2, SESSION_ID);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
@@ -180,7 +192,8 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.loadSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(1, SESSION_ID, undefined, true);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(2, SESSION_ID);
   });
 
   it('restores a cached session from the server', async () => {
@@ -193,7 +206,317 @@ describe('acpChatSessionController.loadSession', () => {
     await acpChatSessionController.restoreSession(SESSION_ID);
 
     expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledWith(SESSION_ID);
-    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(1, SESSION_ID, undefined, true);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(2, SESSION_ID);
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
+      SESSION_ID,
+      loadedSession()
+    );
+  });
+});
+
+describe('acpChatSessionController working directory recovery', () => {
+  const originalAppConfig = window.appConfig;
+  const originalElectron = window.electron;
+
+  afterEach(() => {
+    window.appConfig = originalAppConfig;
+    window.electron = originalElectron;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.electron = {
+      ...originalElectron,
+      replaceChatWindow: vi.fn().mockResolvedValue(undefined),
+    };
+    window.appConfig = { get: () => undefined, getAll: () => ({}) };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+  });
+
+  it('preserves the recoverable missing path for the UI', async () => {
+    vi.mocked(acpLoadSession).mockRejectedValue({
+      message: 'Invalid params',
+      data: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(SESSION_ID, {
+      reason: 'working_directory_missing',
+      path: '/deleted',
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it.each(['/home', '/tmp'])(
+    'replaces local recovery windows without activating in the old backend: %s',
+    async (initialDir) => {
+      window.appConfig = {
+        get: (key) => (key === 'GOOSE_WORKING_DIR' ? initialDir : false),
+        getAll: () => ({}),
+      };
+      const replaceChatWindow = vi.fn();
+      window.electron.replaceChatWindow = replaceChatWindow;
+      vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+      vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+
+      await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+
+      expect(replaceChatWindow).toHaveBeenCalledWith({
+        dir: '/tmp',
+        resumeSessionId: SESSION_ID,
+      });
+      expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, '/tmp', true);
+      expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+    }
+  );
+
+  it('verifies an existing stale resume directory before activating the saved session', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/old-but-existing' : false),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    const loaded = vi.fn();
+    const moved = vi.fn();
+    window.addEventListener(AppEvents.SESSION_MOVED_TO_WINDOW, moved);
+    try {
+      await acpChatSessionController.loadSession(SESSION_ID, { onSessionLoaded: loaded });
+      expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, undefined, true);
+      expect(window.electron.replaceChatWindow).toHaveBeenCalledWith({
+        dir: '/tmp',
+        resumeSessionId: SESSION_ID,
+      });
+      expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+      expect(loaded).not.toHaveBeenCalled();
+      expect(moved).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(AppEvents.SESSION_MOVED_TO_WINDOW, moved);
+    }
+  });
+
+  it('rebinds an initially valid local window after its directory disappears', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/deleted' : false),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+
+    expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, '/tmp', true);
+    expect(window.electron.replaceChatWindow).toHaveBeenCalledWith({
+      dir: '/tmp',
+      resumeSessionId: SESSION_ID,
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('reopens even when the user recreates the deleted directory at the same path', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/tmp' : false),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/tmp' },
+    });
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+    expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, '/tmp', true);
+    expect(window.electron.replaceChatWindow).toHaveBeenCalledWith({
+      dir: '/tmp',
+      resumeSessionId: SESSION_ID,
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('keeps recovery available when a replacement window cannot open', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/deleted' : false),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    vi.mocked(window.electron.replaceChatWindow).mockRejectedValue(new Error('Window failed'));
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+
+    expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, '/tmp', true);
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(SESSION_ID, {
+      reason: 'working_directory_missing',
+      path: '/deleted',
+      recoveryError: 'Window failed',
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('retains recovery after a failed response and rebinds on reconnect', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/deleted' : false),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+    vi.mocked(acpLoadSession).mockRejectedValueOnce(new Error('Connection lost after saving cwd'));
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+    const recovery = vi.mocked(acpChatSessionActions.failSessionLoad).mock.calls[0][1];
+    expect(recovery).toEqual({
+      reason: 'working_directory_missing',
+      path: '/deleted',
+      recoveryError: 'Connection lost after saving cwd',
+    });
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: recovery,
+    });
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    await acpChatSessionController.restoreSession(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenLastCalledWith(SESSION_ID, undefined, true);
+    expect(window.electron.replaceChatWindow).toHaveBeenCalledWith({
+      dir: '/tmp',
+      resumeSessionId: SESSION_ID,
+    });
+    expect(acpChatSessionActions.finishSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('leaves remote recovery on the bound backend', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_EXTERNAL_BACKEND' ? true : '/home'),
+      getAll: () => ({}),
+    };
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/tmp' });
+
+    expect(acpLoadSession).toHaveBeenCalledExactlyOnceWith(SESSION_ID, '/tmp');
+    expect(window.electron.replaceChatWindow).not.toHaveBeenCalled();
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalled();
+  });
+
+  it('shares the complete preparation and activation attempt across concurrent loads', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/tmp' : false),
+      getAll: () => ({}),
+    };
+    let finishActivation!: (result: ReturnType<typeof mockLoadResult>) => void;
+    vi.mocked(acpLoadSession)
+      .mockResolvedValueOnce(mockLoadResult())
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishActivation = resolve;
+        })
+      );
+    vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+    const firstLoaded = vi.fn();
+    const secondLoaded = vi.fn();
+    const first = acpChatSessionController.loadSession(SESSION_ID, {
+      onSessionLoaded: firstLoaded,
+    });
+    expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledOnce();
+    const second = acpChatSessionController.loadSession(SESSION_ID, {
+      onSessionLoaded: secondLoaded,
+    });
+    await vi.waitFor(() => expect(acpLoadSession).toHaveBeenCalledTimes(2));
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+      sessionLoadError: undefined,
+    });
+    const thirdLoaded = vi.fn();
+    const third = acpChatSessionController.loadSession(SESSION_ID, {
+      onSessionLoaded: thirdLoaded,
+    });
+    const restore = acpChatSessionController.restoreSession(SESSION_ID);
+    expect(thirdLoaded).not.toHaveBeenCalled();
+    finishActivation(mockLoadResult());
+    await Promise.all([first, second, third, restore]);
+
+    expect(acpLoadSession).toHaveBeenNthCalledWith(1, SESSION_ID, undefined, true);
+    expect(acpLoadSession).toHaveBeenNthCalledWith(2, SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledTimes(2);
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledTimes(1);
+    expect(firstLoaded).toHaveBeenCalledOnce();
+    expect(secondLoaded).toHaveBeenCalledOnce();
+    expect(thirdLoaded).toHaveBeenCalledOnce();
+  });
+
+  it('does not replace a bootstrap window when the chosen directory is rejected', async () => {
+    window.appConfig = {
+      get: (key) => (key === 'GOOSE_WORKING_DIR' ? '/home' : false),
+      getAll: () => ({}),
+    };
+    const replaceChatWindow = vi.fn();
+    window.electron.replaceChatWindow = replaceChatWindow;
+    vi.mocked(acpLoadSession).mockRejectedValue(
+      new RequestError(-32602, 'Invalid params', 'invalid directory path')
+    );
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/invalid' });
+
+    expect(replaceChatWindow).not.toHaveBeenCalled();
+  });
+
+  it.each(['invalid directory path', 'cwd must be an absolute path'])(
+    'keeps recovery available when a replacement fails validation: %s',
+    async (validationError) => {
+      vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+        ...snapshotWithActivePrompt(null),
+        sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+      });
+      vi.mocked(acpLoadSession).mockRejectedValue(
+        new RequestError(-32602, 'Invalid params', validationError)
+      );
+
+      await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/invalid' });
+
+      expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID, '/invalid', true);
+      expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledWith(SESSION_ID, {
+        reason: 'working_directory_missing',
+        path: '/deleted',
+        recoveryError: expect.any(String),
+      });
+    }
+  );
+
+  it('returns to ordinary retry when activation fails after a replacement is saved', async () => {
+    window.appConfig = { get: (key) => key === 'GOOSE_EXTERNAL_BACKEND', getAll: () => ({}) };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: { reason: 'working_directory_missing', path: '/deleted' },
+    });
+    vi.mocked(acpLoadSession).mockRejectedValue(
+      new RequestError(-32603, 'Failed to prepare session provider')
+    );
+
+    await acpChatSessionController.loadSession(SESSION_ID, { workingDir: '/replacement' });
+
+    const loadError = vi.mocked(acpChatSessionActions.failSessionLoad).mock.calls[0][1];
+    expect(typeof loadError).toBe('string');
+    expect(loadError).toContain('Failed to prepare session provider');
+
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      sessionLoadError: loadError,
+    });
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpLoadSession).toHaveBeenLastCalledWith(SESSION_ID, undefined);
     expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledWith(
       SESSION_ID,
       loadedSession()
@@ -266,7 +589,6 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(acpChatSessionActions.startPromptAttempt).not.toHaveBeenCalled();
     expect(acpPromptSession).not.toHaveBeenCalled();
   });
-
 });
 
 describe('acpChatSessionController.updateMessage', () => {

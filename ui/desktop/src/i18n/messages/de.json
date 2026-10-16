@@ -4738,5 +4738,8 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Agentenschleife"
+  },
+  "workingDirectoryRecovery.missingDirectory": {
+    "defaultMessage": "Das Arbeitsverzeichnis existiert nicht mehr: {path}. Wähle ein neues Verzeichnis, um diese Sitzung zu öffnen."
   }
 }
