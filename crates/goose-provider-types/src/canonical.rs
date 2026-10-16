@@ -162,8 +162,12 @@ fn dotted_version_to_dash(name: &str) -> String {
 /// estimate of the real cost even though it's not guaranteed to match exactly, since Azure
 /// billing can vary by deployment region, SKU, offer, and contract/discounts. Callers should
 /// treat this as `CostSource::Estimated` rather than `CostSource::ProviderReported`.
+///
+/// amazee.ai publishes its own gateway rates, which differ from the upstream vendor's and,
+/// for region-mapped aliases like `chat`, by region. Its bundled definition declares the
+/// region-invariant rates; anything else is better left unpriced than mispriced.
 fn should_clear_catalog_pricing(provider: &str) -> bool {
-    matches!(provider, "ollama" | "local")
+    matches!(provider, "ollama" | "local" | "amazeeai")
 }
 
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
