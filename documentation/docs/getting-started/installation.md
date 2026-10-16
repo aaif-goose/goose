@@ -132,19 +132,44 @@ import { PanelLeft } from 'lucide-react';
 
     <Tabs groupId="interface">
       <TabItem value="ui" label="goose Desktop" default>
-        Install goose Desktop directly from the browser.
+        Install goose Desktop with the installer, or use the portable ZIP.
 
         <h3 style={{ marginTop: '1rem' }}>Install via Download</h3>
         <WindowsDesktopInstallButtons/>
 
         <div style={{ marginTop: '1rem' }}>
+          **Installer (recommended):**
+          1. Run the downloaded `Goose-win32-x64-setup.exe` and follow the setup wizard. goose is installed for the current user only, so no administrator rights are needed.
+          2. Launch goose Desktop from the Start Menu or the desktop shortcut.
+
+          To remove goose later, uninstall it from `Installed apps` in Windows Settings. Your settings and sessions are kept.
+
+          **Portable ZIP:**
           1. Unzip the downloaded zip file.
-          2. Run the executable file to launch the goose Desktop application.
+          2. Run `Goose.exe` in the unzipped folder to launch goose Desktop.
+
+          Already using the portable ZIP? The [updating guide](/docs/guides/updating-goose) covers switching to the installer.
 
           :::tip Updating goose
           It's best to periodically [update goose](/docs/guides/updating-goose).
           :::
         </div>
+
+        <details>
+          <summary>Unattended install</summary>
+
+          For scripted and fleet deployments, run the installer with the `/S` switch. It installs goose for the current user under `%LOCALAPPDATA%\Programs\Goose` with no prompts, creates the Start Menu and desktop shortcuts, and does not launch goose.
+
+          ```powershell
+          Start-Process -FilePath .\Goose-win32-x64-setup.exe -ArgumentList '/S' -Wait
+          ```
+
+          To remove it the same way:
+
+          ```powershell
+          Start-Process -FilePath "$env:LOCALAPPDATA\Programs\Goose\Uninstall Goose.exe" -ArgumentList '/currentuser', '/S' -Wait
+          ```
+        </details>
       </TabItem>
       <TabItem value="cli" label="goose CLI">
         To install goose natively on Windows, you need one of the following environments:

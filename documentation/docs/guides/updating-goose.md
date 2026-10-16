@@ -110,14 +110,30 @@ The goose CLI and desktop apps are under active and continuous development. To g
   <TabItem value="windows" label="Windows">
     <Tabs groupId="interface">
       <TabItem value="ui" label="goose Desktop" default>
-        Update goose to the latest stable version.
+        Update goose to the latest stable version. How an update is applied depends on how goose Desktop was installed:
+
+        - **Installer:** goose downloads the new installer, verifies its signature and runs it with no setup wizard when you click `Install & Restart`.
+        - **Portable ZIP:** goose downloads the new ZIP and replaces the unzipped folder with it. If the folder can't be replaced automatically, you're prompted to install the downloaded version manually.
+
+        Not sure which you have? The installer version is listed under `Installed apps` in Windows Settings; the portable ZIP is not.
 
         <DesktopAutoUpdateSteps />
         
         **To manually download and install updates:**
         1. <WindowsDesktopInstallButtons/>
-        2. Unzip the downloaded zip file
-        3. Run the executable file to launch the goose Desktop app
+        2. Quit goose Desktop
+        3. Run the downloaded installer, or unzip the downloaded zip file in place of your existing folder
+        4. Launch goose Desktop
+
+        <details>
+          <summary>Switching from the portable ZIP to the installer</summary>
+
+          Your settings and sessions are stored in `%APPDATA%\Block\goose`, outside the unzipped folder, so they carry over to the installed copy.
+
+          1. Quit goose Desktop.
+          2. Download and run the installer, then launch goose Desktop from the Start Menu.
+          3. Delete the old unzipped folder and any shortcuts that point to it.
+        </details>
       </TabItem>
       <TabItem value="cli" label="goose CLI">
         You can update goose by running:
