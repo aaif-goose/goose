@@ -661,6 +661,35 @@ mod tests {
         assert!(conversation.messages()[2].content.is_empty());
     }
 
+    #[test]
+    fn acp_replay_sends_the_model_that_produced_each_message() {
+        let conversation = Conversation::new_unvalidated([Message::assistant()
+            .with_text("answer")
+            .with_id("msg_replayed")
+            .with_inference(InferenceMetadata {
+                provider: "anthropic".to_string(),
+                requested_model: "claude-sonnet-4-5".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            })]);
+
+        let messages = messages_for_acp_replay(&conversation);
+        let chunk =
+            content_chunk_for_message(&messages[0], ContentBlock::Text(TextContent::new("answer")));
+
+        assert_eq!(
+            chunk
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("goose"))
+                .and_then(|goose| goose.get("inference")),
+            Some(&serde_json::json!({
+                "provider": "anthropic",
+                "requestedModel": "claude-sonnet-4-5",
+            })),
+        );
+    }
+
     fn persisted_enriched_tool_request() -> ToolRequest {
         ToolRequest {
             id: "req_first".to_string(),

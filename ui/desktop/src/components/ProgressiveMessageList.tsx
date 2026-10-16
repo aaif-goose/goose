@@ -19,7 +19,12 @@ import type {
 } from '../types/message';
 import LoadingGoose from './LoadingGoose';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
-import { deriveMessageRowContexts, type MessageRowContext } from './messageRowContext';
+import {
+  deriveMessageRowContexts,
+  type InferenceModel,
+  inferenceModel,
+  type MessageRowContext,
+} from './messageRowContext';
 
 const i18n = defineMessages({
   loadingMessages: {
@@ -34,15 +39,14 @@ const i18n = defineMessages({
     id: 'progressiveMessageList.modelChanged',
     defaultMessage: 'Model changed: {previousModel} → {currentModel}',
   },
+  requestedModel: {
+    id: 'progressiveMessageList.requestedModel',
+    defaultMessage: '{model} (requested)',
+  },
 });
 
 const emptyToolCallNotifications = new Map<string, NotificationEvent[]>();
 const emptyAppend = () => {};
-
-function getResolvedModel(message: Message): string | null {
-  if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
-  return message.metadata.inference?.resolvedModel ?? null;
-}
 
 function getSystemNotification(message: Message): SystemNotificationContent | undefined {
   return getCreditsExhaustedNotification(message) ?? getInlineSystemNotification(message);
@@ -239,6 +243,10 @@ export default function ProgressiveMessageList({
   }, [isLoading, messages.length]);
 
   const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
+  const modelLabel = (model: InferenceModel) =>
+    model.confirmed
+      ? getModelDisplayName(model.id)
+      : intl.formatMessage(i18n.requestedModel, { model: getModelDisplayName(model.id) });
   const messagesToRender = messages.slice(0, renderedCount);
   const messageRows = messagesToRender
     .map((message, index) => {
@@ -251,14 +259,13 @@ export default function ProgressiveMessageList({
         ? `notification-${messageIdentifier}`
         : messageIdentifier;
       const rowContext = rowContexts[index];
-      const currentResolvedModel = getResolvedModel(message);
+      const currentModel = inferenceModel(message);
+      const previousModel = rowContext.previousModel;
       const modelChangeMessage =
-        currentResolvedModel &&
-        rowContext.previousResolvedModel &&
-        currentResolvedModel !== rowContext.previousResolvedModel
+        currentModel && previousModel && currentModel.id !== previousModel.id
           ? intl.formatMessage(i18n.modelChanged, {
-              previousModel: getModelDisplayName(rowContext.previousResolvedModel),
-              currentModel: getModelDisplayName(currentResolvedModel),
+              previousModel: modelLabel(previousModel),
+              currentModel: modelLabel(currentModel),
             })
           : null;
       const toolNotifications = rowContext.toolStates.map((toolState) =>

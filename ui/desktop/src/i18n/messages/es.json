@@ -2639,6 +2639,9 @@
   "progressiveMessageList.modelChanged": {
     "defaultMessage": "Modelo cambiado: {previousModel} → {currentModel}"
   },
+  "progressiveMessageList.requestedModel": {
+    "defaultMessage": "{model} (solicitado)"
+  },
   "progressiveMessageList.searchHint": {
     "defaultMessage": "Pulsa Cmd/Ctrl+F para cargar todos los mensajes de inmediato y buscar"
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message, MessageContent } from '../types/message';
-import { deriveMessageRowContexts } from './messageRowContext';
+import { deriveMessageRowContexts, inferenceModel } from './messageRowContext';
 
 const visibleMetadata: Message['metadata'] = { agentVisible: true, userVisible: true };
 
@@ -27,6 +27,14 @@ function message(
           }
         : {}),
     },
+  };
+}
+
+function messageWithRequestedModel(id: string, requestedModel: string): Message {
+  const base = message(id, 'assistant', [{ type: 'text', text: id }]);
+  return {
+    ...base,
+    metadata: { ...base.metadata, inference: { provider: 'test', requestedModel } },
   };
 }
 
@@ -131,8 +139,21 @@ describe('deriveMessageRowContexts', () => {
 
     const contexts = deriveMessageRowContexts(messages);
 
-    expect(contexts[0].previousResolvedModel).toBeNull();
-    expect(contexts[1].previousResolvedModel).toBeNull();
-    expect(contexts[2].previousResolvedModel).toBe('model-a');
+    expect(contexts[0].previousModel).toBeNull();
+    expect(contexts[1].previousModel).toBeNull();
+    expect(contexts[2].previousModel).toEqual({ id: 'model-a', confirmed: true });
+  });
+
+  it('falls back to the requested model when the provider does not report a resolved one', () => {
+    const messages = [
+      messageWithRequestedModel('model-a', 'model-a'),
+      message('user', 'user', [{ type: 'text', text: 'Switch model' }]),
+      messageWithRequestedModel('model-b', 'model-b'),
+    ];
+
+    const contexts = deriveMessageRowContexts(messages);
+
+    expect(contexts[2].previousModel).toEqual({ id: 'model-a', confirmed: false });
+    expect(inferenceModel(messages[2])).toEqual({ id: 'model-b', confirmed: false });
   });
 });

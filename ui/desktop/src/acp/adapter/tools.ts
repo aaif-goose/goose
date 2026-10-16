@@ -10,6 +10,7 @@ import { toolNotificationChange } from './toolNotifications';
 import {
   type AcpChatStateChange,
   type AdapterState,
+  applyInferenceMeta,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
   type GooseMessageMeta,
   getGooseMessageMeta,
@@ -26,6 +27,7 @@ export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatSta
 
   const gooseMeta = getGooseMessageMeta(update);
   const message = getOrCreateAssistantMessageForUpdate(state, gooseMeta);
+  applyInferenceMeta(message, gooseMeta);
 
   if (
     message.content.some(

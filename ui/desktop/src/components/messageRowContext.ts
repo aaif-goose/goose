@@ -17,17 +17,27 @@ export interface ToolRenderState {
   isPending: boolean;
 }
 
+export interface InferenceModel {
+  id: string;
+  /** False when the provider did not report which model served the message. */
+  confirmed: boolean;
+}
+
 export interface MessageRowContext {
   hideTimestamp: boolean;
   isInToolCallChain: boolean;
-  previousResolvedModel: string | null;
+  previousModel: InferenceModel | null;
   toolStates: readonly ToolRenderState[];
   toolConfirmationShownInline: boolean;
 }
 
-function resolvedModel(message: Message): string | null {
+export function inferenceModel(message: Message): InferenceModel | null {
   if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
-  return message.metadata.inference?.resolvedModel ?? null;
+  const inference = message.metadata.inference;
+  if (!inference) return null;
+  return inference.resolvedModel
+    ? { id: inference.resolvedModel, confirmed: true }
+    : { id: inference.requestedModel, confirmed: false };
 }
 
 export function deriveMessageRowContexts(messages: Message[]): MessageRowContext[] {
@@ -87,12 +97,12 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
     }
   }
 
-  let previousResolvedModel: string | null = null;
+  let previousModel: InferenceModel | null = null;
 
   return messages.map((message, messageIndex) => {
-    const currentResolvedModel = resolvedModel(message);
-    const rowPreviousResolvedModel = currentResolvedModel ? previousResolvedModel : null;
-    if (currentResolvedModel) previousResolvedModel = currentResolvedModel;
+    const currentModel = inferenceModel(message);
+    const rowPreviousModel = currentModel ? previousModel : null;
+    if (currentModel) previousModel = currentModel;
 
     const toolConfirmation = getToolConfirmationContent(message);
     const confirmationData = getAnyToolConfirmationData(message);
@@ -100,7 +110,7 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
     return {
       hideTimestamp: hiddenTimestampIndices.has(messageIndex),
       isInToolCallChain: chainedMessageIndices.has(messageIndex),
-      previousResolvedModel: rowPreviousResolvedModel,
+      previousModel: rowPreviousModel,
       toolStates: toolStatesByMessageIndex[messageIndex],
       toolConfirmationShownInline: Boolean(
         toolConfirmation && confirmationData && toolRequestIds.has(confirmationData.id)

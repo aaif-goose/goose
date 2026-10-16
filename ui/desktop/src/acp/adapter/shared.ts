@@ -1,6 +1,6 @@
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import type { TokenState } from '../../types/chat';
-import type { Message, NotificationEvent } from '../../types/message';
+import type { InferenceMetadata, Message, NotificationEvent } from '../../types/message';
 
 export type AcpChatStateChange =
   | { type: 'messages'; messages: Message[] }
@@ -29,6 +29,7 @@ export interface GooseMessageMeta {
   outputTokenLimitReached?: boolean;
   fallbackContent?: boolean;
   steer?: boolean;
+  inference?: InferenceMetadata;
 }
 
 export interface ToolIdentity {
@@ -75,7 +76,32 @@ export function getGooseMessageMeta(update: { _meta?: unknown }): GooseMessageMe
     outputTokenLimitReached: outputTokenLimitReached ? true : undefined,
     fallbackContent: goose.fallbackContent === true ? true : undefined,
     steer: goose.steer === true ? true : undefined,
+    inference: getInferenceMeta(goose.inference),
   };
+}
+
+function getInferenceMeta(inference: unknown): InferenceMetadata | undefined {
+  if (
+    !isRecord(inference) ||
+    typeof inference.provider !== 'string' ||
+    typeof inference.requestedModel !== 'string'
+  ) {
+    return undefined;
+  }
+
+  return {
+    provider: inference.provider,
+    requestedModel: inference.requestedModel,
+    ...(typeof inference.resolvedModel === 'string'
+      ? { resolvedModel: inference.resolvedModel }
+      : {}),
+  };
+}
+
+export function applyInferenceMeta(message: Message, gooseMeta: GooseMessageMeta): void {
+  if (message.role === 'assistant' && gooseMeta.inference) {
+    message.metadata.inference = gooseMeta.inference;
+  }
 }
 
 export function getGooseActiveRunId(update: { _meta?: unknown }): string | null | undefined {
