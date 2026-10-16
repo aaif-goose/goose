@@ -10,6 +10,8 @@ SET "MIN_SYSTEM_NODE_MAJOR=22"
 REM === Check for previously downloaded portable Node.js (matching version) ===
 if exist "%GOOSE_NODE_DIR%\node-v%NODE_VERSION%.installed" (
     SET "PATH=%GOOSE_NODE_DIR%;!PATH!"
+    REM Turn delayed expansion off before npx runs, or cmd reads ! in the arguments as a variable.
+    SETLOCAL DisableDelayedExpansion
     "%GOOSE_NODE_DIR%\npx.cmd" %*
     exit /b !errorlevel!
 )
@@ -24,6 +26,7 @@ for /f "delims=" %%N in ('where $PATH:node.exe 2^>nul') do (
             call "%%~dpNnpx.cmd" --version <nul >nul 2>&1
             if "!errorlevel!"=="0" (
                 SET "PATH=%%~dpN;!PATH!"
+                SETLOCAL DisableDelayedExpansion
                 "%%~dpNnpx.cmd" %*
                 exit /b !errorlevel!
             )
@@ -57,6 +60,7 @@ if exist "%GOOSE_NODE_DIR%\npx.cmd" (
     echo.>"%GOOSE_NODE_DIR%\node-v%NODE_VERSION%.installed"
     SET "PATH=%GOOSE_NODE_DIR%;!PATH!"
     echo [Goose] Node.js v%NODE_VERSION% ready. 1>&2
+    SETLOCAL DisableDelayedExpansion
     "%GOOSE_NODE_DIR%\npx.cmd" %*
     exit /b !errorlevel!
 )
