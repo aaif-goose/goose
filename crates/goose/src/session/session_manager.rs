@@ -2318,16 +2318,22 @@ impl SessionStorage {
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id, s.parent_session_id,
                    s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
-                   {} as message_count,
-                   MAX({}) as last_message_timestamp,
-                   {} as sort_timestamp
-            FROM sessions s
-            {}
-            {}
-            GROUP BY s.id
-            {}
-            {}
-            {}
+                   page.message_count, page.last_message_timestamp, page.sort_timestamp
+            FROM (
+                SELECT s.id,
+                       {} as message_count,
+                       MAX({}) as last_message_timestamp,
+                       {} as sort_timestamp
+                FROM sessions s
+                {}
+                {}
+                GROUP BY s.id
+                {}
+                {}
+                {}
+            ) page
+            JOIN sessions s ON s.id = page.id
+            ORDER BY page.sort_timestamp DESC, s.id DESC
             "#,
             message_count_sql,
             normalized_message_timestamp,
