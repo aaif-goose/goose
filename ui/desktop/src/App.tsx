@@ -15,6 +15,7 @@ import AnnouncementModal from './components/AnnouncementModal';
 import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
+import { resetConfiguredRecipeParameters } from './acp/recipeParamRequests';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
 
 import { ChatType } from './types/chat';
@@ -591,6 +592,35 @@ export function AppInner() {
       window.electron.off('set-initial-message', handleSetInitialMessage);
     };
   }, [navigate]);
+
+  useEffect(() => {
+    const handleStartRecipe = async (_event: IpcRendererEvent, ...args: unknown[]) => {
+      const payload = args[0] as { recipeDeeplink: string; recipeParameters?: Record<string, string> };
+      resetConfiguredRecipeParameters();
+      try {
+        const newSession = await createSession(getInitialWorkingDir(), {
+          recipeDeeplink: payload.recipeDeeplink,
+          recipeParameters: payload.recipeParameters,
+        });
+        window.dispatchEvent(
+          new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+            detail: { sessionId: newSession.id },
+          })
+        );
+      } catch (error) {
+        if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) return;
+        if (isRecipeParameterScopesUnsupported(error)) {
+          toast.error(errorMessage(error));
+          return;
+        }
+        console.error('Failed to start recipe from deep link:', error);
+      }
+    };
+    window.electron.on('start-recipe', handleStartRecipe);
+    return () => {
+      window.electron.off('start-recipe', handleStartRecipe);
+    };
+  }, []);
 
   // Register platform event handlers for app lifecycle management
   useEffect(() => {
