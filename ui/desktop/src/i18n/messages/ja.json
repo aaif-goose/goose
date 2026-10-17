@@ -2633,14 +2633,14 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "収集する内容:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "メッセージを読み込み中...（{renderedCount}/{totalCount}）"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# 件のメッセージを非表示}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "モデルを変更しました: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "検索のためにすべてのメッセージをすぐ読み込むには Cmd/Ctrl+F を押してください"
+  "messageList.showAllMessages": {
+    "defaultMessage": "すべて表示"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "すべてのプロンプトをデフォルトにリセットしました"

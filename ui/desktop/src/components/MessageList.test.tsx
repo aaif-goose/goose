@@ -1,9 +1,8 @@
-import { StrictMode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import type { ImageData, Message, MessageContent } from '../types/message';
 import { IntlTestWrapper } from '../i18n/test-utils';
-import ProgressiveMessageList from './ProgressiveMessageList';
+import MessageList from './MessageList';
 
 const renderCounts = vi.hoisted(() => new Map<string, number>());
 const messageUpdateCallbacks = vi.hoisted(
@@ -88,7 +87,7 @@ function toolResponse(id: string): MessageContent {
 
 function renderList(messages: Message[]) {
   return render(
-    <ProgressiveMessageList
+    <MessageList
       messages={messages}
       sessionId="test-session"
       append={append}
@@ -98,7 +97,12 @@ function renderList(messages: Message[]) {
   );
 }
 
-describe('ProgressiveMessageList render isolation', () => {
+beforeEach(() => {
+  vi.mocked(window.electron.on).mockClear();
+  vi.mocked(window.electron.off).mockClear();
+});
+
+describe('MessageList render isolation', () => {
   beforeEach(() => {
     renderCounts.clear();
     messageUpdateCallbacks.clear();
@@ -114,7 +118,7 @@ describe('ProgressiveMessageList render isolation', () => {
     const { rerender } = renderList(messages);
 
     rerender(
-      <ProgressiveMessageList
+      <MessageList
         messages={cloneMessages(messages)}
         sessionId="test-session"
         append={append}
@@ -133,7 +137,7 @@ describe('ProgressiveMessageList render isolation', () => {
     const updatedMessages = cloneMessages(messages);
     updatedMessages[2].content = [{ type: 'text', text: 'Streaming update' }];
     rerender(
-      <ProgressiveMessageList
+      <MessageList
         messages={updatedMessages}
         sessionId="test-session"
         append={append}
@@ -161,7 +165,7 @@ describe('ProgressiveMessageList render isolation', () => {
     updatedMessages[2].content = [toolResponse('tool-1')];
 
     rerender(
-      <ProgressiveMessageList
+      <MessageList
         messages={updatedMessages}
         sessionId="test-session"
         append={append}
@@ -176,7 +180,7 @@ describe('ProgressiveMessageList render isolation', () => {
   it('preserves the message update callback', () => {
     const onMessageUpdate = vi.fn();
     render(
-      <ProgressiveMessageList
+      <MessageList
         messages={[message('user-1', 'user', [{ type: 'text', text: 'Original' }])]}
         sessionId="test-session"
         append={append}
@@ -193,64 +197,82 @@ describe('ProgressiveMessageList render isolation', () => {
   });
 });
 
-describe('ProgressiveMessageList batching', () => {
-  const messages = Array.from({ length: 10 }, (_, index) =>
-    message(`assistant-${index}`, 'assistant', [{ type: 'text', text: `Message ${index}` }])
-  );
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  function renderBatchedList(onRenderingComplete = vi.fn()) {
-    render(
-      <StrictMode>
-        <IntlTestWrapper>
-          <ProgressiveMessageList
-            messages={messages}
-            sessionId="test-session"
-            append={append}
-            isUserMessage={isUserMessage}
-            batchSize={2}
-            batchDelay={20}
-            showLoadingThreshold={0}
-            onRenderingComplete={onRenderingComplete}
-          />
-        </IntlTestWrapper>
-      </StrictMode>
+describe('MessageList transcript window', () => {
+  function messages(count: number): Message[] {
+    return Array.from({ length: count }, (_, index) =>
+      message(`assistant-${index}`, 'assistant', [{ type: 'text', text: `Message ${index}` }])
     );
-    return onRenderingComplete;
   }
 
-  it('renders exactly one batch per delay in StrictMode', () => {
-    renderBatchedList();
+  it('renders the latest messages immediately and hides the middle', () => {
+    renderList(messages(500));
 
-    expect(screen.queryByText('assistant-1')).not.toBeNull();
-    expect(screen.queryByText('assistant-2')).toBeNull();
-
-    act(() => vi.advanceTimersByTime(20));
-    expect(screen.queryByText('assistant-3')).not.toBeNull();
-    expect(screen.queryByText('assistant-4')).toBeNull();
-
-    act(() => vi.advanceTimersByTime(20));
-    expect(screen.queryByText('assistant-5')).not.toBeNull();
-    expect(screen.queryByText('assistant-6')).toBeNull();
+    expect(screen.queryByText('assistant-0')).not.toBeNull();
+    expect(screen.queryByText('assistant-19')).not.toBeNull();
+    expect(screen.queryByText('assistant-20')).toBeNull();
+    expect(screen.queryByText('assistant-299')).toBeNull();
+    expect(screen.queryByText('assistant-300')).not.toBeNull();
+    expect(screen.queryByText('assistant-499')).not.toBeNull();
+    expect(screen.queryByText('280 messages hidden')).not.toBeNull();
   });
 
-  it('reports completion once after the final batch', () => {
-    const onRenderingComplete = renderBatchedList();
+  it('counts and windows visible messages', () => {
+    const transcript = messages(300).map((item, index) =>
+      index >= 100 && index < 160
+        ? { ...item, metadata: { ...item.metadata, userVisible: false } }
+        : item
+    );
 
-    for (let batch = 0; batch < 4; batch++) {
-      act(() => vi.advanceTimersByTime(20));
-    }
-    expect(screen.queryByText('assistant-9')).not.toBeNull();
-    expect(onRenderingComplete).not.toHaveBeenCalled();
+    renderList(transcript);
 
-    act(() => vi.advanceTimersByTime(50));
-    expect(onRenderingComplete).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('assistant-20')).toBeNull();
+    expect(screen.queryByText('assistant-39')).toBeNull();
+    expect(screen.queryByText('assistant-40')).not.toBeNull();
+    expect(screen.queryByText('assistant-100')).toBeNull();
+    expect(screen.queryByText('20 messages hidden')).not.toBeNull();
+  });
+
+  it('renders the full conversation when requested', () => {
+    renderList(messages(221));
+
+    expect(screen.queryByText('assistant-20')).toBeNull();
+
+    act(() => screen.getByRole('button', { name: 'Show all' }).click());
+
+    expect(screen.queryByText('assistant-20')).not.toBeNull();
+    expect(screen.queryByText(/message hidden/)).toBeNull();
+  });
+
+  it('renders the full conversation when search opens from the keyboard', () => {
+    renderList(messages(221));
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true })));
+
+    expect(screen.queryByText('assistant-20')).not.toBeNull();
+  });
+
+  it('renders the full conversation when search opens from the menu', () => {
+    renderList(messages(221));
+    const findHandler = vi
+      .mocked(window.electron.on)
+      .mock.calls.find(([event]) => event === 'find-command')?.[1];
+
+    act(() => findHandler?.({} as Electron.IpcRendererEvent));
+
+    expect(screen.queryByText('assistant-20')).not.toBeNull();
+  });
+
+  it('uses the hidden messages when deriving row context', () => {
+    const transcript = messages(221).map((item, index) => ({
+      ...item,
+      metadata: {
+        ...item.metadata,
+        inference: { resolvedModel: index < 20 ? 'old-model' : 'new-model' },
+      },
+    }));
+
+    renderList(transcript);
+
+    expect(screen.queryByText('Model changed: old-model → new-model')).toBeNull();
   });
 });

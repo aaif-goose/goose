@@ -2015,6 +2015,15 @@
   "messageCopyLink.copy": {
     "defaultMessage": "Copy"
   },
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count,plural,one{# message hidden} other{# messages hidden}}"
+  },
+  "messageList.modelChanged": {
+    "defaultMessage": "Model changed: {previousModel} → {currentModel}"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Show all"
+  },
   "messageQueue.cancel": {
     "defaultMessage": "Cancel"
   },
@@ -2656,15 +2665,6 @@
   },
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "What we collect:"
-  },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Loading messages... ({renderedCount}/{totalCount})"
-  },
-  "progressiveMessageList.modelChanged": {
-    "defaultMessage": "Model changed: {previousModel} → {currentModel}"
-  },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Press Cmd/Ctrl+F to load all messages immediately for search"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "All prompts reset to defaults"

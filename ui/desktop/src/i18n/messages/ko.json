@@ -2633,14 +2633,14 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "수집하는 항목:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "메시지 로드 중... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {#개의 메시지를 숨겼습니다}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "모델 변경: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "검색을 위해 모든 메시지를 즉시 로드하려면 Cmd/Ctrl+F를 누르세요."
+  "messageList.showAllMessages": {
+    "defaultMessage": "모두 표시"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "모든 프롬프트가 기본값으로 재설정되었습니다."

@@ -2633,14 +2633,14 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Những gì chúng tôi thu thập:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Đang tải tin nhắn... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# tin nhắn đã bị ẩn}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Mô hình đã thay đổi: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Nhấn Cmd/Ctrl+F để tải ngay tất cả tin nhắn nhằm tìm kiếm"
+  "messageList.showAllMessages": {
+    "defaultMessage": "Hiển thị tất cả"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Tất cả lời nhắc đã được đặt lại về mặc định"

@@ -2633,14 +2633,14 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Apa yang kami kumpulkan:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Memuat pesan... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# pesan disembunyikan}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Model diubah: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Tekan Cmd/Ctrl+F untuk segera memuat semua pesan untuk pencarian"
+  "messageList.showAllMessages": {
+    "defaultMessage": "Tampilkan semua"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Semua prompt disetel ulang ke default"

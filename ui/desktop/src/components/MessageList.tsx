@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { isEqual } from 'lodash';
 import { defineMessages, useIntl } from '../i18n';
 import GooseMessage from './GooseMessage';
@@ -17,27 +17,29 @@ import type {
   NotificationEvent,
   SystemNotificationContent,
 } from '../types/message';
-import LoadingGoose from './LoadingGoose';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
 import { deriveMessageRowContexts, type MessageRowContext } from './messageRowContext';
 
 const i18n = defineMessages({
-  loadingMessages: {
-    id: 'progressiveMessageList.loadingMessages',
-    defaultMessage: 'Loading messages... ({renderedCount}/{totalCount})',
-  },
-  searchHint: {
-    id: 'progressiveMessageList.searchHint',
-    defaultMessage: 'Press Cmd/Ctrl+F to load all messages immediately for search',
-  },
   modelChanged: {
-    id: 'progressiveMessageList.modelChanged',
+    id: 'messageList.modelChanged',
     defaultMessage: 'Model changed: {previousModel} → {currentModel}',
+  },
+  hiddenMessages: {
+    id: 'messageList.hiddenMessages',
+    defaultMessage: '{count, plural, one {# message hidden} other {# messages hidden}}',
+  },
+  showAllMessages: {
+    id: 'messageList.showAllMessages',
+    defaultMessage: 'Show all',
   },
 });
 
 const emptyToolCallNotifications = new Map<string, NotificationEvent[]>();
 const emptyAppend = () => {};
+const HEAD_MESSAGE_COUNT = 20;
+const TAIL_MESSAGE_COUNT = 200;
+const MESSAGE_DISPLAY_LIMIT = HEAD_MESSAGE_COUNT + TAIL_MESSAGE_COUNT;
 
 function getResolvedModel(message: Message): string | null {
   if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
@@ -147,16 +149,12 @@ function MessageRowComponent({
 
 const MessageRow = memo(MessageRowComponent, isEqual);
 
-interface ProgressiveMessageListProps {
+interface MessageListProps {
   messages: Message[];
   sessionId: string;
   toolCallNotifications?: Map<string, NotificationEvent[]>;
   append?: (value: string) => void;
   isUserMessage: (message: Message) => boolean;
-  batchSize?: number;
-  batchDelay?: number;
-  showLoadingThreshold?: number;
-  renderMessage?: (message: Message, index: number) => React.ReactNode | null;
   isStreamingMessage?: boolean;
   onMessageUpdate?: (
     messageId: string,
@@ -171,141 +169,129 @@ interface ProgressiveMessageListProps {
   ) => Promise<boolean>;
 }
 
-export default function ProgressiveMessageList({
+export default function MessageList({
   messages,
   sessionId,
   toolCallNotifications = emptyToolCallNotifications,
   append = emptyAppend,
   isUserMessage,
-  batchSize = 5,
-  batchDelay = 20,
-  showLoadingThreshold = 50,
-  renderMessage,
   isStreamingMessage = false,
   onMessageUpdate,
   onRenderingComplete,
   submitElicitationResponse,
-}: ProgressiveMessageListProps) {
+}: MessageListProps) {
   const intl = useIntl();
-  const [renderedCount, setRenderedCount] = useState(() =>
-    messages.length <= showLoadingThreshold ? messages.length : Math.min(batchSize, messages.length)
+  const [showAllMessages, setShowAllMessages] = useState(false);
+  const visibleMessages = useMemo(
+    () =>
+      messages.flatMap((message, index) =>
+        message.metadata.userVisible ? [{ message, index }] : []
+      ),
+    [messages]
   );
-  const completedMessageKeyRef = useRef<string | null>(null);
-  const isLoading = renderedCount < messages.length;
-
-  useEffect(() => {
-    if (messages.length <= showLoadingThreshold) {
-      setRenderedCount(messages.length);
-      return;
+  const hiddenMessageCount = showAllMessages
+    ? 0
+    : Math.max(0, visibleMessages.length - MESSAGE_DISPLAY_LIMIT);
+  const hasHiddenMessages = hiddenMessageCount > 0;
+  const displayedMessages = useMemo(() => {
+    if (!hasHiddenMessages) {
+      return visibleMessages;
     }
 
-    if (!isLoading) return;
-
-    const timeout = window.setTimeout(() => {
-      setRenderedCount((current) => Math.min(current + batchSize, messages.length));
-    }, batchDelay);
-
-    return () => window.clearTimeout(timeout);
-  }, [batchDelay, batchSize, isLoading, messages.length, renderedCount, showLoadingThreshold]);
+    const tailStart = visibleMessages.length - TAIL_MESSAGE_COUNT;
+    return [...visibleMessages.slice(0, HEAD_MESSAGE_COUNT), ...visibleMessages.slice(tailStart)];
+  }, [hasHiddenMessages, visibleMessages]);
 
   useEffect(() => {
-    if (isLoading) return;
-
-    const completedMessageKey = `${sessionId}:${messages.length}`;
-    if (completedMessageKeyRef.current === completedMessageKey) return;
-
-    const timeout = window.setTimeout(() => {
-      completedMessageKeyRef.current = completedMessageKey;
-      onRenderingComplete?.();
-    }, 50);
-
-    return () => window.clearTimeout(timeout);
-  }, [isLoading, messages.length, onRenderingComplete, sessionId]);
+    onRenderingComplete?.();
+  }, [messages.length, onRenderingComplete, sessionId]);
 
   useEffect(() => {
-    if (!isLoading) return;
+    if (!hasHiddenMessages) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
-      const isSearchShortcut = (isMac ? event.metaKey : event.ctrlKey) && event.key === 'f';
+      const isSearchShortcut =
+        (isMac ? event.metaKey : event.ctrlKey) && !event.shiftKey && event.key === 'f';
 
       if (isSearchShortcut) {
-        setRenderedCount(messages.length);
+        setShowAllMessages(true);
       }
     };
+    const handleFindCommand = () => setShowAllMessages(true);
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, messages.length]);
+    window.electron.on('find-command', handleFindCommand);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.electron.off('find-command', handleFindCommand);
+    };
+  }, [hasHiddenMessages]);
 
   const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
-  const messagesToRender = messages.slice(0, renderedCount);
-  const messageRows = messagesToRender
-    .map((message, index) => {
-      if (!message.metadata.userVisible) return null;
-      if (renderMessage) return renderMessage(message, index);
+  const messageRows: React.ReactNode[] = [];
 
-      const isUser = isUserMessage(message);
-      const messageIdentifier = message.id ?? `msg-${index}-${message.created}`;
-      const messageKey = getSystemNotification(message)
-        ? `notification-${messageIdentifier}`
-        : messageIdentifier;
-      const rowContext = rowContexts[index];
-      const currentResolvedModel = getResolvedModel(message);
-      const modelChangeMessage =
-        currentResolvedModel &&
-        rowContext.previousResolvedModel &&
-        currentResolvedModel !== rowContext.previousResolvedModel
-          ? intl.formatMessage(i18n.modelChanged, {
-              previousModel: getModelDisplayName(rowContext.previousResolvedModel),
-              currentModel: getModelDisplayName(currentResolvedModel),
-            })
-          : null;
-      const toolNotifications = rowContext.toolStates.map((toolState) =>
-        toolCallNotifications.get(toolState.requestId)
-      );
-
-      return (
-        <MessageRow
-          key={messageKey}
-          append={append}
-          index={index}
-          isStreaming={
-            isStreamingMessage &&
-            !isUser &&
-            index === messagesToRender.length - 1 &&
-            message.role === 'assistant'
-          }
-          isUser={isUser}
-          message={message}
-          modelChangeMessage={modelChangeMessage}
-          onMessageUpdate={onMessageUpdate}
-          rowContext={rowContext}
-          sessionId={sessionId}
-          submitElicitationResponse={submitElicitationResponse}
-          toolNotifications={toolNotifications}
-        />
-      );
-    })
-    .filter(Boolean);
-
-  return (
-    <>
-      {messageRows}
-
-      {isLoading && (
-        <div className="flex flex-col items-center justify-center py-8">
-          <LoadingGoose
-            message={intl.formatMessage(i18n.loadingMessages, {
-              renderedCount,
-              totalCount: messages.length,
-            })}
-          />
-          <div className="text-xs text-text-secondary mt-2">
-            {intl.formatMessage(i18n.searchHint)}
-          </div>
+  displayedMessages.forEach(({ message, index }, displayedIndex) => {
+    if (hiddenMessageCount > 0 && displayedIndex === HEAD_MESSAGE_COUNT) {
+      messageRows.push(
+        <div
+          key="hidden-messages"
+          className="my-6 flex items-center justify-center gap-2 text-xs text-text-secondary"
+        >
+          <span>{intl.formatMessage(i18n.hiddenMessages, { count: hiddenMessageCount })}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-text-primary"
+            onClick={() => setShowAllMessages(true)}
+          >
+            {intl.formatMessage(i18n.showAllMessages)}
+          </button>
         </div>
-      )}
-    </>
-  );
+      );
+    }
+
+    const isUser = isUserMessage(message);
+    const messageIdentifier = message.id ?? `msg-${index}-${message.created}`;
+    const messageKey = getSystemNotification(message)
+      ? `notification-${messageIdentifier}`
+      : messageIdentifier;
+    const rowContext = rowContexts[index];
+    const currentResolvedModel = getResolvedModel(message);
+    const modelChangeMessage =
+      currentResolvedModel &&
+      rowContext.previousResolvedModel &&
+      currentResolvedModel !== rowContext.previousResolvedModel
+        ? intl.formatMessage(i18n.modelChanged, {
+            previousModel: getModelDisplayName(rowContext.previousResolvedModel),
+            currentModel: getModelDisplayName(currentResolvedModel),
+          })
+        : null;
+    const toolNotifications = rowContext.toolStates.map((toolState) =>
+      toolCallNotifications.get(toolState.requestId)
+    );
+
+    messageRows.push(
+      <MessageRow
+        key={messageKey}
+        append={append}
+        index={index}
+        isStreaming={
+          isStreamingMessage &&
+          !isUser &&
+          index === messages.length - 1 &&
+          message.role === 'assistant'
+        }
+        isUser={isUser}
+        message={message}
+        modelChangeMessage={modelChangeMessage}
+        onMessageUpdate={onMessageUpdate}
+        rowContext={rowContext}
+        sessionId={sessionId}
+        submitElicitationResponse={submitElicitationResponse}
+        toolNotifications={toolNotifications}
+      />
+    );
+  });
+
+  return <>{messageRows}</>;
 }

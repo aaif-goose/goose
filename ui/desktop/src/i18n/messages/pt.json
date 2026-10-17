@@ -2633,14 +2633,14 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "O que recolhemos:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "A carregar mensagens... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# mensagem oculta} other {# mensagens ocultas}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Modelo alterado: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Prima Cmd/Ctrl+F para carregar todas as mensagens imediatamente para pesquisa"
+  "messageList.showAllMessages": {
+    "defaultMessage": "Mostrar tudo"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Todos os prompts repostos para as predefinições"
