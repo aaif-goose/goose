@@ -308,6 +308,9 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                         .supports_cache_control
                         .or(existing.supports_cache_control);
                     model.supports_vision = model.supports_vision.or(existing.supports_vision);
+                    model.auto_compact_token_limit = model
+                        .auto_compact_token_limit
+                        .or(existing.auto_compact_token_limit);
                     model.reasoning |= existing.reasoning;
                     model.thinking_preservation_format = model
                         .thinking_preservation_format
@@ -613,6 +616,7 @@ mod tests {
                 supports_cache_control: None,
                 reasoning: false,
                 supports_vision: None,
+                auto_compact_token_limit: None,
                 thinking_preservation_format: None,
                 request_params: None,
             }],
@@ -802,7 +806,8 @@ mod tests {
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
 
         let mut model = ModelInfo::with_cost("large-model", 1_048_576, 0.000002, 0.000006)
-            .with_vision_support(true);
+            .with_vision_support(true)
+            .with_auto_compact_token_limit(800_000);
         model.request_params = Some(HashMap::from([(
             "temperature".to_string(),
             serde_json::json!(0.25),
@@ -857,6 +862,7 @@ mod tests {
         let loaded = load_provider(&created.name).unwrap();
         let model = &loaded.config.models[0];
         assert_eq!(model.context_limit, Some(2_097_152));
+        assert_eq!(model.auto_compact_token_limit, Some(800_000));
         assert_eq!(model.input_token_cost, Some(0.000002));
         assert_eq!(model.output_token_cost, Some(0.000006));
         assert_eq!(

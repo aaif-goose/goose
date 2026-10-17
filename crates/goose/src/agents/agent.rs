@@ -587,7 +587,8 @@ impl Agent {
         let stop_hook_block_cap = Config::global()
             .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
             .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP);
-        let compaction_threshold = crate::context_mgmt::auto_compact_threshold(context_limit);
+        let compaction_threshold =
+            crate::context_mgmt::auto_compact_threshold(&model_config, context_limit);
         let tool_call_cutoff = Config::global()
             .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
             .unwrap_or_else(|_| {

@@ -73,6 +73,10 @@ pub struct InventoryModel {
     pub context_limit: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+    /// Model-declared auto-compaction cap, overriding the global
+    /// GOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_compact_token_limit: Option<usize>,
     /// Whether this model should appear in the compact recommended picker.
     pub recommended: bool,
 }
@@ -788,6 +792,9 @@ impl ProviderInventoryService {
         Ok(())
     }
 
+    /// Snapshots do not persist `auto_compact_token_limit` (no DB column):
+    /// model-declared caps are merged back from the configured models when a
+    /// snapshot is served (see `merge_configured_caps`).
     async fn read_snapshot(
         &self,
         identity: &InventoryIdentity,
@@ -837,6 +844,7 @@ impl ProviderInventoryService {
                         .map(usize::try_from)
                         .transpose()?,
                     reasoning: row.try_get("reasoning")?,
+                    auto_compact_token_limit: None,
                     recommended: row
                         .try_get::<Option<bool>, _>("recommended")?
                         .unwrap_or(false),
@@ -1071,6 +1079,7 @@ fn enrich_model_ids_with_canonical(
                 family: None,
                 context_limit: None,
                 reasoning: None,
+                auto_compact_token_limit: None,
                 recommended: false,
             })
             .collect();
@@ -1080,7 +1089,7 @@ fn enrich_model_ids_with_canonical(
     let mut seen_keys: HashSet<String> = HashSet::new();
 
     for id in model_ids {
-        let model = enriched_model(provider_family, id, None);
+        let model = enriched_model(provider_family, id, None, None);
         let dedup_key = if is_databricks_v2_model_service(provider_family, id) {
             id
         } else {
@@ -1106,7 +1115,7 @@ fn enrich_model_ids_with_canonical(
             if !id.starts_with("goose-") {
                 continue;
             }
-            let candidate = enriched_model(provider_family, id, None);
+            let candidate = enriched_model(provider_family, id, None, None);
             if let Some(&idx) = name_to_idx.get(&candidate.name) {
                 if !models[idx].id.starts_with("goose-") {
                     models[idx].id = candidate.id;
@@ -1137,7 +1146,12 @@ fn configured_models_to_inventory(
     let mut result: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     for model in models {
-        let enriched = enriched_model(provider_family, &model.name, model.context_limit);
+        let enriched = enriched_model(
+            provider_family,
+            &model.name,
+            model.context_limit,
+            model.auto_compact_token_limit,
+        );
         if seen_names.insert(enriched.name.clone()) {
             result.push(enriched);
         }
@@ -1169,16 +1183,35 @@ fn inventory_models_from_snapshot(
 
     match snapshot {
         Some(snapshot) if !snapshot.models.is_empty() || snapshot.last_updated_at.is_some() => {
-            snapshot.models.clone()
+            merge_configured_caps(snapshot.models.clone(), configured_models)
         }
         _ => configured_models_to_inventory(provider_family, configured_models),
     }
+}
+
+/// Snapshots do not persist model-declared caps, so merge them back in from
+/// the configured models — otherwise a refreshed provider loses them.
+fn merge_configured_caps(
+    mut models: Vec<InventoryModel>,
+    configured_models: &[ModelInfo],
+) -> Vec<InventoryModel> {
+    for model in &mut models {
+        if model.auto_compact_token_limit.is_some() {
+            continue;
+        }
+        model.auto_compact_token_limit = configured_models
+            .iter()
+            .find(|configured| configured.name == model.id || configured.name == model.name)
+            .and_then(|configured| configured.auto_compact_token_limit);
+    }
+    models
 }
 
 fn enriched_model(
     provider_family: &str,
     model_id: &str,
     fallback_context_limit: Option<usize>,
+    auto_compact_token_limit: Option<usize>,
 ) -> InventoryModel {
     let registry = CanonicalModelRegistry::bundled().ok();
     let canonical = registry.as_ref().and_then(|registry| {
@@ -1199,6 +1232,7 @@ fn enriched_model(
             .map(|model| model.limit.context)
             .or(fallback_context_limit),
         reasoning: canonical.as_ref().and_then(|model| model.reasoning),
+        auto_compact_token_limit,
         recommended: false,
     }
 }
@@ -1440,6 +1474,7 @@ mod tests {
                 family: None,
                 context_limit: None,
                 reasoning: None,
+                auto_compact_token_limit: None,
                 recommended: false,
             }],
             last_updated_at: Some(Utc::now()),
@@ -1456,5 +1491,44 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "gpt-5.6");
+    }
+
+    #[test]
+    fn snapshot_models_merge_configured_caps() {
+        let configured_models = [
+            ModelInfo::new("big-model").with_auto_compact_token_limit(700_000),
+            ModelInfo::new("other-model"),
+        ];
+        let snapshot = InventorySnapshot {
+            models: vec![
+                InventoryModel {
+                    id: "big-model".to_string(),
+                    name: "Big Model".to_string(),
+                    family: None,
+                    context_limit: Some(1_000_000),
+                    reasoning: None,
+                    auto_compact_token_limit: None,
+                    recommended: false,
+                },
+                InventoryModel {
+                    id: "other-model".to_string(),
+                    name: "other-model".to_string(),
+                    family: None,
+                    context_limit: None,
+                    reasoning: None,
+                    auto_compact_token_limit: None,
+                    recommended: false,
+                },
+            ],
+            last_updated_at: Some(Utc::now()),
+            last_refresh_attempt_at: Some(Utc::now()),
+            last_refresh_error: None,
+        };
+
+        let models =
+            inventory_models_from_snapshot(Some(&snapshot), "custom", &configured_models, true);
+
+        assert_eq!(models[0].auto_compact_token_limit, Some(700_000));
+        assert_eq!(models[1].auto_compact_token_limit, None);
     }
 }

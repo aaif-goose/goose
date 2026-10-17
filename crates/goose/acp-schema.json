@@ -1948,6 +1948,14 @@
           ],
           "description": "Whether the model supports reasoning/extended thinking."
         },
+        "autoCompactTokenLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Model-declared auto-compaction cap, overriding the global\nGOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.",
+          "minimum": 0
+        },
         "recommended": {
           "type": "boolean",
           "description": "Whether this model should appear in the compact recommended picker.",

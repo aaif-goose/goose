@@ -85,6 +85,12 @@ impl ProviderEntry {
         {
             model.supports_vision = Some(supports_vision);
         }
+        if let Some(auto_compact_token_limit) =
+            find_declared_model(&self.metadata.known_models, &model.model_name)
+                .and_then(|m| m.auto_compact_token_limit)
+        {
+            model.auto_compact_token_limit = Some(auto_compact_token_limit);
+        }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
 

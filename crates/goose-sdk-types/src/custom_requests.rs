@@ -1785,6 +1785,10 @@ pub struct ProviderInventoryModelDto {
     /// Whether the model supports reasoning/extended thinking.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+    /// Model-declared auto-compaction cap, overriding the global
+    /// GOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_compact_token_limit: Option<usize>,
     /// Whether this model should appear in the compact recommended picker.
     #[serde(default)]
     pub recommended: bool,
