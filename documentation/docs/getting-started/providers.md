@@ -521,7 +521,8 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
       "models": [
         {
           "name": "gpt-4o",
-          "context_limit": 128000
+          "context_limit": 128000,
+          "auto_compact_token_limit": 800000
         },
         {
           "name": "gpt-3.5-turbo",
@@ -536,6 +537,8 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
       "requires_auth": true
     }
     ```
+
+    Optional model fields include `context_limit` (the model's context window in tokens) and `auto_compact_token_limit` (a per-model override of the global `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` [auto-compaction cap](/docs/guides/sessions/smart-context-management.md), useful for large-context models that would otherwise compact early under the global default; set it to `0` to disable auto-compaction for that model).
 
     Then use the `api_key_env` to set the key for your session. For example:
     ```bash
@@ -562,7 +565,7 @@ Add an `auth` object to the provider's JSON configuration in place of `api_key_e
   "engine": "openai",
   "display_name": "Corporate API",
   "base_url": "https://api.company.com/v1/chat/completions",
-  "models": [{ "name": "gpt-4o", "context_limit": 128000 }],
+  "models": [{ "name": "gpt-4o", "context_limit": 128000, "auto_compact_token_limit": 800000 }],
   "requires_auth": true,
   "auth": {
     "command": "/path/to/get-token.sh",

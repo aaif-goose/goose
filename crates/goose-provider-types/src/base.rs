@@ -269,6 +269,10 @@ pub struct ModelInfo {
     /// Whether this model accepts image input; when set, overrides canonical detection
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_vision: Option<bool>,
+    /// Token count where auto-compaction starts for this model, overriding the
+    /// global default; goose-side policy, never sent to the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_compact_token_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
     /// Static params merged into the request body for this model.
@@ -288,6 +292,7 @@ impl ModelInfo {
             supports_cache_control: None,
             reasoning: false,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -308,6 +313,11 @@ impl ModelInfo {
         self
     }
 
+    pub fn with_auto_compact_token_limit(mut self, limit: usize) -> Self {
+        self.auto_compact_token_limit = Some(limit);
+        self
+    }
+
     /// Create a new ModelInfo with cost information (per token)
     pub fn with_cost(
         name: impl Into<String>,
@@ -325,6 +335,7 @@ impl ModelInfo {
             supports_cache_control: None,
             reasoning: false,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         }
@@ -376,6 +387,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         supports_cache_control: None,
         reasoning,
         supports_vision: None,
+        auto_compact_token_limit: None,
         thinking_preservation_format: None,
         request_params: None,
     }
@@ -1119,6 +1131,7 @@ mod tests {
             supports_cache_control: None,
             reasoning: false,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1135,6 +1148,7 @@ mod tests {
             supports_cache_control: None,
             reasoning: false,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         };
@@ -1151,6 +1165,7 @@ mod tests {
             supports_cache_control: None,
             reasoning: false,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         };

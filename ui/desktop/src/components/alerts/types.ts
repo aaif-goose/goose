@@ -21,4 +21,5 @@ export interface Alert {
   onCompact?: () => void;
   compactIcon?: React.ReactNode;
   onThresholdChange?: (threshold: number) => void;
+  autoCompactTokenLimit?: number;
 }

@@ -140,6 +140,38 @@ describe('AlertBox', () => {
       );
     });
 
+    it('shows a model-declared cap instead of the global token limit', async () => {
+      const alert: Alert = {
+        ...progressAlert(1000000),
+        autoCompactTokenLimit: 700000,
+      };
+      renderWithIntl(<AlertBox alert={alert} />);
+      expect(await screen.findByText('Auto compact at 700k')).toBeInTheDocument();
+    });
+
+    it('shows auto-compaction as off for a model-declared cap of 0', async () => {
+      const alert: Alert = {
+        ...progressAlert(1000000),
+        autoCompactTokenLimit: 0,
+      };
+      renderWithIntl(<AlertBox alert={alert} />);
+      expect(await screen.findByText('Auto compact off')).toBeInTheDocument();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('edits the percentage instead of the cap when the model declares its own limit', async () => {
+      const alert: Alert = {
+        ...progressAlert(1000000),
+        autoCompactTokenLimit: 700000,
+      };
+      renderWithIntl(<AlertBox alert={alert} />);
+      await screen.findByText('Auto compact at 700k');
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      // Editing opens in percentage mode: the global cap doesn't apply to this model
+      expect(input).toHaveValue(80);
+    });
+
     it('edits the percentage in an uncapped context', async () => {
       const onThresholdChange = vi.fn();
       renderWithIntl(<AlertBox alert={{ ...progressAlert(200000), onThresholdChange }} />);

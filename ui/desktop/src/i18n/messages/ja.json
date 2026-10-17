@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "自動圧縮の実行タイミング"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "自動圧縮はオフ"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "今すぐ圧縮"
   },

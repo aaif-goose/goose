@@ -224,10 +224,18 @@ prompt: |
      context. Verify actual agent replies compact only after crossing the trigger.
   3. Verify changing model context size in the same session recalculates the trigger and
      that disabled auto-compaction remains disabled regardless of the cap.
-  4. Run `cd ui/desktop && pnpm exec vitest run src/components/alerts/__tests__/AlertBox.test.tsx`.
-  5. Verify the inline editor saves the displayed token cap in capped contexts and the
+  4. Verify a model-declared `auto_compact_token_limit` (custom-provider model entry)
+     overrides the global `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` for that model, that the
+     global cap still applies to models without a declaration, that the declared
+     value survives a custom-provider update, and that a declared value of `0`
+     disables auto-compaction for that model.
+  5. Run `cd ui/desktop && pnpm exec vitest run src/components/alerts/__tests__/AlertBox.test.tsx`.
+  6. Verify the inline editor saves the displayed token cap in capped contexts and the
      percentage in uncapped contexts, including cancellation and model changes during editing.
-  6. Confirm the smart context management guide describes when compaction starts, rather
+  7. Verify the Desktop context-window alert shows the model-declared cap (not the global
+     one) when the current model declares `auto_compact_token_limit`, and offers
+     percentage-only editing for that model.
+  8. Confirm the smart context management guide describes when compaction starts, rather
      than promising a maximum request size. New messages, tool output, and compaction
      requests can exceed the trigger between checks.
 
