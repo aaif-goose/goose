@@ -27,14 +27,21 @@ pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
 /// The configured threshold, lowered so compaction starts by the token limit.
-pub fn auto_compact_threshold(context_limit: usize) -> f64 {
+/// A model-specific limit (declared on the model, e.g. in a custom provider)
+/// takes precedence over the global configuration.
+pub fn auto_compact_threshold(model_config: &ModelConfig, context_limit: usize) -> f64 {
     let config = Config::global();
     capped_compaction_threshold(
         config
             .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
-        config
-            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+        model_config
+            .auto_compact_token_limit
+            .or_else(|| {
+                config
+                    .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+                    .ok()
+            })
             .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
         context_limit,
     )
@@ -616,6 +623,7 @@ mod tests {
                     request_params: None,
                     reasoning: None,
                     supports_vision: None,
+                    auto_compact_token_limit: None,
                     request_headers: None,
                 },
                 max_tool_responses: None,
