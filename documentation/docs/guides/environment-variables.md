@@ -311,7 +311,7 @@ These variables control security features, credential storage, and anonymous usa
 | `GOOSE_ALLOWLIST` | Controls which extensions can be loaded | URL for [allowed extensions](/docs/guides/allowlist) list | Unset |
 | `GOOSE_DISABLE_KEYRING` | Disables the system keyring for secret storage | Set to any value (e.g., "1", "true", "yes") to disable. The actual value doesn't matter, only whether the variable is set. | Unset (keyring enabled) |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | false |
-| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 |
+| `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (lower = stricter) | Float between 0.01 and 1.0 | 0.8 |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false |
 | `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | Classification endpoint URL for ML-based prompt injection detection | URL (e.g., "https://api.example.com/classify") | Unset |
 | `SECURITY_PROMPT_CLASSIFIER_TOKEN` | Authentication token for `SECURITY_PROMPT_CLASSIFIER_ENDPOINT` | String | Unset |
@@ -323,7 +323,7 @@ These variables control security features, credential storage, and anonymous usa
 # Enable prompt injection detection with default threshold
 export SECURITY_PROMPT_ENABLED=true
 
-# Enable with custom threshold (stricter)
+# Enable with custom threshold (more lenient than default)
 export SECURITY_PROMPT_ENABLED=true
 export SECURITY_PROMPT_THRESHOLD=0.9
 

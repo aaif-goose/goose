@@ -174,7 +174,7 @@ impl SecurityManager {
                 let sanitized_explanation = analysis_result.explanation.replace('\n', " | ");
 
                 if analysis_result.is_malicious {
-                    let above_threshold = analysis_result.confidence > config_threshold;
+                    let above_threshold = analysis_result.confidence >= config_threshold;
                     let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
 
                     let tool_call_json =

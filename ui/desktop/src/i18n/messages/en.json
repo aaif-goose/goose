@@ -3756,7 +3756,7 @@
     "defaultMessage": "Use ML models to detect potential prompt injection in your chat"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)"
+    "defaultMessage": "Lower values are more strict (0.01 = maximum strict, 1.0 = very lenient)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Command injection detection works best when connected to WARP (required to reach the classification service)."
