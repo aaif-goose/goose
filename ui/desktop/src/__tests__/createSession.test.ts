@@ -47,7 +47,10 @@ vi.mock('../acp/capabilities', () => ({
   getAcpFeatureCapabilities: vi.fn(),
 }));
 
-const testRecipe = vi.hoisted(() => ({ title: 'Test recipe', description: 'Recipe used in tests' }));
+const testRecipe = vi.hoisted(() => ({
+  title: 'Test recipe',
+  description: 'Recipe used in tests',
+}));
 
 const testSession: Session = {
   id: 'session-1',
@@ -110,6 +113,7 @@ describe('createSession ACP session extensions', () => {
     mockedGetAcpFeatureCapabilities.mockResolvedValue({
       localInference: false,
       recipeParameterScopes: true,
+      emptyExtensionSelection: true,
     });
   });
 
@@ -163,6 +167,35 @@ describe('createSession ACP session extensions', () => {
     });
   });
 
+  it('preserves an empty selection when every selected configuration disappears', async () => {
+    mockedGetConfiguredGooseExtensions.mockResolvedValue([gooseExtensionEntry('memory')]);
+    await createSession('/tmp', { extensionConfigs: [extensionConfig('developer')] });
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith('/tmp', [], expect.any(Object));
+  });
+
+  it('keeps only the remaining selected configurations without adding defaults', async () => {
+    mockedGetConfiguredGooseExtensions.mockResolvedValue([gooseExtensionEntry('memory')]);
+    await createSession('/tmp', {
+      extensionConfigs: [extensionConfig('developer'), extensionConfig('memory')],
+    });
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith(
+      '/tmp',
+      [gooseExtension('memory')],
+      expect.any(Object)
+    );
+  });
+
+  it('preserves nonempty globally configured defaults without an explicit selection', async () => {
+    await createSession('/tmp', {
+      allExtensions: [configuredExtension('developer', true), configuredExtension('memory', false)],
+    });
+    expect(mockedCreateAcpSession).toHaveBeenCalledWith(
+      '/tmp',
+      [gooseExtension('developer')],
+      expect.any(Object)
+    );
+  });
+
   it('scopes startup parameters to recipe deeplink session creation', async () => {
     await createSession('/tmp', { recipeDeeplink: 'goose://recipe?url=example' });
 
@@ -205,6 +238,7 @@ describe('createSession ACP session extensions', () => {
     mockedGetAcpFeatureCapabilities.mockResolvedValueOnce({
       localInference: false,
       recipeParameterScopes: false,
+      emptyExtensionSelection: false,
     });
 
     await expect(
