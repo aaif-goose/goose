@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-17
+
+### Added
+
+- add IO Intelligence provider ([#12795](https://github.com/aaif-goose/goose/pull/12795))
+
+### Fixed
+
+- *(providers)* add missing GLM models to OpenCode Go and Zen ([#12057](https://github.com/aaif-goose/goose/pull/12057))
+- *(openrouter)* use the context length OpenRouter reports ([#12853](https://github.com/aaif-goose/goose/pull/12853))
+- *(openai)* send session id as prompt_cache_key on Responses requests ([#12420](https://github.com/aaif-goose/goose/pull/12420))
+
+### Other
+
+- *(release)* bump version to 1.55.0 (minor) ([#12863](https://github.com/aaif-goose/goose/pull/12863))
+
 ## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
 
 ### Added
