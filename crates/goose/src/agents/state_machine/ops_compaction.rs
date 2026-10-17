@@ -7,14 +7,14 @@ use async_trait::async_trait;
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
+use crate::agents::state_machine::proactive_compaction::proactive_compaction_tokens;
 use crate::agents::state_machine::{
-    applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error, yielded,
-    yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
-    SlashCommand,
+    applied, messages_since_kickoff, not_applicable, trailing_error, yielded, yielded_with,
+    ConversationEffect, Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
 };
-use crate::context_mgmt::{compact_messages, count_context_tokens};
+use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
-use crate::conversation::{Conversation, EffectiveRole};
+use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::Session;
 use goose_providers::model::ModelConfig;
@@ -22,20 +22,6 @@ use goose_providers::model::ModelConfig;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
-
-/// Reported usage stops at the inference that requested the tools, so the
-/// results that answered it are not counted until the next request.
-async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
-    let messages = conversation.messages();
-    if last_effective_role(messages)? != EffectiveRole::Tool {
-        return Ok(0);
-    }
-    let after_request = messages
-        .iter()
-        .rposition(Message::is_tool_call)
-        .map_or(0, |index| index + 1);
-    count_context_tokens(&messages[after_request..]).await
-}
 
 pub struct CompactionOperation {
     provider: Arc<dyn Provider>,
@@ -59,20 +45,6 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
-        }
-    }
-
-    fn over_threshold(&self, tokens: usize) -> bool {
-        if self.threshold <= 0.0 || self.threshold >= 1.0 {
-            return false;
-        }
-        (tokens as f64 / self.context_limit as f64) > self.threshold
-    }
-
-    async fn context_tokens(&self, session: &Session, conversation: &Conversation) -> Result<i32> {
-        match session.usage.total_tokens {
-            Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
-            None => count_context_tokens(conversation.messages()).await,
         }
     }
 
@@ -216,15 +188,16 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             if context_errors > MAX_CONTEXT_ERROR_COMPACTIONS {
                 return not_applicable();
             }
-        } else {
-            // Compact only ahead of an inference; an assistant tail ends the turn.
-            if last_effective_role(messages)? == EffectiveRole::Assistant {
-                return not_applicable();
-            }
-            let tokens = self.context_tokens(session, conversation).await?;
-            if tokens <= 0 || !self.over_threshold(tokens as usize) {
-                return not_applicable();
-            }
+        } else if proactive_compaction_tokens(
+            session,
+            conversation,
+            self.context_limit,
+            self.threshold,
+        )
+        .await?
+        .is_none()
+        {
+            return not_applicable();
         }
 
         let conversation_with_hidden_error;

@@ -1,19 +1,25 @@
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_providers::api_client::{ApiClient, AuthMethod};
+use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
+use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST};
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, EmptyResponseOperation,
-    ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    BangShellOperation, CompactionOperation, ContextRelevanceOperation, DoctorOperation,
+    EmptyResponseOperation, ExitOnErrorOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::config::Config;
 use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
@@ -38,6 +44,44 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) stop_hook_block_cap: u32,
     pub(crate) max_turns: u32,
     pub(crate) cancel: CancellationToken,
+    pub(crate) context_relevance: Option<Arc<dyn DecisionProvider>>,
+}
+
+/// Providers that manage their own context never run the operation, so they
+/// must not trigger a secret lookup either. After an explicit opt-in, setup
+/// failures are logged and recorded with each observation instead of turning
+/// the experiment off silently.
+pub(crate) fn context_relevance_provider(
+    config: &Config,
+    provider: &dyn Provider,
+) -> Option<Arc<dyn DecisionProvider>> {
+    if provider.manages_own_context()
+        || !config
+            .get_param::<bool>("GOOSE_CONTEXT_RELEVANCE_SHADOW")
+            .unwrap_or(false)
+    {
+        return None;
+    }
+    Some(typesafe_provider(config).unwrap_or_else(|error| {
+        tracing::error!("context relevance shadow is enabled but TypeSafe setup failed: {error}");
+        Arc::new(UnavailableDecisions(error.to_string()))
+    }))
+}
+
+fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider>> {
+    let key = config
+        .get_secret::<String>("TYPESAFE_API_KEY")?
+        .trim()
+        .to_string();
+    anyhow::ensure!(!key.is_empty(), "TYPESAFE_API_KEY is empty");
+    let tls = crate::config::tls::provider_tls_config_from_config(config)?;
+    let client = ApiClient::with_timeout_and_tls(
+        TYPESAFE_DEFAULT_HOST.to_string(),
+        AuthMethod::BearerToken(key),
+        ContextRelevanceOperation::timeout(),
+        tls,
+    )?;
+    Ok(Arc::new(TypeSafeProvider::new(client)))
 }
 
 pub(crate) fn build_state_machine(
@@ -62,6 +106,7 @@ pub(crate) fn build_state_machine(
         stop_hook_block_cap,
         max_turns,
         cancel,
+        context_relevance,
     } = config;
     let manages_own_context = provider.manages_own_context();
 
@@ -87,6 +132,13 @@ pub(crate) fn build_state_machine(
         Arc::new(BangShellOperation::new()),
     ];
     if !manages_own_context {
+        if let Some(decisions) = context_relevance {
+            operations.push(Arc::new(ContextRelevanceOperation::new(
+                decisions,
+                context_limit,
+                compaction_threshold,
+            )));
+        }
         operations.push(Arc::new(CompactionOperation::new(
             provider.clone(),
             model_config.clone(),

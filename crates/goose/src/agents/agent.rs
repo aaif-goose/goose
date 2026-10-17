@@ -594,6 +594,11 @@ impl Agent {
                 crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
             });
 
+        let context_relevance = crate::agents::state_machine_builder::context_relevance_provider(
+            Config::global(),
+            provider.as_ref(),
+        );
+
         build_state_machine(StateMachineConfig {
             provider,
             model_config,
@@ -613,6 +618,7 @@ impl Agent {
             stop_hook_block_cap,
             max_turns,
             cancel,
+            context_relevance,
         })
     }
 

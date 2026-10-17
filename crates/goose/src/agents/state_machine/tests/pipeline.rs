@@ -99,6 +99,7 @@ pub(super) struct TestPipeline {
     max_turns: u32,
     scheduler: Option<Arc<crate::scheduler::Scheduler>>,
     subagent_host: Arc<crate::agents::Agent>,
+    context_relevance: Option<Arc<dyn goose_providers::decision::DecisionProvider>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
@@ -130,6 +131,7 @@ impl TestPipeline {
             stop_hook_block_cap: self.stop_hook_block_cap,
             max_turns: self.max_turns,
             cancel,
+            context_relevance: self.context_relevance.clone(),
         })
     }
 
@@ -176,6 +178,18 @@ impl TestPipeline {
             .apply()
             .await?;
         self.reconstruct().await
+    }
+
+    pub(super) fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    pub(super) fn with_context_relevance(
+        mut self,
+        decisions: Arc<dyn goose_providers::decision::DecisionProvider>,
+    ) -> Self {
+        self.context_relevance = Some(decisions);
+        self
     }
 
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
@@ -292,6 +306,7 @@ impl TestPipeline {
         .with_max_turns(self.max_turns)
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
+        pipeline.context_relevance = self.context_relevance.clone();
         Ok(pipeline)
     }
 
@@ -787,6 +802,7 @@ async fn build_test_pipeline(
         max_turns: MAX_TURNS,
         scheduler,
         subagent_host,
+        context_relevance: None,
         _temp_dir: temp_dir,
     };
     let extension_manager = pipeline.extension_manager.clone();
