@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 use crate::agents::tool_execution::ToolCallNotificationEmitter;
 use crate::subprocess::SubprocessExt;
@@ -20,6 +21,7 @@ pub use super::shell_output_streaming::{
     ShellOutputStream, DEVELOPER_SHELL_OUTPUT_NOTIFICATION_METHOD,
 };
 use super::shell_output_streaming::{ShellOutputBatcher, SHELL_LIVE_OUTPUT_FLUSH_INTERVAL};
+use super::shell_process::ShellProcess;
 
 /// Check if the current process is running inside a Flatpak sandbox.
 ///
@@ -431,51 +433,53 @@ async fn run_command(
     };
 
     let mut command = tokio::select! {
-        command = build_shell_command(command_line, working_dir, session_id) => command,
-        _ = sleep_until_deadline(deadline) => return Ok(not_started(true)),
+        biased;
         _ = cancellation_token.cancelled() => return Ok(not_started(false)),
+        _ = sleep_until_deadline(deadline) => return Ok(not_started(true)),
+        command = build_shell_command(command_line, working_dir, session_id) => command,
     };
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
     command.stdin(Stdio::null());
 
-    let mut child = command
-        .spawn()
+    let mut process = ShellProcess::spawn(&mut command)
         .map_err(|error| format!("Failed to spawn shell command: {}", error))?;
 
-    let child_stdout = child
+    let child_stdout = process
+        .child
         .stdout
         .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
-    let child_stderr = child
+    let child_stderr = process
+        .child
         .stderr
         .take()
         .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let output_task = tokio::spawn(collect_tagged_lines(
+    let output_task = AbortOnDropHandle::new(tokio::spawn(collect_tagged_lines(
         child_stdout,
         child_stderr,
         tx,
         notification_emitter,
-    ));
+    )));
     let abort_handle = output_task.abort_handle();
 
     let mut timed_out = false;
     let exit_code = tokio::select! {
-        result = child.wait() => result
+        result = process.wait() => result
             .map_err(|error| format!("Failed waiting on shell command: {}", error))?
             .code(),
         _ = sleep_until_deadline(deadline) => {
             timed_out = true;
-            let _ = child.start_kill();
-            let _ = child.wait().await;
+            process.kill().await
+                .map_err(|error| format!("Failed to stop shell command: {}", error))?;
             None
         }
         _ = cancellation_token.cancelled() => {
-            let _ = child.start_kill();
-            let _ = child.wait().await;
+            process.kill().await
+                .map_err(|error| format!("Failed to stop shell command: {}", error))?;
             None
         }
     };

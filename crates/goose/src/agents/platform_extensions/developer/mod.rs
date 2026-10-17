@@ -2,6 +2,7 @@ pub mod edit;
 pub mod image;
 pub mod shell;
 mod shell_output_streaming;
+mod shell_process;
 pub mod tree;
 
 use crate::agents::mcp_client::{Error, McpClientTrait};
