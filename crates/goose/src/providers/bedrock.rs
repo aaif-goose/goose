@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
@@ -190,6 +192,8 @@ pub struct BedrockProvider {
     http_client: reqwest::Client,
     #[serde(skip)]
     mantle_base_url: Option<String>,
+    #[serde(skip)]
+    documents_unsupported: AtomicBool,
 }
 
 /// Request inputs shared by the `Converse` and `ConverseStream` APIs.
@@ -309,6 +313,7 @@ impl BedrockProvider {
                 ))
                 .build()?,
             mantle_base_url: None,
+            documents_unsupported: AtomicBool::new(false),
         })
     }
 
@@ -447,8 +452,12 @@ impl BedrockProvider {
 
         let mut bedrock_messages: Vec<bedrock::Message> = Vec::new();
         for message in visible_messages {
-            let formatted =
-                to_bedrock_message_with_caching(message, false, Some(&model.model_name))?;
+            let formatted = to_bedrock_message_with_caching(
+                message,
+                false,
+                Some(&model.model_name),
+                self.documents_supported(),
+            )?;
             if formatted.content().is_empty() {
                 continue;
             }
@@ -485,6 +494,28 @@ impl BedrockProvider {
             thinking_fields: bedrock_anthropic_thinking_fields(model),
             inference_config: bedrock_inference_config(model),
         })
+    }
+
+    fn documents_supported(&self) -> bool {
+        !self.documents_unsupported.load(Ordering::Relaxed)
+    }
+
+    async fn send_with_document_fallback<T, Fut>(
+        &self,
+        request: impl Fn() -> Fut,
+    ) -> Result<T, ProviderError>
+    where
+        Fut: Future<Output = Result<T, ProviderError>>,
+    {
+        match request().await {
+            Err(err)
+                if is_documents_unsupported_error(&err)
+                    && !self.documents_unsupported.swap(true, Ordering::Relaxed) =>
+            {
+                request().await
+            }
+            result => result,
+        }
     }
 
     async fn converse(
@@ -638,7 +669,11 @@ impl BedrockProvider {
         model_name: &str,
     ) -> Result<MessageStream, ProviderError> {
         let (bedrock_message, bedrock_usage) = self
-            .with_retry(|| self.converse(model, session_id, system, messages, tools))
+            .with_retry(|| {
+                self.send_with_document_fallback(|| {
+                    self.converse(model, session_id, system, messages, tools)
+                })
+            })
             .await?;
 
         let usage = bedrock_usage
@@ -1023,7 +1058,9 @@ impl Provider for BedrockProvider {
         // the Anthropic provider's behaviour).
         let response = self
             .with_retry(|| {
-                self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                self.send_with_document_fallback(|| {
+                    self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                })
             })
             .await?;
 
@@ -1139,6 +1176,13 @@ impl Provider for BedrockProvider {
     }
 }
 
+fn is_documents_unsupported_error(err: &ProviderError) -> bool {
+    matches!(
+        err,
+        ProviderError::ExecutionError(details) if details.contains("doesn't support documents")
+    )
+}
+
 fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
     match err {
         ConverseStreamError::ThrottlingException(throttle_err) => {
@@ -1184,6 +1228,7 @@ mod tests {
 
         (
             BedrockProvider {
+                documents_unsupported: AtomicBool::new(false),
                 client,
                 retry_config: RetryConfig::default(),
                 name: "aws_bedrock".to_string(),
@@ -1205,6 +1250,23 @@ mod tests {
                 request_headers: None,
             },
         )
+    }
+
+    #[test]
+    fn documents_unsupported_error_is_detected() {
+        let err = ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"This model doesn't support documents.\") }"
+                .to_string(),
+        );
+        assert!(is_documents_unsupported_error(&err));
+
+        assert!(!is_documents_unsupported_error(&ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"Input is too long.\") }"
+                .to_string(),
+        )));
+        assert!(!is_documents_unsupported_error(
+            &ProviderError::ServerError("doesn't support documents".to_string(),)
+        ));
     }
 
     #[test]
@@ -1451,6 +1513,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.5");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -1515,6 +1578,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.6-terra");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -2047,6 +2111,7 @@ mod tests {
 
         let model = ModelConfig::new("google.gemma-4-31b");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
