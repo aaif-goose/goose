@@ -2115,7 +2115,19 @@ impl SessionStorage {
                 .bind(session_id)
                 .fetch_one(&mut *tx)
                 .await?;
-        let created = message.created.max(latest.unwrap_or(message.created));
+        // Normalize the latest timestamp to seconds before comparing so a
+        // millisecond-scale value from an older Goose version cannot win the
+        // max() and re-stamp every new message with a stale constant.
+        let latest_normalized = latest
+            .map(|t| {
+                if t > MILLISECOND_TIMESTAMP_THRESHOLD {
+                    t / 1000
+                } else {
+                    t
+                }
+            })
+            .unwrap_or(message.created);
+        let created = message.created.max(latest_normalized);
 
         let message_id = message
             .id
@@ -5267,5 +5279,95 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_add_message_normalizes_millisecond_timestamp_before_max() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test-stale-ts"),
+                "Mixed scales".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // Seed a millisecond-scale timestamp, as written by an older Goose
+        // version: numerically it dwarfs any seconds value, so without
+        // normalization max() re-stamps every new message with this constant.
+        add_message_at_millis(&sm, &session.id, "old message", "2025-01-01T00:00:00Z").await;
+
+        let current = chrono::Utc::now().timestamp();
+        sm.add_message(&session.id, &Message::user().with_text("new message"))
+            .await
+            .unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let timestamps: Vec<i64> = sqlx::query_scalar(
+            "SELECT created_timestamp FROM messages WHERE session_id = ? ORDER BY id",
+        )
+        .bind(&session.id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+
+        assert_eq!(timestamps.len(), 2);
+        assert!(timestamps[0] > MILLISECOND_TIMESTAMP_THRESHOLD);
+        assert!(
+            timestamps[1] >= current,
+            "new message keeps its own seconds-scale timestamp instead of the stale ms value: {}",
+            timestamps[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_add_message_clamp_preserves_arrival_order() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test-clamp"),
+                "Clamp order".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // A message built before the one it is appended after (operations do
+        // this when they prepare a reply while a tool runs) must be clamped
+        // up to the latest stored timestamp, never sorting ahead of it.
+        let mut held = Message::user().with_text("built first");
+        held.created -= 5;
+        sm.add_message(&session.id, &Message::user().with_text("appended first"))
+            .await
+            .unwrap();
+        let later = chrono::Utc::now().timestamp();
+        sm.add_message(&session.id, &held).await.unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let timestamps: Vec<i64> = sqlx::query_scalar(
+            "SELECT created_timestamp FROM messages WHERE session_id = ? ORDER BY id",
+        )
+        .bind(&session.id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+
+        assert_eq!(timestamps.len(), 2);
+        assert!(
+            timestamps[1] >= timestamps[0],
+            "held message clamped to latest"
+        );
+        assert!(
+            timestamps[1] >= later - 5,
+            "clamp uses the stored latest, not the held value: {}",
+            timestamps[1]
+        );
     }
 }
