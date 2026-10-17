@@ -628,7 +628,8 @@ pub async fn run_load_session_mcp<C: Connection>() {
     assert_stored_extensions(
         &conn,
         &session.session_id().0,
-        &["developer", "mcp-fixture"],
+        &["developer"],
+        &["mcp-fixture"],
     )
     .await;
 
@@ -651,8 +652,14 @@ pub async fn run_load_session_mcp<C: Connection>() {
     let SessionData {
         session: mut loaded_session,
         ..
-    } = conn.load_session(&session_id, vec![]).await.unwrap();
-    assert_stored_extensions(&conn, &session_id, &["developer", "mcp-fixture"]).await;
+    } = conn
+        .load_session(
+            &session_id,
+            vec![McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp_url))],
+        )
+        .await
+        .unwrap();
+    assert_stored_extensions(&conn, &session_id, &["developer"], &["mcp-fixture"]).await;
 
     let output = loaded_session
         .prompt(&shell_prompt, PermissionDecision::AllowOnce)
@@ -670,7 +677,12 @@ pub async fn run_load_session_mcp<C: Connection>() {
     );
 }
 
-async fn assert_stored_extensions<C: Connection>(conn: &C, session_id: &str, expected: &[&str]) {
+async fn assert_stored_extensions<C: Connection>(
+    conn: &C,
+    session_id: &str,
+    expected: &[&str],
+    absent: &[&str],
+) {
     let session = SessionManager::new(conn.data_root())
         .get_session(session_id, false)
         .await
@@ -687,6 +699,12 @@ async fn assert_stored_extensions<C: Connection>(conn: &C, session_id: &str, exp
         assert!(
             names.iter().any(|name| name == expected_name),
             "expected stored extension {expected_name} in {names:?}"
+        );
+    }
+    for absent_name in absent {
+        assert!(
+            !names.iter().any(|name| name == absent_name),
+            "expected no stored extension {absent_name} in {names:?}"
         );
     }
 }

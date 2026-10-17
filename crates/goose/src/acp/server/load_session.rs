@@ -399,7 +399,8 @@ impl GooseAcpAgent {
         let cwd = effective_session_cwd(self.session_cwd.as_deref(), &args.cwd);
         validate_absolute_cwd(&cwd)?;
 
-        session = self
+        let client_servers;
+        (session, client_servers) = self
             .prepare_session_for_activation(session, cwd, args.mcp_servers, true)
             .await?;
         self.render_stored_recipe_template(&mut session).await?;
@@ -411,7 +412,9 @@ impl GooseAcpAgent {
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
+        let (agent, extension_results) = self
+            .prepare_acp_session_agent(cx, &session, client_servers)
+            .await?;
         self.register_acp_session(session_id_str.clone(), agent.clone())
             .await;
         let provider = agent

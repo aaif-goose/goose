@@ -517,14 +517,14 @@ fn mcp_server_configs(
         .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))
 }
 
-fn add_mcp_servers(
-    extensions: &mut Vec<ExtensionConfig>,
-    mcp_servers: Vec<McpServer>,
-) -> Result<(), agent_client_protocol::Error> {
-    for extension in mcp_server_configs(mcp_servers)? {
-        push_or_replace_extension(extensions, extension);
-    }
-    Ok(())
+/// The client's servers serve the session from memory, so a stored copy
+/// would only leak the URLs and headers they carry.
+fn drop_client_servers(extensions: &mut Vec<ExtensionConfig>, client_servers: &[ExtensionConfig]) {
+    extensions.retain(|extension| {
+        !client_servers
+            .iter()
+            .any(|server| server.key() == extension.key())
+    });
 }
 
 fn enabled_extensions_data(
@@ -561,7 +561,6 @@ fn initial_session_extensions(
     config: &Config,
     builtin_selection: &AcpBuiltinSelection,
     project_root: &Path,
-    mcp_servers: Vec<McpServer>,
     goose_extensions: Option<Vec<GooseExtension>>,
     recipe_extensions: Option<&[ExtensionConfig]>,
 ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
@@ -589,7 +588,6 @@ fn initial_session_extensions(
         {
             push_or_replace_extension(&mut extensions, extension);
         }
-        add_mcp_servers(&mut extensions, mcp_servers)?;
     }
 
     Ok(extensions)
@@ -1117,14 +1115,21 @@ impl GooseAcpAgent {
         Ok(())
     }
 
+    /// `client_servers` are the request's `mcpServers`: they serve this
+    /// connection's session but stay out of the session record.
     async fn prepare_acp_session_agent(
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
+        client_servers: Vec<ExtensionConfig>,
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
         let agent = self
             .get_or_create_session_agent(cx, session.id.clone())
             .await?;
+        agent
+            .extension_manager
+            .set_client_servers(&session.id, client_servers)
+            .await;
         self.apply_acp_extension_overrides(cx, &agent, session)
             .await?;
         // Leases start extensions on first use anyway; starting them here is
@@ -1147,7 +1152,7 @@ impl GooseAcpAgent {
         cwd: std::path::PathBuf,
         mcp_servers: Vec<McpServer>,
         include_messages_on_reload: bool,
-    ) -> Result<Session, agent_client_protocol::Error> {
+    ) -> Result<(Session, Vec<ExtensionConfig>), agent_client_protocol::Error> {
         let config = Config::global();
         let mut builder = self.session_manager.update(&session.id);
         let mut session_needs_update = false;
@@ -1166,17 +1171,15 @@ impl GooseAcpAgent {
             session_needs_update = true;
         }
 
-        if !mcp_servers.is_empty() {
-            let extensions = mcp_server_configs(mcp_servers)?;
+        let client_servers = mcp_server_configs(mcp_servers)?;
+        if !client_servers.is_empty() {
+            // Earlier versions stored them.
             self.session_manager
                 .update_enabled_extensions(&session.id, |selected| {
-                    for extension in extensions {
-                        push_or_replace_extension(selected, extension);
-                    }
+                    drop_client_servers(selected, &client_servers)
                 })
                 .await
-                .internal_err_ctx("Failed to add the client's MCP servers")?;
-            session_needs_update = true;
+                .internal_err_ctx("Failed to drop stored copies of the client's MCP servers")?;
         }
 
         if session_needs_update {
@@ -1198,25 +1201,25 @@ impl GooseAcpAgent {
                 .internal_err_ctx("Failed to reload session")?;
         }
 
-        Ok(session)
+        Ok((session, client_servers))
     }
 
     fn build_enabled_extensions_data(
         &self,
         config: &Config,
         session: &Session,
-        mcp_servers: Vec<McpServer>,
+        client_servers: &[ExtensionConfig],
         goose_extensions: Option<Vec<GooseExtension>>,
         recipe_extensions: Option<&[ExtensionConfig]>,
     ) -> Result<ExtensionData, agent_client_protocol::Error> {
-        let extensions = initial_session_extensions(
+        let mut extensions = initial_session_extensions(
             config,
             &self.builtin_selection,
             &session.working_dir,
-            mcp_servers,
             goose_extensions,
             recipe_extensions,
         )?;
+        drop_client_servers(&mut extensions, client_servers);
         enabled_extensions_data(session, extensions)
     }
 
@@ -1291,8 +1294,11 @@ impl GooseAcpAgent {
         &self,
         cx: &ConnectionTo<Client>,
         session: &Session,
+        client_servers: Vec<ExtensionConfig>,
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
-        let (agent, extension_results) = self.prepare_acp_session_agent(cx, session).await?;
+        let (agent, extension_results) = self
+            .prepare_acp_session_agent(cx, session, client_servers)
+            .await?;
         self.register_acp_session(session.id.clone(), agent.clone())
             .await;
 
@@ -1869,7 +1875,7 @@ impl GooseAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
-        let (agent, _) = self.activate_acp_session(cx, &session).await?;
+        let (agent, _) = self.activate_acp_session(cx, &session, vec![]).await?;
         Ok(agent)
     }
 
@@ -2881,40 +2887,7 @@ mod tests {
     }
 
     #[test]
-    fn new_session_mcp_is_additive_to_enabled_config_extensions() {
-        let (config, _c, _s) = config_with_yaml(
-            r#"
-extensions:
-  developer:
-    enabled: true
-    type: builtin
-    name: developer
-"#,
-        );
-        let project_root = tempfile::tempdir().unwrap();
-        let extensions = initial_session_extensions(
-            &config,
-            &AcpBuiltinSelection::default(),
-            project_root.path(),
-            vec![McpServer::Http(McpServerHttp::new(
-                "zed-mcp",
-                "http://localhost/mcp",
-            ))],
-            None,
-            None,
-        )
-        .unwrap();
-
-        assert!(extensions
-            .iter()
-            .any(|extension| extension.name() == "developer"));
-        assert!(extensions
-            .iter()
-            .any(|extension| extension.name() == "zed-mcp"));
-    }
-
-    #[test]
-    fn new_session_mcp_does_not_enable_disabled_default_builtin() {
+    fn new_session_does_not_enable_disabled_default_builtin() {
         let (config, _c, _s) = config_with_yaml(
             r#"
 extensions:
@@ -2929,19 +2902,12 @@ extensions:
             &config,
             &AcpBuiltinSelection::from_requested(Vec::new()),
             project_root.path(),
-            vec![McpServer::Http(McpServerHttp::new(
-                "zed-mcp",
-                "http://localhost/mcp",
-            ))],
             None,
             None,
         )
         .unwrap();
 
         assert!(!has_developer(&extensions));
-        assert!(extensions
-            .iter()
-            .any(|extension| extension.name() == "zed-mcp"));
     }
 
     fn requested_builtin(name: &str) -> GooseExtension {
@@ -2977,7 +2943,6 @@ extensions:
                 &config,
                 &selection,
                 project_root.path(),
-                vec![],
                 Some(vec![requested_builtin("memory")]),
                 None,
             )
@@ -2997,7 +2962,6 @@ extensions:
             &config,
             &default_builtin("developer"),
             project_root.path(),
-            vec![],
             Some(vec![]),
             None,
         )
@@ -3007,7 +2971,7 @@ extensions:
     }
 
     #[test]
-    fn client_selection_ignores_configured_extensions_and_request_mcp_servers() {
+    fn client_selection_ignores_configured_extensions() {
         let (config, _c, _s) = config_with_yaml(
             r#"
 extensions:
@@ -3027,10 +2991,6 @@ extensions:
             &config,
             &default_builtin("developer"),
             project_root.path(),
-            vec![McpServer::Http(McpServerHttp::new(
-                "zed-mcp",
-                "http://localhost/mcp",
-            ))],
             Some(vec![requested_builtin("memory")]),
             None,
         )
@@ -3050,7 +3010,6 @@ extensions:
             &config,
             &default_builtin("developer"),
             project_root.path(),
-            vec![],
             Some(vec![]),
             Some(&recipe_extensions),
         )
@@ -3060,53 +3019,6 @@ extensions:
         assert!(extensions
             .iter()
             .any(|extension| extension.name() == "memory"));
-    }
-
-    #[test]
-    fn acp_mcp_is_additive_to_stored_extensions() {
-        let mut stored_extensions = vec![builtin_to_extension_config("developer")];
-        add_mcp_servers(
-            &mut stored_extensions,
-            vec![McpServer::Http(McpServerHttp::new(
-                "zed-mcp",
-                "http://localhost/mcp",
-            ))],
-        )
-        .unwrap();
-
-        assert!(has_developer(&stored_extensions));
-        assert!(stored_extensions
-            .iter()
-            .any(|extension| extension.name() == "zed-mcp"));
-    }
-
-    #[test]
-    fn acp_mcp_replaces_same_named_extension() {
-        let mut extensions =
-            vec![
-                mcp_server_to_extension_config(McpServer::Http(McpServerHttp::new(
-                    "zed-mcp",
-                    "http://localhost/old",
-                )))
-                .unwrap(),
-            ];
-        add_mcp_servers(
-            &mut extensions,
-            vec![McpServer::Http(McpServerHttp::new(
-                "zed-mcp",
-                "http://localhost/new",
-            ))],
-        )
-        .unwrap();
-
-        assert_eq!(extensions.len(), 1);
-        match &extensions[0] {
-            ExtensionConfig::StreamableHttp { name, uri, .. } => {
-                assert_eq!(name, "zed-mcp");
-                assert_eq!(uri, "http://localhost/new");
-            }
-            extension => panic!("expected streamable HTTP extension, got {extension:?}"),
-        }
     }
 
     #[test]

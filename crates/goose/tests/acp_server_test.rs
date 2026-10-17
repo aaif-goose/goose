@@ -3,7 +3,7 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
+    ContentBlock, HttpHeader, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
     NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
     SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
     StopReason, TextContent,
@@ -1259,6 +1259,138 @@ async fn assert_usage_updates_during_prompt() {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     assert_eq!(used, [2469, 2631, 2631], "agent text: {}", output.text);
+}
+
+/// A client's MCP server URL and headers can carry a bearer token, so goose
+/// connects to them for the session but never writes them to sessions.db.
+async fn assert_client_mcp_servers_stay_out_of_sessions_db() {
+    let prompt = "Use the get_code tool and output only its result.";
+    let token = "client-mcp-bearer-3f9c1e";
+    let mcp = McpFixture::new().await;
+    let server =
+        || {
+            McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url).headers(vec![
+                HttpHeader::new("Authorization", format!("Bearer {token}")),
+            ]))
+        };
+    let tool_turn = || {
+        [
+            (
+                prompt.to_string(),
+                include_str!("acp_test_data/openai_tool_call.txt"),
+            ),
+            (
+                format!(r#""content":"{FAKE_CODE}""#),
+                include_str!("acp_test_data/openai_tool_result.txt"),
+            ),
+        ]
+    };
+    let openai = OpenAiFixture::new(
+        tool_turn().into_iter().chain(tool_turn()).collect(),
+        <AcpServerConnection as Connection>::expected_session_id(),
+    )
+    .await;
+    let config = TestConnectionConfig {
+        mcp_servers: vec![server()],
+        ..Default::default()
+    };
+    let mut conn = <AcpServerConnection as Connection>::new(config, openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    let output = session
+        .prompt(prompt, PermissionDecision::Cancel)
+        .await
+        .unwrap();
+    assert_eq!(output.text, FAKE_CODE, "tool call failed in new session");
+    assert_not_in_sessions_db(&conn.data_root(), &[token, &mcp.url]);
+
+    let session_id = session.session_id().0.to_string();
+    let SessionData {
+        session: mut loaded,
+        ..
+    } = conn
+        .load_session(&session_id, vec![server()])
+        .await
+        .unwrap();
+    let output = loaded
+        .prompt(prompt, PermissionDecision::Cancel)
+        .await
+        .unwrap();
+    assert_eq!(output.text, FAKE_CODE, "tool call failed in loaded session");
+    assert_not_in_sessions_db(&conn.data_root(), &[token, &mcp.url]);
+}
+
+/// Reads the database with its WAL, where recent writes sit until a checkpoint.
+fn assert_not_in_sessions_db(data_root: &Path, secrets: &[&str]) {
+    let sessions = data_root.join("sessions");
+    let mut files = 0;
+    for entry in std::fs::read_dir(&sessions).unwrap() {
+        let path = entry.unwrap().path();
+        if !path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("sessions.db"))
+        {
+            continue;
+        }
+        files += 1;
+        let bytes = std::fs::read(&path).unwrap();
+        for secret in secrets {
+            assert!(
+                !bytes
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes()),
+                "{} contains {secret}",
+                path.display()
+            );
+        }
+    }
+    assert!(files > 0, "no sessions.db in {}", sessions.display());
+}
+
+#[test]
+fn test_client_mcp_servers_stay_out_of_sessions_db() {
+    run_test(async { assert_client_mcp_servers_stay_out_of_sessions_db().await });
+}
+
+/// Buzz also names its server in the selection, so goose versions that store
+/// `mcpServers` still load it. The stored selection leaves that entry out.
+#[test]
+fn test_client_mcp_server_in_the_selection_stays_out_of_sessions_db() {
+    run_test(async {
+        let token = "client-mcp-bearer-8d2a4b";
+        let mcp = McpFixture::new().await;
+        let server = McpServer::Http(McpServerHttp::new("mcp-fixture", &mcp.url).headers(vec![
+            HttpHeader::new("Authorization", format!("Bearer {token}")),
+        ]));
+        let openai = OpenAiFixture::new(
+            vec![],
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "enabledExtensions".to_string(),
+            serde_json::json!([{ "type": "mcp", "server": server }]),
+        );
+        let work_dir = tempfile::tempdir().unwrap();
+        let response = conn
+            .cx()
+            .send_request(
+                NewSessionRequest::new(work_dir.path())
+                    .mcp_servers(vec![server])
+                    .meta(meta),
+            )
+            .block_task()
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.meta.unwrap()["extensionResults"],
+            serde_json::json!([{ "name": "mcp-fixture", "success": true }])
+        );
+        assert_not_in_sessions_db(&conn.data_root(), &[token, &mcp.url]);
+    });
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::acp::custom_requests::GooseExtension;
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
-use crate::agents::ExtensionLoadResult;
+use crate::agents::{ExtensionConfig, ExtensionLoadResult};
 use crate::config::{Config, GooseMode};
 use crate::recipe::{Recipe, Settings};
 use crate::session::{ExtensionData, Session, SessionType};
@@ -81,11 +81,14 @@ impl GooseAcpAgent {
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        self.configure_new_session(cx, config, session, args, recipe, meta)
+        let client_servers = self
+            .configure_new_session(cx, config, session, args, recipe, meta)
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
+        let (agent, extension_results) = self
+            .activate_acp_session(cx, &reloaded_session, client_servers)
+            .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
@@ -128,7 +131,8 @@ impl GooseAcpAgent {
         args: NewSessionRequest,
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
-    ) -> Result<(), agent_client_protocol::Error> {
+    ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+        let client_servers = super::mcp_server_configs(args.mcp_servers)?;
         let recipe_parameter_scope_id = meta_string(args.meta.as_ref(), "recipeParameterScopeId")?;
         let (rendered, user_recipe_values) = self
             .render_recipe_for_session(
@@ -149,7 +153,7 @@ impl GooseAcpAgent {
         let extension_data = self.build_enabled_extensions_data(
             config,
             session,
-            args.mcp_servers,
+            &client_servers,
             goose_extensions,
             recipe_extensions,
         )?;
@@ -165,7 +169,8 @@ impl GooseAcpAgent {
                 meta,
             },
         )
-        .await
+        .await?;
+        Ok(client_servers)
     }
 
     async fn reload_session(

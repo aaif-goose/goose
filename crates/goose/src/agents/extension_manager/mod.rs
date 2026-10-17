@@ -373,6 +373,10 @@ pub struct ExtensionManager {
     /// the old selection in the meantime must not lose them, or the next
     /// lease would start a second process.
     enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
+    /// MCP servers a client passed for a session, by session. They join each
+    /// lease but never the session record, so their URLs and headers stay off
+    /// disk; the client sends them again when it loads the session.
+    client_servers: Mutex<HashMap<String, Vec<ExtensionConfig>>>,
     context: PlatformExtensionContext,
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
@@ -597,6 +601,7 @@ impl ExtensionManager {
         Self {
             scopes: Mutex::new(HashMap::new()),
             enabling: Mutex::new(HashMap::new()),
+            client_servers: Mutex::new(HashMap::new()),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -753,7 +758,9 @@ impl ExtensionManager {
                 Err(_) => false,
             },
         };
-        let extensions = selection(session)
+        let extensions = self
+            .selection(session)
+            .await
             .into_iter()
             .filter(|config| {
                 !(provider_runs_tool_loop
@@ -968,7 +975,18 @@ impl ExtensionManager {
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
-        self.context
+        let client_server = self
+            .client_servers
+            .lock()
+            .await
+            .get_mut(session_id)
+            .is_some_and(|servers| {
+                let selected = servers.len();
+                servers.retain(|config| config.key() != key);
+                servers.len() != selected
+            });
+        let selected = self
+            .context
             .session_manager
             .update_enabled_extensions(session_id, |extensions| {
                 let selected = extensions.len();
@@ -976,7 +994,19 @@ impl ExtensionManager {
                 extensions.len() != selected
             })
             .await
-            .map_err(|error| ExtensionError::SetupError(error.to_string()))
+            .map_err(|error| ExtensionError::SetupError(error.to_string()))?;
+        Ok(client_server || selected)
+    }
+
+    /// Replaces the MCP servers the client passed for the session. They are
+    /// started like selected extensions and replace one with the same key.
+    pub async fn set_client_servers(&self, session_id: &str, servers: Vec<ExtensionConfig>) {
+        let mut client_servers = self.client_servers.lock().await;
+        if servers.is_empty() {
+            client_servers.remove(session_id);
+        } else {
+            client_servers.insert(session_id.to_string(), servers);
+        }
     }
 
     pub async fn apply(
@@ -1059,6 +1089,7 @@ impl ExtensionManager {
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
         self.scopes.lock().await.remove(session_id);
+        self.client_servers.lock().await.remove(session_id);
     }
 
     pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
@@ -1067,7 +1098,7 @@ impl ExtensionManager {
             .session_manager
             .get_session(session_id, false)
             .await?;
-        Ok(selection(&session))
+        Ok(self.selection(&session).await)
     }
 
     pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
@@ -1083,12 +1114,19 @@ impl ExtensionManager {
         let key = name_to_key(name);
         Ok(self.list_extensions(session_id).await?.contains(&key))
     }
-}
 
-fn selection(session: &Session) -> Vec<ExtensionConfig> {
-    EnabledExtensionsState::from_extension_data(&session.extension_data)
-        .map(|state| state.extensions)
-        .unwrap_or_default()
+    async fn selection(&self, session: &Session) -> Vec<ExtensionConfig> {
+        let mut extensions = EnabledExtensionsState::from_extension_data(&session.extension_data)
+            .map(|state| state.extensions)
+            .unwrap_or_default();
+        if let Some(servers) = self.client_servers.lock().await.get(&session.id) {
+            for server in servers {
+                extensions.retain(|config| config.key() != server.key());
+                extensions.push(server.clone());
+            }
+        }
+        extensions
+    }
 }
 
 #[cfg(test)]
