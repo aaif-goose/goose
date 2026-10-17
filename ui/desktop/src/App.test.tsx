@@ -12,6 +12,8 @@ import { FeaturesProvider } from './contexts/FeaturesContext';
 import { reconnectAcpAfterSystemResume } from './acp/acpConnection';
 import { createSession } from './sessions';
 import { RecipeParameterScopesUnsupportedError } from './acp/errors';
+import { acpChatSessionActions, acpChatSessionStore } from './acp/chatSessionStore';
+import type { Session } from './types/session';
 
 const mockToastError = vi.hoisted(() => vi.fn());
 
@@ -144,6 +146,7 @@ vi.mock('./components/AnnouncementModal', () => ({
 const mockNavigate = vi.fn();
 const mockSearchParams = new URLSearchParams();
 const mockSetSearchParams = vi.fn();
+const mockLocation = { state: null, pathname: '/', search: '' };
 
 // Mock react-router to avoid HashRouter issues in tests
 vi.mock('react-router', () => ({
@@ -151,7 +154,7 @@ vi.mock('react-router', () => ({
   Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Route: ({ element }: { element: React.ReactNode }) => element,
   useNavigate: () => mockNavigate,
-  useLocation: () => ({ state: null, pathname: '/' }),
+  useLocation: () => mockLocation,
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
   Outlet: () => null,
 }));
@@ -213,6 +216,8 @@ describe('App Component - Brand New State', () => {
     vi.clearAllMocks();
     mockNavigate.mockClear();
     mockSetSearchParams.mockClear();
+    mockLocation.pathname = '/';
+    mockLocation.search = '';
     mockAppConfig.get.mockImplementation((key: string): string | null => {
       if (key === 'GOOSE_WORKING_DIR') return '/test/dir';
       return null;
@@ -230,6 +235,8 @@ describe('App Component - Brand New State', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    acpChatSessionActions.deleteSnapshot('website');
+    acpChatSessionActions.deleteSnapshot('payments');
   });
 
   it('should redirect to "/" when app is brand new (no provider configured)', async () => {
@@ -313,6 +320,7 @@ describe('App Component - Brand New State', () => {
   });
 
   it('should navigate home when the main process emits new-chat', async () => {
+    mockLocation.pathname = '/sessions';
     mockElectron.getConfig.mockReturnValue({
       GOOSE_DEFAULT_PROVIDER: 'openai',
       GOOSE_DEFAULT_MODEL: 'gpt-4',
@@ -332,7 +340,44 @@ describe('App Component - Brand New State', () => {
 
     newChatHandler?.({} as any);
 
-    expect(mockNavigate).toHaveBeenCalledWith('/');
+    expect(mockNavigate).toHaveBeenCalledWith('/', { state: { workingDir: undefined } });
+  });
+
+  it('inherits the active session folder without changing other sessions', async () => {
+    mockLocation.pathname = '/pair';
+    mockLocation.search = '?resumeSessionId=website';
+    acpChatSessionActions.setSessionMetadata('website', {
+      id: 'website',
+      working_dir: '/projects/website',
+    } as Session);
+    acpChatSessionActions.setSessionMetadata('payments', {
+      id: 'payments',
+      working_dir: '/projects/payments',
+    } as Session);
+
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+
+    await waitFor(() => expect(mockElectron.reactReady).toHaveBeenCalled());
+
+    // Read the folder at shortcut time, including a change made since the render.
+    acpChatSessionActions.setSessionMetadata('website', {
+      id: 'website',
+      working_dir: '/projects/website/frontend',
+    } as Session);
+    const newChatHandler = mockElectron.on.mock.calls.find(
+      ([channel]) => channel === 'new-chat'
+    )?.[1];
+    newChatHandler?.({} as any);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/', {
+      state: { workingDir: '/projects/website/frontend' },
+    });
+    expect(acpChatSessionStore.getSnapshot('website')?.session?.working_dir).toBe(
+      '/projects/website/frontend'
+    );
+    expect(acpChatSessionStore.getSnapshot('payments')?.session?.working_dir).toBe(
+      '/projects/payments'
+    );
   });
 
   it('should reconnect ACP when the main process emits system-resume', async () => {

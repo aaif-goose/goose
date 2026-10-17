@@ -2603,7 +2603,7 @@ async function appMain() {
           accelerator: shortcuts.newChat,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) focusedWindow.webContents.send('set-view', '');
+            if (focusedWindow) focusedWindow.webContents.send('new-chat');
           },
         })
       );

@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useLocation } from 'react-router';
 import { defineMessages, useIntl } from '../i18n';
 import { AppEvents } from '../constants/events';
 import ChatInput from './ChatInput';
@@ -60,8 +61,10 @@ export default function Hub({
   liveVoice: LiveVoiceController;
 }) {
   const intl = useIntl();
+  const { state } = useLocation();
+  const initialWorkingDir = (state as { workingDir?: string } | null)?.workingDir;
   const { extensionsList } = useConfig();
-  const [workingDir, setWorkingDir] = useState(getInitialWorkingDir());
+  const [workingDir, setWorkingDir] = useState(initialWorkingDir ?? getInitialWorkingDir());
   const userSelectedWorkingDirRef = useRef(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
@@ -75,13 +78,13 @@ export default function Hub({
   // creation, so a configured remote directory may have changed since then.
   useEffect(() => {
     let active = true;
-    void getEffectiveWorkingDir().then((dir) => {
+    void getEffectiveWorkingDir(initialWorkingDir).then((dir) => {
       if (active && !userSelectedWorkingDirRef.current) setWorkingDir(dir);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialWorkingDir]);
 
   useEffect(() => {
     let requestGeneration = 0;
@@ -155,7 +158,9 @@ export default function Hub({
 
       // Resolve the effective directory at submit time: the IPC lookup may still
       // be pending when the user submits, and an explicit pick must win.
-      const dir = userSelectedWorkingDirRef.current ? workingDir : await getEffectiveWorkingDir();
+      const dir = userSelectedWorkingDirRef.current
+        ? workingDir
+        : await getEffectiveWorkingDir(initialWorkingDir);
       const session = await createSession(dir, sessionOptions);
       setNextChatExtensionDraft(null);
       return session;
