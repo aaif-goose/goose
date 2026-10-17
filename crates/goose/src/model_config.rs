@@ -343,6 +343,25 @@ mod azure_foundry_tests {
 }
 
 #[cfg(test)]
+mod openrouter_tests {
+    use super::*;
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    fn openrouter_variant_does_not_inherit_base_output_limit(model: &str) {
+        let config = apply_canonical_limits("openrouter", ModelConfig::new(model));
+        assert_eq!(config.max_tokens, None);
+    }
+
+    #[test]
+    fn openrouter_base_keeps_catalog_output_limit() {
+        let config =
+            apply_canonical_limits("openrouter", ModelConfig::new("deepseek/deepseek-v4-flash"));
+        assert!(config.max_tokens.is_some());
+    }
+}
+
+#[cfg(test)]
 mod canonical_vision_tests {
     use super::*;
 
