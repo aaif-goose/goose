@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Автосжимать при"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Автосжатие отключено"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Сжать сейчас"
   },

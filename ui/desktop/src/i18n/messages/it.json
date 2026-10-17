@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Compattazione automatica a"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Compattazione automatica disattivata"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Compatta ora"
   },

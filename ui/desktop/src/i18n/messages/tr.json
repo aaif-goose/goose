@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Otomatik sıkıştırma eşiği"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Otomatik sıkıştırma kapalı"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Şimdi sıkıştır"
   },

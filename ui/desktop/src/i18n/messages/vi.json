@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Tự động nén tại"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Tự động nén đã tắt"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Nén ngay"
   },

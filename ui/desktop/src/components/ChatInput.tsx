@@ -1,4 +1,7 @@
+import type { ModelInfo } from '../types/providers';
 import { AppEvents } from '../constants/events';
+
+
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { ArrowUp, Bug, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
@@ -358,6 +361,10 @@ export default function ChatInput({
     }
   }, [sessionModel, sessionProvider, configModel, configProvider, sessionId, modelOverride]);
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
+  const [modelAutoCompactLimit, setModelAutoCompactLimit] = useState<number | undefined>(
+    undefined
+  );
+  const loadProviderDetailsSeqRef = useRef(0);
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
@@ -637,23 +644,49 @@ export default function ChatInput({
 
   // Load providers and get current model's token limit
   const loadProviderDetails = async () => {
-    try {
-      if (sessionId) {
-        setTokenLimit(0);
-        setIsTokenLimitLoaded(false);
-        return;
-      }
+    // Guard against interleaved runs when the model changes rapidly: only
+    // the most recent invocation may write state
+    const seq = ++loadProviderDetailsSeqRef.current;
+    // Reset synchronously before any awaits so the [contextLimit] effect can
+    // apply the session-streamed limit afterwards without being clobbered
+    if (sessionId) {
+      setTokenLimit(0);
       setIsTokenLimitLoaded(false);
-
+    } else {
+      setIsTokenLimitLoaded(false);
+    }
+    try {
       // Use effective model/provider (includes overrides from in-session model changes),
       // fall back to config defaults
       let model = effectiveModel;
       let provider = effectiveProvider;
       if (!model || !provider) {
         const configModelAndProvider = await getCurrentModelAndProvider();
+        if (seq !== loadProviderDetailsSeqRef.current) {
+          return;
+        }
         model = configModelAndProvider.model;
         provider = configModelAndProvider.provider;
       }
+
+      // A model can declare its own auto-compaction cap, overriding the global
+      // GOOSE_AUTO_COMPACT_TOKEN_LIMIT; surface it for the context-window alert
+      // in both session and no-session contexts — inside a session the context
+      // limit comes from the session stream, but the declared cap does not
+      let knownModel: ModelInfo | undefined;
+      if (model && provider) {
+        const currentProvider = await acpGetProviderDetails(provider).catch(() => null);
+        if (seq !== loadProviderDetailsSeqRef.current) {
+          return;
+        }
+        knownModel = currentProvider?.metadata?.known_models?.find((m) => m.name === model);
+      }
+      setModelAutoCompactLimit(knownModel?.auto_compact_token_limit ?? undefined);
+
+      if (sessionId) {
+        return;
+      }
+
       if (!model || !provider) {
         setIsTokenLimitLoaded(true);
         return;
@@ -677,14 +710,10 @@ export default function ChatInput({
       }
 
       // Priority 3: Fall back to provider metadata known_models (may be outdated)
-      const currentProvider = await acpGetProviderDetails(provider);
-      if (currentProvider?.metadata?.known_models) {
-        const modelConfig = currentProvider.metadata.known_models.find((m) => m.name === model);
-        if (modelConfig?.context_limit) {
-          setTokenLimit(modelConfig.context_limit);
-          setIsTokenLimitLoaded(true);
-          return;
-        }
+      if (knownModel?.context_limit) {
+        setTokenLimit(knownModel.context_limit);
+        setIsTokenLimitLoaded(true);
+        return;
       }
 
       // Priority 4: Use default if nothing else found
@@ -692,8 +721,12 @@ export default function ChatInput({
       setIsTokenLimitLoaded(true);
     } catch (err) {
       console.error('Error loading providers or token limit:', err);
-      // Set default limit on error
+      if (seq !== loadProviderDetailsSeqRef.current) {
+        return;
+      }
+      // Set default limit on error and drop any stale model-declared cap
       setTokenLimit(TOKEN_LIMIT_DEFAULT);
+      setModelAutoCompactLimit(undefined);
       setIsTokenLimitLoaded(true);
     }
   };
@@ -738,11 +771,12 @@ export default function ChatInput({
           handleSubmit({ msg: MANUAL_COMPACT_TRIGGER, images: [] });
         },
         compactIcon: <ScrollText size={12} />,
+        autoCompactTokenLimit: modelAutoCompactLimit,
       });
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalTokens, tokenLimit, isTokenLimitLoaded, isLoading, addAlert, clearAlerts]);
+  }, [totalTokens, tokenLimit, modelAutoCompactLimit, isTokenLimitLoaded, isLoading, addAlert, clearAlerts]);
 
   // Cleanup effect for component unmount - prevent memory leaks
   useEffect(() => {

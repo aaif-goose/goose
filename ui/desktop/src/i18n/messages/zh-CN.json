@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "自动压缩阈值"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "自动压缩已关闭"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "立即压缩"
   },

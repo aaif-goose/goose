@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "자동 압축 기준"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "자동 압축 끄기"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "지금 압축"
   },
