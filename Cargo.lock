@@ -4615,6 +4615,7 @@ dependencies = [
  "getrandom 0.4.3",
  "gloo-timers",
  "once_cell",
+ "percent-encoding",
  "rand 0.10.2",
  "regex",
  "reqwest 0.13.5",
