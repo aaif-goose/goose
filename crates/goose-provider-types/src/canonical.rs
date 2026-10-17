@@ -163,7 +163,7 @@ fn dotted_version_to_dash(name: &str) -> String {
 /// billing can vary by deployment region, SKU, offer, and contract/discounts. Callers should
 /// treat this as `CostSource::Estimated` rather than `CostSource::ProviderReported`.
 fn should_clear_catalog_pricing(provider: &str) -> bool {
-    matches!(provider, "ollama" | "local")
+    matches!(provider, "ollama" | "llmman" | "local")
 }
 
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
@@ -220,6 +220,19 @@ mod tests {
         // When accessed via ollama, cost must be zeroed out.
         let canonical = maybe_get_canonical_model("ollama", "mistral-nemo")
             .expect("mistral-nemo should resolve via ollama");
+        assert_eq!(canonical.cost.input, None);
+        assert_eq!(canonical.cost.output, None);
+        assert!(
+            canonical.limit.context > 0,
+            "context limit should be preserved"
+        );
+    }
+
+    #[test]
+    fn llmman_models_have_zero_cost() {
+        // llmman serves models locally, so the hosted rate of "mistral-nemo" must not apply.
+        let canonical = maybe_get_canonical_model("llmman", "mistral-nemo")
+            .expect("mistral-nemo should resolve via llmman");
         assert_eq!(canonical.cost.input, None);
         assert_eq!(canonical.cost.output, None);
         assert!(

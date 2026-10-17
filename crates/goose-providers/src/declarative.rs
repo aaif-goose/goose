@@ -31,6 +31,7 @@ pub(crate) mod declarative_providers {
         inception,
         ionet,
         llama_swap,
+        llmman,
         lmstudio,
         lynkr,
         meta,
