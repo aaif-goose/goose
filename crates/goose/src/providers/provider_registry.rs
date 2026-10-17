@@ -417,6 +417,7 @@ mod tests {
             setup_steps: vec![],
             toolshim: false,
             preserves_thinking: false,
+            reasoning_effort_mapping: None,
             emit_clear_thinking: false,
             setup: None,
         }

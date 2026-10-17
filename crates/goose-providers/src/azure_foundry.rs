@@ -419,6 +419,7 @@ fn model_info_for_deployment(deployment_name: &str, model_name: &str) -> ModelIn
             .unwrap_or_else(|| ModelConfig::new(model_name).is_reasoning_model()),
         supports_vision: None,
         thinking_preservation_format: None,
+        reasoning_effort_mapping: None,
         request_params: None,
     }
 }

@@ -522,6 +522,7 @@ impl DatabricksProvider {
             reasoning,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         }
     }

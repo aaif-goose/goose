@@ -238,6 +238,7 @@ pub fn create_custom_provider(
         setup_steps: vec![],
         toolshim: params.toolshim,
         preserves_thinking,
+        reasoning_effort_mapping: None,
         emit_clear_thinking: false,
         setup: None,
     };
@@ -313,6 +314,9 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
                         .thinking_preservation_format
                         .or(existing.thinking_preservation_format);
                     model.request_params = model.request_params.or(existing.request_params.clone());
+                    model.reasoning_effort_mapping = model
+                        .reasoning_effort_mapping
+                        .or(existing.reasoning_effort_mapping.clone());
                 }
                 model
             })
@@ -354,6 +358,7 @@ pub fn update_custom_provider(params: UpdateCustomProviderParams) -> Result<()> 
             setup_steps: existing_config.setup_steps,
             toolshim: params.toolshim,
             preserves_thinking,
+            reasoning_effort_mapping: existing_config.reasoning_effort_mapping,
             emit_clear_thinking: existing_config.emit_clear_thinking,
             setup: existing_config.setup,
         };
@@ -614,6 +619,7 @@ mod tests {
                 reasoning: false,
                 supports_vision: None,
                 thinking_preservation_format: None,
+                reasoning_effort_mapping: None,
                 request_params: None,
             }],
             headers: None,
@@ -631,6 +637,7 @@ mod tests {
             setup_steps: Vec::new(),
             toolshim: false,
             preserves_thinking: true,
+            reasoning_effort_mapping: None,
             emit_clear_thinking: false,
             setup: None,
         }
@@ -796,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_provider_update_preserves_model_metadata() {
+    fn custom_provider_update_preserves_model_metadata_and_effort_mapping() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_root = temp_dir.path().display().to_string();
         let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(temp_root.as_str()))]);
@@ -807,7 +814,7 @@ mod tests {
             "temperature".to_string(),
             serde_json::json!(0.25),
         )]));
-        let created = create_custom_provider(CreateCustomProviderParams {
+        let mut created = create_custom_provider(CreateCustomProviderParams {
             engine: "openai".to_string(),
             display_name: "Large Context".to_string(),
             api_url: "https://example.invalid/v1".to_string(),
@@ -823,6 +830,17 @@ mod tests {
             auth: None,
         })
         .unwrap();
+
+        created.reasoning_effort_mapping = deserialize_provider_config(goose_providers::meta::JSON)
+            .unwrap()
+            .reasoning_effort_mapping;
+        created.models[0].reasoning_effort_mapping =
+            deserialize_provider_config(goose_providers::paper_instruments::JSON)
+                .unwrap()
+                .models[0]
+                .reasoning_effort_mapping
+                .clone();
+        persist_custom_provider(&created).unwrap();
 
         for (declared, expected) in [
             (None, true),
@@ -852,6 +870,17 @@ mod tests {
 
             let loaded = load_provider(&created.name).unwrap();
             assert_eq!(loaded.config.models[0].supports_vision, Some(expected));
+            assert_eq!(
+                loaded.config.reasoning_effort_mapping.as_ref().unwrap()["medium"],
+                "medium"
+            );
+            assert_eq!(
+                loaded.config.models[0]
+                    .reasoning_effort_mapping
+                    .as_ref()
+                    .unwrap()["medium"],
+                "high"
+            );
         }
 
         let loaded = load_provider(&created.name).unwrap();

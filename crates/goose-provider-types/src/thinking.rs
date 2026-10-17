@@ -312,6 +312,9 @@ pub enum ThinkingEffort {
     Max,
 }
 
+/// Maps goose effort names to API-specific Chat Completions `reasoning_effort` values.
+pub type ReasoningEffortMapping = std::collections::HashMap<String, String>;
+
 impl FromStr for ThinkingEffort {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

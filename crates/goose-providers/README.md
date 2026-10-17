@@ -33,6 +33,11 @@ its engine, base URL, env vars, and models.
 - `load_custom_providers(dir)` — load user-supplied definitions from disk.
 - `fixed_provider_configs` — the bundled set.
 
+OpenAI-compatible definitions can set `reasoning_effort_mapping` to map goose
+thinking efforts to API strings, e.g. `{"max": "xhigh"}`. Model mappings replace
+provider defaults; empty mappings disable inheritance. Unset or unmapped efforts
+omit the request field, leaving the service default in effect.
+
 ```bash
 cargo run -p goose-providers --example declarative
 cargo run -p goose-providers --example streaming

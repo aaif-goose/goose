@@ -271,6 +271,9 @@ pub struct ModelInfo {
     pub supports_vision: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_preservation_format: Option<ThinkingPreservationFormat>,
+    /// Overrides the provider's Chat Completions reasoning-effort mapping for this model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort_mapping: Option<crate::thinking::ReasoningEffortMapping>,
     /// Static params merged into the request body for this model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_params: Option<HashMap<String, Value>>,
@@ -289,6 +292,7 @@ impl ModelInfo {
             reasoning: false,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         }
     }
@@ -326,6 +330,7 @@ impl ModelInfo {
             reasoning: false,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         }
     }
@@ -377,6 +382,7 @@ pub fn model_info_for_provider_model(provider_name: &str, model_name: &str) -> M
         reasoning,
         supports_vision: None,
         thinking_preservation_format: None,
+        reasoning_effort_mapping: None,
         request_params: None,
     }
 }
@@ -1120,6 +1126,7 @@ mod tests {
             reasoning: false,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         };
         assert_eq!(info.context_limit, Some(1000));
@@ -1136,6 +1143,7 @@ mod tests {
             reasoning: false,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         };
         assert_eq!(info, info2);
@@ -1152,6 +1160,7 @@ mod tests {
             reasoning: false,
             supports_vision: None,
             thinking_preservation_format: None,
+            reasoning_effort_mapping: None,
             request_params: None,
         };
         assert_ne!(info, info3);
