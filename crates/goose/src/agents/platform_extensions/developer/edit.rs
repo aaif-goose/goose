@@ -168,7 +168,15 @@ pub fn string_replace(content: &str, before: &str, after: &str) -> Result<String
             msg.push_str(&format!("\n\nFile preview:\n```\n{}\n```", preview));
             Err(msg)
         }
-        1 => Ok(content.replacen(before, after, 1)),
+        1 => {
+            if before == after {
+                return Err(
+                    "No change made: the replacement text is identical to the matched text."
+                        .to_string(),
+                );
+            }
+            Ok(content.replacen(before, after, 1))
+        }
         n => {
             let mut msg = format!(
                 "Found {} matches. Please provide more context to identify a unique match:\n",
@@ -486,6 +494,49 @@ mod tests {
             fs::read_to_string(dir.path().join("relative.txt")).unwrap(),
             "relative write"
         );
+    }
+
+    #[test]
+    fn test_file_edit_identical_before_after_is_error() {
+        let dir = setup();
+        let path = dir.path().join("edit.txt");
+        let original = "hello world\n";
+        fs::write(&path, original).unwrap();
+        let tools = EditTools::new();
+
+        let result = tools.file_edit(FileEditParams {
+            path: path.to_string_lossy().to_string(),
+            before: "hello".to_string(),
+            after: "hello".to_string(),
+        });
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "expected an error for a no-op edit, got: {}",
+            extract_text(&result)
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            original,
+            "a no-op edit must not rewrite the file"
+        );
+    }
+
+    #[test]
+    fn test_string_replace_identical_before_after_is_error() {
+        // The no-op guard lives in the shared replacement path so that both
+        // the developer `edit` tool and the ACP `edit` override reject it.
+        let result = string_replace("hello world\n", "hello", "hello");
+        assert!(
+            result.is_err(),
+            "expected an error for a no-op replacement, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_string_replace_normal_edit_still_succeeds() {
+        let result = string_replace("hello world\n", "hello", "goodbye");
+        assert_eq!(result, Ok("goodbye world\n".to_string()));
     }
 
     #[test]
