@@ -3934,35 +3934,51 @@ print(\"hello, world\")
     #[tokio::test]
     async fn session_info_reports_each_sessions_active_run_from_the_shared_registry() {
         let root = tempfile::tempdir().unwrap();
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |_provider_name, _extensions, _working_dir, _use_default_model| {
-                Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
-            },
-        );
-        let shared_registry: ActiveRunRegistry = Default::default();
-        let new_agent = |registry: ActiveRunRegistry| {
+        let provider_factory: AcpProviderFactory = Arc::new(|_provider_name| {
+            Box::pin(async { Err(anyhow::anyhow!("unused provider factory")) })
+        });
+        // One set of services, two connections: that is what AcpServer hands to two
+        // ACP clients, and the run registry lives on the shared services.
+        let services = StateMachineServices::with_config(acp_services_config(
+            Arc::new(SessionManager::new(root.path().to_path_buf())),
+            root.path().to_path_buf(),
+            true,
+            GoosePlatform::GooseCli,
+        ));
+        let new_connection = {
             let provider_factory = provider_factory.clone();
-            let data_dir = root.path().to_path_buf();
-            GooseAcpAgent::new(GooseAcpAgentOptions {
-                provider_factory,
-                builtin_selection: AcpBuiltinSelection::default(),
-                data_dir: data_dir.clone(),
-                config_dir: data_dir,
-                disable_session_naming: true,
-                goose_platform: GoosePlatform::GooseCli,
-                additional_source_roots: Vec::new(),
-                scheduler: None,
-                session_cwd: None,
-                active_prompt_runs: registry,
-            })
+            let services = services.clone();
+            let config_dir = root.path().to_path_buf();
+            move || {
+                let provider_factory = provider_factory.clone();
+                let services = services.clone();
+                let config_dir = config_dir.clone();
+                async move {
+                    let live_voice =
+                        Arc::new(LiveVoiceService::from_config(services.runtime.runs.clone()));
+                    Arc::new(
+                        AcpConnection::new(AcpConnectionOptions {
+                            provider_factory,
+                            builtin_selection: AcpBuiltinSelection::default(),
+                            config_dir,
+                            services,
+                            additional_source_roots: Vec::new(),
+                            session_cwd: None,
+                            live_voice,
+                        })
+                        .await
+                        .unwrap(),
+                    )
+                }
+            }
         };
-        let owner = Arc::new(new_agent(shared_registry.clone()).await.unwrap());
-        let observer = Arc::new(new_agent(shared_registry).await.unwrap());
+        let _owner = new_connection().await;
+        let observer = new_connection().await;
 
         let mut sessions = Vec::new();
         for title in ["First run probe", "Second run probe"] {
             sessions.push(
-                owner
+                services
                     .session_manager
                     .create_session(
                         root.path().to_path_buf(),
@@ -3974,26 +3990,26 @@ print(\"hello, world\")
                     .unwrap(),
             );
         }
-        let probe = |agent: Arc<GooseAcpAgent>, session_id: String| async move {
-            let info = agent
+
+        let probe = |connection: Arc<AcpConnection>, session_id: String| async move {
+            let info = connection
                 .on_get_session_info(GetSessionInfoRequest { session_id })
                 .await
                 .unwrap();
-            let goose = info
-                .session
+            info.session
                 .meta
                 .as_ref()
                 .and_then(|meta| meta.get("goose"))
+                .and_then(|goose| goose.get("activeRunId"))
                 .cloned()
-                .expect("session info must carry the goose meta object");
-            goose.get("activeRunId").cloned().expect("activeRunId key")
+                .expect("session info must carry goose.activeRunId")
         };
-        let wait_for = |agent: Arc<GooseAcpAgent>,
+        let wait_for = |connection: Arc<AcpConnection>,
                         session_id: String,
                         expected: serde_json::Value| async move {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
             loop {
-                if probe(agent.clone(), session_id.clone()).await == expected {
+                if probe(connection.clone(), session_id.clone()).await == expected {
                     break;
                 }
                 assert!(
@@ -4011,14 +4027,26 @@ print(\"hello, world\")
             .await
             .is_null());
 
-        owner
-            .test_start_active_run(&sessions[0].id, "run-1".to_string(), Arc::new(Agent::new()))
-            .await
-            .unwrap();
-        owner
-            .test_start_active_run(&sessions[1].id, "run-2".to_string(), Arc::new(Agent::new()))
-            .await
-            .unwrap();
+        // Set the runs on the shared registry, which is what a prompt does; the
+        // registry accessors are available without the test-only helpers.
+        assert!(services
+            .runtime
+            .runs
+            .start_prompt_run(
+                &sessions[0].id,
+                "run-1".to_string(),
+                CancellationToken::new()
+            )
+            .is_ok());
+        assert!(services
+            .runtime
+            .runs
+            .start_prompt_run(
+                &sessions[1].id,
+                "run-2".to_string(),
+                CancellationToken::new()
+            )
+            .is_ok());
 
         assert_eq!(
             probe(observer.clone(), sessions[0].id.clone()).await,
@@ -4029,8 +4057,14 @@ print(\"hello, world\")
             serde_json::json!("run-2")
         );
 
-        owner.test_drop_active_run_guard(&sessions[0].id, "run-1");
-        owner.test_drop_active_run_guard(&sessions[1].id, "run-2");
+        assert!(services
+            .runtime
+            .runs
+            .remove_agent_run(&sessions[0].id, "run-1"));
+        assert!(services
+            .runtime
+            .runs
+            .remove_agent_run(&sessions[1].id, "run-2"));
         wait_for(
             observer.clone(),
             sessions[0].id.clone(),
