@@ -3,8 +3,11 @@ use crate::conversation::message::ToolRequest;
 use anyhow::Result;
 use blake3::Hasher;
 use chrono::Utc;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::time::Duration;
 use std::{fs::File, path::PathBuf};
 
@@ -64,14 +67,25 @@ impl ToolPermissionStore {
         std::fs::create_dir_all(&self.permissions_dir)?;
 
         let path = self.permissions_dir.join("tool_permissions.json");
-        let temp_path = path.with_extension("tmp");
 
-        // Write complete content to temporary file
+        let lock_path = {
+            let mut p = path.as_os_str().to_os_string();
+            p.push(".lock");
+            PathBuf::from(p)
+        };
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        lock_file.lock_exclusive()?;
+
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&temp_path, &content)?;
-
-        // Atomically rename temp file to target file
-        std::fs::rename(temp_path, path)?;
+        let mut temp = tempfile::NamedTempFile::new_in(&self.permissions_dir)?;
+        temp.write_all(content.as_bytes())?;
+        temp.as_file().sync_all()?;
+        temp.persist(&path).map_err(|e| e.error)?;
 
         Ok(())
     }
