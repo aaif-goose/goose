@@ -1014,8 +1014,12 @@ fn extension_display_name(name: &str) -> &str {
     }
 }
 
+fn short_subagent_id(subagent_id: &str) -> &str {
+    subagent_id.rsplit(['_', '-']).next().unwrap_or(subagent_id)
+}
+
 pub fn format_subagent_tool_call_message(subagent_id: &str, tool_name: &str) -> String {
-    let short_id = subagent_id.rsplit('_').next().unwrap_or(subagent_id);
+    let short_id = short_subagent_id(subagent_id);
     let parts = ToolNameParts::from(tool_name);
 
     match parts.extension_name {
@@ -1062,7 +1066,7 @@ pub fn render_subagent_tool_call(
 }
 
 fn render_subagent_tool_graph(subagent_id: &str, tool_name: &str, tool_graph: &[Value]) {
-    let short_id = subagent_id.rsplit('_').next().unwrap_or(subagent_id);
+    let short_id = short_subagent_id(subagent_id);
     let count = tool_graph.len();
     let plural = if count == 1 { "" } else { "s" };
     println!();
@@ -1961,6 +1965,10 @@ mod tests {
         assert_eq!(
             format_subagent_tool_call_message("subagent_42", "calendar__events__list"),
             "[subagent:42] events__list | calendar"
+        );
+        assert_eq!(
+            format_subagent_tool_call_message("019a0b6e-3c1d-7f2a-9b4e-5d6c7e8f9a0b", "read"),
+            "[subagent:5d6c7e8f9a0b] read"
         );
     }
 
