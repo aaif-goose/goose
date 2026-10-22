@@ -1795,40 +1795,19 @@ impl SessionStorage {
                         .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'),
                 "session ID must be 1-128 ASCII letters, digits, underscores, or hyphens"
             );
-            let bytes = id.as_bytes();
-            anyhow::ensure!(
-                !(bytes.len() >= 19
-                    && bytes[..8].iter().all(u8::is_ascii_digit)
-                    && bytes[9..19].iter().all(u8::is_ascii_digit)),
-                "session ID date-prefixed numeric suffix must be fewer than 10 digits"
-            );
         }
+        let session_id = id.map_or_else(|| uuid::Uuid::now_v7().to_string(), str::to_string);
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let today = chrono::Utc::now().format("%Y%m%d").to_string();
         let session = sqlx::query_as(
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-                VALUES (
-                    COALESCE(?, ? || '_' || CAST(COALESCE((
-                        SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
-                        FROM sessions
-                        WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT)),
-                    ?,
-                    FALSE,
-                    ?,
-                    ?,
-                    '{}',
-                    ?
-                )
+                VALUES (?, ?, FALSE, ?, ?, '{}', ?)
                 RETURNING *
                 "#,
         )
-            .bind(id)
-            .bind(&today)
-            .bind(&today)
+            .bind(&session_id)
             .bind(&name)
             .bind(session_type.to_string())
             .bind(&*working_dir.to_string_lossy())
@@ -4631,27 +4610,18 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(generated.id, id);
-        assert!(generated
-            .id
-            .starts_with(&chrono::Utc::now().format("%Y%m%d_").to_string()));
+        assert_eq!(
+            uuid::Uuid::parse_str(&generated.id).unwrap().get_version(),
+            Some(uuid::Version::SortRand)
+        );
     }
 
     #[tokio::test]
     async fn test_caller_supplied_session_id_rejects_invalid_values() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
-        let oversized_suffix = format!("{}_9223372036854775807", Utc::now().format("%Y%m%d"));
-        let trailing_text = format!("{oversized_suffix}x");
-        let alternate_separator = format!("{}X9223372036854775807", Utc::now().format("%Y%m%d"));
-        for id in [
-            "",
-            "../session",
-            "a b",
-            "a/b",
-            &oversized_suffix,
-            &trailing_text,
-            &alternate_separator,
-        ] {
+        let oversized = "a".repeat(129);
+        for id in ["", "../session", "a b", "a/b", &oversized] {
             assert!(sm
                 .create_session_with_id(
                     id,
@@ -4784,6 +4754,54 @@ mod tests {
         assert_eq!(insights.total_sessions, NUM_CONCURRENT_SESSIONS as usize);
         let expected_tokens = 100 * NUM_CONCURRENT_SESSIONS * (NUM_CONCURRENT_SESSIONS - 1) / 2;
         assert_eq!(insights.total_tokens, expected_tokens as i64);
+    }
+
+    #[tokio::test]
+    async fn test_new_session_ids_are_uuids_and_date_counter_ids_still_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let legacy_id = format!("{}_1", chrono::Utc::now().format("%Y%m%d"));
+        sqlx::query(
+            "INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
+             VALUES (?, 'Legacy session', FALSE, 'user', '/tmp', '{}', 'auto')",
+        )
+        .bind(&legacy_id)
+        .execute(sm.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp"),
+                "New session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let parsed = uuid::Uuid::parse_str(&session.id).unwrap();
+        assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+        assert_eq!(session.id, parsed.hyphenated().to_string());
+
+        sm.add_message(&legacy_id, &Message::user().with_text("resumed"))
+            .await
+            .unwrap();
+        let legacy = sm.get_session(&legacy_id, true).await.unwrap();
+        assert_eq!(legacy.name, "Legacy session");
+        assert_eq!(legacy.message_count, 1);
+
+        let mut listed: Vec<_> = sm
+            .list_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        listed.sort();
+        let mut expected = vec![legacy_id, session.id];
+        expected.sort();
+        assert_eq!(listed, expected);
     }
 
     #[tokio::test]
