@@ -101,15 +101,7 @@ function GooseMessage({
       <div className="flex flex-col w-full min-w-0">
         {thinkingContent && (
           <div className="group">
-            <ThinkingContent
-              content={thinkingContent}
-              isExpanded={
-                isStreaming &&
-                !displayText.trim() &&
-                imagePaths.length === 0 &&
-                toolRequests.length === 0
-              }
-            />
+            <ThinkingContent content={thinkingContent} />
             {!displayText.trim() && imagePaths.length === 0 && toolRequests.length === 0 && (
               <div className="relative flex items-center justify-between">
                 <div
