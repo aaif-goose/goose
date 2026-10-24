@@ -14,6 +14,7 @@ pub(crate) mod declarative_providers {
 
     expose_declarative_providers!(
         aigateway,
+        aihubmix,
         aimlapi,
         alibaba,
         atomic_chat,
