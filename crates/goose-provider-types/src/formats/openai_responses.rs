@@ -659,7 +659,11 @@ pub fn create_responses_request_for_model(
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
     let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
-    let reasoning_effort = if is_reasoning_model {
+    let sends_reasoning_effort = is_reasoning_model
+        || model_config
+            .request_param::<bool>("declared_reasoning")
+            .unwrap_or(false);
+    let reasoning_effort = if sends_reasoning_effort {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {
                 legacy_reasoning_effort

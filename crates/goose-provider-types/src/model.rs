@@ -34,6 +34,7 @@ pub fn is_goose_internal_request_param(key: &str) -> bool {
             | "emit_clear_thinking"
             | "preserve_thinking_context"
             | "preserve_unsigned_thinking"
+            | "declared_reasoning"
     )
 }
 
@@ -230,6 +231,19 @@ impl ModelConfig {
             }
         }
         self
+    }
+
+    /// Records that reasoning support comes from the provider definition rather
+    /// than the canonical catalog. The canonical catalog keys models by their
+    /// first-party provider, so an OpenAI-compatible backend serving a model it
+    /// does not own (DeepSeek on the `openai` engine, for example) would
+    /// otherwise look non-reasoning and lose `reasoning_effort`.
+    pub fn with_declared_reasoning(mut self) -> Self {
+        self.reasoning = Some(true);
+        self.with_merged_request_params(HashMap::from([(
+            "declared_reasoning".to_string(),
+            Value::Bool(true),
+        )]))
     }
 
     pub fn with_thinking_effort(mut self, effort: ThinkingEffort) -> Self {

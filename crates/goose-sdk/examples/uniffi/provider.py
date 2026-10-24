@@ -19,7 +19,7 @@ from goose import (  # noqa: E402
 
 async def main() -> None:
     provider = declarative_provider_from_json((HERE.parent / "deepseek.json").read_text())
-    model = ProviderModelConfig(model_name="deepseek-v4-flash")
+    model = ProviderModelConfig(model_name="deepseek-flash")
     messages = [
         ProviderMessage(
             role=MessageRole.USER,

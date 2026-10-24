@@ -1754,8 +1754,16 @@ pub fn create_request_for_model_with_options(
 ) -> anyhow::Result<Value, Error> {
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
     let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
+    // An explicitly declared reasoning model still gets `reasoning_effort` when the
+    // canonical catalog files it under another provider: DeepSeek, for example, is
+    // served through the OpenAI-compatible engine and accepts the parameter, but
+    // `openai_reasoning_for_model` rejects non-`openai/` catalog entries.
+    let sends_reasoning_effort = is_reasoning_model
+        || model_config
+            .request_param::<bool>("declared_reasoning")
+            .unwrap_or(false);
     let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
-    let reasoning_effort = if is_reasoning_model {
+    let reasoning_effort = if sends_reasoning_effort {
         model_config
             .thinking_effort()
             .map_or(legacy_reasoning_effort, |effort| {
@@ -3593,6 +3601,32 @@ mod tests {
 
         assert_eq!(obj.get("reasoning_effort"), Some(&json!("xhigh")));
         assert!(obj.get("thinking_effort").is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_declared_reasoning_model_sends_reasoning_effort_for_foreign_catalog_entry(
+    ) -> anyhow::Result<()> {
+        // `deepseek-flash` resolves to the DeepSeek catalog entry, so
+        // `openai_reasoning_for_model` treats it as non-OpenAI. A provider
+        // definition that declares reasoning support must still get the effort.
+        let model_config = test_model_config("deepseek-flash")
+            .with_declared_reasoning()
+            .with_thinking_effort(ThinkingEffort::High);
+        let request = create_request(
+            &model_config,
+            "system",
+            &[],
+            &[],
+            &ImageFormat::OpenAi,
+            false,
+        )?;
+        let obj = request.as_object().unwrap();
+
+        assert_eq!(obj.get("reasoning_effort").unwrap(), "high");
+        assert_eq!(obj["messages"][0]["role"], "system");
+        assert!(obj.get("declared_reasoning").is_none());
 
         Ok(())
     }
