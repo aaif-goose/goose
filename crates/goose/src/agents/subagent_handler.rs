@@ -1,13 +1,10 @@
 use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
-        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
+        state_machine::{messages_since_kickoff, trailing_error, MAX_TURNS_MESSAGE},
         Agent, AgentEvent, SessionConfig,
     },
-    conversation::{
-        message::{ActionRequiredData, Message, MessageContent},
-        Conversation,
-    },
+    conversation::message::{ActionRequiredData, Message, MessageContent},
     prompt_template::render_template,
     session::extension_data::{EnabledExtensionsState, ExtensionState},
     session::{Session, SessionManager, SessionType},
@@ -156,10 +153,11 @@ impl ForegroundSubagentRunner {
             Ok(subagent) => subagent,
             Err(error) => return SubagentOutcome::Failed(error.to_string()),
         };
-        let messages = subagent.conversation.as_ref().map(Conversation::messages);
-        if let Some(output) =
-            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
-        {
+        let conversation = subagent.conversation.as_ref();
+        let latest_turn = conversation
+            .and_then(|conversation| messages_since_kickoff(conversation).ok())
+            .unwrap_or_default();
+        if let Some(output) = FinalOutputTool::successful_output(latest_turn) {
             return SubagentOutcome::Completed(output);
         }
         if stopped {
@@ -168,12 +166,10 @@ impl ForegroundSubagentRunner {
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());
         }
-        if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
+        if let Some(error) = conversation.and_then(trailing_error) {
             return SubagentOutcome::Failed(format!("{error:?}"));
         }
-        SubagentOutcome::Failed(failure_reason(
-            messages.map(Vec::as_slice).unwrap_or_default(),
-        ))
+        SubagentOutcome::Failed(failure_reason(latest_turn))
     }
 }
 

@@ -478,7 +478,7 @@ impl SummonClient {
             "properties": {
                 "instructions": {
                     "type": "string",
-                    "description": "Task instructions. Required for ad-hoc tasks. With `resume`, an optional message for the subagent."
+                    "description": "Task instructions. Required for ad-hoc tasks. With `resume`, a message for the subagent, required when resuming a completed delegate."
                 },
                 "source": {
                     "type": "string",
@@ -521,7 +521,7 @@ impl SummonClient {
                 },
                 "resume": {
                     "type": "string",
-                    "description": "Subagent ID of a failed or cancelled delegate to continue. Only `instructions` can be combined with it."
+                    "description": "Subagent ID of an earlier delegate to continue. Only `instructions` can be combined with it."
                 }
             }
         });
@@ -533,7 +533,7 @@ impl SummonClient {
              1. Ad-hoc: Provide `instructions` for a custom task\n\
              2. Source-based: Provide `source` name to run a subrecipe, recipe, or agent\n\
              3. Combined: Pair a source with a task (e.g., source: \"deploy\", instructions: \"deploy to staging\")\n\
-             4. Resume: Provide `resume` with the subagent ID of a failed or cancelled delegate to continue it instead of starting over. If the user says to continue after a stop, resume the ones from the latest stop unless they name others. Completed delegates cannot be resumed.\n\n\
+             4. Resume: Provide `resume` with the subagent ID of a failed or cancelled delegate to continue it instead of starting over. If the user says to continue after a stop, resume the ones from the latest stop unless they name others. A completed delegate can be resumed with `instructions` holding a follow-up; it keeps its earlier context.\n\n\
              Effective Delegation:\n\
              - Delegates know only instructions + source content\n\
              - Delegates cannot coordinate. Same-file work = conflicts.\n\
@@ -901,15 +901,17 @@ impl SummonClient {
                 "Subagent {subagent_id} does not belong to this session"
             ));
         }
-        if subagent
+        let completed = subagent
             .conversation
             .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
-            .is_some()
-        {
-            return Err(format!("Subagent {subagent_id} already completed"));
+            .and_then(FinalOutputTool::latest_turn_output)
+            .is_some();
+        let instructions = instructions.filter(|text| !text.trim().is_empty());
+        if instructions.is_none() && completed {
+            return Err(format!(
+                "Subagent {subagent_id} already completed; provide `instructions` with a follow-up to resume it"
+            ));
         }
-
         let instructions = instructions.unwrap_or_else(|| DEFAULT_RESUME_INSTRUCTIONS.to_string());
         session_manager
             .add_message(subagent_id, &Message::user().with_text(instructions))
@@ -1779,6 +1781,56 @@ mod tests {
             .await
     }
 
+    async fn last_message(
+        manager: &crate::session::SessionManager,
+        session_id: &str,
+    ) -> Result<String> {
+        let session = manager.get_session(session_id, true).await?;
+        Ok(session
+            .conversation
+            .unwrap()
+            .last()
+            .unwrap()
+            .as_concat_text())
+    }
+
+    async fn complete_task(
+        manager: &crate::session::SessionManager,
+        subagent_id: &str,
+    ) -> Result<()> {
+        manager
+            .add_message(subagent_id, &Message::user().with_text("Write a summary"))
+            .await?;
+        let arguments = serde_json::json!({"summary": "done"})
+            .as_object()
+            .unwrap()
+            .clone();
+        manager
+            .add_message(
+                subagent_id,
+                &Message::assistant().with_tool_request(
+                    "final-output-call",
+                    Ok(rmcp::model::CallToolRequestParams::new(
+                        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+                    )
+                    .with_arguments(arguments)),
+                ),
+            )
+            .await?;
+        manager
+            .add_message(
+                subagent_id,
+                &Message::user().with_tool_response(
+                    "final-output-call",
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
+                    )])),
+                ),
+            )
+            .await?;
+        Ok(())
+    }
+
     #[tokio::test]
     async fn delegate_resume_continues_the_saved_subagent() -> Result<()> {
         let temp_dir = TempDir::new()?;
@@ -1809,9 +1861,10 @@ mod tests {
             meta.0.get("subagent_session_id"),
             Some(&serde_json::json!(subagent.id))
         );
-        let resumed = manager.get_session(&subagent.id, true).await?;
-        let last = resumed.conversation.as_ref().unwrap().last().unwrap();
-        assert_eq!(last.as_concat_text(), "Finish the summary");
+        assert_eq!(
+            last_message(&manager, &subagent.id).await?,
+            "Finish the summary"
+        );
 
         resume(
             &client,
@@ -1820,9 +1873,51 @@ mod tests {
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        let resumed = manager.get_session(&subagent.id, true).await?;
-        let last = resumed.conversation.as_ref().unwrap().last().unwrap();
-        assert_eq!(last.as_concat_text(), DEFAULT_RESUME_INSTRUCTIONS);
+        assert_eq!(
+            last_message(&manager, &subagent.id).await?,
+            DEFAULT_RESUME_INSTRUCTIONS
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delegate_resume_gives_a_completed_subagent_its_follow_up() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = create_session(&manager, &temp_dir, SessionType::User, None).await?;
+        let completed =
+            create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
+        complete_task(&manager, &completed.id).await?;
+        let unanswered =
+            create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
+        complete_task(&manager, &unanswered.id).await?;
+        manager
+            .add_message(
+                &unanswered.id,
+                &Message::user().with_text("Also cover the tests"),
+            )
+            .await?;
+        let client = SummonClient::new(create_test_context_with_session_manager(manager.clone()))?;
+
+        for (subagent_id, args, expected) in [
+            (
+                &completed.id,
+                serde_json::json!({"resume": completed.id, "instructions": "Also cover the tests"}),
+                "Also cover the tests",
+            ),
+            (
+                &unanswered.id,
+                serde_json::json!({"resume": unanswered.id}),
+                DEFAULT_RESUME_INSTRUCTIONS,
+            ),
+        ] {
+            resume(&client, &parent.id, args)
+                .await
+                .map_err(anyhow::Error::msg)?;
+            assert_eq!(last_message(&manager, subagent_id).await?, expected);
+        }
         Ok(())
     }
 
@@ -1845,33 +1940,7 @@ mod tests {
         .await?;
         let completed =
             create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
-        let arguments = serde_json::json!({"summary": "done"})
-            .as_object()
-            .unwrap()
-            .clone();
-        manager
-            .add_message(
-                &completed.id,
-                &Message::assistant().with_tool_request(
-                    "final-output-call",
-                    Ok(rmcp::model::CallToolRequestParams::new(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
-                    )
-                    .with_arguments(arguments)),
-                ),
-            )
-            .await?;
-        manager
-            .add_message(
-                &completed.id,
-                &Message::user().with_tool_response(
-                    "final-output-call",
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
-                    )])),
-                ),
-            )
-            .await?;
+        complete_task(&manager, &completed.id).await?;
         let client = SummonClient::new(create_test_context_with_session_manager(manager.clone()))?;
 
         for (session_id, args, expected) in [
@@ -1883,7 +1952,12 @@ mod tests {
             (
                 &parent.id,
                 serde_json::json!({"resume": completed.id}),
-                "already completed",
+                "already completed; provide `instructions` with a follow-up",
+            ),
+            (
+                &parent.id,
+                serde_json::json!({"resume": completed.id, "instructions": "  "}),
+                "already completed; provide `instructions` with a follow-up",
             ),
             (
                 &parent.id,

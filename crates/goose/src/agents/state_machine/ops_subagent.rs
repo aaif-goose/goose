@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use futures::future;
 use futures::stream::{self, BoxStream, StreamExt};
 use goose_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
+use rmcp::model::Role;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::final_output_tool::FinalOutputTool;
@@ -28,6 +29,21 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
         })
         .unwrap_or_default();
     format!("Running subagent {subagent_id}{snippet}")
+}
+
+fn is_resume(subagent: &Session) -> bool {
+    subagent.conversation.as_ref().is_some_and(|conversation| {
+        conversation
+            .messages()
+            .iter()
+            .filter(|message| {
+                message.role == Role::User
+                    && !message.is_tool_response()
+                    && message.is_user_visible()
+            })
+            .count()
+            > 1
+    })
 }
 
 fn finished_notice(
@@ -119,16 +135,20 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
         if let Some(output) = subagent
             .conversation
             .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+            .and_then(FinalOutputTool::latest_turn_output)
         {
             return ended(SubagentOutcome::Completed(output));
         }
-        let task = subagent
-            .recipe
-            .as_ref()
-            .and_then(|recipe| recipe.prompt.as_deref());
-        let notice =
-            SubagentUpdate::ToParent(inline_notice(start_notice(subagent_session_id, task)));
+        let notice = if is_resume(&subagent) {
+            format!("Resuming subagent {subagent_session_id}")
+        } else {
+            let task = subagent
+                .recipe
+                .as_ref()
+                .and_then(|recipe| recipe.prompt.as_deref());
+            start_notice(subagent_session_id, task)
+        };
+        let notice = SubagentUpdate::ToParent(inline_notice(notice));
         Box::pin(stream::once(future::ready(notice)).chain(self.spawn(subagent, cancel)))
     }
 
@@ -235,6 +255,9 @@ mod tests {
             .update(&subagent.id)
             .parent_session_id(Some(parent_id.to_string()))
             .apply()
+            .await?;
+        manager
+            .add_message(&subagent.id, &Message::user().with_text("Write a summary"))
             .await?;
         manager
             .add_message(parent_id, &delegate_message(&subagent.id))
@@ -507,6 +530,43 @@ mod tests {
         assert!(matches!(
             updates.last(),
             Some(SubagentUpdate::Finished(SubagentOutcome::Cancelled))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_completed_subagent_given_a_follow_up_runs_again() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::user().with_text("Also cover the tests"),
+            )
+            .await?;
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, false)
+            .await?;
+        let updates: Vec<_> = fixture
+            .runner()
+            .start(&parent, &fixture.subagent_id, CancellationToken::new())
+            .await
+            .collect()
+            .await;
+        let Some(SubagentUpdate::ToParent(notice)) = updates.first() else {
+            panic!("expected a start notice");
+        };
+        assert!(matches!(
+            notice.content.as_slice(),
+            [MessageContent::SystemNotification(notification)]
+                if notification.msg == format!("Resuming subagent {}", fixture.subagent_id)
+        ));
+        assert!(matches!(
+            updates.last(),
+            Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+                if reason.contains("has no saved recipe")
         ));
         Ok(())
     }
