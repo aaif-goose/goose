@@ -6,6 +6,7 @@ use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::plugins::discovery::PluginScope;
 use crate::subprocess::{git_command, SubprocessExt};
+use crate::utils::copy_dir_all;
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
 use fs_err as fs;
@@ -399,25 +400,6 @@ fn replace_plugin_dir(source: &Path, destination: &Path) -> Result<()> {
     if let Err(err) = fs::rename(source, destination) {
         fs::rename(&backup_plugin_dir, destination)?;
         return Err(err.into());
-    }
-
-    Ok(())
-}
-
-fn copy_dir_all(source: &Path, destination: &Path) -> Result<()> {
-    fs::create_dir_all(destination)?;
-
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            copy_dir_all(&source_path, &destination_path)?;
-        } else if file_type.is_file() {
-            fs::copy(&source_path, &destination_path)?;
-        }
     }
 
     Ok(())

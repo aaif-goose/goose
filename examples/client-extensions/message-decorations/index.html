@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>message-decorations</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        font-size: 12px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #e8f4ff;
+        color: #175cd3;
+      }
+      pre {
+        margin: 0;
+        padding: 8px;
+        border-radius: 6px;
+        background: #f6f8fa;
+        overflow: auto;
+        max-height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      function resize(height) {
+        if (window.parent) {
+          window.parent.postMessage({ type: 'grc/resize', height }, '*');
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'grc/render') {
+          return;
+        }
+
+        const { slotKind, payload } = data;
+
+        if (slotKind === 'contentSuffix') {
+          document.body.innerHTML =
+            '<span class="badge">Extension: this message includes an image</span>';
+          resize(28);
+          return;
+        }
+
+        if (slotKind === 'customRender' && payload.matchedLanguage === 'json') {
+          const block = payload.codeBlocks.find((entry) => entry.language === 'json');
+          if (!block) {
+            resize(0);
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(block.content);
+            document.body.innerHTML =
+              '<pre>' + JSON.stringify(parsed, null, 2).replace(/</g, '&lt;') + '</pre>';
+            resize(Math.min(200, 40 + block.content.split('\n').length * 14));
+          } catch {
+            document.body.innerHTML =
+              '<span class="badge">Invalid JSON block</span>';
+            resize(28);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
