@@ -100,8 +100,26 @@ pub(super) fn session_response_meta(
     meta
 }
 
-pub(super) fn build_session_info(session: Session) -> SessionInfo {
-    let meta = session_meta(&session);
+pub(super) fn active_run_meta(
+    active_run_id: Option<&str>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut goose = serde_json::Map::new();
+    goose.insert(
+        "activeRunId".to_string(),
+        active_run_id
+            .map(|run_id| serde_json::Value::String(run_id.to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+
+    let mut meta = serde_json::Map::new();
+    meta.insert("goose".to_string(), serde_json::Value::Object(goose));
+    meta
+}
+
+fn session_info_from_meta(
+    session: Session,
+    meta: serde_json::Map<String, serde_json::Value>,
+) -> SessionInfo {
     let mut info = SessionInfo::new(SessionId::new(session.id), session.working_dir)
         .updated_at(session.updated_at.to_rfc3339())
         .meta(meta);
@@ -109,6 +127,22 @@ pub(super) fn build_session_info(session: Session) -> SessionInfo {
         info = info.title(session.name);
     }
     info
+}
+
+pub(super) fn build_session_info(session: Session) -> SessionInfo {
+    let meta = session_meta(&session);
+    session_info_from_meta(session, meta)
+}
+
+/// Session info is the only payload that reports a session's active run; list
+/// and schedule snapshots omit the key instead of claiming a session is idle.
+pub(super) fn build_session_info_with_active_run(
+    session: Session,
+    active_run_id: Option<&str>,
+) -> SessionInfo {
+    let mut meta = session_meta(&session);
+    meta.extend(active_run_meta(active_run_id));
+    session_info_from_meta(session, meta)
 }
 
 /// A model and its label, used to build the "model" session config option.

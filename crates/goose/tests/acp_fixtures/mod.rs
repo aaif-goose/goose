@@ -228,7 +228,17 @@ impl OpenAiFixture {
         exchanges: Vec<(String, &'static str)>,
         expected_session_id: Arc<dyn ExpectedSessionId>,
     ) -> Self {
-        Self::with_response_delay(exchanges, expected_session_id, Duration::ZERO).await
+        Self::new_with_response_delay(exchanges, expected_session_id, Duration::ZERO).await
+    }
+
+    /// Like [`Self::new`], but every chat-completions response is delayed, so a
+    /// test can act on a turn while the provider is still producing its reply.
+    pub async fn new_with_response_delay(
+        exchanges: Vec<(String, &'static str)>,
+        expected_session_id: Arc<dyn ExpectedSessionId>,
+        response_delay: Duration,
+    ) -> Self {
+        Self::with_response_delay(exchanges, expected_session_id, response_delay).await
     }
 
     pub async fn with_response_delay(
