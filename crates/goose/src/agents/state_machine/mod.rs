@@ -29,6 +29,7 @@ mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod session;
+pub(crate) use ops_llm::enrich_unclaimed_tool_errors;
 pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
 mod tool_confirmation;
