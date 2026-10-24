@@ -6,7 +6,7 @@ import {
   type NewSessionRequest,
   type SessionInfo,
 } from '@agentclientprotocol/sdk';
-import type { GooseExtension, SessionExportFormat } from '@aaif/goose-acp-client';
+import type { GooseExtension, SessionCostAggregateGroup, SessionExportFormat } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
@@ -325,4 +325,12 @@ export async function acpExportSession(
 export async function acpImportSession(input: string): Promise<void> {
   const client = await getAcpClient();
   await client.goose.sessionImport_unstable({ input });
+}
+
+export async function acpGetProjectCostAggregate(): Promise<SessionCostAggregateGroup[]> {
+  const client = await getAcpClient();
+  const response = await client.goose.sessionCostAggregate_unstable({
+    groupBy: 'working_directory',
+  });
+  return response.groups;
 }
