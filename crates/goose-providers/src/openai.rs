@@ -514,6 +514,15 @@ impl OpenAiProvider {
         find_declared_model(self.custom_models.as_deref()?, model_name)
     }
 
+    /// Direct callers (the GDK, or anything constructing `ModelConfig` outside
+    /// goose's provider registry) never see `normalize_model_config`, so the
+    /// declaration is applied here, where every request passes through.
+    fn declared_reasoning_model_config(&self, model_config: &ModelConfig) -> Option<ModelConfig> {
+        self.declared_model(&model_config.model_name)
+            .filter(|declared| declared.reasoning)
+            .map(|_| model_config.clone().with_declared_reasoning())
+    }
+
     fn vision_support(&self, model_config: &ModelConfig) -> Option<bool> {
         self.declared_model(&model_config.model_name)
             .and_then(|model| model.supports_vision)
@@ -841,6 +850,9 @@ impl Provider for OpenAiProvider {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
+        let declared_config = self.declared_reasoning_model_config(model_config);
+        let model_config = declared_config.as_ref().unwrap_or(model_config);
+
         if self.should_use_responses_api_for_provider(&model_config.model_name) {
             let (wire_model, _) =
                 crate::formats::openai::extract_reasoning_effort(&model_config.model_name);
@@ -1649,6 +1661,30 @@ mod tests {
             native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    #[tokio::test]
+    async fn declared_reasoning_models_are_normalized_for_direct_callers() {
+        let server = wiremock::MockServer::start().await;
+        let mut provider =
+            make_provider_with_custom_models(&server.uri(), "v1/chat/completions", Vec::new());
+        provider.custom_models = Some(vec![ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("deepseek-flash")
+        }]);
+
+        let marked = provider
+            .declared_reasoning_model_config(&ModelConfig::new("deepseek-flash"))
+            .expect("declared reasoning model should be normalized");
+        assert_eq!(marked.reasoning, Some(true));
+        assert_eq!(
+            marked.request_param::<bool>("declared_reasoning"),
+            Some(true)
+        );
+
+        assert!(provider
+            .declared_reasoning_model_config(&ModelConfig::new("other-model"))
+            .is_none());
     }
 
     #[tokio::test]
