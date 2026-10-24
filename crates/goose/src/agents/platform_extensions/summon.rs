@@ -1414,16 +1414,23 @@ impl SummonClient {
             .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
 
         let provider_entry = providers::get_from_registry(&provider_name).await;
-        let provider_default_model = provider_entry
-            .as_ref()
-            .ok()
-            .map(|entry| entry.metadata().default_model.as_str());
+        let provider_default_model = if provider_name == "chatgpt_codex" {
+            crate::providers::chatgpt_codex::default_model()
+        } else {
+            provider_entry
+                .as_ref()
+                .ok()
+                .map(|entry| entry.metadata().default_model.clone())
+        };
+        if provider_name == "chatgpt_codex" && provider_default_model.is_none() {
+            anyhow::bail!("ChatGPT Codex catalog contains no selectable models");
+        }
         let model_config = self.resolve_model_config(
             params,
             recipe,
             session,
             &provider_name,
-            provider_default_model,
+            provider_default_model.as_deref(),
         )?;
         Ok((provider_name, model_config))
     }

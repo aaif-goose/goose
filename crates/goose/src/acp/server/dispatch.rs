@@ -1,5 +1,5 @@
 use super::*;
-use crate::providers::inventory::ensure_refresh_identity_current;
+use crate::providers::inventory::{ensure_refresh_identity_current, refresh_identity_after_fetch};
 
 impl HandleDispatchFrom<Client> for GooseAcpHandler {
     fn describe_chain(&self) -> impl std::fmt::Debug {
@@ -216,7 +216,11 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                             responder.respond(SetSessionConfigOptionResponse::new(config_options))?;
 
                             let maybe_refresh = if config_id == "provider" {
-                                let provider_id = value_id.0.to_string();
+                                let provider_id = if value_id.0.as_ref() == DEFAULT_PROVIDER_ID {
+                                    Config::global().get_goose_provider().unwrap_or_default()
+                                } else {
+                                    value_id.0.to_string()
+                                };
                                 agent
                                     .provider_inventory
                                     .plan_refresh_jobs(std::slice::from_ref(&provider_id))
@@ -278,7 +282,13 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                             .catch_unwind()
                                             .await
                                             {
-                                                Ok(Ok(models)) => Ok(models),
+                                                Ok(Ok(models)) => refresh_identity_after_fetch(
+                                                    &refresh_provider_id,
+                                                    &refresh_identity,
+                                                    &models,
+                                                )
+                                                .await
+                                                .map(|identity| (models, identity)),
                                                 Ok(Err(error)) => {
                                                     Err(anyhow::anyhow!(error.to_string()))
                                                 }
@@ -293,10 +303,10 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                 };
 
                                 match fetch_result {
-                                    Ok(models) => match agent_bg
+                                    Ok((models, storage_identity)) => match agent_bg
                                         .provider_inventory
                                         .store_refreshed_models_for_identity(
-                                            &refresh_identity,
+                                            &storage_identity,
                                             &models,
                                         )
                                         .await
@@ -326,7 +336,8 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                                         let error_message = error.to_string();
                                         match agent_bg
                                             .provider_inventory
-                                            .store_refresh_error_for_identity(
+                                            .store_refresh_error_after_fetch(
+                                                &refresh_provider_id,
                                                 &refresh_identity,
                                                 error_message.clone(),
                                             )
