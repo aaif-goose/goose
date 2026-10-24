@@ -6,7 +6,8 @@ mod registry;
 
 pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, PricingTier, ThinkingMode};
 pub use name_builder::{
-    canonical_name, map_provider_name, map_to_canonical_model, strip_version_suffix,
+    canonical_name, map_provider_name, map_to_canonical_model, strip_openrouter_variant,
+    strip_version_suffix,
 };
 pub use registry::{
     fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
@@ -167,16 +168,48 @@ fn should_clear_catalog_pricing(provider: &str) -> bool {
 }
 
 pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<CanonicalModel> {
+    maybe_get_canonical_model_with_variant_fallback(provider, model).map(|(canonical, _)| canonical)
+}
+
+/// Resolve model metadata and report whether an OpenRouter variant used its base row.
+pub fn maybe_get_canonical_model_with_variant_fallback(
+    provider: &str,
+    model: &str,
+) -> Option<(CanonicalModel, bool)> {
     let registry = CanonicalModelRegistry::bundled().ok()?;
 
-    let canonical_id = map_to_canonical_model(provider, model, &registry)?;
+    let (canonical_id, is_variant_fallback) =
+        match map_to_canonical_model(provider, model, &registry) {
+            Some(id) => (id, false),
+            None if provider == "openrouter" => (
+                map_to_canonical_model(provider, strip_openrouter_variant(model)?, &registry)?,
+                true,
+            ),
+            None => return None,
+        };
     let mut canonical = if let Some((canon_provider, canon_model)) = canonical_id.split_once('/') {
         registry.get(canon_provider, canon_model).cloned()?
     } else {
         return None;
     };
 
-    if should_clear_catalog_pricing(provider) {
+    if is_variant_fallback {
+        // Variants share capabilities, but endpoint output caps and prices can differ.
+        canonical.limit.output = None;
+        // `:thinking` is the one tag that changes capabilities: it serves the reasoning mode.
+        if model.ends_with(":thinking") {
+            canonical.reasoning = Some(true);
+        }
+        canonical.cost = if model.ends_with(":free") {
+            Pricing {
+                input: Some(0.0),
+                output: Some(0.0),
+                ..Pricing::default()
+            }
+        } else {
+            Pricing::default()
+        };
+    } else if should_clear_catalog_pricing(provider) {
         canonical.cost = Pricing::default();
     } else if name_builder::is_meta_provider(provider) && canonical.cost.has_no_usable_rate() {
         // A meta-provider model can infer to a first-party catalog entry that carries literal
@@ -187,7 +220,7 @@ pub fn maybe_get_canonical_model(provider: &str, model: &str) -> Option<Canonica
         canonical.cost = host_catalog_pricing(provider, model, &registry).unwrap_or_default();
     }
 
-    Some(canonical)
+    Some((canonical, is_variant_fallback))
 }
 
 /// Pricing from the meta-provider's own catalog rows (`azure/*`, `databricks/*`,
@@ -213,6 +246,100 @@ fn host_catalog_pricing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:free"; "dated free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:nitro"; "dated nitro")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:floor"; "floor")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:online"; "online")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    fn openrouter_variants_resolve_to_base_model(model: &str) {
+        let canonical = maybe_get_canonical_model("openrouter", model).unwrap();
+        let base = maybe_get_canonical_model("openrouter", "deepseek/deepseek-v4-flash").unwrap();
+        assert_eq!(canonical.id, base.id);
+        assert_eq!(canonical.limit.context, base.limit.context);
+        assert_eq!(canonical.reasoning, base.reasoning);
+        assert_eq!(canonical.modalities.input, base.modalities.input);
+    }
+
+    #[test]
+    fn openrouter_exact_free_model_keeps_its_catalog_entry() {
+        let model = "google/gemma-4-31b-it:free";
+        let row = CanonicalModelRegistry::bundled()
+            .unwrap()
+            .get("openrouter", model)
+            .cloned()
+            .unwrap();
+        let (canonical, is_variant_fallback) =
+            maybe_get_canonical_model_with_variant_fallback("openrouter", model).unwrap();
+        assert!(!is_variant_fallback);
+        assert_eq!(canonical.id, row.id);
+        assert!(row.limit.output.is_some());
+        assert_eq!(canonical.limit.output, row.limit.output);
+    }
+
+    #[test]
+    fn openrouter_thinking_variant_is_reasoning() {
+        let base = maybe_get_canonical_model("openrouter", "qwen/qwen-plus-2025-07-28").unwrap();
+        assert_eq!(base.reasoning, Some(false));
+
+        let (thinking, is_variant_fallback) = maybe_get_canonical_model_with_variant_fallback(
+            "openrouter",
+            "qwen/qwen-plus-2025-07-28:thinking",
+        )
+        .unwrap();
+        assert!(is_variant_fallback);
+        assert_eq!(thinking.id, base.id);
+        assert_eq!(thinking.reasoning, Some(true));
+    }
+
+    #[test]
+    fn non_openrouter_colon_model_does_not_resolve_to_base_model() {
+        assert!(maybe_get_canonical_model("deepseek", "deepseek-v4-flash").is_some());
+        assert!(maybe_get_canonical_model("deepseek", "deepseek-v4-flash:free").is_none());
+    }
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:free"; "free")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash-0731:free"; "dated free")]
+    fn openrouter_free_fallback_has_zero_cost(model: &str) {
+        let paid = maybe_get_canonical_model("openrouter", "deepseek/deepseek-v4-flash").unwrap();
+        assert!(paid.cost.input.is_some_and(|price| price > 0.0));
+        assert!(paid.cost.output.is_some_and(|price| price > 0.0));
+
+        let free = maybe_get_canonical_model("openrouter", model).unwrap();
+        assert_eq!(free.id, paid.id);
+        assert_eq!(free.limit.context, paid.limit.context);
+        assert_eq!(free.cost.input, Some(0.0));
+        assert_eq!(free.cost.output, Some(0.0));
+        assert_eq!(free.cost.cache_read, None);
+        assert_eq!(free.cost.cache_write, None);
+        assert!(free.cost.tiers.is_empty());
+        let usage = crate::conversation::token_usage::Usage {
+            input_tokens: Some(1_000_000),
+            output_tokens: Some(1_000_000),
+            total_tokens: None,
+            cache_read_input_tokens: Some(100_000),
+            cache_write_input_tokens: Some(100_000),
+        };
+        assert_eq!(free.cost.estimate_cost(&usage), Some(0.0));
+    }
+
+    #[test_case::test_case("deepseek/deepseek-v4-flash:batch"; "batch")]
+    #[test_case::test_case("deepseek/deepseek-v4-flash:nitro"; "nitro")]
+    fn openrouter_variant_fallback_has_no_catalog_price(model: &str) {
+        let canonical = maybe_get_canonical_model("openrouter", model).unwrap();
+        assert_eq!(canonical.cost.input, None);
+        assert_eq!(canonical.cost.output, None);
+        assert_eq!(canonical.cost.cache_read, None);
+        assert_eq!(canonical.cost.cache_write, None);
+        assert!(canonical.cost.tiers.is_empty());
+        assert_eq!(
+            canonical
+                .cost
+                .estimate_cost(&crate::conversation::token_usage::Usage::default()),
+            None
+        );
+    }
 
     #[test]
     fn ollama_models_have_zero_cost() {
