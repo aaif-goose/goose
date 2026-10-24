@@ -9,7 +9,7 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData
 
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-use crate::agents::state_machine::ops_tool_approval::request_executable;
+use crate::agents::state_machine::ops_tool_approval::{request_declined, request_executable};
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
@@ -701,12 +701,18 @@ pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, T
                     match request_executable(req).unwrap_or(true) {
                         true => Some((req.clone(), ToolDisposition::Execute)),
                         false => {
-                            if approval_requests.contains(&req.id)
-                                && !approval_denied(approvals.get(&req.id))
+                            // Only an explicit user denial justifies a Decline.
+                            // An executable=false request with no recorded approval
+                            // card is a pending approval that was lost across a
+                            // crash/resume: hand it back to the tool_approval
+                            // operation to re-raise the card instead of
+                            // fabricating a user decline.
+                            if approval_denied(approvals.get(&req.id))
+                                || request_declined(req) == Some(true)
                             {
-                                None
-                            } else {
                                 Some((req.clone(), ToolDisposition::Decline))
+                            } else {
+                                None
                             }
                         }
                     }
@@ -1109,6 +1115,8 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::ActionRequired;
+    use crate::permission::Permission;
 
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {
@@ -1135,6 +1143,68 @@ mod tests {
 
         assert_eq!(pending.len(), 1);
         assert!(matches!(pending[0].1, ToolDisposition::Execute));
+    }
+
+    #[test]
+    fn lost_approval_card_is_not_a_decline() {
+        // executable=false with no approval card and no explicit deny is a
+        // pending approval whose card was lost across a crash/resume: it
+        // must not be reported as a Decline.
+        let message = Message::assistant().with_tool_request_with_metadata(
+            "lost-card",
+            Ok(CallToolRequestParams::new("registered__tool")),
+            None,
+            Some(serde_json::json!({ "goose.executable": false })),
+        );
+
+        let pending = pending_tool_requests(&[message]);
+
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn policy_denial_is_a_decline() {
+        // A durable policy-denial marker (goose.declined) must still
+        // surface as a Decline even without an approval card.
+        let message = Message::assistant().with_tool_request_with_metadata(
+            "policy-denied",
+            Ok(CallToolRequestParams::new("registered__tool")),
+            None,
+            Some(serde_json::json!({
+                "goose.executable": false,
+                "goose.declined": true
+            })),
+        );
+
+        let pending = pending_tool_requests(&[message]);
+
+        assert_eq!(pending.len(), 1);
+        assert!(matches!(pending[0].1, ToolDisposition::Decline));
+    }
+
+    #[test]
+    fn explicit_user_deny_is_a_decline() {
+        // An explicit ToolConfirmationResponse deny must produce a Decline.
+        let request = Message::assistant().with_tool_request_with_metadata(
+            "user-denied",
+            Ok(CallToolRequestParams::new("registered__tool")),
+            None,
+            Some(serde_json::json!({ "goose.executable": false })),
+        );
+        let mut answered = Message::assistant();
+        answered
+            .content
+            .push(MessageContent::ActionRequired(ActionRequired {
+                data: ActionRequiredData::ToolConfirmationResponse {
+                    id: "user-denied".to_string(),
+                    permission: Permission::DenyOnce,
+                },
+            }));
+
+        let pending = pending_tool_requests(&[request, answered]);
+
+        assert_eq!(pending.len(), 1);
+        assert!(matches!(pending[0].1, ToolDisposition::Decline));
     }
 
     #[test]
