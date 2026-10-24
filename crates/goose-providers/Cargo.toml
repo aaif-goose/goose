@@ -69,6 +69,7 @@ env-lock = { workspace = true }
 wiremock.workspace = true
 flate2 = "1.1.9"
 reqwest = { workspace = true, features = ["gzip"] }
+sha2.workspace = true
 
 [[example]]
 name = "streaming"
