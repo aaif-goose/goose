@@ -23,12 +23,12 @@ mod ops_skills;
 mod ops_slash_command;
 mod ops_status;
 mod ops_steer;
-mod ops_stop_hook;
 mod ops_subagent;
 mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod session;
+mod stop_hook;
 pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
 mod tool_confirmation;
@@ -47,6 +47,7 @@ pub use goose_agent::operation::{
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
     CLIENT_LOG,
 };
+pub(super) use goose_agent::stop_hook::StopHookOperation;
 pub(super) use goose_agent::subagent::SubagentOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -71,8 +72,8 @@ pub(super) use ops_skills::SkillOperation;
 pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
-pub(super) use ops_stop_hook::StopHookOperation;
 pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
+pub(super) use stop_hook::{deny_limit_warning, GooseStopHook};

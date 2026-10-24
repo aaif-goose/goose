@@ -28,7 +28,27 @@ is a function of the persisted conversation, not of in-memory loop state.
   session. Dynamic providers are queried before inference and again before
   execution, so their tool names and handlers must remain stable between those
   boundaries. Their schemas are sent to inference and matching calls are
-  dispatched against the current session.
+  dispatched against the current session. Pass `BeforeToolCallHook<S>`s to
+  `with_before_call_hooks` to check each call before it runs, and
+  `AfterToolCallHook<S>`s to `with_after_call_hooks` to check its result. A
+  `Deny` before the call skips it; a `Deny` after the call discards the result.
+  Either way the model gets the deny's `reason` as the tool's error. An
+  after-call deny can't undo the call; if the tool has side effects, say in the
+  `reason` that it already ran so the model doesn't call it again. Unparseable
+  calls get no hooks, and denied calls get no after-call hooks. A
+  result is saved only after its after-call hooks finish, so stopping the run
+  during them saves nothing for that call. Only `ToolOperation` runs these
+  hooks; a custom tool operation has to call them itself.
+- **`StopHookOperation<S>`** — runs `StopHook<S>`s when the model ends its turn.
+  A `Deny` keeps the turn going and sends its `reason` to the model as a hidden
+  user message. Denials are capped per turn (`with_deny_limit_per_turn`,
+  default 8); past the cap the turn ends and a message from the
+  `with_deny_limit_message` function, if set, is built, shown, and saved.
+- **`Hook<S, E>`** / **`HookDecision`** — the trait every hook implements. A
+  hook returns `Allow` or `Deny { reason, user_message }`. Hooks are asked in
+  order and the first `Deny` wins; later hooks are not asked. A deny's
+  `user_message` is a `Message` the hook builds in whatever form the app shows;
+  if present, it is shown to the user but not saved.
 - **`StateMachine<'a, S, E>`** — holds `Vec<Step<..>>` and a `CancellationToken`.
   `step()` runs one pass and returns a `StepResult` whose `applied_step` names
   the step that applied (`None` if none did) and whose `status` says whether the
@@ -89,7 +109,7 @@ The crate builds for `wasm32-unknown-unknown` and runs without a tokio runtime,
 so it can be embedded in a JavaScript host. There, the clock and randomness come
 from JavaScript. Some things differ from native:
 
-- The traits you implement (`Provider`, `Operation`, `ToolProvider`,
+- The traits you implement (`Provider`, `Operation`, `ToolProvider`, `Hook`,
   `SessionLoader`, `EffectHandler`, and the rest) do not require `Send` or
   `Sync`, and neither does `MessageStream`. So you can await JavaScript promises
   and hold host handles directly. Implement the traits with

@@ -15,6 +15,7 @@ use rmcp::{
 };
 use serde_json::{json, Value};
 
+use crate::hook::{run_hooks, Hook, HookDecision};
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
@@ -54,6 +55,17 @@ fn definition<T: ToolBase>() -> Tool {
         tool = tool.with_meta(meta);
     }
     tool
+}
+
+fn denied(
+    emit: &Emitter,
+    reason: String,
+    user_message: Option<Message>,
+) -> Result<CallToolResult, ErrorData> {
+    if let Some(user_message) = user_message {
+        emit.message(user_message);
+    }
+    Err(ErrorData::internal_error(reason, None))
 }
 
 fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> Vec<ToolRequest> {
@@ -134,6 +146,22 @@ pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     ) -> Result<CallToolResult, ErrorData>;
 }
 
+pub struct BeforeToolCall<'a> {
+    pub conversation: &'a Conversation,
+    pub request_id: &'a str,
+    pub call: &'a CallToolRequestParams,
+}
+
+pub struct AfterToolCall<'a> {
+    pub conversation: &'a Conversation,
+    pub request_id: &'a str,
+    pub call: &'a CallToolRequestParams,
+    pub result: &'a Result<CallToolResult, ErrorData>,
+}
+
+pub type BeforeToolCallHook<S> = dyn for<'a> Hook<S, BeforeToolCall<'a>>;
+pub type AfterToolCallHook<S> = dyn for<'a> Hook<S, AfterToolCall<'a>>;
+
 #[cfg(not(target_arch = "wasm32"))]
 type ToolHandler<S> = dyn for<'a> Fn(&'a S, Option<JsonObject>) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>
     + Send
@@ -193,6 +221,8 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
+    before_call_hooks: Vec<Arc<BeforeToolCallHook<S>>>,
+    after_call_hooks: Vec<Arc<AfterToolCallHook<S>>>,
     response: Mutex<Option<Message>>,
 }
 
@@ -204,6 +234,8 @@ where
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
+            before_call_hooks: Vec::new(),
+            after_call_hooks: Vec::new(),
             response: Mutex::new(None),
         }
     }
@@ -223,6 +255,16 @@ where
 
     pub fn with_provider(mut self, provider: Arc<dyn ToolProvider<S>>) -> Self {
         self.providers.push(provider);
+        self
+    }
+
+    pub fn with_before_call_hooks(mut self, hooks: Vec<Arc<BeforeToolCallHook<S>>>) -> Self {
+        self.before_call_hooks = hooks;
+        self
+    }
+
+    pub fn with_after_call_hooks(mut self, hooks: Vec<Arc<AfterToolCallHook<S>>>) -> Self {
+        self.after_call_hooks = hooks;
         self
     }
 
@@ -280,6 +322,48 @@ where
             }
         }
         Ok(available)
+    }
+
+    async fn call_with_hooks(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+        request_id: &str,
+        call: &CallToolRequestParams,
+        available: &[(Tool, &dyn ToolProvider<S>)],
+        emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        let before_call = BeforeToolCall {
+            conversation,
+            request_id,
+            call,
+        };
+        if let HookDecision::Deny {
+            reason,
+            user_message,
+        } = run_hooks(&self.before_call_hooks, session, &before_call).await
+        {
+            return denied(emit, reason, user_message);
+        }
+        let provider = available
+            .iter()
+            .find(|(tool, _)| tool.name == call.name)
+            .map(|(_, provider)| *provider)
+            .expect("pending requests were filtered by available tools");
+        let result = provider.call(session, request_id, call.clone(), emit).await;
+        let after_call = AfterToolCall {
+            conversation,
+            request_id,
+            call,
+            result: &result,
+        };
+        match run_hooks(&self.after_call_hooks, session, &after_call).await {
+            HookDecision::Allow => result,
+            HookDecision::Deny {
+                reason,
+                user_message,
+            } => denied(emit, reason, user_message),
+        }
     }
 }
 
@@ -360,19 +444,10 @@ where
         }
 
         for request in pending {
-            let provider = match request.tool_call.as_ref() {
-                Ok(call) => available
-                    .iter()
-                    .find(|(tool, _)| tool.name == call.name)
-                    .map(|(_, provider)| *provider)
-                    .expect("pending requests were filtered by available tools"),
-                Err(_) => &self.registered as &dyn ToolProvider<S>,
-            };
             let tool_result = match request.tool_call.as_ref() {
                 Err(error) => Err(error.clone()),
                 Ok(call) => {
-                    provider
-                        .call(session, &request.id, call.clone(), emit)
+                    self.call_with_hooks(session, conversation, &request.id, call, &available, emit)
                         .await
                 }
             };

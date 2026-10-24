@@ -2,22 +2,27 @@ use std::{
     borrow::Cow,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::{
+    events::AgentEvent,
+    hook::{Hook, HookDecision},
     machine::{MachineSession, StateMachine, Step},
     operation::{
         ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
         RunStatus,
     },
-    tool::{ToolOperation, ToolProvider},
+    tool::{
+        AfterToolCall, AfterToolCallHook, BeforeToolCall, BeforeToolCallHook, ToolOperation,
+        ToolProvider,
+    },
 };
 use goose_provider_types::conversation::{
-    message::{Message, MessageContent},
+    message::{Message, MessageContent, SystemNotificationType},
     Conversation,
 };
 use rmcp::{
@@ -110,6 +115,24 @@ fn operation() -> ToolOperation<()> {
         .with_async_tool::<Greet>()
 }
 
+fn add_and_greet() -> Conversation {
+    Conversation::new_unvalidated([
+        Message::user().with_text("do both"),
+        Message::assistant()
+            .with_tool_request(
+                "call-1",
+                Ok(CallToolRequestParams::new("add").with_arguments(
+                    serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
+                )),
+            )
+            .with_tool_request(
+                "call-2",
+                Ok(CallToolRequestParams::new("greet")
+                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+            ),
+    ])
+}
+
 fn appended_message(result: OperationResult<ConversationEffect>) -> Message {
     let OperationResult::Applied(result) = result else {
         panic!("operation should apply");
@@ -139,21 +162,7 @@ async fn advertises_user_defined_tools_directly() {
 
 #[tokio::test]
 async fn dispatches_calls_to_user_defined_tools() {
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("do both"),
-        Message::assistant()
-            .with_tool_request(
-                "call-1",
-                Ok(CallToolRequestParams::new("add").with_arguments(
-                    serde_json::from_value(json!({"left": 2, "right": 3})).unwrap(),
-                )),
-            )
-            .with_tool_request(
-                "call-2",
-                Ok(CallToolRequestParams::new("greet")
-                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
-            ),
-    ]);
+    let conversation = add_and_greet();
 
     let message = appended_message(
         <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
@@ -506,4 +515,318 @@ async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
     .unwrap();
 
     assert!(matches!(result, OperationResult::NotApplicable));
+}
+
+fn notice(text: &str) -> Message {
+    Message::assistant().with_system_notification(SystemNotificationType::InlineMessage, text)
+}
+
+#[derive(Default)]
+struct RecordingHook {
+    deny: Option<(&'static str, &'static str)>,
+    asked: Mutex<Vec<String>>,
+    results: Mutex<Vec<(String, Result<CallToolResult, ErrorData>)>>,
+}
+
+impl RecordingHook {
+    fn allowing() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    fn denying(tool: &'static str, reason: &'static str) -> Arc<Self> {
+        Arc::new(Self {
+            deny: Some((tool, reason)),
+            ..Self::default()
+        })
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
+    }
+
+    fn results(&self) -> Vec<(String, Result<CallToolResult, ErrorData>)> {
+        self.results.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl<'a> Hook<(), BeforeToolCall<'a>> for RecordingHook {
+    async fn decide(&self, _session: &(), event: &BeforeToolCall<'a>) -> HookDecision {
+        let call = event.call;
+        self.asked
+            .lock()
+            .unwrap()
+            .push(event.request_id.to_string());
+        match self.deny {
+            Some((tool, reason)) if tool == call.name => HookDecision::Deny {
+                reason: reason.to_string(),
+                user_message: None,
+            },
+            _ => HookDecision::Allow,
+        }
+    }
+}
+
+#[async_trait]
+impl<'a> Hook<(), AfterToolCall<'a>> for RecordingHook {
+    async fn decide(&self, _session: &(), event: &AfterToolCall<'a>) -> HookDecision {
+        self.results
+            .lock()
+            .unwrap()
+            .push((event.request_id.to_string(), event.result.clone()));
+        HookDecision::Allow
+    }
+}
+
+struct CountedTool {
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl ToolProvider<()> for CountedTool {
+    async fn tools(&self, _session: &()) -> Result<Vec<Tool>> {
+        Ok(vec![Tool::new(
+            "counted",
+            "Counts its calls",
+            Arc::new(serde_json::from_value(json!({"type": "object"}))?),
+        )])
+    }
+
+    async fn call(
+        &self,
+        _session: &(),
+        _request_id: &str,
+        _call: CallToolRequestParams,
+        _emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(CallToolResult::structured(json!({})))
+    }
+}
+
+fn with_recording(operation: ToolOperation<()>, hooks: &[Arc<RecordingHook>]) -> ToolOperation<()> {
+    let before_call_hooks: Vec<Arc<BeforeToolCallHook<()>>> = hooks
+        .iter()
+        .map(|hook| hook.clone() as Arc<BeforeToolCallHook<()>>)
+        .collect();
+    let after_call_hooks: Vec<Arc<AfterToolCallHook<()>>> = hooks
+        .iter()
+        .map(|hook| hook.clone() as Arc<AfterToolCallHook<()>>)
+        .collect();
+    operation
+        .with_before_call_hooks(before_call_hooks)
+        .with_after_call_hooks(after_call_hooks)
+}
+
+async fn run_with_hooks(
+    hooks: &[Arc<RecordingHook>],
+    conversation: &Conversation,
+) -> Vec<Result<CallToolResult, ErrorData>> {
+    run_operation(with_recording(operation(), hooks), conversation).await
+}
+
+async fn run_operation(
+    operation: ToolOperation<()>,
+    conversation: &Conversation,
+) -> Vec<Result<CallToolResult, ErrorData>> {
+    run_and_collect_notifications(operation, conversation)
+        .await
+        .0
+}
+
+async fn run_and_collect_notifications(
+    operation: ToolOperation<()>,
+    conversation: &Conversation,
+) -> (Vec<Result<CallToolResult, ErrorData>>, Vec<String>) {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, CancellationToken::new());
+    let message = appended_message(
+        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation,
+            &(),
+            conversation,
+            &emit,
+        )
+        .await
+        .unwrap(),
+    );
+    let results = message
+        .content
+        .iter()
+        .map(|content| content.as_tool_response().unwrap().tool_result.clone())
+        .collect();
+    let notifications = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AgentEvent::Message(message) => {
+                message.content.iter().find_map(|content| match content {
+                    MessageContent::SystemNotification(notification) => {
+                        Some(notification.msg.clone())
+                    }
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    (results, notifications)
+}
+
+#[tokio::test]
+async fn allowing_hooks_let_calls_run_and_see_their_results() {
+    let hook = RecordingHook::allowing();
+
+    let results = run_with_hooks(std::slice::from_ref(&hook), &add_and_greet()).await;
+
+    assert_eq!(
+        results[0].as_ref().unwrap().structured_content,
+        Some(json!({"sum": 5}))
+    );
+    assert_eq!(hook.asked(), vec!["call-1", "call-2"]);
+    let seen = hook.results();
+    assert_eq!(seen[0].0, "call-1");
+    assert_eq!(
+        seen[0].1.as_ref().unwrap().structured_content,
+        Some(json!({"sum": 5}))
+    );
+    assert_eq!(seen[1].0, "call-2");
+}
+
+#[tokio::test]
+async fn a_denied_call_is_skipped_and_returns_the_reason() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let hook = RecordingHook::denying("counted", "counted is not allowed");
+    let operation = with_recording(
+        operation().with_provider(Arc::new(CountedTool {
+            calls: calls.clone(),
+        })),
+        std::slice::from_ref(&hook),
+    );
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("do both"),
+        Message::assistant()
+            .with_tool_request("call-1", Ok(CallToolRequestParams::new("counted")))
+            .with_tool_request(
+                "call-2",
+                Ok(CallToolRequestParams::new("greet")
+                    .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+            ),
+    ]);
+
+    let results = run_operation(operation, &conversation).await;
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        results[0].as_ref().unwrap_err().message,
+        "counted is not allowed"
+    );
+    assert_eq!(
+        results[1].as_ref().unwrap().structured_content,
+        Some(json!({"greeting": "Hello, Goose!"}))
+    );
+    let seen = hook.results();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].0, "call-2");
+}
+
+struct DenyResult;
+
+#[async_trait]
+impl<'a> Hook<(), AfterToolCall<'a>> for DenyResult {
+    async fn decide(&self, _session: &(), event: &AfterToolCall<'a>) -> HookDecision {
+        if event.call.name != "add" {
+            return HookDecision::Allow;
+        }
+        HookDecision::Deny {
+            reason: "the sum is secret".to_string(),
+            user_message: Some(notice("add result was hidden")),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_denied_result_is_replaced_with_the_reason() {
+    let (results, shown) = run_and_collect_notifications(
+        operation().with_after_call_hooks(vec![Arc::new(DenyResult)]),
+        &add_and_greet(),
+    )
+    .await;
+
+    assert_eq!(
+        results[0].as_ref().unwrap_err().message,
+        "the sum is secret"
+    );
+    assert_eq!(
+        results[1].as_ref().unwrap().structured_content,
+        Some(json!({"greeting": "Hello, Goose!"}))
+    );
+    assert_eq!(shown, vec!["add result was hidden"]);
+}
+
+#[tokio::test]
+async fn unparseable_calls_skip_hooks() {
+    let hook = RecordingHook::allowing();
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("call a tool"),
+        Message::assistant().with_tool_request(
+            "invalid-call",
+            Err(ErrorData::invalid_params("malformed arguments", None)),
+        ),
+    ]);
+
+    let results = run_with_hooks(std::slice::from_ref(&hook), &conversation).await;
+
+    assert_eq!(
+        results[0].as_ref().unwrap_err().message,
+        "malformed arguments"
+    );
+    assert!(hook.asked().is_empty());
+    assert!(hook.results().is_empty());
+}
+
+#[derive(Default)]
+struct StuckAfterCall {
+    reached: AtomicBool,
+}
+
+#[async_trait]
+impl<'a> Hook<(), AfterToolCall<'a>> for StuckAfterCall {
+    async fn decide(&self, _session: &(), _event: &AfterToolCall<'a>) -> HookDecision {
+        self.reached.store(true, Ordering::SeqCst);
+        std::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn stopping_during_after_call_hooks_saves_nothing_for_that_call() {
+    let hook = Arc::new(StuckAfterCall::default());
+    let operation = operation().with_after_call_hooks(vec![hook.clone()]);
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("greet"),
+        Message::assistant().with_tool_request(
+            "call-1",
+            Ok(CallToolRequestParams::new("greet")
+                .with_arguments(serde_json::from_value(json!({"name": "Goose"})).unwrap())),
+        ),
+    ]);
+    let emit = emitter();
+
+    {
+        let mut run = <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation,
+            &(),
+            &conversation,
+            &emit,
+        );
+        assert!(futures::poll!(run.as_mut()).is_pending());
+    }
+    assert!(hook.reached.load(Ordering::SeqCst));
+
+    let saved = <ToolOperation<()> as Operation<(), ConversationEffect>>::finalize_cancellation(
+        &operation,
+        &(),
+        &conversation,
+        &emit,
+    )
+    .await;
+    assert!(saved.is_empty());
 }

@@ -6,11 +6,11 @@ use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
-use crate::agents::state_machine::ops_stop_hook::DENIED;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
+use goose_agent::stop_hook::DENIED;
 
 struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
@@ -100,7 +100,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
     let expected_working_dir = pipeline.working_dir().to_string_lossy().into_owned();
     let pipeline = pipeline
         .with_hook_manager(blocked.hook_manager())
-        .with_stop_hook_block_cap(2);
+        .with_stop_hook_deny_limit(2);
     api.on("hello").reply("response");
     api.on("blocked ending this turn").reply("response");
 
@@ -233,12 +233,12 @@ async fn stop_hook_receives_complete_user_visible_assistant_response() -> Result
 }
 
 #[tokio::test]
-async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Result<()> {
+async fn stop_hook_distinct_id_denials_retry_once_then_respect_deny_limit() -> Result<()> {
     let blocked = HookTestEnv::new("Stop", RECORD_AND_BLOCK_MARKER_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline
         .with_hook_manager(blocked.hook_manager())
-        .with_stop_hook_block_cap(1);
+        .with_stop_hook_deny_limit(1);
     api.on("hello")
         .reply_with_distinct_ids(["policy marker: initial; ", "tail"]);
     api.on("blocked ending this turn")

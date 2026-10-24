@@ -323,8 +323,8 @@ impl HookContext {
     ) -> PreToolUseResultPayload {
         self.policy_evaluated = Some(outcome.policy_evaluated);
         match &outcome.decision {
-            HookDecision::Allow => self.decision = Some("allow".to_string()),
-            HookDecision::Deny { reason, plugin } => {
+            PluginHookDecision::Allow => self.decision = Some("allow".to_string()),
+            PluginHookDecision::Deny { reason, plugin } => {
                 self.decision = Some("deny".to_string());
                 self.blocked_by = Some(plugin.clone());
                 self.reason = Some(reason.clone());
@@ -346,7 +346,7 @@ pub(crate) struct PreToolUseResultPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HookDecision {
+pub enum PluginHookDecision {
     Allow,
     Deny { reason: String, plugin: String },
 }
@@ -366,11 +366,11 @@ impl HookOutcomeCause {
     }
 }
 
-/// Crate-internal: the public [`HookManager::emit_blocking`] contract is
-/// unchanged and still returns a [`HookDecision`].
+/// Crate-internal: the public [`HookManager::emit_blocking`] returns only the
+/// [`PluginHookDecision`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HookChainOutcome {
-    pub decision: HookDecision,
+    pub decision: PluginHookDecision,
     pub policy_evaluated: bool,
     pub cause: Option<HookOutcomeCause>,
 }
@@ -378,14 +378,14 @@ pub(crate) struct HookChainOutcome {
 impl HookChainOutcome {
     pub(crate) fn allow(policy_evaluated: bool) -> Self {
         Self {
-            decision: HookDecision::Allow,
+            decision: PluginHookDecision::Allow,
             policy_evaluated,
             cause: None,
         }
     }
 
     pub(crate) fn denial(&self) -> Option<HookDenial> {
-        let HookDecision::Deny { reason, plugin } = &self.decision else {
+        let PluginHookDecision::Deny { reason, plugin } = &self.decision else {
             return None;
         };
         Some(match self.cause {
@@ -681,7 +681,7 @@ impl HookManager {
     /// Like [`Self::emit`], but stops at the first rule that denies the event
     /// and returns the denial. A hook denies by exiting with status code 2
     /// (reason on stderr) or by printing `{"decision":"block","reason":"..."}`
-    pub async fn emit_blocking(&self, event: HookEvent, ctx: HookContext) -> HookDecision {
+    pub async fn emit_blocking(&self, event: HookEvent, ctx: HookContext) -> PluginHookDecision {
         self.emit_blocking_with_outcome(event, ctx).await.decision
     }
 
@@ -765,7 +765,7 @@ impl HookManager {
                         "Plugin hook denied tool call",
                     );
                     return HookChainOutcome {
-                        decision: HookDecision::Deny {
+                        decision: PluginHookDecision::Deny {
                             reason,
                             plugin: rule.plugin_name.clone(),
                         },
@@ -777,7 +777,7 @@ impl HookManager {
         }
 
         HookChainOutcome {
-            decision: HookDecision::Allow,
+            decision: PluginHookDecision::Allow,
             policy_evaluated,
             cause: failed.then_some(HookOutcomeCause::HookFailure),
         }
@@ -810,7 +810,7 @@ fn serialization_failure_outcome(
         .find(|(_, action)| action.on_failure() == OnFailure::Block);
     match blocker {
         Some((rule, _)) if event == HookEvent::PreToolUse => HookChainOutcome {
-            decision: HookDecision::Deny {
+            decision: PluginHookDecision::Deny {
                 reason,
                 plugin: rule.plugin_name.clone(),
             },
@@ -818,7 +818,7 @@ fn serialization_failure_outcome(
             cause: Some(HookOutcomeCause::HookFailure),
         },
         _ => HookChainOutcome {
-            decision: HookDecision::Allow,
+            decision: PluginHookDecision::Allow,
             policy_evaluated: false,
             cause: Some(HookOutcomeCause::HookFailure),
         },
@@ -1314,7 +1314,7 @@ mod tests {
             "on_failure": "block",
         });
         let outcome = run_chain(HookEvent::PreToolUse, vec![spec]).await;
-        let HookDecision::Deny { reason, .. } = &outcome.decision else {
+        let PluginHookDecision::Deny { reason, .. } = &outcome.decision else {
             panic!("expected a denial, got {:?}", outcome.decision);
         };
         assert_eq!(reason, COMMAND_FAILED_REASON);
@@ -1356,7 +1356,7 @@ mod tests {
             let allowed = run_chain(HookEvent::PreToolUse, vec![spec.clone()]).await;
             assert_eq!(
                 allowed.decision,
-                HookDecision::Allow,
+                PluginHookDecision::Allow,
                 "{label} must fail open by default"
             );
             assert_eq!(
@@ -1373,7 +1373,7 @@ mod tests {
             spec["on_failure"] = serde_json::json!("block");
             let blocked = run_chain(HookEvent::PreToolUse, vec![spec.clone()]).await;
             assert!(
-                matches!(blocked.decision, HookDecision::Deny { .. }),
+                matches!(blocked.decision, PluginHookDecision::Deny { .. }),
                 "{label} must deny under on_failure block, got {:?}",
                 blocked.decision
             );
@@ -1397,7 +1397,7 @@ mod tests {
         let open = run_chain_with(event, vec![action("exit 0")], oversized_context(event)).await;
         assert_eq!(
             open.decision,
-            HookDecision::Allow,
+            PluginHookDecision::Allow,
             "the default still allows"
         );
         assert_eq!(
@@ -1413,7 +1413,7 @@ mod tests {
             oversized_context(event),
         )
         .await;
-        let HookDecision::Deny { reason, .. } = &printed_allow.decision else {
+        let PluginHookDecision::Deny { reason, .. } = &printed_allow.decision else {
             panic!(
                 "an allow from a hook that never saw the request must not stand under block, got {:?}",
                 printed_allow.decision
@@ -1429,14 +1429,14 @@ mod tests {
             oversized_context(event),
         )
         .await;
-        assert!(matches!(denied.decision, HookDecision::Deny { .. }));
+        assert!(matches!(denied.decision, PluginHookDecision::Deny { .. }));
         assert_eq!(denied.cause, Some(HookOutcomeCause::PolicyDenial));
     }
 
     #[tokio::test]
     async fn decisions_are_unchanged_by_on_failure_block() {
         let block = r#"printf '%s' '{"decision":"block","reason":"nope"}'"#;
-        let denied = HookDecision::Deny {
+        let denied = PluginHookDecision::Deny {
             reason: "nope".to_string(),
             plugin: "p".to_string(),
         };
@@ -1453,7 +1453,7 @@ mod tests {
             blocking_action(r#"cat >/dev/null 2>&1; printf '%s' '{"decision":"allow"}'"#),
         ] {
             let outcome = run_chain(HookEvent::PreToolUse, vec![spec]).await;
-            assert_eq!(outcome.decision, HookDecision::Allow);
+            assert_eq!(outcome.decision, PluginHookDecision::Allow);
             assert_eq!(outcome.cause, None);
             assert!(outcome.policy_evaluated);
         }
@@ -1467,7 +1467,7 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(failure.decision, HookDecision::Deny { .. }));
+        assert!(matches!(failure.decision, PluginHookDecision::Deny { .. }));
         assert_eq!(failure.cause, Some(HookOutcomeCause::HookFailure));
         assert!(failure.policy_evaluated);
 
@@ -1482,7 +1482,7 @@ mod tests {
 
         assert_eq!(
             denial.decision,
-            HookDecision::Deny {
+            PluginHookDecision::Deny {
                 reason: "nope".to_string(),
                 plugin: "p".to_string(),
             }
@@ -1514,7 +1514,7 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(outcome.decision, HookDecision::Deny { .. }));
+        assert!(matches!(outcome.decision, PluginHookDecision::Deny { .. }));
         assert!(!marker.exists(), "the chain must stop at the denial");
     }
 
@@ -1544,7 +1544,7 @@ mod tests {
             )
             .await;
 
-        assert_eq!(outcome.decision, HookDecision::Allow);
+        assert_eq!(outcome.decision, PluginHookDecision::Allow);
         assert!(!outcome.policy_evaluated);
         assert_eq!(outcome.cause, None);
     }
@@ -1564,7 +1564,7 @@ mod tests {
             HookEvent::PreToolUse,
             &[("fail-open", vec![action("exit 0")])],
         );
-        assert_eq!(open.decision, HookDecision::Allow);
+        assert_eq!(open.decision, PluginHookDecision::Allow);
         assert_eq!(open.cause, Some(HookOutcomeCause::HookFailure));
         assert!(!open.policy_evaluated);
 
@@ -1575,7 +1575,7 @@ mod tests {
                 ("fail-closed", vec![blocking_action("exit 0")]),
             ],
         );
-        let HookDecision::Deny { plugin, reason } = &closed.decision else {
+        let PluginHookDecision::Deny { plugin, reason } = &closed.decision else {
             panic!("expected a denial, got {:?}", closed.decision);
         };
         assert_eq!(plugin, "fail-closed", "the first blocking action owns it");
@@ -1587,7 +1587,7 @@ mod tests {
             HookEvent::Stop,
             &[("fail-closed", vec![blocking_action("exit 0")])],
         );
-        assert_eq!(stop.decision, HookDecision::Allow);
+        assert_eq!(stop.decision, PluginHookDecision::Allow);
         assert!(!stop.policy_evaluated);
     }
 
@@ -1756,7 +1756,7 @@ mod tests {
     fn denial_wording_separates_policy_from_failure() {
         let deny = |cause: HookOutcomeCause, reason: &str| {
             HookChainOutcome {
-                decision: HookDecision::Deny {
+                decision: PluginHookDecision::Deny {
                     reason: reason.to_string(),
                     plugin: "guard".to_string(),
                 },
@@ -1828,7 +1828,7 @@ mod tests {
         );
 
         let deny = payload(&HookChainOutcome {
-            decision: HookDecision::Deny {
+            decision: PluginHookDecision::Deny {
                 reason: "blocked by test policy".to_string(),
                 plugin: "test-plugin".to_string(),
             },
@@ -1841,7 +1841,7 @@ mod tests {
         assert_eq!(deny["cause"], "policy_denial");
 
         let failed_open = payload(&HookChainOutcome {
-            decision: HookDecision::Allow,
+            decision: PluginHookDecision::Allow,
             policy_evaluated: false,
             cause: Some(HookOutcomeCause::HookFailure),
         });
@@ -1849,7 +1849,7 @@ mod tests {
         assert_eq!(failed_open["cause"], "hook_failure");
 
         let failed_closed = payload(&HookChainOutcome {
-            decision: HookDecision::Deny {
+            decision: PluginHookDecision::Deny {
                 reason: "the hook exited with status 3 and no usable decision".to_string(),
                 plugin: "test-plugin".to_string(),
             },
@@ -1897,7 +1897,7 @@ mod tests {
         let outcome = mgr
             .emit_blocking_with_outcome(HookEvent::PreToolUse, ctx())
             .await;
-        assert_eq!(outcome.decision, HookDecision::Allow);
+        assert_eq!(outcome.decision, PluginHookDecision::Allow);
         assert!(
             !outcome.policy_evaluated,
             "a sole hook exiting 3 with no decision must not count as evaluated",
@@ -1913,7 +1913,7 @@ mod tests {
         let outcome = mgr
             .emit_blocking_with_outcome(HookEvent::PreToolUse, ctx())
             .await;
-        assert_eq!(outcome.decision, HookDecision::Allow);
+        assert_eq!(outcome.decision, PluginHookDecision::Allow);
         assert!(
             outcome.policy_evaluated,
             "a hook that exited 0 must keep policy_evaluated true when a later hook fails",
@@ -1932,7 +1932,7 @@ mod tests {
             .await;
         assert_eq!(
             outcome.decision,
-            HookDecision::Deny {
+            PluginHookDecision::Deny {
                 reason: "refused by policy".to_string(),
                 plugin: "denier".to_string(),
             }
@@ -2077,7 +2077,7 @@ mod tests {
 
         assert_eq!(
             decision,
-            HookDecision::Deny {
+            PluginHookDecision::Deny {
                 reason: "say something first".into(),
                 plugin: "p".into(),
             }
