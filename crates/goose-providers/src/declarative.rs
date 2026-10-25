@@ -543,6 +543,39 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_definition_matches_current_api_models() {
+        let config = fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "custom_deepseek")
+            .expect("deepseek should be bundled");
+
+        let names: Vec<&str> = config
+            .models
+            .iter()
+            .map(|model| model.name.as_str())
+            .collect();
+
+        assert!(names.contains(&"deepseek-flash"));
+        assert!(names.contains(&"deepseek-v4-pro"));
+        assert_eq!(config.catalog_provider_id.as_deref(), Some("deepseek"));
+        assert!(
+            !names.contains(&"deepseek-reasoner"),
+            "deepseek-reasoner was retired by DeepSeek on 2026-07-24"
+        );
+
+        let flash = config
+            .models
+            .iter()
+            .find(|model| model.name == "deepseek-flash")
+            .expect("deepseek-flash should be declared");
+
+        assert_eq!(flash.context_limit, Some(1_000_000));
+        assert!(flash.reasoning);
+        assert_eq!(flash.supports_vision, Some(true));
+    }
+
+    #[test]
     fn opencode_go_overrides_session_id_header() {
         let config = fixed_provider_configs()
             .expect("bundled providers should load")

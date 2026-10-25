@@ -6,7 +6,7 @@ pub use resolver::{
     InventoryRegistration, InventoryResolvers,
 };
 
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
+use super::base::{find_declared_model, ConfigKey, ModelInfo, Provider, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
@@ -461,7 +461,15 @@ impl ProviderInventoryService {
         identity: &InventoryIdentity,
         model_ids: &[String],
     ) -> Result<()> {
-        let models = enrich_model_ids_with_canonical(&identity.provider_family, model_ids);
+        let configured = self
+            .describe_provider(&identity.provider_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|descriptor| descriptor.static_models)
+            .unwrap_or_default();
+        let models =
+            enrich_model_ids_with_canonical(&identity.provider_family, model_ids, &configured);
         let now = Utc::now();
         let pool = self.storage.pool().await?;
         let mut tx = pool.begin().await?;
@@ -1061,6 +1069,7 @@ fn is_databricks_v2_model_service(provider_family: &str, model_id: &str) -> bool
 fn enrich_model_ids_with_canonical(
     provider_family: &str,
     model_ids: &[String],
+    configured: &[ModelInfo],
 ) -> Vec<InventoryModel> {
     if provider_family == "litellm" {
         return model_ids
@@ -1080,7 +1089,7 @@ fn enrich_model_ids_with_canonical(
     let mut seen_keys: HashSet<String> = HashSet::new();
 
     for id in model_ids {
-        let model = enriched_model(provider_family, id, None);
+        let model = enriched_model(provider_family, id, find_declared_model(configured, id));
         let dedup_key = if is_databricks_v2_model_service(provider_family, id) {
             id
         } else {
@@ -1137,7 +1146,7 @@ fn configured_models_to_inventory(
     let mut result: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     for model in models {
-        let enriched = enriched_model(provider_family, &model.name, model.context_limit);
+        let enriched = enriched_model(provider_family, &model.name, Some(model));
         if seen_names.insert(enriched.name.clone()) {
             result.push(enriched);
         }
@@ -1178,7 +1187,7 @@ fn inventory_models_from_snapshot(
 fn enriched_model(
     provider_family: &str,
     model_id: &str,
-    fallback_context_limit: Option<usize>,
+    declared: Option<&ModelInfo>,
 ) -> InventoryModel {
     let registry = CanonicalModelRegistry::bundled().ok();
     let canonical = registry.as_ref().and_then(|registry| {
@@ -1197,8 +1206,11 @@ fn enriched_model(
         context_limit: canonical
             .as_ref()
             .map(|model| model.limit.context)
-            .or(fallback_context_limit),
-        reasoning: canonical.as_ref().and_then(|model| model.reasoning),
+            .or_else(|| declared.and_then(|model| model.context_limit)),
+        reasoning: canonical
+            .as_ref()
+            .and_then(|model| model.reasoning)
+            .or_else(|| declared.filter(|model| model.reasoning).map(|_| true)),
         recommended: false,
     }
 }
@@ -1354,6 +1366,44 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_flash_gets_context_and_reasoning_from_canonical_catalog() {
+        let models = configured_models_to_inventory("openai", &[ModelInfo::new("deepseek-flash")]);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].context_limit, Some(1_000_000));
+        assert_eq!(models[0].reasoning, Some(true));
+    }
+
+    #[test]
+    fn declared_reasoning_and_context_survive_missing_canonical_model() {
+        let declared = ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("acme-reasoner-9").with_context_limit(262_144)
+        };
+
+        let models = configured_models_to_inventory("acme", &[declared]);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].context_limit, Some(262_144));
+        assert_eq!(models[0].reasoning, Some(true));
+    }
+
+    #[test]
+    fn refreshed_models_keep_configured_metadata() {
+        let configured = [ModelInfo {
+            reasoning: true,
+            ..ModelInfo::new("acme-reasoner-9").with_context_limit(262_144)
+        }];
+
+        let models =
+            enrich_model_ids_with_canonical("acme", &["acme-reasoner-9".to_string()], &configured);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].context_limit, Some(262_144));
+        assert_eq!(models[0].reasoning, Some(true));
+    }
+
+    #[test]
     fn databricks_v2_inventory_prefers_goose_model_ids_for_duplicate_names() {
         let models = enrich_model_ids_with_canonical(
             "databricks_v2",
@@ -1361,6 +1411,7 @@ mod tests {
                 "databricks-gpt-5-5".to_string(),
                 "goose-gpt-5-5".to_string(),
             ],
+            &[],
         );
 
         assert!(
@@ -1381,7 +1432,7 @@ mod tests {
             "alpha.prod.claude-sonnet-4-5",
         ]
         .map(String::from);
-        let models = enrich_model_ids_with_canonical("databricks_v2", &model_ids);
+        let models = enrich_model_ids_with_canonical("databricks_v2", &model_ids, &[]);
 
         let ids = models
             .iter()

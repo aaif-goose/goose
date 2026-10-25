@@ -78,12 +78,17 @@ impl ProviderEntry {
             model = model.with_toolshim(true);
         }
         // Declared model metadata is authoritative over canonical detection, which
-        // may already have populated supports_vision earlier in materialization.
-        if let Some(supports_vision) =
-            find_declared_model(&self.metadata.known_models, &model.model_name)
-                .and_then(|m| m.supports_vision)
+        // may already have populated these fields earlier in materialization.
+        if let Some(declared) = find_declared_model(&self.metadata.known_models, &model.model_name)
         {
-            model.supports_vision = Some(supports_vision);
+            if let Some(supports_vision) = declared.supports_vision {
+                model.supports_vision = Some(supports_vision);
+            }
+            // The canonical catalog may not know a freshly released model, so a
+            // provider definition must be able to declare it as a reasoning model.
+            if declared.reasoning {
+                model = model.with_declared_reasoning();
+            }
         }
         crate::model_config::materialize_model_config(&self.metadata.name, model)
     }
@@ -561,5 +566,47 @@ mod tests {
         assert_eq!(vision.supports_vision, Some(true));
         assert_eq!(text.supports_vision, Some(false));
         assert_eq!(undeclared.supports_vision, None);
+    }
+
+    #[test]
+    fn declared_reasoning_is_applied_to_model_config() {
+        let mut registry = ProviderRegistry::new(None);
+        let mut config = test_config();
+        config.name = "custom_reasoning".to_string();
+        config.models = vec![
+            ModelInfo {
+                reasoning: true,
+                ..ModelInfo::new("reasoner-9")
+            },
+            ModelInfo::new("plain-9"),
+        ];
+        registry.register_with_name::<OpenAiProviderDef, _, _>(
+            &config,
+            ProviderType::Custom,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || {
+                Ok(InventoryIdentityInput::new(
+                    "custom_reasoning",
+                    "custom_reasoning",
+                ))
+            },
+        );
+        let entry = &registry.entries["custom_reasoning"];
+
+        let declared = entry
+            .normalize_model_config(ModelConfig::new("reasoner-9"))
+            .unwrap();
+        assert_eq!(declared.reasoning, Some(true));
+        assert_eq!(
+            declared.request_param::<bool>("declared_reasoning"),
+            Some(true)
+        );
+
+        let undeclared = entry
+            .normalize_model_config(ModelConfig::new("plain-9"))
+            .unwrap();
+        assert_eq!(undeclared.reasoning, None);
+        assert_eq!(undeclared.request_param::<bool>("declared_reasoning"), None);
     }
 }
