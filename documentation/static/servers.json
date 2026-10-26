@@ -325,6 +325,18 @@
     "type": "streamable-http"
   },
   {
+    "id": "fair-value-calculator",
+    "name": "Fair Value Calculator",
+    "description": "Fair value, valuation status and quality score for 35,000+ stocks, plus your watchlist",
+    "url": "https://www.fairvalue-calculator.com/mcp",
+    "link": "https://www.fairvalue-calculator.com/mcp",
+    "installation_notes": "Hosted remote server. Sign in with a free Fair Value Calculator account via OAuth on first connect.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "github-mcp",
     "name": "GitHub",
     "description": "GitHub repository management and operations",
