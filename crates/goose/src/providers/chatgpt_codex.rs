@@ -19,8 +19,6 @@ use futures::{StreamExt, TryStreamExt};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai_responses::responses_api_to_streaming_message;
 use goose_providers::model::ModelConfig;
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use rmcp::model::{ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -100,14 +98,12 @@ fn known_model_names() -> Vec<&'static str> {
 #[derive(Debug)]
 struct ChatGptCodexAuthState {
     oauth_mutex: TokioMutex<()>,
-    jwks_cache: TokioMutex<Option<JwkSet>>,
 }
 
 impl ChatGptCodexAuthState {
     fn new() -> Self {
         Self {
             oauth_mutex: TokioMutex::new(()),
-            jwks_cache: TokioMutex::new(None),
         }
     }
 
@@ -378,61 +374,7 @@ struct OrgInfo {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct OidcConfiguration {
-    jwks_uri: String,
-}
-
-async fn fetch_jwks_for(issuer: &str) -> Result<JwkSet> {
-    let client = reqwest::Client::new();
-    let config_url = format!("{}/.well-known/openid-configuration", issuer);
-    let config = client
-        .get(config_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<OidcConfiguration>()
-        .await?;
-
-    let jwks = client
-        .get(config.jwks_uri)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<JwkSet>()
-        .await?;
-
-    Ok(jwks)
-}
-
-async fn get_jwks(state: &ChatGptCodexAuthState) -> Result<JwkSet> {
-    let mut cache = state.jwks_cache.lock().await;
-    if let Some(jwks) = cache.clone() {
-        return Ok(jwks);
-    }
-    let jwks = fetch_jwks_for(ISSUER).await?;
-    *cache = Some(jwks.clone());
-    Ok(jwks)
-}
-
-fn parse_jwt_claims_with_jwks(token: &str, jwks: &JwkSet) -> Result<JwtClaims> {
-    let header = decode_header(token)?;
-    let kid = header
-        .kid
-        .ok_or_else(|| anyhow!("JWT header missing kid"))?;
-    let jwk = jwks
-        .find(&kid)
-        .ok_or_else(|| anyhow!("JWT signing key not found"))?;
-    let decoding_key = DecodingKey::from_jwk(jwk)?;
-
-    let mut validation = Validation::new(header.alg);
-    validation.validate_aud = false;
-
-    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
-    Ok(token_data.claims)
-}
-
-fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
+fn parse_jwt_claims(token: &str) -> Option<JwtClaims> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return None;
@@ -441,15 +383,6 @@ fn parse_jwt_claims_unverified(token: &str) -> Option<JwtClaims> {
         .decode(parts[1])
         .ok()?;
     serde_json::from_slice(&payload).ok()
-}
-
-async fn parse_jwt_claims(token: &str, state: &ChatGptCodexAuthState) -> Option<JwtClaims> {
-    if let Ok(jwks) = get_jwks(state).await {
-        if let Ok(claims) = parse_jwt_claims_with_jwks(token, &jwks) {
-            return Some(claims);
-        }
-    }
-    parse_jwt_claims_unverified(token)
 }
 
 fn account_id_from_claims(claims: &JwtClaims) -> Option<String> {
@@ -469,21 +402,16 @@ fn account_id_from_claims(claims: &JwtClaims) -> Option<String> {
     None
 }
 
-async fn extract_account_id(
-    token_data: &TokenData,
-    state: &ChatGptCodexAuthState,
-) -> Option<String> {
+fn extract_account_id(token_data: &TokenData) -> Option<String> {
     if let Some(id_token) = token_data.id_token.as_deref() {
-        if let Some(claims) = parse_jwt_claims(id_token, state).await {
+        if let Some(claims) = parse_jwt_claims(id_token) {
             if let Some(account_id) = account_id_from_claims(&claims) {
                 return Some(account_id);
             }
         }
     }
 
-    parse_jwt_claims(&token_data.access_token, state)
-        .await
-        .and_then(|claims| account_id_from_claims(&claims))
+    parse_jwt_claims(&token_data.access_token).and_then(|claims| account_id_from_claims(&claims))
 }
 
 struct PkceChallenge {
@@ -806,7 +734,7 @@ async fn perform_oauth_flow(auth_state: &ChatGptCodexAuthState) -> Result<TokenD
         account_id: None,
     };
 
-    token_data.account_id = extract_account_id(&token_data, auth_state).await;
+    token_data.account_id = extract_account_id(&token_data);
 
     Ok(token_data)
 }
@@ -846,8 +774,7 @@ impl ChatGptCodexAuthProvider {
                     token_data.expires_at = Utc::now()
                         + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
                     if token_data.account_id.is_none() {
-                        token_data.account_id =
-                            extract_account_id(&token_data, self.state.as_ref()).await;
+                        token_data.account_id = extract_account_id(&token_data);
                     }
                     self.cache.save(&token_data)?;
                     tracing::info!("Token refreshed successfully");
@@ -1069,7 +996,6 @@ mod tests {
     use super::*;
     use crate::conversation::message::Message;
     use goose_test_support::TEST_IMAGE_B64;
-    use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
     use rmcp::object;
     use test_case::test_case;
@@ -1323,6 +1249,56 @@ mod tests {
         assert_eq!(account_id_from_claims(&claims), expected);
     }
 
+    fn unsigned_jwt(claims: Value) -> String {
+        let encode = |value: Value| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value.to_string())
+        };
+        format!(
+            "{}.{}.signature",
+            encode(json!({"alg": "RS256", "typ": "JWT"})),
+            encode(claims)
+        )
+    }
+
+    fn token_data_with(id_token: Option<String>, access_token: String) -> TokenData {
+        TokenData {
+            access_token,
+            refresh_token: "refresh".to_string(),
+            id_token,
+            expires_at: Utc::now(),
+            account_id: None,
+        }
+    }
+
+    #[test_case(
+        Some(unsigned_jwt(json!({"chatgpt_account_id": "from-id-token"}))),
+        unsigned_jwt(json!({"chatgpt_account_id": "from-access-token"})),
+        Some("from-id-token".to_string());
+        "prefers the id token"
+    )]
+    #[test_case(
+        Some("not-a-jwt".to_string()),
+        unsigned_jwt(json!({"chatgpt_account_id": "from-access-token"})),
+        Some("from-access-token".to_string());
+        "falls back to the access token"
+    )]
+    #[test_case(
+        None,
+        "not-a-jwt".to_string(),
+        None;
+        "returns none without readable claims"
+    )]
+    fn test_extract_account_id(
+        id_token: Option<String>,
+        access_token: String,
+        expected: Option<String>,
+    ) {
+        assert_eq!(
+            extract_account_id(&token_data_with(id_token, access_token)),
+            expected
+        );
+    }
+
     #[tokio::test]
     async fn test_exchange_code_for_tokens() {
         let server = MockServer::start().await;
@@ -1386,59 +1362,6 @@ mod tests {
         assert_eq!(tokens.refresh_token, "refresh-2");
         assert_eq!(tokens.id_token.as_deref(), Some("id-2"));
         assert_eq!(tokens.expires_in, Some(1800));
-    }
-
-    #[derive(Serialize)]
-    struct TestClaims {
-        exp: usize,
-        chatgpt_account_id: Option<String>,
-    }
-
-    #[tokio::test]
-    async fn test_parse_jwt_claims_verified_with_issuer() {
-        let server = MockServer::start().await;
-        let jwks_uri = format!("{}/jwks", server.uri());
-        Mock::given(method("GET"))
-            .and(path("/.well-known/openid-configuration"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "jwks_uri": jwks_uri
-            })))
-            .mount(&server)
-            .await;
-
-        let secret = "test-secret";
-        let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret);
-        Mock::given(method("GET"))
-            .and(path("/jwks"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "keys": [{
-                    "kty": "oct",
-                    "alg": "HS256",
-                    "kid": "test-kid",
-                    "k": key
-                }]
-            })))
-            .mount(&server)
-            .await;
-
-        let mut header = Header::new(Algorithm::HS256);
-        header.kid = Some("test-kid".to_string());
-
-        let claims = TestClaims {
-            exp: (Utc::now() + chrono::Duration::seconds(60)).timestamp() as usize,
-            chatgpt_account_id: Some("account-1".to_string()),
-        };
-        let token = jsonwebtoken::encode(
-            &header,
-            &claims,
-            &EncodingKey::from_secret(secret.as_bytes()),
-        )
-        .unwrap();
-
-        let jwks = fetch_jwks_for(&server.uri()).await.unwrap();
-        let claims = parse_jwt_claims_with_jwks(&token, &jwks).unwrap();
-
-        assert_eq!(claims.chatgpt_account_id.as_deref(), Some("account-1"));
     }
 
     #[test_case("gpt-5.6-sol", &["none", "low", "medium", "high", "xhigh"]; "gpt 5.6 sol supports extended reasoning levels")]
