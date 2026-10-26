@@ -76,10 +76,31 @@ pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
 /// `-cloud` for models that have one (`qwen3:8b-cloud`). The catalog keys
 /// those models under the `ollama-cloud` provider without the tag, so it has
 /// to come off before the lookup can succeed.
+///
+/// This mirrors how Ollama parses the suffix itself: the legacy form only
+/// counts after an explicit tag, so a plain name like `acme-cloud` is an
+/// ordinary local model. Treating it as a cloud model would make goose trust
+/// the model's trained maximum over the window the daemon actually serves it
+/// with, postponing compaction past the real limit.
 pub fn strip_ollama_cloud_tag(model: &str) -> Option<&str> {
-    model
-        .strip_suffix(":cloud")
-        .or_else(|| model.strip_suffix("-cloud"))
+    let (base, suffix) = model.rsplit_once(':')?;
+    let suffix_lower = suffix.to_ascii_lowercase();
+
+    if suffix_lower == "cloud" {
+        return Some(base);
+    }
+
+    // The legacy form: `-cloud` after an explicit tag. Ollama rejects it when
+    // the part after the colon holds a `/`, since that is a registry host.
+    if !suffix.contains('/') && suffix_lower.ends_with("-cloud") {
+        // The tag itself is kept, so `qwen3:8b-cloud` becomes `qwen3:8b`.
+        // `to_ascii_lowercase` preserves length, so the end of the tag is on a
+        // char boundary; `get` keeps the original casing of the tag.
+        let tag_len = suffix.len() - "-cloud".len();
+        return model.get(..base.len() + 1 + tag_len);
+    }
+
+    None
 }
 
 /// Try to map a provider/model pair to a canonical model
@@ -422,6 +443,34 @@ mod tests {
         );
         // A local model without the tag keeps resolving the way it did before.
         assert_eq!(map_to_canonical_model("ollama", "qwen3", &r), None);
+
+        // === Ollama cloud tag parsing ===
+        // These expectations mirror ollama's own `parseSourceSuffix`
+        // (internal/modelref/modelref.go), which decides what a cloud tag is.
+        // The legacy `-cloud` form only applies to a name that already carries
+        // an explicit tag, so a plain name that happens to end in `-cloud` is
+        // an ordinary local model.
+        for (model, expected) in [
+            ("muse-spark-open:cloud", Some("muse-spark-open")),
+            ("gpt-oss:120b-cloud", Some("gpt-oss:120b")),
+            ("acme-cloud", None),
+            ("qwen3", None),
+            ("qwen3:8b", None),
+            ("cloud", None),
+            ("registry.example.com:5000/model", None),
+            (
+                "registry.example.com:5000/model:cloud",
+                Some("registry.example.com:5000/model"),
+            ),
+            ("model:-cloud", Some("model:")),
+            (":cloud", Some("")),
+            ("muse-spark-open:CLOUD", Some("muse-spark-open")),
+            // A multibyte name must not panic on a byte boundary.
+            ("müse-spark:cloud", Some("müse-spark")),
+            ("müse:8b-cloud", Some("müse:8b")),
+        ] {
+            assert_eq!(strip_ollama_cloud_tag(model), expected, "model: {model}");
+        }
 
         // === Anthropic Claude - basic ===
         assert_eq!(

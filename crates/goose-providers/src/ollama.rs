@@ -912,6 +912,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_cloud_tag_needs_an_explicit_tag() {
+        // `qwen3:8b-cloud` is Ollama's legacy spelling for a tagged cloud
+        // model, so the daemon's window applies.
+        let server = mock_show_server(show_context_length(1_048_576), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("qwen3:8b-cloud", None).await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn untagged_dash_cloud_name_is_a_local_model() {
+        // A local model named `acme-cloud` is an ordinary model. Asking the
+        // daemon for its window would report the trained maximum rather than
+        // the window the daemon serves it with, postponing compaction past the
+        // real limit.
+        let server = mock_show_server(show_context_length(1_048_576), 0).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("acme-cloud", None).await,
+            crate::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[tokio::test]
     async fn local_model_context_limit_does_not_query_the_daemon() {
         // A local model keeps its catalog-derived window; the daemon's
         // `model_info.context_length` is the model's trained maximum, not the
