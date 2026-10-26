@@ -13,7 +13,7 @@ use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
 use crate::agents::state_machine::{
-    has_unapplied_tool_confirmation_response, pending_tool_confirmations,
+    has_unapplied_tool_confirmation_response, pending_tool_confirmations, turn_failure,
 };
 use crate::agents::{
     Agent, AgentConfig, ExtensionConfig, ExtensionLoadResult, GoosePlatform, SessionConfig,
@@ -92,7 +92,7 @@ use self::message_meta::{
 use self::tool_calls::chain::{breaks_consecutive_tool_calls, ReadyToolChain, ToolChainTracker};
 use self::tool_calls::conversion::{
     build_initial_tool_call_with_message_meta, build_permission_tool_call_update,
-    tool_call_update_fields_from_response, trusted_update_meta,
+    tool_call_update_fields_from_response, tool_response_meta,
 };
 use self::tool_calls::enrichment::{spawn_chain_summary_enrichment, spawn_tool_title_enrichment};
 
@@ -626,25 +626,6 @@ fn resolve_default_provider_model_config(
     Ok((resolved_provider, resolved_model_config))
 }
 
-async fn resolve_provider_default_model_config(
-    provider_name: &str,
-) -> Result<goose_providers::model::ModelConfig, agent_client_protocol::Error> {
-    let entry = crate::providers::get_from_registry(provider_name)
-        .await
-        .map_err(|error| {
-            agent_client_protocol::Error::invalid_params()
-                .data(format!("Unknown provider '{}': {}", provider_name, error))
-        })?;
-    crate::model_config::model_config_from_user_config(
-        provider_name,
-        &entry.metadata().default_model,
-    )
-    .map_err(|error| {
-        agent_client_protocol::Error::internal_error()
-            .data(format!("Failed to resolve model: {}", error))
-    })
-}
-
 fn render_resource_link(link: &ResourceLink) -> String {
     let inlined_file = Url::parse(&link.uri)
         .ok()
@@ -812,12 +793,12 @@ pub(super) fn validate_absolute_cwd(cwd: &Path) -> Result<(), agent_client_proto
 }
 
 impl GooseAcpAgent {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) fn active_run_registry(&self) -> &Arc<ActiveRunRegistry> {
         &self.active_runs
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) async fn test_start_active_run(
         &self,
         session_id: &str,
@@ -828,7 +809,7 @@ impl GooseAcpAgent {
             .await
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) fn test_drop_active_run_guard(&self, session_id: &str, run_id: &str) {
         drop(ActiveRunDropGuard {
             registry: self.active_runs.clone(),
@@ -838,7 +819,7 @@ impl GooseAcpAgent {
         });
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "scheduler"))]
     pub(crate) async fn test_require_active_run(
         &self,
         session_id: &str,
@@ -1540,7 +1521,7 @@ impl GooseAcpAgent {
         let fields = tool_call_update_fields_from_response(tool_response, tool_request, false);
 
         let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
-            .meta(trusted_update_meta(tool_response));
+            .meta(tool_response_meta(tool_response));
         let tool_call_notifier = ToolCallNotifier::new(cx, session_id);
         tool_call_notifier.send_update(update)?;
 
@@ -1645,7 +1626,7 @@ fn prompt_error_from_message_content(
         MessageContent::Error(error)
             if error.kind == crate::conversation::message::MessageErrorKind::Authentication =>
         {
-            Some(agent_client_protocol::Error::auth_required())
+            Some(agent_client_protocol::Error::auth_required().data(turn_failed_data()))
         }
         MessageContent::SystemNotification(notification)
             if notification.notification_type == SystemNotificationType::CreditsExhausted =>
@@ -1665,8 +1646,16 @@ fn prompt_error_from_message_content(
                     .data(serde_json::Value::Object(data)),
             )
         }
+        MessageContent::Error(error) => Some(
+            agent_client_protocol::Error::new(-32603, error.message.clone())
+                .data(turn_failed_data()),
+        ),
         _ => None,
     }
+}
+
+fn turn_failed_data() -> serde_json::Value {
+    serde_json::json!({ "reason": crate::acp::TURN_FAILED_REASON })
 }
 
 fn credits_exhausted_prompt_error(
@@ -2112,6 +2101,7 @@ impl GooseAcpAgent {
         let mut output_token_limit_reached = false;
         let mut tool_requests = HashMap::new();
         let mut chain_tracker = ToolChainTracker::default();
+        let mut last_message_was_error = false;
         let mut context_limit = None;
         let target = SessionAgentTarget {
             agent: agent.clone(),
@@ -2136,11 +2126,8 @@ impl GooseAcpAgent {
                     drop(sessions);
 
                     populate_output_token_limit_content(&mut message);
+                    last_message_was_error = message.error_kind().is_some();
                     for content_item in &message.content {
-                        if let Some(error) = prompt_error_from_message_content(content_item) {
-                            return Err(error);
-                        }
-
                         if let MessageContent::ToolRequest(tool_request) = content_item {
                             tool_requests.insert(tool_request.id.clone(), tool_request.clone());
                         }
@@ -2231,6 +2218,26 @@ impl GooseAcpAgent {
 
         let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
+            if last_message_was_error {
+                let session = self
+                    .session_manager
+                    .get_session(session_id, true)
+                    .await
+                    .internal_err_ctx("Failed to load session")?;
+                if let Some(error) = session
+                    .conversation
+                    .as_ref()
+                    .and_then(turn_failure)
+                    .and_then(|message| {
+                        message
+                            .content
+                            .iter()
+                            .find_map(prompt_error_from_message_content)
+                    })
+                {
+                    return Err(error);
+                }
+            }
             if let Some(chain) = chain_tracker.close_current_chain() {
                 self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
             }
@@ -2339,11 +2346,11 @@ impl GooseAcpAgent {
         let stream_result = forward.await;
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
-        let outcome = stream_result?;
-
-        let session = self
+        let usage_result = self
             .send_session_usage_updates(cx, &args.session_id, &session_id, &agent, &mut None)
-            .await?;
+            .await;
+        let outcome = stream_result?;
+        let session = usage_result?;
 
         let stop_reason =
             prompt_stop_reason(outcome.was_cancelled, outcome.output_token_limit_reached);
@@ -3485,6 +3492,27 @@ print(\"hello, world\")
         assert_eq!(
             error.code,
             agent_client_protocol::schema::v1::ErrorCode::AuthRequired
+        );
+        assert_eq!(error.data.unwrap()["reason"], "turn_failed");
+    }
+
+    #[test]
+    fn test_other_error_messages_map_to_internal_error() {
+        let message = "Network error: connection refused";
+        let content = MessageContent::error(
+            crate::conversation::message::MessageErrorKind::Other,
+            message,
+        );
+
+        let error = prompt_error_from_message_content(&content).expect("expected prompt error");
+
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code": -32603,
+                "message": message,
+                "data": { "reason": "turn_failed" }
+            })
         );
     }
 

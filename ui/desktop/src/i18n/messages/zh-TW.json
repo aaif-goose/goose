@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "確定"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "您確定要安裝 {name} 擴充功能嗎？命令：{command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "模型已變更：{previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (已請求)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "全部顯示"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "設定可在配方執行期間作為工具呼叫的子配方"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "載入最新進度"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "子代理的進度不會在此即時顯示。"
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "返回模型清單"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "已設定"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "輸入 API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "移除金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "儲存金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "使用 Jev 為每個請求選擇思考層級。請求文字會傳送至 TypeSafe AI；技能和配方斜線命令會包含展開後的本機指示。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "自動思考層級"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "封鎖上限"

@@ -223,10 +223,10 @@ impl Drop for SubagentEnding {
 }
 
 async fn end_subagent(agent: &Agent, subagent_id: &str) {
+    agent.release_session(subagent_id).await;
     agent
         .emit_hook(crate::hooks::HookEvent::SessionEnd, subagent_id)
         .await;
-    agent.release_session(subagent_id).await;
 }
 
 fn forwarded(

@@ -39,6 +39,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) on_failure_timeout: Duration,
     pub(crate) stop_hook_block_cap: u32,
     pub(crate) max_turns: u32,
+    pub(crate) extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
     pub(crate) cancel: CancellationToken,
 }
 
@@ -63,6 +64,7 @@ pub(crate) fn build_state_machine(
         on_failure_timeout,
         stop_hook_block_cap,
         max_turns,
+        extra_operations,
         cancel,
     } = config;
     let manages_own_context = provider.manages_own_context();
@@ -118,6 +120,7 @@ pub(crate) fn build_state_machine(
         Arc::new(MaxTurnsOperation::new(max_turns)),
     ];
     operations.extend(remaining_operations);
+    operations.extend(extra_operations);
     let request_preparer = GooseInferenceRequestPreparer {
         extension_manager,
         extension_lease,

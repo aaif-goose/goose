@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures::stream::BoxStream;
@@ -19,7 +20,8 @@ use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_goose, Emitter, GooseEffect, StateMachine, SteerQueue,
+    persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
+    Operation, StateMachine, SteerQueue,
 };
 use crate::agents::state_machine_builder::{build_state_machine, StateMachineConfig};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -41,16 +43,76 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
+use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
 use rmcp::model::{ElicitationAction, GetPromptResult, Prompt, Tool};
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, instrument, warn};
 
-const DEFAULT_MAX_TURNS: u32 = 1000;
 const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
+const AUTO_EFFORTS: [ThinkingEffort; 5] = [
+    ThinkingEffort::Off,
+    ThinkingEffort::Low,
+    ThinkingEffort::Medium,
+    ThinkingEffort::High,
+    ThinkingEffort::Max,
+];
+
+pub(super) fn available_auto_efforts(
+    provider_name: &str,
+    model_config: &goose_providers::model::ModelConfig,
+    support: ThinkingEffortSupport,
+) -> Vec<ThinkingEffort> {
+    let applied_as_selected = |effort: &ThinkingEffort, applied: Option<String>| match effort {
+        ThinkingEffort::Off => applied.as_deref() == Some("none"),
+        ThinkingEffort::Low => applied.as_deref() == Some("low"),
+        ThinkingEffort::Medium => applied.as_deref() == Some("medium"),
+        ThinkingEffort::High => applied.as_deref() == Some("high"),
+        ThinkingEffort::Max => matches!(applied.as_deref(), Some("xhigh" | "max")),
+    };
+
+    match support {
+        ThinkingEffortSupport::Unspecified
+            if provider_name == goose_providers::openai::OPEN_AI_PROVIDER_NAME
+                && model_config.is_openai_reasoning_model() =>
+        {
+            AUTO_EFFORTS
+                .into_iter()
+                .filter(|effort| {
+                    applied_as_selected(
+                        effort,
+                        goose_providers::formats::openai::openai_reasoning_effort_for_thinking(
+                            &model_config.model_name,
+                            *effort,
+                        ),
+                    )
+                })
+                .collect()
+        }
+        ThinkingEffortSupport::Unspecified
+            if provider_name == goose_providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME
+                && model_config.is_reasoning_model() =>
+        {
+            let always_on = goose_providers::canonical::maybe_get_canonical_model(
+                provider_name,
+                &model_config.model_name,
+            )
+            .and_then(|model| model.thinking_mode)
+                == Some(goose_providers::canonical::ThinkingMode::AlwaysOnAdaptive);
+            AUTO_EFFORTS
+                .into_iter()
+                .filter(|effort| !always_on || *effort != ThinkingEffort::Off)
+                .collect()
+        }
+        ThinkingEffortSupport::Unspecified
+        | ThinkingEffortSupport::Unsupported
+        | ThinkingEffortSupport::Options(_) => Vec::new(),
+    }
+}
 
 fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> anyhow::Error {
     let message = format!("{context}: {error}");
@@ -562,11 +624,9 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let max_turns = session_config.max_turns.unwrap_or_else(|| {
-            Config::global()
-                .get_param::<u32>("GOOSE_MAX_TURNS")
-                .unwrap_or(DEFAULT_MAX_TURNS)
-        });
+        let max_turns = session_config
+            .max_turns
+            .unwrap_or_else(|| Config::global().default_max_turns());
         let extension_lease = self
             .tool_confirmation_coordinator
             .session(&session_config.id)
@@ -595,6 +655,48 @@ impl Agent {
                 crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
             });
 
+        let auto_effort = (|| {
+            let config = Config::global();
+            if !config
+                .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
+                .unwrap_or(false)
+            {
+                return None;
+            }
+
+            let efforts = available_auto_efforts(
+                provider.get_name(),
+                &model_config,
+                provider.thinking_effort_support(),
+            );
+            if efforts.is_empty() {
+                return None;
+            }
+
+            let api_key = config
+                .get_secret::<String>("TYPESAFE_API_KEY")
+                .ok()?
+                .trim()
+                .to_string();
+            if api_key.is_empty() {
+                return None;
+            }
+
+            let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+            let api_client = ApiClient::with_timeout_and_tls(
+                TYPESAFE_DEFAULT_HOST.to_string(),
+                AuthMethod::BearerToken(api_key),
+                Duration::from_secs(2),
+                tls_config,
+            )
+            .ok()?;
+            Some(Arc::new(AutoEffortOperation::new(
+                Arc::new(TypeSafeProvider::new(api_client)),
+                TYPESAFE_DEFAULT_MODEL.to_string(),
+                efforts,
+            )) as Arc<dyn Operation<Session, GooseEffect>>)
+        })();
+
         build_state_machine(StateMachineConfig {
             provider,
             model_config,
@@ -613,6 +715,7 @@ impl Agent {
             on_failure_timeout: std::time::Duration::from_secs(on_failure_timeout),
             stop_hook_block_cap,
             max_turns,
+            extra_operations: auto_effort.into_iter().collect(),
             cancel,
         })
     }
@@ -869,6 +972,31 @@ impl Agent {
         let session_id = session_config.id.clone();
         let provider = self.provider(&session_id).await?;
         let model_config = self.effective_model_config_for_session(&session_id).await?;
+
+        let session = session_manager.get_session(&session_id, true).await?;
+        let saved_provider_session_id = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| {
+                super::latest_provider_session_id(conversation.messages(), provider.get_name())
+            })
+            .map(str::to_string);
+        if let Some(saved_provider_session_id) = saved_provider_session_id {
+            if let Err(error) = provider.resume(&saved_provider_session_id).await {
+                warn!(
+                    provider = provider.get_name(),
+                    %error,
+                    "Could not resume provider session; continuing with a handoff"
+                );
+            }
+        }
+        if let Err(error) = provider.apply_model_selection(&model_config).await {
+            warn!(
+                provider = provider.get_name(),
+                %error,
+                "Could not apply model selection before building state machine"
+            );
+        }
 
         let context_limit =
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)

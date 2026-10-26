@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Möchten Sie die Erweiterung {name} wirklich installieren? Befehl: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Modell geändert: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (angefordert)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Alle anzeigen"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Konfigurieren Sie ein Subrezept, das während der Rezeptausführung als Tool aufgerufen werden kann"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Neuesten Fortschritt laden"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Der Fortschritt des Subagenten wird hier nicht live angezeigt."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Zurück zur Modellliste"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatisch"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Konfiguriert"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe-API-Schlüssel"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API-Schlüssel eingeben"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Schlüssel entfernen"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Schlüssel speichern"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Verwendet Jev, um den Denkaufwand für jede Anfrage auszuwählen. Anfragetext wird an TypeSafe AI gesendet; Slash-Befehle für Skills und Rezepte enthalten deren erweiterte lokale Anweisungen."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatischer Denkaufwand"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Blockierungslimit"

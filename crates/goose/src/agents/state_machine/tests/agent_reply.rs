@@ -15,7 +15,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD};
-use super::dummy_api::{DummyApi, ProviderFeatures};
+use super::dummy_api::{ApiCall, DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
 use crate::acp::server::GooseAcpAgent;
 use crate::agents::extension::ExtensionConfig;
@@ -1324,13 +1324,16 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
 fn install_hook_log(
     agent: &mut Arc<Agent>,
     events: &[&str],
+    delay_seconds: u64,
 ) -> Result<(tempfile::TempDir, std::path::PathBuf)> {
     let hook_dir = tempfile::tempdir()?;
     let plugin_dir = hook_dir.path().join("test-plugin");
     std::fs::create_dir_all(plugin_dir.join("hooks"))?;
     let log_command = json!([{ "hooks": [{
         "type": "command",
-        "command": "payload=$(cat); printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""
+        "command": format!(
+            "payload=$(cat); sleep {delay_seconds}; printf '%s\\n' \"$payload\" >> \"$PLUGIN_ROOT/hook.log\""
+        )
     }] }]);
     let hooks: serde_json::Map<String, serde_json::Value> = events
         .iter()
@@ -1370,7 +1373,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         ("OPENAI_BASE_PATH", Some("chat/completions")),
         ("OPENAI_CUSTOM_HEADERS", Some("")),
     ]);
-    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["SessionEnd"])?;
+    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["SessionEnd"], 0)?;
     agent
         .config
         .session_manager
@@ -1379,19 +1382,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
         .apply()
         .await?;
     enable_developer(&agent, &session_id).await?;
-    agent
-        .extension_manager
-        .enable(
-            &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
-        )
-        .await?;
+    enable_summon(&agent, &session_id).await?;
     api.on("hand this off").call(
         "delegate",
         json!({ "instructions": "wait for approval", "max_turns": 3 }),
@@ -1399,38 +1390,7 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     api.on("wait for approval")
         .call("shell", json!({ "command": "echo never" }));
 
-    let cancel = CancellationToken::new();
-    let mut stream = agent
-        .reply(
-            Message::user().with_text("hand this off"),
-            SessionConfig {
-                id: session_id.clone(),
-                schedule_id: None,
-                max_turns: Some(3),
-            },
-            Some(cancel.clone()),
-        )
-        .await?;
-    while let Some(event) = stream.next().await {
-        let AgentEvent::Message(message) = event? else {
-            continue;
-        };
-        for content in &message.content {
-            let MessageContent::ActionRequired(action) = content else {
-                continue;
-            };
-            let ActionRequiredData::ToolConfirmation { id, tool_name, .. } = &action.data else {
-                continue;
-            };
-            if tool_name == "shell" {
-                cancel.cancel();
-            } else {
-                agent
-                    .submit_tool_confirmation(&session_id, id, Permission::AllowOnce)
-                    .await?;
-            }
-        }
-    }
+    reply_approving(&agent, &session_id, "hand this off", Some("shell")).await?;
 
     let subagent_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -1451,6 +1411,223 @@ async fn cancelling_the_parent_ends_a_waiting_subagent() -> Result<()> {
     })
     .await?;
     assert_ne!(subagent_id, session_id);
+    Ok(())
+}
+
+async fn enable_summon(agent: &Arc<Agent>, session_id: &str) -> Result<()> {
+    agent
+        .extension_manager
+        .enable(
+            session_id,
+            ExtensionConfig::Platform {
+                name: "summon".to_string(),
+                description: "Delegate work".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+async fn delegated_subagent_id(agent: &Arc<Agent>, session_id: &str) -> Result<String> {
+    let session = agent
+        .config
+        .session_manager
+        .get_session(session_id, true)
+        .await?;
+    session
+        .conversation
+        .as_ref()
+        .unwrap()
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+        .find_map(|content| {
+            let MessageContent::ToolResponse(response) = content else {
+                return None;
+            };
+            let meta = response.tool_result.as_ref().ok()?.meta.as_ref()?;
+            meta.0
+                .get("subagent_session_id")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .ok_or_else(|| anyhow::anyhow!("no delegated subagent"))
+}
+
+async fn parent_texts(agent: &Arc<Agent>, session_id: &str) -> Result<Vec<String>> {
+    let session = agent
+        .config
+        .session_manager
+        .get_session(session_id, true)
+        .await?;
+    Ok(session
+        .conversation
+        .as_ref()
+        .unwrap()
+        .messages()
+        .iter()
+        .map(Message::as_concat_text)
+        .collect())
+}
+
+async fn reply_approving(
+    agent: &Arc<Agent>,
+    session_id: &str,
+    text: &str,
+    stop_at_tool: Option<&str>,
+) -> Result<()> {
+    let cancel = CancellationToken::new();
+    let mut stream = agent
+        .reply(
+            Message::user().with_text(text),
+            SessionConfig {
+                id: session_id.to_string(),
+                schedule_id: None,
+                max_turns: Some(3),
+            },
+            Some(cancel.clone()),
+        )
+        .await?;
+    while let Some(event) = stream.next().await {
+        let AgentEvent::Message(message) = event? else {
+            continue;
+        };
+        for content in &message.content {
+            let MessageContent::ActionRequired(action) = content else {
+                continue;
+            };
+            let ActionRequiredData::ToolConfirmation { id, tool_name, .. } = &action.data else {
+                continue;
+            };
+            if Some(tool_name.as_str()) == stop_at_tool {
+                cancel.cancel();
+            } else {
+                agent
+                    .submit_tool_confirmation(session_id, id, Permission::AllowOnce)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn resume_until_completed(
+    agent: &Arc<Agent>,
+    api: &DummyApi,
+    session_id: &str,
+    subagent_id: &str,
+) -> Result<ApiCall> {
+    api.on("resume it").call(
+        "delegate",
+        json!({ "resume": subagent_id, "instructions": "finish the count" }),
+    );
+    api.on("finish the count").call(
+        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+        json!({ "summary": "counted after resume" }),
+    );
+    api.on("counted after resume").reply("all done");
+    reply_approving(agent, session_id, "resume it", None).await?;
+
+    assert!(parent_texts(agent, session_id)
+        .await?
+        .iter()
+        .any(
+            |text| text.starts_with(&format!("Subagent {subagent_id} completed"))
+                && text.contains("counted after resume")
+        ));
+    api.calls()
+        .into_iter()
+        .find(|call| {
+            call.session_id() == Some(subagent_id) && call.input_contains("finish the count")
+        })
+        .ok_or_else(|| anyhow::anyhow!("the resumed subagent did not call the model"))
+}
+
+#[tokio::test]
+async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> {
+    let (agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    enable_developer(&agent, &session_id).await?;
+    enable_summon(&agent, &session_id).await?;
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "count the files", "max_turns": 1 }),
+    );
+    api.on("count the files")
+        .call("shell", json!({ "command": "echo partial-progress" }));
+    api.on("max turns reached")
+        .reply("the subagent ran out of turns");
+
+    reply_approving(&agent, &session_id, "hand this off", None).await?;
+    let subagent_id = delegated_subagent_id(&agent, &session_id).await?;
+    assert!(
+        parent_texts(&agent, &session_id)
+            .await?
+            .iter()
+            .any(|text| text
+                .starts_with(&format!("Subagent {subagent_id} failed: max turns reached")))
+    );
+
+    let resumed_request = resume_until_completed(&agent, &api, &session_id, &subagent_id).await?;
+    assert!(resumed_request.input_contains("partial-progress"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stopped_subagent_is_released_before_a_slow_session_end_hook_and_resumes() -> Result<()> {
+    let (mut agent, api, session_id, _temp_dir) = agent_with_dummy_api().await?;
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["SessionEnd"], 2)?;
+    agent
+        .config
+        .session_manager
+        .update(&session_id)
+        .goose_mode(GooseMode::Approve)
+        .apply()
+        .await?;
+    enable_developer(&agent, &session_id).await?;
+    enable_summon(&agent, &session_id).await?;
+    api.on("hand this off").call(
+        "delegate",
+        json!({ "instructions": "wait for approval", "max_turns": 3 }),
+    );
+    api.on("wait for approval")
+        .call("shell", json!({ "command": "echo never" }));
+
+    reply_approving(&agent, &session_id, "hand this off", Some("shell")).await?;
+    let subagent_id = delegated_subagent_id(&agent, &session_id).await?;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while agent.tracks_confirmations_for(&subagent_id)
+            || !agent
+                .extension_manager
+                .scope_lease(&subagent_id)
+                .await
+                .configs()
+                .is_empty()
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
+    assert!(hook_sessions(&hook_log, "SessionEnd").is_empty());
+
+    let resumed_request = resume_until_completed(&agent, &api, &session_id, &subagent_id).await?;
+    assert!(resumed_request.answers_every_tool_call_next());
     Ok(())
 }
 

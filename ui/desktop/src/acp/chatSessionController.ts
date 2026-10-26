@@ -18,6 +18,7 @@ import {
 import { cancelAcpElicitationRequestsForSession } from './elicitationRequests';
 import {
   formatAcpError,
+  isAcpTurnError,
   parseAcpCreditsExhaustedError,
   type AcpCreditsExhaustedError,
 } from './errors';
@@ -41,8 +42,10 @@ export interface AcpSnapshotOptions {
   getCurrentSnapshot(): AcpChatSessionSnapshot | undefined;
 }
 
+export type PromptOutcome = { status: 'completed' } | { status: 'failed'; message?: string };
+
 export interface AcpSubmitMessageOptions extends AcpSnapshotOptions {
-  onFinish(error?: string): void | Promise<void>;
+  onFinish(outcome: PromptOutcome): void | Promise<void>;
 }
 
 export interface AcpChatSessionController {
@@ -190,7 +193,7 @@ async function submitMessage(
       return;
     }
     if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
-      void options.onFinish();
+      void options.onFinish({ status: 'completed' });
     }
   } catch (error) {
     if (acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId)) {
@@ -209,14 +212,14 @@ async function submitMessage(
       ];
       acpChatSessionActions.setMessages(sessionId, messages);
       if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
-        void options.onFinish();
+        void options.onFinish({ status: 'failed' });
       }
       return;
     }
 
-    const submitError = formatAcpError(error);
+    const message = isAcpTurnError(error) ? undefined : formatAcpError(error);
     if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
-      void options.onFinish(submitError);
+      void options.onFinish({ status: 'failed', message });
     }
   }
 }

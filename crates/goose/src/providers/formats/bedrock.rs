@@ -34,10 +34,13 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
     let anthropic_config = bedrock_anthropic_model_config(model_config)?;
     let thinking_type = thinking_type_for_provider(ANTHROPIC_PROVIDER_NAME, &anthropic_config);
     let thinking = match thinking_type {
-        ThinkingType::Adaptive => Document::Object(HashMap::from([(
-            "type".to_string(),
-            Document::String("adaptive".to_string()),
-        )])),
+        ThinkingType::Adaptive => Document::Object(HashMap::from([
+            ("type".to_string(), Document::String("adaptive".to_string())),
+            (
+                "display".to_string(),
+                Document::String("summarized".to_string()),
+            ),
+        ])),
         ThinkingType::Enabled => {
             // Thinking tokens count against `maxTokens`, which `bedrock_inference_config`
             // now sends when explicitly configured. Mirror the Anthropic formatter: clamp
@@ -56,6 +59,10 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
                 (
                     "budget_tokens".to_string(),
                     Document::Number(Number::PosInt(budget_tokens as u64)),
+                ),
+                (
+                    "display".to_string(),
+                    Document::String("summarized".to_string()),
                 ),
             ]))
         }
@@ -677,7 +684,8 @@ mod tests {
             json!({
                 "thinking": {
                     "type": "enabled",
-                    "budget_tokens": 4000
+                    "budget_tokens": 4000,
+                    "display": "summarized"
                 }
             })
         );
@@ -701,7 +709,8 @@ mod tests {
             json!({
                 "thinking": {
                     "type": "enabled",
-                    "budget_tokens": 3000 - 1024
+                    "budget_tokens": 3000 - 1024,
+                    "display": "summarized"
                 }
             })
         );
@@ -753,7 +762,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "high"}
             })
         );
@@ -772,7 +781,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "low"}
             })
         );
@@ -791,7 +800,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "low"}
             })
         );

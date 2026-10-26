@@ -1,24 +1,24 @@
 use anyhow::Result;
 use serde_json::json;
 
-use super::dummy_api::{DummyApi, ProviderFeatures};
+#[cfg(feature = "scheduler")]
+use super::dummy_api::DummyApi;
+use super::dummy_api::ProviderFeatures;
+#[cfg(feature = "scheduler")]
+use super::pipeline::test_pipeline_with_scheduler;
 use super::pipeline::{
-    test_pipeline, test_pipeline_with, test_pipeline_with_scheduler, MessageKind::Agent,
-    MessageKind::Error, MessageKind::ToolResponse,
+    test_pipeline, test_pipeline_with, MessageKind::Agent, MessageKind::Error,
+    MessageKind::ToolResponse,
 };
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+#[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
-#[cfg(feature = "code-mode")]
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
-#[cfg(feature = "code-mode")]
-use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::Message;
-#[cfg(feature = "code-mode")]
-use crate::conversation::message::MessageContent;
+#[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
 
@@ -93,6 +93,7 @@ async fn slash_recipe_extension_failure_is_reported_before_applying_the_recipe()
     Ok(())
 }
 
+#[cfg(feature = "tree-sitter")]
 #[tokio::test]
 async fn inherited_recipe_parameters_instructions_and_extensions_reach_inference() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -499,12 +500,12 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
 
 #[cfg(feature = "code-mode")]
 #[tokio::test]
-async fn unadvertised_final_output_is_neither_approved_nor_executed() -> Result<()> {
+async fn code_mode_advertises_and_accepts_final_output() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let recipe = Recipe::builder()
-        .title("Structured output boundary")
-        .description("Structured output boundary")
-        .instructions("Return structured output")
+        .title("Structured output")
+        .description("Return structured output")
+        .instructions("Compute the answer")
         .response(Response {
             json_schema: Some(json!({
                 "type": "object",
@@ -516,59 +517,16 @@ async fn unadvertised_final_output_is_neither_approved_nor_executed() -> Result<
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
     pipeline.add_extension("code_execution").await?;
-    pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::AlwaysAllow);
-    let pipeline = pipeline
-        .with_max_turns(2)
-        .with_goose_mode(GooseMode::Approve)
-        .await;
-    api.on("try the hidden final output")
-        .unadvertised_call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "escaped" }));
-    api.on("not available").reply("recipe call blocked");
+    api.on("compute the answer")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "42" }));
 
-    let result = pipeline.run(["try the hidden final output"]).await?;
+    let result = pipeline.run(["compute the answer"]).await?;
 
-    assert!(!api.calls()[0].advertises_tool(FINAL_OUTPUT_TOOL_NAME));
-    assert!(result.conversation().messages().iter().any(|message| {
-        message.content.iter().any(|content| {
-            matches!(content, MessageContent::ToolResponse(response)
-            if response.tool_result.as_ref().is_ok_and(|result| {
-                result.content.iter().any(|content| {
-                    content.as_text().is_some_and(|text| {
-                        text.text.contains("Tool 'recipe__final_output' is not available")
-                    })
-                })
-            }))
-        })
-    }));
-    assert!(result.conversation().messages().iter().any(|message| {
-        message.content.iter().any(|content| {
-            matches!(content, MessageContent::Text(text) if text.text == "recipe call blocked")
-        })
-    }));
-    assert!(!result.conversation().messages().iter().any(|message| {
-        message
-            .content
-            .iter()
-            .any(|content| matches!(content, MessageContent::ActionRequired(_)))
-    }));
-    let request = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .find(|request| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-        })
-        .expect("final_output request");
-    assert!(request
-        .tool_meta
-        .as_ref()
-        .and_then(|metadata| metadata.get(TOOL_EXECUTABLE_KEY))
-        .is_none());
+    assert_eq!(api.call_count(), 1);
+    assert!(api.calls()[0].advertises_tool("execute_javascript"));
+    assert!(api.calls()[0].system_contains("You MUST use the `final_output` tool"));
+    assert!(api.calls()[0].advertises_tool(FINAL_OUTPUT_TOOL_NAME));
+    result.assert_message(-1, Agent, r#"{"result":"42"}"#);
 
     Ok(())
 }
@@ -611,6 +569,7 @@ async fn structured_output_fails_fast_when_provider_manages_own_context() -> Res
     Ok(())
 }
 
+#[cfg(feature = "scheduler")]
 #[tokio::test]
 async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -767,6 +726,7 @@ async fn boolean_final_output_schema_stops_before_inference() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "scheduler")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn scheduled_run_attaches_recipe_to_session_before_inference() -> Result<()> {
     let api = DummyApi::start(ProviderFeatures::default()).await;

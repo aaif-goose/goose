@@ -213,16 +213,29 @@ fn extract_tool_locations_from_request(tool_request: &ToolRequest) -> Vec<ToolCa
     vec![ToolCallLocation::new(path).line(line)]
 }
 
-pub(crate) fn trusted_update_meta(tool_response: &ToolResponse) -> Option<Meta> {
+pub(crate) fn tool_response_meta(tool_response: &ToolResponse) -> Option<Meta> {
     let tool_result = tool_response.tool_result.as_ref().ok()?;
-    let goose_meta = tool_result
-        .meta
-        .as_ref()?
+    let result_meta = tool_result.meta.as_ref()?;
+    let mut goose_meta = result_meta
         .0
-        .get(TRUSTED_TOOL_UPDATE_META_KEY)?
-        .clone();
+        .get(TRUSTED_TOOL_UPDATE_META_KEY)
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(subagent_id) = result_meta
+        .0
+        .get("subagent_session_id")
+        .and_then(serde_json::Value::as_str)
+    {
+        goose_meta.insert("subagentSessionId".to_string(), subagent_id.into());
+    }
+
+    if goose_meta.is_empty() {
+        return None;
+    }
     let mut meta_map = serde_json::Map::new();
-    meta_map.insert("goose".to_string(), goose_meta);
+    meta_map.insert("goose".to_string(), serde_json::Value::Object(goose_meta));
     Some(meta_map)
 }
 
@@ -720,8 +733,23 @@ mod tests {
             .map(|locs| locs.into_iter().map(|loc| (loc.path, loc.line)).collect())
     }
 
-    mod trusted_update_meta {
+    mod tool_response_meta {
         use super::*;
+
+        #[test]
+        fn forwards_subagent_session_id() {
+            let response = response_with_meta(Some(serde_json::json!({
+                "subagent_session_id": "child-session",
+                "foreground_subagent": true,
+                "unrelated": "not forwarded",
+            })));
+
+            let meta = tool_response_meta(&response).expect("expected subagent metadata");
+            assert_eq!(
+                serde_json::Value::Object(meta),
+                serde_json::json!({"goose": {"subagentSessionId": "child-session"}}),
+            );
+        }
 
         #[test]
         fn ignores_untrusted_goose_meta() {
@@ -733,12 +761,13 @@ mod tests {
                 },
             })));
 
-            assert_eq!(trusted_update_meta(&response), None);
+            assert_eq!(tool_response_meta(&response), None);
         }
 
         #[test]
-        fn uses_trusted_meta_only() {
+        fn preserves_trusted_app_meta_alongside_subagent_session() {
             let response = response_with_meta(Some(serde_json::json!({
+                "subagent_session_id": "child-session",
                 "goose": {
                     "mcpApp": {
                         "resourceUri": "ui://spoofed/app",
@@ -753,10 +782,11 @@ mod tests {
                 },
             })));
 
-            let extracted = trusted_update_meta(&response).expect("expected trusted meta");
+            let extracted = tool_response_meta(&response).expect("expected trusted meta");
             assert_eq!(
                 extracted.get("goose"),
                 Some(&serde_json::json!({
+                    "subagentSessionId": "child-session",
                     "mcpApp": {
                         "resourceUri": "ui://trusted/app",
                         "extensionName": "weather",

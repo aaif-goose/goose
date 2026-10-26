@@ -8,7 +8,6 @@ use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::Emitter;
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
-use crate::conversation::Conversation;
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
 
@@ -87,18 +86,15 @@ fn readable_output(output: &str) -> String {
 
 #[async_trait]
 impl SubagentRunner<Session> for ForegroundSubagentRunner {
-    fn started_subagent_session_ids(
+    fn requested_subagent_session_ids(
         &self,
         parent_session: &Session,
-        conversation: &Conversation,
+        message: &Message,
     ) -> Vec<String> {
         if parent_session.session_type == SessionType::SubAgent {
             return Vec::new();
         }
-        conversation
-            .messages()
-            .iter()
-            .flat_map(|message| delegated_subagent_ids(&message.content))
+        delegated_subagent_ids(&message.content)
             .map(str::to_owned)
             .collect()
     }
@@ -167,6 +163,7 @@ mod tests {
         ConversationEffect, GooseEffect, Operation, OperationResult, RunStatus,
     };
     use crate::config::GooseMode;
+    use crate::conversation::Conversation;
     use crate::session::SessionManager;
     use goose_agent::machine::EffectHandler;
 
@@ -311,22 +308,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn successful_foreground_delegations_are_the_started_subagents() -> Result<()> {
+    async fn a_message_starts_its_successful_foreground_delegations() -> Result<()> {
         let fixture = fixture().await?;
         let mut failed_delegate = delegate_result("failed", true);
         failed_delegate.is_error = Some(true);
-        let conversation = Conversation::new_unvalidated(vec![
-            Message::user().with_text("delegate"),
-            Message::user()
-                .with_tool_response("a", Ok(delegate_result("first", true)))
-                .with_tool_response("b", Ok(delegate_result("background", false)))
-                .with_tool_response("c", Ok(failed_delegate))
-                .with_tool_response(
-                    "d",
-                    Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
-                ),
-            delegate_message("second"),
-        ]);
+        let mixed = Message::user()
+            .with_tool_response("a", Ok(delegate_result("first", true)))
+            .with_tool_response("b", Ok(delegate_result("background", false)))
+            .with_tool_response("c", Ok(failed_delegate))
+            .with_tool_response(
+                "d",
+                Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
+            );
         let mut parent = fixture
             .manager
             .get_session(&fixture.parent_id, false)
@@ -334,12 +327,19 @@ mod tests {
         let runner = fixture.runner();
 
         assert_eq!(
-            runner.started_subagent_session_ids(&parent, &conversation),
-            ["first", "second"]
+            runner.requested_subagent_session_ids(&parent, &mixed),
+            ["first"]
         );
+        assert_eq!(
+            runner.requested_subagent_session_ids(&parent, &delegate_message("second")),
+            ["second"]
+        );
+        assert!(runner
+            .requested_subagent_session_ids(&parent, &Message::user().with_text("delegate"))
+            .is_empty());
         parent.session_type = SessionType::SubAgent;
         assert!(runner
-            .started_subagent_session_ids(&parent, &conversation)
+            .requested_subagent_session_ids(&parent, &mixed)
             .is_empty());
         Ok(())
     }

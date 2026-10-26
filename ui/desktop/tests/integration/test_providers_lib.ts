@@ -84,11 +84,7 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'google',
-      models: [
-        'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.6-flash',
-      ],
+      models: ['gemini-3.5-flash-lite', 'gemini-3.6-flash'],
       available: () => hasEnv('GOOGLE_API_KEY'),
     },
     {

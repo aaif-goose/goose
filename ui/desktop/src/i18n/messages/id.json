@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Apakah Anda yakin ingin memasang ekstensi {name}? Perintah: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Model diubah: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (diminta)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Tampilkan semua"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Konfigurasikan subresep yang dapat dipanggil sebagai alat selama eksekusi resep"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Muat progres terbaru"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Progres subagen tidak ditampilkan secara langsung di sini."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Kembali ke daftar model"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatis"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Terkonfigurasi"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Kunci API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Masukkan kunci API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Hapus kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Simpan kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Menggunakan Jev untuk memilih tingkat penalaran bagi setiap permintaan. Teks permintaan dikirim ke TypeSafe AI; perintah garis miring skill dan resep menyertakan instruksi lokal yang telah diperluas."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Tingkat penalaran otomatis"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Batas pemblokiran"

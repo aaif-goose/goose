@@ -195,6 +195,11 @@ impl SchedulerTrait for FixtureScheduler {
     }
 }
 
+fn http_error_response(response: &str) -> Option<(u16, &str)> {
+    let (status, body) = response.strip_prefix("status:")?.split_once(' ')?;
+    Some((status.parse().ok()?, body))
+}
+
 fn write_global_test_config(config_path: &Path, openai_base_url: &str) {
     let contents = fs::read_to_string(config_path).unwrap();
     let mut config: serde_yaml::Mapping = serde_yaml::from_str(&contents).unwrap();
@@ -269,6 +274,11 @@ impl OpenAiFixture {
                     let (expected_body, response) = q.front().cloned().unwrap_or_default();
                     if !expected_body.is_empty() && body.contains(&expected_body) {
                         q.pop_front();
+                        if let Some((status, error)) = http_error_response(response) {
+                            return ResponseTemplate::new(status)
+                                .insert_header("content-type", "application/json")
+                                .set_body_string(error);
+                        }
                         return ResponseTemplate::new(200)
                             .insert_header("content-type", "text/event-stream")
                             .set_body_string(response)

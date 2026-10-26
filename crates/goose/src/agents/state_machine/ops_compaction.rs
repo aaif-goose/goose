@@ -8,7 +8,7 @@ use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::{
-    applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error, yielded,
+    applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error,
     yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
     SlashCommand,
 };
@@ -17,6 +17,7 @@ use crate::conversation::message::{Message, MessageErrorKind, SystemNotification
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
 use crate::session::Session;
+use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
@@ -284,12 +285,50 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             }
             Err(e) => {
                 span.record("error.type", "compaction_error");
-                emit.message(Message::assistant().with_text(format!(
-                    "Ran into this error trying to compact: {e}.\n\n\
-                     Please try again or create a new session"
-                )));
-                yielded()
+                let message = emit.message(compaction_failure_message(&e));
+                yielded_with([message.into()])
             }
         }
+    }
+}
+
+fn compaction_failure_message(e: &anyhow::Error) -> Message {
+    let provider_error = e.downcast_ref::<ProviderError>();
+    if let Some(err @ ProviderError::CreditsExhausted { .. }) = provider_error {
+        return Message::from_provider_error(err);
+    }
+    Message::assistant().with_error(
+        provider_error.map_or(MessageErrorKind::Other, MessageErrorKind::from),
+        format!(
+            "Ran into this error trying to compact: {e}.\n\n\
+             Please try again or create a new session"
+        ),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credits_failure_keeps_the_top_up_url() {
+        let error = anyhow::Error::from(ProviderError::CreditsExhausted {
+            details: "no credits".to_string(),
+            top_up_url: Some("https://example.com/billing".to_string()),
+        });
+        let message = compaction_failure_message(&error);
+        let Some(crate::conversation::message::MessageContent::SystemNotification(notification)) =
+            message.content.first()
+        else {
+            panic!("expected a credits notification, got {message:?}");
+        };
+        assert_eq!(
+            notification.notification_type,
+            SystemNotificationType::CreditsExhausted
+        );
+        assert_eq!(
+            notification.data.as_ref().unwrap()["top_up_url"],
+            "https://example.com/billing"
+        );
     }
 }

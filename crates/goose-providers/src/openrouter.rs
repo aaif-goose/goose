@@ -12,6 +12,7 @@ use crate::api_client::ApiClient;
 pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + Sync>;
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
+use crate::canonical::{maybe_get_canonical_model_with_variant_fallback, strip_openrouter_variant};
 use crate::conversation::message::Message;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
@@ -26,21 +27,17 @@ use rmcp::model::Tool;
 
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
-pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-4";
+pub const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5.5";
 pub const OPENROUTER_DECISION_DEFAULT_MODEL: &str = "typesafe/jev-1.13";
 
-// OpenRouter can run many models, we suggest the default
 pub const OPENROUTER_KNOWN_MODELS: &[&str] = &[
-    "x-ai/grok-code-fast-1",
-    "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-sonnet-4",
-    "anthropic/claude-opus-4.1",
-    "anthropic/claude-opus-4",
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-    "deepseek/deepseek-r1-0528",
-    "qwen/qwen3-coder",
-    "moonshotai/kimi-k2",
+    OPENROUTER_DEFAULT_MODEL,
+    "anthropic/claude-opus-5.5",
+    "google/gemini-3.5-flash",
+    "x-ai/grok-4.7",
+    "deepseek/deepseek-v4-pro",
+    "qwen/qwen3.8-flash",
+    "moonshotai/kimi-k3",
 ];
 pub const OPENROUTER_DOC_URL: &str = "https://openrouter.ai/models";
 
@@ -569,19 +566,22 @@ impl Provider for OpenRouterProvider {
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .resolve(model, override_limit, || async {
-                // The catalog outranks the reported length, so a model it knows
-                // never needs the model list.
-                if let Some(canonical) =
-                    crate::canonical::maybe_get_canonical_model(&self.name, model)
-                {
+                let canonical = maybe_get_canonical_model_with_variant_fallback(&self.name, model);
+                let base = strip_openrouter_variant(model);
+                // Exact catalog rows outrank live exact IDs; base fallbacks come after both.
+                if let Some((canonical, false)) = &canonical {
                     return Ok(Some(canonical.limit.context));
                 }
-                Ok(self
-                    .get_or_fetch_models()
-                    .await?
+                let models = self.get_or_fetch_models().await?;
+                Ok(models
                     .iter()
                     .find(|info| info.id == model)
-                    .and_then(|info| info.context_length))
+                    .and_then(|info| info.context_length)
+                    .or_else(|| canonical.map(|(canonical, _)| canonical.limit.context))
+                    .or_else(|| {
+                        base.and_then(|base| models.iter().find(|info| info.id == base))
+                            .and_then(|info| info.context_length)
+                    }))
             })
             .await
     }
@@ -711,6 +711,38 @@ mod tests {
     }
 
     #[test]
+    fn metadata_default_and_known_models_are_in_catalog() {
+        let metadata = OpenRouterProvider::metadata();
+        let registry = crate::canonical::CanonicalModelRegistry::bundled().unwrap();
+
+        assert!(metadata
+            .known_models
+            .iter()
+            .any(|model| model.name == metadata.default_model));
+
+        for model in &metadata.known_models {
+            let canonical = registry
+                .get(&metadata.name, &model.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "OpenRouter model {} is missing from the catalog",
+                        model.name
+                    )
+                });
+            assert!(canonical.tool_call, "{} must support tools", model.name);
+            assert!(
+                canonical
+                    .modalities
+                    .input
+                    .contains(&crate::canonical::Modality::Text),
+                "{} must support text input",
+                model.name
+            );
+            assert!(canonical.limit.context > 0);
+        }
+    }
+
+    #[test]
     fn merge_openrouter_parameters_updates_model_request_params() {
         let mut model = model_config("anthropic/claude-sonnet-4");
         model.request_params = Some(HashMap::from([("verbosity".to_string(), json!("low"))]));
@@ -826,6 +858,7 @@ mod tests {
         );
     }
 
+    const MODEL_IN_CATALOG: &str = "anthropic/claude-sonnet-4.5";
     const MODEL_NOT_IN_CATALOG: &str = "test-vendor/not-in-catalog";
 
     fn models_response() -> wiremock::ResponseTemplate {
@@ -837,7 +870,7 @@ mod tests {
                     "supported_parameters": ["tools"]
                 },
                 {
-                    "id": OPENROUTER_DEFAULT_MODEL,
+                    "id": MODEL_IN_CATALOG,
                     "context_length": 4_096,
                     "supported_parameters": ["tools"]
                 },
@@ -892,16 +925,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn context_limit_uses_base_model_for_variant_not_in_catalog() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{MODEL_NOT_IN_CATALOG}:nitro"), None)
+                .await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_keeps_exact_variant_precedence() {
+        let variant = format!("{MODEL_NOT_IN_CATALOG}:nitro");
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                { "id": MODEL_NOT_IN_CATALOG, "context_length": 1_048_576 },
+                { "id": variant, "context_length": 64_000 }
+            ]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(&variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_live_exact_variant_over_catalog_base() {
+        let variant = "deepseek/deepseek-v4-flash:nitro";
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": variant, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_catalog_base_when_live_variant_is_missing() {
+        let model = "deepseek/deepseek-v4-flash";
+        let catalog_limit =
+            crate::canonical::maybe_get_canonical_model(OPENROUTER_PROVIDER_NAME, model)
+                .unwrap()
+                .limit
+                .context;
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": model, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{model}:nitro"), None)
+                .await,
+            catalog_limit
+        );
+    }
+
+    #[tokio::test]
     async fn context_limit_keeps_override_and_catalog_precedence_without_fetching() {
         let server = models_server(models_response(), 0).await;
         let provider = provider_for(&server);
-        let catalog_limit = crate::canonical::maybe_get_canonical_model(
-            OPENROUTER_PROVIDER_NAME,
-            OPENROUTER_DEFAULT_MODEL,
-        )
-        .unwrap()
-        .limit
-        .context;
+        let catalog_limit =
+            crate::canonical::maybe_get_canonical_model(OPENROUTER_PROVIDER_NAME, MODEL_IN_CATALOG)
+                .unwrap()
+                .limit
+                .context;
 
         assert_eq!(
             provider
@@ -910,9 +1003,7 @@ mod tests {
             64_000
         );
         assert_eq!(
-            provider
-                .get_context_limit(OPENROUTER_DEFAULT_MODEL, None)
-                .await,
+            provider.get_context_limit(MODEL_IN_CATALOG, None).await,
             catalog_limit
         );
     }
@@ -1053,13 +1144,13 @@ mod tests {
 
         assert_eq!(
             recommended.unwrap(),
-            vec![OPENROUTER_DEFAULT_MODEL, MODEL_NOT_IN_CATALOG]
+            vec![MODEL_IN_CATALOG, MODEL_NOT_IN_CATALOG]
         );
         assert_eq!(context_limit, 1_048_576);
         assert_eq!(
             provider.fetch_recommended_models(true).await.unwrap(),
             vec![
-                OPENROUTER_DEFAULT_MODEL,
+                MODEL_IN_CATALOG,
                 "test-vendor/no-tools",
                 MODEL_NOT_IN_CATALOG
             ]

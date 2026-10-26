@@ -18,12 +18,22 @@ import type {
   SystemNotificationContent,
 } from '../types/message';
 import { getModelDisplayName } from './settings/models/predefinedModelsUtils';
-import { deriveMessageRowContexts, type MessageRowContext } from './messageRowContext';
+import {
+  deriveMessageRowContexts,
+  type InferenceModel,
+  inferenceModel,
+  isModelChange,
+  type MessageRowContext,
+} from './messageRowContext';
 
 const i18n = defineMessages({
   modelChanged: {
     id: 'messageList.modelChanged',
     defaultMessage: 'Model changed: {previousModel} → {currentModel}',
+  },
+  requestedModel: {
+    id: 'messageList.requestedModel',
+    defaultMessage: '{model} (requested)',
   },
   hiddenMessages: {
     id: 'messageList.hiddenMessages',
@@ -40,11 +50,6 @@ const emptyAppend = () => {};
 const HEAD_MESSAGE_COUNT = 20;
 const TAIL_MESSAGE_COUNT = 200;
 const MESSAGE_DISPLAY_LIMIT = HEAD_MESSAGE_COUNT + TAIL_MESSAGE_COUNT;
-
-function getResolvedModel(message: Message): string | null {
-  if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
-  return message.metadata.inference?.resolvedModel ?? null;
-}
 
 function getSystemNotification(message: Message): SystemNotificationContent | undefined {
   return getCreditsExhaustedNotification(message) ?? getInlineSystemNotification(message);
@@ -229,6 +234,10 @@ export default function MessageList({
   }, [hasHiddenMessages]);
 
   const rowContexts = useMemo(() => deriveMessageRowContexts(messages), [messages]);
+  const modelLabel = (model: InferenceModel) =>
+    model.confirmed
+      ? getModelDisplayName(model.id)
+      : intl.formatMessage(i18n.requestedModel, { model: getModelDisplayName(model.id) });
   const messageRows: React.ReactNode[] = [];
 
   displayedMessages.forEach(({ message, index }, displayedIndex) => {
@@ -256,14 +265,13 @@ export default function MessageList({
       ? `notification-${messageIdentifier}`
       : messageIdentifier;
     const rowContext = rowContexts[index];
-    const currentResolvedModel = getResolvedModel(message);
+    const currentModel = inferenceModel(message);
+    const previousModel = rowContext.previousModel;
     const modelChangeMessage =
-      currentResolvedModel &&
-      rowContext.previousResolvedModel &&
-      currentResolvedModel !== rowContext.previousResolvedModel
+      currentModel && previousModel && isModelChange(previousModel, currentModel)
         ? intl.formatMessage(i18n.modelChanged, {
-            previousModel: getModelDisplayName(rowContext.previousResolvedModel),
-            currentModel: getModelDisplayName(currentResolvedModel),
+            previousModel: modelLabel(previousModel),
+            currentModel: modelLabel(currentModel),
           })
         : null;
     const toolNotifications = rowContext.toolStates.map((toolState) =>

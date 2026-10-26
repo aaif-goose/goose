@@ -188,9 +188,13 @@ pub(crate) fn prepare_inference_tools(
     #[cfg(feature = "code-mode")]
     if code_execution_active {
         tools.retain(|tool| {
-            crate::agents::extension_manager::get_tool_owner(tool).is_some_and(|owner| {
-                crate::agents::extension_manager::is_first_class_extension(&owner)
-            }) || crate::agents::extension_manager::get_tool_resource_uri(tool).is_some()
+            let owner = crate::agents::extension_manager::get_tool_owner(tool);
+            (tool.name == crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME
+                && owner.is_none())
+                || owner.is_some_and(|owner| {
+                    crate::agents::extension_manager::is_first_class_extension(&owner)
+                })
+                || crate::agents::extension_manager::get_tool_resource_uri(tool).is_some()
         });
     }
 
@@ -1455,7 +1459,13 @@ mod tests {
     }
     #[cfg(feature = "code-mode")]
     #[test]
-    fn code_mode_keeps_first_class_and_resource_tools() {
+    fn code_mode_keeps_first_class_resource_and_final_output_tools() {
+        use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+        let mut final_output = make_tool_with_meta(None);
+        final_output.name = FINAL_OUTPUT_TOOL_NAME.into();
+        let mut extension_final_output =
+            make_tool_with_meta(Some(serde_json::json!({"goose_extension": "recipe"})));
+        extension_final_output.name = FINAL_OUTPUT_TOOL_NAME.into();
         let mut first_class =
             make_tool_with_meta(Some(serde_json::json!({"goose_extension": "developer"})));
         first_class.name = "shell".into();
@@ -1467,12 +1477,22 @@ mod tests {
         let hidden = make_tool_with_meta(Some(
             serde_json::json!({"goose_extension": "developer", "ui": {"visibility": ["app"]}}),
         ));
-        let filtered = prepare_inference_tools(vec![ordinary, first_class, resource, hidden], true);
+        let filtered = prepare_inference_tools(
+            vec![
+                ordinary,
+                first_class,
+                resource,
+                hidden,
+                final_output,
+                extension_final_output,
+            ],
+            true,
+        );
         let names = filtered
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names, ["resource__view", "shell"]);
+        assert_eq!(names, [FINAL_OUTPUT_TOOL_NAME, "resource__view", "shell"]);
     }
 }
 

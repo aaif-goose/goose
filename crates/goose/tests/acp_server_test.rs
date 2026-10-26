@@ -836,6 +836,65 @@ fn test_load_session_replays_image_attachment() {
     run_test(async { run_load_session_replays_image_attachment::<AcpServerConnection>().await });
 }
 
+async fn seed_session_awaiting_approval(data_root: &Path, session_type: SessionType) -> String {
+    let session_manager = SessionManager::new(data_root.to_path_buf());
+    let session = session_manager
+        .create_session(
+            data_root.to_path_buf(),
+            "Awaiting approval".to_string(),
+            session_type,
+            GooseMode::default(),
+        )
+        .await
+        .unwrap();
+    for message in [
+        Message::user().with_text("run the tool"),
+        Message::assistant().with_action_required(
+            "approval",
+            "tool".to_string(),
+            Default::default(),
+            None,
+        ),
+    ] {
+        session_manager
+            .add_message(&session.id, &message)
+            .await
+            .unwrap();
+    }
+    session.id
+}
+
+fn starts_a_run(updates: &[SessionUpdate]) -> bool {
+    updates.iter().any(|update| match update {
+        SessionUpdate::SessionInfoUpdate(info) => info
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("goose"))
+            .and_then(|goose| goose.get("activeRunId"))
+            .is_some_and(serde_json::Value::is_string),
+        _ => false,
+    })
+}
+
+#[test]
+fn test_load_session_resumes_pending_approval_except_for_subagents() {
+    run_test(async {
+        for (session_type, resumes) in [(SessionType::Acp, true), (SessionType::SubAgent, false)] {
+            let data_root = tempfile::tempdir().unwrap();
+            let session_id = seed_session_awaiting_approval(data_root.path(), session_type).await;
+            let mut conn = new_connection(data_root.path()).await;
+
+            let SessionData { session, .. } = conn.load_session(&session_id, vec![]).await.unwrap();
+
+            assert_eq!(
+                starts_a_run(&session.session_updates()),
+                resumes,
+                "{session_type:?}"
+            );
+        }
+    });
+}
+
 #[test]
 fn test_mode_set() {
     run_test(async { run_mode_set::<AcpServerConnection>().await });
@@ -940,6 +999,30 @@ fn test_new_session_honors_recipe_model_without_recipe_provider() {
             meta.get("providerId").and_then(|v| v.as_str()),
             Some("openai")
         );
+    });
+}
+
+#[test]
+fn test_new_session_rejects_unknown_provider_as_invalid_params() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "provider".to_string(),
+            serde_json::Value::String("not-a-provider".to_string()),
+        );
+
+        let error: anyhow::Error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(work_dir.path()).meta(meta))
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+
+        assert_invalid_params(error);
     });
 }
 
@@ -1284,4 +1367,101 @@ fn test_shell_terminal_false() {
 #[test]
 fn test_shell_terminal_true() {
     run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+}
+
+const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
+const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
+const CONTEXT_ERROR_TEXT: &str =
+    "Context length exceeded: too long\n\nThe conversation is too long for the model's context window.";
+
+async fn prompt_after_context_overflow(
+    exchanges: Vec<(&str, &'static str)>,
+) -> anyhow::Result<String> {
+    let mut all = vec![("overflow", CONTEXT_OVERFLOW)];
+    all.extend(exchanges);
+    prompt_and_stream("overflow", all).await.0
+}
+
+async fn prompt_and_stream(
+    prompt: &str,
+    exchanges: Vec<(&str, &'static str)>,
+) -> (anyhow::Result<String>, String) {
+    let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+    let exchanges = exchanges
+        .into_iter()
+        .map(|(p, r)| (p.to_string(), r))
+        .collect();
+    let openai = OpenAiFixture::new(exchanges, expected_session_id.clone()).await;
+    let mut conn =
+        <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    expected_session_id.set(&session.session_id().0);
+    let result = session
+        .prompt(prompt, PermissionDecision::Cancel)
+        .await
+        .map(|output| output.text);
+    let streamed = session
+        .session_updates()
+        .into_iter()
+        .filter_map(|update| match update {
+            SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                ContentBlock::Text(text) => Some(text.text),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    (result, streamed)
+}
+
+fn prompt_acp_error(error: anyhow::Error) -> agent_client_protocol::Error {
+    error.downcast::<agent_client_protocol::Error>().unwrap()
+}
+
+#[test]
+fn test_prompt_succeeds_when_compaction_recovers_from_context_overflow() {
+    run_test(async {
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let text = prompt_after_context_overflow(vec![
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", basic),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(text, format!("{CONTEXT_ERROR_TEXT}2"));
+    });
+}
+
+#[test]
+fn test_prompt_reports_context_error_when_compaction_limit_is_exhausted() {
+    run_test(async {
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let error = prompt_after_context_overflow(vec![
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", CONTEXT_OVERFLOW),
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", CONTEXT_OVERFLOW),
+        ])
+        .await
+        .unwrap_err();
+        let error = prompt_acp_error(error);
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert_eq!(error.data.unwrap()["reason"], "turn_failed");
+    });
+}
+
+const PARTIAL_THEN_STREAM_ERROR: &str = "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1766229303,\"model\":\"gpt-5-nano\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"partial answer\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"message\":\"upstream exploded\"}}\n\n";
+
+#[test]
+fn test_prompt_fails_and_streams_the_error() {
+    run_test(async {
+        let (result, streamed) =
+            prompt_and_stream("partial", vec![("partial", PARTIAL_THEN_STREAM_ERROR)]).await;
+        let error = prompt_acp_error(result.unwrap_err());
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert!(
+            streamed.contains("partial answer") && streamed.contains("upstream exploded"),
+            "streamed text: {streamed:?}"
+        );
+    });
 }

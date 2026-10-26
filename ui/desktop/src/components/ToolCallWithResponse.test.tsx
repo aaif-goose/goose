@@ -183,7 +183,7 @@ describe('Code Mode execution history', () => {
     'execute_typescript',
     'code_execution__execute_typescript',
   ])('renders code and graph for %s', async (name) => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true });
     render(
       <ToolCallWithResponse
         isCancelledMessage={false}

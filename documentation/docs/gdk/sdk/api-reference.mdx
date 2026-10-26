@@ -2,15 +2,41 @@
 sidebar_position: 2
 title: SDK Reference
 sidebar_label: API Reference
-description: Complete SDK reference for Rust, Python, and Kotlin.
+description: Rust GDK crate documentation on docs.rs and the shared Python and Kotlin bindings reference.
 ---
 
 import GdkApiReference from '@site/src/components/GdkApiReference';
 
 # SDK Reference
 
-The complete SDK surface. Use the toggles to switch language and SDK
-version — names and types are shown using each language's own conventions.
+## Rust API reference
+
+For Rust, use the native GDK crate documentation on **docs.rs** as the primary
+API reference. These crates expose the full Rust APIs, beyond the shared
+`goose-sdk` bindings shown below.
+
+| Crate | API |
+| --- | --- |
+| [`goose-agent`](https://docs.rs/goose-agent/latest/goose_agent/) | Agent state machine, operations, inference, and tools |
+| [`goose-providers`](https://docs.rs/goose-providers/latest/goose_providers/) | Model provider implementations and declarative providers |
+| [`goose-provider-types`](https://docs.rs/goose-provider-types/latest/goose_provider_types/) | Provider traits, messages, model configuration, and shared types |
+| [`goose-context-management`](https://docs.rs/goose-context-management/latest/goose_context_management/) | Conversation compaction and summarization |
+| [`goose-local-inference`](https://docs.rs/goose-local-inference/latest/goose_local_inference/) | On-device model inference and model management |
+| [`goose-download-manager`](https://docs.rs/goose-download-manager/latest/goose_download_manager/) | Model downloads and download progress |
+| [`goose-sdk-types`](https://docs.rs/goose-sdk-types/latest/goose_sdk_types/) | Shared goose ACP wire types |
+| [`goose-sdk`](https://docs.rs/goose-sdk/latest/goose_sdk/) | Shared wire type re-exports and optional UniFFI bindings |
+
+The links open the latest published crate documentation. Use the docs.rs version
+selector to match the version in your project.
+
+## Shared bindings reference
+
+The generated reference below covers the `goose-sdk` UniFFI API used by Python
+and Kotlin, with Rust signatures also available for that bindings layer. It is
+not the full native Rust GDK API.
+
+Use the toggles to switch language and bindings version — names and types are
+shown using each language's own conventions.
 
 New to the SDK? Start with the [SDK overview](/docs/gdk/sdk) for
 installation and runnable examples.

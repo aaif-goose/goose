@@ -2,7 +2,6 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::state_machine::DELEGATED_META_KEY;
-use crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
 use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
@@ -55,7 +54,10 @@ pub struct DelegateParams {
     pub max_turns: Option<usize>,
     pub context: Option<String>,
     pub working_dir: Option<String>,
+    pub resume: Option<String>,
 }
+
+const DEFAULT_RESUME_INSTRUCTIONS: &str = "Continue the task from where you left off.";
 
 struct SubagentConfig {
     provider_name: String,
@@ -316,6 +318,19 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     sources
 }
 
+fn delegated_result(text: String, subagent_id: &str) -> CallToolResult {
+    let mut meta = MetaObject::new();
+    meta.0.insert(
+        "subagent_session_id".to_string(),
+        serde_json::Value::String(subagent_id.to_string()),
+    );
+    meta.0.insert(
+        DELEGATED_META_KEY.to_string(),
+        serde_json::Value::Bool(true),
+    );
+    CallToolResult::success(vec![ContentBlock::text(text)]).with_meta(Some(meta))
+}
+
 fn build_instructions_with_context(context: &str, instructions: &str) -> String {
     let mut result = format!("# Reference Context\n\n{}", context);
     if !instructions.is_empty() {
@@ -463,7 +478,7 @@ impl SummonClient {
             "properties": {
                 "instructions": {
                     "type": "string",
-                    "description": "Task instructions. Required for ad-hoc tasks."
+                    "description": "Task instructions. Required for ad-hoc tasks. With `resume`, an optional message for the subagent."
                 },
                 "source": {
                     "type": "string",
@@ -503,6 +518,10 @@ impl SummonClient {
                 "working_dir": {
                     "type": "string",
                     "description": "Working directory for the delegate. Must be within the parent session's working directory. Defaults to the parent's working directory."
+                },
+                "resume": {
+                    "type": "string",
+                    "description": "Subagent ID of a failed or cancelled delegate to continue. Only `instructions` can be combined with it."
                 }
             }
         });
@@ -513,7 +532,8 @@ impl SummonClient {
              Modes:\n\
              1. Ad-hoc: Provide `instructions` for a custom task\n\
              2. Source-based: Provide `source` name to run a subrecipe, recipe, or agent\n\
-             3. Combined: Pair a source with a task (e.g., source: \"deploy\", instructions: \"deploy to staging\")\n\n\
+             3. Combined: Pair a source with a task (e.g., source: \"deploy\", instructions: \"deploy to staging\")\n\
+             4. Resume: Provide `resume` with the subagent ID of a failed or cancelled delegate to continue it instead of starting over. If the user says to continue after a stop, resume the ones from the latest stop unless they name others. Completed delegates cannot be resumed.\n\n\
              Effective Delegation:\n\
              - Delegates know only instructions + source content\n\
              - Delegates cannot coordinate. Same-file work = conflicts.\n\
@@ -838,7 +858,10 @@ impl SummonClient {
             .map_err(|e| format!("Invalid parameters: {}", e))?
             .unwrap_or_default();
 
-        self.validate_delegate_params(&params)?;
+        match params.resume {
+            Some(_) => self.validate_resume_params(&params)?,
+            None => self.validate_delegate_params(&params)?,
+        }
 
         let mut session = self
             .context
@@ -852,7 +875,51 @@ impl SummonClient {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
 
+        if let Some(subagent_id) = &params.resume {
+            return self
+                .resume_subagent(subagent_id, params.instructions, &session.id)
+                .await;
+        }
         self.create_subagent(params, &session).await
+    }
+
+    async fn resume_subagent(
+        &self,
+        subagent_id: &str,
+        instructions: Option<String>,
+        parent_id: &str,
+    ) -> Result<CallToolResult, String> {
+        let session_manager = &self.context.session_manager;
+        let subagent = session_manager
+            .get_session(subagent_id, true)
+            .await
+            .map_err(|e| format!("Failed to load subagent {subagent_id}: {e}"))?;
+        if subagent.session_type != SessionType::SubAgent
+            || subagent.parent_session_id.as_deref() != Some(parent_id)
+        {
+            return Err(format!(
+                "Subagent {subagent_id} does not belong to this session"
+            ));
+        }
+        if subagent
+            .conversation
+            .as_ref()
+            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+            .is_some()
+        {
+            return Err(format!("Subagent {subagent_id} already completed"));
+        }
+
+        let instructions = instructions.unwrap_or_else(|| DEFAULT_RESUME_INSTRUCTIONS.to_string());
+        session_manager
+            .add_message(subagent_id, &Message::user().with_text(instructions))
+            .await
+            .map_err(|e| format!("Failed to save the resume instructions: {e}"))?;
+
+        Ok(delegated_result(
+            format!("Resumed subagent {subagent_id}"),
+            subagent_id,
+        ))
     }
 
     async fn create_subagent(
@@ -939,20 +1006,35 @@ impl SummonClient {
             .await
             .map_err(|e| format!("Failed to save delegate task: {e}"))?;
 
-        let mut meta = MetaObject::new();
-        meta.0.insert(
-            "subagent_session_id".to_string(),
-            serde_json::Value::String(child.id.clone()),
-        );
-        meta.0.insert(
-            DELEGATED_META_KEY.to_string(),
-            serde_json::Value::Bool(true),
-        );
-        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-            "Delegated to subagent {}",
-            child.id
-        ))])
-        .with_meta(Some(meta)))
+        Ok(delegated_result(
+            format!("Delegated to subagent {}", child.id),
+            &child.id,
+        ))
+    }
+
+    fn validate_resume_params(&self, params: &DelegateParams) -> Result<(), String> {
+        let conflicting: Vec<&str> = [
+            ("source", params.source.is_some()),
+            ("parameters", params.parameters.is_some()),
+            ("extensions", params.extensions.is_some()),
+            ("provider", params.provider.is_some()),
+            ("model", params.model.is_some()),
+            ("temperature", params.temperature.is_some()),
+            ("context", params.context.is_some()),
+            ("working_dir", params.working_dir.is_some()),
+            ("max_turns", params.max_turns.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(name, set)| set.then_some(name))
+        .collect();
+        if !conflicting.is_empty() {
+            return Err(format!(
+                "'resume' only accepts 'instructions'; remove {}",
+                conflicting.join(", ")
+            ));
+        }
+
+        Ok(())
     }
 
     fn validate_delegate_params(&self, params: &DelegateParams) -> Result<(), String> {
@@ -1127,9 +1209,6 @@ impl SummonClient {
             .and_then(serde_json::Value::as_str)
             .map(str::to_string);
 
-        // max_turns is set later in resolve_subagent_config so it can incorporate params.max_turns
-        // with the correct priority ordering; setting it here would cause it to be overridden
-        // by the parent session's recipe instead.
         let settings = model.map(|m| Settings {
             goose_model: Some(m),
             goose_provider: params.provider.clone(),
@@ -1195,10 +1274,7 @@ impl SummonClient {
             .resolve_provider_config(params, recipe, session)
             .await?;
 
-        let max_turns = params
-            .max_turns
-            .or_else(|| recipe.settings.as_ref().and_then(|s| s.max_turns))
-            .unwrap_or_else(|| self.resolve_max_turns(session));
+        let max_turns = Self::resolve_max_turns(params, recipe, Config::global());
 
         if max_turns == 0 || max_turns > u32::MAX as usize {
             anyhow::bail!(
@@ -1352,23 +1428,12 @@ impl SummonClient {
         Ok((provider_name, model_config))
     }
 
-    fn resolve_max_turns(&self, session: &crate::session::Session) -> usize {
-        session
-            .recipe
-            .as_ref()
-            .and_then(|r| r.settings.as_ref())
-            .and_then(|s| s.max_turns)
-            .or_else(|| {
-                std::env::var("GOOSE_SUBAGENT_MAX_TURNS")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-            })
-            .or_else(|| {
-                Config::global()
-                    .get_param::<usize>("GOOSE_SUBAGENT_MAX_TURNS")
-                    .ok()
-            })
-            .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS)
+    fn resolve_max_turns(params: &DelegateParams, recipe: &Recipe, config: &Config) -> usize {
+        params
+            .max_turns
+            .or_else(|| recipe.settings.as_ref().and_then(|s| s.max_turns))
+            .or_else(|| config.get_param::<usize>("GOOSE_SUBAGENT_MAX_TURNS").ok())
+            .unwrap_or_else(|| config.default_max_turns() as usize)
     }
 }
 
@@ -1485,7 +1550,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::sync::Arc;
-    use tempfile::TempDir;
+    use tempfile::{NamedTempFile, TempDir};
 
     fn create_test_context() -> PlatformExtensionContext {
         create_test_context_with_session_manager(Arc::new(
@@ -1680,6 +1745,173 @@ mod tests {
             reloaded_agent.provider(&child.id).await.unwrap().get_name(),
             "openai"
         );
+    }
+
+    async fn create_session(
+        manager: &crate::session::SessionManager,
+        temp_dir: &TempDir,
+        session_type: SessionType,
+        parent_id: Option<&str>,
+    ) -> Result<Session> {
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "session".to_string(),
+                session_type,
+                GooseMode::Auto,
+            )
+            .await?;
+        manager
+            .update(&session.id)
+            .parent_session_id(parent_id.map(str::to_owned))
+            .apply()
+            .await?;
+        Ok(session)
+    }
+
+    async fn resume(
+        client: &SummonClient,
+        session_id: &str,
+        args: serde_json::Value,
+    ) -> Result<CallToolResult, String> {
+        client
+            .handle_delegate(session_id, Path::new(""), args.as_object().cloned())
+            .await
+    }
+
+    #[tokio::test]
+    async fn delegate_resume_continues_the_saved_subagent() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = create_session(&manager, &temp_dir, SessionType::User, None).await?;
+        let subagent =
+            create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
+        let client = SummonClient::new(create_test_context_with_session_manager(manager.clone()))?;
+
+        let result = resume(
+            &client,
+            &parent.id,
+            serde_json::json!({
+                "resume": subagent.id,
+                "instructions": "Finish the summary"
+            }),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        let meta = result.meta.as_ref().unwrap();
+        assert_eq!(
+            meta.0.get(DELEGATED_META_KEY),
+            Some(&serde_json::json!(true))
+        );
+        assert_eq!(
+            meta.0.get("subagent_session_id"),
+            Some(&serde_json::json!(subagent.id))
+        );
+        let resumed = manager.get_session(&subagent.id, true).await?;
+        let last = resumed.conversation.as_ref().unwrap().last().unwrap();
+        assert_eq!(last.as_concat_text(), "Finish the summary");
+
+        resume(
+            &client,
+            &parent.id,
+            serde_json::json!({"resume": subagent.id}),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        let resumed = manager.get_session(&subagent.id, true).await?;
+        let last = resumed.conversation.as_ref().unwrap().last().unwrap();
+        assert_eq!(last.as_concat_text(), DEFAULT_RESUME_INSTRUCTIONS);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delegate_resume_rejects_subagents_it_cannot_resume() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = create_session(&manager, &temp_dir, SessionType::User, None).await?;
+        let other_parent = create_session(&manager, &temp_dir, SessionType::User, None).await?;
+        let subagent =
+            create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
+        let others = create_session(
+            &manager,
+            &temp_dir,
+            SessionType::SubAgent,
+            Some(&other_parent.id),
+        )
+        .await?;
+        let completed =
+            create_session(&manager, &temp_dir, SessionType::SubAgent, Some(&parent.id)).await?;
+        let arguments = serde_json::json!({"summary": "done"})
+            .as_object()
+            .unwrap()
+            .clone();
+        manager
+            .add_message(
+                &completed.id,
+                &Message::assistant().with_tool_request(
+                    "final-output-call",
+                    Ok(rmcp::model::CallToolRequestParams::new(
+                        crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
+                    )
+                    .with_arguments(arguments)),
+                ),
+            )
+            .await?;
+        manager
+            .add_message(
+                &completed.id,
+                &Message::user().with_tool_response(
+                    "final-output-call",
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
+                    )])),
+                ),
+            )
+            .await?;
+        let client = SummonClient::new(create_test_context_with_session_manager(manager.clone()))?;
+
+        for (session_id, args, expected) in [
+            (
+                &parent.id,
+                serde_json::json!({"resume": others.id}),
+                "does not belong to this session",
+            ),
+            (
+                &parent.id,
+                serde_json::json!({"resume": completed.id}),
+                "already completed",
+            ),
+            (
+                &parent.id,
+                serde_json::json!({"resume": "missing"}),
+                "Failed to load subagent missing",
+            ),
+            (
+                &subagent.id,
+                serde_json::json!({"resume": subagent.id}),
+                "Delegated tasks cannot spawn further delegations",
+            ),
+            (
+                &parent.id,
+                serde_json::json!({"resume": subagent.id, "model": "other"}),
+                "'resume' only accepts 'instructions'; remove model",
+            ),
+            (
+                &parent.id,
+                serde_json::json!({"resume": subagent.id, "max_turns": 5}),
+                "'resume' only accepts 'instructions'; remove max_turns",
+            ),
+        ] {
+            let error = resume(&client, session_id, args.clone()).await.unwrap_err();
+            assert!(error.contains(expected), "{args}: {error}");
+        }
+        let untouched = manager.get_session(&subagent.id, true).await?;
+        assert!(untouched.conversation.as_ref().unwrap().is_empty());
+        Ok(())
     }
 
     #[tokio::test]
@@ -2256,77 +2488,69 @@ You review code."#;
 
     #[test]
     #[serial]
-    fn test_resolve_max_turns_recipe_overrides_env_var() {
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
+    fn test_resolve_max_turns_precedence() {
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        fs::write(
+            config_file.path(),
+            "GOOSE_SUBAGENT_MAX_TURNS: 7\nGOOSE_MAX_TURNS: 8\n",
+        )
+        .unwrap();
+        let _env = env_lock::lock_env([
+            ("GOOSE_SUBAGENT_MAX_TURNS", Some("99")),
+            ("GOOSE_MAX_TURNS", Some("42")),
+        ]);
 
-        let session = crate::session::Session {
-            recipe: Some(crate::recipe::Recipe {
-                version: "1.0.0".to_string(),
-                title: String::new(),
-                description: String::new(),
-                instructions: None,
-                prompt: None,
-                extensions: None,
-                settings: Some(crate::recipe::Settings {
-                    goose_provider: None,
-                    goose_model: None,
-                    temperature: None,
-                    max_turns: Some(10),
-                }),
-                activities: None,
-                author: None,
-                parameters: None,
-                response: None,
-                sub_recipes: None,
-                retry: None,
-            }),
-            ..Default::default()
-        };
-
-        // Set env var to a different value — recipe should still win
-        let _env = env_lock::lock_env([("GOOSE_SUBAGENT_MAX_TURNS", Some("99"))]);
-        let result = client.resolve_max_turns(&session);
-
-        assert_eq!(
-            result, 10,
-            "recipe settings.max_turns should take priority over env var"
-        );
+        for (delegate_limit, recipe_limit, expected) in
+            [(Some(3), Some(5), 3), (None, Some(5), 5), (None, None, 99)]
+        {
+            let params = DelegateParams {
+                max_turns: delegate_limit,
+                ..Default::default()
+            };
+            let mut recipe = empty_recipe();
+            recipe.settings = Some(Settings {
+                goose_provider: None,
+                goose_model: None,
+                temperature: None,
+                max_turns: recipe_limit,
+            });
+            assert_eq!(
+                SummonClient::resolve_max_turns(&params, &recipe, &config),
+                expected
+            );
+        }
     }
 
     #[test]
     #[serial]
-    fn test_resolve_max_turns_falls_back_to_env_var() {
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
+    fn test_resolve_max_turns_from_config_file_or_default() {
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        let _env = env_lock::lock_env([
+            ("GOOSE_SUBAGENT_MAX_TURNS", None::<&str>),
+            ("GOOSE_MAX_TURNS", None),
+        ]);
 
-        let session = crate::session::Session::default(); // no recipe
-
-        let _env = env_lock::lock_env([("GOOSE_SUBAGENT_MAX_TURNS", Some("7"))]);
-        let result = client.resolve_max_turns(&session);
-
-        assert_eq!(
-            result, 7,
-            "should fall back to GOOSE_SUBAGENT_MAX_TURNS env var"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_resolve_max_turns_falls_back_to_default() {
-        let context = create_test_context();
-        let client = SummonClient::new(context).unwrap();
-
-        let session = crate::session::Session::default(); // no recipe
-
-        std::env::remove_var("GOOSE_SUBAGENT_MAX_TURNS");
-        let result = client.resolve_max_turns(&session);
-
-        assert_eq!(
-            result,
-            crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS,
-            "should fall back to DEFAULT_SUBAGENT_MAX_TURNS"
-        );
+        for (contents, expected) in [
+            ("", 1000),
+            ("GOOSE_MAX_TURNS: 42\n", 42),
+            ("GOOSE_SUBAGENT_MAX_TURNS: 7\nGOOSE_MAX_TURNS: 42\n", 7),
+        ] {
+            fs::write(config_file.path(), contents).unwrap();
+            assert_eq!(
+                SummonClient::resolve_max_turns(
+                    &DelegateParams::default(),
+                    &empty_recipe(),
+                    &config
+                ),
+                expected
+            );
+        }
     }
 
     fn empty_recipe() -> crate::recipe::Recipe {

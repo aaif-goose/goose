@@ -8,6 +8,7 @@ import MessageList from './MessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
+import { SubagentSessionNotice } from './SubagentSessionNotice';
 import { Button } from './ui/button';
 import { ScrollArea, ScrollAreaHandle } from './ui/scroll-area';
 import { useFileDrop } from '../hooks/useFileDrop';
@@ -152,6 +153,7 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    refreshSession,
     sessionLoadError,
     tokenState,
     notifications: toolCallNotifications,
@@ -169,6 +171,7 @@ export default function BaseChat({
   );
 
   const sessionLoaded = session !== undefined;
+  const isSubagentSession = session?.session_type === 'sub_agent';
   const liveVoiceChatBusy = chatState !== ChatState.Idle;
 
   useEffect(() => {
@@ -492,7 +495,7 @@ export default function BaseChat({
               </div>
             )}
 
-            {recipe && (
+            {recipe && !isSubagentSession && (
               <div className={hasStartedUsingRecipe ? 'mb-6' : ''}>
                 <RecipeActivities
                   append={appendToChat}
@@ -509,11 +512,11 @@ export default function BaseChat({
                       messages={messages}
                       sessionId={sessionId}
                       toolCallNotifications={toolCallNotifications}
-                      append={appendToChat}
+                      append={isSubagentSession ? undefined : appendToChat}
                       isUserMessage={isUserMessage}
                       isStreamingMessage={chatState !== ChatState.Idle}
                       onRenderingComplete={handleRenderingComplete}
-                      onMessageUpdate={onMessageUpdate}
+                      onMessageUpdate={isSubagentSession ? undefined : onMessageUpdate}
                       submitElicitationResponse={submitElicitationResponse}
                     />
                   </div>
@@ -537,7 +540,7 @@ export default function BaseChat({
           </div>
         )}
 
-        {quoteButtonPos && (
+        {quoteButtonPos && !isSubagentSession && (
           <button
             className="fixed z-50 -translate-x-1/2 -translate-y-full rounded-md bg-background-inverse px-2 py-1 text-xs font-medium text-text-inverse shadow-md hover:opacity-90"
             style={{ left: quoteButtonPos.x, top: quoteButtonPos.y }}
@@ -556,63 +559,72 @@ export default function BaseChat({
           </button>
         )}
 
-        <ChatInputCard
-          className={cn(
-            'relative z-30 mx-4 mb-4',
-            !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
-          )}
-        >
-          <ChatInput
-            inputRef={chatInputRef}
-            sessionId={sessionId}
-            handleSubmit={chatInputSubmit}
-            chatState={chatState}
-            hasActiveRun={hasActiveRun}
-            onStop={stopStreaming}
-            onSteerQueuedMessage={onSteerQueuedMessage}
-            pauseQueueOnStop={pauseQueueOnStop}
-            queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
-            commandHistory={commandHistory}
-            initialValue={initialPrompt}
-            setView={setView}
-            totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
-            contextLimit={tokenState?.contextLimit}
-            accumulatedInputTokens={
-              tokenState?.accumulatedInputTokens ??
-              session?.accumulated_usage?.input_tokens ??
-              undefined
-            }
-            accumulatedOutputTokens={
-              tokenState?.accumulatedOutputTokens ??
-              session?.accumulated_usage?.output_tokens ??
-              undefined
-            }
-            accumulatedCost={tokenState?.accumulatedCost ?? session?.accumulated_cost ?? undefined}
-            droppedFiles={droppedFiles}
-            onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
-            messages={messages}
-            disableAnimation={disableAnimation}
-            recipe={recipe}
-            initialPrompt={initialPrompt}
-            sessionModel={sessionModel}
-            sessionProvider={sessionProvider}
-            sessionLoaded={sessionLoaded}
-            workingDir={session?.working_dir}
-            onWorkingDirChange={handleWorkingDirChange}
-            latestInference={latestInference}
-            liveVoice={{
-              availability: liveVoiceAvailability,
-              phase: ownsLiveVoice ? liveVoice.phase : 'idle',
-              muted: ownsLiveVoice ? liveVoice.muted : false,
-              activeInAnotherSession: liveVoiceActiveInAnotherSession,
-              start: () => startLiveVoice(),
-              stop: liveVoice.stop,
-              toggleMute: liveVoice.toggleMute,
-            }}
-            appendQuote={pendingQuote}
-            onAppendQuoteConsumed={() => setPendingQuote(null)}
+        {isSubagentSession ? (
+          <SubagentSessionNotice
+            refreshing={chatState === ChatState.LoadingConversation}
+            onRefresh={() => void refreshSession()}
           />
-        </ChatInputCard>
+        ) : (
+          <ChatInputCard
+            className={cn(
+              'relative z-30 mx-4 mb-4',
+              !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
+            )}
+          >
+            <ChatInput
+              inputRef={chatInputRef}
+              sessionId={sessionId}
+              handleSubmit={chatInputSubmit}
+              chatState={chatState}
+              hasActiveRun={hasActiveRun}
+              onStop={stopStreaming}
+              onSteerQueuedMessage={onSteerQueuedMessage}
+              pauseQueueOnStop={pauseQueueOnStop}
+              queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
+              commandHistory={commandHistory}
+              initialValue={initialPrompt}
+              setView={setView}
+              totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
+              contextLimit={tokenState?.contextLimit}
+              accumulatedInputTokens={
+                tokenState?.accumulatedInputTokens ??
+                session?.accumulated_usage?.input_tokens ??
+                undefined
+              }
+              accumulatedOutputTokens={
+                tokenState?.accumulatedOutputTokens ??
+                session?.accumulated_usage?.output_tokens ??
+                undefined
+              }
+              accumulatedCost={
+                tokenState?.accumulatedCost ?? session?.accumulated_cost ?? undefined
+              }
+              droppedFiles={droppedFiles}
+              onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
+              messages={messages}
+              disableAnimation={disableAnimation}
+              recipe={recipe}
+              initialPrompt={initialPrompt}
+              sessionModel={sessionModel}
+              sessionProvider={sessionProvider}
+              sessionLoaded={sessionLoaded}
+              workingDir={session?.working_dir}
+              onWorkingDirChange={handleWorkingDirChange}
+              latestInference={latestInference}
+              liveVoice={{
+                availability: liveVoiceAvailability,
+                phase: ownsLiveVoice ? liveVoice.phase : 'idle',
+                muted: ownsLiveVoice ? liveVoice.muted : false,
+                activeInAnotherSession: liveVoiceActiveInAnotherSession,
+                start: () => startLiveVoice(),
+                stop: liveVoice.stop,
+                toggleMute: liveVoice.toggleMute,
+              }}
+              appendQuote={pendingQuote}
+              onAppendQuoteConsumed={() => setPendingQuote(null)}
+            />
+          </ChatInputCard>
+        )}
       </MainPanelLayout>
     </div>
   );

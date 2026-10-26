@@ -93,3 +93,74 @@ async fn persisted_vision_declarations_control_registry_requests() {
         }
     }
 }
+
+#[tokio::test]
+async fn catalog_provider_id_resolves_vision_for_renamed_provider() {
+    let root = tempfile::tempdir().unwrap();
+    let root_path = root.path().to_str().unwrap();
+    let _guard = env_lock::lock_env([("GOOSE_PATH_ROOT", Some(root_path))]);
+
+    // Only catalogued as fireworks-ai/..., with image input.
+    let model_name = "accounts/fireworks/models/deepseek-v4p1-flash";
+
+    for (catalog_provider_id, configured, expected) in [
+        (Some("fireworks-ai"), None, true),
+        (Some("fireworks-ai"), Some(false), false),
+        (Some("fireworks-ai"), Some(true), true),
+        (None, None, false),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "response-1", "model": model_name,
+                "choices": [{"message": {"role": "assistant", "content": "Seen"},
+                             "finish_reason": "stop"}]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let saved = create_custom_provider(CreateCustomProviderParams {
+            engine: "openai".to_string(),
+            display_name: "Catalog Vision Self Test".to_string(),
+            api_url: server.uri(),
+            api_key: None,
+            models: vec![ModelInfo::new(model_name)],
+            supports_streaming: Some(false),
+            headers: None,
+            requires_auth: false,
+            catalog_provider_id: catalog_provider_id.map(str::to_string),
+            base_path: Some("v1/chat/completions".to_string()),
+            toolshim: false,
+            preserves_thinking: None,
+            auth: None,
+        })
+        .unwrap();
+        refresh_custom_providers().await.unwrap();
+        let entry = get_from_registry(&saved.name).await.unwrap();
+        let mut model = ModelConfig::new(model_name);
+        model.supports_vision = configured;
+        let model = entry.normalize_model_config(model).unwrap();
+        let provider = entry.create(vec![]).await.unwrap();
+        provider
+            .complete(
+                &model,
+                "Describe images",
+                &[Message::user()
+                    .with_text("Describe this image")
+                    .with_image("dXNlcg==", "image/png")],
+                &[],
+            )
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let body: serde_json::Value = requests[0].body_json().unwrap();
+        assert_eq!(
+            body.to_string().contains("data:image/png;base64,dXNlcg=="),
+            expected,
+            "catalog_provider_id={catalog_provider_id:?} configured={configured:?}: {body}"
+        );
+    }
+}

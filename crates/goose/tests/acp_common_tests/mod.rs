@@ -393,7 +393,7 @@ pub async fn run_fs_write_text_file_true<C: Connection>() {
                 include_str!("../acp_test_data/openai_fs_write_tool_call.txt"),
             ),
             (
-                r#"Created /tmp/test_acp_write.txt"#.into(),
+                r#" /tmp/test_acp_write.txt (1 lines)"#.into(),
                 include_str!("../acp_test_data/openai_fs_write_tool_result.txt"),
             ),
         ],
@@ -478,8 +478,8 @@ pub async fn run_load_mode<C: Connection>() {
                 include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
-                format!(r#""content":"{FAKE_CODE}""#),
-                include_str!("../acp_test_data/openai_tool_result.txt"),
+                "The user has declined to run this tool.".to_string(),
+                include_str!("../acp_test_data/openai_tool_declined.txt"),
             ),
         ],
         expected_session_id.clone(),
@@ -838,6 +838,14 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
                 include_str!("../acp_test_data/openai_tool_call.txt"),
             ),
             (
+                "The user has declined to run this tool.".to_string(),
+                include_str!("../acp_test_data/openai_tool_declined.txt"),
+            ),
+            (
+                prompt.to_string(),
+                include_str!("../acp_test_data/openai_tool_call.txt"),
+            ),
+            (
                 format!(r#""content":"{FAKE_CODE}""#),
                 include_str!("../acp_test_data/openai_tool_result.txt"),
             ),
@@ -898,7 +906,6 @@ async fn run_mode_set_impl<C: Connection>(via: SetModeVia) {
     );
 
     // Auto mode ignores Cancel -- tool succeeds without permission prompt
-    conn.reset_openai();
     expected_session_id.set(&session_a.session_id().0);
     let output = session_a
         .prompt(prompt, PermissionDecision::Cancel)

@@ -1103,6 +1103,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Are you sure you want to install the {name} extension? Command: {command}"
   },
@@ -2023,6 +2029,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Model changed: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (requested)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Show all"
@@ -3977,6 +3986,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Auto"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configured"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Enter API key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Remove key"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Save key"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Uses Jev to choose the thinking effort for each request. Request text is sent to TypeSafe AI; skill and recipe slash commands include their expanded local instructions."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatic thinking effort"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Block limit"
   },
@@ -4396,6 +4426,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configure a subrecipe that can be called as a tool during recipe execution"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Load latest progress"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Subagent progress isn't shown live here."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Back to model list"

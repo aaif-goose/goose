@@ -294,6 +294,47 @@ async fn context_errors_compact_and_retry() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_failed_compaction_reports_the_provider_error_kind() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("overflow").context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY).http_error(401);
+
+    let failed = pipeline.run(["overflow"]).await?;
+
+    assert_eq!(failed.history_replacements(), 0);
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(
+        failed.emitted_error_kinds(),
+        [
+            MessageErrorKind::ContextLengthExceeded,
+            MessageErrorKind::Authentication
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_compaction_without_a_provider_error_reports_other() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("overflow").context_limit_error("too long");
+    api.on(SUMMARIZE_HISTORY)
+        .context_limit_error("still too long");
+
+    let failed = pipeline.run(["overflow"]).await?;
+
+    assert_eq!(failed.history_replacements(), 0);
+    assert_eq!(api.call_count(), 2);
+    assert_eq!(
+        failed.emitted_error_kinds(),
+        [
+            MessageErrorKind::ContextLengthExceeded,
+            MessageErrorKind::Other
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn repeated_context_errors_stop_compacting() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("keep overflowing").context_limit_error("too long");

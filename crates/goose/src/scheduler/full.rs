@@ -16,6 +16,7 @@ use crate::config::permission::PermissionManager;
 use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
+use crate::model_config::resolve_provider_and_model_config;
 #[cfg(feature = "telemetry")]
 use crate::posthog;
 use crate::recipe::build_recipe::build_recipe_from_template;
@@ -865,12 +866,9 @@ async fn execute_job(
         GoosePlatform::GooseCli,
     ));
 
-    let config = Config::global();
-    let provider_name = config.get_goose_provider()?;
-    let model_name = config.get_goose_model()?;
-    let model_config =
-        crate::model_config::model_config_from_user_config(&provider_name, &model_name)?
-            .with_cache_ttl_clamped();
+    let (provider_name, model_config) =
+        resolve_provider_and_model_config(Config::global(), None, recipe.settings.as_ref()).await?;
+    let model_config = model_config.with_cache_ttl_clamped();
 
     let session = agent
         .config
@@ -972,7 +970,11 @@ async fn execute_job(
     let session_config = SessionConfig {
         id: session.id.clone(),
         schedule_id: Some(job.id.clone()),
-        max_turns: None,
+        max_turns: recipe
+            .settings
+            .as_ref()
+            .and_then(|s| s.max_turns)
+            .map(|turns| u32::try_from(turns).unwrap_or(u32::MAX)),
     };
 
     let stream = agent
@@ -1398,6 +1400,67 @@ mod tests {
         assert_eq!(sessions[0].goose_mode, GooseMode::Auto);
         scheduler
             .remove_scheduled_job("scheduled_job", false)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_scheduled_run_uses_recipe_model_settings() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_PROVIDER", Some("openai")),
+            ("GOOSE_MODEL", Some("gpt-4o")),
+            ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+            ("OPENAI_CUSTOM_HEADERS", Some("")),
+        ]);
+        let temp_dir = tempdir().unwrap();
+        let storage_path = temp_dir.path().join("schedule.json");
+        let recipe_path = temp_dir.path().join("recipe_settings.yaml");
+        fs::write(
+            &recipe_path,
+            "title: recipe_settings\ndescription: Recipe with model settings\nprompt: test\nsettings:\n  goose_model: gpt-4o-mini\n  temperature: 0.3\n",
+        )
+        .unwrap();
+        let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let scheduler = Scheduler::new(storage_path, session_manager.clone())
+            .await
+            .unwrap();
+
+        let job = ScheduledJob {
+            id: "recipe_settings_job".to_string(),
+            source: recipe_path.to_string_lossy().to_string(),
+            cron: "* * * * * *".to_string(),
+            last_run: None,
+            currently_running: false,
+            paused: false,
+            current_session_id: None,
+            process_start_time: None,
+            parameters: vec![],
+            recipe_base_dir: None,
+        };
+
+        scheduler.add_scheduled_job(job, true).await.unwrap();
+        let model_config = tokio::time::timeout(Duration::from_secs(10), async {
+            let mut poll = tokio::time::interval(Duration::from_millis(200));
+            loop {
+                poll.tick().await;
+                let model_config = session_manager
+                    .list_sessions_by_types(&[SessionType::Scheduled])
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .find_map(|session| session.model_config);
+                if let Some(model_config) = model_config {
+                    break model_config;
+                }
+            }
+        })
+        .await
+        .expect("Scheduled job should create a session with a model config within 10 seconds");
+
+        assert_eq!(model_config.model_name, "gpt-4o-mini");
+        assert_eq!(model_config.temperature, Some(0.3));
+        scheduler
+            .remove_scheduled_job("recipe_settings_job", false)
             .await
             .unwrap();
     }

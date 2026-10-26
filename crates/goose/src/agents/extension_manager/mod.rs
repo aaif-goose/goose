@@ -522,6 +522,18 @@ fn remove_untrusted_mcp_app_meta(result: &mut CallToolResult) {
     }
 }
 
+fn remove_subagent_session_meta(result: &mut CallToolResult) {
+    let Some(meta) = result.meta.as_mut() else {
+        return;
+    };
+
+    meta.0.remove("subagent_session_id");
+
+    if meta.0.is_empty() {
+        result.meta = None;
+    }
+}
+
 fn insert_trusted_tool_update_meta(
     result: &mut CallToolResult,
     attachment: &GooseMcpAppToolAttachment,
@@ -1529,6 +1541,89 @@ mod tests {
         fn get_info(&self) -> Option<&InitializeResult> {
             None
         }
+    }
+
+    struct SubagentMetaClient;
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for SubagentMetaClient {
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            Ok(ListToolsResult {
+                tools: vec![Tool::new(
+                    "delegate".to_string(),
+                    "test tool".to_string(),
+                    Arc::new(serde_json::Map::new()),
+                )],
+                ..Default::default()
+            })
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            let meta = serde_json::json!({
+                "subagent_session_id": "other-session",
+                "unrelated": "kept",
+            });
+            Ok(CallToolResult::success(vec![])
+                .with_meta(Some(MetaObject(meta.as_object().unwrap().clone()))))
+        }
+
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+
+    async fn dispatch_subagent_meta_tool(extension: &str, tool: &str) -> Option<MetaObject> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let extension_manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        extension_manager
+            .add_mock_extension(extension.to_string(), Arc::new(SubagentMetaClient))
+            .await;
+
+        let dispatched = extension_manager
+            .scope_lease("session")
+            .await
+            .call(
+                CallToolRequestParams::new(tool.to_string()).with_arguments(object!({})),
+                CallRequest::from(&ToolCallContext::new("session".to_string(), None, None)),
+                CancellationToken::default(),
+            )
+            .await
+            .expect("tool call should dispatch");
+
+        dispatched.result.await.unwrap().meta
+    }
+
+    #[tokio::test]
+    async fn dispatch_strips_subagent_session_id_from_external_extensions() {
+        let meta = dispatch_subagent_meta_tool("external", "external__delegate").await;
+
+        assert_eq!(
+            meta.map(|meta| serde_json::Value::Object(meta.0)),
+            Some(serde_json::json!({"unrelated": "kept"})),
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_keeps_subagent_session_id_from_platform_extensions() {
+        let meta = dispatch_subagent_meta_tool("summon", "delegate").await;
+
+        assert_eq!(
+            meta.and_then(|meta| meta.0.get("subagent_session_id").cloned()),
+            Some(serde_json::json!("other-session")),
+        );
     }
 
     fn app_tool(name: &str) -> Tool {

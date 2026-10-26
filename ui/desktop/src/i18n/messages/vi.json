@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Bạn có chắc chắn muốn cài đặt tiện ích mở rộng {name} không? Lệnh: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Mô hình đã thay đổi: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (đã yêu cầu)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Hiển thị tất cả"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Định cấu hình một công thức con có thể được gọi như công cụ trong quá trình thực thi công thức"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Tải tiến trình mới nhất"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Tiến trình của tác tử con không được hiển thị trực tiếp tại đây."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Quay lại danh sách mô hình"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Tự động"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Đã cấu hình"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Khóa API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Nhập khóa API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Xóa khóa"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Lưu khóa"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Sử dụng Jev để chọn mức suy luận cho từng yêu cầu. Nội dung được gửi đến TypeSafe AI; lệnh gạch chéo kỹ năng và công thức bao gồm hướng dẫn cục bộ đã mở rộng."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Mức suy luận tự động"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Giới hạn chặn"

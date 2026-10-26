@@ -36,6 +36,15 @@ const i18n = defineMessages({
     id: 'extensionInstallModal.ok',
     defaultMessage: 'OK',
   },
+  policyErrorTitle: {
+    id: 'extensionInstallModal.policyErrorTitle',
+    defaultMessage: 'Extension Policy Unavailable',
+  },
+  policyErrorMessage: {
+    id: 'extensionInstallModal.policyErrorMessage',
+    defaultMessage:
+      'The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available.\n\nContact your administrator to check the GOOSE_ALLOWLIST configuration.',
+  },
   untrustedTitle: {
     id: 'extensionInstallModal.untrustedTitle',
     defaultMessage: 'Install Untrusted Extension?',
@@ -94,7 +103,7 @@ const i18n = defineMessages({
   },
 });
 
-type ModalType = 'blocked' | 'untrusted' | 'trusted';
+type ModalType = 'blocked' | 'untrusted' | 'trusted' | 'policy-error';
 
 interface ExtensionInfo {
   name: string;
@@ -179,7 +188,7 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
 
       const allowedCommands = await window.electron.getAllowedExtensions();
 
-      if (!allowedCommands || allowedCommands.length === 0) {
+      if (allowedCommands === null) {
         return 'trusted';
       }
 
@@ -190,7 +199,7 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
       return isCommandAllowed ? 'trusted' : 'blocked';
     } catch (error) {
       console.error('Error checking allowlist:', error);
-      return 'trusted';
+      return 'policy-error';
     }
   };
 
@@ -236,6 +245,16 @@ export function ExtensionInstallModal({ addExtension, setView }: ExtensionInstal
           isBlocked: false,
         };
       }
+
+      case 'policy-error':
+        return {
+          title: intl.formatMessage(i18n.policyErrorTitle),
+          message: '\n\n' + intl.formatMessage(i18n.policyErrorMessage),
+          confirmLabel: intl.formatMessage(i18n.ok),
+          cancelLabel: '',
+          showSingleButton: true,
+          isBlocked: true,
+        };
 
       case 'trusted':
       default:

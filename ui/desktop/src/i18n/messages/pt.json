@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Tem certeza de que deseja instalar a extensão {name}? Comando: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Modelo alterado: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (solicitado)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Mostrar tudo"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configure uma subrreceita que pode ser invocada como ferramenta durante a execução da receita"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Carregar o progresso mais recente"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "O progresso do subagente não é mostrado ao vivo aqui."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Voltar à lista de modelos"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configurada"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Chave de API da TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Insira a chave de API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Remover chave"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Salvar chave"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Usa o Jev para escolher o nível de raciocínio de cada solicitação. O texto é enviado à TypeSafe AI; comandos de barra de habilidades e receitas incluem suas instruções locais expandidas."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Nível de raciocínio automático"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Limite de bloqueios"

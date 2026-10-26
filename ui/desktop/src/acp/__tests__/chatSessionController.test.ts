@@ -267,6 +267,54 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(acpPromptSession).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { code: -32603, message: 'Network error: connection refused' },
+    { code: -32000, message: 'Authentication required' },
+  ])('finishes a failed turn without a submit error ($code)', async ({ code, message }) => {
+    vi.mocked(acpPromptSession).mockRejectedValueOnce({
+      code,
+      message,
+      data: { reason: 'turn_failed' },
+    });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed' });
+  });
+
+  it('finishes a credits failure without a submit error', async () => {
+    vi.mocked(acpChatSessionActions.isCurrentPromptAttempt).mockReturnValue(true);
+    vi.mocked(acpPromptSession).mockRejectedValueOnce({
+      code: -32603,
+      message: 'Out of credits',
+      data: { reason: 'credits_exhausted' },
+    });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(acpChatSessionActions.setMessages).toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed' });
+  });
+
+  it('reports other prompt errors as a submit error', async () => {
+    vi.mocked(acpPromptSession).mockRejectedValueOnce(new Error('Session not found'));
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed', message: 'Session not found' });
+  });
 });
 
 describe('acpChatSessionController.updateMessage', () => {

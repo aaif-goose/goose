@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import type { IpcRendererEvent } from 'electron';
-import type { ImageData, Message, MessageContent } from '../types/message';
+import type { ImageData, InferenceMetadata, Message, MessageContent } from '../types/message';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import MessageList from './MessageList';
 
@@ -195,6 +195,85 @@ describe('MessageList render isolation', () => {
     messageUpdateCallbacks.get('user-1')?.('user-1', 'Updated', 'fork', retainedImages);
 
     expect(onMessageUpdate).toHaveBeenCalledWith('user-1', 'Updated', 'fork', retainedImages);
+  });
+});
+
+describe('MessageList model change disclosure', () => {
+  function assistantWithModel(id: string, inference: InferenceMetadata): Message {
+    return {
+      ...message(id, 'assistant', [{ type: 'text', text: id }]),
+      metadata: { ...visibleMetadata, inference },
+    };
+  }
+
+  it('labels models that the provider did not confirm as requested', () => {
+    renderList([
+      assistantWithModel('assistant-1', { provider: 'test', requestedModel: 'model-a' }),
+      message('user-1', 'user', [{ type: 'text', text: 'Switch model' }]),
+      assistantWithModel('assistant-2', { provider: 'test', requestedModel: 'model-b' }),
+    ]);
+
+    expect(
+      screen.getByText('Model changed: model-a (requested) → model-b (requested)')
+    ).toBeInTheDocument();
+  });
+
+  it('shows a resolved model without the requested label', () => {
+    renderList([
+      assistantWithModel('assistant-1', {
+        provider: 'test',
+        requestedModel: 'model-a',
+        resolvedModel: 'model-a-2026-01-01',
+      }),
+      message('user-1', 'user', [{ type: 'text', text: 'Switch model' }]),
+      assistantWithModel('assistant-2', { provider: 'test', requestedModel: 'model-b' }),
+    ]);
+
+    expect(
+      screen.getByText('Model changed: model-a-2026-01-01 → model-b (requested)')
+    ).toBeInTheDocument();
+  });
+
+  it('does not report a change when only the resolved model is missing', () => {
+    renderList([
+      assistantWithModel('assistant-1', {
+        provider: 'test',
+        requestedModel: 'model-a',
+        resolvedModel: 'model-a-2026-01-01',
+      }),
+      message('user-1', 'user', [{ type: 'text', text: 'Continue' }]),
+      assistantWithModel('assistant-2', { provider: 'test', requestedModel: 'model-a' }),
+      message('user-2', 'user', [{ type: 'text', text: 'Continue' }]),
+      assistantWithModel('assistant-3', {
+        provider: 'test',
+        requestedModel: 'model-a',
+        resolvedModel: 'model-a-2026-01-01',
+      }),
+    ]);
+
+    expect(screen.queryByText(/Model changed/)).toBeNull();
+  });
+
+  it('compares a resolved model with the last resolved one after a reply without one', () => {
+    renderList([
+      assistantWithModel('assistant-1', {
+        provider: 'test',
+        requestedModel: 'model-a',
+        resolvedModel: 'model-a-2026-01-01',
+      }),
+      message('user-1', 'user', [{ type: 'text', text: 'Continue' }]),
+      assistantWithModel('assistant-2', { provider: 'test', requestedModel: 'model-a' }),
+      message('user-2', 'user', [{ type: 'text', text: 'Continue' }]),
+      assistantWithModel('assistant-3', {
+        provider: 'test',
+        requestedModel: 'model-a',
+        resolvedModel: 'model-a-2026-02-01',
+      }),
+    ]);
+
+    expect(
+      screen.getByText('Model changed: model-a-2026-01-01 → model-a-2026-02-01')
+    ).toBeInTheDocument();
   });
 });
 

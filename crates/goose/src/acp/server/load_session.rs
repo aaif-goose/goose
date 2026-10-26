@@ -3,7 +3,7 @@ use super::message_meta::{
 };
 use super::tool_calls::conversion::{
     build_initial_tool_call_with_message_meta, tool_call_update_fields_from_response,
-    trusted_update_meta,
+    tool_response_meta,
 };
 use super::tool_calls::enrichment::tool_chain_summary;
 use super::*;
@@ -172,7 +172,7 @@ fn replay_conversation_to_client(
                         replay_tool_requests.get(&tool_response.id),
                         true,
                     );
-                    let meta = trusted_update_meta(tool_response).unwrap_or_default();
+                    let meta = tool_response_meta(tool_response).unwrap_or_default();
 
                     let update =
                         ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
@@ -319,23 +319,21 @@ impl GooseAcpAgent {
                     stream,
                 )
                 .await;
-            if result.is_ok() {
-                if let Err(error) = server
-                    .send_session_usage_updates(
-                        &task_cx,
-                        &task_acp_session_id,
-                        &task_session_id,
-                        &task_agent,
-                        &mut None,
-                    )
-                    .await
-                {
-                    warn!(
-                        session_id = task_session_id,
-                        ?error,
-                        "Failed to update usage after resumed ACP turn"
-                    );
-                }
+            if let Err(error) = server
+                .send_session_usage_updates(
+                    &task_cx,
+                    &task_acp_session_id,
+                    &task_session_id,
+                    &task_agent,
+                    &mut None,
+                )
+                .await
+            {
+                warn!(
+                    session_id = task_session_id,
+                    ?error,
+                    "Failed to update usage after resumed ACP turn"
+                );
             }
             server
                 .clear_active_run(&task_session_id, &task_run_id)
@@ -411,6 +409,16 @@ impl GooseAcpAgent {
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
         )?;
+        let pending_confirmations = session
+            .conversation
+            .as_ref()
+            .map(pending_tool_confirmations)
+            .unwrap_or_default();
+        let awaiting_confirmation = !pending_confirmations.is_empty()
+            || session
+                .conversation
+                .as_ref()
+                .is_some_and(has_unapplied_tool_confirmation_response);
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
         self.register_acp_session(session_id_str.clone(), agent.clone())
             .await;
@@ -446,17 +454,9 @@ impl GooseAcpAgent {
         }
         response = response.meta(meta);
 
-        let pending_confirmations = session
-            .conversation
-            .as_ref()
-            .map(pending_tool_confirmations)
-            .unwrap_or_default();
-        let should_resume_state_machine = !pending_confirmations.is_empty()
-            || session
-                .conversation
-                .as_ref()
-                .is_some_and(has_unapplied_tool_confirmation_response);
-        if should_resume_state_machine {
+        let is_subagent = session.session_type == SessionType::SubAgent;
+        let already_running = self.active_runs.agent_run(&session_id_str).is_some();
+        if awaiting_confirmation && !is_subagent && !already_running {
             self.start_resumed_state_machine_turn(
                 cx,
                 &agent,
@@ -464,14 +464,6 @@ impl GooseAcpAgent {
                 &pending_confirmations,
             )
             .await?;
-        } else {
-            self.resend_pending_tool_permissions(
-                cx,
-                &agent,
-                &session_id_str,
-                &pending_confirmations,
-                None,
-            )?;
         }
 
         self.closed_session_ids.lock().await.remove(&session_id_str);
@@ -659,6 +651,35 @@ mod tests {
         );
         assert!(messages[1].metadata.output_token_limit_reached);
         assert!(conversation.messages()[2].content.is_empty());
+    }
+
+    #[test]
+    fn acp_replay_sends_the_model_that_produced_each_message() {
+        let conversation = Conversation::new_unvalidated([Message::assistant()
+            .with_text("answer")
+            .with_id("msg_replayed")
+            .with_inference(InferenceMetadata {
+                provider: "anthropic".to_string(),
+                requested_model: "claude-sonnet-4-5".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            })]);
+
+        let messages = messages_for_acp_replay(&conversation);
+        let chunk =
+            content_chunk_for_message(&messages[0], ContentBlock::Text(TextContent::new("answer")));
+
+        assert_eq!(
+            chunk
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("goose"))
+                .and_then(|goose| goose.get("inference")),
+            Some(&serde_json::json!({
+                "provider": "anthropic",
+                "requestedModel": "claude-sonnet-4-5",
+            })),
+        );
     }
 
     fn persisted_enriched_tool_request() -> ToolRequest {

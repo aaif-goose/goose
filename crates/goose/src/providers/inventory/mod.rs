@@ -7,7 +7,10 @@ pub use resolver::{
 };
 
 use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
-use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
+use super::canonical::{
+    map_provider_name, map_to_canonical_model, maybe_get_canonical_model_with_variant_fallback,
+    CanonicalModelRegistry,
+};
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
 use crate::config::Config;
 use crate::session::session_manager::SessionStorage;
@@ -1213,11 +1216,19 @@ fn enriched_model(
     fallback_context_limit: Option<usize>,
     auto_compact_token_limit: Option<usize>,
 ) -> InventoryModel {
-    let registry = CanonicalModelRegistry::bundled().ok();
-    let canonical = registry.as_ref().and_then(|registry| {
-        let canonical_id = map_to_canonical_model(provider_family, model_id, registry)?;
+    // The registry guard is dropped inside the closure: the fallback below takes its own
+    // read lock, and a nested read can block behind a queued catalog refresh.
+    let canonical = CanonicalModelRegistry::bundled().ok().and_then(|registry| {
+        let canonical_id = map_to_canonical_model(provider_family, model_id, &registry)?;
         let (provider, model) = canonical_id.split_once('/')?;
         registry.get(provider, model).cloned()
+    });
+    // A variant borrows its base row's metadata but keeps its own id as the name,
+    // so the picker still lists it next to the base model.
+    let metadata = canonical.clone().or_else(|| {
+        maybe_get_canonical_model_with_variant_fallback(provider_family, model_id)
+            .filter(|(_, is_variant_fallback)| *is_variant_fallback)
+            .map(|(model, _)| model)
     });
 
     InventoryModel {
@@ -1226,12 +1237,12 @@ fn enriched_model(
             .as_ref()
             .map(|model| model.name.clone())
             .unwrap_or_else(|| model_id.to_string()),
-        family: canonical.as_ref().and_then(|model| model.family.clone()),
-        context_limit: canonical
+        family: metadata.as_ref().and_then(|model| model.family.clone()),
+        context_limit: metadata
             .as_ref()
             .map(|model| model.limit.context)
             .or(fallback_context_limit),
-        reasoning: canonical.as_ref().and_then(|model| model.reasoning),
+        reasoning: metadata.as_ref().and_then(|model| model.reasoning),
         auto_compact_token_limit,
         recommended: false,
     }
@@ -1291,6 +1302,26 @@ mod tests {
             provider_id: provider_id.to_string(),
             provider_family: provider_id.to_string(),
             inventory_key: inventory_key.to_string(),
+        }
+    }
+
+    #[test]
+    fn openrouter_inventory_keeps_base_and_unlisted_variants() {
+        let ids = vec![
+            "deepseek/deepseek-v4-flash".to_string(),
+            "deepseek/deepseek-v4-flash:batch".to_string(),
+            "deepseek/deepseek-v4-flash:free".to_string(),
+        ];
+        let models = enrich_model_ids_with_canonical("openrouter", &ids);
+        assert_eq!(
+            models.iter().map(|model| &model.id).collect::<Vec<_>>(),
+            ids.iter().collect::<Vec<_>>()
+        );
+        for variant in &models[1..] {
+            assert_eq!(variant.name, variant.id);
+            assert_eq!(variant.family, models[0].family);
+            assert_eq!(variant.context_limit, models[0].context_limit);
+            assert_eq!(variant.reasoning, models[0].reasoning);
         }
     }
 

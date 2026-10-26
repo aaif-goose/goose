@@ -6,7 +6,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.55.0"
+version = "1.56.0"
 rust-version = "1.94.1"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
@@ -75,7 +75,7 @@ webbrowser = { version = "1", default-features = false }
 which = { version = "8", default-features = false, features = ["real-sys"] }
 winapi = { version = "0.3.9", default-features = false, features = ["wincred", "std"] }
 wiremock = { version = "0.6", default-features = false }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 serial_test = { version = "4", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 shell-words = { version = "1", default-features = false, features = ["std"] }

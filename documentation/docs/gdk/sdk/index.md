@@ -2,25 +2,34 @@
 sidebar_position: 1
 title: SDK
 sidebar_label: Overview
-description: Build with goose providers in Rust, Python, and Kotlin.
+description: Build with the native Rust GDK crates or shared provider bindings for Python and Kotlin.
 ---
 
 # SDK
 
-The SDK exposes its provider layer as an in-process library so you can
-call models, stream completions, and compact conversations from your own
-application.
+The SDK provides native Rust crates for agent orchestration, model providers,
+and context management. Python and Kotlin access the provider layer through
+shared bindings, so you can call models, stream completions, and compact
+conversations from your own application.
 
-One Rust crate, `goose-sdk`, is the source of every language binding. Python and
-Kotlin are generated from it with [UniFFI](https://github.com/mozilla/uniffi-rs),
-so all three languages share the same types, behavior, and version number.
+For Rust, the primary API reference is the crate documentation on docs.rs:
 
-See the [API Reference](/docs/gdk/sdk/api-reference) for the complete
-surface in your language of choice.
+- [`goose-agent`](https://docs.rs/goose-agent/latest/goose_agent/) — agent state machine and tools
+- [`goose-providers`](https://docs.rs/goose-providers/latest/goose_providers/) — model providers
+- [`goose-context-management`](https://docs.rs/goose-context-management/latest/goose_context_management/) — conversation compaction
+- [All GDK crates](/docs/gdk/sdk/api-reference#rust-api-reference)
+
+The `goose-sdk` crate is the source of the Python and Kotlin bindings, generated
+with [UniFFI](https://github.com/mozilla/uniffi-rs). The
+[shared bindings reference](/docs/gdk/sdk/api-reference#shared-bindings-reference)
+documents that API in Python, Kotlin, and Rust; it does not cover the full native
+Rust GDK API. The installation and examples below focus on this shared bindings
+layer.
 
 :::info Alpha
 The SDK is in alpha. The surface may change between `0.x` releases. Pin an
-exact version and check the API reference version selector when upgrading.
+exact version and select the matching version on docs.rs or in the shared
+bindings reference when upgrading.
 :::
 
 ## What you can do
@@ -38,6 +47,10 @@ exact version and check the API reference version selector when upgrading.
 <!-- prettier-ignore-start -->
 
 ### Rust
+
+For native Rust, depend directly on the
+[GDK crates](/docs/gdk/sdk/api-reference#rust-api-reference) your application needs
+and follow their docs.rs documentation. To use the shared bindings API from Rust:
 
 ```bash
 cargo add goose-sdk --features uniffi

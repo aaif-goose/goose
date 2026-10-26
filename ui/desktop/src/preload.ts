@@ -124,7 +124,7 @@ type ElectronAPI = {
   writeFile: (directory: string, content: string) => Promise<boolean>;
   ensureDirectory: (dirPath: string) => Promise<boolean>;
   listFiles: (dirPath: string, extension?: string) => Promise<string[]>;
-  getAllowedExtensions: () => Promise<string[]>;
+  getAllowedExtensions: () => Promise<string[] | null>;
   getPathForFile: (file: File) => string;
   setMenuBarIcon: (show: boolean) => Promise<boolean>;
   getMenuBarIconState: () => Promise<boolean>;
@@ -163,7 +163,7 @@ type ElectronAPI = {
   getVersion: () => string;
   checkForUpdates: () => Promise<{ updateInfo: unknown; error: string | null }>;
   downloadUpdate: () => Promise<{ success: boolean; error: string | null }>;
-  installUpdate: () => void;
+  installUpdate: () => Promise<{ success: boolean; error: string | null }>;
   restartApp: () => void;
   onUpdaterEvent: (callback: (event: UpdaterEvent) => void) => void;
   getUpdateState: () => Promise<{ updateAvailable: boolean; latestVersion?: string } | null>;
@@ -311,8 +311,8 @@ const electronAPI: ElectronAPI = {
   downloadUpdate: (): Promise<{ success: boolean; error: string | null }> => {
     return ipcRenderer.invoke('download-update');
   },
-  installUpdate: (): void => {
-    ipcRenderer.invoke('install-update');
+  installUpdate: (): Promise<{ success: boolean; error: string | null }> => {
+    return ipcRenderer.invoke('install-update');
   },
   restartApp: (): void => {
     ipcRenderer.send('restart-app');

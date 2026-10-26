@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "확인"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name} 익스텐션을 설치하시겠습니까? 명령: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "모델 변경: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (요청됨)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "모두 표시"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "레시피 실행 시 도구로 호출할 수 있는 서브레시피를 구성합니다."
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "최신 진행 상황 불러오기"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "하위 에이전트 진행 상황은 여기에 실시간으로 표시되지 않습니다."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "모델 목록으로 돌아가기"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "자동"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "구성됨"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 키"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API 키 입력"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "키 제거"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "키 저장"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Jev를 사용해 각 요청의 사고 수준을 선택합니다. 요청 텍스트는 TypeSafe AI로 전송되며, 스킬 및 레시피 슬래시 명령에는 확장된 로컬 지침이 포함됩니다."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "자동 사고 수준"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "차단 한도"

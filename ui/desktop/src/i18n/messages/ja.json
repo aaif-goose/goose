@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name}拡張機能をインストールしてもよろしいですか？コマンド: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "モデルを変更しました: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model}（リクエスト済み）"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "すべて表示"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "レシピ実行中にツールとして呼び出せるサブレシピを設定します"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "最新の進捗を読み込む"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "サブエージェントの進捗はここではリアルタイムに表示されません。"
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "モデル一覧に戻る"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "設定済み"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe APIキー"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "APIキーを入力"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "キーを削除"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "キーを保存"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Jevを使用してリクエストごとの思考レベルを選択します。リクエストのテキストはTypeSafe AIに送信され、スキルやレシピのスラッシュコマンドには展開されたローカル指示が含まれます。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "思考レベルの自動選択"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "ブロック上限"

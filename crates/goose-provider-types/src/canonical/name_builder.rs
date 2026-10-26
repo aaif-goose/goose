@@ -64,6 +64,12 @@ pub fn map_provider_name(provider: &str) -> &str {
     }
 }
 
+/// Strip a trailing OpenRouter variant tag such as `:free` or `:nitro`.
+pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
+    let (base, tag) = model.rsplit_once(':')?;
+    (!tag.is_empty() && tag.bytes().all(|byte| byte.is_ascii_lowercase())).then_some(base)
+}
+
 /// Try to map a provider/model pair to a canonical model
 pub fn map_to_canonical_model(
     provider: &str,
@@ -361,8 +367,8 @@ mod tests {
             Some("openai/gpt-5.6-sol".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("opencode_go", "kimi-k2.6", &r),
-            Some("opencode-go/kimi-k2.6".to_string())
+            map_to_canonical_model("opencode_go", "kimi-k3", &r),
+            Some("opencode-go/kimi-k3".to_string())
         );
         assert_eq!(
             map_to_canonical_model("opencode_zen", "kimi-k3", &r),

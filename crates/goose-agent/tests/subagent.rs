@@ -48,7 +48,6 @@ struct FakeRunner {
     children: Mutex<HashMap<String, Child>>,
     started: Mutex<Vec<String>>,
     events: Mutex<Vec<String>>,
-    started_subagent_session_ids: Vec<String>,
 }
 
 impl FakeRunner {
@@ -79,12 +78,16 @@ impl FakeRunner {
 
 #[async_trait]
 impl SubagentRunner<Parent> for FakeRunner {
-    fn started_subagent_session_ids(
+    fn requested_subagent_session_ids(
         &self,
         _parent_session: &Parent,
-        _conversation: &Conversation,
+        message: &Message,
     ) -> Vec<String> {
-        self.started_subagent_session_ids.clone()
+        message
+            .as_concat_text()
+            .strip_prefix("start ")
+            .map(|ids| ids.split(' ').map(str::to_string).collect())
+            .unwrap_or_default()
     }
 
     async fn start(
@@ -151,18 +154,8 @@ fn shown(rx: &mut mpsc::UnboundedReceiver<AgentEvent>) -> Vec<String> {
         .collect()
 }
 
-fn kickoff() -> Message {
-    Message::user().with_text("go")
-}
-
-fn fake(subagent_session_ids: &[&str]) -> FakeRunner {
-    FakeRunner {
-        started_subagent_session_ids: subagent_session_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect(),
-        ..FakeRunner::default()
-    }
+fn start(subagent_session_ids: &[&str]) -> Message {
+    Message::user().with_text(format!("start {}", subagent_session_ids.join(" ")))
 }
 
 fn appended(effects: Vec<ConversationEffect>) -> Vec<Message> {
@@ -234,10 +227,10 @@ async fn stop_with(
 
 #[tokio::test]
 async fn a_finished_subagent_is_delivered_without_running() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     runner.finished("a", SubagentOutcome::Completed("done".into()));
     let operation = operation(&runner);
-    let mut messages = vec![kickoff()];
+    let mut messages = vec![start(&["a"])];
 
     let delivered = run_once(&operation, &messages).await;
 
@@ -253,11 +246,11 @@ async fn a_finished_subagent_is_delivered_without_running() {
 
 #[tokio::test]
 async fn running_subagents_are_delivered_one_per_pass_and_started_once() {
-    let runner = Arc::new(fake(&["a", "b"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let b = runner.running("b");
     let operation = operation(&runner);
-    let mut messages = vec![kickoff()];
+    let mut messages = vec![start(&["a", "b"])];
 
     b.finish(SubagentOutcome::Completed("b done".into()));
     let delivered = run_once(&operation, &messages).await;
@@ -284,11 +277,11 @@ async fn running_subagents_are_delivered_one_per_pass_and_started_once() {
 
 #[tokio::test]
 async fn an_already_finished_subagent_does_not_hold_back_the_others() {
-    let runner = Arc::new(fake(&["a", "b"]));
+    let runner = Arc::new(FakeRunner::default());
     runner.finished("a", SubagentOutcome::Completed("a done".into()));
     let _b = runner.running("b");
 
-    let delivered = run_once(&operation(&runner), &[kickoff()]).await;
+    let delivered = run_once(&operation(&runner), &[start(&["a", "b"])]).await;
 
     assert_eq!(texts(&delivered), ["Subagent a completed: a done"]);
     assert_eq!(runner.started(), ["a", "b"]);
@@ -297,17 +290,17 @@ async fn an_already_finished_subagent_does_not_hold_back_the_others() {
 
 #[tokio::test]
 async fn a_subagent_cancelled_elsewhere_is_reported_and_not_restarted() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let operation = operation(&runner);
-    let mut messages = vec![kickoff()];
+    let mut messages = vec![start(&["a"])];
 
     a.finish(SubagentOutcome::Cancelled);
     let delivered = run_once(&operation, &messages).await;
 
     assert_eq!(
         texts(&delivered),
-        ["Subagent a was cancelled before it finished and will not run again."]
+        ["Subagent a was cancelled before it finished."]
     );
     messages.extend(delivered);
     assert!(run_once(&operation, &messages).await.is_empty());
@@ -316,12 +309,12 @@ async fn a_subagent_cancelled_elsewhere_is_reported_and_not_restarted() {
 
 #[tokio::test]
 async fn stop_delivers_finished_subagents_and_cancels_running_and_queued_children() {
-    let runner = Arc::new(fake(&["a", "b", "c"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let b = runner.running("b");
     runner.finished("c", SubagentOutcome::Completed("c done".into()));
     let operation = operation(&runner).with_max_concurrency(NonZeroUsize::new(2).unwrap());
-    let mut messages = vec![kickoff()];
+    let mut messages = vec![start(&["a", "b", "c"])];
 
     interrupt(&operation, &messages);
     assert_eq!(runner.started(), ["a", "b"]);
@@ -334,8 +327,8 @@ async fn stop_delivers_finished_subagents_and_cancels_running_and_queued_childre
         texts(&saved),
         [
             "Subagent a completed: a done",
-            "Subagent b was cancelled before it finished and will not run again.\n\
-             Subagent c was cancelled before it finished and will not run again.",
+            "Subagent b was cancelled before it finished.\n\
+             Subagent c was cancelled before it finished.",
         ]
     );
     assert_eq!(
@@ -350,14 +343,40 @@ async fn stop_delivers_finished_subagents_and_cancels_running_and_queued_childre
 }
 
 #[tokio::test]
-async fn a_repeated_id_starts_once() {
-    let runner = Arc::new(fake(&["x", "x"]));
-    runner.finished("x", SubagentOutcome::Failed("boom\ndetails".into()));
+async fn a_subagent_started_twice_before_it_finishes_runs_once() {
+    let runner = Arc::new(FakeRunner::default());
+    runner.finished("x", SubagentOutcome::Completed("done".into()));
+    let operation = operation(&runner);
+    let mut messages = vec![start(&["x"]), start(&["x"])];
 
-    let delivered = run_once(&operation(&runner), &[kickoff()]).await;
+    let delivered = run_once(&operation, &messages).await;
+    assert_eq!(texts(&delivered), ["Subagent x completed: done"]);
+    messages.extend(delivered);
 
-    assert_eq!(texts(&delivered), ["Subagent x failed: boom\ndetails"]);
+    assert!(run_once(&operation, &messages).await.is_empty());
     assert_eq!(runner.started(), ["x"]);
+}
+
+#[tokio::test]
+async fn a_failed_subagent_started_again_runs_until_it_finishes() {
+    let runner = Arc::new(FakeRunner::default());
+    runner.finished("x", SubagentOutcome::Failed("boom\ndetails".into()));
+    let operation = operation(&runner);
+    let mut messages = vec![start(&["x"])];
+
+    let delivered = run_once(&operation, &messages).await;
+    assert_eq!(texts(&delivered), ["Subagent x failed: boom\ndetails"]);
+    messages.extend(delivered);
+    assert!(run_once(&operation, &messages).await.is_empty());
+
+    messages.push(start(&["x"]));
+    runner.finished("x", SubagentOutcome::Completed("done".into()));
+    let delivered = run_once(&operation, &messages).await;
+    assert_eq!(texts(&delivered), ["Subagent x completed: done"]);
+    messages.extend(delivered);
+
+    assert!(run_once(&operation, &messages).await.is_empty());
+    assert_eq!(runner.started(), ["x", "x"]);
 }
 
 #[tokio::test]
@@ -374,9 +393,9 @@ async fn reads_the_notes_goose_saves_today() {
     cancelled
         .metadata
         .set_operation_note("foreground_subagent", "cancelled", json!(["b"]));
-    let messages = vec![kickoff(), delivered, cancelled];
+    let messages = vec![start(&["a", "b", "c"]), delivered, cancelled];
 
-    let runner = Arc::new(fake(&["a", "b", "c"]));
+    let runner = Arc::new(FakeRunner::default());
     runner.finished("c", SubagentOutcome::Completed("c done".into()));
     let delivered = run_once(&operation(&runner), &messages).await;
 
@@ -386,14 +405,14 @@ async fn reads_the_notes_goose_saves_today() {
 
 #[tokio::test]
 async fn messages_from_a_running_subagent_reach_the_parent_before_its_result() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let operation = operation(&runner);
     let (emit, mut rx) = watched_emitter();
 
     a.to_parent("may I run cargo test?");
     a.finish(SubagentOutcome::Completed("done".into()));
-    let delivered = run_once_with(&operation, &[kickoff()], &emit).await;
+    let delivered = run_once_with(&operation, &[start(&["a"])], &emit).await;
 
     assert_eq!(shown(&mut rx), ["may I run cargo test?"]);
     assert_eq!(texts(&delivered), ["Subagent a completed: done"]);
@@ -401,10 +420,10 @@ async fn messages_from_a_running_subagent_reach_the_parent_before_its_result() {
 
 #[tokio::test]
 async fn a_subagent_whose_updates_end_without_an_outcome_has_failed() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     drop(runner.running("a"));
 
-    let delivered = run_once(&operation(&runner), &[kickoff()]).await;
+    let delivered = run_once(&operation(&runner), &[start(&["a"])]).await;
 
     assert_eq!(
         texts(&delivered),
@@ -414,7 +433,7 @@ async fn a_subagent_whose_updates_end_without_an_outcome_has_failed() {
 
 #[tokio::test]
 async fn updates_after_the_outcome_are_ignored() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let operation = operation(&runner);
     let (emit, mut rx) = watched_emitter();
@@ -422,7 +441,7 @@ async fn updates_after_the_outcome_are_ignored() {
     a.finish(SubagentOutcome::Completed("done".into()));
     a.to_parent("too late");
     a.finish(SubagentOutcome::Failed("again".into()));
-    let delivered = run_once_with(&operation, &[kickoff()], &emit).await;
+    let delivered = run_once_with(&operation, &[start(&["a"])], &emit).await;
 
     assert_eq!(texts(&delivered), ["Subagent a completed: done"]);
     assert!(shown(&mut rx).is_empty());
@@ -431,10 +450,10 @@ async fn updates_after_the_outcome_are_ignored() {
 
 #[tokio::test]
 async fn stop_skips_messages_queued_ahead_of_a_finished_result() {
-    let runner = Arc::new(fake(&["a"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let operation = operation(&runner);
-    let messages = [kickoff()];
+    let messages = [start(&["a"])];
     let (emit, mut rx) = watched_emitter();
 
     interrupt(&operation, &messages);
@@ -448,12 +467,12 @@ async fn stop_skips_messages_queued_ahead_of_a_finished_result() {
 
 #[tokio::test]
 async fn concurrency_limit_queues_subagents_until_a_slot_is_available() {
-    let runner = Arc::new(fake(&["a", "b", "c"]));
+    let runner = Arc::new(FakeRunner::default());
     let a = runner.running("a");
     let b = runner.running("b");
     let c = runner.running("c");
     let operation = operation(&runner).with_max_concurrency(NonZeroUsize::new(2).unwrap());
-    let mut messages = vec![kickoff()];
+    let mut messages = vec![start(&["a", "b", "c"])];
 
     interrupt(&operation, &messages);
     assert_eq!(runner.started(), ["a", "b"]);

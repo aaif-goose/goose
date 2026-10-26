@@ -20,7 +20,10 @@ use std::str::FromStr;
 use tokio::signal::ctrl_c;
 use tokio_util::task::AbortOnDropHandle;
 
-pub use builder::{build_session, ExtensionFailure, SessionBuilderConfig};
+pub use builder::{
+    build_session, is_provider_unavailable_error, try_build_session, ExtensionFailure,
+    SessionBuilderConfig,
+};
 use console::Color;
 
 use goose::agents::platform_extensions::developer::shell::{

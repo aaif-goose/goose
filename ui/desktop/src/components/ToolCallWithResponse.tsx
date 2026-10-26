@@ -695,6 +695,9 @@ function ToolCallView({
         return `capturing screen`;
 
       case 'delegate': {
+        if (args.resume) {
+          return `resuming subagent ${getStringValue(args.resume)}`;
+        }
         if (args.instructions) {
           const instr = getStringValue(args.instructions);
           const truncated = instr.length > 80 ? instr.substring(0, 80) + '…' : instr;

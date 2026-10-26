@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "tamam"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name} uzantısını yüklemek istediğinizden emin misiniz? Komut: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Model değişti: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (istenen)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Tümünü göster"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Tarif yürütme sırasında araç olarak çağrılabilecek bir alt tarif yapılandırın"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "En son ilerlemeyi yükle"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Alt ajan ilerlemesi burada canlı olarak gösterilmez."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Model listesine geri dön"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatik"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Yapılandırıldı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API anahtarı"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API anahtarını girin"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Anahtarı kaldır"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Anahtarı kaydet"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Her istek için düşünme düzeyini seçmek üzere Jev’i kullanır. İstek metni TypeSafe AI’a gönderilir; beceri ve tarif eğik çizgi komutları genişletilmiş yerel talimatlarını içerir."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Otomatik düşünme düzeyi"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Engelleme sınırı"

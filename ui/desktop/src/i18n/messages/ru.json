@@ -1094,6 +1094,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Установить расширение {name}? Команда: {command}"
   },
@@ -2641,6 +2647,9 @@
   },
   "messageList.modelChanged": {
     "defaultMessage": "Модель изменена: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (запрошенная)"
   },
   "messageList.showAllMessages": {
     "defaultMessage": "Показать все"
@@ -4280,6 +4289,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Настройте подрецепт, который можно вызывать как инструмент при выполнении рецепта"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Загрузить последний прогресс"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Прогресс субагента здесь не отображается в реальном времени."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Назад к списку моделей"
   },
@@ -4675,6 +4690,27 @@
   },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Настроено"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "API-ключ TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Введите API-ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Удалить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Сохранить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Использует Jev для выбора уровня рассуждений для каждого запроса. Текст отправляется в TypeSafe AI; слеш-команды навыков и рецептов включают их развёрнутые локальные инструкции."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Автоматический уровень рассуждений"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Лимит блокировок"
