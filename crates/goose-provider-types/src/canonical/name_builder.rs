@@ -70,6 +70,18 @@ pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
     (!tag.is_empty() && tag.bytes().all(|byte| byte.is_ascii_lowercase())).then_some(base)
 }
 
+/// Strip the tag an Ollama daemon puts on the cloud models it proxies.
+///
+/// Ollama uses `:cloud` for models without an explicit tag and the legacy
+/// `-cloud` for models that have one (`qwen3:8b-cloud`). The catalog keys
+/// those models under the `ollama-cloud` provider without the tag, so it has
+/// to come off before the lookup can succeed.
+pub fn strip_ollama_cloud_tag(model: &str) -> Option<&str> {
+    model
+        .strip_suffix(":cloud")
+        .or_else(|| model.strip_suffix("-cloud"))
+}
+
 /// Try to map a provider/model pair to a canonical model
 pub fn map_to_canonical_model(
     provider: &str,
@@ -77,6 +89,17 @@ pub fn map_to_canonical_model(
     registry: &super::CanonicalModelRegistry,
 ) -> Option<String> {
     let registry_provider = map_provider_name(provider);
+
+    // An Ollama daemon lists the Ollama Cloud models it proxies with a cloud
+    // tag. Those models are cataloged under the `ollama-cloud` provider, so a
+    // direct lookup has to drop the tag and use that provider.
+    if provider == "ollama" {
+        if let Some(base) = strip_ollama_cloud_tag(model) {
+            if let Some(canonical) = registry.get("ollama-cloud", base) {
+                return Some(canonical.id.clone());
+            }
+        }
+    }
 
     if provider == "gcp_vertex_ai" {
         let normalized_model = strip_version_suffix(model);
@@ -380,6 +403,25 @@ mod tests {
             map_to_canonical_model("openrouter", "anthropic/claude-sonnet-4.5", &r),
             Some("openrouter/anthropic/claude-sonnet-4.5".to_string())
         );
+
+        // === Ollama ===
+        // A local Ollama daemon lists the Ollama Cloud models it proxies with a
+        // `:cloud` tag. Those models are cataloged under `ollama-cloud`.
+        assert_eq!(
+            map_to_canonical_model("ollama", "muse-spark-open:cloud", &r),
+            Some("ollama-cloud/muse-spark-open".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("ollama", "kimi-k3:cloud", &r),
+            Some("ollama-cloud/kimi-k3".to_string())
+        );
+        // Models that already carry a tag use the legacy `-cloud` suffix.
+        assert_eq!(
+            map_to_canonical_model("ollama", "gpt-oss:120b-cloud", &r),
+            Some("ollama-cloud/gpt-oss:120b".to_string())
+        );
+        // A local model without the tag keeps resolving the way it did before.
+        assert_eq!(map_to_canonical_model("ollama", "qwen3", &r), None);
 
         // === Anthropic Claude - basic ===
         assert_eq!(

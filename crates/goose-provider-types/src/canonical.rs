@@ -6,8 +6,8 @@ mod registry;
 
 pub use model::{CanonicalModel, Limit, Modalities, Modality, Pricing, PricingTier, ThinkingMode};
 pub use name_builder::{
-    canonical_name, map_provider_name, map_to_canonical_model, strip_openrouter_variant,
-    strip_version_suffix,
+    canonical_name, map_provider_name, map_to_canonical_model, strip_ollama_cloud_tag,
+    strip_openrouter_variant, strip_version_suffix,
 };
 pub use registry::{
     fetch_remote_catalog, load_cached_catalog, CanonicalModelRegistry, RemoteCatalog,
