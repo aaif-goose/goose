@@ -31,10 +31,6 @@
       "context_limit": 262144
     },
     {
-      "name": "devstral-small-2505",
-      "context_limit": 262144
-    },
-    {
       "name": "ministral-8b-2410",
       "context_limit": 128000
     },

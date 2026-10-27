@@ -76,11 +76,7 @@ static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, CachedDatabricksEndpointInfo>>,
 > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
-pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
-    "databricks-claude-sonnet-4-5",
-    "databricks-meta-llama-3-3-70b-instruct",
-    "databricks-meta-llama-3-1-405b-instruct",
-];
+pub const DATABRICKS_KNOWN_MODELS: &[&str] = &["databricks-claude-sonnet-4-5"];
 
 pub const DATABRICKS_DOC_URL: &str =
     "https://docs.databricks.com/en/generative-ai/external-models/index.html";
