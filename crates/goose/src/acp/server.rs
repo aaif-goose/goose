@@ -1099,7 +1099,10 @@ impl AcpConnection {
                 .await
                 .internal_err_ctx("Failed to update session")?;
 
-            self.services.release_session(&session_id).await;
+            // The session may be open, and running, on another connection: extensions
+            // follow the record on their next lease, so only the provider, which was
+            // built for the old working directory and extensions, is dropped.
+            self.services.providers.release(&session_id);
 
             session = self
                 .services

@@ -424,13 +424,14 @@ impl StateMachineServices {
     /// Opens the session for a connection, which from now on is who extensions start for
     /// and who gets its generated names.
     pub async fn attach_session(&self, session_id: &str, connection: u64, attachment: Attachment) {
-        {
+        let evicted = {
             let _lifetime = self.runtime.lock_lifetime(session_id).await;
             self.extension_manager
                 .attach_client(session_id, attachment.client.clone());
             self.runtime.attach(session_id, connection, attachment);
-        }
-        self.touch_session(session_id).await;
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
     }
 
     /// Closes the session for one connection; the session is released when that was the
@@ -459,15 +460,27 @@ impl StateMachineServices {
     }
 
     pub async fn touch_session(&self, session_id: &str) {
-        for evicted in self.runtime.touch(session_id) {
-            self.release_session(&evicted).await;
-        }
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
     }
 
     /// Releases what went over the limit while every session was busy.
     async fn trim_sessions(&self) {
-        for evicted in self.runtime.trim() {
-            self.release_session(&evicted).await;
+        self.evict(self.runtime.trim()).await;
+    }
+
+    /// Sessions are chosen for eviction before their lifetime lock is held, so each is
+    /// checked again under it: one touched or busy since then is kept.
+    async fn evict(&self, candidates: Vec<String>) {
+        for session_id in candidates {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            if self.runtime.keep_resident(&session_id) {
+                continue;
+            }
+            self.release(&session_id).await;
         }
     }
 
@@ -949,7 +962,13 @@ impl StateMachineServices {
     ) -> BoxStream<'static, Result<AgentEvent>> {
         let session_id = session_config.id.clone();
         let services = Arc::clone(self);
+        let turn_end = TurnEnd {
+            services: Arc::clone(self),
+            turn_guard: Some(turn_guard),
+        };
         let events = async_stream::try_stream! {
+            let mut turn_end = turn_end;
+            let turn_guard = turn_end.turn_guard.as_ref().expect("held until the turn ends");
             let mut run = run_first;
             loop {
                 if run {
@@ -979,8 +998,7 @@ impl StateMachineServices {
                 run = true;
             }
             turn_guard.state().clear_confirmations();
-            drop(turn_guard);
-            services.trim_sessions().await;
+            turn_end.finish().await;
         };
         crate::session_context::with_session_id_stream(Some(session_id), Box::pin(events))
     }
@@ -1282,6 +1300,32 @@ impl StateMachineServices {
                 )
             })?;
         Ok(true)
+    }
+}
+
+/// Ends a turn however its stream stops (finished, failed, cancelled or dropped): frees
+/// the session and trims what went over the limit while every session was busy.
+struct TurnEnd {
+    services: Arc<StateMachineServices>,
+    turn_guard: Option<ActiveTurnGuard>,
+}
+
+impl TurnEnd {
+    async fn finish(&mut self) {
+        drop(self.turn_guard.take());
+        self.services.trim_sessions().await;
+    }
+}
+
+impl Drop for TurnEnd {
+    fn drop(&mut self) {
+        if self.turn_guard.take().is_none() {
+            return;
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let services = Arc::clone(&self.services);
+            handle.spawn(async move { services.trim_sessions().await });
+        }
     }
 }
 

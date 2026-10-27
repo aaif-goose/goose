@@ -180,6 +180,21 @@ impl SessionRuntime {
             .remove(session_id);
     }
 
+    /// Whether an eviction candidate must stay: touched again since it was chosen, or busy
+    /// (then it goes back to the resident set).
+    pub(super) fn keep_resident(&self, session_id: &str) -> bool {
+        let mut resident = self.resident.lock().expect("session runtime poisoned");
+        if resident.contains(session_id) {
+            return true;
+        }
+        if self.is_busy(session_id) {
+            resident.put(session_id.to_string(), ());
+            resident.demote(session_id);
+            return true;
+        }
+        false
+    }
+
     /// A Live conversation runs without a turn, and a prompt registers its run before
     /// its turn starts.
     fn is_busy(&self, session_id: &str) -> bool {
