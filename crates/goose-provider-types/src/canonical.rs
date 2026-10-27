@@ -341,18 +341,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ollama_models_have_zero_cost() {
-        // "mistral-nemo" resolves to mistralai/mistral-nemo which has non-zero cloud pricing.
-        // When accessed via ollama, cost must be zeroed out.
-        let canonical = maybe_get_canonical_model("ollama", "mistral-nemo")
-            .expect("mistral-nemo should resolve via ollama");
+    #[test_case::test_case("ollama")]
+    #[test_case::test_case("local")]
+    fn local_models_have_no_catalog_cost(provider: &str) {
+        let cloud = maybe_get_canonical_model("mistralai", "ministral-3b")
+            .expect("ministral-3b should resolve for its first-party provider");
+        assert!(cloud.cost.input.is_some_and(|price| price > 0.0));
+        assert!(cloud.cost.output.is_some_and(|price| price > 0.0));
+
+        let canonical = maybe_get_canonical_model(provider, "ministral-3b")
+            .expect("ministral-3b should resolve for local inference");
+        assert_eq!(canonical.id, cloud.id);
         assert_eq!(canonical.cost.input, None);
         assert_eq!(canonical.cost.output, None);
-        assert!(
-            canonical.limit.context > 0,
-            "context limit should be preserved"
-        );
+        assert_eq!(canonical.limit.context, cloud.limit.context);
     }
 
     #[test]
@@ -369,25 +371,12 @@ mod tests {
     }
 
     #[test]
-    fn meta_provider_zero_priced_inference_prefers_the_host_catalog_rate() {
-        // "llama-3.3-70b-instruct" infers to meta-llama/llama-3.3-70b-instruct, priced 0.0/0.0
-        // because the weights are free to download — but Azure bills to serve them. The
-        // azure/llama-3.3-70b-instruct row carries the rate Azure actually charges.
+    fn azure_foundry_models_use_host_catalog_pricing_without_a_publisher_entry() {
         let canonical = maybe_get_canonical_model("azure_foundry", "llama-3.3-70b-instruct")
-            .expect("llama-3.3-70b-instruct should resolve");
+            .expect("llama-3.3-70b-instruct should resolve through the Azure catalog");
+        assert_eq!(canonical.id, "azure/llama-3.3-70b-instruct");
         assert_eq!(canonical.cost.input, Some(0.71));
         assert_eq!(canonical.cost.output, Some(0.71));
-        assert!(canonical.limit.context > 0);
-    }
-
-    #[test]
-    fn meta_provider_zero_priced_inference_reports_no_cost_without_a_host_rate() {
-        // Databricks bills for llama-3.3-70b-instruct but publishes no catalog row for it.
-        // Reporting nothing beats reporting the publisher's 0.0/0.0 as if it were free.
-        let canonical = maybe_get_canonical_model("databricks", "llama-3.3-70b-instruct")
-            .expect("llama-3.3-70b-instruct should resolve");
-        assert_eq!(canonical.cost.input, None);
-        assert_eq!(canonical.cost.output, None);
         assert!(canonical.limit.context > 0);
     }
 
