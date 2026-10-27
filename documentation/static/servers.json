@@ -325,6 +325,18 @@
     "type": "streamable-http"
   },
   {
+    "id": "uxkin",
+    "name": "UXKIN",
+    "description": "Real UI references: iOS app screens, user journeys and website design systems",
+    "url": "https://uxkin.com/mcp",
+    "link": "https://uxkin.com",
+    "installation_notes": "Hosted remote server. Sign in with your UXKIN account via OAuth on first connect. Searching needs a UXKIN plan.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "github-mcp",
     "name": "GitHub",
     "description": "GitHub repository management and operations",
