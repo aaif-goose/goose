@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
 
 use super::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
@@ -677,6 +678,28 @@ impl BedrockProvider {
 /// Anthropic provider already recovers from this by stripping thinking history
 /// (`strip_thinking_history`); this mirrors that behaviour for Converse and
 /// ConverseStream.
+/// Sessions whose stored history Bedrock has already rejected once.
+///
+/// The rejection is deterministic: the offending thinking blocks stay in the
+/// session, so every later request would fail validation again. Remembering the
+/// session lets subsequent turns send a stripped payload up front instead of
+/// paying a failed round-trip on every turn.
+static THINKING_REPLAY_DISABLED: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn thinking_replay_disabled(session_id: &str) -> bool {
+    THINKING_REPLAY_DISABLED
+        .lock()
+        .map(|sessions| sessions.contains(session_id))
+        .unwrap_or(false)
+}
+
+fn remember_thinking_replay_disabled(session_id: &str) {
+    if let Ok(mut sessions) = THINKING_REPLAY_DISABLED.lock() {
+        sessions.insert(session_id.to_string());
+    }
+}
+
 fn strip_thinking_blocks(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
@@ -1046,9 +1069,16 @@ impl Provider for BedrockProvider {
         // Open the AWS ConverseStream event stream. Retry wraps the request
         // setup only — mid-stream errors are surfaced, not retried (matching
         // the Anthropic provider's behaviour).
+        // A session that has been rejected once will be rejected again on every
+        // later turn, because the offending blocks stay in the stored history.
+        // Skip replaying thinking up front once that has happened.
+        let skip_thinking_replay = session_id_opt.is_some_and(thinking_replay_disabled);
+        let stripped_for_session = skip_thinking_replay.then(|| strip_thinking_blocks(messages));
+        let outgoing: &[Message] = stripped_for_session.as_deref().unwrap_or(messages);
+
         let response = match self
             .with_retry(|| {
-                self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                self.converse_stream(model_config, session_id_opt, system, outgoing, tools)
             })
             .await
         {
@@ -1061,6 +1091,9 @@ impl Provider for BedrockProvider {
                     error = %err,
                     "Bedrock rejected replayed thinking blocks; retrying once with thinking history stripped"
                 );
+                if let Some(session_id) = session_id_opt {
+                    remember_thinking_replay_disabled(session_id);
+                }
                 let stripped = strip_thinking_blocks(messages);
                 self.with_retry(|| {
                     self.converse_stream(model_config, session_id_opt, system, &stripped, tools)
@@ -1218,6 +1251,14 @@ mod tests {
     use goose_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
 
+    #[test]
+    fn thinking_replay_disabled_is_remembered_per_session() {
+        let session = "test-session-sticky-thinking-replay";
+        assert!(!thinking_replay_disabled(session));
+        remember_thinking_replay_disabled(session);
+        assert!(thinking_replay_disabled(session));
+        assert!(!thinking_replay_disabled("some-other-session"));
+    }
     #[test]
     fn strip_thinking_blocks_drops_reasoning_but_keeps_content() {
         use rmcp::model::Role;
