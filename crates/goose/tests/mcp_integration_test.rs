@@ -646,6 +646,55 @@ async fn configured_tool_call_meta_reaches_only_its_server(
     );
 }
 
+/// Configured `tool_call_meta` cannot replace goose's session context or trace
+/// context, whatever the key's letter case; other configured keys still pass.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_cannot_replace_goose_keys(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let spoofed = "spoofed";
+    let configured = with_tool_call_meta(
+        http_fixture("configured", &http_server.url),
+        object!({
+            "AGENT-SESSION-ID": spoofed,
+            "Agent-Working-Dir": spoofed,
+            "agent-tool-call-request-id": spoofed,
+            "TraceParent": spoofed,
+            "TRACESTATE": spoofed,
+            "kept": "configured",
+        }),
+    );
+    fx.add(&session, &configured).await;
+    let lease = fx.resolve(&session, &[configured]).await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    assert_eq!(
+        report.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+    assert_eq!(
+        report.request_working_dir.as_deref(),
+        Some(session.working_dir.to_string_lossy().as_ref())
+    );
+    assert!(
+        report
+            .request_meta
+            .values()
+            .all(|value| value.as_str() != Some(spoofed)),
+        "{:?}",
+        report.request_meta
+    );
+    assert_eq!(report.request_meta.get("kept"), Some(&"configured".into()));
+}
+
 /// Everything that crosses the wire besides a plain call: per-session tool
 /// lists, progress notifications, MCP-app hydration, forged result meta, and
 /// elicitation routed back to the originating call with and without the

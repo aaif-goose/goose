@@ -483,6 +483,14 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
     }
 }
 
+const GOOSE_TOOL_CALL_META_KEYS: [&str; 5] = [
+    SESSION_ID_HEADER,
+    WORKING_DIR_HEADER,
+    TOOL_CALL_REQUEST_ID_HEADER,
+    "traceparent",
+    "tracestate",
+];
+
 #[derive(Clone)]
 pub(crate) struct ConnectContext {
     pub timeout: Duration,
@@ -584,12 +592,23 @@ impl McpClient {
         self.docker_container.as_deref()
     }
 
-    /// Seeds a tool call's `_meta` with the configured entries; goose's own
-    /// keys are injected afterwards and replace any configured duplicates.
+    /// Seeds a tool call's `_meta` with the configured entries, minus any key
+    /// goose sets itself. Trace keys are dropped even when goose has no trace
+    /// to send, so configuration can never pose as goose's trace context.
     fn tool_call_extensions(&self) -> Extensions {
         let mut extensions = Extensions::new();
-        if !self.tool_call_meta.is_empty() {
-            extensions.insert(MetaObject(self.tool_call_meta.clone()));
+        let meta: JsonObject = self
+            .tool_call_meta
+            .iter()
+            .filter(|(key, _)| {
+                !GOOSE_TOOL_CALL_META_KEYS
+                    .iter()
+                    .any(|owned| key.eq_ignore_ascii_case(owned))
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        if !meta.is_empty() {
+            extensions.insert(MetaObject(meta));
         }
         extensions
     }
