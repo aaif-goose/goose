@@ -5,6 +5,7 @@ use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionLevel;
 use crate::config::Config;
 use once_cell::sync::Lazy;
+use rmcp::model::JsonObject;
 use rmcp::service::ClientInitializeError;
 use rmcp::ServiceError as ClientError;
 use serde::Deserializer;
@@ -176,6 +177,10 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
+        /// Added to the `_meta` of every tool call sent to this server.
+        #[serde(default)]
+        #[serde(skip_serializing_if = "JsonObject::is_empty")]
+        tool_call_meta: JsonObject,
     },
     /// Built-in extension that is part of the bundled goose MCP server
     #[serde(rename = "builtin")]
@@ -253,6 +258,10 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
+        /// Added to the `_meta` of every tool call sent to this server.
+        #[serde(default)]
+        #[serde(skip_serializing_if = "JsonObject::is_empty")]
+        tool_call_meta: JsonObject,
     },
 }
 
@@ -290,6 +299,7 @@ impl ExtensionConfig {
             scopes: Vec::new(),
             bundled: None,
             available_tools: Vec::new(),
+            tool_call_meta: JsonObject::new(),
         }
     }
 
@@ -310,6 +320,7 @@ impl ExtensionConfig {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
+            tool_call_meta: JsonObject::new(),
         }
     }
 
@@ -329,6 +340,7 @@ impl ExtensionConfig {
                 description,
                 bundled,
                 available_tools,
+                tool_call_meta,
                 ..
             } => Self::Stdio {
                 name,
@@ -341,6 +353,7 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
+                tool_call_meta,
             },
             other => other,
         }
@@ -392,6 +405,7 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
+                tool_call_meta,
             } => {
                 let merged = merge_environments(&envs, env_keys.iter(), config).await?;
                 Ok(Self::Stdio {
@@ -405,6 +419,7 @@ impl ExtensionConfig {
                     cwd: cwd.map(|s| substitute_env_vars(&s, &merged)),
                     bundled,
                     available_tools,
+                    tool_call_meta,
                 })
             }
             Self::StreamableHttp {
@@ -421,6 +436,7 @@ impl ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools,
+                tool_call_meta,
             } => {
                 // Resolve the OAuth client secret alongside env_keys so that
                 // rotating it changes the resolved config, which is what
@@ -451,6 +467,7 @@ impl ExtensionConfig {
                     scopes,
                     bundled,
                     available_tools,
+                    tool_call_meta,
                 })
             }
             other => Ok(other),
@@ -824,6 +841,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -848,6 +866,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "header_substitution"
     )]
@@ -863,6 +882,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -875,6 +895,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "env_keys_cleared"
     )]
@@ -890,6 +911,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -906,6 +928,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "env_key_resolved"
     )]
@@ -929,6 +952,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -950,6 +974,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "http_env_key_and_header_substitution"
     )]
@@ -968,6 +993,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -987,6 +1013,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "http_env_key_uri_substitution"
     )]
@@ -1006,6 +1033,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1022,6 +1050,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "env_key_skipped_when_already_in_envs"
     )]
@@ -1040,6 +1069,7 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1059,6 +1089,7 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "http_client_id_substitution_and_oauth_fields_preserved"
     )]
@@ -1077,6 +1108,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1096,6 +1128,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "http_client_secret_key_resolved_without_env_keys_entry"
     )]
@@ -1131,6 +1164,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         };
 
         let resolved = config.resolve(&cfg).await.unwrap();
@@ -1159,6 +1193,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         };
         assert_eq!(
             config.to_string(),
@@ -1182,6 +1217,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         };
         assert_eq!(
             config.to_string(),

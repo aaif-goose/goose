@@ -473,6 +473,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 cwd: None,
                 bundled: Some(false),
                 available_tools: vec![],
+                tool_call_meta: Default::default(),
             })
         }
         McpServer::Http(http) => {
@@ -495,6 +496,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 scopes: vec![],
                 bundled: Some(false),
                 available_tools: vec![],
+                tool_call_meta: Default::default(),
             })
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
@@ -3130,6 +3132,7 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         })
     )]
     #[test_case(
@@ -3154,6 +3157,7 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         })
     )]
     #[test_case(

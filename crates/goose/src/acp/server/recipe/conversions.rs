@@ -334,6 +334,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                tool_call_meta: Default::default(),
             },
             RecipeExtensionDto::StreamableHttp {
                 name,
@@ -363,6 +364,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                tool_call_meta: Default::default(),
             },
         })
     }
@@ -412,6 +414,8 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 cwd,
                 bundled,
                 available_tools,
+                // The published recipe DTO has no field for it.
+                tool_call_meta: _,
             } => Self::Stdio {
                 name,
                 description: Some(description),
@@ -438,6 +442,8 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 scopes,
                 bundled,
                 available_tools,
+                // The published recipe DTO has no field for it.
+                tool_call_meta: _,
             } => Self::StreamableHttp {
                 name,
                 description: Some(description),

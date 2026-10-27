@@ -313,6 +313,7 @@ fn goose_extension_to_config(
                     cwd: None,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
+                    tool_call_meta: Default::default(),
                 }
             }
             McpServer::Http(http) => ExtensionConfig::StreamableHttp {
@@ -333,6 +334,7 @@ fn goose_extension_to_config(
                 scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                tool_call_meta: Default::default(),
             },
             McpServer::Sse(_) => {
                 return Err(agent_client_protocol::Error::invalid_params()
@@ -520,6 +522,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec!["run".to_string()],
+            tool_call_meta: Default::default(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -584,6 +587,7 @@ mod tests {
             scopes: vec!["scope.read".to_string()],
             bundled: None,
             available_tools: vec!["fetch".to_string()],
+            tool_call_meta: Default::default(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -767,6 +771,7 @@ mod tests {
             scopes,
             bundled,
             available_tools,
+            tool_call_meta: _,
         } = conversion.config
         else {
             panic!("expected streamable http config");

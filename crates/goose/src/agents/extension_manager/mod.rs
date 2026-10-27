@@ -29,7 +29,9 @@ use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, Session};
-use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject, ServerConfig, Tool};
+use rmcp::model::{
+    CallToolResult, ErrorCode, ErrorData, JsonObject, MetaObject, ServerConfig, Tool,
+};
 use serde_json::Value;
 
 mod builtin;
@@ -795,6 +797,11 @@ impl ExtensionManager {
         };
         let container = placement.and_then(|placement| placement.container.as_ref());
 
+        let tool_call_meta = match &resolved_config {
+            ExtensionConfig::Stdio { tool_call_meta, .. }
+            | ExtensionConfig::StreamableHttp { tool_call_meta, .. } => tool_call_meta.clone(),
+            ExtensionConfig::Builtin { .. } | ExtensionConfig::Platform { .. } => JsonObject::new(),
+        };
         let tools_version = Arc::new(AtomicU64::new(0));
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
             timeout: Duration::from_secs(resolve_timeout(timeout)),
@@ -804,6 +811,7 @@ impl ExtensionManager {
             docker_container: None,
             action_required: self.context.session_manager.action_required(),
             tools_version: Arc::clone(&tools_version),
+            tool_call_meta: tool_call_meta.clone(),
         };
 
         let client: Box<dyn McpClientTrait> = match &resolved_config {
@@ -1843,6 +1851,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
     }
 

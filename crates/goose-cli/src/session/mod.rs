@@ -387,6 +387,7 @@ impl CliSession {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
+            tool_call_meta: Default::default(),
         })
     }
 
@@ -426,6 +427,7 @@ impl CliSession {
             scopes: vec![],
             bundled: None,
             available_tools: Vec::new(),
+            tool_call_meta: Default::default(),
         }
     }
 
@@ -2903,6 +2905,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "name_from_cmd_basename"
     )]
@@ -2919,6 +2922,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "env_prefix_name_from_cmd"
     )]
@@ -2935,6 +2939,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "quoted_path_with_spaces"
     )]
@@ -3112,6 +3117,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "name_from_host"
     )]
@@ -3131,6 +3137,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "port_and_path"
     )]
@@ -3150,6 +3157,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         }
         ; "different_port_and_path"
     )]

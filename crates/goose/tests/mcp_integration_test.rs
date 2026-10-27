@@ -165,6 +165,7 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
+        tool_call_meta: Default::default(),
     }
 }
 
@@ -183,7 +184,20 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
+        tool_call_meta: Default::default(),
     }
+}
+
+fn with_tool_call_meta(
+    mut config: ExtensionConfig,
+    meta: rmcp::model::JsonObject,
+) -> ExtensionConfig {
+    match &mut config {
+        ExtensionConfig::Stdio { tool_call_meta, .. }
+        | ExtensionConfig::StreamableHttp { tool_call_meta, .. } => *tool_call_meta = meta,
+        other => panic!("{other:?} has no tool_call_meta"),
+    }
+    config
 }
 
 fn platform(name: &str) -> ExtensionConfig {
@@ -587,6 +601,51 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert!(ExtensionSet::new("s", None, vec![todo.clone(), platform("Todo")]).is_err());
 }
 
+/// A server's configured `tool_call_meta` arrives in the `_meta` of every call
+/// to that server, alongside goose's own keys, and is not sent to any other
+/// server. Covers the legacy handshake and stateless 2026 HTTP, which build
+/// `_meta` in different places.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_reaches_only_its_server(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version.clone()).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let a2ui = serde_json::json!({
+        "clientCapabilities": { "v0.9": { "supportedCatalogIds": ["https://example.com/catalog.json"] } }
+    });
+    let configured = with_tool_call_meta(
+        http_fixture("configured", &http_server.url),
+        object!({ "a2ui": a2ui.clone() }),
+    );
+    let plain = stdio_fixture("plain", None, &["inspect_context"]);
+    fx.add(&session, &configured).await;
+    fx.add(&session, &plain).await;
+    let lease = fx.resolve(&session, &[configured, plain]).await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    let expected_protocol = client_protocol_version.unwrap_or(ProtocolVersion::V_2026_07_28);
+    assert_eq!(report.protocol_version, expected_protocol.as_str());
+    assert_eq!(report.request_meta.get("a2ui"), Some(&a2ui));
+    assert_eq!(
+        report.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+
+    let plain_report = inspect_context(&lease, "plain__inspect_context").await;
+    assert!(
+        !plain_report.request_meta.contains_key("a2ui"),
+        "{:?}",
+        plain_report.request_meta
+    );
+}
+
 /// Everything that crosses the wire besides a plain call: per-session tool
 /// lists, progress notifications, MCP-app hydration, forged result meta, and
 /// elicitation routed back to the originating call with and without the
@@ -901,6 +960,7 @@ async fn test_replayed_session(
         cwd: None,
         bundled: Some(false),
         available_tools: vec![],
+        tool_call_meta: Default::default(),
     };
 
     let temp_dir = tempfile::tempdir().unwrap();

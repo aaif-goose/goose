@@ -792,6 +792,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         &[
             r#"mcp_servers.lookup.command="node""#,
@@ -815,6 +816,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         &[
             r#"mcp_servers.lookup.url="http://localhost/mcp""#,
@@ -837,6 +839,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         &[
             r#"mcp_servers.mcp_kiwi_com.url="https://mcp.kiwi.com""#,
@@ -855,6 +858,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         },
         &[
             r#"mcp_servers.my-server.command="/usr/bin/my-server""#,
@@ -886,6 +890,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         };
 
         let error = codex_mcp_config_overrides(&[config]).unwrap_err();
