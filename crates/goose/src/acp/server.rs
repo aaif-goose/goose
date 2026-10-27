@@ -1,6 +1,5 @@
 use crate::acp::custom_notifications::*;
 use crate::acp::custom_requests::*;
-use crate::acp::fs::AcpTools;
 pub(super) use crate::acp::response_builder::{
     agent_thinking_effort_support, build_config_options, build_mode_state, build_model_state,
     build_provider_options, build_session_info, build_session_setup_config,
@@ -10,8 +9,7 @@ pub(super) use crate::acp::response_builder::{
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
-use crate::agents::mcp_client::{GooseMcpHostInfo, McpClientTrait};
-use crate::agents::platform_extensions::developer::DeveloperClient;
+use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations, turn_failure,
 };
@@ -47,17 +45,16 @@ use agent_client_protocol::schema::v1::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, ContentBlock, Cost, CurrentModeUpdate, DeleteSessionRequest,
-    DeleteSessionResponse, EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest,
-    ForkSessionResponse, ImageContent, Implementation, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    McpCapabilities, McpServer, Meta, NewSessionRequest, NewSessionResponse, PermissionOption,
-    PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionCloseCapabilities, SessionConfigOption, SessionDeleteCapabilities, SessionId,
-    SessionInfoUpdate, SessionListCapabilities, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, StopReason, TextContent, ToolCallId, ToolCallUpdate, Usage,
-    UsageUpdate,
+    DeleteSessionResponse, EmbeddedResourceResource, ForkSessionRequest, ForkSessionResponse,
+    ImageContent, Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
+    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer,
+    Meta, NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
+    SessionConfigOption, SessionDeleteCapabilities, SessionId, SessionInfoUpdate,
+    SessionListCapabilities, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
+    TextContent, ToolCallId, ToolCallUpdate, Usage, UsageUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::util::MatchDispatchFrom;
@@ -318,8 +315,6 @@ pub struct GooseAcpAgent {
     agent_manager: Arc<AgentManager>,
     provider_factory: AcpProviderFactory,
     builtin_selection: AcpBuiltinSelection,
-    client_fs_capabilities: OnceCell<FileSystemCapabilities>,
-    client_terminal: OnceCell<bool>,
     client_mcp_host_info: OnceCell<GooseMcpHostInfo>,
     client_supports_acp_elicitation: OnceCell<bool>,
     client_supports_goose_custom_notifications: OnceCell<bool>,
@@ -624,25 +619,6 @@ fn resolve_default_provider_model_config(
                     .data(format!("Failed to resolve model: {}", error))
             })?;
     Ok((resolved_provider, resolved_model_config))
-}
-
-async fn resolve_provider_default_model_config(
-    provider_name: &str,
-) -> Result<goose_providers::model::ModelConfig, agent_client_protocol::Error> {
-    let entry = crate::providers::get_from_registry(provider_name)
-        .await
-        .map_err(|error| {
-            agent_client_protocol::Error::invalid_params()
-                .data(format!("Unknown provider '{}': {}", provider_name, error))
-        })?;
-    crate::model_config::model_config_from_user_config(
-        provider_name,
-        &entry.metadata().default_model,
-    )
-    .map_err(|error| {
-        agent_client_protocol::Error::internal_error()
-            .data(format!("Failed to resolve model: {}", error))
-    })
 }
 
 fn render_resource_link(link: &ResourceLink) -> String {
@@ -964,8 +940,6 @@ impl GooseAcpAgent {
             agent_manager,
             provider_factory: options.provider_factory,
             builtin_selection: options.builtin_selection,
-            client_fs_capabilities: OnceCell::new(),
-            client_terminal: OnceCell::new(),
             client_mcp_host_info: OnceCell::new(),
             client_supports_acp_elicitation: OnceCell::new(),
             client_supports_goose_custom_notifications: OnceCell::new(),
@@ -1053,70 +1027,6 @@ impl GooseAcpAgent {
             .map_err(|error| agent_creation_error(error, "Failed to create agent"))
     }
 
-    async fn apply_acp_extension_overrides(
-        &self,
-        cx: &ConnectionTo<Client>,
-        agent: &Arc<Agent>,
-        session: &Session,
-    ) -> Result<(), agent_client_protocol::Error> {
-        let client_fs_capabilities = self
-            .client_fs_capabilities
-            .get()
-            .cloned()
-            .unwrap_or_default();
-        let client_terminal = self.client_terminal.get().copied().unwrap_or(false);
-        if !client_fs_capabilities.read_text_file
-            && !client_fs_capabilities.write_text_file
-            && !client_terminal
-        {
-            return Ok(());
-        }
-
-        if !agent
-            .extension_manager
-            .is_extension_enabled(&session.id, "developer")
-            .await
-            .internal_err()?
-        {
-            return Ok(());
-        }
-
-        let dev_client = match DeveloperClient::new() {
-            Ok(dev_client) => dev_client,
-            Err(error) => {
-                warn!(error = %error, "Failed to create ACP developer client");
-                return Ok(());
-            }
-        };
-
-        let session_id = SessionId::new(session.id.clone());
-        let client: Arc<dyn McpClientTrait> = Arc::new(AcpTools {
-            inner: Arc::new(dev_client),
-            cx: cx.clone(),
-            session_id: session_id.clone(),
-            tool_call_notifier: ToolCallNotifier::new(cx, &session_id),
-            fs_read: client_fs_capabilities.read_text_file,
-            fs_write: client_fs_capabilities.write_text_file,
-            terminal: client_terminal,
-        });
-        let info = client.get_info().cloned();
-
-        let developer_config = agent
-            .extension_manager
-            .get_extension_configs(&session.id)
-            .await
-            .internal_err()?
-            .into_iter()
-            .find(|extension| extension.name() == "developer")
-            .unwrap_or_else(|| builtin_to_extension_config("developer"));
-
-        agent
-            .extension_manager
-            .add_client(&session.id, developer_config, client, info)
-            .await;
-        Ok(())
-    }
-
     async fn prepare_acp_session_agent(
         &self,
         cx: &ConnectionTo<Client>,
@@ -1124,8 +1034,6 @@ impl GooseAcpAgent {
     ) -> Result<(Arc<Agent>, Vec<ExtensionLoadResult>), agent_client_protocol::Error> {
         let agent = self
             .get_or_create_session_agent(cx, session.id.clone())
-            .await?;
-        self.apply_acp_extension_overrides(cx, &agent, session)
             .await?;
         // Leases start extensions on first use anyway; starting them here is
         // what lets the session response report extensions that fail.
@@ -1537,7 +1445,7 @@ impl GooseAcpAgent {
         session_id: &SessionId,
         cx: &ConnectionTo<Client>,
     ) -> Result<(), agent_client_protocol::Error> {
-        let fields = tool_call_update_fields_from_response(tool_response, tool_request, false);
+        let fields = tool_call_update_fields_from_response(tool_response, tool_request);
 
         let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
             .meta(tool_response_meta(tool_response));
@@ -1786,10 +1694,6 @@ impl GooseAcpAgent {
     ) -> Result<InitializeResponse, agent_client_protocol::Error> {
         debug!(?args, "initialize request");
 
-        let _ = self
-            .client_fs_capabilities
-            .set(args.client_capabilities.fs.clone());
-        let _ = self.client_terminal.set(args.client_capabilities.terminal);
         let goose_client_capabilities =
             extract_client_capabilities_meta(&args).and_then(|meta| meta.goose);
         let _ = self.client_mcp_host_info.set(extract_client_mcp_host_info(

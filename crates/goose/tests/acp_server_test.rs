@@ -20,16 +20,14 @@ use common_tests::fixtures::{
 use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
-    run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
-    run_fs_write_text_file_true, run_initialize_doesnt_hit_provider, run_list_sessions,
-    run_load_mode, run_load_model, run_load_session_error, run_load_session_mcp,
+    run_delete_session, run_initialize_doesnt_hit_provider, run_list_sessions, run_load_mode,
+    run_load_model, run_load_session_error, run_load_session_mcp,
     run_load_session_replays_image_attachment, run_mode_set, run_model_list, run_model_set,
     run_model_set_error_session_not_found, run_new_session_returns_initial_config,
     run_new_session_uses_current_config_mode, run_permission_persistence, run_prompt_basic,
     run_prompt_error, run_prompt_image, run_prompt_image_attachment, run_prompt_mcp,
-    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification,
-    run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
-    OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
+    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification, run_shell,
+    run_write_file, GENERATED_SESSION_TITLE, OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
@@ -792,18 +790,8 @@ fn test_delete_session() {
 }
 
 #[test]
-fn test_fs_read_text_file_true() {
-    run_test(async { run_fs_read_text_file_true::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_false() {
-    run_test(async { run_fs_write_text_file_false::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_true() {
-    run_test(async { run_fs_write_text_file_true::<AcpServerConnection>().await });
+fn test_write_file() {
+    run_test(async { run_write_file::<AcpServerConnection>().await });
 }
 
 #[test]
@@ -999,6 +987,30 @@ fn test_new_session_honors_recipe_model_without_recipe_provider() {
             meta.get("providerId").and_then(|v| v.as_str()),
             Some("openai")
         );
+    });
+}
+
+#[test]
+fn test_new_session_rejects_unknown_provider_as_invalid_params() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "provider".to_string(),
+            serde_json::Value::String("not-a-provider".to_string()),
+        );
+
+        let error: anyhow::Error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(work_dir.path()).meta(meta))
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+
+        assert_invalid_params(error);
     });
 }
 
@@ -1336,13 +1348,8 @@ fn test_prompt_skill() {
 }
 
 #[test]
-fn test_shell_terminal_false() {
-    run_test(async { run_shell_terminal_false::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_shell_terminal_true() {
-    run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+fn test_shell() {
+    run_test(async { run_shell::<AcpServerConnection>().await });
 }
 
 const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;

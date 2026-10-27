@@ -1,6 +1,7 @@
 //! OpenAI implementation of the live voice provider boundary.
 
 use crate::{
+    api_client::TlsConfig,
     live::{LiveSessionEndReason, LiveSessionEvent},
     live_voice_provider::{
         DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
@@ -52,6 +53,11 @@ impl OpenAiLiveVoiceProvider {
             instructions,
             delivery_failure_instructions,
         })
+    }
+
+    pub fn with_tls_config(mut self, tls_config: TlsConfig) -> Self {
+        self.client = self.client.with_tls_config(tls_config);
+        self
     }
 }
 

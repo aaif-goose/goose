@@ -12,6 +12,7 @@ use crate::api_client::ApiClient;
 pub type OpenRouterSessionIdProvider = Box<dyn Fn() -> Option<String> + Send + Sync>;
 use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::cache_semantics::{apply_chat_payload_breakpoints, CacheSemantics};
+use crate::canonical::{maybe_get_canonical_model_with_variant_fallback, strip_openrouter_variant};
 use crate::conversation::message::Message;
 use crate::decision::{DecisionProvider, DecisionRequest, DecisionResponse};
 use crate::errors::ProviderError;
@@ -565,19 +566,22 @@ impl Provider for OpenRouterProvider {
     async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .resolve(model, override_limit, || async {
-                // The catalog outranks the reported length, so a model it knows
-                // never needs the model list.
-                if let Some(canonical) =
-                    crate::canonical::maybe_get_canonical_model(&self.name, model)
-                {
+                let canonical = maybe_get_canonical_model_with_variant_fallback(&self.name, model);
+                let base = strip_openrouter_variant(model);
+                // Exact catalog rows outrank live exact IDs; base fallbacks come after both.
+                if let Some((canonical, false)) = &canonical {
                     return Ok(Some(canonical.limit.context));
                 }
-                Ok(self
-                    .get_or_fetch_models()
-                    .await?
+                let models = self.get_or_fetch_models().await?;
+                Ok(models
                     .iter()
                     .find(|info| info.id == model)
-                    .and_then(|info| info.context_length))
+                    .and_then(|info| info.context_length)
+                    .or_else(|| canonical.map(|(canonical, _)| canonical.limit.context))
+                    .or_else(|| {
+                        base.and_then(|base| models.iter().find(|info| info.id == base))
+                            .and_then(|info| info.context_length)
+                    }))
             })
             .await
     }
@@ -916,6 +920,68 @@ mod tests {
         assert_eq!(
             provider.get_context_limit(MODEL_NOT_IN_CATALOG, None).await,
             1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_uses_base_model_for_variant_not_in_catalog() {
+        let server = models_server(models_response(), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{MODEL_NOT_IN_CATALOG}:nitro"), None)
+                .await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_keeps_exact_variant_precedence() {
+        let variant = format!("{MODEL_NOT_IN_CATALOG}:nitro");
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [
+                { "id": MODEL_NOT_IN_CATALOG, "context_length": 1_048_576 },
+                { "id": variant, "context_length": 64_000 }
+            ]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(&variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_live_exact_variant_over_catalog_base() {
+        let variant = "deepseek/deepseek-v4-flash:nitro";
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": variant, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(provider.get_context_limit(variant, None).await, 64_000);
+    }
+
+    #[tokio::test]
+    async fn context_limit_prefers_catalog_base_when_live_variant_is_missing() {
+        let model = "deepseek/deepseek-v4-flash";
+        let catalog_limit =
+            crate::canonical::maybe_get_canonical_model(OPENROUTER_PROVIDER_NAME, model)
+                .unwrap()
+                .limit
+                .context;
+        let response = wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": model, "context_length": 64_000 }]
+        }));
+        let server = models_server(response, 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit(&format!("{model}:nitro"), None)
+                .await,
+            catalog_limit
         );
     }
 

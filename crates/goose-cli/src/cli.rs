@@ -18,7 +18,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
-use crate::commands::configure::handle_configure;
+use crate::commands::configure::{configure_provider_dialog, handle_configure};
 use crate::commands::info::handle_info;
 use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
@@ -38,7 +38,9 @@ use crate::commands::session::{handle_session_list, handle_session_remove, handl
 use crate::commands::skills::handle_skills_list;
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
-use crate::session::{build_session, SessionBuilderConfig};
+use crate::session::{
+    build_session, is_provider_unavailable_error, try_build_session, SessionBuilderConfig,
+};
 use goose::agents::Container;
 use goose::session::session_manager::SessionType;
 use goose::session::SessionManager;
@@ -2781,7 +2783,7 @@ async fn handle_default_session() -> Result<()> {
     let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
     let session_id = get_or_create_session_id(None, false, false, goose_mode).await?;
 
-    let mut session = build_session(SessionBuilderConfig {
+    let mut session = match try_build_session(SessionBuilderConfig {
         session_id,
         resume: false,
         fork: false,
@@ -2804,7 +2806,16 @@ async fn handle_default_session() -> Result<()> {
         container: None,
         stats: false,
     })
-    .await;
+    .await
+    {
+        Ok(session) => session,
+        Err(error) if is_provider_unavailable_error(&error) => loop {
+            if configure_provider_dialog().await? {
+                return Ok(());
+            }
+        },
+        Err(error) => return Err(error),
+    };
     session.interactive(None).await
 }
 

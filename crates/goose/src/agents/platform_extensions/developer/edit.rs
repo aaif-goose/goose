@@ -8,17 +8,6 @@ use serde::Deserialize;
 const NO_MATCH_PREVIEW_LINES: usize = 20;
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct FileReadParams {
-    /// Absolute path to the file to read.
-    pub path: String,
-    /// Line number to start reading from (1-based).
-    #[schemars(range(min = 1))]
-    pub line: Option<u32>,
-    /// Maximum number of lines to read.
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
 pub struct FileWriteParams {
     pub path: String,
     pub content: String,
@@ -42,25 +31,6 @@ fn visible_text(text: impl Into<String>) -> ContentBlock {
 impl EditTools {
     pub fn new() -> Self {
         Self
-    }
-
-    pub fn file_read_with_cwd(
-        &self,
-        params: FileReadParams,
-        working_dir: Option<&Path>,
-    ) -> CallToolResult {
-        let path = resolve_path(&params.path, working_dir);
-
-        match fs::read_to_string(&path) {
-            Ok(content) => {
-                let content = apply_line_limit(&content, params.line, params.limit);
-                CallToolResult::success(vec![visible_text(content)])
-            }
-            Err(error) => CallToolResult::error(vec![visible_text(format!(
-                "Failed to read {}: {}",
-                params.path, error
-            ))]),
-        }
     }
 
     pub fn file_write(&self, params: FileWriteParams) -> CallToolResult {
@@ -195,22 +165,6 @@ pub fn string_replace(content: &str, before: &str, after: &str) -> Result<String
     }
 }
 
-fn apply_line_limit(content: &str, line: Option<u32>, limit: Option<u32>) -> String {
-    if line.is_none() && limit.is_none() {
-        return content.to_string();
-    }
-    let lines: Vec<&str> = content.split_inclusive('\n').collect();
-    let start = line
-        .map(|l| (l as usize).saturating_sub(1))
-        .unwrap_or(0)
-        .min(lines.len());
-    let end = limit
-        .map(|l| start + l as usize)
-        .unwrap_or(lines.len())
-        .min(lines.len());
-    lines[start..end].concat()
-}
-
 pub fn resolve_path(path: &str, working_dir: Option<&Path>) -> PathBuf {
     let path = PathBuf::from(path);
     if path.is_absolute() {
@@ -283,7 +237,6 @@ mod tests {
     use rmcp::model::ContentBlock;
     use std::fs;
     use tempfile::TempDir;
-    use test_case::test_case;
 
     fn setup() -> TempDir {
         tempfile::tempdir().unwrap()
@@ -294,58 +247,6 @@ mod tests {
             ContentBlock::Text(text) => &text.text,
             _ => panic!("expected text"),
         }
-    }
-
-    #[test_case(None, None, "line1\nline2\nline3" ; "full content")]
-    #[test_case(Some(2), None, "line2\nline3" ; "from line 2")]
-    #[test_case(None, Some(2), "line1\nline2\n" ; "limit 2")]
-    #[test_case(Some(2), Some(1), "line2\n" ; "line 2 limit 1")]
-    #[test_case(Some(99), None, "" ; "beyond eof")]
-    fn test_apply_line_limit(line: Option<u32>, limit: Option<u32>, expected: &str) {
-        assert_eq!(
-            apply_line_limit("line1\nline2\nline3", line, limit),
-            expected
-        );
-    }
-
-    #[test]
-    fn test_file_read() {
-        let dir = setup();
-        let path = dir.path().join("read.txt");
-        fs::write(&path, "line1\nline2\nline3").unwrap();
-        let tools = EditTools::new();
-
-        let result = tools.file_read_with_cwd(
-            FileReadParams {
-                path: path.to_string_lossy().to_string(),
-                line: None,
-                limit: None,
-            },
-            None,
-        );
-
-        assert!(!result.is_error.unwrap_or(false));
-        assert_eq!(extract_text(&result), "line1\nline2\nline3");
-    }
-
-    #[test]
-    fn test_file_read_partial() {
-        let dir = setup();
-        let path = dir.path().join("read.txt");
-        fs::write(&path, "line1\nline2\nline3").unwrap();
-        let tools = EditTools::new();
-
-        let result = tools.file_read_with_cwd(
-            FileReadParams {
-                path: path.to_string_lossy().to_string(),
-                line: Some(2),
-                limit: Some(1),
-            },
-            None,
-        );
-
-        assert!(!result.is_error.unwrap_or(false));
-        assert_eq!(extract_text(&result), "line2\n");
     }
 
     #[test]

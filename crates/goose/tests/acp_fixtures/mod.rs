@@ -2,11 +2,8 @@
 #![allow(unused_attributes)]
 
 use agent_client_protocol::schema::v1::{
-    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
-    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
-    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse, ToolCallContent,
-    ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
-    WriteTextFileResponse,
+    ListSessionsResponse, McpServer, SessionModeState, SessionUpdate, ToolCallContent,
+    ToolCallStatus, ToolKind,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -535,190 +532,6 @@ pub fn assert_notifications(actual: &[Notification], expected: &[Notification]) 
     assert_eq!(actual, expected);
 }
 
-type ReadTextFileHandler =
-    Arc<dyn Fn(&ReadTextFileRequest) -> Result<ReadTextFileResponse, String> + Send + Sync>;
-type WriteTextFileHandler =
-    Arc<dyn Fn(&WriteTextFileRequest) -> Result<WriteTextFileResponse, String> + Send + Sync>;
-
-#[derive(Clone)]
-pub struct FsFixture {
-    calls: Arc<Mutex<Vec<Result<(), String>>>>,
-}
-
-impl FsFixture {
-    pub fn new() -> Self {
-        Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn read_handler(&self, expected_path: &str, content: &str) -> ReadTextFileHandler {
-        let calls = self.calls.clone();
-        let expected_path = expected_path.to_string();
-        let content = content.to_string();
-        Arc::new(move |req: &ReadTextFileRequest| {
-            let path = req.path.to_str().unwrap_or("");
-            if path != expected_path {
-                let err = format!("expected path {expected_path}, got {path}");
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            calls.lock().unwrap().push(Ok(()));
-            Ok(ReadTextFileResponse::new(&content))
-        })
-    }
-
-    pub fn write_handler(
-        &self,
-        expected_path: &str,
-        expected_content: &str,
-    ) -> WriteTextFileHandler {
-        let calls = self.calls.clone();
-        let expected_path = expected_path.to_string();
-        let expected_content = expected_content.to_string();
-        Arc::new(move |req: &WriteTextFileRequest| {
-            let path = req.path.to_str().unwrap_or("");
-            if path != expected_path {
-                let err = format!("expected path {expected_path}, got {path}");
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            if req.content != expected_content {
-                let err = format!("expected content {expected_content}, got {}", req.content);
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            calls.lock().unwrap().push(Ok(()));
-            Ok(WriteTextFileResponse::new())
-        })
-    }
-
-    pub fn assert_called(&self) {
-        let calls = self.calls.lock().unwrap();
-        assert!(!calls.is_empty(), "fs handler was never called");
-        let errors: Vec<_> = calls.iter().filter_map(|c| c.as_ref().err()).collect();
-        assert!(errors.is_empty(), "fs handler errors: {errors:?}");
-    }
-}
-
-/// Expected terminal calls. Each variant carries (expected_input, return_value) data,
-/// like OpenAiFixture's (pattern, response) pairs.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum TerminalCall {
-    Create(String, String),      // (command, terminal_id)
-    WaitForExit(String, u32),    // (terminal_id, exit_code)
-    Output(String, String, u32), // (terminal_id, text, exit_code)
-    Release(String),             // terminal_id
-    Kill(String),                // terminal_id
-}
-
-impl TerminalCall {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Create(..) => "create",
-            Self::WaitForExit(..) => "wait_for_exit",
-            Self::Output(..) => "output",
-            Self::Release(_) => "release",
-            Self::Kill(_) => "kill",
-        }
-    }
-}
-
-pub struct TerminalFixture {
-    queue: Arc<Mutex<VecDeque<TerminalCall>>>,
-    errors: Arc<Mutex<Vec<String>>>,
-}
-
-impl TerminalFixture {
-    pub fn new(calls: Vec<TerminalCall>) -> Arc<Self> {
-        Arc::new(Self {
-            queue: Arc::new(Mutex::new(VecDeque::from(calls))),
-            errors: Arc::new(Mutex::new(Vec::new())),
-        })
-    }
-
-    fn pop(&self, expected: &str) -> Option<TerminalCall> {
-        let Some(call) = self.queue.lock().unwrap().pop_front() else {
-            self.record_error(format!("unexpected {expected}: queue empty"));
-            return None;
-        };
-        if call.name() != expected {
-            self.record_error(format!("expected {expected}, got {}", call.name()));
-            return None;
-        }
-        Some(call)
-    }
-
-    fn record_error(&self, msg: String) {
-        self.errors.lock().unwrap().push(msg);
-    }
-
-    fn validate_terminal_id(&self, method: &str, expected: &str, actual: &TerminalId) {
-        if expected != actual.0.as_ref() {
-            self.record_error(format!(
-                "{method}: expected terminal_id {expected}, got {actual}"
-            ));
-        }
-    }
-
-    pub fn on_create(&self, command: &str) -> CreateTerminalResponse {
-        if let Some(TerminalCall::Create(expect_command, terminal_id)) = self.pop("create") {
-            if command != expect_command {
-                self.record_error(format!(
-                    "create: expected command {expect_command}, got {command}"
-                ));
-            }
-            CreateTerminalResponse::new(TerminalId::new(terminal_id))
-        } else {
-            CreateTerminalResponse::new(TerminalId::new("error"))
-        }
-    }
-
-    pub fn on_wait_for_exit(&self, terminal_id: &TerminalId) -> WaitForTerminalExitResponse {
-        if let Some(TerminalCall::WaitForExit(expected_id, exit_code)) = self.pop("wait_for_exit") {
-            self.validate_terminal_id("wait_for_exit", &expected_id, terminal_id);
-            WaitForTerminalExitResponse::new(TerminalExitStatus::new().exit_code(exit_code))
-        } else {
-            WaitForTerminalExitResponse::new(TerminalExitStatus::new().exit_code(1))
-        }
-    }
-
-    pub fn on_output(&self, terminal_id: &TerminalId) -> TerminalOutputResponse {
-        if let Some(TerminalCall::Output(expected_id, text, exit_code)) = self.pop("output") {
-            self.validate_terminal_id("output", &expected_id, terminal_id);
-            TerminalOutputResponse::new(text, false)
-                .exit_status(TerminalExitStatus::new().exit_code(exit_code))
-        } else {
-            TerminalOutputResponse::new("", false)
-        }
-    }
-
-    pub fn on_release(&self, terminal_id: &TerminalId) -> ReleaseTerminalResponse {
-        if let Some(TerminalCall::Release(expected_id)) = self.pop("release") {
-            self.validate_terminal_id("release", &expected_id, terminal_id);
-        }
-        ReleaseTerminalResponse::new()
-    }
-
-    pub fn on_kill(&self, terminal_id: &TerminalId) -> KillTerminalResponse {
-        if let Some(TerminalCall::Kill(expected_id)) = self.pop("kill") {
-            self.validate_terminal_id("kill", &expected_id, terminal_id);
-        }
-        KillTerminalResponse::new()
-    }
-
-    pub fn assert_called(&self) {
-        let errors = self.errors.lock().unwrap();
-        assert!(errors.is_empty(), "terminal fixture errors: {errors:?}");
-        let queue = self.queue.lock().unwrap();
-        assert!(
-            queue.is_empty(),
-            "terminal fixture has unconsumed calls: {queue:?}"
-        );
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelStateFixture {
     pub current_model_id: String,
@@ -739,9 +552,6 @@ pub struct TestConnectionConfig {
     pub cwd: Option<tempfile::TempDir>,
     pub data_root: PathBuf,
     pub provider_factory: Option<AcpProviderFactory>,
-    pub read_text_file: Option<ReadTextFileHandler>,
-    pub write_text_file: Option<WriteTextFileHandler>,
-    pub terminal: Option<Arc<TerminalFixture>>,
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
     pub disable_session_naming: bool,
@@ -756,9 +566,6 @@ impl Default for TestConnectionConfig {
             cwd: None,
             data_root: PathBuf::new(),
             provider_factory: None,
-            read_text_file: None,
-            write_text_file: None,
-            terminal: None,
             current_model: TEST_MODEL.to_string(),
             disable_session_naming: true,
         }

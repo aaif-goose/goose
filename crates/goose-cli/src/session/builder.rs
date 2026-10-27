@@ -646,6 +646,22 @@ async fn configure_session_prompts(
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    match try_build_session(session_config).await {
+        Ok(session) => session,
+        Err(error) => {
+            output::render_error(&format!(
+                "Error {}.\n\
+                Please check your system keychain and run 'goose configure' again.\n\
+                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
+                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
+                error
+            ));
+            process::exit(1);
+        }
+    }
+}
+
+pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::Result<CliSession> {
     #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("cli", session_config.resume);
 
@@ -774,26 +790,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model_config,
                     ),
                     Err(e2) => {
-                        output::render_error(&format!(
-                        "Error {}.\n\
-                        Please check your system keychain and run 'goose configure' again.\n\
-                        If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                        For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                        e2
-                    ));
-                        process::exit(1);
+                        return Err(e2);
                     }
                 }
             }
             Err(e) => {
-                output::render_error(&format!(
-                "Error {}.\n\
-                Please check your system keychain and run 'goose configure' again.\n\
-                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                e
-            ));
-                process::exit(1);
+                return Err(e);
             }
         };
     tracing::info!("🤖 Using model: {}", effective_model_name);
@@ -898,10 +900,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             &Some(session_id),
         );
     }
-    session
+    Ok(session)
 }
 
-fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
+pub fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string();
     msg.contains("is not set")
         || msg.contains("not configured")

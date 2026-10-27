@@ -1,4 +1,3 @@
-use crate::acp::tools::AcpAwareToolMeta;
 use crate::agents::extension_manager::TRUSTED_TOOL_UPDATE_META_KEY;
 use crate::conversation::message::{Message, ToolNameParts, ToolRequest, ToolResponse};
 use crate::mcp_utils::ToolResult;
@@ -297,7 +296,6 @@ fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<s
 pub(crate) fn tool_call_update_fields_from_response(
     tool_response: &ToolResponse,
     tool_request: Option<&ToolRequest>,
-    include_content_for_acp_aware_tools: bool,
 ) -> ToolCallUpdateFields {
     let is_failed = match &tool_response.tool_result {
         Ok(result) => result.is_error == Some(true),
@@ -313,26 +311,15 @@ pub(crate) fn tool_call_update_fields_from_response(
     if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
         fields = fields.raw_output(raw_output);
     }
-    let is_acp_aware = tool_response
-        .tool_result
-        .as_ref()
-        .is_ok_and(|result| result.is_acp_aware());
-    let include_content = include_content_for_acp_aware_tools || is_failed || !is_acp_aware;
-    let include_locations = !is_acp_aware;
+    fields = fields.content(build_tool_call_content(&tool_response.tool_result));
 
-    if include_content {
-        fields = fields.content(build_tool_call_content(&tool_response.tool_result));
-    }
-
-    if include_locations {
-        let locations = extract_tool_locations_from_response(tool_response).unwrap_or_else(|| {
-            tool_request
-                .map(extract_tool_locations_from_request)
-                .unwrap_or_default()
-        });
-        if !locations.is_empty() {
-            fields = fields.locations(locations);
-        }
+    let locations = extract_tool_locations_from_response(tool_response).unwrap_or_else(|| {
+        tool_request
+            .map(extract_tool_locations_from_request)
+            .unwrap_or_default()
+    });
+    if !locations.is_empty() {
+        fields = fields.locations(locations);
     }
 
     fields
@@ -842,7 +829,7 @@ mod tests {
             let response = response_from_tool_result(Ok(result));
             let request = write_request("/tmp/request.txt");
 
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
+            let fields = tool_call_update_fields_from_response(&response, Some(&request));
 
             assert_eq!(fields.status, Some(ToolCallStatus::Completed));
             assert_eq!(fields.raw_output, Some(raw_output));
@@ -860,39 +847,11 @@ mod tests {
                     "write failed",
                 )])));
 
-            let fields = tool_call_update_fields_from_response(&response, None, false);
+            let fields = tool_call_update_fields_from_response(&response, None);
 
             assert_eq!(fields.status, Some(ToolCallStatus::Failed));
             assert_eq!(first_tool_call_text(&fields), Some("write failed"));
             assert!(fields.locations.is_none());
-        }
-
-        #[test]
-        fn suppresses_acp_aware_success_details() {
-            let raw_output = serde_json::json!({ "changed": true });
-            let mut result = CallToolResult::success(vec![RmcpContent::text("write completed")]);
-            result.structured_content = Some(raw_output.clone());
-            let response = response_from_tool_result(Ok(result.with_acp_aware_meta()));
-            let request = write_request("/tmp/request.txt");
-
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Completed));
-            assert_eq!(fields.raw_output, Some(raw_output));
-            assert!(fields.content.is_none());
-            assert!(fields.locations.is_none());
-        }
-
-        #[test]
-        fn includes_acp_aware_success_content_when_requested() {
-            let result = CallToolResult::success(vec![RmcpContent::text("write completed")])
-                .with_acp_aware_meta();
-            let response = response_from_tool_result(Ok(result));
-
-            let fields = tool_call_update_fields_from_response(&response, None, true);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Completed));
-            assert_eq!(first_tool_call_text(&fields), Some("write completed"));
         }
 
         #[test]
@@ -902,26 +861,12 @@ mod tests {
             })));
             let request = write_request("/tmp/request.txt");
 
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
+            let fields = tool_call_update_fields_from_response(&response, Some(&request));
 
             let locations = fields.locations.as_deref().expect("expected location");
             assert_eq!(locations.len(), 1);
             assert_eq!(locations[0].path, PathBuf::from("/tmp/response.txt"));
             assert_eq!(locations[0].line, Some(7));
-        }
-
-        #[test]
-        fn includes_acp_aware_error_content() {
-            let result = CallToolResult::error(vec![RmcpContent::text("write failed")])
-                .with_acp_aware_meta();
-            let response = response_from_tool_result(Ok(result));
-            let request = write_request("/tmp/request.txt");
-
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Failed));
-            assert_eq!(first_tool_call_text(&fields), Some("write failed"));
-            assert!(fields.locations.is_none());
         }
 
         #[test]
@@ -932,7 +877,7 @@ mod tests {
                 None,
             )));
 
-            let fields = tool_call_update_fields_from_response(&response, None, false);
+            let fields = tool_call_update_fields_from_response(&response, None);
 
             assert_eq!(fields.status, Some(ToolCallStatus::Failed));
             assert_eq!(first_tool_call_text(&fields), Some("transport failed"));
