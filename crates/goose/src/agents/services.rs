@@ -452,10 +452,13 @@ impl StateMachineServices {
     }
 
     /// For a connection that went away without closing: its sessions keep running.
-    pub fn detach_connection(&self, connection: u64) {
-        for (session_id, latest) in self.runtime.detach_connection(connection) {
-            self.extension_manager
-                .attach_client(&session_id, latest.client);
+    pub async fn detach_connection(&self, connection: u64) {
+        for session_id in self.runtime.sessions_for_connection(connection) {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            if let Some(latest) = self.runtime.detach(&session_id, connection) {
+                self.extension_manager
+                    .attach_client(&session_id, latest.client);
+            }
         }
     }
 
@@ -836,11 +839,17 @@ impl StateMachineServices {
             }
         }
 
-        let turn_guard = self
-            .runtime
-            .confirmations
-            .session(&session_id)
-            .try_start_turn()?;
+        let (turn_guard, evicted) = {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            let turn_guard = self
+                .runtime
+                .confirmations
+                .session(&session_id)
+                .try_start_turn()?;
+            let evicted = self.runtime.touch(&session_id);
+            (turn_guard, evicted)
+        };
+        self.evict(evicted).await;
         turn_guard.state().start_new_turn();
 
         if let Some(schedule_id) = session_config.schedule_id.clone() {

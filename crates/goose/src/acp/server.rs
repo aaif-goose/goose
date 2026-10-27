@@ -332,7 +332,11 @@ pub struct AcpConnection {
 
 impl Drop for AcpConnection {
     fn drop(&mut self) {
-        self.services.detach_connection(self.connection_id);
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let services = Arc::clone(&self.services);
+            let connection_id = self.connection_id;
+            handle.spawn(async move { services.detach_connection(connection_id).await });
+        }
     }
 }
 

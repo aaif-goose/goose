@@ -130,22 +130,14 @@ impl SessionRuntime {
         latest
     }
 
-    /// Removes the connection from every session it had open; returns, per session that
-    /// still has a connection, the one it talks to now.
-    pub(super) fn detach_connection(&self, connection: u64) -> Vec<(String, Attachment)> {
-        let mut attachments = self.attachments.lock().expect("session runtime poisoned");
-        let mut repointed = Vec::new();
-        attachments.retain(|session_id, connections| {
-            let was_latest = connections.last().is_some_and(|(id, _)| *id == connection);
-            connections.shift_remove(&connection);
-            if was_latest {
-                if let Some((_, attachment)) = connections.last() {
-                    repointed.push((session_id.clone(), attachment.clone()));
-                }
-            }
-            !connections.is_empty()
-        });
-        repointed
+    pub(super) fn sessions_for_connection(&self, connection: u64) -> Vec<String> {
+        self.attachments
+            .lock()
+            .expect("session runtime poisoned")
+            .iter()
+            .filter(|(_, connections)| connections.contains_key(&connection))
+            .map(|(session_id, _)| session_id.clone())
+            .collect()
     }
 
     pub(super) fn session_names(
