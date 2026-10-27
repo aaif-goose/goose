@@ -700,13 +700,20 @@ fn remember_thinking_replay_disabled(session_id: &str) {
     }
 }
 
-/// Strip thinking blocks from every turn except the one currently in flight.
+/// How many trailing messages may keep their thinking blocks when replay is
+/// being suppressed.
 ///
-/// The current turn starts at the last user message that carries real text
-/// (tool responses are user-role messages too, so they do not start a turn).
-/// Keeping the current turn intact preserves the reasoning around this turn's
-/// tool calls - the part the model benefits most from replaying - while
-/// dropping earlier turns, which is where stale signatures accumulate.
+/// A single turn can stay open across many tool rounds - or across a restart -
+/// so "the current turn" alone is not a safe boundary: blocks produced before
+/// a restart are bound to a prefix that no longer exists and would be rejected
+/// forever. Capping the window keeps the reasoning that matters for the next
+/// tool call without resurrecting stale blocks.
+const THINKING_REPLAY_KEEP_WINDOW: usize = 8;
+
+/// Strip thinking blocks from everything older than the current turn, where
+/// the current turn starts at the last user message carrying real text (tool
+/// responses are user-role messages too, so they do not start a turn) and is
+/// capped at [`THINKING_REPLAY_KEEP_WINDOW`] trailing messages.
 fn strip_thinking_before_current_turn(messages: &[Message]) -> Vec<Message> {
     let turn_start = messages
         .iter()
@@ -718,13 +725,14 @@ fn strip_thinking_before_current_turn(messages: &[Message]) -> Vec<Message> {
                     .any(|content| matches!(content, MessageContent::Text(_)))
         })
         .unwrap_or(0);
+    let keep_from = turn_start.max(messages.len().saturating_sub(THINKING_REPLAY_KEEP_WINDOW));
 
     messages
         .iter()
         .enumerate()
         .map(|(index, message)| {
             let mut stripped = message.clone();
-            if index < turn_start {
+            if index < keep_from {
                 stripped.content.retain(|content| {
                     !matches!(
                         content,
@@ -1324,6 +1332,35 @@ mod tests {
             MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
         )));
         assert!(stripped[3]
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::Thinking(_))));
+    }
+    #[test]
+    fn strip_thinking_before_current_turn_caps_the_window() {
+        use rmcp::model::Role;
+
+        // A long turn: the user message sits at the front, then many rounds.
+        let mut messages = vec![Message::new(
+            Role::User,
+            0,
+            vec![MessageContent::text("long running task")],
+        )];
+        for i in 1..12 {
+            messages.push(Message::new(
+                Role::Assistant,
+                i,
+                vec![MessageContent::thinking("reasoning", "sig")],
+            ));
+        }
+
+        let stripped = strip_thinking_before_current_turn(&messages);
+
+        // Everything older than the window loses its thinking, including
+        // blocks that are still inside the same open turn.
+        assert!(stripped[1].content.is_empty());
+        // The trailing window keeps its reasoning.
+        assert!(stripped[messages.len() - 1]
             .content
             .iter()
             .any(|content| matches!(content, MessageContent::Thinking(_))));
