@@ -6,7 +6,6 @@ use std::sync::Arc;
 use async_stream::try_stream;
 use futures::stream::StreamExt;
 use serde_json::{json, Value};
-use tracing::debug;
 
 use super::gen_ai_telemetry;
 use crate::config::Config;
@@ -292,93 +291,31 @@ pub(crate) async fn stream_response_from_provider(
     let model_config =
         model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
     let request_started = std::time::Instant::now();
-    debug!("WAITING_LLM_STREAM_START");
-    let stream_result = crate::session_context::with_session_id(
-        Some(session_id.clone()),
-        provider.stream(
-            &model_config,
-            system_prompt.as_str(),
-            messages_for_provider.messages(),
-            &tools,
-        ),
-    )
-    .await;
-    debug!("WAITING_LLM_STREAM_END");
-
-    // If there was an error creating the stream, return a stream that yields that error
-    let mut stream = match stream_result {
-        Ok(s) => s,
-        Err(e) => {
-            let enhanced_error = enhance_model_error(e, &provider, config.toolshim).await;
-            // Return a stream that immediately yields the error
-            // This allows the error to be caught by existing error handling in agent.rs
-            return Ok(Box::pin(try_stream! {
-                yield Err(enhanced_error)?;
-            }));
-        }
-    };
-
-    Ok(Box::pin(try_stream! {
-        if !provider.manages_own_context() {
-            let retry_config = provider.retry_config().transient_only();
-            let mut attempts = 0;
-
-            loop {
-                match stream.next().await {
-                    None => break,
-                    Some(Ok(item)) => {
-                        stream = Box::pin(
-                            futures::stream::once(std::future::ready(Ok(item))).chain(stream),
-                        );
-                        break;
-                    }
-                    Some(Err(error))
-                        if goose_providers::retry::should_retry(&error, &retry_config)
-                            && attempts < retry_config.max_retries =>
-                    {
-                        attempts += 1;
-                        let delay = match &error {
-                            ProviderError::RateLimitExceeded {
-                                retry_delay: Some(provider_delay),
-                                ..
-                            } => *provider_delay,
-                            _ => retry_config.delay_for_attempt(attempts),
-                        };
-                        warn!(
-                            "Provider stream failed before its first item, retrying ({}/{}): {:?}",
-                            attempts, retry_config.max_retries, error
-                        );
-
-                        let skip_backoff = std::env::var("GOOSE_PROVIDER_SKIP_BACKOFF")
-                            .unwrap_or_default()
-                            .parse::<bool>()
-                            .unwrap_or(false);
-                        if !skip_backoff {
-                            tokio::time::sleep(delay).await;
-                        }
-
-                        stream = match crate::session_context::with_session_id(
-                            Some(session_id.clone()),
-                            provider.stream(
-                                &model_config,
-                                system_prompt.as_str(),
-                                messages_for_provider.messages(),
-                                &tools,
-                            ),
-                        )
-                        .await
-                        {
-                            Ok(stream) => stream,
-                            Err(error) => {
-                                Err(enhance_model_error(error, &provider, config.toolshim).await)?
-                            }
-                        };
-                    }
-                    Some(Err(error)) => Err(error)?,
-                }
+    let budget = std::time::Duration::from_secs(
+        Config::global()
+            .get_param("GOOSE_PROVIDER_RETRY_TIMEOUT")
+            .unwrap_or(120),
+    );
+    let mut stream = goose_providers::retry::stream_with_recovery(
+        provider.clone(),
+        model_config,
+        system_prompt,
+        messages_for_provider.messages().clone(),
+        tools,
+        budget,
+    );
+    let mut stream: MessageStream = Box::pin(try_stream! {
+        while let Some(result) = crate::session_context::with_session_id(
+            Some(session_id.clone()), stream.next(),
+        ).await {
+            match result {
+                Ok(item) => yield item,
+                Err(error) => Err(enhance_model_error(error, &provider, config.toolshim).await)?,
             }
         }
+    });
 
+    Ok(Box::pin(try_stream! {
         if config.toolshim {
             // Toolshim mode: accumulate the full response before processing
             // so that tool-use markers spanning multiple chunks are detected
@@ -388,9 +325,24 @@ pub(crate) async fn stream_response_from_provider(
             let mut first_content_at: Option<std::time::Instant> = None;
 
             while let Some(result) = stream.next().await {
-                let (msg_opt, usage_opt) = result?;
+                let (msg_opt, usage_opt) = match result {
+                    Ok(item) => item,
+                    Err(error) => {
+                        if accumulated_message.is_some() || final_usage.is_some() {
+                            yield (accumulated_message.take().map(Message::with_generated_id_if_missing), final_usage.take());
+                        }
+                        Err(error)?;
+                        return;
+                    }
+                };
 
                 if let Some(msg) = msg_opt {
+                    if !msg.content.is_empty() && msg.content.iter().all(|content| {
+                        matches!(content, MessageContent::SystemNotification(_))
+                    }) {
+                        yield (Some(msg), usage_opt);
+                        continue;
+                    }
                     if first_content_at.is_none() && message_has_timing_content(&msg) {
                         first_content_at = Some(std::time::Instant::now());
                     }
@@ -659,7 +611,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -671,6 +623,7 @@ mod tests {
         .await
         .unwrap();
 
+        stream.next().await.unwrap().unwrap();
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].role, Role::User);
@@ -691,7 +644,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -703,6 +656,7 @@ mod tests {
         .await
         .unwrap();
 
+        stream.next().await.unwrap().unwrap();
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
         assert_eq!(captured[0].role, Role::User);
@@ -735,7 +689,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -747,6 +701,7 @@ mod tests {
         .await
         .unwrap();
 
+        stream.next().await.unwrap().unwrap();
         let captured = captured.lock().unwrap();
         let tool_response = captured
             .iter()
@@ -1288,8 +1243,13 @@ mod tests {
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let response = self.responses.lock().unwrap().pop_front().unwrap();
-            response.map(|items| Box::pin(futures::stream::iter(items)) as MessageStream)
+            let response = self.responses.lock().unwrap().pop_front();
+            match response {
+                Some(response) => {
+                    response.map(|items| Box::pin(futures::stream::iter(items)) as MessageStream)
+                }
+                None => futures::future::pending().await,
+            }
         }
     }
 
@@ -1323,6 +1283,12 @@ mod tests {
         ]));
         let calls = provider.calls.clone();
         let mut stream = stream_for_test(provider).await;
+        let progress = stream.next().await.unwrap().unwrap().0.unwrap();
+        assert!(!progress.is_agent_visible());
+        assert!(
+            matches!(&progress.content[0], MessageContent::SystemNotification(n)
+            if n.notification_type == SystemNotificationType::ProgressMessage)
+        );
 
         assert_eq!(
             stream
@@ -1353,8 +1319,8 @@ mod tests {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    #[tokio::test]
-    async fn first_item_retry_exhaustion_returns_last_error() {
+    #[tokio::test(start_paused = true)]
+    async fn recovery_budget_exhaustion_returns_last_error() {
         let provider = Arc::new(SequencedProvider::new(vec![
             Ok(vec![Err(transient_error())]),
             Ok(vec![Err(transient_error())]),
@@ -1363,11 +1329,15 @@ mod tests {
         let calls = provider.calls.clone();
         let mut stream = stream_for_test(provider).await;
 
-        assert!(matches!(
-            stream.next().await.unwrap(),
-            Err(ProviderError::NetworkError(_))
-        ));
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        let start = tokio::time::Instant::now();
+        while let Some(result) = stream.next().await {
+            if let Err(error) = result {
+                assert!(matches!(error, ProviderError::NetworkError(_)));
+                break;
+            }
+        }
+        assert_eq!(start.elapsed(), Duration::from_secs(120));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 4);
     }
 
     #[tokio::test]
@@ -1386,19 +1356,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replacement_stream_creation_error_does_not_retry() {
+    async fn replacement_stream_creation_error_retries() {
         let provider = Arc::new(SequencedProvider::new(vec![
             Ok(vec![Err(transient_error())]),
             Err(ProviderError::ServerError("unavailable".into())),
+            Ok(vec![successful_item()]),
         ]));
         let calls = provider.calls.clone();
         let mut stream = stream_for_test(provider).await;
 
-        assert!(matches!(
-            stream.next().await.unwrap(),
-            Err(ProviderError::ServerError(_))
-        ));
-        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        stream.next().await.unwrap().unwrap();
+        stream.next().await.unwrap().unwrap();
+        assert_eq!(
+            stream
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .0
+                .unwrap()
+                .as_concat_text(),
+            "ok"
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     #[tokio::test]
@@ -1415,6 +1395,75 @@ mod tests {
             stream.next().await.unwrap(),
             Err(ProviderError::NetworkError(_))
         ));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn toolshim_recovery_delivers_progress_before_buffered_output() {
+        let provider = Arc::new(SequencedProvider::new(vec![
+            Err(transient_error()),
+            Ok(vec![successful_item()]),
+        ]));
+        let mut stream = stream_response_from_provider(
+            provider,
+            ModelConfig::new("test-model").with_toolshim(true),
+            "session",
+            "system",
+            &[Message::user().with_text("hi")],
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+        let start = tokio::time::Instant::now();
+        let progress = stream.next().await.unwrap().unwrap().0.unwrap();
+        assert!(!progress.is_agent_visible());
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        assert!(matches!(
+            progress.content[0],
+            MessageContent::SystemNotification(_)
+        ));
+        let mut text = String::new();
+        while let Some(result) = stream.next().await {
+            if let Some(message) = result.unwrap().0 {
+                text.push_str(&message.as_concat_text());
+            }
+        }
+        assert_eq!(text, "ok");
+    }
+
+    #[tokio::test]
+    async fn toolshim_failure_preserves_partial_output_through_nested_recovery() {
+        let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![
+            successful_item(),
+            Err(transient_error()),
+        ])]));
+        let calls = provider.calls.clone();
+        let provider = Arc::new(crate::agents::state_machine::GooseInferenceProvider::new(
+            provider,
+        ));
+        let mut stream = goose_providers::retry::stream_with_recovery(
+            provider,
+            ModelConfig::new("test-model").with_toolshim(true),
+            "system".into(),
+            vec![Message::user().with_text("hi")],
+            vec![],
+            Duration::from_secs(120),
+        );
+        let mut text = String::new();
+        let mut failed = false;
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok((Some(message), _)) => text.push_str(&message.as_concat_text()),
+                Ok(_) => {}
+                Err(error) => {
+                    assert!(matches!(error, ProviderError::NetworkError(_)));
+                    failed = true;
+                }
+            }
+        }
+        assert_eq!(text, "ok");
+        assert!(failed);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 

@@ -27,7 +27,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing = { workspace = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 uuid = { workspace = true, features = ["v4", "std"] }
@@ -43,7 +43,7 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 env-lock = { workspace = true }
 tempfile = { workspace = true }
 test-case = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 tokio-stream = { workspace = true }
 
 [build-dependencies]

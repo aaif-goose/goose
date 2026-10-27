@@ -7,7 +7,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
 use goose_provider_types::base::Provider;
-use goose_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
+use goose_provider_types::conversation::message::{
+    InferenceMetadata, Message, MessageContent, SystemNotificationType,
+};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::conversation::{
     effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
@@ -15,6 +17,7 @@ use goose_provider_types::conversation::{
 };
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
+use goose_provider_types::retry::{default_recovery_budget, stream_with_recovery};
 use tracing_futures::Instrument;
 
 use crate::machine::MachineSession;
@@ -252,6 +255,7 @@ pub struct InferenceRunner<'a, S, E> {
     request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
     output: Mutex<InferenceOutput>,
     effect: std::marker::PhantomData<fn() -> E>,
+    recovery_budget: std::time::Duration,
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
@@ -348,6 +352,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
             request_preparer: Arc::new(IdentityInferenceRequestPreparer),
             output: Mutex::new(InferenceOutput::default()),
             effect: std::marker::PhantomData,
+            recovery_budget: default_recovery_budget(),
         }
     }
 
@@ -356,6 +361,11 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
     ) -> Self {
         self.request_preparer = request_preparer;
+        self
+    }
+
+    pub fn with_recovery_budget(mut self, budget: std::time::Duration) -> Self {
+        self.recovery_budget = budget;
         self
     }
 
@@ -488,35 +498,16 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             let mut empty_responses = 0;
             let empty_output = loop {
             let attempt_start = self.output().usage.len();
-            let stream = self
-                .provider
-                .stream(
-                    &model_config,
-                    &system_prompt,
-                    conversation_for_provider.messages(),
-                    &tools,
-                )
-                .await;
+            let mut stream = stream_with_recovery(
+                self.provider.clone(),
+                model_config.clone(),
+                system_prompt.clone(),
+                conversation_for_provider.messages().clone(),
+                tools.clone(),
+                self.recovery_budget,
+            );
 
-            let mut stream = match stream {
-                Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
-            };
-
-            let requested_model = model_config.model_name.clone();
-            let resolved_model = self
-                .provider
-                .fetch_model_info(&requested_model)
-                .await
-                .ok()
-                .and_then(|model_info| model_info.resolved_model);
-            let provider_session_id = self.provider.provider_session_id();
-            let inference = Some(InferenceMetadata {
-                provider: self.provider.get_name().to_string(),
-                requested_model,
-                resolved_model,
-                provider_session_id,
-            });
+            let mut inference = None;
 
             let mut tool_request_ids = HashSet::new();
             while let Some(result) = stream.next().await {
@@ -531,6 +522,29 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     output.usage.push(usage);
                 }
                 if let Some(mut chunk) = msg_opt {
+                    if !chunk.content.is_empty() && chunk.content.iter().all(|content| {
+                        matches!(content, MessageContent::SystemNotification(notification)
+                            if notification.notification_type == SystemNotificationType::ProgressMessage)
+                    }) {
+                        emit.message(chunk);
+                        continue;
+                    }
+                    if inference.is_none() {
+                        let requested_model = model_config.model_name.clone();
+                        let resolved_model = self
+                            .provider
+                            .fetch_model_info(&requested_model)
+                            .await
+                            .ok()
+                            .and_then(|model_info| model_info.resolved_model);
+                        let provider_session_id = self.provider.provider_session_id();
+                        inference = Some(InferenceMetadata {
+                            provider: self.provider.get_name().to_string(),
+                            requested_model,
+                            resolved_model,
+                            provider_session_id,
+                        });
+                    }
                     if let Some(inference) = &inference {
                         chunk = chunk.with_inference_if_assistant(inference.clone());
                     }

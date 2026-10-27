@@ -5,6 +5,11 @@ use async_trait::async_trait;
 use std::future::Future;
 use std::time::Duration;
 
+mod recovery;
+pub use recovery::{
+    default_recovery_budget, record_stream_output, stream_recovery_active, stream_with_recovery,
+};
+
 // wasm32 hosts run without a tokio runtime, so back off on the host's timer.
 #[cfg(target_arch = "wasm32")]
 use gloo_timers::future::sleep;
@@ -130,7 +135,10 @@ where
         match operation().await {
             Ok(result) => return Ok(result),
             Err(error) => {
-                if should_retry(&error, config) && attempts < config.max_retries {
+                if !stream_recovery_active()
+                    && should_retry(&error, config)
+                    && attempts < config.max_retries
+                {
                     attempts += 1;
                     tracing::warn!(
                         "Request failed, retrying ({}/{}): {:?}",
@@ -231,7 +239,10 @@ impl<P: Provider> ProviderRetry for P {
                         }
                     }
 
-                    if should_retry(&error, &config) && attempts < config.max_retries {
+                    if !stream_recovery_active()
+                        && should_retry(&error, &config)
+                        && attempts < config.max_retries
+                    {
                         attempts += 1;
                         tracing::warn!(
                             "Request failed, retrying ({}/{}): {:?}",
