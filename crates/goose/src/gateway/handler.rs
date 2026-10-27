@@ -376,9 +376,7 @@ impl GatewayHandler {
 
     /// Sync the session's provider, model, and extensions with the current
     /// global config so gateway sessions always reflect what the user has
-    /// configured in the desktop app.  Returns `true` if extensions changed
-    /// (which means the caller must recreate the agent so stale extension
-    /// processes are torn down).
+    /// configured in the desktop app.
     async fn sync_session_config(&self, session: &Session) -> anyhow::Result<()> {
         let config = Config::global();
         let manager = &self.services.session_manager;
@@ -437,11 +435,14 @@ impl GatewayHandler {
 
         update.apply().await?;
         if extensions_changed {
-            if let Err(e) = manager
+            match manager
                 .update_enabled_extensions(&session.id, |selected| *selected = current_extensions)
                 .await
             {
-                tracing::warn!(error = %e, "failed to update gateway session extensions");
+                Ok(_) => self.services.providers.release(&session.id),
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to update gateway session extensions");
+                }
             }
         }
         Ok(())

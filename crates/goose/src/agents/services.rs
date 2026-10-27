@@ -367,6 +367,10 @@ impl StateMachineServices {
             }),
             turn_settings: config.turn_settings,
         });
+        services
+            .runtime
+            .runs
+            .set_services(Arc::downgrade(&services));
         if let Some(scheduler) = &services.scheduler {
             scheduler.run_jobs_on(&services);
         }
@@ -471,7 +475,7 @@ impl StateMachineServices {
     }
 
     /// Releases what went over the limit while every session was busy.
-    async fn trim_sessions(&self) {
+    pub(super) async fn trim_sessions(&self) {
         self.evict(self.runtime.trim()).await;
     }
 

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock, Weak},
+};
+
+use super::services::StateMachineServices;
 use tokio_util::sync::CancellationToken;
 
 struct ActiveRun {
@@ -20,9 +25,16 @@ pub(crate) enum StartRunError {
 #[derive(Default)]
 pub struct ActiveRunRegistry {
     runs_by_session: Mutex<HashMap<String, SessionRunState>>,
+    services: OnceLock<Weak<StateMachineServices>>,
 }
 
 impl ActiveRunRegistry {
+    pub(super) fn set_services(&self, services: Weak<StateMachineServices>) {
+        self.services
+            .set(services)
+            .unwrap_or_else(|_| panic!("active run services already set"));
+    }
+
     pub(crate) fn start_prompt_run(
         &self,
         session_id: &str,
@@ -155,6 +167,12 @@ impl ActiveRunRegistry {
             state.live_active = false;
             if state.agent_run.is_none() {
                 runs.remove(session_id);
+            }
+        }
+        drop(runs);
+        if let Some(services) = self.services.get().and_then(Weak::upgrade) {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move { services.trim_sessions().await });
             }
         }
     }
