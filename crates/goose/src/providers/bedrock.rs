@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, Mutex};
 
 use super::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
@@ -6,7 +7,7 @@ use super::base::{
 };
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::Result;
 use async_stream::try_stream;
@@ -20,12 +21,13 @@ use base64::Engine;
 use futures::future::BoxFuture;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
+use goose_providers::formats::anthropic::is_thinking_signature_error;
 use goose_providers::formats::openai::extract_reasoning_effort;
 use goose_providers::formats::openai_responses::create_responses_request;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
-use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Tool};
+use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role, Tool};
 use serde_json::Value;
 use smithy_transport_reqwest::ReqwestHttpClient;
 
@@ -668,6 +670,97 @@ impl BedrockProvider {
     }
 }
 
+/// Drop replayed thinking blocks from the conversation history.
+///
+/// Bedrock validates thinking signatures against the exact prefix that produced
+/// them, so any history rewrite (message merging, truncation, prompt-cache
+/// markers) can leave signed blocks that no longer validate. The native
+/// Anthropic provider already recovers from this by stripping thinking history
+/// (`strip_thinking_history`); this mirrors that behaviour for Converse and
+/// ConverseStream.
+/// Sessions whose stored history Bedrock has already rejected once.
+///
+/// The rejection is deterministic: the offending thinking blocks stay in the
+/// session, so every later request would fail validation again. Remembering the
+/// session lets subsequent turns send a stripped payload up front instead of
+/// paying a failed round-trip on every turn.
+static THINKING_REPLAY_DISABLED: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn thinking_replay_disabled(session_id: &str) -> bool {
+    THINKING_REPLAY_DISABLED
+        .lock()
+        .map(|sessions| sessions.contains(session_id))
+        .unwrap_or(false)
+}
+
+fn remember_thinking_replay_disabled(session_id: &str) {
+    if let Ok(mut sessions) = THINKING_REPLAY_DISABLED.lock() {
+        sessions.insert(session_id.to_string());
+    }
+}
+
+/// How many trailing messages may keep their thinking blocks when replay is
+/// being suppressed.
+///
+/// A single turn can stay open across many tool rounds - or across a restart -
+/// so "the current turn" alone is not a safe boundary: blocks produced before
+/// a restart are bound to a prefix that no longer exists and would be rejected
+/// forever. Capping the window keeps the reasoning that matters for the next
+/// tool call without resurrecting stale blocks.
+const THINKING_REPLAY_KEEP_WINDOW: usize = 8;
+
+/// Strip thinking blocks from everything older than the current turn, where
+/// the current turn starts at the last user message carrying real text (tool
+/// responses are user-role messages too, so they do not start a turn) and is
+/// capped at [`THINKING_REPLAY_KEEP_WINDOW`] trailing messages.
+fn strip_thinking_before_current_turn(messages: &[Message]) -> Vec<Message> {
+    let turn_start = messages
+        .iter()
+        .rposition(|message| {
+            message.role == Role::User
+                && message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::Text(_)))
+        })
+        .unwrap_or(0);
+    let keep_from = turn_start.max(messages.len().saturating_sub(THINKING_REPLAY_KEEP_WINDOW));
+
+    messages
+        .iter()
+        .enumerate()
+        .map(|(index, message)| {
+            let mut stripped = message.clone();
+            if index < keep_from {
+                stripped.content.retain(|content| {
+                    !matches!(
+                        content,
+                        MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                    )
+                });
+            }
+            stripped
+        })
+        .collect()
+}
+
+fn strip_thinking_blocks(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .map(|message| {
+            let mut stripped = message.clone();
+            stripped.content.retain(|content| {
+                !matches!(
+                    content,
+                    MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                )
+            });
+            stripped
+        })
+        .collect()
+}
+
 /// Accumulation state for in-flight content blocks while consuming a
 /// `ConverseStream` response. Tool inputs and reasoning content arrive as
 /// fragments that only become a complete [`Message`] at `ContentBlockStop`.
@@ -1021,11 +1114,43 @@ impl Provider for BedrockProvider {
         // Open the AWS ConverseStream event stream. Retry wraps the request
         // setup only — mid-stream errors are surfaced, not retried (matching
         // the Anthropic provider's behaviour).
-        let response = self
+        // A session that has been rejected once will be rejected again on every
+        // later turn, because the offending blocks stay in the stored history.
+        // Skip replaying thinking up front once that has happened.
+        let skip_thinking_replay = session_id_opt.is_some_and(thinking_replay_disabled);
+        let stripped_for_session =
+            skip_thinking_replay.then(|| strip_thinking_before_current_turn(messages));
+        let outgoing: &[Message] = stripped_for_session.as_deref().unwrap_or(messages);
+
+        let response = match self
             .with_retry(|| {
-                self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                self.converse_stream(model_config, session_id_opt, system, outgoing, tools)
             })
-            .await?;
+            .await
+        {
+            // Bedrock validates replayed thinking signatures against the exact
+            // prefix that produced them: any history rewrite (message merging,
+            // truncation, prompt-cache markers) can leave blocks that no longer
+            // validate. Mirrors the Anthropic provider's one-shot recovery.
+            Err(err) if is_thinking_signature_error(&err.to_string()) => {
+                tracing::warn!(
+                    error = %err,
+                    "Bedrock rejected replayed thinking blocks; retrying once with thinking history stripped"
+                );
+                if let Some(session_id) = session_id_opt {
+                    remember_thinking_replay_disabled(session_id);
+                }
+                // Strip everything on the retry path: whatever the offending
+                // block is (possibly inside the current turn), the request has
+                // to go out clean.
+                let stripped = strip_thinking_blocks(messages);
+                self.with_retry(|| {
+                    self.converse_stream(model_config, session_id_opt, system, &stripped, tools)
+                })
+                .await?
+            }
+            other => other?,
+        };
 
         // Debug trace with input context; the streamed text is written once
         // the stream completes.
@@ -1174,6 +1299,114 @@ mod tests {
     use super::*;
     use goose_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
+
+    #[test]
+    fn strip_thinking_before_current_turn_keeps_current_reasoning() {
+        use rmcp::model::Role;
+
+        let first = Message::new(Role::User, 0, vec![MessageContent::text("first")]);
+        let old_assistant = Message::new(
+            Role::Assistant,
+            1,
+            vec![
+                MessageContent::thinking("old reasoning", "sig-old"),
+                MessageContent::text("old answer"),
+            ],
+        );
+        let current = Message::new(Role::User, 2, vec![MessageContent::text("now")]);
+        let new_assistant = Message::new(
+            Role::Assistant,
+            3,
+            vec![
+                MessageContent::thinking("current reasoning", "sig-new"),
+                MessageContent::text("current answer"),
+            ],
+        );
+
+        let stripped =
+            strip_thinking_before_current_turn(&[first, old_assistant, current, new_assistant]);
+
+        assert_eq!(stripped.len(), 4);
+        assert!(stripped[1].content.iter().all(|content| !matches!(
+            content,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+        )));
+        assert!(stripped[3]
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::Thinking(_))));
+    }
+    #[test]
+    fn strip_thinking_before_current_turn_caps_the_window() {
+        use rmcp::model::Role;
+
+        // A long turn: the user message sits at the front, then many rounds.
+        let mut messages = vec![Message::new(
+            Role::User,
+            0,
+            vec![MessageContent::text("long running task")],
+        )];
+        for i in 1..12 {
+            messages.push(Message::new(
+                Role::Assistant,
+                i,
+                vec![MessageContent::thinking("reasoning", "sig")],
+            ));
+        }
+
+        let stripped = strip_thinking_before_current_turn(&messages);
+
+        // Everything older than the window loses its thinking, including
+        // blocks that are still inside the same open turn.
+        assert!(stripped[1].content.is_empty());
+        // The trailing window keeps its reasoning.
+        assert!(stripped[messages.len() - 1]
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::Thinking(_))));
+    }
+    #[test]
+    fn thinking_replay_disabled_is_remembered_per_session() {
+        let session = "test-session-sticky-thinking-replay";
+        assert!(!thinking_replay_disabled(session));
+        remember_thinking_replay_disabled(session);
+        assert!(thinking_replay_disabled(session));
+        assert!(!thinking_replay_disabled("some-other-session"));
+    }
+    #[test]
+    fn strip_thinking_blocks_drops_reasoning_but_keeps_content() {
+        use rmcp::model::Role;
+
+        let mut assistant = Message::new(
+            Role::Assistant,
+            0,
+            vec![
+                MessageContent::thinking("internal reasoning", "sig-abc"),
+                MessageContent::redacted_thinking("opaque"),
+                MessageContent::text("visible answer"),
+            ],
+        );
+        assistant.content.push(MessageContent::tool_request(
+            "call-1".to_string(),
+            Ok(CallToolRequestParams::new("shell")),
+        ));
+
+        let user = Message::new(Role::User, 0, vec![MessageContent::text("hi")]);
+
+        let stripped = strip_thinking_blocks(&[assistant, user]);
+
+        assert_eq!(stripped.len(), 2);
+        assert_eq!(
+            stripped[0].content.len(),
+            2,
+            "text and tool request survive"
+        );
+        assert!(stripped[0].content.iter().all(|content| !matches!(
+            content,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+        )));
+        assert_eq!(stripped[1].content.len(), 1);
+    }
 
     fn create_mock_provider_and_model(model_name: &str) -> (BedrockProvider, ModelConfig) {
         let sdk_config = aws_config::SdkConfig::builder()
