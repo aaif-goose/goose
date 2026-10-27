@@ -35,10 +35,6 @@
       "context_limit": 262144
     },
     {
-      "name": "pixtral-large-2411",
-      "context_limit": 128000
-    },
-    {
       "name": "ministral-8b-2410",
       "context_limit": 128000
     },
