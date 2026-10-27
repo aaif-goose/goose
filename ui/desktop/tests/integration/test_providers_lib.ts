@@ -73,7 +73,7 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'anthropic',
-      models: ['claude-sonnet-5-5', 'claude-opus-5-5'],
+      models: ['claude-sonnet-5-5'],
       available: () => hasEnv('ANTHROPIC_API_KEY'),
     },
     {
