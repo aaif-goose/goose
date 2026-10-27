@@ -3,8 +3,10 @@ pub mod server;
 #[cfg(test)]
 mod tests;
 
+use crate::config::Config;
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use goose_providers::openrouter::{OPENROUTER_DEFAULT_MODEL, OPENROUTER_PROVIDER_NAME};
 use rand::{distr::Alphanumeric, RngExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -13,8 +15,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
-/// Default models for openrouter config configuration
-const OPENROUTER_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5.5";
+pub use self::PkceAuthFlow as OpenRouterAuth;
 
 const OPENROUTER_AUTH_URL: &str = "https://openrouter.ai/auth";
 const OPENROUTER_TOKEN_URL: &str = "https://openrouter.ai/api/v1/auth/keys";
@@ -159,16 +160,8 @@ impl PkceAuthFlow {
     }
 }
 
-pub use self::PkceAuthFlow as OpenRouterAuth;
-
-use crate::config::Config;
-
 pub fn configure_openrouter(config: &Config, api_key: String) -> Result<()> {
     config.set_secret("OPENROUTER_API_KEY", &api_key)?;
-    crate::config::set_active_provider(
-        config,
-        goose_providers::openrouter::OPENROUTER_PROVIDER_NAME,
-        OPENROUTER_DEFAULT_MODEL,
-    )?;
+    crate::config::set_active_provider(config, OPENROUTER_PROVIDER_NAME, OPENROUTER_DEFAULT_MODEL)?;
     Ok(())
 }
