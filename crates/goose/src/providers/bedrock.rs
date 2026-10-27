@@ -27,7 +27,7 @@ use goose_providers::formats::openai_responses::create_responses_request;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
-use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Tool};
+use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role, Tool};
 use serde_json::Value;
 use smithy_transport_reqwest::ReqwestHttpClient;
 
@@ -700,6 +700,43 @@ fn remember_thinking_replay_disabled(session_id: &str) {
     }
 }
 
+/// Strip thinking blocks from every turn except the one currently in flight.
+///
+/// The current turn starts at the last user message that carries real text
+/// (tool responses are user-role messages too, so they do not start a turn).
+/// Keeping the current turn intact preserves the reasoning around this turn's
+/// tool calls - the part the model benefits most from replaying - while
+/// dropping earlier turns, which is where stale signatures accumulate.
+fn strip_thinking_before_current_turn(messages: &[Message]) -> Vec<Message> {
+    let turn_start = messages
+        .iter()
+        .rposition(|message| {
+            message.role == Role::User
+                && message
+                    .content
+                    .iter()
+                    .any(|content| matches!(content, MessageContent::Text(_)))
+        })
+        .unwrap_or(0);
+
+    messages
+        .iter()
+        .enumerate()
+        .map(|(index, message)| {
+            let mut stripped = message.clone();
+            if index < turn_start {
+                stripped.content.retain(|content| {
+                    !matches!(
+                        content,
+                        MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                    )
+                });
+            }
+            stripped
+        })
+        .collect()
+}
+
 fn strip_thinking_blocks(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
@@ -1073,7 +1110,8 @@ impl Provider for BedrockProvider {
         // later turn, because the offending blocks stay in the stored history.
         // Skip replaying thinking up front once that has happened.
         let skip_thinking_replay = session_id_opt.is_some_and(thinking_replay_disabled);
-        let stripped_for_session = skip_thinking_replay.then(|| strip_thinking_blocks(messages));
+        let stripped_for_session =
+            skip_thinking_replay.then(|| strip_thinking_before_current_turn(messages));
         let outgoing: &[Message] = stripped_for_session.as_deref().unwrap_or(messages);
 
         let response = match self
@@ -1094,6 +1132,9 @@ impl Provider for BedrockProvider {
                 if let Some(session_id) = session_id_opt {
                     remember_thinking_replay_disabled(session_id);
                 }
+                // Strip everything on the retry path: whatever the offending
+                // block is (possibly inside the current turn), the request has
+                // to go out clean.
                 let stripped = strip_thinking_blocks(messages);
                 self.with_retry(|| {
                     self.converse_stream(model_config, session_id_opt, system, &stripped, tools)
@@ -1251,6 +1292,42 @@ mod tests {
     use goose_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
 
+    #[test]
+    fn strip_thinking_before_current_turn_keeps_current_reasoning() {
+        use rmcp::model::Role;
+
+        let first = Message::new(Role::User, 0, vec![MessageContent::text("first")]);
+        let old_assistant = Message::new(
+            Role::Assistant,
+            1,
+            vec![
+                MessageContent::thinking("old reasoning", "sig-old"),
+                MessageContent::text("old answer"),
+            ],
+        );
+        let current = Message::new(Role::User, 2, vec![MessageContent::text("now")]);
+        let new_assistant = Message::new(
+            Role::Assistant,
+            3,
+            vec![
+                MessageContent::thinking("current reasoning", "sig-new"),
+                MessageContent::text("current answer"),
+            ],
+        );
+
+        let stripped =
+            strip_thinking_before_current_turn(&[first, old_assistant, current, new_assistant]);
+
+        assert_eq!(stripped.len(), 4);
+        assert!(stripped[1].content.iter().all(|content| !matches!(
+            content,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+        )));
+        assert!(stripped[3]
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::Thinking(_))));
+    }
     #[test]
     fn thinking_replay_disabled_is_remembered_per_session() {
         let session = "test-session-sticky-thinking-replay";
