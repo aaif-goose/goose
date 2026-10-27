@@ -182,10 +182,13 @@ fn config_to_goose_extension(
             timeout,
             bundled,
             available_tools,
+            tool_call_meta,
             ..
         } => GooseExtension::Mcp {
             server: Box::new(McpServer::Stdio(
-                McpServerStdio::new(name, cmd).args(args.clone()),
+                McpServerStdio::new(name, cmd)
+                    .args(args.clone())
+                    .meta(super::tool_call_meta_to_meta(tool_call_meta)),
             )),
             env_keys: env_keys.clone(),
             description: empty_string_to_none(description),
@@ -210,6 +213,7 @@ fn config_to_goose_extension(
             scopes,
             bundled,
             available_tools,
+            tool_call_meta,
             ..
         } => {
             let headers = headers
@@ -218,7 +222,9 @@ fn config_to_goose_extension(
                 .collect();
             GooseExtension::Mcp {
                 server: Box::new(McpServer::Http(
-                    McpServerHttp::new(name, uri).headers(headers),
+                    McpServerHttp::new(name, uri)
+                        .headers(headers)
+                        .meta(super::tool_call_meta_to_meta(tool_call_meta)),
                 )),
                 env_keys: env_keys.clone(),
                 description: empty_string_to_none(description),
@@ -313,7 +319,7 @@ fn goose_extension_to_config(
                     cwd: None,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
-                    tool_call_meta: Default::default(),
+                    tool_call_meta: super::extract_tool_call_meta_from_meta(&stdio.meta),
                 }
             }
             McpServer::Http(http) => ExtensionConfig::StreamableHttp {
@@ -334,7 +340,7 @@ fn goose_extension_to_config(
                 scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
-                tool_call_meta: Default::default(),
+                tool_call_meta: super::extract_tool_call_meta_from_meta(&http.meta),
             },
             McpServer::Sse(_) => {
                 return Err(agent_client_protocol::Error::invalid_params()
@@ -885,5 +891,48 @@ mod tests {
         };
 
         assert!(goose_extension_to_config(extension).is_err());
+    }
+
+    /// The desktop saves extensions through this round trip, so a field it
+    /// drops would be deleted from the user's config.
+    #[test]
+    fn tool_call_meta_survives_goose_extension_round_trip() {
+        let tool_call_meta = serde_json::json!({ "a2ui": { "clientCapabilities": {} } })
+            .as_object()
+            .unwrap()
+            .clone();
+        let mut stdio = ExtensionConfig::stdio("stdio", "cmd", "", 30u64);
+        let mut http =
+            ExtensionConfig::streamable_http("http", "https://example.com/mcp", "", 30u64);
+        for config in [&mut stdio, &mut http] {
+            match config {
+                ExtensionConfig::Stdio {
+                    tool_call_meta: meta,
+                    ..
+                }
+                | ExtensionConfig::StreamableHttp {
+                    tool_call_meta: meta,
+                    ..
+                } => *meta = tool_call_meta.clone(),
+                _ => unreachable!(),
+            }
+        }
+
+        for config in [stdio, http] {
+            let extension = config_to_goose_extension(&config).unwrap().unwrap();
+            let round_tripped = goose_extension_to_config(extension).unwrap().config;
+            let (ExtensionConfig::Stdio {
+                tool_call_meta: meta,
+                ..
+            }
+            | ExtensionConfig::StreamableHttp {
+                tool_call_meta: meta,
+                ..
+            }) = round_tripped
+            else {
+                panic!("expected an MCP extension");
+            };
+            assert_eq!(meta, tool_call_meta, "{}", config.name());
+        }
     }
 }

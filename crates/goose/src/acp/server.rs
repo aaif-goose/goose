@@ -405,14 +405,27 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
         .and_then(|v| v.as_u64())
 }
 
+const TOOL_CALL_META_KEY: &str = "toolCallMeta";
+
 fn extract_tool_call_meta_from_meta(
     meta: &Option<Meta>,
 ) -> serde_json::Map<String, serde_json::Value> {
     meta.as_ref()
-        .and_then(|m| m.get("toolCallMeta"))
+        .and_then(|m| m.get(TOOL_CALL_META_KEY))
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default()
+}
+
+fn tool_call_meta_to_meta(
+    tool_call_meta: &serde_json::Map<String, serde_json::Value>,
+) -> Option<Meta> {
+    (!tool_call_meta.is_empty()).then(|| {
+        Meta::from_iter([(
+            TOOL_CALL_META_KEY.to_string(),
+            serde_json::Value::Object(tool_call_meta.clone()),
+        )])
+    })
 }
 
 #[derive(Debug, Default, Deserialize)]

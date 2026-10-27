@@ -766,6 +766,43 @@ timeout: 300",
     }
 
     #[test]
+    fn tool_call_meta_round_trips_through_yaml_and_is_omitted_when_empty() {
+        let config: ExtensionConfig = serde_yaml::from_str(
+            "type: stdio
+name: orders
+cmd: node
+args: [orders.mjs]
+timeout: 60
+tool_call_meta:
+  a2ui:
+    clientCapabilities:
+      v0.9:
+        supportedCatalogIds: [https://example.com/catalog.json]
+",
+        )
+        .unwrap();
+        let ExtensionConfig::Stdio { tool_call_meta, .. } = &config else {
+            panic!("expected stdio");
+        };
+        assert_eq!(
+            serde_json::Value::Object(tool_call_meta.clone()),
+            serde_json::json!({
+                "a2ui": { "clientCapabilities": { "v0.9": {
+                    "supportedCatalogIds": ["https://example.com/catalog.json"]
+                } } }
+            })
+        );
+        let reloaded: ExtensionConfig =
+            serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(reloaded, config);
+
+        let plain = ExtensionConfig::stdio("plain", "cmd", "", 60u64);
+        assert!(!serde_yaml::to_string(&plain)
+            .unwrap()
+            .contains("tool_call_meta"));
+    }
+
+    #[test]
     fn serialization_omits_empty_available_tools() {
         let config = ExtensionConfig::Builtin {
             name: "developer".into(),

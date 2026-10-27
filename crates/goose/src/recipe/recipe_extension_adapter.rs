@@ -166,6 +166,42 @@ mod tests {
     }
 
     #[test]
+    fn mcp_extensions_keep_tool_call_meta() {
+        let wrapper: Wrapper = serde_json::from_value(json!({
+            "extensions": [
+                {
+                    "type": "stdio",
+                    "name": "orders",
+                    "cmd": "node",
+                    "args": ["orders.mjs"],
+                    "timeout": 60,
+                    "tool_call_meta": { "a2ui": { "version": "v0.9" } },
+                },
+                {
+                    "type": "streamable_http",
+                    "name": "remote",
+                    "uri": "https://example.com/mcp",
+                    "timeout": 60,
+                    "tool_call_meta": { "a2ui": { "version": "v0.9" } },
+                },
+            ]
+        }))
+        .expect("failed to deserialize extensions");
+
+        for extension in wrapper.extensions.expect("expected extensions") {
+            let (ExtensionConfig::Stdio { tool_call_meta, .. }
+            | ExtensionConfig::StreamableHttp { tool_call_meta, .. }) = extension
+            else {
+                panic!("unexpected extension variant: {extension:?}");
+            };
+            assert_eq!(
+                serde_json::Value::Object(tool_call_meta),
+                json!({ "a2ui": { "version": "v0.9" } })
+            );
+        }
+    }
+
+    #[test]
     fn builtin_extension_defaults_description() {
         let wrapper: Wrapper = serde_json::from_value(json!({
             "extensions": [{

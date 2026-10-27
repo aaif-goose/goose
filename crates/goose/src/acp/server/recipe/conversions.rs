@@ -442,7 +442,6 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 scopes,
                 bundled,
                 available_tools,
-                // The published recipe DTO has no field for it.
                 tool_call_meta: _,
             } => Self::StreamableHttp {
                 name,
