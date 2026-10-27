@@ -375,6 +375,26 @@
     "environmentVariables": []
   },
   {
+    "id": "hookpost",
+    "name": "Hookpost",
+    "description": "Draft and schedule social media posts on your connected channels, and check each network's rules first",
+    "url": "https://hookpost.hookstep.in/api/mcp",
+    "link": "https://github.com/jatinder14/hookpost-mcp",
+    "installation_notes": "This is a remote extension that requires a Hookpost workspace API key (Settings > Developers in Hookpost, https://hookpost.hookstep.in) as a Request Header e.g Authorization: Bearer <YOUR_HOOKPOST_API_KEY>. Standard and Pro plans include it, each with a 3-day trial.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "headers": [
+      {
+        "name": "Authorization",
+        "description": "Bearer <YOUR_HOOKPOST_API_KEY>",
+        "required": true
+      }
+    ],
+    "show_install_command": false,
+    "type": "streamable-http"
+  },
+  {
     "id": "jetbrains",
     "name": "JetBrains",
     "description": "Integrate with any JetBrains IDE (requires local setup, dependent on your IDE version)",
