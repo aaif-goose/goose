@@ -76,7 +76,6 @@ static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, CachedDatabricksEndpointInfo>>,
 > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
-pub const DATABRICKS_KNOWN_MODELS: &[&str] = &["databricks-claude-sonnet-4-5"];
 
 pub const DATABRICKS_DOC_URL: &str =
     "https://docs.databricks.com/en/generative-ai/external-models/index.html";
@@ -550,7 +549,7 @@ impl crate::base::ProviderDescriptor for DatabricksProvider {
             "Databricks",
             "Models on Databricks AI Gateway",
             DATABRICKS_DEFAULT_MODEL,
-            DATABRICKS_KNOWN_MODELS.to_vec(),
+            vec![],
             DATABRICKS_DOC_URL,
             vec![
                 ConfigKey::new("DATABRICKS_HOST", true, false, None, true),
