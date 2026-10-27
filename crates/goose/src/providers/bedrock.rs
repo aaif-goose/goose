@@ -6,7 +6,7 @@ use super::base::{
 };
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::Result;
 use async_stream::try_stream;
@@ -20,6 +20,7 @@ use base64::Engine;
 use futures::future::BoxFuture;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
+use goose_providers::formats::anthropic::is_thinking_signature_error;
 use goose_providers::formats::openai::extract_reasoning_effort;
 use goose_providers::formats::openai_responses::create_responses_request;
 use goose_providers::model::ModelConfig;
@@ -668,6 +669,30 @@ impl BedrockProvider {
     }
 }
 
+/// Drop replayed thinking blocks from the conversation history.
+///
+/// Bedrock validates thinking signatures against the exact prefix that produced
+/// them, so any history rewrite (message merging, truncation, prompt-cache
+/// markers) can leave signed blocks that no longer validate. The native
+/// Anthropic provider already recovers from this by stripping thinking history
+/// (`strip_thinking_history`); this mirrors that behaviour for Converse and
+/// ConverseStream.
+fn strip_thinking_blocks(messages: &[Message]) -> Vec<Message> {
+    messages
+        .iter()
+        .map(|message| {
+            let mut stripped = message.clone();
+            stripped.content.retain(|content| {
+                !matches!(
+                    content,
+                    MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+                )
+            });
+            stripped
+        })
+        .collect()
+}
+
 /// Accumulation state for in-flight content blocks while consuming a
 /// `ConverseStream` response. Tool inputs and reasoning content arrive as
 /// fragments that only become a complete [`Message`] at `ContentBlockStop`.
@@ -1021,11 +1046,29 @@ impl Provider for BedrockProvider {
         // Open the AWS ConverseStream event stream. Retry wraps the request
         // setup only — mid-stream errors are surfaced, not retried (matching
         // the Anthropic provider's behaviour).
-        let response = self
+        let response = match self
             .with_retry(|| {
                 self.converse_stream(model_config, session_id_opt, system, messages, tools)
             })
-            .await?;
+            .await
+        {
+            // Bedrock validates replayed thinking signatures against the exact
+            // prefix that produced them: any history rewrite (message merging,
+            // truncation, prompt-cache markers) can leave blocks that no longer
+            // validate. Mirrors the Anthropic provider's one-shot recovery.
+            Err(err) if is_thinking_signature_error(&err.to_string()) => {
+                tracing::warn!(
+                    error = %err,
+                    "Bedrock rejected replayed thinking blocks; retrying once with thinking history stripped"
+                );
+                let stripped = strip_thinking_blocks(messages);
+                self.with_retry(|| {
+                    self.converse_stream(model_config, session_id_opt, system, &stripped, tools)
+                })
+                .await?
+            }
+            other => other?,
+        };
 
         // Debug trace with input context; the streamed text is written once
         // the stream completes.
@@ -1174,6 +1217,41 @@ mod tests {
     use super::*;
     use goose_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
+
+    #[test]
+    fn strip_thinking_blocks_drops_reasoning_but_keeps_content() {
+        use rmcp::model::Role;
+
+        let mut assistant = Message::new(
+            Role::Assistant,
+            0,
+            vec![
+                MessageContent::thinking("internal reasoning", "sig-abc"),
+                MessageContent::redacted_thinking("opaque"),
+                MessageContent::text("visible answer"),
+            ],
+        );
+        assistant.content.push(MessageContent::tool_request(
+            "call-1".to_string(),
+            Ok(CallToolRequestParams::new("shell")),
+        ));
+
+        let user = Message::new(Role::User, 0, vec![MessageContent::text("hi")]);
+
+        let stripped = strip_thinking_blocks(&[assistant, user]);
+
+        assert_eq!(stripped.len(), 2);
+        assert_eq!(
+            stripped[0].content.len(),
+            2,
+            "text and tool request survive"
+        );
+        assert!(stripped[0].content.iter().all(|content| !matches!(
+            content,
+            MessageContent::Thinking(_) | MessageContent::RedactedThinking(_)
+        )));
+        assert_eq!(stripped[1].content.len(), 1);
+    }
 
     fn create_mock_provider_and_model(model_name: &str) -> (BedrockProvider, ModelConfig) {
         let sdk_config = aws_config::SdkConfig::builder()
