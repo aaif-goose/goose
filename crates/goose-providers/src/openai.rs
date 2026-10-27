@@ -43,8 +43,32 @@ pub const OPEN_AI_DEFAULT_BASE_PATH: &str = "v1/chat/completions";
 pub const OPEN_AI_VERSIONLESS_BASE_PATH: &str = "chat/completions";
 const OPEN_AI_DEFAULT_RESPONSES_PATH: &str = "v1/responses";
 const OPEN_AI_DEFAULT_MODELS_PATH: &str = "v1/models";
-const N_CTX_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-const N_CTX_FAILURE_TTL: Duration = Duration::from_secs(60);
+const CONTEXT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const CONTEXT_PROBE_FAILURE_TTL: Duration = Duration::from_secs(60);
+
+/// Field paths on a `/v1/models` entry that carry the context window, most
+/// authoritative first. llama.cpp and Ollama use the non-standard `meta.n_ctx`,
+/// while Lemonade and LM Studio report a top-level `context_length`, gateways
+/// such as ContextForge use `context_window`, and vLLM's `max_model_len` is a
+/// deployment ceiling that can exceed the window actually served, so it ranks
+/// last. The first candidate that yields a positive value wins.
+///
+/// Advertisements are trusted as given, with no upper bound: a window larger than
+/// anything goose has seen before is the provider's contract to keep, and the
+/// canonical catalog already resolves 20M-token models. Capping here would
+/// under-report those models back to the default, which is the failure this
+/// discovery path exists to remove.
+const CONTEXT_WINDOW_FIELDS: &[&[&str]] = &[
+    &["meta", "n_ctx"],
+    &["context_window"],
+    &["context_length"],
+    &["recipe_options", "ctx_size"],
+    &["max_context"],
+    &["context_limit"],
+    &["details", "context_window"],
+    &["limit", "context"],
+    &["max_model_len"],
+];
 
 #[derive(Debug, Clone, Copy)]
 enum CachedContextLimit {
@@ -56,7 +80,9 @@ impl CachedContextLimit {
     fn value(self) -> Option<Option<usize>> {
         match self {
             Self::Success(limit) => Some(limit),
-            Self::Failure(fetched_at) if fetched_at.elapsed() < N_CTX_FAILURE_TTL => Some(None),
+            Self::Failure(fetched_at) if fetched_at.elapsed() < CONTEXT_PROBE_FAILURE_TTL => {
+                Some(None)
+            }
             Self::Failure(_) => None,
         }
     }
@@ -143,7 +169,7 @@ pub struct OpenAiProvider {
     #[serde(skip)]
     session_id_provider: Option<OpenAiSessionIdProvider>,
     #[serde(skip)]
-    n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
+    context_window_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
 }
 
 impl std::fmt::Debug for OpenAiProvider {
@@ -288,7 +314,7 @@ impl OpenAiProviderBuilder {
             preserve_thinking_context: self.preserve_thinking_context,
             session_id_provider: self.session_id_provider,
             native_openai: self.native_openai,
-            n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
+            context_window_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -420,7 +446,7 @@ impl OpenAiProvider {
             preserve_thinking_context: false,
             session_id_provider: None,
             native_openai: false,
-            n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
+            context_window_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -638,10 +664,16 @@ impl OpenAiProvider {
         parse_model_ids(&json)
     }
 
-    /// llama.cpp and Ollama expose the actual allocated context window in the
-    /// non-standard `meta.n_ctx` field of `/v1/models`. Returns `None` when absent
+    /// Ask the provider's `/v1/models` endpoint for the context window it actually
+    /// serves for `model_name`. llama.cpp and Ollama expose the allocated window in
+    /// the non-standard `meta.n_ctx` field, while other OpenAI-compatible servers use
+    /// top-level fields such as `context_window` or `context_length`; see
+    /// `CONTEXT_WINDOW_FIELDS`. Returns `None` when the server advertises no window
     /// (e.g. real OpenAI).
-    async fn fetch_n_ctx_from_api(&self, model_name: &str) -> Result<Option<usize>, ProviderError> {
+    async fn fetch_context_window_from_api(
+        &self,
+        model_name: &str,
+    ) -> Result<Option<usize>, ProviderError> {
         let models_path =
             Self::map_base_path(&self.base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH);
         let response = self.api_client.request(&models_path).response_get().await?;
@@ -655,7 +687,7 @@ impl OpenAiProvider {
                 error
             }
         })?;
-        Ok(parse_n_ctx_from_models(&json, model_name))
+        Ok(parse_context_window_from_models(&json, model_name))
     }
 }
 
@@ -675,32 +707,44 @@ fn parse_model_ids(json: &serde_json::Value) -> Result<Vec<String>, ProviderErro
     Ok(model_ids)
 }
 
-/// Extract `meta.n_ctx` for `model_name` from a `/v1/models` response body.
-fn parse_n_ctx_from_models(json: &serde_json::Value, model_name: &str) -> Option<usize> {
-    let data = json.get("data")?.as_array()?;
-
-    let n_ctx = |entry: &serde_json::Value| -> Option<usize> {
-        entry
-            .get("meta")?
-            .get("n_ctx")?
-            .as_u64()
-            .map(|v| v as usize)
-    };
+/// Extract the context window for `model_name` from a `/v1/models` response body.
+///
+/// Returns the first positive value found by walking `CONTEXT_WINDOW_FIELDS` on
+/// the matching entry. Servers that do not advertise a window at all (real OpenAI)
+/// yield `None`, and resolution falls through to canonical metadata and finally the
+/// global default.
+fn parse_context_window_from_models(json: &serde_json::Value, model_name: &str) -> Option<usize> {
+    // Together answers with the array at the root instead of under `data`, the
+    // same shape `parse_model_ids` accepts.
+    let data = json
+        .get("data")
+        .and_then(|value| value.as_array())
+        .or_else(|| json.as_array())?;
 
     if let Some(entry) = data
         .iter()
         .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(model_name))
     {
-        return n_ctx(entry);
+        return context_window_from_entry(entry);
     }
 
     // For single-model servers without --alias, llama.cpp reports the loaded model
     // file path as id rather than the client's alias, so no entry matches above.
-    // Fall back to the sole entry's n_ctx.
+    // Fall back to the sole entry's window.
     match data.as_slice() {
-        [only] => n_ctx(only),
+        [only] => context_window_from_entry(only),
         _ => None,
     }
+}
+
+fn context_window_from_entry(entry: &serde_json::Value) -> Option<usize> {
+    CONTEXT_WINDOW_FIELDS.iter().find_map(|path| {
+        let advertised = path
+            .iter()
+            .try_fold(entry, |current, key| current.get(*key))?
+            .as_u64()?;
+        usize::try_from(advertised).ok().filter(|value| *value > 0)
+    })
 }
 
 impl ProviderDescriptor for OpenAiProvider {
@@ -767,7 +811,7 @@ impl Provider for OpenAiProvider {
         resolver
             .resolve(model, override_limit, || async {
                 if let Some(cached) = self
-                    .n_ctx_cache
+                    .context_window_cache
                     .lock()
                     .ok()
                     .and_then(|cache| cache.get(model).copied())
@@ -777,8 +821,8 @@ impl Provider for OpenAiProvider {
                 }
 
                 let probed = match tokio::time::timeout(
-                    N_CTX_PROBE_TIMEOUT,
-                    self.fetch_n_ctx_from_api(model),
+                    CONTEXT_PROBE_TIMEOUT,
+                    self.fetch_context_window_from_api(model),
                 )
                 .await
                 {
@@ -790,7 +834,7 @@ impl Provider for OpenAiProvider {
                     )),
                 };
 
-                if let Ok(mut cache) = self.n_ctx_cache.lock() {
+                if let Ok(mut cache) = self.context_window_cache.lock() {
                     let cached = match probed.as_ref() {
                         Ok(limit) => CachedContextLimit::Success(*limit),
                         Err(_) => CachedContextLimit::Failure(Instant::now()),
@@ -1094,7 +1138,7 @@ mod tests {
             preserve_thinking_context: false,
             session_id_provider: None,
             native_openai: false,
-            n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
+            context_window_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -1572,24 +1616,226 @@ mod tests {
     }
 
     #[test]
-    fn parse_n_ctx_falls_back_to_sole_entry_when_id_differs() {
+    fn parse_context_window_falls_back_to_sole_entry_when_id_differs() {
         let body = json!({
             "data": [
                 { "id": "/models/qwen3.gguf", "meta": { "n_ctx": 32768 } }
             ]
         });
-        assert_eq!(parse_n_ctx_from_models(&body, "qwen3"), Some(32768));
+        assert_eq!(
+            parse_context_window_from_models(&body, "qwen3"),
+            Some(32768)
+        );
     }
 
     #[test]
-    fn parse_n_ctx_no_fallback_with_multiple_unmatched_entries() {
+    fn parse_context_window_no_fallback_with_multiple_unmatched_entries() {
         let body = json!({
             "data": [
                 { "id": "model-a", "meta": { "n_ctx": 4096 } },
                 { "id": "model-b", "meta": { "n_ctx": 8192 } }
             ]
         });
-        assert_eq!(parse_n_ctx_from_models(&body, "model-c"), None);
+        assert_eq!(parse_context_window_from_models(&body, "model-c"), None);
+    }
+
+    #[test]
+    fn parse_context_window_accepts_bare_array_response() {
+        let body = json!([
+            { "id": "Qwen/Qwen3-Coder-480B", "context_length": 131_072 },
+            { "id": "meta-llama/Llama-3.3-70B", "type": "chat" }
+        ]);
+        assert_eq!(
+            parse_context_window_from_models(&body, "Qwen/Qwen3-Coder-480B"),
+            Some(131_072)
+        );
+        assert_eq!(
+            parse_context_window_from_models(&body, "meta-llama/Llama-3.3-70B"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_context_window_reads_each_provider_field_spelling() {
+        for (label, entry, expected) in [
+            (
+                "meta.n_ctx",
+                json!({ "id": "model", "meta": { "n_ctx": 32_768 } }),
+                32_768,
+            ),
+            (
+                "context_window",
+                json!({ "id": "model", "context_window": 262_144 }),
+                262_144,
+            ),
+            (
+                "context_length",
+                json!({ "id": "model", "context_length": 131_072 }),
+                131_072,
+            ),
+            (
+                "recipe_options.ctx_size",
+                json!({ "id": "model", "recipe_options": { "ctx_size": 16_384 } }),
+                16_384,
+            ),
+            (
+                "max_context",
+                json!({ "id": "model", "max_context": 8_192 }),
+                8_192,
+            ),
+            (
+                "context_limit",
+                json!({ "id": "model", "context_limit": 65_536 }),
+                65_536,
+            ),
+            (
+                "details.context_window",
+                json!({ "id": "model", "details": { "context_window": 4_096 } }),
+                4_096,
+            ),
+            (
+                "limit.context",
+                json!({ "id": "model", "limit": { "context": 1_048_576 } }),
+                1_048_576,
+            ),
+            (
+                "max_model_len",
+                json!({ "id": "model", "max_model_len": 40_960 }),
+                40_960,
+            ),
+        ] {
+            let body = json!({ "data": [entry] });
+            assert_eq!(
+                parse_context_window_from_models(&body, "model"),
+                Some(expected),
+                "{label} should be recognized as a context window"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_context_window_prefers_fields_in_declared_order() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "model",
+                    "meta": { "n_ctx": 32_768 },
+                    "context_window": 262_144,
+                    "context_length": 131_072,
+                    "max_model_len": 1_048_576
+                }
+            ]
+        });
+        assert_eq!(
+            parse_context_window_from_models(&body, "model"),
+            Some(32_768)
+        );
+
+        // Without llama.cpp's `meta`, a gateway's served window still outranks
+        // vLLM's deployment ceiling.
+        let body = json!({
+            "data": [
+                { "id": "model", "context_window": 262_144, "max_model_len": 1_048_576 }
+            ]
+        });
+        assert_eq!(
+            parse_context_window_from_models(&body, "model"),
+            Some(262_144)
+        );
+    }
+
+    #[test]
+    fn parse_context_window_skips_non_numeric_and_non_positive_values() {
+        for (label, value) in [
+            ("zero", json!(0)),
+            ("negative", json!(-1)),
+            ("float", json!(262_144.0)),
+            ("null", json!(null)),
+            ("string", json!("262144")),
+            ("object", json!({ "n_ctx": 262_144 })),
+            ("array", json!([262_144])),
+        ] {
+            let body = json!({ "data": [{ "id": "model", "context_window": value }] });
+            assert_eq!(
+                parse_context_window_from_models(&body, "model"),
+                None,
+                "{label} should not be trusted as a context window"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_context_window_trusts_windows_larger_than_the_catalog_max() {
+        // qiniu-ai/x-ai/grok-4.1-fast-reasoning is 20M in the canonical catalog, so
+        // a provider advertising the same size through /v1/models must resolve to it
+        // rather than falling back to the default.
+        for context in [10_000_001usize, 20_000_000, 99_999_999] {
+            let body = json!({ "data": [{ "id": "model", "context_window": context }] });
+            assert_eq!(
+                parse_context_window_from_models(&body, "model"),
+                Some(context),
+                "{context} is the provider's own advertised window"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_context_window_falls_through_an_unusable_strong_field() {
+        let body = json!({
+            "data": [
+                {
+                    "id": "model",
+                    "meta": { "n_ctx": 0 },
+                    "context_window": 32_768
+                }
+            ]
+        });
+        assert_eq!(
+            parse_context_window_from_models(&body, "model"),
+            Some(32_768)
+        );
+    }
+
+    #[test]
+    fn parse_context_window_matches_model_ids_case_sensitively() {
+        // Gateway ids are case-significant, and a case-insensitive match across
+        // hundreds of entries could attribute the wrong window to a model. That
+        // error is unsafe, so ids are compared exactly as before.
+        let body = json!({
+            "data": [
+                { "id": "local.Qwen3.8-27B", "context_window": 262_144 },
+                { "id": "local.other", "object": "model" }
+            ]
+        });
+        assert_eq!(
+            parse_context_window_from_models(&body, "local.Qwen3.8-27B"),
+            Some(262_144)
+        );
+        assert_eq!(
+            parse_context_window_from_models(&body, "local.qwen3.8-27b"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_context_window_ignores_entries_without_a_window() {
+        let body = json!({
+            "data": [
+                { "id": "gpt-4o", "object": "model", "created": 1_715_642_356, "owned_by": "openai" }
+            ]
+        });
+        assert_eq!(parse_context_window_from_models(&body, "gpt-4o"), None);
+    }
+
+    #[test]
+    fn parse_context_window_does_not_leak_a_window_from_other_models() {
+        let body = json!({
+            "data": [
+                { "id": "reported", "context_window": 262_144 },
+                { "id": "unreported", "object": "model" }
+            ]
+        });
+        assert_eq!(parse_context_window_from_models(&body, "unreported"), None);
     }
 
     #[test]
@@ -1647,7 +1893,7 @@ mod tests {
             preserve_thinking_context: false,
             session_id_provider: None,
             native_openai: false,
-            n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
+            context_window_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -1698,9 +1944,9 @@ mod tests {
             vec!["other-model".to_string()],
         );
         provider.custom_models = None;
-        provider.n_ctx_cache.lock().unwrap().insert(
+        provider.context_window_cache.lock().unwrap().insert(
             "unknown-model".to_string(),
-            CachedContextLimit::Failure(Instant::now() - N_CTX_FAILURE_TTL),
+            CachedContextLimit::Failure(Instant::now() - CONTEXT_PROBE_FAILURE_TTL),
         );
 
         assert_eq!(
@@ -1735,6 +1981,149 @@ mod tests {
         );
         assert_eq!(
             provider.get_context_limit("unknown-model", None).await,
+            crate::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_discovers_provider_reported_context_window() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [
+                    { "id": "local.Qwen3.8-27B", "context_window": 262_144 },
+                    { "id": "local.Qwen3.6-35B", "context_window": 65_536 }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["local.Qwen3.8-27B".to_string()],
+        );
+        provider.custom_models = None;
+
+        assert_eq!(
+            provider.get_context_limit("local.Qwen3.8-27B", None).await,
+            262_144
+        );
+        assert_eq!(
+            provider.get_context_limit("local.Qwen3.6-35B", None).await,
+            65_536
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_discovers_alternate_field_spellings() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [
+                    { "id": "lemonade", "context_length": 131_072 },
+                    { "id": "vllm", "max_model_len": 40_960 }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["lemonade".to_string(), "vllm".to_string()],
+        );
+        provider.custom_models = None;
+
+        assert_eq!(provider.get_context_limit("lemonade", None).await, 131_072);
+        assert_eq!(provider.get_context_limit("vllm", None).await, 40_960);
+    }
+
+    #[tokio::test]
+    async fn context_limit_configured_model_beats_provider_discovery() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{ "id": "declared", "context_window": 262_144 }]
+            })))
+            .mount(&server)
+            .await;
+
+        // `make_provider_with_custom_models` pins every declared model at 4096.
+        let provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["declared".to_string()],
+        );
+
+        assert_eq!(provider.get_context_limit("declared", None).await, 4096);
+    }
+
+    #[tokio::test]
+    async fn context_limit_override_beats_provider_discovery() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{ "id": "discovered", "context_window": 262_144 }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["discovered".to_string()],
+        );
+        provider.custom_models = None;
+
+        assert_eq!(
+            provider.get_context_limit("discovered", Some(32_768)).await,
+            32_768
+        );
+    }
+
+    #[tokio::test]
+    async fn context_limit_ignores_windows_advertised_for_other_models() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [
+                    { "id": "reported", "context_window": 262_144 },
+                    { "id": "unreported", "object": "model" }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut provider = make_provider_with_custom_models(
+            &server.uri(),
+            "v1/chat/completions",
+            vec!["reported".to_string(), "unreported".to_string()],
+        );
+        provider.custom_models = None;
+
+        assert_eq!(
+            provider.get_context_limit("unreported", None).await,
             crate::model::DEFAULT_CONTEXT_LIMIT
         );
     }
