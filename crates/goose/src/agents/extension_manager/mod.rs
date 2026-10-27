@@ -1063,12 +1063,12 @@ impl ExtensionManager {
             .is_some_and(|pending| Arc::ptr_eq(pending, &slot))
         {
             enabling.remove(&pending_key);
-        }
-        if result.is_ok() {
-            scopes
-                .entry(pending_key.0)
-                .or_default()
-                .insert(pending_key.1, slot);
+            if result.is_ok() {
+                scopes
+                    .entry(pending_key.0)
+                    .or_default()
+                    .insert(pending_key.1, slot);
+            }
         }
         result
     }
@@ -1131,7 +1131,10 @@ impl ExtensionManager {
 
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
-        self.scopes.lock().await.remove(session_id);
+        let mut scopes = self.scopes.lock().await;
+        let mut enabling = self.enabling.lock().await;
+        scopes.remove(session_id);
+        enabling.retain(|(scope_id, _), _| scope_id != session_id);
         self.clients
             .lock()
             .expect("clients mutex poisoned")
