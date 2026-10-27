@@ -4,6 +4,20 @@ on:
   push:
     branches:
       - 'release/**'
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: 'Release branch whose PR receives the download link'
+        required: true
+        type: string
+      build_sha:
+        description: 'Exact commit SHA to build'
+        required: true
+        type: string
+
+concurrency:
+  group: release-candidate-${{ inputs.build_sha || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   bundle-desktop:
@@ -11,7 +25,7 @@ jobs:
     permissions:
       contents: read
     with:
-      ref: ${{ github.sha }}
+      ref: ${{ inputs.build_sha || github.sha }}
       target: aarch64-apple-darwin
       package_cli: false
       package_desktop: true
@@ -25,12 +39,14 @@ jobs:
       - name: Find release PR
         id: release-pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_BRANCH: ${{ inputs.release_branch || github.ref_name }}
         with:
           script: |
             const { data: prs } = await github.rest.pulls.list({
               ...context.repo,
               state: 'open',
-              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+              head: `${context.repo.owner}:${process.env.RELEASE_BRANCH}`,
             });
             core.setOutput('number', prs[0]?.number ?? '');
 
