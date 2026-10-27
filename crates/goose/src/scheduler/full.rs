@@ -1075,7 +1075,7 @@ async fn execute_job(
         Ok(session.id.clone())
     }
     .await;
-    services.release_session(&session.id).await;
+    services.release_session_if_closed(&session.id).await;
     result
 }
 
