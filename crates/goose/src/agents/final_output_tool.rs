@@ -1,5 +1,7 @@
+use crate::agents::state_machine::messages_since_kickoff;
 use crate::agents::tool_execution::ToolCallResult;
 use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::Conversation;
 use crate::recipe::Response;
 use indoc::formatdoc;
 use rmcp::model::{
@@ -50,6 +52,12 @@ impl FinalOutputTool {
             response,
             final_output: None,
         })
+    }
+
+    pub(crate) fn latest_turn_output(conversation: &Conversation) -> Option<String> {
+        messages_since_kickoff(conversation)
+            .ok()
+            .and_then(Self::successful_output)
     }
 
     pub(crate) fn successful_output(messages: &[Message]) -> Option<String> {
