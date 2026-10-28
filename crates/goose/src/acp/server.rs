@@ -1005,8 +1005,7 @@ impl AcpConnection {
         });
     }
 
-    /// Points the session's name updates and extension starts at this connection.
-    async fn attach_session(&self, cx: &ConnectionTo<Client>, session_id: &str) {
+    fn session_attachment(&self, cx: &ConnectionTo<Client>) -> Attachment {
         let session_names = (!self.services.disable_session_naming).then(|| {
             self.session_name_update_tx
                 .get_or_init(|| spawn_session_name_update_notifier(cx.clone()))
@@ -1016,15 +1015,16 @@ impl AcpConnection {
             &self.services.goose_platform,
             self.client_mcp_host_info.get().cloned(),
         );
+        Attachment {
+            client,
+            session_names,
+        }
+    }
+
+    /// Points the session's name updates and extension starts at this connection.
+    async fn attach_session(&self, cx: &ConnectionTo<Client>, session_id: &str) {
         self.services
-            .attach_session(
-                session_id,
-                self.connection_id,
-                Attachment {
-                    client,
-                    session_names,
-                },
-            )
+            .attach_session(session_id, self.connection_id, self.session_attachment(cx))
             .await;
     }
 
@@ -1798,8 +1798,18 @@ impl AcpConnection {
             .data(format!("Session not found: {}", session_id)));
         }
 
+        let cx = self.client_cx.get().ok_or_else(|| {
+            agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                .data(format!("Session not found: {}", session_id))
+        })?;
         self.services
-            .start_prompt_run(session_id, run_id, cancel_token)
+            .start_prompt_run(
+                session_id,
+                self.connection_id,
+                self.session_attachment(cx),
+                run_id,
+                cancel_token,
+            )
             .await
             .map_err(|error| match error {
                 StartRunError::AgentRunExists { run_id } => {
