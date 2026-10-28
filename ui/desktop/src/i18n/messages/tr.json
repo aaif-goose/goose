@@ -4517,6 +4517,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Araç Ayrıntıları"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Araç tanımlayıcısı"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Araç sonucu"
   },

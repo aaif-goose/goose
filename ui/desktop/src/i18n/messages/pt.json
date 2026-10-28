@@ -4517,6 +4517,9 @@
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Detalhes da Ferramenta"
   },
+  "toolCallWithResponse.toolIdentifier": {
+    "defaultMessage": "Identificador da ferramenta"
+  },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Resultado da ferramenta"
   },
