@@ -636,40 +636,51 @@ impl Config {
         }
     }
 
-    fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
-        let target_path = self.config_write_target_path()?;
+    fn config_mutation_lock_path(&self) -> Result<PathBuf, ConfigError> {
+        let target = self.config_write_target_path()?;
+        let mut lock_path = target.as_os_str().to_os_string();
+        lock_path.push(".lock");
+        Ok(PathBuf::from(lock_path))
+    }
 
-        // Convert to YAML for storage
-        let yaml_value = serde_yaml::to_string(values)?;
-
-        if let Some(parent) = target_path.parent() {
+    fn lock_config_for_mutation(&self) -> Result<std::fs::File, ConfigError> {
+        let lock_path = self.config_mutation_lock_path()?;
+        if let Some(parent) = lock_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
             std::fs::create_dir_all(parent)
                 .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
         }
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        lock_file
+            .lock_exclusive()
+            .map_err(|e| ConfigError::LockError(e.to_string()))?;
+        Ok(lock_file)
+    }
 
-        // Write to a temporary file first for atomic operation
-        let temp_path = target_path.with_extension("tmp");
+    fn save_values(&self, values: &Mapping) -> Result<(), ConfigError> {
+        let target_path = self.config_write_target_path()?;
 
-        {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&temp_path)?;
+        let yaml_value = serde_yaml::to_string(values)?;
 
-            // Acquire an exclusive lock
-            file.lock_exclusive()
-                .map_err(|e| ConfigError::LockError(e.to_string()))?;
+        let parent = target_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(parent)
+            .map_err(|e| ConfigError::DirectoryError(e.to_string()))?;
 
-            // Write the contents using the same file handle
-            file.write_all(yaml_value.as_bytes())?;
-            file.sync_all()?;
+        let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+        temp.write_all(yaml_value.as_bytes())?;
+        temp.as_file().sync_all()?;
+        temp.persist(&target_path).map_err(|e| e.error)?;
 
-            // Unlock is handled automatically when file is dropped
-        }
-
-        // Atomically replace the original file
-        std::fs::rename(&temp_path, &target_path)?;
         self.generation.fetch_add(1, Ordering::Relaxed);
 
         Ok(())
@@ -834,6 +845,7 @@ impl Config {
         F: FnOnce(T) -> V,
     {
         let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         let mut values = self.load_write_config()?;
         let current: T = values
             .get(key)
@@ -859,6 +871,7 @@ impl Config {
     /// - There is an error serializing the value
     pub fn set_param<V: Serialize>(&self, key: &str, value: V) -> Result<(), ConfigError> {
         let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         let mut values = self.load_write_config()?;
         values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
         self.save_values(&values)
@@ -871,6 +884,7 @@ impl Config {
         }
 
         let _guard = self.guard.lock().unwrap();
+        let _config_lock = self.lock_config_for_mutation()?;
         let mut values = self.load_write_config()?;
         for (key, value) in updates {
             values.insert(serde_yaml::to_value(key)?, serde_yaml::to_value(value)?);
@@ -892,12 +906,10 @@ impl Config {
     /// - There is an error reading or writing the config file
     /// - There is an error serializing the value
     pub fn delete(&self, key: &str) -> Result<(), ConfigError> {
-        // Lock before reading to prevent race condition.
         let _guard = self.guard.lock().unwrap();
-
+        let _config_lock = self.lock_config_for_mutation()?;
         let mut values = self.load_write_config()?;
         values.shift_remove(key);
-
         self.save_values(&values)
     }
 
@@ -1868,6 +1880,54 @@ mod tests {
                 key
             );
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_concurrent_independent_instances_no_lost_update() -> Result<(), ConfigError> {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let directory = TempDir::new().unwrap();
+        let config_path = directory.path().join("config.yaml");
+        let secrets_path = directory.path().join("secrets.yaml");
+
+        {
+            let seed = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+            seed.save_values(&Default::default())?;
+        }
+
+        let barrier = Arc::new(Barrier::new(4));
+        let mut handles = vec![];
+
+        for i in 0..4 {
+            let config_path = config_path.clone();
+            let secrets_path = secrets_path.clone();
+            let barrier = Arc::clone(&barrier);
+            let handle = thread::spawn(move || -> Result<(), ConfigError> {
+                let instance = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+                barrier.wait();
+                instance.set_param(&format!("key{i}"), &format!("value{i}"))?;
+                Ok(())
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap()?;
+        }
+
+        let final_config = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        for i in 0..4 {
+            assert_eq!(
+                final_config.get_param::<String>(&format!("key{i}"))?,
+                format!("value{i}"),
+            );
+        }
+
+        let raw = std::fs::read_to_string(&config_path)?;
+        assert!(parse_yaml_content(&raw).is_ok(), "config file is not valid YAML");
 
         Ok(())
     }
