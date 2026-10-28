@@ -190,14 +190,14 @@ pub fn ends_with_successful_tool_response(messages: &[Message]) -> bool {
     let Some(message) = messages.last() else {
         return false;
     };
-    let mut responses = message
+    let mut tool_responses = message
         .content
         .iter()
         .filter_map(MessageContent::as_tool_response)
         .peekable();
-    responses.peek().is_some()
-        && responses.all(|response| {
-            response
+    tool_responses.peek().is_some()
+        && tool_responses.all(|tool_response| {
+            tool_response
                 .tool_result
                 .as_ref()
                 .is_ok_and(|result| !result.is_error.unwrap_or(false))
@@ -255,13 +255,13 @@ pub struct InferenceRunner<'a, S, E> {
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
-/// unanswered by an earlier turn are dropped, since nothing will answer them now.
+/// with no response from an earlier turn are dropped, since nothing will respond to them now.
 fn messages_for_provider(
     conversation: &Conversation,
     turn: &[Message],
     keep_empty_messages: bool,
 ) -> Vec<Message> {
-    let answered: HashSet<&str> = conversation
+    let tool_response_ids: HashSet<&str> = conversation
         .messages()
         .iter()
         .flat_map(|message| message.get_tool_response_ids())
@@ -276,7 +276,9 @@ fn messages_for_provider(
             let mut message = message.agent_visible_content();
             if index < start {
                 message.content.retain(|content| match content {
-                    MessageContent::ToolRequest(request) => answered.contains(request.id.as_str()),
+                    MessageContent::ToolRequest(request) => {
+                        tool_response_ids.contains(request.id.as_str())
+                    }
                     _ => true,
                 });
             }

@@ -6,7 +6,6 @@ use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
-use crate::agents::state_machine::ops_stop_hook::DENIED;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
@@ -126,7 +125,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
             .iter()
             .filter(|message| message
                 .metadata
-                .operation_note("stop_hook", DENIED)
+                .operation_note("stop_hook", "denied")
                 .is_some())
             .count(),
         2
@@ -263,7 +262,7 @@ async fn stop_hook_distinct_id_denials_retry_once_then_respect_block_cap() -> Re
             .iter()
             .filter(|message| message
                 .metadata
-                .operation_note("stop_hook", DENIED)
+                .operation_note("stop_hook", "denied")
                 .is_some())
             .count(),
         1
@@ -1484,14 +1483,19 @@ async fn pre_tool_use_hook_failure_blocks_when_configured() -> Result<()> {
         .iter()
         .flat_map(|message| &message.content)
         .find_map(|content| match content {
-            MessageContent::ToolResponse(response) => response.tool_result.as_ref().err(),
+            MessageContent::ToolResponse(response) => response
+                .tool_result
+                .as_ref()
+                .ok()
+                .filter(|result| result.is_error == Some(true))
+                .and_then(|result| result.content[0].as_text())
+                .map(|text| text.text.clone()),
             _ => None,
         })
         .expect("blocked tool response");
     assert!(
-        tool_error.message.ends_with(HOOK_FAILURE_REFUSAL),
-        "expected the shared refusal, got {}",
-        tool_error.message
+        tool_error.ends_with(HOOK_FAILURE_REFUSAL),
+        "expected the shared refusal, got {tool_error}"
     );
     Ok(())
 }

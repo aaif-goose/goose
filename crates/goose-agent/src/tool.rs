@@ -19,6 +19,8 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
 };
+use crate::post_tool_call_hook::PostToolCallHook;
+use crate::tool_call_state::{tool_calls, ToolCallState};
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 fn empty_input_schema() -> Arc<JsonObject> {
@@ -193,7 +195,8 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
-    response: Mutex<Option<Message>>,
+    post_tool_call_hook: Option<Arc<dyn PostToolCallHook<S>>>,
+    tool_responses: Mutex<Option<Message>>,
 }
 
 impl<S> ToolOperation<S>
@@ -204,7 +207,8 @@ where
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
-            response: Mutex::new(None),
+            post_tool_call_hook: None,
+            tool_responses: Mutex::new(None),
         }
     }
 
@@ -223,6 +227,11 @@ where
 
     pub fn with_provider(mut self, provider: Arc<dyn ToolProvider<S>>) -> Self {
         self.providers.push(provider);
+        self
+    }
+
+    pub fn with_post_tool_call_hook(mut self, hook: Arc<dyn PostToolCallHook<S>>) -> Self {
+        self.post_tool_call_hook = Some(hook);
         self
     }
 
@@ -309,9 +318,9 @@ where
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        let response = self.response.lock().unwrap().take();
-        match response {
-            Some(response) => vec![E::from(emit.message(response))],
+        let tool_responses = self.tool_responses.lock().unwrap().take();
+        match tool_responses {
+            Some(tool_responses) => vec![E::from(emit.message(tool_responses))],
             None => Vec::new(),
         }
     }
@@ -332,18 +341,13 @@ where
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         let turn = messages_since_kickoff(conversation)?;
-        let answered: HashSet<&str> = turn
-            .iter()
-            .flat_map(Message::get_tool_response_ids)
-            .collect();
-        let pending = turn
-            .iter()
-            .flat_map(|message| message.content.iter())
-            .filter_map(MessageContent::as_tool_request)
-            .filter(|request| {
-                !request.was_executed_externally() && !answered.contains(request.id.as_str())
+        let pending = tool_calls(turn)
+            .into_iter()
+            .filter(|(request, state)| {
+                !request.was_executed_externally()
+                    && matches!(state, ToolCallState::Unchecked | ToolCallState::Executable)
             })
-            .cloned()
+            .map(|(request, _)| request.clone())
             .collect::<Vec<_>>();
         if pending.is_empty() {
             return not_applicable();
@@ -376,22 +380,37 @@ where
                         .await
                 }
             };
-            let mut output = self.response.lock().unwrap();
-            let message =
-                output.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-            message.add_tool_response_with_metadata(
-                request.id,
-                tool_result,
-                request.metadata.as_ref(),
-            );
+            let tool_response = {
+                let mut tool_responses = self.tool_responses.lock().unwrap();
+                let tool_responses = tool_responses
+                    .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
+                tool_responses.add_tool_response_with_metadata(
+                    request.id.clone(),
+                    tool_result,
+                    request.metadata.as_ref(),
+                );
+                tool_responses
+                    .content
+                    .last()
+                    .and_then(MessageContent::as_tool_response)
+                    .cloned()
+                    .expect("tool response just added")
+            };
+            if let (Ok(_), Some(hook)) = (&request.tool_call, &self.post_tool_call_hook) {
+                if let Err(error) = hook
+                    .after_call(session, conversation, &request, &tool_response)
+                    .await
+                {
+                    tracing::warn!(%error, tool_call_id = %request.id, "post tool call hook failed");
+                }
+            }
         }
-        let message = self
-            .response
+        let tool_responses = self
+            .tool_responses
             .lock()
             .unwrap()
             .take()
             .expect("tool responses retained");
-        let message = emit.message(message);
-        applied([E::from(message)])
+        applied([E::from(emit.message(tool_responses))])
     }
 }

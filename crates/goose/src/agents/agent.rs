@@ -43,6 +43,7 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
+use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -53,7 +54,6 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, instrument, warn};
 
-const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 const AUTO_EFFORTS: [ThinkingEffort; 5] = [
     ThinkingEffort::Off,
     ThinkingEffort::Low,
@@ -641,12 +641,12 @@ impl Agent {
         let stop_hook_block_cap = self.stop_hook_block_cap_override.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP)
+                .unwrap_or(DEFAULT_DENY_LIMIT)
         });
         #[cfg(not(test))]
         let stop_hook_block_cap = Config::global()
             .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-            .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP);
+            .unwrap_or(DEFAULT_DENY_LIMIT);
         let compaction_threshold = crate::context_mgmt::auto_compact_threshold(context_limit);
         let tool_call_cutoff = Config::global()
             .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")

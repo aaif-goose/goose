@@ -1166,12 +1166,14 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 5] = [
+const TOOL_OPERATIONS: [&str; 7] = [
     "tool_approval",
+    "pre_tool_call_hook",
     "skills",
     "recipe",
     "tool_execution",
     "remaining_tool_calls",
+    "unhandled_tool_calls",
 ];
 
 fn assert_only_tool_operations_act_on_open_calls(session: &Session, applied_step: Option<&str>) {

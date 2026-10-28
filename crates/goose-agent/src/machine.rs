@@ -11,7 +11,8 @@ use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
     Operation, OperationResult, RunStatus, StepResult,
 };
-use goose_provider_types::conversation::message::{Message, MessageContent};
+use crate::tool_call_state::tool_calls;
+use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use goose_provider_types::thinking::ThinkingEffort;
@@ -70,20 +71,11 @@ fn empty_result<E>(status: RunStatus) -> StepResult<E> {
     }
 }
 
-fn interrupted_response(messages: &[Message]) -> Option<Message> {
-    let answered = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect::<HashSet<_>>();
-    let mut request_ids = HashSet::new();
-    let mut response = Message::user();
-    for request in messages
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-    {
-        if request_ids.insert(request.id.as_str()) && !answered.contains(request.id.as_str()) {
-            response.add_tool_response_with_metadata(
+fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
+    let mut tool_responses = Message::user();
+    for (request, state) in tool_calls(messages) {
+        if state.is_open() {
+            tool_responses.add_tool_response_with_metadata(
                 request.id.clone(),
                 Ok(rmcp::model::CallToolResult::error(vec![
                     rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
@@ -92,7 +84,7 @@ fn interrupted_response(messages: &[Message]) -> Option<Message> {
             );
         }
     }
-    (!response.get_tool_response_ids().is_empty()).then_some(response)
+    (!tool_responses.content.is_empty()).then_some(tool_responses)
 }
 
 fn add_tools_to_inference_input(
@@ -245,12 +237,12 @@ where
                 .await?;
         }
 
-        let unanswered = session
+        let interrupted = session
             .conversation()
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
-            .and_then(interrupted_response);
-        if let Some(response) = unanswered {
-            let effects = vec![E::from(emit.message(response))];
+            .and_then(interrupted_tool_responses);
+        if let Some(tool_responses) = interrupted {
+            let effects = vec![E::from(emit.message(tool_responses))];
             session = self
                 .save(runtime, session_id, session, effects, emit)
                 .await?;

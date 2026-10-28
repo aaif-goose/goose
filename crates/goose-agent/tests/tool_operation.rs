@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -14,10 +14,12 @@ use goose_agent::{
         ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
         RunStatus,
     },
+    post_tool_call_hook::PostToolCallHook,
     tool::{ToolOperation, ToolProvider},
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
-    message::{Message, MessageContent},
+    message::{Message, MessageContent, ToolRequest, ToolResponse},
     Conversation,
 };
 use rmcp::{
@@ -475,11 +477,11 @@ async fn cancellation_interrupts_inference_discovery() {
 }
 
 #[tokio::test]
-async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
+async fn ignores_unavailable_responded_and_externally_dispatched_requests() {
     let conversation = Conversation::new_unvalidated([
         Message::user().with_text("call tools"),
         Message::assistant()
-            .with_tool_request("answered", Ok(CallToolRequestParams::new("add")))
+            .with_tool_request("responded", Ok(CallToolRequestParams::new("add")))
             .with_tool_request(
                 "unavailable",
                 Ok(CallToolRequestParams::new("not_registered")),
@@ -491,7 +493,7 @@ async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
                 Some(json!({"goose.external_dispatch": true})),
             ),
         Message::user().with_tool_response(
-            "answered",
+            "responded",
             Ok(CallToolResult::structured(json!({"sum": 5}))),
         ),
     ]);
@@ -506,4 +508,133 @@ async fn ignores_unavailable_answered_and_externally_dispatched_requests() {
     .unwrap();
 
     assert!(matches!(result, OperationResult::NotApplicable));
+}
+
+#[tokio::test]
+async fn skips_calls_marked_not_to_run() {
+    let call = |executable: bool| {
+        Conversation::new_unvalidated([
+            Message::user().with_text("call tools"),
+            Message::assistant().with_tool_request_with_metadata(
+                "add-call",
+                Ok(CallToolRequestParams::new("add")
+                    .with_arguments(json!({"left": 2, "right": 3}).as_object().unwrap().clone())),
+                None,
+                Some(json!({ EXECUTABLE_KEY: executable })),
+            ),
+        ])
+    };
+    let run = |conversation: Conversation| async move {
+        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation(),
+            &(),
+            &conversation,
+            &emitter(),
+        )
+        .await
+        .unwrap()
+    };
+
+    assert!(matches!(
+        run(call(false)).await,
+        OperationResult::NotApplicable
+    ));
+    let tool_responses = appended_message(run(call(true)).await);
+    assert!(tool_responses.get_tool_response_ids().contains("add-call"));
+}
+
+type Log = Arc<Mutex<Vec<String>>>;
+
+struct LoggingTools(Log);
+
+#[async_trait]
+impl ToolProvider<()> for LoggingTools {
+    async fn tools(&self, _session: &()) -> Result<Vec<Tool>> {
+        Ok(vec![Tool::new(
+            "logged",
+            "A tool that logs its calls",
+            Arc::new(serde_json::Map::new()),
+        )])
+    }
+
+    async fn call(
+        &self,
+        _session: &(),
+        request_id: &str,
+        _call: CallToolRequestParams,
+        _emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.0.lock().unwrap().push(format!("call:{request_id}"));
+        Ok(CallToolResult::structured(json!({ "id": request_id })))
+    }
+}
+
+struct LoggingHook {
+    log: Log,
+    fail: bool,
+}
+
+#[async_trait]
+impl PostToolCallHook<()> for LoggingHook {
+    async fn after_call(
+        &self,
+        _session: &(),
+        _conversation: &Conversation,
+        request: &ToolRequest,
+        response: &ToolResponse,
+    ) -> Result<()> {
+        assert_eq!(request.id, response.id);
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("hook:{}", request.id));
+        if self.fail {
+            anyhow::bail!("hook failed");
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn calls_the_post_tool_call_hook_after_each_call_and_keeps_results_if_it_fails() {
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("call tools"),
+        Message::assistant()
+            .with_tool_request("first", Ok(CallToolRequestParams::new("logged")))
+            .with_tool_request(
+                "invalid",
+                Err(ErrorData::invalid_params("malformed arguments", None)),
+            )
+            .with_tool_request("second", Ok(CallToolRequestParams::new("logged"))),
+    ]);
+
+    for fail in [false, true] {
+        let log = Log::default();
+        let operation = ToolOperation::new()
+            .with_provider(Arc::new(LoggingTools(log.clone())))
+            .with_post_tool_call_hook(Arc::new(LoggingHook {
+                log: log.clone(),
+                fail,
+            }));
+        let tool_responses = appended_message(
+            <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
+                &operation,
+                &(),
+                &conversation,
+                &emitter(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["call:first", "hook:first", "call:second", "hook:second"]
+        );
+        let ids = tool_responses.get_tool_response_ids();
+        assert_eq!(ids.len(), 3);
+        assert!(["first", "invalid", "second"]
+            .iter()
+            .all(|id| ids.contains(id)));
+    }
 }

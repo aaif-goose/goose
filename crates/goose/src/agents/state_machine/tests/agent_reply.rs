@@ -304,7 +304,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
         .collect::<serde_json::Result<Vec<_>>>()?;
-    assert_eq!(hook_payloads.len(), 2);
+    assert_eq!(hook_payloads.len(), 1);
     assert!(hook_payloads.iter().all(|payload| {
         payload["working_dir"].as_str() == Some(temp_dir.path().to_string_lossy().as_ref())
     }));
@@ -441,6 +441,63 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
         "Tool call was interrupted before completing"
     );
     assert_eq!(calculator.total(), 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() -> Result<()> {
+    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    agent
+        .update_goose_mode(GooseMode::Auto, &session_id)
+        .await?;
+    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["PreToolUse"], 0)?;
+
+    let model_reply = api.on("add one").hold_call(ADD, value(1));
+    api.on("result: 1").reply("the result is one");
+
+    let session_config = SessionConfig {
+        id: session_id,
+        schedule_id: None,
+        max_turns: Some(2),
+    };
+    let stream = agent
+        .reply(
+            Message::user().with_text("add one"),
+            session_config.clone(),
+            Some(CancellationToken::new()),
+        )
+        .await?;
+    let new_working_dir = tempfile::tempdir()?;
+    let change_working_dir = async {
+        model_reply.entered().await;
+        agent
+            .config
+            .session_manager
+            .update(&session_config.id)
+            .working_dir(new_working_dir.path().to_path_buf())
+            .apply()
+            .await?;
+        model_reply.release();
+        anyhow::Ok(())
+    };
+    let (messages, changed) = tokio::join!(stream_messages(stream), change_working_dir);
+    messages?;
+    changed?;
+
+    assert_eq!(calculator.total(), 1);
+    let leased_working_dir = temp_dir.path().to_string_lossy().to_string();
+    assert!(calculator
+        .contexts()
+        .iter()
+        .all(|context| context.working_dir.as_deref() == Some(temp_dir.path())));
+    let working_dirs = std::fs::read_to_string(hook_log)?
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .map(|payload| payload["working_dir"].as_str().map(str::to_string))
+        })
+        .collect::<serde_json::Result<Vec<_>>>()?;
+    assert_eq!(working_dirs, vec![Some(leased_working_dir)]);
     Ok(())
 }
 

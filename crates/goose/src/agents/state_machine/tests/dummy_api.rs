@@ -316,6 +316,20 @@ impl<'a> ApiRuleBuilder<'a> {
         gate
     }
 
+    pub(super) fn hold_call(self, name: impl Into<String>, arguments: Value) -> ResponseGate {
+        let gate = ResponseGate::new();
+        self.api.add_gated_rule(
+            self.matcher,
+            ApiResponse::ToolCall {
+                name: name.into(),
+                arguments: arguments.to_string(),
+                require_advertised: true,
+            },
+            gate.clone(),
+        );
+        gate
+    }
+
     pub(super) fn reasoning(self, text: impl Into<String>) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::Mixed {
             reasoning: text.into(),
