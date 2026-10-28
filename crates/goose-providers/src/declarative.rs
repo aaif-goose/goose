@@ -48,6 +48,7 @@ pub(crate) mod declarative_providers {
         opper,
         orcarouter,
         ovhcloud,
+        paper_instruments,
         perplexity,
         pleumrouter,
         routstr,
@@ -149,6 +150,8 @@ fn default_refresh_interval() -> u64 {
     3600
 }
 
+pub use crate::thinking::ReasoningEffortMapping;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeclarativeProviderConfig {
     pub name: String,
@@ -195,6 +198,9 @@ pub struct DeclarativeProviderConfig {
     pub toolshim: bool,
     #[serde(default)]
     pub preserves_thinking: bool,
+    /// When absent, leaves the engine's reasoning-effort behavior unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort_mapping: Option<ReasoningEffortMapping>,
     /// Enables Z.AI's `clear_thinking` field, which Anthropic does not support.
     #[serde(default)]
     pub emit_clear_thinking: bool,

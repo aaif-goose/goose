@@ -1,0 +1,44 @@
+{
+  "name": "paper_instruments",
+  "engine": "openai",
+  "display_name": "Paper Instruments",
+  "description": "Ultramarine models for professional knowledge work",
+  "api_key_env": "PAPERINSTRUMENTS_API_KEY",
+  "base_url": "https://api.paperinstruments.com/v1",
+  "session_id_header_override": "x-session-id",
+  "models": [
+    {
+      "name": "ultramarine-1-flash",
+      "context_limit": 131072,
+      "input_token_cost": 0.00000015,
+      "output_token_cost": 0.0000005,
+      "currency": "USD",
+      "reasoning": true,
+      "supports_vision": true,
+      "reasoning_effort_mapping": {
+        "off": "low",
+        "low": "low",
+        "medium": "high",
+        "high": "high",
+        "max": "max"
+      }
+    }
+  ],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "preserves_thinking": true,
+  "model_doc_link": "https://docs.paperinstruments.com/docs/ultramarine",
+  "setup_steps": [
+    "Sign in at https://platform.paperinstruments.com",
+    "Add funds on the Billing page",
+    "Create an API key on the API keys page",
+    "Paste the key above as PAPERINSTRUMENTS_API_KEY"
+  ],
+  "setup": {
+    "category": "model",
+    "setup_method": "single_api_key",
+    "group": "additional",
+    "docs_url": "https://docs.paperinstruments.com/docs/ultramarine",
+    "aliases": ["paperinstruments", "ultramarine"]
+  }
+}
