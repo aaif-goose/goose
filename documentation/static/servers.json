@@ -36,7 +36,7 @@
   {
     "id": "apify",
     "name": "Apify",
-    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store \u26a1",
+    "description": "Extract data from any website with thousands of scrapers, crawlers, and automations on Apify Store ⚡",
     "command": "npx -y @apify/actors-mcp-server",
     "link": "https://github.com/apify/apify-mcp-server",
     "installation_notes": "Install using npx. Requires an Apify API token.",
@@ -774,7 +774,7 @@
   {
     "id": "cash-app",
     "name": "Cash App",
-    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout\u2014all conversationally.",
+    "description": "Cash App brings local food ordering into the AI era. Discover nearby sellers, browse menus with calories and allergen info, customize orders, and complete checkout—all conversationally.",
     "type": "streamable-http",
     "url": "https://connect.squareup.com/v2/mcp/cash-app",
     "link": "",
@@ -784,26 +784,38 @@
     "environmentVariables": []
   },
   {
-  "id": "scholar-sidekick",
-  "name": "Scholar Sidekick",
-  "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
-  "command": "npx -y scholar-sidekick-mcp@latest",
-  "link": "https://github.com/mlava/scholar-sidekick-mcp",
-  "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
-  "is_builtin": false,
-  "endorsed": false,
-  "environmentVariables": [
-    {
-      "name": "SCHOLAR_API_KEY",
-      "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
-      "required": false
-    },
-    {
-      "name": "RAPIDAPI_KEY",
-      "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
-      "required": false
-    }
-  ]
-}
-
+    "id": "scholar-sidekick",
+    "name": "Scholar Sidekick",
+    "description": "Resolve, format, export, and verify academic citations (DOI, PMID, ISBN, arXiv) plus retraction and open-access checks",
+    "command": "npx -y scholar-sidekick-mcp@latest",
+    "link": "https://github.com/mlava/scholar-sidekick-mcp",
+    "installation_notes": "No API key required — works anonymously on a free, rate-limited tier. Optionally set SCHOLAR_API_KEY (a free first-party ssk_ key from https://scholar-sidekick.com/account) for higher limits, or RAPIDAPI_KEY for paid tiers via RapidAPI.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [
+      {
+        "name": "SCHOLAR_API_KEY",
+        "description": "Optional first-party API key (ssk_) from https://scholar-sidekick.com/account; raises rate limits. Sent as Authorization: Bearer.",
+        "required": false
+      },
+      {
+        "name": "RAPIDAPI_KEY",
+        "description": "Optional RapidAPI key for paid/managed tiers; routes calls through the RapidAPI gateway.",
+        "required": false
+      }
+    ]
+  },
+  {
+    "id": "probative-legal-marketing-data",
+    "name": "Probative Legal-Marketing Data",
+    "description": "US lawyer advertising rules by state, bar ad filing, ethics opinions, ad-platform policies and attorney fee caps, with sources (read-only, no auth)",
+    "url": "https://probativegrowth.com/mcp",
+    "link": "https://github.com/ops864/legal-marketing-data",
+    "documentation": "https://probativegrowth.com/resources/rules-api/",
+    "installation_notes": "Remote server, no API key or sign-in. Read-only public data under CC BY 4.0. Not legal advice.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
