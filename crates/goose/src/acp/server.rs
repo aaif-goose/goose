@@ -809,8 +809,19 @@ impl AcpConnection {
         session_id: &str,
         run_id: String,
     ) -> Result<(), agent_client_protocol::Error> {
-        self.start_active_run(session_id, run_id, CancellationToken::new())
+        self.services
+            .start_prompt_run(
+                session_id,
+                self.connection_id,
+                Attachment {
+                    client: ClientContext::new(&self.services.goose_platform, None),
+                    session_names: None,
+                },
+                run_id,
+                CancellationToken::new(),
+            )
             .await
+            .map_err(|_| agent_client_protocol::Error::invalid_params())
     }
 
     #[cfg(all(test, feature = "scheduler"))]
@@ -3765,6 +3776,7 @@ print(\"hello, world\")
             .connect_with(
                 ByteStreams::new(server_write.compat_write(), server_read.compat()),
                 async move |cx: ConnectionTo<Client>| {
+                    server_for_connection.client_cx.set(cx.clone()).unwrap();
                     server_for_connection
                         .start_thinking_effort_update_forwarder(&cx)
                         .await;
