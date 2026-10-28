@@ -1,18 +1,23 @@
 //! Limits autonomous assistant turns using persisted conversation history.
 
-use crate::conversation::message::Message;
-use crate::conversation::Conversation;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::conversation::message::Message;
+use goose_provider_types::conversation::Conversation;
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-use crate::agents::state_machine::{
+use crate::operation::{
     assistant_turn_count, messages_since_kickoff, not_applicable, yielded_with, Emitter, Operation,
     OperationResult,
 };
 
 const OPERATION_NAME: &str = "max_turns";
 
+#[cfg(not(target_arch = "wasm32"))]
 type ExhaustionMessage = dyn Fn() -> Message + Send + Sync;
+
+#[cfg(target_arch = "wasm32")]
+type ExhaustionMessage = dyn Fn() -> Message;
 
 /// Yields when the conversation has used its autonomous turn budget.
 ///
@@ -46,18 +51,19 @@ impl MaxTurnsOperation {
     /// Customizes the exhaustion message's content and visibility.
     pub fn with_exhaustion_message(
         mut self,
-        message: impl Fn() -> Message + Send + Sync + 'static,
+        message: impl Fn() -> Message + MaybeSend + MaybeSync + 'static,
     ) -> Self {
         self.exhaustion_message = Some(Box::new(message));
         self
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S, E> Operation<S, E> for MaxTurnsOperation
 where
-    S: Send + Sync + 'static,
-    E: From<Message> + Send + 'static,
+    S: MaybeSend + MaybeSync + 'static,
+    E: From<Message> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
         OPERATION_NAME

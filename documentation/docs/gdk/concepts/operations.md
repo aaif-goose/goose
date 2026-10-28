@@ -46,6 +46,8 @@ Suppose an application should allow at most three assistant turns for each
 user request. Once the current tool results have been saved, it should hand
 control back to the user instead of making another model call.
 
+This example illustrates the `Operation` contract. For an application turn limit, use the reusable `goose_agent::turns::MaxTurnsOperation` instead; its usage is shown after the example.
+
 We can implement this without changing inference or the state machine. This
 native Rust operation works with any session and any effect type that can
 represent a `Message`:
@@ -119,8 +121,21 @@ tool calls that need separate handling.
 
 When the user sends a new message, it becomes the next kickoff and the count
 starts again. No mutable counter needs to survive a restart. This is a limit
-on assistant turns, not a dollar, token, or tool-call budget. The complete goose
-application has its own `MaxTurnsOperation` with additional prompt context.
+on assistant turns, not a dollar, token, or tool-call budget.
+
+`MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`; supply a factory if you want a visible exhaustion message:
+
+```rust
+use goose_agent::turns::MaxTurnsOperation;
+use goose_provider_types::conversation::message::Message;
+
+let turn_limit = MaxTurnsOperation::new(3).with_exhaustion_message(|| {
+    Message::assistant()
+        .with_text("I've reached this request's turn limit. Would you like me to continue?")
+});
+```
+
+Without a factory, it yields with an empty hidden message. Your inference request preparer must render `moim_parts` for budget reminders to reach the model.
 
 ## Operations available today
 
@@ -133,6 +148,7 @@ tools, provider, or subagent runner:
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | [`ToolOperation`](https://docs.rs/goose-agent/latest/goose_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
 | [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
+| [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 
 ### Operations in goose
@@ -160,7 +176,6 @@ your application.
 | `EmptyResponseOperation`      | Make an empty-response fallback visible when another operation has not taken over.                |
 | `StopHookOperation`           | Let configured stop hooks accept or block the end of a turn.                                      |
 | `ExitOnErrorOperation`        | Yield when an error remains at the end of the conversation.                                       |
-| `MaxTurnsOperation`           | Enforce goose's autonomous turn budget and contribute remaining-budget context.                   |
 | `AutoEffortOperation`         | Select and record thinking effort for a turn when automatic effort selection is enabled.          |
 | `SlashCommandOperation`       | Route a recognized slash command to operations' command handlers.                                 |
 | `StatusOperation`             | Report the current session, model, and usage through `/status`.                                   |

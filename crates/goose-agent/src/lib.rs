@@ -10,4 +10,5 @@ pub mod subagent;
 pub mod tool;
 pub mod tool_approval;
 pub mod tool_call_state;
+pub mod turns;
 pub mod unhandled_tool_calls;
