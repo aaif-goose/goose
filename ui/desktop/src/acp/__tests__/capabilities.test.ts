@@ -1,6 +1,10 @@
 import type { InitializeResponse } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import { hasLocalInferenceCapability, hasRecipeParameterScopesCapability } from '../capabilities';
+import {
+  hasLocalInferenceCapability,
+  hasRecipeParameterScopesCapability,
+  hasEmptyExtensionSelectionCapability,
+} from '../capabilities';
 
 function initializeResponseWithMeta(meta?: unknown): Pick<InitializeResponse, 'agentCapabilities'> {
   return {
@@ -11,6 +15,45 @@ function initializeResponseWithMeta(meta?: unknown): Pick<InitializeResponse, 'a
 }
 
 describe('ACP capabilities', () => {
+  it('requires advertised empty-selection support', () => {
+    expect(
+      hasEmptyExtensionSelectionCapability(
+        initializeResponseWithMeta({
+          goose: { emptyExtensionSelection: {} },
+        })
+      )
+    ).toBe(true);
+    for (const meta of [
+      undefined,
+      {},
+      { goose: null },
+      { goose: {} },
+      { goose: { emptyExtensionSelection: false } },
+      { goose: { emptyExtensionSelection: null } },
+    ]) {
+      expect(hasEmptyExtensionSelectionCapability(initializeResponseWithMeta(meta))).toBe(false);
+    }
+  });
+
+  it('accepts empty-selection capability objects with fields', () => {
+    expect(
+      hasEmptyExtensionSelectionCapability(
+        initializeResponseWithMeta({
+          goose: { emptyExtensionSelection: { version: 1 } },
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    [],
+    { goose: [] },
+    { goose: { emptyExtensionSelection: [] } },
+    { goose: { emptyExtensionSelection: ['supported'] } },
+  ])('rejects array capability metadata: %j', (meta) => {
+    expect(hasEmptyExtensionSelectionCapability(initializeResponseWithMeta(meta))).toBe(false);
+  });
+
   it('detects local inference support from Goose metadata', () => {
     expect(
       hasLocalInferenceCapability(
