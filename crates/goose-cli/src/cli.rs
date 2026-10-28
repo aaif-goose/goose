@@ -2206,7 +2206,7 @@ fn parse_run_input(
             Ok(Some((
                 InputConfig {
                     contents: Some(contents),
-                    additional_system_prompt: None,
+                    additional_system_prompt: input_opts.system.clone(),
                 },
                 None,
             )))
@@ -3007,6 +3007,7 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn completion_command_accepts_nushell_alias() {
@@ -3312,5 +3313,45 @@ mod tests {
             assert_eq!(format_size(1024 * 1024 * 1024), "1.0GB");
             assert_eq!(format_size(3 * 1024 * 1024 * 1024 / 2), "1.5GB");
         }
+    }
+
+    #[test]
+    fn parse_run_input_applies_system_prompt_with_instructions_file() {
+        let mut file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        write!(file, "Say hello.").expect("failed to write temp file");
+
+        let input_opts = InputOptions {
+            instructions: Some(file.path().to_str().unwrap().to_string()),
+            system: Some("Answer only in French.".to_string()),
+            ..Default::default()
+        };
+
+        let (config, recipe) = parse_run_input(&input_opts, false)
+            .expect("parse_run_input failed")
+            .expect("expected Some input config");
+
+        assert!(recipe.is_none());
+        assert_eq!(config.contents.as_deref(), Some("Say hello."));
+        assert_eq!(
+            config.additional_system_prompt.as_deref(),
+            Some("Answer only in French.")
+        );
+    }
+
+    #[test]
+    fn parse_run_input_without_system_prompt_leaves_it_none() {
+        let mut file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        write!(file, "Say hello.").expect("failed to write temp file");
+
+        let input_opts = InputOptions {
+            instructions: Some(file.path().to_str().unwrap().to_string()),
+            ..Default::default()
+        };
+
+        let (config, _recipe) = parse_run_input(&input_opts, false)
+            .expect("parse_run_input failed")
+            .expect("expected Some input config");
+
+        assert!(config.additional_system_prompt.is_none());
     }
 }
