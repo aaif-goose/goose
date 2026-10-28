@@ -452,15 +452,26 @@ if (process.platform !== 'darwin') {
       const protocolUrl = commandLine.find((arg) => arg.startsWith('goose://'));
       if (protocolUrl) {
         const parsedUrl = new URL(protocolUrl);
-        // If it's a bot/recipe URL, handle it directly by creating a new window
+        // If it's a bot/recipe URL, reuse an existing window or open a new one
         if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
           app.whenReady().then(async () => {
+            const deeplinkData = parseRecipeDeeplink(protocolUrl);
+            const regularWindows = getRegularWindows();
+            if (regularWindows.length > 0) {
+              const targetWindow = regularWindows[0];
+              if (targetWindow.isMinimized()) targetWindow.restore();
+              targetWindow.focus();
+              if (deeplinkData?.config) {
+                deliverRecipeDeepLink(
+                  { recipeDeeplink: deeplinkData.config, recipeParameters: deeplinkData.parameters },
+                  targetWindow
+                );
+              }
+              return;
+            }
             const recentDirs = loadRecentDirs();
             const openDir = recentDirs.length > 0 ? recentDirs[0] : null;
-
-            const deeplinkData = parseRecipeDeeplink(protocolUrl);
             const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
             await createChat(app, {
               dir: openDir || undefined,
               recipeDeeplink: deeplinkData?.config,
@@ -552,6 +563,13 @@ function queuePendingDeepLink(windowId: number, url: string): void {
   pendingDeepLinks.set(windowId, url);
 }
 
+interface StartRecipePayload {
+  recipeDeeplink: string;
+  recipeParameters?: Record<string, string>;
+}
+
+const pendingRecipeDeepLinks = new Map<number, StartRecipePayload>();
+
 const reactReadyWindows = new Set<number>();
 
 function deliverExtensionDeepLink(url: string, targetWindow: BrowserWindow): void {
@@ -561,6 +579,15 @@ function deliverExtensionDeepLink(url: string, targetWindow: BrowserWindow): voi
   }
 
   targetWindow.webContents.send('add-extension', url);
+}
+
+function deliverRecipeDeepLink(payload: StartRecipePayload, targetWindow: BrowserWindow): void {
+  if (!reactReadyWindows.has(targetWindow.id) || targetWindow.webContents.isLoadingMainFrame()) {
+    pendingRecipeDeepLinks.set(targetWindow.id, payload);
+    return;
+  }
+
+  targetWindow.webContents.send('start-recipe', payload);
 }
 
 function getResumeSessionId(parsedUrl: URL): string | null {
@@ -685,16 +712,28 @@ app.on('open-url', async (_event, url) => {
       return;
     }
 
-    // Handle bot/recipe URLs by directly creating a new window
+    // Handle bot/recipe URLs by reusing an existing window or creating a new one
     if (parsedUrl.hostname === 'bot' || parsedUrl.hostname === 'recipe') {
+      const deeplinkData = parseRecipeDeeplink(url);
+      const regularWindows = getRegularWindows();
+      if (regularWindows.length > 0) {
+        const targetWindow = regularWindows[0];
+        if (targetWindow.isMinimized()) targetWindow.restore();
+        targetWindow.focus();
+        if (deeplinkData?.config) {
+          deliverRecipeDeepLink(
+            { recipeDeeplink: deeplinkData.config, recipeParameters: deeplinkData.parameters },
+            targetWindow
+          );
+        }
+        return;
+      }
       log.info('[Main] Detected bot/recipe URL, creating new chat window');
       openUrlHandledLaunch = true;
-      const deeplinkData = parseRecipeDeeplink(url);
       if (deeplinkData) {
         windowDeeplinkURL = url;
       }
       const scheduledJobId = parsedUrl.searchParams.get('scheduledJob');
-
       await createChat(app, {
         dir: openDir || undefined,
         recipeDeeplink: deeplinkData?.config,
@@ -1450,6 +1489,7 @@ const createChat = async (
 
     pendingInitialMessages.delete(windowId);
     pendingDeepLinks.delete(windowId);
+    pendingRecipeDeepLinks.delete(windowId);
     reactReadyWindows.delete(windowId);
 
     if (windowPowerSaveBlockers.has(windowId)) {
@@ -1886,6 +1926,12 @@ ipcMain.on('react-ready', (event) => {
     } catch (error) {
       log.error('Error processing pending deep link:', error);
     }
+  }
+
+  if (windowId && pendingRecipeDeepLinks.has(windowId) && window) {
+    const payload = pendingRecipeDeepLinks.get(windowId)!;
+    pendingRecipeDeepLinks.delete(windowId);
+    window.webContents.send('start-recipe', payload);
   }
 });
 
