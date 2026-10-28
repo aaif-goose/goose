@@ -197,6 +197,9 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
     assert!(calls[first_budgeted_call].input_contains("<turn-budget>"));
     result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
     result.assert_emitted_message_matches_persisted(MAX_TURNS_MESSAGE);
+    assert!(goose_agent::turns::turn_limit_reached(
+        result.conversation().last().unwrap()
+    ));
 
     Ok(())
 }

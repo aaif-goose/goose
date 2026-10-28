@@ -2,7 +2,6 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{messages_since_kickoff, trailing_error},
-        state_machine_builder::MAX_TURNS_MESSAGE,
         AgentEvent, SessionConfig, StateMachineServices,
     },
     conversation::message::{ActionRequiredData, Message, MessageContent},
@@ -14,6 +13,7 @@ use anyhow::{anyhow, Result};
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
+use goose_agent::turns::turn_limit_reached;
 use rmcp::model::Role;
 use serde::Serialize;
 use std::future::Future;
@@ -263,19 +263,19 @@ fn failure_reason(messages: &[Message]) -> String {
     let Some(last) = messages.last() else {
         return "stopped without final output".to_string();
     };
-    let last_text = last.as_concat_text();
-    if last_text == MAX_TURNS_MESSAGE {
+    if turn_limit_reached(last) {
         let last_response = messages
             .iter()
             .rev()
-            .filter(|message| message.role == Role::Assistant)
+            .filter(|message| message.role == Role::Assistant && !turn_limit_reached(message))
             .map(Message::as_concat_text)
-            .find(|text| !text.is_empty() && text != MAX_TURNS_MESSAGE);
+            .find(|text| !text.is_empty());
         return match last_response {
             Some(text) => format!("max turns reached; last response: {text}"),
             None => "max turns reached".to_string(),
         };
     }
+    let last_text = last.as_concat_text();
     if last_text.is_empty() {
         "stopped without final output".to_string()
     } else {
@@ -385,7 +385,12 @@ mod tests {
 
     #[test]
     fn failure_reason_describes_how_the_subagent_stopped() {
-        let max_turns = Message::assistant().with_text(MAX_TURNS_MESSAGE);
+        let mut max_turns = Message::assistant().with_text("custom limit text");
+        max_turns.metadata.set_operation_note(
+            "max_turns",
+            "exhausted",
+            serde_json::Value::Bool(true),
+        );
         let cases = [
             (vec![], "stopped without final output".to_string()),
             (
@@ -397,6 +402,10 @@ mod tests {
                 "I gave up".to_string(),
             ),
             (
+                vec![Message::assistant().with_text(MAX_TURNS_MESSAGE)],
+                MAX_TURNS_MESSAGE.to_string(),
+            ),
+            (
                 vec![Message::user().with_text("go"), max_turns.clone()],
                 "max turns reached".to_string(),
             ),
@@ -404,9 +413,17 @@ mod tests {
                 vec![
                     Message::assistant().with_text("halfway there"),
                     Message::user().with_text("tool result"),
-                    max_turns,
+                    max_turns.clone(),
                 ],
                 "max turns reached; last response: halfway there".to_string(),
+            ),
+            (
+                vec![
+                    Message::assistant().with_text(MAX_TURNS_MESSAGE),
+                    Message::user().with_text("tool result"),
+                    max_turns,
+                ],
+                format!("max turns reached; last response: {MAX_TURNS_MESSAGE}"),
             ),
         ];
         for (messages, expected) in cases {
