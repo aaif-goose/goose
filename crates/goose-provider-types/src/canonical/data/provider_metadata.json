@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 125
+    "model_count": 126
   },
   {
     "id": "abacus",
@@ -449,7 +449,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 107
+    "model_count": 108
   },
   {
     "id": "crossmodel",
@@ -571,7 +571,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 370
+    "model_count": 368
   },
   {
     "id": "empiriolabs",
@@ -582,7 +582,7 @@
     "env": [
       "EMPIRIOLABS_API_KEY"
     ],
-    "model_count": 63
+    "model_count": 62
   },
   {
     "id": "engy",
@@ -902,7 +902,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 396
+    "model_count": 384
   },
   {
     "id": "kimi-code-plan-cn",
@@ -990,7 +990,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 208
+    "model_count": 195
   },
   {
     "id": "llmgateway-providers",
@@ -1001,7 +1001,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 432
+    "model_count": 409
   },
   {
     "id": "llmtech",
@@ -1100,7 +1100,7 @@
     "env": [
       "MELIOUS_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 8
   },
   {
     "id": "meta",
@@ -1224,6 +1224,17 @@
     "model_count": 7
   },
   {
+    "id": "modular",
+    "display_name": "Modular",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.modular.com/v1",
+    "doc": "https://docs.modular.com/models",
+    "env": [
+      "MODULAR_API_KEY"
+    ],
+    "model_count": 4
+  },
+  {
     "id": "moonshotai",
     "display_name": "Moonshot AI",
     "npm": "@ai-sdk/openai-compatible",
@@ -1298,7 +1309,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 650
+    "model_count": 641
   },
   {
     "id": "nearai",
@@ -1332,7 +1343,7 @@
       "NEON_AI_GATEWAY_BASE_URL",
       "NEON_AI_GATEWAY_TOKEN"
     ],
-    "model_count": 57
+    "model_count": 58
   },
   {
     "id": "neosmith",
@@ -2059,7 +2070,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 37
+    "model_count": 38
   },
   {
     "id": "volcengine",
