@@ -1764,14 +1764,14 @@ impl AcpConnection {
             .data(format!("Session not found: {}", session_id)));
         }
 
-        if self.has_session(session_id) {
-            return Ok(());
-        }
-
         let cx = self.client_cx.get().ok_or_else(|| {
             agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                 .data(format!("Session not found: {}", session_id))
         })?;
+        if self.has_session(session_id) {
+            self.attach_session(cx, session_id).await;
+            return Ok(());
+        }
         let session = self
             .services
             .session_manager
