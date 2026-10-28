@@ -517,8 +517,16 @@ impl From<ModelInfo> for ProviderModelInfo {
 }
 
 impl ProviderModelConfig {
-    fn to_goose_model_config(&self, provider_name: &str) -> Result<ModelConfig, GooseError> {
-        let mut config = ModelConfig::new(&self.model_name)
+    fn to_goose_model_config(
+        &self,
+        provider_name: &str,
+        catalog_provider_id: Option<&str>,
+    ) -> Result<ModelConfig, GooseError> {
+        let mut config = ModelConfig::new(&self.model_name);
+        if let Some(id) = catalog_provider_id {
+            config = config.with_canonical_vision_support(id);
+        }
+        let mut config = config
             .with_canonical_vision_support(provider_name)
             .with_temperature(self.temperature)
             .with_max_tokens(self.max_tokens)
@@ -754,12 +762,14 @@ where
 
 struct ProviderHandle {
     provider: Arc<dyn GooseProvider>,
+    catalog_provider_id: Option<String>,
 }
 
 impl ProviderHandle {
-    fn new(provider: Box<dyn GooseProvider>) -> Self {
+    fn new(provider: Box<dyn GooseProvider>, catalog_provider_id: Option<String>) -> Self {
         Self {
             provider: Arc::from(provider),
+            catalog_provider_id,
         }
     }
 
@@ -796,7 +806,10 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<Arc<ProviderStream>, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(self.provider.get_name())?;
+        let model = model.to_goose_model_config(
+            self.provider.get_name(),
+            self.catalog_provider_id.as_deref(),
+        )?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = Arc::new(RequestObserver::start(RequestDescriptor {
@@ -839,7 +852,10 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<ProviderCompletion, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config(self.provider.get_name())?;
+        let model = model.to_goose_model_config(
+            self.provider.get_name(),
+            self.catalog_provider_id.as_deref(),
+        )?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = RequestObserver::start(RequestDescriptor {
@@ -1099,8 +1115,15 @@ pub struct Provider {
 
 impl Provider {
     fn new(provider: Box<dyn GooseProvider>) -> Arc<Self> {
+        Self::with_catalog_id(provider, None)
+    }
+
+    fn with_catalog_id(
+        provider: Box<dyn GooseProvider>,
+        catalog_provider_id: Option<String>,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            handle: ProviderHandle::new(provider),
+            handle: ProviderHandle::new(provider, catalog_provider_id),
         })
     }
 }
@@ -1260,7 +1283,10 @@ pub fn default_compaction_templates() -> CompactionTemplates {
 #[uniffi::export]
 pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, GooseError> {
     let provider = goose_providers::declarative::from_json(&json, None, EnvKeyResolver {})?;
-    Ok(Provider::new(provider))
+    let catalog_provider_id = serde_json::from_str::<Value>(&json)
+        .ok()
+        .and_then(|v| v.get("catalog_provider_id")?.as_str().map(str::to_owned));
+    Ok(Provider::with_catalog_id(provider, catalog_provider_id))
 }
 
 fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<DecisionProvider> {
@@ -1748,7 +1774,35 @@ mod tests {
             ..base_model_config()
         };
 
-        assert!(config.to_goose_model_config("openai").is_err());
+        assert!(config.to_goose_model_config("openai", None).is_err());
+    }
+
+    #[test]
+    fn model_config_uses_catalog_provider_id_for_vision() {
+        let config = ProviderModelConfig {
+            model_name: "accounts/fireworks/models/kimi-k3".to_string(),
+            ..base_model_config()
+        };
+
+        let model = config
+            .to_goose_model_config("fireworks-live", Some("fireworks-ai"))
+            .unwrap();
+
+        assert_eq!(model.supports_vision, Some(true));
+    }
+
+    #[test]
+    fn model_config_without_catalog_provider_id_has_no_vision_for_renamed_provider() {
+        let config = ProviderModelConfig {
+            model_name: "accounts/fireworks/models/kimi-k3".to_string(),
+            ..base_model_config()
+        };
+
+        let model = config
+            .to_goose_model_config("fireworks-live", None)
+            .unwrap();
+
+        assert_eq!(model.supports_vision, None);
     }
 
     #[test]
