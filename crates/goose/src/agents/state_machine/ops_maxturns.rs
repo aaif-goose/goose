@@ -1,20 +1,25 @@
-//! Ends the turn when the agent has used its autonomous turn budget.
+//! Limits autonomous assistant turns using persisted conversation history.
 
-use crate::agents::state_machine::effects::GooseEffect;
+use crate::conversation::message::Message;
+use crate::conversation::Conversation;
+use anyhow::Result;
+use async_trait::async_trait;
+
 use crate::agents::state_machine::{
     assistant_turn_count, messages_since_kickoff, not_applicable, yielded_with, Emitter, Operation,
     OperationResult,
 };
-use crate::conversation::message::Message;
-use crate::conversation::Conversation;
-use crate::session::Session;
-use anyhow::Result;
-use async_trait::async_trait;
 
-pub const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
+const OPERATION_NAME: &str = "max_turns";
 
+/// Yields when the conversation has used its autonomous turn budget.
+///
+/// Place this operation after tool handling and normal completion, before inference.
+/// Turns are consecutive assistant-message blocks since the latest kickoff, so
+/// counting follows the persisted history rather than individual provider calls.
 pub struct MaxTurnsOperation {
     max_turns: u32,
+    exhaustion_message: String,
 }
 
 fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
@@ -28,22 +33,22 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 }
 
 impl MaxTurnsOperation {
-    pub fn new(max_turns: u32) -> Self {
-        Self { max_turns }
+    /// Uses the host's exhaustion text. A zero limit yields before inference.
+    pub fn new(max_turns: u32, exhaustion_message: impl Into<String>) -> Self {
+        Self {
+            max_turns,
+            exhaustion_message: exhaustion_message.into(),
+        }
     }
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for MaxTurnsOperation {
+impl<S: Sync, E: From<Message> + Send + 'static> Operation<S, E> for MaxTurnsOperation {
     fn name(&self) -> &'static str {
-        "max_turns"
+        OPERATION_NAME
     }
 
-    async fn moim_parts(
-        &self,
-        _session: &Session,
-        conversation: &Conversation,
-    ) -> Result<Vec<String>> {
+    async fn moim_parts(&self, _session: &S, conversation: &Conversation) -> Result<Vec<String>> {
         let turns_taken = assistant_turn_count(messages_since_kickoff(conversation)?);
         Ok(turn_budget_part(turns_taken, self.max_turns)
             .into_iter()
@@ -52,16 +57,16 @@ impl Operation<Session, GooseEffect> for MaxTurnsOperation {
 
     async fn run(
         &self,
-        _session: &Session,
+        _session: &S,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<E>> {
         let messages = messages_since_kickoff(conversation)?;
         if assistant_turn_count(messages) < self.max_turns {
             return not_applicable();
         }
 
-        let message = Message::assistant().with_text(MAX_TURNS_MESSAGE);
+        let message = Message::assistant().with_text(&self.exhaustion_message);
         let message = emit.message(message);
         yielded_with([message.into()])
     }

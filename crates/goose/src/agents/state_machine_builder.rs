@@ -13,6 +13,7 @@ use crate::agents::state_machine::{
     RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
     StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
     SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    MAX_TURNS_MESSAGE,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::config::Config;
@@ -117,7 +118,7 @@ pub(crate) fn build_state_machine(
         Arc::new(EmptyResponseOperation),
         Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
         Arc::new(ExitOnErrorOperation),
-        Arc::new(MaxTurnsOperation::new(max_turns)),
+        Arc::new(MaxTurnsOperation::new(max_turns, MAX_TURNS_MESSAGE)),
     ];
     operations.extend(remaining_operations);
     operations.extend(extra_operations);
