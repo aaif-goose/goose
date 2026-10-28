@@ -289,8 +289,8 @@ async fn dispatch_notification_methods(ctx: ToolCallContext) -> Vec<String> {
         )
         .await;
 
-    let tool_call = CallToolRequestParams::new("notifications__tool".to_string())
-        .with_arguments(object!({}));
+    let tool_call =
+        CallToolRequestParams::new("notifications__tool".to_string()).with_arguments(object!({}));
     let dispatched = extension_manager
         .scope_lease(&ctx.session_id)
         .await
@@ -309,9 +309,7 @@ async fn dispatch_notification_methods(ctx: ToolCallContext) -> Vec<String> {
         .expect("notification stream should exist")
         .filter_map(|notification| async move {
             match notification {
-                ServerNotification::CustomNotification(notification) => {
-                    Some(notification.method)
-                }
+                ServerNotification::CustomNotification(notification) => Some(notification.method),
                 _ => None,
             }
         })
@@ -352,8 +350,8 @@ async fn dispatch_reuses_existing_notification_emitter() {
         Some("nested-request".to_string()),
     )
     .with_notification_emitter(ToolCallNotificationEmitter::new(sender));
-    let tool_call = CallToolRequestParams::new("notifications__tool".to_string())
-        .with_arguments(object!({}));
+    let tool_call =
+        CallToolRequestParams::new("notifications__tool".to_string()).with_arguments(object!({}));
 
     let dispatched = extension_manager
         .scope_lease(&ctx.session_id)
@@ -380,9 +378,7 @@ async fn dispatch_reuses_existing_notification_emitter() {
         .expect("client notification stream should exist")
         .filter_map(|notification| async move {
             match notification {
-                ServerNotification::CustomNotification(notification) => {
-                    Some(notification.method)
-                }
+                ServerNotification::CustomNotification(notification) => Some(notification.method),
                 _ => None,
             }
         })
@@ -677,8 +673,7 @@ async fn resolve_replaces_a_slot_whose_config_changed() {
         .add_mock_extension("ext_a".to_string(), Arc::new(MockClient {}))
         .await;
 
-    let same =
-        ExtensionSet::new("session", None, vec![builtin_config("ext_a", vec![])]).unwrap();
+    let same = ExtensionSet::new("session", None, vec![builtin_config("ext_a", vec![])]).unwrap();
     assert!(!extension_manager
         .resolve(&same)
         .await
@@ -1137,8 +1132,7 @@ async fn client_changes_restart_only_extensions_that_negotiate_capabilities() {
     ));
     assert!(current.start().await.iter().all(|result| result.success));
 
-    for (lease, supports_apps) in [(&held, true), (&reattached_lease, true), (&current, false)]
-    {
+    for (lease, supports_apps) in [(&held, true), (&reattached_lease, true), (&current, false)] {
         let result = lease
             .call(
                 CallToolRequestParams::new("client_fixture__app_card"),
@@ -1360,12 +1354,10 @@ async fn extension_manager_resource_tools_use_the_calling_lease() {
 
     let read = lease
         .call(
-            CallToolRequestParams::new("extensionmanager__read_resource").with_arguments(
-                object!({
-                    "extension_name": "resources",
-                    "uri": "resource://snapshot"
-                }),
-            ),
+            CallToolRequestParams::new("extensionmanager__read_resource").with_arguments(object!({
+                "extension_name": "resources",
+                "uri": "resource://snapshot"
+            })),
             CallRequest::default(),
             CancellationToken::default(),
         )
@@ -1470,13 +1462,11 @@ fn test_recover_mangled_tool_name() {
         Some("developer__shell")
     );
     assert_eq!(
-        recover_mangled_tool_name("functions.developer__shell", tools.iter().copied())
-            .as_deref(),
+        recover_mangled_tool_name("functions.developer__shell", tools.iter().copied()).as_deref(),
         Some("developer__shell")
     );
     assert_eq!(
-        recover_mangled_tool_name("functions.developer.shell", tools.iter().copied())
-            .as_deref(),
+        recover_mangled_tool_name("functions.developer.shell", tools.iter().copied()).as_deref(),
         Some("developer__shell")
     );
     assert_eq!(
@@ -1516,8 +1506,7 @@ fn test_recover_mangled_tool_name_unprefixed_extension() {
         Some("shell")
     );
     assert_eq!(
-        recover_mangled_tool_name("functions.developer.shell", tools.iter().copied())
-            .as_deref(),
+        recover_mangled_tool_name("functions.developer.shell", tools.iter().copied()).as_deref(),
         Some("shell")
     );
 
