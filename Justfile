@@ -170,7 +170,7 @@ build-lean:
     cargo build -p goose --bin goose-acp \
       --profile lean \
       --no-default-features \
-      --features native-tls,online-model-meta
+      --features rustls-tls,online-model-meta,system-keyring
 
 # Budgets are per-platform. ELF carries several MiB that Mach-O does not for the
 # same code: DWARF .eh_frame instead of compact unwind info, and a .rela.dyn
