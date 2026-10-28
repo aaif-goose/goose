@@ -115,6 +115,63 @@ impl ChatGptCodexAuthState {
 static CHATGPT_CODEX_AUTH_STATE: LazyLock<Arc<ChatGptCodexAuthState>> =
     LazyLock::new(|| Arc::new(ChatGptCodexAuthState::new()));
 
+const SUPPORTED_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
+const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+
+fn image_placeholder(mime_type: &str) -> Value {
+    json!({ "type": "input_text", "text": format!("[Image: {mime_type}]") })
+}
+
+fn oversized_image_placeholder(len: usize) -> Value {
+    json!({
+        "type": "input_text",
+        "text": format!("image is too large: {len} bytes exceeds {MAX_IMAGE_BYTES} byte limit")
+    })
+}
+
+fn has_supported_image_magic(bytes: &[u8]) -> bool {
+    matches!(
+        bytes.get(..4),
+        Some([0x89, 0x50, 0x4E, 0x47])
+            | Some([0xFF, 0xD8, 0xFF, _])
+            | Some([0x47, 0x49, 0x46, 0x38])
+    ) || matches!(
+        (bytes.get(..4), bytes.get(8..12)),
+        (Some(b"RIFF"), Some(b"WEBP"))
+    )
+}
+
+fn tool_result_image(data: &str, mime_type: &str) -> Value {
+    let (declared_mime, payload) = match data.strip_prefix("data:") {
+        Some(rest) => (
+            rest.split([';', ',']).next().unwrap_or_default(),
+            rest.split_once(',').map_or("", |(_, payload)| payload),
+        ),
+        None => (mime_type, data),
+    };
+    if !SUPPORTED_IMAGE_TYPES.contains(&declared_mime.to_ascii_lowercase().as_str()) {
+        return image_placeholder(declared_mime);
+    }
+    if payload.len() > MAX_IMAGE_BYTES * 4 / 3 + 4 {
+        return oversized_image_placeholder(payload.len() / 4 * 3);
+    }
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
+        return image_placeholder(declared_mime);
+    };
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return oversized_image_placeholder(bytes.len());
+    }
+    if !has_supported_image_magic(&bytes) {
+        return image_placeholder(declared_mime);
+    }
+    let image_url = if data.starts_with("data:") {
+        data.to_string()
+    } else {
+        format!("data:{declared_mime};base64,{payload}")
+    };
+    json!({ "type": "input_image", "image_url": image_url })
+}
+
 fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
     let mut items = Vec::new();
 
@@ -172,22 +229,24 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
                     flush_text(&mut items, role, &mut content_items);
                     match &response.tool_result {
                         Ok(contents) => {
-                            let text_content: Vec<String> = contents
+                            let output: Vec<Value> = contents
                                 .content
                                 .iter()
-                                .filter_map(|c| {
-                                    if let ContentBlock::Text(t) = c {
-                                        Some(t.text.clone())
-                                    } else {
-                                        None
+                                .filter_map(|c| match c {
+                                    ContentBlock::Text(t) => {
+                                        Some(json!({ "type": "input_text", "text": t.text }))
                                     }
+                                    ContentBlock::Image(img) => {
+                                        Some(tool_result_image(&img.data, &img.mime_type))
+                                    }
+                                    _ => None,
                                 })
                                 .collect();
-                            if !text_content.is_empty() {
+                            if !output.is_empty() {
                                 items.push(json!({
                                     "type": "function_call_output",
                                     "call_id": response.id,
-                                    "output": text_content.join("\n")
+                                    "output": output
                                 }));
                             }
                         }
@@ -1151,6 +1210,122 @@ mod tests {
         let payload = json!({ "input": items });
         let kinds = input_kinds(&payload);
         assert_eq!(kinds, expected);
+    }
+
+    #[test]
+    fn test_tool_response_image_forwarded() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image(TEST_IMAGE_B64, "image/png"),
+            ])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(output[0], json!({ "type": "input_text", "text": "img" }));
+        assert_eq!(output[1]["type"], "input_image");
+        assert!(output[1]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn test_tool_response_unsupported_image_type() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image(TEST_IMAGE_B64, "image/svg+xml"),
+            ])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([
+                { "type": "input_text", "text": "img" },
+                { "type": "input_text", "text": "[Image: image/svg+xml]" }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_oversized_image() {
+        let data = "A".repeat(MAX_IMAGE_BYTES * 4 / 3 + 5);
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data.clone(),
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([{
+                "type": "input_text",
+                "text": format!(
+                    "image is too large: {} bytes exceeds {MAX_IMAGE_BYTES} byte limit",
+                    data.len() / 4 * 3
+                )
+            }])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_image_at_size_limit_not_false_oversized() {
+        let mut bytes = vec![0u8; MAX_IMAGE_BYTES];
+        bytes[..4].copy_from_slice(&[0x89, 0x50, 0x4E, 0x47]);
+        let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        assert!(
+            data.len() <= MAX_IMAGE_BYTES * 4 / 3 + 4,
+            "exact-limit encoding must pass the encoded-length preflight"
+        );
+
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                data,
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(output[0]["type"], "input_image");
+    }
+
+    #[test]
+    fn test_tool_response_invalid_image_bytes() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![
+                ContentBlock::text("img"),
+                ContentBlock::image("not-valid-base64!!!", "image/png"),
+            ])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([
+                { "type": "input_text", "text": "img" },
+                { "type": "input_text", "text": "[Image: image/png]" }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_tool_response_non_image_payload() {
+        let messages = vec![Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                "aGVsbG8=",
+                "image/png",
+            )])),
+        )];
+        let output = &build_input_items(&messages).unwrap()[0]["output"];
+        assert_eq!(
+            output,
+            &json!([{ "type": "input_text", "text": "[Image: image/png]" }])
+        );
     }
 
     #[test]
