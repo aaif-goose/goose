@@ -3,13 +3,13 @@ use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -30,6 +30,7 @@ use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, Session};
 use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject, ServerConfig, Tool};
+use rmcp::ServiceError;
 use serde_json::Value;
 
 mod builtin;
@@ -139,6 +140,15 @@ pub(super) struct Extension {
     /// management hides itself from subagents), so the scope is part of the
     /// cache key.
     tools: Mutex<Option<CachedTools>>,
+    skills: Mutex<Option<CachedSkills>>,
+}
+
+// This cache lives on one connected extension instance, so both public and
+// private cache scopes remain isolated to that server and authorization context.
+struct CachedSkills {
+    scope_id: String,
+    expires_at: Instant,
+    skills: Arc<Vec<crate::skills::mcp::SkillRecord>>,
 }
 
 struct CachedTools {
@@ -254,6 +264,67 @@ impl Extension {
             .as_ref()
             .and_then(|info| info.capabilities.resources.as_ref())
             .is_some()
+    }
+
+    pub(super) async fn public_skills(
+        &self,
+        scope_id: &str,
+    ) -> Result<Arc<Vec<crate::skills::mcp::SkillRecord>>, ServiceError> {
+        {
+            let cache = self.skills.lock().await;
+            if let Some(cached) = &*cache {
+                if cached.scope_id == scope_id && Instant::now() < cached.expires_at {
+                    return Ok(Arc::clone(&cached.skills));
+                }
+            }
+        }
+
+        let cancel = CancellationToken::new();
+        let mut skills = Vec::new();
+        let mut cursor = None;
+        let mut seen_cursors = HashSet::new();
+        let mut expires_at: Option<Instant> = None;
+        loop {
+            let params = cursor
+                .as_ref()
+                .map(|cursor| serde_json::json!({ "cursor": cursor }));
+            let raw = self
+                .client
+                .send_custom(
+                    scope_id,
+                    crate::skills::mcp::SKILLS_LIST_METHOD,
+                    params,
+                    cancel.clone(),
+                )
+                .await?;
+            let page = crate::skills::mcp::parse_skills_list(&raw, &self.config.name())
+                .map_err(|_| ServiceError::UnexpectedResponse)?;
+            let now = Instant::now();
+            let page_expiry = now
+                .checked_add(Duration::from_millis(page.ttl_ms))
+                .unwrap_or(now);
+            expires_at = Some(expires_at.map_or(page_expiry, |current| current.min(page_expiry)));
+            for error in page.rejected {
+                warn!(extension = %self.key, %error, "rejected invalid MCP skill entry");
+            }
+            skills.extend(page.skills);
+            match page.next_cursor {
+                Some(next) if seen_cursors.insert(next.clone()) => cursor = Some(next),
+                Some(next) => {
+                    warn!(extension = %self.key, cursor = %next, "MCP skills pagination repeated a cursor");
+                    return Err(ServiceError::UnexpectedResponse);
+                }
+                None => break,
+            }
+        }
+        let skills = Arc::new(skills);
+        let expires_at = expires_at.unwrap_or_else(Instant::now);
+        *self.skills.lock().await = Some(CachedSkills {
+            scope_id: scope_id.to_string(),
+            expires_at,
+            skills: Arc::clone(&skills),
+        });
+        Ok(skills)
     }
 
     pub(super) fn is_platform(&self) -> bool {
@@ -886,6 +957,7 @@ impl ExtensionManager {
             server_info,
             tools_version,
             tools: Mutex::new(None),
+            skills: Mutex::new(None),
         }))
     }
 
@@ -1058,6 +1130,7 @@ impl ExtensionManager {
                     server_info: info,
                     tools_version: Arc::new(AtomicU64::new(0)),
                     tools: Mutex::new(None),
+                    skills: Mutex::new(None),
                 })))),
             },
         )
@@ -1071,6 +1144,7 @@ impl ExtensionManager {
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
         self.scopes.lock().await.remove(session_id);
+        crate::skills::mcp::clear_held_skills(session_id);
     }
 
     pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
@@ -1146,6 +1220,142 @@ mod tests {
             };
             self.add_client("session", config, client, None).await;
         }
+    }
+
+    struct SkillClient {
+        info: InitializeResult,
+        markdown: String,
+        list_calls: AtomicUsize,
+        reads: AtomicUsize,
+    }
+
+    impl SkillClient {
+        fn new() -> Self {
+            let mut extensions = rmcp::model::ExtensionCapabilities::new();
+            extensions.insert(
+                crate::skills::mcp::SKILLS_EXTENSION_ID.to_string(),
+                JsonObject::new(),
+            );
+            let mut capabilities = rmcp::model::ServerCapabilities::default();
+            capabilities.extensions = Some(extensions);
+            capabilities.resources = Some(Default::default());
+            let markdown =
+                "---\nname: billing\ndescription: Billing workflow\n---\n\nDo the work.\n"
+                    .to_string();
+            Self {
+                info: InitializeResult::new(capabilities),
+                markdown,
+                list_calls: AtomicUsize::new(0),
+                reads: AtomicUsize::new(0),
+            }
+        }
+
+        fn manifest(&self) -> serde_json::Value {
+            let uri = "skill://acme/billing/SKILL.md";
+            serde_json::json!({
+                "uri": uri,
+                "frontmatter": { "name": "billing", "description": "Billing workflow" },
+                "resources": [{
+                    "uri": uri,
+                    "digest": crate::skills::mcp::sha256_digest(self.markdown.as_bytes()),
+                    "size": self.markdown.len()
+                }]
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl McpClientTrait for SkillClient {
+        fn get_info(&self) -> Option<&InitializeResult> {
+            Some(&self.info)
+        }
+
+        async fn list_tools(
+            &self,
+            _session_id: &str,
+            _next_cursor: Option<String>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ListToolsResult, Error> {
+            Ok(ListToolsResult::default())
+        }
+
+        async fn call_tool(
+            &self,
+            _ctx: &ToolCallContext,
+            _name: &str,
+            _arguments: Option<JsonObject>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            Ok(CallToolResult::success(vec![]))
+        }
+
+        async fn send_custom(
+            &self,
+            _session_id: &str,
+            method: &str,
+            _params: Option<serde_json::Value>,
+            _cancellation_token: CancellationToken,
+        ) -> Result<serde_json::Value, Error> {
+            match method {
+                crate::skills::mcp::SKILLS_LIST_METHOD => {
+                    self.list_calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(serde_json::json!({
+                        "resultType": "complete",
+                        "skills": [self.manifest()],
+                        "ttlMs": 300000,
+                        "cacheScope": "private"
+                    }))
+                }
+                crate::skills::mcp::SKILLS_GET_METHOD => Ok(serde_json::json!({
+                    "resultType": "complete",
+                    "skill": self.manifest(),
+                    "ttlMs": 300000,
+                    "cacheScope": "private"
+                })),
+                _ => Err(Error::UnexpectedResponse),
+            }
+        }
+
+        async fn read_resource(
+            &self,
+            _session_id: &str,
+            uri: &str,
+            _cancellation_token: CancellationToken,
+        ) -> Result<ReadResourceResult, Error> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            Ok(ReadResourceResult::new(vec![
+                rmcp::model::ResourceContents::text(self.markdown.clone(), uri),
+            ]))
+        }
+    }
+
+    #[tokio::test]
+    async fn lease_lists_gets_and_reads_stable_mcp_skills() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ExtensionManager::with_data_dir(
+            temp_dir.path().to_path_buf(),
+        ));
+        let client = Arc::new(SkillClient::new());
+        manager
+            .add_mock_extension("billing-server".to_string(), client.clone())
+            .await;
+
+        let lease = manager.scope_lease("session").await;
+        let listed = lease.list_mcp_skills().await;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(lease.list_mcp_skills().await.len(), 1);
+        assert_eq!(client.list_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(listed[0].extension_name, "billing-server");
+        let got = lease
+            .send_skill_get("billing-server", &listed[0].uri)
+            .await
+            .unwrap();
+        let text = lease
+            .read_skill_text("billing-server", &listed[0].uri)
+            .await
+            .unwrap();
+        crate::skills::mcp::verify_skill_markdown(&got, &text).unwrap();
+        assert_eq!(client.reads.load(Ordering::SeqCst), 1);
     }
 
     struct MockClient {}

@@ -245,9 +245,34 @@ impl ExtensionLease {
     }
 
     async fn start_extension(&self, extension_name: &str) -> Option<Arc<Extension>> {
+        self.start_extension_result(extension_name).await.ok()
+    }
+
+    async fn start_extension_result(
+        &self,
+        extension_name: &str,
+    ) -> Result<Arc<Extension>, crate::skills::mcp::SkillLoadError> {
         let key = name_to_key(extension_name);
-        let slot = self.slots.iter().find(|slot| slot.key == key)?;
-        slot.start().await.cloned()
+        let slot = self
+            .slots
+            .iter()
+            .find(|slot| slot.key == key)
+            .ok_or_else(|| crate::skills::mcp::SkillLoadError::NotListed {
+                name: extension_name.to_string(),
+            })?;
+        match slot.runtime().await {
+            super::Runtime::Running(extension) => Ok(Arc::clone(extension)),
+            super::Runtime::Declined => Err(crate::skills::mcp::SkillLoadError::Unavailable {
+                name: extension_name.to_string(),
+                reason: "extension declined to start".to_string(),
+            }),
+            super::Runtime::Failed(reason) => {
+                Err(crate::skills::mcp::SkillLoadError::Unavailable {
+                    name: extension_name.to_string(),
+                    reason: reason.clone(),
+                })
+            }
+        }
     }
 
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
@@ -572,6 +597,137 @@ impl ExtensionLease {
             ));
         }
         infos
+    }
+
+    /// SEP-2640 skills from running extensions in this lease that advertised
+    /// `io.modelcontextprotocol/skills`. Servers that did not advertise it are
+    /// not queried. A server that fails to list is skipped.
+    pub async fn list_mcp_skills(&self) -> Vec<crate::skills::mcp::SkillRecord> {
+        let mut skills = Vec::new();
+        for extension in self.start_extensions().await {
+            if !extension.client.supports_skills() {
+                continue;
+            }
+            match extension.public_skills(&self.scope_id).await {
+                Ok(found) => skills.extend(found.iter().cloned()),
+                Err(error) => warn!(
+                    extension = extension.config.name(),
+                    %error,
+                    "failed to list MCP skills"
+                ),
+            }
+        }
+        skills
+    }
+
+    pub async fn send_skill_get(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<crate::skills::mcp::SkillRecord, crate::skills::mcp::SkillLoadError> {
+        let extension = self.start_extension_result(extension_name).await?;
+        if !extension.client.supports_skills() {
+            return Err(crate::skills::mcp::SkillLoadError::Unavailable {
+                name: uri.to_string(),
+                reason: format!("extension '{extension_name}' does not advertise MCP skills"),
+            });
+        }
+        let page = extension
+            .client
+            .send_custom(
+                &self.scope_id,
+                crate::skills::mcp::SKILLS_GET_METHOD,
+                Some(serde_json::json!({ "uri": uri })),
+                CancellationToken::new(),
+            )
+            .await
+            .map_err(|error| match error {
+                ServiceError::McpError(error) if error.code == ErrorCode::INVALID_PARAMS => {
+                    crate::skills::mcp::SkillLoadError::NotListed {
+                        name: uri.to_string(),
+                    }
+                }
+                other => crate::skills::mcp::SkillLoadError::Unavailable {
+                    name: uri.to_string(),
+                    reason: other.to_string(),
+                },
+            })?;
+        let got = crate::skills::mcp::parse_skills_get(&page, extension_name)?;
+        if got.skill.uri != uri {
+            return Err(crate::skills::mcp::SkillLoadError::InvalidEntry {
+                uri: got.skill.uri,
+                reason: "skills/get returned a different skill URI".to_string(),
+            });
+        }
+        Ok(got.skill)
+    }
+
+    pub async fn read_skill_resource(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<ResourceContents, ErrorData> {
+        let client = self
+            .start_extension(extension_name)
+            .await
+            .filter(|extension| extension.client.supports_skills())
+            .map(|extension| Arc::clone(&extension.client))
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("extension '{extension_name}' is not in this session"),
+                    None,
+                )
+            })?;
+        let result = client
+            .read_resource(&self.scope_id, uri, CancellationToken::new())
+            .await
+            .map_err(|error| {
+                ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("failed to read skill '{uri}': {error}"),
+                    None,
+                )
+            })?;
+        result
+            .contents
+            .into_iter()
+            .find(|content| match content {
+                ResourceContents::TextResourceContents {
+                    uri: content_uri, ..
+                }
+                | ResourceContents::BlobResourceContents {
+                    uri: content_uri, ..
+                } => content_uri == uri,
+                _ => false,
+            })
+            .ok_or_else(|| {
+                ErrorData::new(
+                    ErrorCode::INVALID_PARAMS,
+                    format!("skill resource '{uri}' was not returned"),
+                    None,
+                )
+            })
+    }
+
+    pub async fn read_skill_text(
+        &self,
+        extension_name: &str,
+        uri: &str,
+    ) -> Result<String, ErrorData> {
+        match self.read_skill_resource(extension_name, uri).await? {
+            ResourceContents::TextResourceContents { text, .. } => Ok(text),
+            ResourceContents::BlobResourceContents { .. } => Err(ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("skill '{uri}' did not return text"),
+                None,
+            )),
+            _ => Err(ErrorData::new(
+                ErrorCode::INVALID_PARAMS,
+                format!("skill '{uri}' returned unsupported content"),
+                None,
+            )),
+        }
     }
 
     pub async fn moim(&self) -> Vec<String> {

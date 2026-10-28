@@ -51,19 +51,24 @@ impl Operation<Session, GooseEffect> for ToolApprovalOperation<'_> {
             return not_applicable();
         }
 
-        let state = ApprovalState::from_messages(messages_since_kickoff(conversation)?);
+        let turn_messages = messages_since_kickoff(conversation)?;
+        let acting_on_mcp_skill = !crate::skills::mcp::active_origins(&session.id).is_empty();
+        let state = ApprovalState::from_messages(turn_messages);
         let mut effects = Vec::new();
 
         for pending in state.responses() {
             let executable = permission_allows(&pending.permission);
 
             if let Some(tool_name) = pending.tool_name {
-                if pending.permission == Permission::AlwaysAllow && pending.executable != Some(true)
+                if pending.permission == Permission::AlwaysAllow
+                    && pending.executable != Some(true)
+                    && !acting_on_mcp_skill
+                    && tool_name != crate::skills::approval::LOAD_SKILL_TOOL_NAME
                 {
                     self.tool_inspection_manager
                         .update_permission_manager(&tool_name, PermissionLevel::AlwaysAllow)
                         .await;
-                } else if pending.permission == Permission::AlwaysDeny {
+                } else if pending.permission == Permission::AlwaysDeny && !acting_on_mcp_skill {
                     self.tool_inspection_manager
                         .update_permission_manager(&tool_name, PermissionLevel::NeverAllow)
                         .await;
