@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_agent::turns::MaxTurnsOperation;
 use goose_providers::model::ModelConfig;
 use tokio_util::sync::CancellationToken;
 
@@ -9,11 +10,10 @@ use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, EmptyResponseOperation,
     ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    MAX_TURNS_MESSAGE,
+    InferenceRunner, Operation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
+    SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, MAX_TURNS_MESSAGE,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::config::Config;

@@ -1,11 +1,12 @@
 //! Limits autonomous assistant turns using persisted conversation history.
 
-use crate::conversation::message::Message;
-use crate::conversation::Conversation;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::conversation::message::Message;
+use goose_provider_types::conversation::Conversation;
+use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-use crate::agents::state_machine::{
+use crate::operation::{
     assistant_turn_count, messages_since_kickoff, not_applicable, yielded_with, Emitter, Operation,
     OperationResult,
 };
@@ -42,8 +43,9 @@ impl MaxTurnsOperation {
     }
 }
 
-#[async_trait]
-impl<S: Sync, E: From<Message> + Send + 'static> Operation<S, E> for MaxTurnsOperation {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl<S: MaybeSync, E: From<Message> + MaybeSend + 'static> Operation<S, E> for MaxTurnsOperation {
     fn name(&self) -> &'static str {
         OPERATION_NAME
     }
