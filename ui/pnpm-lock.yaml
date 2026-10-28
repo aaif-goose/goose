@@ -6081,8 +6081,8 @@ packages:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
     engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
 
-  smol-toml@1.6.0:
-    resolution: {integrity: sha512-4zemZi0HvTnYwLfrpk/CF9LOd9Lt87kAt50GnqhMpyF9U3poDAP2+iukq2bZsO/ufegbYehBkqINbsWxj4l4cw==}
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
     engines: {node: '>= 18'}
 
   socks-proxy-agent@7.0.0:
@@ -11827,7 +11827,7 @@ snapshots:
       oxc-resolver: 11.19.1
       picocolors: 1.1.1
       picomatch: 4.0.3
-      smol-toml: 1.6.0
+      smol-toml: 1.9.1
       strip-json-comments: 5.0.3
       typescript: 5.9.3
       unbash: 2.2.0
@@ -13607,7 +13607,7 @@ snapshots:
 
   smart-buffer@4.2.0: {}
 
-  smol-toml@1.6.0: {}
+  smol-toml@1.9.1: {}
 
   socks-proxy-agent@7.0.0(supports-color@8.1.1):
     dependencies:
