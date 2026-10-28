@@ -235,8 +235,7 @@ impl Provider for OpenAiCompatibleProvider {
 // format-agnostic and used across all provider families.
 pub use super::http_status::{
     extract_request_id, handle_response, handle_status, map_http_error_to_provider_error,
-    map_http_error_to_provider_error_with_headers, parse_request_id_suffix,
-    request_id_message_suffix, sanitize_url,
+    parse_request_id_suffix, request_id_message_suffix, sanitize_url,
 };
 
 // Legacy alias kept for callers that haven't migrated their import path yet.

@@ -10,7 +10,7 @@ use crate::base::{ConfigKey, MessageStream, Provider, ProviderMetadata};
 use crate::conversation::message::Message;
 use crate::errors::ProviderError;
 use crate::formats::snowflake::{create_request, get_usage, response_to_message};
-use crate::openai_compatible::{map_http_error_to_provider_error_with_headers, sanitize_url};
+use crate::openai_compatible::handle_status;
 use crate::retry::ProviderRetry;
 use crate::utils::get_model;
 
@@ -110,15 +110,14 @@ impl SnowflakeProvider {
             .response_post(payload)
             .await?;
 
-        let status = response.status();
-        let url = sanitize_url(response.url().as_str());
+        let response = handle_status(response).await?;
         let headers = response.headers().clone();
         let is_json = headers
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .map(|v| v.to_ascii_lowercase())
             .is_some_and(|v| v.contains("json"));
-        let payload_text: String = if status.is_success() && !is_json {
+        let payload_text: String = if !is_json {
             response.text().await.ok().unwrap_or_default()
         } else {
             crate::http_status::read_error_body(response)
@@ -126,22 +125,20 @@ impl SnowflakeProvider {
                 .unwrap_or_default()
         };
 
-        if status.is_success() {
-            if let Ok(payload) = serde_json::from_str::<Value>(&payload_text) {
-                if payload.get("code").is_some() {
-                    let code = payload
-                        .get("code")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("Unknown code");
-                    let message = payload
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("Unknown message");
-                    return Err(ProviderError::RequestFailed(format!(
-                        "{} - {}",
-                        code, message
-                    )));
-                }
+        if let Ok(payload) = serde_json::from_str::<Value>(&payload_text) {
+            if payload.get("code").is_some() {
+                let code = payload
+                    .get("code")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("Unknown code");
+                let message = payload
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("Unknown message");
+                return Err(ProviderError::RequestFailed(format!(
+                    "{} - {}",
+                    code, message
+                )));
             }
         }
 
@@ -289,14 +286,7 @@ impl SnowflakeProvider {
             "content_list": content_list
         });
 
-        if status.is_success() {
-            Ok(answer_payload)
-        } else {
-            let error_json = serde_json::from_str::<Value>(&payload_text).ok();
-            Err(map_http_error_to_provider_error_with_headers(
-                status, error_json, &url, &headers,
-            ))
-        }
+        Ok(answer_payload)
     }
 }
 

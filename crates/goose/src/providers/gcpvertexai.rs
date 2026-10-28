@@ -27,9 +27,7 @@ use crate::providers::formats::gcpvertexai::{
     DEFAULT_MODEL, KNOWN_MODELS,
 };
 use crate::providers::gcpauth::GcpAuth;
-use crate::providers::openai_compatible::{
-    map_http_error_to_provider_error_with_headers, sanitize_url,
-};
+use crate::providers::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use crate::providers::retry::RetryConfig;
 use goose_providers::errors::ProviderError;
 use goose_providers::http_status::{extract_retry_after, read_error_body};
@@ -65,9 +63,7 @@ const OVERLOADED_ERROR_MSG: &str =
      error but indicates backend processing capacity issues.";
 
 /// Map a 429 response to the retry decision: the error to record and how
-/// long to sleep before the next attempt. Honors the server's Retry-After
-/// hint (header or OpenRouter-style body field); falls back to the
-/// configured exponential backoff when the response carries no hint.
+/// long to sleep before the next attempt.
 fn map_429_retry(
     headers: &HeaderMap,
     body: &str,
@@ -380,10 +376,7 @@ impl GcpVertexAIProvider {
                         }),
                     );
                 }
-                // Headers must be captured before the body is consumed: the
-                // 429 branch never reaches the header-aware error mapping, so
-                // without this the server's Retry-After hint is silently
-                // dropped and every sleep falls back to generic backoff.
+                // Headers must be captured before the body is consumed.
                 let headers = response.headers().clone();
                 let body = read_error_body(response).await.unwrap_or_default();
                 let (err, sleep_for) =
@@ -430,12 +423,9 @@ impl GcpVertexAIProvider {
                 )));
             } else {
                 let url = sanitize_url(response.url().as_str());
-                let headers = response.headers().clone();
                 let response_text = read_error_body(response).await.unwrap_or_default();
                 let payload = serde_json::from_str::<Value>(&response_text).ok();
-                return Err(map_http_error_to_provider_error_with_headers(
-                    status, payload, &url, &headers,
-                ));
+                return Err(map_http_error_to_provider_error(status, payload, &url));
             }
         }
     }
@@ -740,10 +730,6 @@ mod tests {
 
     #[test]
     fn test_429_retry_honors_retry_after_header() {
-        // The 429 branch of the retry loop must honor the server's
-        // Retry-After hint instead of always falling back to generic backoff
-        // (codex P1 on #12986: the header-aware mapping was unreachable from
-        // this branch, so the hint was silently dropped).
         let config = RetryConfig::new(5, 1000, 2.0, 32000);
         let mut headers = HeaderMap::new();
         headers.insert("retry-after", "30".parse().unwrap());
@@ -787,8 +773,6 @@ mod tests {
             }
             other => panic!("expected rate limit, got: {other:?}"),
         }
-        // No hint: the sleep is the configured exponential backoff for
-        // attempt 1 (1000ms base with jitter), not a server delay.
         let ms = sleep_for.as_millis();
         assert!((800..=1200).contains(&ms), "unexpected backoff: {ms}ms");
     }

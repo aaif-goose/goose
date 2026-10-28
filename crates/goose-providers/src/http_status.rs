@@ -46,8 +46,7 @@ const MAX_RETRY_AFTER_SECS: f64 = 3600.0;
 /// in either its delay-seconds form or its HTTP-date form.
 ///
 /// Public so providers with their own retry loops (e.g. gcpvertexai) can
-/// honor the server's retry hint on the statuses they short-circuit, instead
-/// of always falling back to generic exponential backoff.
+/// honor the hint on statuses they short-circuit.
 pub fn extract_retry_after(headers: &HeaderMap, payload: Option<&Value>) -> Option<Duration> {
     if let Some(secs) = payload
         .and_then(|p| p.get("error"))
@@ -250,24 +249,7 @@ pub fn map_http_error_to_provider_error(
     payload: Option<Value>,
     url: &str,
 ) -> ProviderError {
-    map_http_error_to_provider_error_with_headers(status, payload, url, &HeaderMap::new())
-}
-
-/// Like [`map_http_error_to_provider_error`], but also honors the response
-/// `Retry-After` header (and the OpenRouter-style `retry_after_seconds` body
-/// field) on 429s. Prefer this wherever the response headers are still
-/// available: providers that map errors directly (databricks, google,
-/// snowflake, gcpvertexai) otherwise silently drop the server's retry hint,
-/// and the agent's retry loop falls back to generic exponential backoff
-/// instead of the server-requested delay.
-pub fn map_http_error_to_provider_error_with_headers(
-    status: StatusCode,
-    payload: Option<Value>,
-    url: &str,
-    headers: &HeaderMap,
-) -> ProviderError {
-    let err = map_http_error(status, payload.clone(), url, None);
-    apply_retry_after(err, headers, payload.as_ref())
+    map_http_error(status, payload, url, None)
 }
 
 /// Fold a 429's retry hint into the error so the agent's retry loop honors
@@ -1035,51 +1017,11 @@ mod tests {
     }
 
     #[test]
-    fn direct_error_mapping_honors_retry_after_header() {
-        // 429s mapped through the direct (non-`handle_status`) path must carry
-        // the server's Retry-After hint, exactly like `handle_status` does —
-        // otherwise providers on this path (databricks, google, snowflake,
-        // gcpvertexai) silently drop the hint and the agent's retry
-        // loop falls back to generic exponential backoff.
-        let payload = json!({ "error": { "message": "slow down" } });
-        let headers = headers_with_retry_after("30");
-        let err = map_http_error_to_provider_error_with_headers(
-            StatusCode::TOO_MANY_REQUESTS,
-            Some(payload),
-            "http://test/endpoint",
-            &headers,
-        );
-        match err {
-            ProviderError::RateLimitExceeded { retry_delay, .. } => {
-                assert_eq!(retry_delay, Some(Duration::from_secs(30)));
-            }
-            other => panic!("expected rate limit, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn direct_error_mapping_honors_retry_after_body_seconds() {
-        // Same guarantee for the OpenRouter-style body field when no header
-        // is present.
+    fn legacy_error_mapping_ignores_retry_hint() {
+        // The legacy mapper predates Retry-After support: a 429 payload
+        // carrying retry_after_seconds must still map to retry_delay None,
+        // so existing callers keep their old retry behavior.
         let payload = json!({ "error": { "metadata": { "retry_after_seconds": 45.0 } } });
-        let err = map_http_error_to_provider_error_with_headers(
-            StatusCode::TOO_MANY_REQUESTS,
-            Some(payload),
-            "http://test/endpoint",
-            &empty_headers(),
-        );
-        match err {
-            ProviderError::RateLimitExceeded { retry_delay, .. } => {
-                assert_eq!(retry_delay, Some(Duration::from_secs(45)));
-            }
-            other => panic!("expected rate limit, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn direct_error_mapping_without_retry_hint_has_none() {
-        // No hint anywhere: retry_delay stays None (agent uses backoff).
-        let payload = json!({ "error": { "message": "slow down" } });
         let err = map_http_error_to_provider_error(
             StatusCode::TOO_MANY_REQUESTS,
             Some(payload),
