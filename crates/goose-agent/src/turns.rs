@@ -12,6 +12,15 @@ use crate::operation::{
 };
 
 const OPERATION_NAME: &str = "max_turns";
+const EXHAUSTED: &str = "exhausted";
+
+/// Whether a message records turn-limit exhaustion, independently of its display text.
+pub fn turn_limit_reached(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(OPERATION_NAME, EXHAUSTED)
+        .is_some()
+}
 
 /// Yields when the conversation has used its autonomous turn budget.
 ///
@@ -68,7 +77,12 @@ impl<S: MaybeSync, E: From<Message> + MaybeSend + 'static> Operation<S, E> for M
             return not_applicable();
         }
 
-        let message = Message::assistant().with_text(&self.exhaustion_message);
+        let mut message = Message::assistant().with_text(&self.exhaustion_message);
+        message.metadata.set_operation_note(
+            OPERATION_NAME,
+            EXHAUSTED,
+            serde_json::Value::Bool(true),
+        );
         let message = emit.message(message);
         yielded_with([message.into()])
     }
