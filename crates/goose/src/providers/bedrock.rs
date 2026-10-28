@@ -171,6 +171,21 @@ fn find_model_entry(name: &str) -> Option<&'static BedrockModelEntry> {
     BEDROCK_MODEL_TABLE.iter().find(|e| e.name == candidate)
 }
 
+/// Model ID to send to Mantle, or `None` for Converse. Bedrock serves the
+/// closed-weight OpenAI GPT models by bare ID only on Mantle (Converse needs a
+/// `us.`/`global.` inference profile), so those route by ID shape without a
+/// table row. GPT OSS, inference profiles and ARNs stay on Converse.
+fn mantle_model_id(name: &str) -> Option<String> {
+    if let Some(entry) = find_model_entry(name) {
+        return (entry.endpoint == BedrockEndpoint::MantleResponses)
+            .then(|| entry.wire_model_id.to_string());
+    }
+    let (base, _) = extract_reasoning_effort(name.strip_prefix("openai.").unwrap_or(name));
+    base.strip_prefix("gpt-")?
+        .starts_with(|c: char| c.is_ascii_digit())
+        .then(|| format!("openai.{base}"))
+}
+
 pub const BEDROCK_DEFAULT_MAX_RETRIES: usize = 6;
 pub const BEDROCK_DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
 pub const BEDROCK_DEFAULT_BACKOFF_MULTIPLIER: f64 = 2.0;
@@ -1009,30 +1024,29 @@ impl Provider for BedrockProvider {
             Some(session_id.as_str())
         };
 
-        if let Some(entry) = find_model_entry(&model_config.model_name) {
-            if entry.endpoint == BedrockEndpoint::MantleResponses {
-                let capability_model_name =
-                    entry.name.strip_prefix("openai.").unwrap_or(entry.name);
-                let mut normalized_config = model_config.clone();
-                normalized_config.model_name = capability_model_name.to_string();
-                let mut payload =
-                    create_responses_request(&normalized_config, system, messages, tools)?;
-                payload["model"] = Value::String(entry.wire_model_id.to_string());
-                payload["stream"] = Value::Bool(true);
-                if entry.name.starts_with("google.gemma-4-") {
-                    payload["parallel_tool_calls"] = Value::Bool(false);
-                }
-                let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
-
-                let response = self
-                    .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
-                    .await
-                    .inspect_err(|e| {
-                        let _ = log.error(e);
-                    })?;
-
-                return stream_responses_compat(response, log);
+        if let Some(wire_model_id) = mantle_model_id(&model_config.model_name) {
+            let capability_model_name = wire_model_id
+                .strip_prefix("openai.")
+                .unwrap_or(&wire_model_id);
+            let mut normalized_config = model_config.clone();
+            normalized_config.model_name = capability_model_name.to_string();
+            let mut payload =
+                create_responses_request(&normalized_config, system, messages, tools)?;
+            payload["model"] = Value::String(wire_model_id.clone());
+            payload["stream"] = Value::Bool(true);
+            if wire_model_id.starts_with("google.gemma-4-") {
+                payload["parallel_tool_calls"] = Value::Bool(false);
             }
+            let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
+
+            let response = self
+                .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
+                .await
+                .inspect_err(|e| {
+                    let _ = log.error(e);
+                })?;
+
+            return stream_responses_compat(response, log);
         }
 
         let model_name = model_config.model_name.clone();
@@ -2173,6 +2187,27 @@ mod tests {
         for model in ["gpt-5.5", "gpt-5.5-high"] {
             let entry = find_model_entry(model).unwrap();
             assert_eq!(entry.endpoint, BedrockEndpoint::MantleResponses);
+        }
+    }
+
+    #[test]
+    fn test_gpt_routes_to_mantle_by_id_shape() {
+        for (model, expected) in [
+            ("openai.gpt-6-sol", Some("openai.gpt-6-sol")),
+            ("openai.gpt-6.1-sol-high", Some("openai.gpt-6.1-sol")),
+            ("gpt-6-astra", Some("openai.gpt-6-astra")),
+            ("openai.gpt-5.6-sol", Some("openai.gpt-5.6-sol")),
+            ("google.gemma-4-31b", Some("google.gemma-4-31b")),
+            ("openai.gpt-oss-120b-1:0", None),
+            ("us.openai.gpt-6-sol", None),
+            ("global.openai.gpt-6-sol", None),
+            (
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6-sol",
+                None,
+            ),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", None),
+        ] {
+            assert_eq!(mantle_model_id(model).as_deref(), expected, "{model}");
         }
     }
 
