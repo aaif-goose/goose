@@ -351,6 +351,50 @@ fn meta_string(
     Ok(Some(value.to_string()))
 }
 
+const MAX_SESSION_TAGS: usize = 16;
+const MAX_SESSION_TAG_KEY_BYTES: usize = 128;
+const MAX_SESSION_TAG_VALUE_BYTES: usize = 1024;
+
+/// Client-owned `key -> value` string labels from `_meta.tags`, sorted by key.
+fn meta_tags(meta: Option<&Meta>) -> Result<Vec<(String, String)>, agent_client_protocol::Error> {
+    let invalid = |message: String| agent_client_protocol::Error::invalid_params().data(message);
+    let Some(value) = meta.and_then(|m| m.get("tags")) else {
+        return Ok(Vec::new());
+    };
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(tags) = value.as_object() else {
+        return Err(invalid("tags must be an object".to_string()));
+    };
+    if tags.len() > MAX_SESSION_TAGS {
+        return Err(invalid(format!(
+            "tags may have at most {MAX_SESSION_TAGS} entries"
+        )));
+    }
+    let mut parsed = tags
+        .iter()
+        .map(|(key, value)| {
+            if key.is_empty() || key.len() > MAX_SESSION_TAG_KEY_BYTES {
+                return Err(invalid(format!(
+                    "tag keys must be 1-{MAX_SESSION_TAG_KEY_BYTES} bytes"
+                )));
+            }
+            let Some(value) = value.as_str() else {
+                return Err(invalid(format!("tag {key} must be a string")));
+            };
+            if value.len() > MAX_SESSION_TAG_VALUE_BYTES {
+                return Err(invalid(format!(
+                    "tag {key} must be at most {MAX_SESSION_TAG_VALUE_BYTES} bytes"
+                )));
+            }
+            Ok((key.clone(), value.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parsed.sort();
+    Ok(parsed)
+}
+
 fn agent_capabilities_meta() -> Option<Meta> {
     let mut goose = serde_json::Map::new();
     goose.insert("recipeParameterScopes".to_string(), serde_json::json!({}));
