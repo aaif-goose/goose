@@ -28,7 +28,6 @@ pub enum SubagentOutcome {
     Cancelled,
 }
 
-#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum SubagentUpdate {
     ToParent(Message),

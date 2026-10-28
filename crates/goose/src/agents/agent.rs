@@ -43,6 +43,7 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager, SessionNameUpdate};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
+use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -53,7 +54,6 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, instrument, warn};
 
-const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 const AUTO_EFFORTS: [ThinkingEffort; 5] = [
     ThinkingEffort::Off,
     ThinkingEffort::Low,
@@ -215,7 +215,7 @@ pub struct Agent {
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
     #[cfg(test)]
-    pub(super) stop_hook_block_cap_override: Option<u32>,
+    pub(super) stop_hook_deny_limit_override: Option<u32>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
 }
 
@@ -293,7 +293,7 @@ impl Agent {
             ),
             hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
             #[cfg(test)]
-            stop_hook_block_cap_override: None,
+            stop_hook_deny_limit_override: None,
             steer_queues: Mutex::new(HashMap::new()),
         })
     }
@@ -316,10 +316,10 @@ impl Agent {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_stop_hook_block_cap_for_test(self: &mut Arc<Self>, cap: u32) {
+    pub(crate) fn set_stop_hook_deny_limit_for_test(self: &mut Arc<Self>, limit: u32) {
         Arc::get_mut(self)
             .expect("agent is shared")
-            .stop_hook_block_cap_override = Some(cap);
+            .stop_hook_deny_limit_override = Some(limit);
     }
 
     pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
@@ -638,15 +638,15 @@ impl Agent {
             .get_param::<u64>("GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS")
             .unwrap_or(DEFAULT_ON_FAILURE_TIMEOUT_SECONDS);
         #[cfg(test)]
-        let stop_hook_block_cap = self.stop_hook_block_cap_override.unwrap_or_else(|| {
+        let stop_hook_deny_limit = self.stop_hook_deny_limit_override.unwrap_or_else(|| {
             Config::global()
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP)
+                .unwrap_or(DEFAULT_DENY_LIMIT)
         });
         #[cfg(not(test))]
-        let stop_hook_block_cap = Config::global()
+        let stop_hook_deny_limit = Config::global()
             .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-            .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP);
+            .unwrap_or(DEFAULT_DENY_LIMIT);
         let compaction_threshold = crate::context_mgmt::auto_compact_threshold(context_limit);
         let tool_call_cutoff = Config::global()
             .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
@@ -712,7 +712,7 @@ impl Agent {
             subagent_runner: ForegroundSubagentRunner::new(Arc::clone(self)),
             retry_timeout: std::time::Duration::from_secs(retry_timeout),
             on_failure_timeout: std::time::Duration::from_secs(on_failure_timeout),
-            stop_hook_block_cap,
+            stop_hook_deny_limit,
             max_turns,
             extra_operations: auto_effort.into_iter().collect(),
             cancel,
@@ -2448,12 +2448,12 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     async fn create_stop_hook_test_agent(
         env: &StopHookTestEnv,
-        stop_hook_block_cap: u32,
+        stop_hook_deny_limit: u32,
     ) -> Result<(Arc<Agent>, String, Arc<CountingTextProvider>)> {
         let provider = Arc::new(CountingTextProvider::new());
         let (mut agent, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
-        agent.set_stop_hook_block_cap_for_test(stop_hook_block_cap);
+        agent.set_stop_hook_deny_limit_for_test(stop_hook_deny_limit);
         Ok((agent, session_id, provider))
     }
 
@@ -2581,7 +2581,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     #[tokio::test]
-    async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides() -> Result<()>
+    async fn stop_hook_deny_limit_allows_configured_consecutive_blocks_then_overrides() -> Result<()>
     {
         let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
         let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
@@ -2592,7 +2592,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert_eq!(
             provider.call_count(),
             3,
-            "cap=2 should allow two blocked retries, then override on the third block"
+            "limit=2 should allow two blocked retries, then override on the third block"
         );
         assert_eq!(
             env.hook_invocations(),
@@ -2645,7 +2645,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 
     #[tokio::test]
-    async fn stop_hook_block_cap_counts_only_consecutive_blocks() -> Result<()> {
+    async fn stop_hook_deny_limit_counts_only_consecutive_blocks() -> Result<()> {
         let env = StopHookTestEnv::new(ALTERNATE_BLOCK_ALLOW_SCRIPT)?;
         let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
 
@@ -2668,7 +2668,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             !texts
                 .iter()
                 .any(|text| text.contains("overriding and ending turn")),
-            "non-consecutive Stop hook blocks should not trip the cap warning"
+            "non-consecutive Stop hook blocks should not trip the deny limit warning"
         );
 
         Ok(())

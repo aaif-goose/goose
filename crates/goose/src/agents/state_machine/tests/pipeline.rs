@@ -143,7 +143,7 @@ pub(super) struct TestPipeline {
     tool_inspection_manager: ToolInspectionManager,
     permission_manager: Arc<PermissionManager>,
     pub(super) hook_manager: HookManager,
-    stop_hook_block_cap: u32,
+    stop_hook_deny_limit: u32,
     calculator: Arc<CalculatorExtension>,
     pub(super) session_id: String,
     working_dir: std::path::PathBuf,
@@ -181,7 +181,7 @@ impl TestPipeline {
             subagent_runner: ForegroundSubagentRunner::new(Arc::clone(&self.subagent_host)),
             retry_timeout: std::time::Duration::from_secs(1),
             on_failure_timeout: std::time::Duration::from_secs(1),
-            stop_hook_block_cap: self.stop_hook_block_cap,
+            stop_hook_deny_limit: self.stop_hook_deny_limit,
             max_turns: self.max_turns,
             extra_operations: self.extra_operations.clone(),
             cancel,
@@ -276,8 +276,8 @@ impl TestPipeline {
         self
     }
 
-    pub(super) fn with_stop_hook_block_cap(mut self, cap: u32) -> Self {
-        self.stop_hook_block_cap = cap;
+    pub(super) fn with_stop_hook_deny_limit(mut self, limit: u32) -> Self {
+        self.stop_hook_deny_limit = limit;
         self
     }
 
@@ -376,7 +376,7 @@ impl TestPipeline {
         .await?
         .with_hook_manager(self.hook_manager.clone())
         .with_max_turns(self.max_turns)
-        .with_stop_hook_block_cap(self.stop_hook_block_cap);
+        .with_stop_hook_deny_limit(self.stop_hook_deny_limit);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
         Ok(pipeline)
     }
@@ -863,7 +863,7 @@ async fn build_test_pipeline(
         tool_inspection_manager,
         permission_manager,
         hook_manager: HookManager::default(),
-        stop_hook_block_cap: 3,
+        stop_hook_deny_limit: 3,
         calculator: calculator.clone(),
         session_id: session.id.clone(),
         working_dir: session.working_dir.clone(),

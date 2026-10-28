@@ -15,6 +15,7 @@ use rmcp::{
 };
 use serde_json::{json, Value};
 
+use crate::hook::{run_hooks, Hook, HookDecision};
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationFuture,
     OperationResult,
@@ -54,6 +55,27 @@ fn definition<T: ToolBase>() -> Tool {
         tool = tool.with_meta(meta);
     }
     tool
+}
+
+fn denied(
+    emit: &Emitter,
+    reason: String,
+    user_message: Option<Message>,
+) -> Result<CallToolResult, ErrorData> {
+    if let Some(user_message) = user_message {
+        emit.message(user_message);
+    }
+    Err(ErrorData::internal_error(reason, None))
+}
+
+fn add_tool_response(
+    response: &mut Option<Message>,
+    request: &ToolRequest,
+    result: Result<CallToolResult, ErrorData>,
+) {
+    response
+        .get_or_insert_with(|| Message::user().with_generated_id_if_missing())
+        .add_tool_response_with_metadata(request.id.clone(), result, request.metadata.as_ref());
 }
 
 fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> Vec<ToolRequest> {
@@ -134,6 +156,22 @@ pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     ) -> Result<CallToolResult, ErrorData>;
 }
 
+pub struct BeforeToolCall<'a> {
+    pub conversation: &'a Conversation,
+    pub request_id: &'a str,
+    pub call: &'a CallToolRequestParams,
+}
+
+pub struct AfterToolCall<'a> {
+    pub conversation: &'a Conversation,
+    pub request_id: &'a str,
+    pub call: &'a CallToolRequestParams,
+    pub result: &'a Result<CallToolResult, ErrorData>,
+}
+
+pub type BeforeToolCallHook<S> = dyn for<'a> Hook<S, BeforeToolCall<'a>>;
+pub type AfterToolCallHook<S> = dyn for<'a> Hook<S, AfterToolCall<'a>>;
+
 #[cfg(not(target_arch = "wasm32"))]
 type ToolHandler<S> = dyn for<'a> Fn(&'a S, Option<JsonObject>) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>
     + Send
@@ -193,7 +231,10 @@ where
 pub struct ToolOperation<S> {
     registered: RegisteredToolProvider<S>,
     providers: Vec<Arc<dyn ToolProvider<S>>>,
+    before_call_hooks: Vec<Arc<BeforeToolCallHook<S>>>,
+    after_call_hooks: Vec<Arc<AfterToolCallHook<S>>>,
     response: Mutex<Option<Message>>,
+    call_in_after_call_hooks: Mutex<Option<ToolRequest>>,
 }
 
 impl<S> ToolOperation<S>
@@ -204,7 +245,10 @@ where
         Self {
             registered: RegisteredToolProvider { tools: Vec::new() },
             providers: Vec::new(),
+            before_call_hooks: Vec::new(),
+            after_call_hooks: Vec::new(),
             response: Mutex::new(None),
+            call_in_after_call_hooks: Mutex::new(None),
         }
     }
 
@@ -223,6 +267,16 @@ where
 
     pub fn with_provider(mut self, provider: Arc<dyn ToolProvider<S>>) -> Self {
         self.providers.push(provider);
+        self
+    }
+
+    pub fn with_before_call_hooks(mut self, hooks: Vec<Arc<BeforeToolCallHook<S>>>) -> Self {
+        self.before_call_hooks = hooks;
+        self
+    }
+
+    pub fn with_after_call_hooks(mut self, hooks: Vec<Arc<AfterToolCallHook<S>>>) -> Self {
+        self.after_call_hooks = hooks;
         self
     }
 
@@ -281,6 +335,64 @@ where
         }
         Ok(available)
     }
+
+    async fn call_with_hooks(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+        request: &ToolRequest,
+        call: &CallToolRequestParams,
+        available: &[(Tool, &dyn ToolProvider<S>)],
+        emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        let request_id = request.id.as_str();
+        let before_call = BeforeToolCall {
+            conversation,
+            request_id,
+            call,
+        };
+        match run_hooks(&self.before_call_hooks, session, &before_call).await {
+            Ok(HookDecision::Allow) => {}
+            Ok(HookDecision::Deny {
+                reason,
+                user_message,
+            }) => return denied(emit, reason, user_message),
+            Err(error) => {
+                return Err(ErrorData::internal_error(
+                    format!("The tool did not run because a hook failed: {error:#}"),
+                    None,
+                ))
+            }
+        }
+        let provider = available
+            .iter()
+            .find(|(tool, _)| tool.name == call.name)
+            .map(|(_, provider)| *provider)
+            .expect("pending requests were filtered by available tools");
+        let result = provider.call(session, request_id, call.clone(), emit).await;
+        let after_call = AfterToolCall {
+            conversation,
+            request_id,
+            call,
+            result: &result,
+        };
+        *self.call_in_after_call_hooks.lock().unwrap() = Some(request.clone());
+        let decision = run_hooks(&self.after_call_hooks, session, &after_call).await;
+        *self.call_in_after_call_hooks.lock().unwrap() = None;
+        match decision {
+            Ok(HookDecision::Allow) => result,
+            Ok(HookDecision::Deny {
+                reason,
+                user_message,
+            }) => denied(emit, reason, user_message),
+            Err(error) => Err(ErrorData::internal_error(
+                format!(
+                    "The tool completed, but a hook failed while checking its result: {error:#}"
+                ),
+                None,
+            )),
+        }
+    }
 }
 
 impl<S> Default for ToolOperation<S>
@@ -309,7 +421,17 @@ where
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        let response = self.response.lock().unwrap().take();
+        let mut response = self.response.lock().unwrap().take();
+        if let Some(request) = self.call_in_after_call_hooks.lock().unwrap().take() {
+            add_tool_response(
+                &mut response,
+                &request,
+                Err(ErrorData::internal_error(
+                    "The tool completed, but the run was stopped before a hook checked its result",
+                    None,
+                )),
+            );
+        }
         match response {
             Some(response) => vec![E::from(emit.message(response))],
             None => Vec::new(),
@@ -360,30 +482,14 @@ where
         }
 
         for request in pending {
-            let provider = match request.tool_call.as_ref() {
-                Ok(call) => available
-                    .iter()
-                    .find(|(tool, _)| tool.name == call.name)
-                    .map(|(_, provider)| *provider)
-                    .expect("pending requests were filtered by available tools"),
-                Err(_) => &self.registered as &dyn ToolProvider<S>,
-            };
             let tool_result = match request.tool_call.as_ref() {
                 Err(error) => Err(error.clone()),
                 Ok(call) => {
-                    provider
-                        .call(session, &request.id, call.clone(), emit)
+                    self.call_with_hooks(session, conversation, &request, call, &available, emit)
                         .await
                 }
             };
-            let mut output = self.response.lock().unwrap();
-            let message =
-                output.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-            message.add_tool_response_with_metadata(
-                request.id,
-                tool_result,
-                request.metadata.as_ref(),
-            );
+            add_tool_response(&mut self.response.lock().unwrap(), &request, tool_result);
         }
         let message = self
             .response

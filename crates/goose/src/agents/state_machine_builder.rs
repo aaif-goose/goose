@@ -7,12 +7,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, EmptyResponseOperation,
-    ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    deny_limit_warning, BangShellOperation, CompactionOperation, DoctorOperation,
+    EmptyResponseOperation, ExitOnErrorOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, GooseStopHook, InferenceRunner, MaxTurnsOperation, Operation,
+    ProjectOperation, RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::config::Config;
@@ -37,7 +38,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) subagent_runner: ForegroundSubagentRunner,
     pub(crate) retry_timeout: Duration,
     pub(crate) on_failure_timeout: Duration,
-    pub(crate) stop_hook_block_cap: u32,
+    pub(crate) stop_hook_deny_limit: u32,
     pub(crate) max_turns: u32,
     pub(crate) extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
     pub(crate) cancel: CancellationToken,
@@ -62,7 +63,7 @@ pub(crate) fn build_state_machine(
         subagent_runner,
         retry_timeout,
         on_failure_timeout,
-        stop_hook_block_cap,
+        stop_hook_deny_limit,
         max_turns,
         extra_operations,
         cancel,
@@ -115,7 +116,11 @@ pub(crate) fn build_state_machine(
         Arc::new(ProjectOperation),
         Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
         Arc::new(EmptyResponseOperation),
-        Arc::new(StopHookOperation::new(hook_manager, stop_hook_block_cap)),
+        Arc::new(
+            StopHookOperation::new(vec![Arc::new(GooseStopHook::new(hook_manager))])
+                .with_deny_limit_per_turn(stop_hook_deny_limit)
+                .with_deny_limit_message(move || deny_limit_warning(stop_hook_deny_limit)),
+        ),
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
     ];
