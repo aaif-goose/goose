@@ -980,6 +980,11 @@ export type ProviderInventoryModelDto = {
      */
     reasoning?: boolean | null;
     /**
+     * Model-declared auto-compaction cap, overriding the global
+     * GOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.
+     */
+    autoCompactTokenLimit?: number | null;
+    /**
      * Whether this model should appear in the compact recommended picker.
      */
     recommended?: boolean;

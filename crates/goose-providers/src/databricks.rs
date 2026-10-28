@@ -518,6 +518,7 @@ impl DatabricksProvider {
             supports_cache_control: None,
             reasoning,
             supports_vision: None,
+            auto_compact_token_limit: None,
             thinking_preservation_format: None,
             request_params: None,
         }

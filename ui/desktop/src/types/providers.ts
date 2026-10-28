@@ -13,6 +13,7 @@ export type ConfigKey = {
 };
 
 export type ModelInfo = {
+  auto_compact_token_limit?: number | null;
   cache_read_token_cost?: number | null;
   cache_write_token_cost?: number | null;
   context_limit?: number | null;

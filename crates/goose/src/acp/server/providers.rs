@@ -68,6 +68,7 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
                 family: m.family,
                 context_limit: m.context_limit,
                 reasoning: m.reasoning,
+                auto_compact_token_limit: m.auto_compact_token_limit,
                 recommended: m.recommended,
             })
             .collect(),

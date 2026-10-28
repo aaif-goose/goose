@@ -23,6 +23,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Auto compact at"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Auto compact off"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Compact now"
   },

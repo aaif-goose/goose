@@ -74,9 +74,17 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         ("GOOSE_DISABLE_SESSION_NAMING", Some("true")),
     ]);
     let config = Config::global();
-    assert_eq!(auto_compact_threshold(1_000_000), 0.225);
-    assert_eq!(auto_compact_threshold(200_000), 0.8);
-    assert_eq!(auto_compact_threshold(0), 0.8);
+    let plain = ModelConfig::new("threshold-model");
+    assert_eq!(auto_compact_threshold(&plain, 1_000_000), 0.225);
+    assert_eq!(auto_compact_threshold(&plain, 200_000), 0.8);
+    assert_eq!(auto_compact_threshold(&plain, 0), 0.8);
+    let declared = ModelConfig::new("threshold-model").with_auto_compact_token_limit(800_000);
+    assert_eq!(auto_compact_threshold(&declared, 1_000_000), 0.8);
+    // A model-specific limit takes precedence over the global configuration.
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 400_000)?;
+    assert_eq!(auto_compact_threshold(&declared, 1_000_000), 0.8);
+    assert_eq!(auto_compact_threshold(&plain, 1_000_000), 0.4);
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
 
     let agent = Agent::new();
     let session = agent
@@ -100,11 +108,32 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", percentage)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", cap)?;
         assert_eq!(
-            auto_compact_threshold(context),
+            auto_compact_threshold(&plain, context),
             percentage.min(cap as f64 / context as f64)
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
-            verify_reply(&agent, &session.id, context, tokens, expected).await?;
+            verify_reply(&agent, &session.id, context, None, tokens, expected).await?;
+        }
+    }
+
+    // A limit declared on the model overrides the global configuration.
+    config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", 0.8)?;
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
+    for (model_limit, context, trigger) in [(800_000usize, 1_000_000, 800_000)] {
+        assert_eq!(
+            auto_compact_threshold(&declared, context),
+            0.8_f64.min(model_limit as f64 / context as f64)
+        );
+        for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
+            verify_reply(
+                &agent,
+                &session.id,
+                context,
+                Some(model_limit),
+                tokens,
+                expected,
+            )
+            .await?;
         }
     }
 
@@ -112,8 +141,8 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", disabled)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
         for context in [1_000_000, 200_000] {
-            assert_eq!(auto_compact_threshold(context), disabled);
-            verify_reply(&agent, &session.id, context, 900_000, false).await?;
+            assert_eq!(auto_compact_threshold(&plain, context), disabled);
+            verify_reply(&agent, &session.id, context, None, 900_000, false).await?;
         }
     }
     Ok(())
@@ -123,16 +152,17 @@ async fn verify_reply(
     agent: &Arc<Agent>,
     session_id: &str,
     context: usize,
+    model_limit: Option<usize>,
     tokens: i32,
     expected_compaction: bool,
 ) -> Result<()> {
     let provider = Arc::new(CompactionProvider::default());
+    let mut model_config = ModelConfig::new(context.to_string());
+    if let Some(limit) = model_limit {
+        model_config = model_config.with_auto_compact_token_limit(limit);
+    }
     agent
-        .update_provider(
-            provider.clone(),
-            ModelConfig::new(context.to_string()),
-            session_id,
-        )
+        .update_provider(provider.clone(), model_config, session_id)
         .await?;
     agent
         .config

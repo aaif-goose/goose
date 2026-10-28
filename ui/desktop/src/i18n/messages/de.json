@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Automatisch verdichten bei"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Automatisches Verdichten aus"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Jetzt verdichten"
   },

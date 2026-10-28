@@ -71,6 +71,7 @@ function providerEntryToDetails(entry: ProviderInventoryEntryDto): ProviderDetai
         name: model.id,
         context_limit: model.contextLimit ?? undefined,
         reasoning: model.reasoning ?? undefined,
+        auto_compact_token_limit: model.autoCompactTokenLimit ?? undefined,
       })),
       setup_steps: entry.setupSteps,
     },

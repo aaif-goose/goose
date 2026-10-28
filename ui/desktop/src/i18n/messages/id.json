@@ -2,6 +2,9 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Padatkan otomatis pada"
   },
+  "alertBox.autoCompactOff": {
+    "defaultMessage": "Kompaksi otomatis nonaktif"
+  },
   "alertBox.compactNow": {
     "defaultMessage": "Padatkan sekarang"
   },

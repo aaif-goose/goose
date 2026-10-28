@@ -23,6 +23,10 @@ const i18n = defineMessages({
     id: 'alertBox.autoCompactAt',
     defaultMessage: 'Auto compact at',
   },
+  autoCompactOff: {
+    id: 'alertBox.autoCompactOff',
+    defaultMessage: 'Auto compact off',
+  },
   tokenLimitLabel: {
     id: 'settings.agentLoop.operations.tokenLimit.label',
     defaultMessage: 'Token limit',
@@ -80,8 +84,16 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
 
   const currentThreshold = loadedThreshold;
   const contextLimit = alert.progress?.total ?? 0;
+  // A model-declared limit overrides the global GOOSE_AUTO_COMPACT_TOKEN_LIMIT
+  const effectiveTokenLimit = alert.autoCompactTokenLimit ?? tokenLimit;
   const tokenLimitApplies =
-    currentThreshold > 0 && currentThreshold < 1 && tokenLimit < currentThreshold * contextLimit;
+    currentThreshold > 0 &&
+    currentThreshold < 1 &&
+    effectiveTokenLimit < currentThreshold * contextLimit;
+  const canEditTokenLimit = tokenLimitApplies && alert.autoCompactTokenLimit === undefined;
+  // A model-declared limit of 0 disables auto-compaction entirely, matching
+  // GOOSE_AUTO_COMPACT_THRESHOLD=0 semantics
+  const modelDisablesCompaction = alert.autoCompactTokenLimit === 0;
 
   const editMaximum = editingTokenLimit ? Number.MAX_SAFE_INTEGER : 99;
   const editLabel = intl.formatMessage(
@@ -188,12 +200,16 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
                   <FaSave className="w-3 h-3" />
                 </button>
               </>
+            ) : modelDisablesCompaction ? (
+              <span className="text-[10px] opacity-70">
+                {intl.formatMessage(i18n.autoCompactOff)}
+              </span>
             ) : (
               <>
                 <span className="text-[10px] opacity-70">
                   {intl.formatMessage(i18n.autoCompactAt)}{' '}
                   {tokenLimitApplies
-                    ? `${Math.round(tokenLimit / 1000)}k`
+                    ? `${Math.round(effectiveTokenLimit / 1000)}k`
                     : `${Math.round(currentThreshold * 100)}%`}
                 </span>
                 <button
@@ -201,10 +217,10 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setEditingTokenLimit(tokenLimitApplies);
+                    setEditingTokenLimit(canEditTokenLimit);
                     setEditValue(
-                      tokenLimitApplies
-                        ? tokenLimit
+                      canEditTokenLimit
+                        ? effectiveTokenLimit
                         : Math.max(1, Math.min(99, Math.round(currentThreshold * 100)))
                     );
                     setIsEditingThreshold(true);
