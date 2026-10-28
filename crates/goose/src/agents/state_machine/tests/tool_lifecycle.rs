@@ -12,7 +12,7 @@ use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
 use super::pipeline::TestPipeline;
 use super::pipeline::MAX_TURNS;
 use super::test_pipeline;
-use crate::agents::state_machine::MAX_TURNS_MESSAGE;
+use crate::agents::state_machine_builder::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
@@ -322,7 +322,7 @@ async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let result = pipeline.run(["repeat malformed forever"]).await?;
 
     assert_eq!(api.call_count() - calls_before, MAX_TURNS as usize);
-    result.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
 
     Ok(())
 }

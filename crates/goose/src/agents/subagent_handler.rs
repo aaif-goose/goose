@@ -1,7 +1,8 @@
 use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
-        state_machine::{messages_since_kickoff, trailing_error, MAX_TURNS_MESSAGE},
+        state_machine::{messages_since_kickoff, trailing_error},
+        state_machine_builder::MAX_TURNS_MESSAGE,
         AgentEvent, SessionConfig, StateMachineServices,
     },
     conversation::message::{ActionRequiredData, Message, MessageContent},
@@ -315,7 +316,7 @@ mod tests {
     use futures::StreamExt;
 
     use super::{failure_reason, spawn_run};
-    use crate::agents::state_machine::MAX_TURNS_MESSAGE;
+    use crate::agents::state_machine_builder::MAX_TURNS_MESSAGE;
     use crate::conversation::message::Message;
     use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
     use tokio::sync::{mpsc, oneshot};

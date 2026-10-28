@@ -29,6 +29,8 @@ use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 
+pub(super) const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
+
 pub(crate) struct StateMachineConfig<'a> {
     pub(crate) provider: Arc<dyn Provider>,
     pub(crate) model_config: ModelConfig,
@@ -190,7 +192,11 @@ pub(crate) fn build_state_machine(
                 .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
         ),
         Arc::new(ExitOnErrorOperation),
-        Arc::new(MaxTurnsOperation::new(max_turns)),
+        Arc::new(
+            MaxTurnsOperation::new(max_turns).with_exhaustion_message(|| {
+                crate::conversation::message::Message::assistant().with_text(MAX_TURNS_MESSAGE)
+            }),
+        ),
     ];
     operations.extend(remaining_operations);
     operations.extend(extra_operations);

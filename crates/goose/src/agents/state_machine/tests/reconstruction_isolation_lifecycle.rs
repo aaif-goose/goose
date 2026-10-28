@@ -172,7 +172,11 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let bounded = pipeline.run(["keep adding"]).await?;
     assert_eq!(api.call_count() - calls_before, 2);
     assert_eq!(pipeline.calculator_total(), 2);
-    bounded.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    bounded.assert_message(
+        -1,
+        Agent,
+        crate::agents::state_machine_builder::MAX_TURNS_MESSAGE,
+    );
 
     let restored = pipeline.session().await?;
     assert_eq!(restored.usage.cache_read_input_tokens, Some(11));

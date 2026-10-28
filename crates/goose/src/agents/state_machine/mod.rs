@@ -71,7 +71,7 @@ pub(super) use ops_empty_response::EmptyResponseOperation;
 pub(crate) use ops_exit_on_error::turn_failure;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
 pub(super) use ops_llm::{enrich_unclaimed_tool_errors, GooseInferenceProvider, InferenceRunner};
-pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
+pub(super) use ops_maxturns::MaxTurnsOperation;
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
 pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;
