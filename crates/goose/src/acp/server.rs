@@ -1798,8 +1798,9 @@ impl AcpConnection {
             .data(format!("Session not found: {}", session_id)));
         }
 
-        self.runs()
+        self.services
             .start_prompt_run(session_id, run_id, cancel_token)
+            .await
             .map_err(|error| match error {
                 StartRunError::AgentRunExists { run_id } => {
                     let message = format!(

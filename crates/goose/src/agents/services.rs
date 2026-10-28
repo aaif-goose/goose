@@ -466,6 +466,23 @@ impl StateMachineServices {
         }
     }
 
+    pub(crate) async fn start_prompt_run(
+        &self,
+        session_id: &str,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> std::result::Result<(), super::active_run::StartRunError> {
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.runtime
+                .runs
+                .start_prompt_run(session_id, run_id, cancel_token)?;
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
+        Ok(())
+    }
+
     pub async fn touch_session(&self, session_id: &str) {
         let evicted = {
             let _lifetime = self.runtime.lock_lifetime(session_id).await;
