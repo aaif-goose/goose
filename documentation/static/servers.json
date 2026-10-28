@@ -804,6 +804,17 @@
       "required": false
     }
   ]
-}
-
+},
+  {
+    "id": "scalelist",
+    "name": "Scalelist",
+    "description": "Find B2B leads with verified work emails and mobile numbers",
+    "url": "https://mcp.scalelist.com/mcp",
+    "link": "https://github.com/Scalelist-Dev/scalelist-mcp-server",
+    "installation_notes": "Hosted remote server. Sign in with your Scalelist account via OAuth on first connect. New accounts get 20 free credits.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 ]
