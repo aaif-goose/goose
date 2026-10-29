@@ -590,9 +590,9 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
 }
 
 /// A server's configured `tool_call_meta` arrives in the `_meta` of every call
-/// to that server, alongside goose's own keys, and is not sent to any other
-/// server. Covers the legacy handshake and stateless 2026 HTTP, which build
-/// `_meta` in different places.
+/// to that server, over HTTP and stdio, alongside goose's own keys, and is not
+/// sent to any other server. Covers the legacy handshake and stateless 2026
+/// HTTP, which build `_meta` in different places.
 #[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
 #[test_case(None; "v2026_07_28")]
 #[tokio::test]
@@ -610,10 +610,15 @@ async fn configured_tool_call_meta_reaches_only_its_server(
     });
     let configured = http_fixture("configured", &http_server.url)
         .with_tool_call_meta(object!({ "a2ui": a2ui.clone() }));
+    let configured_stdio = stdio_fixture("configured_stdio", None, &["inspect_context"])
+        .with_tool_call_meta(object!({ "a2ui": a2ui.clone() }));
     let plain = stdio_fixture("plain", None, &["inspect_context"]);
     fx.add(&session, &configured).await;
+    fx.add(&session, &configured_stdio).await;
     fx.add(&session, &plain).await;
-    let lease = fx.resolve(&session, &[configured, plain]).await;
+    let lease = fx
+        .resolve(&session, &[configured, configured_stdio, plain])
+        .await;
 
     let report = inspect_context(&lease, "configured__inspect_context").await;
     let expected_protocol = client_protocol_version.unwrap_or(ProtocolVersion::V_2026_07_28);
@@ -623,6 +628,9 @@ async fn configured_tool_call_meta_reaches_only_its_server(
         report.request_session_id.as_deref(),
         Some(session.id.as_str())
     );
+
+    let stdio_report = inspect_context(&lease, "configured_stdio__inspect_context").await;
+    assert_eq!(stdio_report.request_meta.get("a2ui"), Some(&a2ui));
 
     let plain_report = inspect_context(&lease, "plain__inspect_context").await;
     assert!(
