@@ -464,11 +464,11 @@ async fn stop_at_a_confirmation_interrupts_the_waiting_call() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() -> Result<()> {
-    let (mut agent, api, session_id, calculator, temp_dir) = agent_with_calculator().await?;
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
+    let (agent, api, session_id, calculator, temp_dir) = agent_with_calculator(hooks).await?;
     agent
         .update_goose_mode(GooseMode::Auto, &session_id)
         .await?;
-    let (_hook_dir, hook_log) = install_hook_log(&mut agent, &["PreToolUse"], 0)?;
 
     let model_reply = api.on("add one").hold_call(ADD, value(1));
     api.on("result: 1").reply("the result is one");
@@ -489,7 +489,6 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
     let change_working_dir = async {
         model_reply.entered().await;
         agent
-            .config
             .session_manager
             .update(&session_config.id)
             .working_dir(new_working_dir.path().to_path_buf())
@@ -508,7 +507,7 @@ async fn pre_tool_use_reports_the_leased_working_dir_after_a_mid_run_change() ->
         .contexts()
         .iter()
         .all(|context| context.working_dir.as_deref() == Some(temp_dir.path())));
-    let working_dirs = std::fs::read_to_string(hook_log)?
+    let working_dirs = std::fs::read_to_string(hook_log_path)?
         .lines()
         .map(|line| {
             serde_json::from_str::<serde_json::Value>(line)
