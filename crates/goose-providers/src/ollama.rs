@@ -98,6 +98,8 @@ pub struct OllamaProvider {
     options: OllamaOptions,
     #[serde(skip)]
     capabilities: Mutex<HashMap<String, OllamaCapabilities>>,
+    #[serde(skip)]
+    context_limits: Mutex<HashMap<String, usize>>,
 }
 
 pub struct OllamaProviderBuilder {
@@ -173,6 +175,7 @@ impl OllamaProviderBuilder {
             skip_canonical_filtering: self.skip_canonical_filtering,
             options: self.options,
             capabilities: Mutex::new(HashMap::new()),
+            context_limits: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -226,17 +229,61 @@ impl OllamaProvider {
             return Some(cached);
         }
 
-        let capabilities = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_capabilities(model))
+        let json = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
             .await
             .ok()
             .flatten()?;
+        // Opportunistically cache the context window from the same response so a
+        // subsequent `model_context_limit` call does not re-hit `/api/show`.
+        // Do this before the capabilities parse so a response missing
+        // `capabilities` still populates the limit cache.
+        if let Some(limit) = Self::parse_context_limit(&json) {
+            if let Ok(mut cache) = self.context_limits.lock() {
+                cache.insert(model.to_string(), limit);
+            }
+        }
+        let capabilities = Self::parse_capabilities(&json)?;
         if let Ok(mut cache) = self.capabilities.lock() {
             cache.insert(model.to_string(), capabilities);
         }
         Some(capabilities)
     }
 
-    async fn fetch_capabilities(&self, model: &str) -> Option<OllamaCapabilities> {
+    /// The context window the daemon reports for a model, if it reports one.
+    ///
+    /// `/api/show` reports the real window in `model_info.<arch>.context_length`.
+    /// Only successful responses are cached; a timeout or parse failure is not
+    /// cached so a transient failure does not pin an uncatalogued cloud model
+    /// to the 128k default for the life of the provider.
+    async fn model_context_limit(&self, model: &str) -> Option<usize> {
+        if let Some(cached) = self
+            .context_limits
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(model).copied())
+        {
+            return Some(cached);
+        }
+
+        let json = tokio::time::timeout(SHOW_INFO_TIMEOUT, self.fetch_show_json(model))
+            .await
+            .ok()
+            .flatten()?;
+        // Opportunistically cache capabilities from the same response so a
+        // subsequent `model_capabilities` call does not re-hit `/api/show`.
+        if let Some(capabilities) = Self::parse_capabilities(&json) {
+            if let Ok(mut cache) = self.capabilities.lock() {
+                cache.insert(model.to_string(), capabilities);
+            }
+        }
+        let limit = Self::parse_context_limit(&json)?;
+        if let Ok(mut cache) = self.context_limits.lock() {
+            cache.insert(model.to_string(), limit);
+        }
+        Some(limit)
+    }
+
+    async fn fetch_show_json(&self, model: &str) -> Option<Value> {
         let response = self
             .api_client
             .request("api/show")
@@ -246,8 +293,10 @@ impl OllamaProvider {
         if !response.status().is_success() {
             return None;
         }
+        response.json().await.ok()
+    }
 
-        let json: Value = response.json().await.ok()?;
+    fn parse_capabilities(json: &Value) -> Option<OllamaCapabilities> {
         let capabilities = json.get("capabilities")?.as_array()?;
         let has = |name| {
             capabilities
@@ -259,6 +308,26 @@ impl OllamaProvider {
             vision: has("vision"),
         })
     }
+
+    fn parse_context_limit(json: &Value) -> Option<usize> {
+        json.get("model_info")
+            .and_then(|info| info.as_object())
+            .and_then(|obj| {
+                obj.iter().find_map(|(key, value)| {
+                    key.ends_with(".context_length")
+                        .then(|| value.as_u64().map(|n| n as usize))
+                        .flatten()
+                })
+            })
+    }
+}
+
+/// Whether a model id names an Ollama Cloud model.
+///
+/// The daemon tags the cloud models it proxies, and the canonical catalog keys
+/// those models under the `ollama-cloud` provider without the tag.
+pub fn is_ollama_cloud_model(model: &str) -> bool {
+    crate::canonical::strip_ollama_cloud_tag(model).is_some()
 }
 
 pub async fn fetch_ollama_model_names(
@@ -531,7 +600,19 @@ impl Provider for OllamaProvider {
         crate::context_limit::ContextLimitResolver::new(&self.name)
             .with_configured_limits(configured_limits)
             .resolve(model, override_limit, || async {
-                Ok(self.options.input_limit)
+                // An explicit GOOSE_INPUT_LIMIT wins: it is the window we ask
+                // the daemon to serve.
+                if let Some(limit) = self.options.input_limit {
+                    return Ok(Some(limit));
+                }
+                // The daemon is authoritative about the window it serves for the
+                // cloud models it proxies. Their ids carry a `:cloud` tag that
+                // the canonical catalog does not key on, so without asking the
+                // daemon they fall back to the 128k default.
+                if is_ollama_cloud_model(model) {
+                    return Ok(self.model_context_limit(model).await);
+                }
+                Ok(None)
             })
             .await
     }
@@ -820,6 +901,83 @@ mod tests {
 
     fn show_capabilities(capabilities: &[&str]) -> ResponseTemplate {
         ResponseTemplate::new(200).set_body_json(json!({ "capabilities": capabilities }))
+    }
+
+    fn show_context_length(context_length: usize) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model_info": { "muse-spark.context_length": context_length }
+        }))
+    }
+
+    #[tokio::test]
+    async fn cloud_model_context_limit_comes_from_the_daemon() {
+        let server = mock_show_server(show_context_length(1_048_576), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider
+                .get_context_limit("muse-spark-open:cloud", None)
+                .await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_cloud_tag_needs_an_explicit_tag() {
+        // `qwen3:8b-cloud` is Ollama's legacy spelling for a tagged cloud
+        // model, so the daemon's window applies.
+        let server = mock_show_server(show_context_length(1_048_576), 1).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("qwen3:8b-cloud", None).await,
+            1_048_576
+        );
+    }
+
+    #[tokio::test]
+    async fn untagged_dash_cloud_name_is_a_local_model() {
+        // A local model named `acme-cloud` is an ordinary model. Asking the
+        // daemon for its window would report the trained maximum rather than
+        // the window the daemon serves it with, postponing compaction past the
+        // real limit.
+        let server = mock_show_server(show_context_length(1_048_576), 0).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("acme-cloud", None).await,
+            crate::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[tokio::test]
+    async fn local_model_context_limit_does_not_query_the_daemon() {
+        // A local model keeps its catalog-derived window; the daemon's
+        // `model_info.context_length` is the model's trained maximum, not the
+        // window the daemon actually serves it with.
+        let server = mock_show_server(show_context_length(1_048_576), 0).await;
+        let provider = provider_for(&server);
+
+        assert_eq!(
+            provider.get_context_limit("qwen3", None).await,
+            crate::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_input_limit_wins_over_the_daemon_window() {
+        let server = mock_show_server(show_context_length(1_048_576), 0).await;
+        let provider = provider_for(&server).with_options(OllamaOptions {
+            input_limit: Some(65_536),
+            ..OllamaOptions::default()
+        });
+
+        assert_eq!(
+            provider
+                .get_context_limit("muse-spark-open:cloud", None)
+                .await,
+            65_536
+        );
     }
 
     #[tokio::test]
