@@ -1050,6 +1050,7 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
+        let mut completed_tool_messages = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
@@ -1238,7 +1239,8 @@ where
                                 vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
                             );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            // A closed tool block is not executable until the response succeeds.
+                            completed_tool_messages.push(message);
                         }
                     }
                     continue;
@@ -1323,6 +1325,10 @@ where
 
         if !message_stopped {
             Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
+        }
+
+        for message in completed_tool_messages {
+            yield (Some(message), None);
         }
 
         // A tool_use block left open at stream end never received its

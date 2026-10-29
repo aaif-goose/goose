@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use goose_provider_types::conversation::message::MessageContentBlock;
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::formats::anthropic::response_to_streaming_message;
 
@@ -8,6 +9,10 @@ const OVERLOAD: &str =
 const TEXT: &str = r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Working on it"}}"#;
 const DELTA: &str = r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}"#;
 const STOP: &str = r#"data: {"type":"message_stop"}"#;
+
+const TOOL_START: &str = r#"data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"tool_1","name":"dangerous_action","input":{}}}"#;
+const TOOL_ARGS: &str = r#"data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{}"}}"#;
+const TOOL_STOP: &str = r#"data: {"type":"content_block_stop","index":2}"#;
 
 async fn assert_stream_error(events: &[&str]) -> ProviderError {
     let lines: Vec<anyhow::Result<String>> =
@@ -29,6 +34,13 @@ async fn assert_stream_error(events: &[&str]) -> ProviderError {
             .filter_map(|r| r.as_ref().ok())
             .all(|(_, usage)| usage.is_none()),
         "an incomplete response must not emit final usage"
+    );
+    assert!(
+        results.iter().filter_map(|result| result.as_ref().ok())
+            .filter_map(|(message, _)| message.as_ref())
+            .flat_map(|message| &message.content)
+            .all(|block| !matches!(block, MessageContentBlock::ToolRequest(request) if request.tool_call.is_ok())),
+        "an unsuccessful response must not emit executable tool requests: {results:?}"
     );
     errors[0]
         .downcast_ref::<ProviderError>()
@@ -192,4 +204,52 @@ async fn interrupted_open_tool_call_is_not_emitted() {
         assert_eq!(results.len(), 1, "must not emit an unfinished tool call");
         assert!(results[0].is_err());
     }
+}
+
+#[tokio::test]
+async fn closed_tool_followed_by_eof_is_not_executable() {
+    assert!(matches!(
+        assert_stream_error(&[START, TOOL_START, TOOL_ARGS, TOOL_STOP]).await,
+        ProviderError::NetworkError(_)
+    ));
+}
+
+#[tokio::test]
+async fn closed_tool_followed_by_error_is_not_executable() {
+    assert_eq!(
+        assert_stream_error(&[START, TOOL_START, TOOL_ARGS, TOOL_STOP, OVERLOAD]).await,
+        ProviderError::ServerError("overloaded_error: Overloaded".to_string())
+    );
+}
+
+#[tokio::test]
+async fn completed_tool_waits_for_message_stop_and_is_emitted_once() {
+    let stream = response_to_streaming_message(futures::stream::iter(
+        [START, TOOL_START, TOOL_ARGS, TOOL_STOP, TEXT, DELTA, STOP]
+            .into_iter()
+            .map(|line| Ok(line.to_string())),
+    ));
+    futures::pin_mut!(stream);
+    let (message, usage) = stream.next().await.unwrap().unwrap();
+    assert!(usage.is_none());
+    assert!(
+        matches!(&message.unwrap().content[0], MessageContentBlock::Text(text) if text.text == "Working on it")
+    );
+    let results = stream.collect::<Vec<_>>().await;
+    assert!(results.iter().all(Result::is_ok));
+    let requests: Vec<_> = results
+        .iter()
+        .filter_map(|result| result.as_ref().unwrap().0.as_ref())
+        .flat_map(|message| &message.content)
+        .filter_map(|block| match block {
+            MessageContentBlock::ToolRequest(request) => Some(request),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].provider_index(), Some(2));
+    assert_eq!(requests[0].id, "tool_1");
+    let call = requests[0].tool_call.as_ref().unwrap();
+    assert_eq!(call.name, "dangerous_action");
+    assert_eq!(call.arguments, Some(Default::default()));
 }
