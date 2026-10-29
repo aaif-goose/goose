@@ -2,9 +2,8 @@
  * Hub Component
  *
  * The empty-chat landing screen. Visually it's "Pair with no messages yet" —
- * a large time + greeting above a centered, narrower ChatInput. Submitting
- * creates a session and navigates to /pair so the rest of the chat lifecycle
- * lives there.
+ * a large time + greeting above a centered, narrower ChatInput. Enter
+ * navigates to /pair immediately; Pair creates the session in the background.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
@@ -19,7 +18,6 @@ import { View, ViewOptions } from '../utils/navigationUtils';
 import { useConfig } from './ConfigContext';
 import { getEffectiveWorkingDir, getInitialWorkingDir } from '../utils/workingDir';
 import { createSession } from '../sessions';
-import LoadingGoose from './LoadingGoose';
 import { UserInput } from '../types/message';
 import {
   createNextChatExtensionDraft,
@@ -66,7 +64,6 @@ export default function Hub({
   const { extensionsList } = useConfig();
   const [workingDir, setWorkingDir] = useState(initialWorkingDir ?? getInitialWorkingDir());
   const userSelectedWorkingDirRef = useRef(false);
-  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
     useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
@@ -143,59 +140,21 @@ export default function Hub({
     setWorkingDir(dir);
   }, []);
 
-  const createHubSession = async () => {
-    if (isCreatingSession) return null;
-    setIsCreatingSession(true);
-
-    try {
-      // A draft exists only once the user has opened the picker, so its absence is
-      // "not specified" while an empty draft is "start with no extensions".
-      const sessionOptions = nextChatExtensionDraft
-        ? {
-            extensionConfigs: selectNextChatExtensions(extensionsList, nextChatExtensionDraft),
-          }
-        : { allExtensions: extensionsList };
-
-      // Resolve the effective directory at submit time: the IPC lookup may still
-      // be pending when the user submits, and an explicit pick must win.
-      const dir = userSelectedWorkingDirRef.current
-        ? workingDir
-        : await getEffectiveWorkingDir(initialWorkingDir);
-      const session = await createSession(dir, sessionOptions);
-      setNextChatExtensionDraft(null);
-      return session;
-    } catch (error) {
-      console.error('Failed to create session:', error);
-      toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
-      setIsCreatingSession(false);
-      return null;
-    }
-  };
-
-  const handleSubmit = async (input: UserInput) => {
+  const handleSubmit = (input: UserInput) => {
     const { msg: userMessage, images } = input;
     if (!(images.length > 0 || userMessage.trim())) return;
 
-    const draftAtSubmit = draftRef.current;
-    const session = await createHubSession();
-    if (!session) return;
-
-    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-    window.dispatchEvent(
-      new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-        detail: { sessionId: session.id, initialMessage: { msg: userMessage, images } },
-      })
-    );
-
-    // Preserve edits made while the session was being created.
-    if (draftRef.current === draftAtSubmit) {
-      draftRef.current = '';
-    }
+    // ChatInput only clears this draft when sessionId !== null, so the text
+    // stays put until Pair clears it after session/new succeeds.
+    const sessionOptions = nextChatExtensionDraft
+      ? { extensionConfigs: selectNextChatExtensions(extensionsList, nextChatExtensionDraft) }
+      : {};
 
     setView('pair', {
       disableAnimation: true,
-      resumeSessionId: session.id,
       initialMessage: { msg: userMessage, images },
+      workingDir: userSelectedWorkingDirRef.current ? workingDir : (initialWorkingDir ?? workingDir),
+      ...sessionOptions,
     });
   };
 
@@ -205,21 +164,31 @@ export default function Hub({
       return;
     }
 
-    const session = await createHubSession();
-    if (!session) return;
+    const sessionOptions = nextChatExtensionDraft
+      ? { extensionConfigs: selectNextChatExtensions(extensionsList, nextChatExtensionDraft) }
+      : { allExtensions: extensionsList };
+    const dir = userSelectedWorkingDirRef.current
+      ? workingDir
+      : await getEffectiveWorkingDir(initialWorkingDir);
 
-    window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-    window.dispatchEvent(
-      new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
-        detail: { sessionId: session.id },
-      })
-    );
-
-    setView('pair', {
-      disableAnimation: true,
-      resumeSessionId: session.id,
-      startLiveVoice: true,
-    });
+    try {
+      const session = await createSession(dir, sessionOptions);
+      setNextChatExtensionDraft(null);
+      window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.ADD_ACTIVE_SESSION, {
+          detail: { sessionId: session.id },
+        })
+      );
+      setView('pair', {
+        disableAnimation: true,
+        resumeSessionId: session.id,
+        startLiveVoice: true,
+      });
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
+    }
   };
 
   return (
@@ -240,7 +209,7 @@ export default function Hub({
             sessionId={null}
             draftRef={draftRef}
             handleSubmit={handleSubmit}
-            chatState={isCreatingSession ? ChatState.LoadingConversation : ChatState.Idle}
+            chatState={ChatState.Idle}
             hasActiveRun={false}
             onStop={() => {}}
             initialValue=""
@@ -258,7 +227,7 @@ export default function Hub({
             nextChatExtensionDraft={draftForMenu}
             onNextChatExtensionDraftChange={handleNextChatExtensionDraftChange}
             liveVoice={{
-              availability: isCreatingSession ? null : liveVoiceAvailability,
+              availability: liveVoiceAvailability,
               phase: 'idle',
               muted: false,
               activeInAnotherSession: liveVoice.activeSessionId !== null,
@@ -270,11 +239,6 @@ export default function Hub({
         </ChatInputCard>
       </div>
 
-      {isCreatingSession && (
-        <div className="absolute bottom-4 left-4 z-20 pointer-events-none">
-          <LoadingGoose chatState={ChatState.LoadingConversation} />
-        </div>
-      )}
     </div>
   );
 }

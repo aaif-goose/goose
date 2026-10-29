@@ -24,8 +24,6 @@ type ChatInputCapture = {
   onNextChatExtensionDraftChange?: (draft: { selectedNames: Set<string> }) => void;
 };
 
-type Session = Awaited<ReturnType<typeof createSession>>;
-
 const liveVoice: LiveVoiceController = {
   activeSessionId: null,
   liveVoiceSessionId: null,
@@ -61,7 +59,8 @@ vi.mock('../utils/workingDir', () => ({
 
 vi.mock('../utils/nextChatExtensions', () => ({
   createNextChatExtensionDraft: () => ({}),
-  selectNextChatExtensions: () => [],
+  selectNextChatExtensions: (_list: unknown, draft: { selectedNames: Set<string> }) =>
+    [...draft.selectedNames].map((name) => ({ name, type: 'stdio' })),
 }));
 
 vi.mock('../acp/errors', () => ({ formatAcpError: (error: unknown) => String(error) }));
@@ -73,20 +72,6 @@ vi.mock('../acp/liveVoice', () => ({ acpGetLiveVoiceAvailability: vi.fn() }));
 vi.mock('../acp/acpConnection', () => ({ subscribeToAcpRecovery: vi.fn() }));
 
 const DRAFT = 'a half-written thought';
-const TYPED_WHILE_STARTING = 'and one more thought';
-
-/** Holds session creation open, so the test can edit the draft while it is pending. */
-function pendingSession() {
-  const settle: { started?: () => void; failed?: () => void } = {};
-  vi.mocked(createSession).mockImplementation(
-    () =>
-      new Promise<Session>((resolve, reject) => {
-        settle.started = () => resolve({ id: 'session-1' } as Session);
-        settle.failed = () => reject(new Error('no agent'));
-      })
-  );
-  return settle;
-}
 
 function renderHub(draftRef: { current: string }, setView = vi.fn(), initialWorkingDir?: string) {
   return render(
@@ -116,18 +101,22 @@ describe('Hub', () => {
   });
 
   it.each([undefined, '/projects/payments'])(
-    'starts in the inherited folder unless another folder is selected (%s)',
+    'navigates with the inherited folder unless another folder is selected (%s)',
     async (selectedDir) => {
-      vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
-      renderHub({ current: '' }, vi.fn(), '/projects/website');
+      const setView = vi.fn();
+      renderHub({ current: '' }, setView, '/projects/website');
 
       await waitFor(() => expect(captured.chatInput?.workingDir).toBe('/projects/website'));
       if (selectedDir) {
         await act(async () => captured.chatInput?.onWorkingDirChange(selectedDir));
       }
       await submit();
-      expect(createSession).toHaveBeenCalledWith(selectedDir ?? '/projects/website', {
-        allExtensions: [],
+
+      expect(createSession).not.toHaveBeenCalled();
+      expect(setView).toHaveBeenCalledWith('pair', {
+        disableAnimation: true,
+        initialMessage: { msg: DRAFT, images: [] },
+        workingDir: selectedDir ?? '/projects/website',
       });
     }
   );
@@ -168,9 +157,9 @@ describe('Hub', () => {
     expect(createSession).not.toHaveBeenCalled();
   });
 
-  it('starts a chat with no extensions when the user cleared the picker', async () => {
-    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
-    renderHub({ current: '' });
+  it('navigates with no extensions when the user cleared the picker', async () => {
+    const setView = vi.fn();
+    renderHub({ current: '' }, setView);
 
     // Touching the picker is what turns "not specified" into a real choice, and
     // clearing it is the case the composer already promises in a toast.
@@ -179,16 +168,27 @@ describe('Hub', () => {
     });
     await submit();
 
-    expect(createSession).toHaveBeenCalledWith('/tmp/goose', { extensionConfigs: [] });
+    expect(createSession).not.toHaveBeenCalled();
+    expect(setView).toHaveBeenCalledWith('pair', {
+      disableAnimation: true,
+      initialMessage: { msg: DRAFT, images: [] },
+      workingDir: '/tmp/goose',
+      extensionConfigs: [],
+    });
   });
 
   it('leaves the set unspecified when the picker was never touched', async () => {
-    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
-    renderHub({ current: '' });
+    const setView = vi.fn();
+    renderHub({ current: '' }, setView);
 
     await submit();
 
-    expect(createSession).toHaveBeenCalledWith('/tmp/goose', { allExtensions: [] });
+    expect(createSession).not.toHaveBeenCalled();
+    expect(setView).toHaveBeenCalledWith('pair', {
+      disableAnimation: true,
+      initialMessage: { msg: DRAFT, images: [] },
+      workingDir: '/tmp/goose',
+    });
   });
 
   it('hands the draft to the input', () => {
@@ -198,63 +198,13 @@ describe('Hub', () => {
     expect(captured.chatInput?.draftRef).toBe(draftRef);
   });
 
-  it('drops the draft once the chat starts', async () => {
-    const session = pendingSession();
+  it('leaves the draft for Pair to clear after the chat starts', async () => {
     const draftRef = { current: DRAFT };
     renderHub(draftRef);
 
     await submit();
-    await act(async () => session.started?.());
-
-    expect(draftRef.current).toBe('');
-  });
-
-  it('keeps the draft when the chat fails to start', async () => {
-    const session = pendingSession();
-    const draftRef = { current: DRAFT };
-    renderHub(draftRef);
-
-    await submit();
-    await act(async () => session.failed?.());
 
     expect(draftRef.current).toBe(DRAFT);
-  });
-
-  // The input stays editable while the session is being created, so what is in the
-  // draft when creation ends is not necessarily what was submitted.
-  it('keeps text typed while the chat was starting', async () => {
-    const session = pendingSession();
-    const draftRef = { current: DRAFT };
-    renderHub(draftRef);
-
-    await submit();
-    draftRef.current = TYPED_WHILE_STARTING;
-    await act(async () => session.started?.());
-
-    expect(draftRef.current).toBe(TYPED_WHILE_STARTING);
-  });
-
-  it('keeps text typed while a failing chat was starting', async () => {
-    const session = pendingSession();
-    const draftRef = { current: DRAFT };
-    renderHub(draftRef);
-
-    await submit();
-    draftRef.current = TYPED_WHILE_STARTING;
-    await act(async () => session.failed?.());
-
-    expect(draftRef.current).toBe(TYPED_WHILE_STARTING);
-  });
-
-  it('leaves the draft empty when the input was cleared while the chat was starting', async () => {
-    const session = pendingSession();
-    const draftRef = { current: DRAFT };
-    renderHub(draftRef);
-
-    await submit();
-    draftRef.current = '';
-    await act(async () => session.failed?.());
-
-    expect(draftRef.current).toBe('');
+    expect(createSession).not.toHaveBeenCalled();
   });
 });
