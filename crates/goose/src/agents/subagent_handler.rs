@@ -1,8 +1,7 @@
 use crate::{
     agents::{
-        final_output_tool::FinalOutputTool,
-        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        AgentEvent, SessionConfig, StateMachineServices,
+        final_output_tool::FinalOutputTool, state_machine::MAX_TURNS_MESSAGE, AgentEvent,
+        SessionConfig, StateMachineServices,
     },
     conversation::{
         message::{ActionRequiredData, Message, MessageContent},
@@ -156,24 +155,48 @@ impl ForegroundSubagentRunner {
             Err(error) => return SubagentOutcome::Failed(error.to_string()),
         };
         let messages = subagent.conversation.as_ref().map(Conversation::messages);
-        if let Some(output) =
-            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
-        {
-            return SubagentOutcome::Completed(output);
-        }
         if stopped {
             return SubagentOutcome::Cancelled;
         }
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());
         }
-        if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
-            return SubagentOutcome::Failed(format!("{error:?}"));
+        if let Some(error) = subagent
+            .conversation
+            .as_ref()
+            .and_then(worker_trailing_error)
+        {
+            return SubagentOutcome::Failed(error);
+        }
+        if let Some(output) =
+            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
+        {
+            return SubagentOutcome::Completed(output);
         }
         SubagentOutcome::Failed(failure_reason(
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
     }
+}
+
+pub(crate) fn worker_trailing_error(conversation: &Conversation) -> Option<String> {
+    let message = conversation.messages().iter().rev().find(|message| {
+        message.error_kind().is_some()
+            || message
+                .content
+                .iter()
+                .any(|content| !matches!(content, MessageContent::SystemNotification(_)))
+    })?;
+    message.error_kind().map(|kind| {
+        let detail = message.content.iter().find_map(|content| match content {
+            MessageContent::Error(error) => Some(error.message.as_str()),
+            _ => None,
+        });
+        detail.map_or_else(
+            || format!("{kind:?}"),
+            |detail| format!("{kind:?}: {detail}"),
+        )
+    })
 }
 
 fn spawn_run(

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::Emitter;
-use crate::agents::subagent_handler::ForegroundSubagentRunner;
+use crate::agents::subagent_handler::{worker_trailing_error, ForegroundSubagentRunner};
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
@@ -115,6 +115,16 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
             return ended(SubagentOutcome::Failed(
                 "it does not belong to this session".to_string(),
             ));
+        }
+        if cancel.is_cancelled() {
+            return ended(SubagentOutcome::Cancelled);
+        }
+        if let Some(error) = subagent
+            .conversation
+            .as_ref()
+            .and_then(worker_trailing_error)
+        {
+            return ended(SubagentOutcome::Failed(error));
         }
         if let Some(output) = subagent
             .conversation
@@ -390,6 +400,99 @@ mod tests {
             }
         }
         notices
+    }
+
+    #[tokio::test]
+    async fn saved_final_output_cannot_hide_a_later_terminal_error() -> Result<()> {
+        use crate::conversation::message::MessageErrorKind;
+        for notice in [false, true] {
+            let fixture = fixture().await?;
+            save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+            fixture
+                .manager
+                .add_message(
+                    &fixture.subagent_id,
+                    &Message::assistant().with_error(MessageErrorKind::Other, "provider exhausted"),
+                )
+                .await?;
+            if notice {
+                fixture
+                    .manager
+                    .add_message(
+                        &fixture.subagent_id,
+                        &Message::assistant().with_system_notification(
+                            SystemNotificationType::InlineMessage,
+                            "Stop hook cap reached",
+                        ),
+                    )
+                    .await?;
+            }
+            let parent = fixture
+                .manager
+                .get_session(&fixture.parent_id, true)
+                .await?;
+            let updates: Vec<_> = fixture
+                .runner()
+                .start(&parent, &fixture.subagent_id, CancellationToken::new())
+                .await
+                .collect()
+                .await;
+            assert!(
+                matches!(updates.last(), Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+                if reason.contains("provider exhausted")),
+                "notice={notice}: {updates:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancelled_start_cannot_be_hidden_by_saved_final_output() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, true)
+            .await?;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let updates: Vec<_> = fixture
+            .runner()
+            .start(&parent, &fixture.subagent_id, cancel)
+            .await
+            .collect()
+            .await;
+        assert!(
+            matches!(
+                updates.last(),
+                Some(SubagentUpdate::Finished(SubagentOutcome::Cancelled))
+            ),
+            "{updates:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn run_failure_cannot_be_hidden_by_saved_final_output() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        let child = fixture
+            .manager
+            .get_session(&fixture.subagent_id, true)
+            .await?;
+        // Missing recipe makes the real runner fail during preparation.
+        assert!(child.recipe.is_none());
+        let updates: Vec<_> = fixture
+            .runner()
+            .spawn(child, CancellationToken::new())
+            .collect()
+            .await;
+        assert!(
+            matches!(updates.last(), Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+            if reason.contains("no saved recipe")),
+            "{updates:?}"
+        );
+        Ok(())
     }
 
     #[tokio::test]
