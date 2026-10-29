@@ -14,7 +14,7 @@ import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
 import { ChatState } from '../types/chatState';
 import 'react-toastify/dist/ReactToastify.css';
-import { View, ViewOptions } from '../utils/navigationUtils';
+import { rememberHubSubmit, takeHubSubmit, View, ViewOptions } from '../utils/navigationUtils';
 import { useConfig } from './ConfigContext';
 import { getEffectiveWorkingDir, getInitialWorkingDir } from '../utils/workingDir';
 import { createSession } from '../sessions';
@@ -62,12 +62,15 @@ export default function Hub({
   const { state } = useLocation();
   const initialWorkingDir = (state as { workingDir?: string } | null)?.workingDir;
   const { extensionsList } = useConfig();
-  const [workingDir, setWorkingDir] = useState(initialWorkingDir ?? getInitialWorkingDir());
-  const userSelectedWorkingDirRef = useRef(false);
+  const pendingSubmit = takeHubSubmit(draftRef);
+  const [workingDir, setWorkingDir] = useState(
+    pendingSubmit?.workingDir ?? initialWorkingDir ?? getInitialWorkingDir()
+  );
+  const userSelectedWorkingDirRef = useRef(pendingSubmit?.workingDir !== undefined);
   const [liveVoiceAvailability, setLiveVoiceAvailability] =
     useState<LiveVoiceAvailabilityResponse_unstable | null>(null);
   const [nextChatExtensionDraft, setNextChatExtensionDraft] =
-    useState<NextChatExtensionDraft | null>(null);
+    useState<NextChatExtensionDraft | null>(pendingSubmit?.extensionDraft ?? null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { time, meridiem, hour } = useClock();
 
@@ -145,15 +148,25 @@ export default function Hub({
     if (!(images.length > 0 || userMessage.trim())) return;
 
     // ChatInput only clears this draft when sessionId !== null, so the text
-    // stays put until Pair clears it after session/new succeeds.
+    // stays put until Pair clears it after session/new succeeds. Images and
+    // Hub options are not in that string; Pair puts them back if creation fails.
+    rememberHubSubmit(draftRef, {
+      text: userMessage,
+      images,
+      workingDir: userSelectedWorkingDirRef.current ? workingDir : undefined,
+      extensionDraft: nextChatExtensionDraft,
+    });
     const sessionOptions = nextChatExtensionDraft
       ? { extensionConfigs: selectNextChatExtensions(extensionsList, nextChatExtensionDraft) }
       : {};
 
     setView('pair', {
       disableAnimation: true,
+      fromHub: true,
       initialMessage: { msg: userMessage, images },
-      workingDir: userSelectedWorkingDirRef.current ? workingDir : (initialWorkingDir ?? workingDir),
+      // Only an explicit pick is final. Pair re-resolves an automatic directory,
+      // including one inherited from the previous chat, against the backend.
+      ...(userSelectedWorkingDirRef.current ? { workingDir } : {}),
       ...sessionOptions,
     });
   };
@@ -213,6 +226,7 @@ export default function Hub({
             hasActiveRun={false}
             onStop={() => {}}
             initialValue=""
+            initialImages={pendingSubmit?.images}
             setView={setView}
             totalTokens={0}
             accumulatedInputTokens={0}

@@ -237,6 +237,9 @@ function AppInnerTestWrapper({ children }: { children: React.ReactNode }) {
 describe('App Component - Brand New State', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getEffectiveWorkingDir).mockImplementation(
+      async (inherited?: string) => inherited ?? '/resolved/dir'
+    );
     mockNavigate.mockClear();
     mockSetSearchParams.mockClear();
     mockLocation.pathname = '/';
@@ -424,6 +427,7 @@ describe('App Component - Brand New State', () => {
     mockLocation.state = {
       initialMessage: { msg: 'hello from hub', images: [] },
       workingDir: '/projects/website',
+      fromHub: true,
     };
     let resolveSession: (session: Session) => void = () => {};
     vi.mocked(createSession).mockImplementation(
@@ -440,6 +444,7 @@ describe('App Component - Brand New State', () => {
     );
 
     expect(screen.getByTestId('pending-chat').textContent).toBe('hello from hub');
+    await waitFor(() => expect(createSession).toHaveBeenCalled());
     expect(createSession).toHaveBeenCalledWith('/projects/website', {
       recipeDeeplink: null,
       recipeId: null,
@@ -479,7 +484,7 @@ describe('App Component - Brand New State', () => {
   });
 
   it('keeps a newer Hub draft when the pending session finishes', async () => {
-    mockLocation.state = { initialMessage: { msg: 'first', images: [] } };
+    mockLocation.state = { initialMessage: { msg: 'first', images: [] }, fromHub: true };
     let resolveSession: (session: Session) => void = () => {};
     vi.mocked(createSession).mockImplementation(
       () =>
@@ -511,8 +516,25 @@ describe('App Component - Brand New State', () => {
     });
 
     await waitFor(() => expect(createSession).toHaveBeenCalled());
-    expect(getEffectiveWorkingDir).toHaveBeenCalled();
+    expect(getEffectiveWorkingDir).toHaveBeenCalledWith(undefined);
     expect(createSession).toHaveBeenCalledWith('/resolved/dir', expect.any(Object));
+  });
+
+  it('re-resolves an inherited directory instead of treating it as final', async () => {
+    mockLocation.state = {
+      initialMessage: { msg: 'hello', images: [] },
+      workingDir: '/projects/website',
+    };
+    vi.mocked(getEffectiveWorkingDir).mockResolvedValue('/remote/website');
+    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
+
+    render(<PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} />, {
+      wrapper: AppInnerTestWrapper,
+    });
+
+    await waitFor(() => expect(createSession).toHaveBeenCalled());
+    expect(getEffectiveWorkingDir).toHaveBeenCalledWith('/projects/website');
+    expect(createSession).toHaveBeenCalledWith('/remote/website', expect.any(Object));
   });
 
   it('does not create a session after leaving /pair before the working directory resolves', async () => {
@@ -542,6 +564,13 @@ describe('App Component - Brand New State', () => {
       initialMessage: { msg: 'hello', images: [] },
       workingDir: '/projects/website',
     };
+    let resolveDir: (dir: string) => void = () => {};
+    vi.mocked(getEffectiveWorkingDir).mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveDir = resolve;
+        })
+    );
     let resolveSession: (session: Session) => void = () => {};
     vi.mocked(createSession).mockImplementation(
       () =>
@@ -561,11 +590,29 @@ describe('App Component - Brand New State', () => {
       wrapper: AppInnerTestWrapper,
     });
     await act(async () => {
+      resolveDir('/projects/website');
+    });
+    await act(async () => {
       resolveSession({ id: 'session-1' } as Session);
     });
 
-    expect(created).toHaveBeenCalled();
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(createSession).toHaveBeenCalledTimes(1);
     window.removeEventListener('session-created', created);
+  });
+
+  it('does not clear a Hub draft that this request did not submit', async () => {
+    mockLocation.state = { initialMessage: { msg: 'from the launcher', images: [] } };
+    vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
+    const draftRef = { current: 'unsent hub draft' };
+
+    render(
+      <PairRouteWrapper activeSessions={[]} setActiveSessions={vi.fn()} draftRef={draftRef} />,
+      { wrapper: AppInnerTestWrapper }
+    );
+
+    await waitFor(() => expect(createSession).toHaveBeenCalled());
+    expect(draftRef.current).toBe('unsent hub draft');
   });
 
   it('does not publish a session that finishes after leaving /pair', async () => {

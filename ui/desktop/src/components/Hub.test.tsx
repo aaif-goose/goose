@@ -5,6 +5,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import Hub from './Hub';
+import { peekHubSubmit } from '../utils/navigationUtils';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { createSession } from '../sessions';
 import { UserInput } from '../types/message';
@@ -113,11 +114,21 @@ describe('Hub', () => {
       await submit();
 
       expect(createSession).not.toHaveBeenCalled();
-      expect(setView).toHaveBeenCalledWith('pair', {
-        disableAnimation: true,
-        initialMessage: { msg: DRAFT, images: [] },
-        workingDir: selectedDir ?? '/projects/website',
-      });
+      expect(setView).toHaveBeenCalledWith(
+        'pair',
+        selectedDir
+          ? {
+              disableAnimation: true,
+              fromHub: true,
+              initialMessage: { msg: DRAFT, images: [] },
+              workingDir: selectedDir,
+            }
+          : {
+              disableAnimation: true,
+              fromHub: true,
+              initialMessage: { msg: DRAFT, images: [] },
+            }
+      );
     }
   );
 
@@ -171,8 +182,8 @@ describe('Hub', () => {
     expect(createSession).not.toHaveBeenCalled();
     expect(setView).toHaveBeenCalledWith('pair', {
       disableAnimation: true,
+      fromHub: true,
       initialMessage: { msg: DRAFT, images: [] },
-      workingDir: '/tmp/goose',
       extensionConfigs: [],
     });
   });
@@ -186,8 +197,8 @@ describe('Hub', () => {
     expect(createSession).not.toHaveBeenCalled();
     expect(setView).toHaveBeenCalledWith('pair', {
       disableAnimation: true,
+      fromHub: true,
       initialMessage: { msg: DRAFT, images: [] },
-      workingDir: '/tmp/goose',
     });
   });
 
@@ -196,6 +207,31 @@ describe('Hub', () => {
     renderHub(draftRef);
 
     expect(captured.chatInput?.draftRef).toBe(draftRef);
+  });
+
+  it('keeps images and a picked directory for a failed submit to restore', async () => {
+    const setView = vi.fn();
+    const draftRef = { current: '' };
+    const image = { data: 'abc', mimeType: 'image/png' };
+    renderHub(draftRef, setView, '/projects/website');
+
+    await act(async () => captured.chatInput?.onWorkingDirChange('/projects/payments'));
+    await act(async () => {
+      captured.chatInput?.handleSubmit({ msg: '', images: [image] });
+    });
+
+    expect(peekHubSubmit(draftRef)).toEqual({
+      text: '',
+      images: [image],
+      workingDir: '/projects/payments',
+      extensionDraft: null,
+    });
+    expect(setView).toHaveBeenCalledWith('pair', {
+      disableAnimation: true,
+      fromHub: true,
+      initialMessage: { msg: '', images: [image] },
+      workingDir: '/projects/payments',
+    });
   });
 
   it('leaves the draft for Pair to clear after the chat starts', async () => {

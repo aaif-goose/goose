@@ -33,6 +33,7 @@ interface PairRouteState {
   noAutoSubmit?: boolean;
   workingDir?: string;
   extensionConfigs?: ExtensionConfig[];
+  fromHub?: boolean;
 }
 import SettingsView, { SettingsViewOptions } from './components/settings/SettingsView';
 import SessionsView from './components/sessions/SessionsView';
@@ -54,7 +55,7 @@ import RecipesView from './components/recipes/RecipesView';
 import SkillsView from './components/skills/SkillsView';
 import AppsView from './components/apps/AppsView';
 import StandaloneAppView from './components/apps/StandaloneAppView';
-import { View, ViewOptions } from './utils/navigationUtils';
+import { takeHubSubmit, View, ViewOptions } from './utils/navigationUtils';
 
 import { useNavigation } from './hooks/useNavigation';
 import { errorMessage } from './utils/conversionUtils';
@@ -113,7 +114,7 @@ export const PairRouteWrapper = ({
     (location.state as PairRouteState) || (window.history.state as PairRouteState) || {};
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreatingSessionRef = useRef(false);
-  const unmountedRef = useRef(false);
+  const requestGenerationRef = useRef(0);
   const navigate = useNavigate();
 
   const resumeSessionId = searchParams.get('resumeSessionId') ?? undefined;
@@ -122,28 +123,32 @@ export const PairRouteWrapper = ({
   const initialMessage = routeState.initialMessage;
   const noAutoSubmit = routeState.noAutoSubmit;
   const requestedWorkingDir = routeState.workingDir;
+  const fromHub = routeState.fromHub === true;
   const isPendingSession =
     !resumeSessionId && Boolean(initialMessage || recipeDeeplinkFromConfig || recipeIdFromConfig);
 
   // Create session if we have an initialMessage, recipeDeeplink, or recipeId but no sessionId.
-  // Leaving /pair before this finishes drops the result: no session is published, and
-  // no prompt is sent in a chat the user is no longer looking at. Reset on setup so
-  // StrictMode's extra cleanup cannot strand a still-mounted route.
+  // Each run has its own generation. Cleanup invalidates that run only, so a StrictMode
+  // remount or an extensionsList refresh cannot let the stale request publish too.
+  // Leaving /pair before the run finishes drops it: no session, and no prompt in a
+  // chat the user is no longer looking at.
   useEffect(() => {
-    unmountedRef.current = false;
     if (!isPendingSession || isCreatingSessionRef.current) {
       return;
     }
 
+    const generation = ++requestGenerationRef.current;
     isCreatingSessionRef.current = true;
-    // Snapshot of the draft this request owns. A newer one typed after returning
-    // to Hub must survive both settle paths below.
-    const draftAtSubmit = draftRef?.current;
+    // Snapshot of the draft this Hub submit owns. A newer one typed after returning
+    // to Hub must survive both settle paths below. Launcher and recipe launches do
+    // not own the Hub draft, so they must not clear it.
+    const draftAtSubmit = fromHub ? draftRef?.current : undefined;
 
     (async () => {
+      const stale = () => requestGenerationRef.current !== generation;
       try {
-        const sessionWorkingDir = requestedWorkingDir ?? (await getEffectiveWorkingDir());
-        if (unmountedRef.current) return;
+        const sessionWorkingDir = await getEffectiveWorkingDir(requestedWorkingDir);
+        if (stale()) return;
 
         const sessionOptions =
           routeState.extensionConfigs !== undefined
@@ -155,10 +160,11 @@ export const PairRouteWrapper = ({
           recipeId: recipeIdFromConfig,
           ...sessionOptions,
         });
-        if (unmountedRef.current) return;
+        if (stale()) return;
 
-        if (draftRef && draftRef.current === draftAtSubmit) {
+        if (fromHub && draftRef && draftRef.current === draftAtSubmit) {
           draftRef.current = '';
+          takeHubSubmit(draftRef);
         }
         const sessionInitialMessage = resolveSessionInitialMessage(newSession, initialMessage);
 
@@ -181,7 +187,7 @@ export const PairRouteWrapper = ({
           { replace: true, state: location.state }
         );
       } catch (error) {
-        if (unmountedRef.current) return;
+        if (stale()) return;
         if (isRecipeDeclined(error) || isRecipeParamsCancelled(error)) {
           navigate('/');
           return;
@@ -200,14 +206,16 @@ export const PairRouteWrapper = ({
         toastError({ title: "Couldn't start chat", msg: formatAcpError(error) });
         navigate('/');
       } finally {
-        if (!unmountedRef.current) {
+        if (!stale()) {
           isCreatingSessionRef.current = false;
         }
       }
     })();
 
     return () => {
-      unmountedRef.current = true;
+      if (requestGenerationRef.current === generation) {
+        requestGenerationRef.current += 1;
+      }
       isCreatingSessionRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
