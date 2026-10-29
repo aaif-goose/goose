@@ -1,4 +1,5 @@
 use crate::agents::extension::{Envs, ExtensionConfig};
+use rmcp::model::JsonObject;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -25,7 +26,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        tool_call_meta: rmcp::model::JsonObject,
+        tool_call_meta: JsonObject,
     },
     #[serde(rename = "builtin")]
     Builtin {
@@ -77,7 +78,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        tool_call_meta: rmcp::model::JsonObject,
+        tool_call_meta: JsonObject,
     },
 }
 
@@ -189,13 +190,8 @@ mod tests {
         .expect("failed to deserialize extensions");
 
         for extension in wrapper.extensions.expect("expected extensions") {
-            let (ExtensionConfig::Stdio { tool_call_meta, .. }
-            | ExtensionConfig::StreamableHttp { tool_call_meta, .. }) = extension
-            else {
-                panic!("unexpected extension variant: {extension:?}");
-            };
             assert_eq!(
-                serde_json::Value::Object(tool_call_meta),
+                serde_json::Value::Object(extension.tool_call_meta().unwrap().clone()),
                 json!({ "a2ui": { "version": "v0.9" } })
             );
         }

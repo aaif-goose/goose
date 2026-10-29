@@ -901,38 +901,19 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        let mut stdio = ExtensionConfig::stdio("stdio", "cmd", "", 30u64);
-        let mut http =
-            ExtensionConfig::streamable_http("http", "https://example.com/mcp", "", 30u64);
-        for config in [&mut stdio, &mut http] {
-            match config {
-                ExtensionConfig::Stdio {
-                    tool_call_meta: meta,
-                    ..
-                }
-                | ExtensionConfig::StreamableHttp {
-                    tool_call_meta: meta,
-                    ..
-                } => *meta = tool_call_meta.clone(),
-                _ => unreachable!(),
-            }
-        }
+        let stdio = ExtensionConfig::stdio("stdio", "cmd", "", 30u64);
+        let http = ExtensionConfig::streamable_http("http", "https://example.com/mcp", "", 30u64);
 
         for config in [stdio, http] {
+            let config = config.with_tool_call_meta(tool_call_meta.clone());
             let extension = config_to_goose_extension(&config).unwrap().unwrap();
             let round_tripped = goose_extension_to_config(extension).unwrap().config;
-            let (ExtensionConfig::Stdio {
-                tool_call_meta: meta,
-                ..
-            }
-            | ExtensionConfig::StreamableHttp {
-                tool_call_meta: meta,
-                ..
-            }) = round_tripped
-            else {
-                panic!("expected an MCP extension");
-            };
-            assert_eq!(meta, tool_call_meta, "{}", config.name());
+            assert_eq!(
+                round_tripped.tool_call_meta(),
+                Some(&tool_call_meta),
+                "{}",
+                config.name()
+            );
         }
     }
 }

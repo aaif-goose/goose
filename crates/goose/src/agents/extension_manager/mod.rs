@@ -29,9 +29,7 @@ use crate::config::extensions::name_to_key;
 use crate::config::{get_extension_by_name, Config};
 use crate::oauth::GooseCredentialStore;
 use crate::session::{EnabledExtensionsState, Session};
-use rmcp::model::{
-    CallToolResult, ErrorCode, ErrorData, JsonObject, MetaObject, ServerConfig, Tool,
-};
+use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
 mod builtin;
@@ -797,11 +795,10 @@ impl ExtensionManager {
         };
         let container = placement.and_then(|placement| placement.container.as_ref());
 
-        let tool_call_meta = match &resolved_config {
-            ExtensionConfig::Stdio { tool_call_meta, .. }
-            | ExtensionConfig::StreamableHttp { tool_call_meta, .. } => tool_call_meta.clone(),
-            ExtensionConfig::Builtin { .. } | ExtensionConfig::Platform { .. } => JsonObject::new(),
-        };
+        let tool_call_meta = resolved_config
+            .tool_call_meta()
+            .cloned()
+            .unwrap_or_default();
         let tools_version = Arc::new(AtomicU64::new(0));
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
             timeout: Duration::from_secs(resolve_timeout(timeout)),

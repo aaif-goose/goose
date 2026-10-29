@@ -177,7 +177,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        /// Added to the `_meta` of every tool call sent to this server.
         #[serde(default)]
         #[serde(skip_serializing_if = "JsonObject::is_empty")]
         tool_call_meta: JsonObject,
@@ -258,7 +257,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        /// Added to the `_meta` of every tool call sent to this server.
         #[serde(default)]
         #[serde(skip_serializing_if = "JsonObject::is_empty")]
         tool_call_meta: JsonObject,
@@ -356,6 +354,24 @@ impl ExtensionConfig {
                 tool_call_meta,
             },
             other => other,
+        }
+    }
+
+    pub fn with_tool_call_meta(mut self, meta: JsonObject) -> Self {
+        if let Self::Stdio { tool_call_meta, .. } | Self::StreamableHttp { tool_call_meta, .. } =
+            &mut self
+        {
+            *tool_call_meta = meta;
+        }
+        self
+    }
+
+    pub fn tool_call_meta(&self) -> Option<&JsonObject> {
+        match self {
+            Self::Stdio { tool_call_meta, .. } | Self::StreamableHttp { tool_call_meta, .. } => {
+                Some(tool_call_meta)
+            }
+            Self::Builtin { .. } | Self::Platform { .. } => None,
         }
     }
 

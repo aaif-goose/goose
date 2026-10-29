@@ -188,18 +188,6 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
     }
 }
 
-fn with_tool_call_meta(
-    mut config: ExtensionConfig,
-    meta: rmcp::model::JsonObject,
-) -> ExtensionConfig {
-    match &mut config {
-        ExtensionConfig::Stdio { tool_call_meta, .. }
-        | ExtensionConfig::StreamableHttp { tool_call_meta, .. } => *tool_call_meta = meta,
-        other => panic!("{other:?} has no tool_call_meta"),
-    }
-    config
-}
-
 fn platform(name: &str) -> ExtensionConfig {
     ExtensionConfig::Platform {
         name: name.to_string(),
@@ -620,10 +608,8 @@ async fn configured_tool_call_meta_reaches_only_its_server(
     let a2ui = serde_json::json!({
         "clientCapabilities": { "v0.9": { "supportedCatalogIds": ["https://example.com/catalog.json"] } }
     });
-    let configured = with_tool_call_meta(
-        http_fixture("configured", &http_server.url),
-        object!({ "a2ui": a2ui.clone() }),
-    );
+    let configured = http_fixture("configured", &http_server.url)
+        .with_tool_call_meta(object!({ "a2ui": a2ui.clone() }));
     let plain = stdio_fixture("plain", None, &["inspect_context"]);
     fx.add(&session, &configured).await;
     fx.add(&session, &plain).await;
@@ -661,17 +647,14 @@ async fn configured_tool_call_meta_cannot_replace_goose_keys(
     let fx = fixture(false, client_protocol_version).await;
     let session = fx.session(SessionType::Hidden).await;
     let spoofed = "spoofed";
-    let configured = with_tool_call_meta(
-        http_fixture("configured", &http_server.url),
-        object!({
-            "AGENT-SESSION-ID": spoofed,
-            "Agent-Working-Dir": spoofed,
-            "agent-tool-call-request-id": spoofed,
-            "TraceParent": spoofed,
-            "TRACESTATE": spoofed,
-            "kept": "configured",
-        }),
-    );
+    let configured = http_fixture("configured", &http_server.url).with_tool_call_meta(object!({
+        "AGENT-SESSION-ID": spoofed,
+        "Agent-Working-Dir": spoofed,
+        "agent-tool-call-request-id": spoofed,
+        "TraceParent": spoofed,
+        "TRACESTATE": spoofed,
+        "kept": "configured",
+    }));
     fx.add(&session, &configured).await;
     let lease = fx.resolve(&session, &[configured]).await;
 

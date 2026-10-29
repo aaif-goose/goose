@@ -68,7 +68,7 @@ use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
 use goose_providers::errors::ProviderError;
 use rmcp::model::{
-    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
+    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, JsonObject, Role,
     TextContent as RmcpTextContent,
 };
 use serde::Deserialize;
@@ -407,9 +407,7 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
 
 const TOOL_CALL_META_KEY: &str = "toolCallMeta";
 
-fn extract_tool_call_meta_from_meta(
-    meta: &Option<Meta>,
-) -> serde_json::Map<String, serde_json::Value> {
+fn extract_tool_call_meta_from_meta(meta: &Option<Meta>) -> JsonObject {
     meta.as_ref()
         .and_then(|m| m.get(TOOL_CALL_META_KEY))
         .and_then(|v| v.as_object())
@@ -417,9 +415,7 @@ fn extract_tool_call_meta_from_meta(
         .unwrap_or_default()
 }
 
-fn tool_call_meta_to_meta(
-    tool_call_meta: &serde_json::Map<String, serde_json::Value>,
-) -> Option<Meta> {
+fn tool_call_meta_to_meta(tool_call_meta: &JsonObject) -> Option<Meta> {
     (!tool_call_meta.is_empty()).then(|| {
         Meta::from_iter([(
             TOOL_CALL_META_KEY.to_string(),
