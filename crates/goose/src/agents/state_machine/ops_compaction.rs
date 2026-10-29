@@ -22,6 +22,17 @@ use goose_providers::model::ModelConfig;
 
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 
+/// A failed compaction may still have billed completed-but-rejected
+/// summarization calls.
+fn billed_compaction_usage(
+    error: &anyhow::Error,
+) -> Vec<goose_providers::conversation::token_usage::ProviderUsage> {
+    error
+        .downcast_ref::<goose_context_management::CompactionFailure>()
+        .map(|failure| failure.billed_usage.clone())
+        .unwrap_or_default()
+}
+
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
 
 /// Reported usage stops at the inference that requested the tools, so the
@@ -164,7 +175,15 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             Ok(result) => result,
             Err(error) => {
                 span.record("error.type", "compaction_error");
-                return Self::command_error(conversation, error.to_string(), emit);
+                let mut result = Self::command_error(conversation, error.to_string(), emit);
+                if let Ok(OperationResult::Applied(step)) = &mut result {
+                    step.effects.extend(
+                        billed_compaction_usage(&error)
+                            .into_iter()
+                            .map(GooseEffect::RecordUsage),
+                    );
+                }
+                return result;
             }
         };
         let compacted = result.conversation;
@@ -181,13 +200,19 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             .with_visibility(true, false);
         emit.message(command);
         let response = emit.message(response);
-        yielded_with([
-            GooseEffect::CompactConversation {
-                conversation: compacted,
-                usage: Some(usage),
-            },
-            response.into(),
-        ])
+        yielded_with(
+            result
+                .rejected_usage
+                .into_iter()
+                .map(GooseEffect::RecordUsage)
+                .chain([
+                    GooseEffect::CompactConversation {
+                        conversation: compacted,
+                        usage: Some(usage),
+                    },
+                    response.into(),
+                ]),
+        )
     }
 
     async fn run(
@@ -278,22 +303,37 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
                     SystemNotificationType::InlineMessage,
                     "Compaction complete",
                 ));
-                applied([GooseEffect::CompactConversation {
-                    conversation: compacted,
-                    usage: Some(usage),
-                }])
+                applied(
+                    result
+                        .rejected_usage
+                        .into_iter()
+                        .map(GooseEffect::RecordUsage)
+                        .chain([GooseEffect::CompactConversation {
+                            conversation: compacted,
+                            usage: Some(usage),
+                        }]),
+                )
             }
             Err(e) => {
                 span.record("error.type", "compaction_error");
                 let message = emit.message(compaction_failure_message(&e));
-                yielded_with([message.into()])
+                yielded_with(
+                    std::iter::once(message.into()).chain(
+                        billed_compaction_usage(&e)
+                            .into_iter()
+                            .map(GooseEffect::RecordUsage),
+                    ),
+                )
             }
         }
     }
 }
 
 fn compaction_failure_message(e: &anyhow::Error) -> Message {
-    let provider_error = e.downcast_ref::<ProviderError>();
+    let provider_error = e.downcast_ref::<ProviderError>().or_else(|| {
+        e.downcast_ref::<goose_context_management::CompactionFailure>()
+            .and_then(|failure| failure.error.downcast_ref::<ProviderError>())
+    });
     if let Some(err @ ProviderError::CreditsExhausted { .. }) = provider_error {
         return Message::from_provider_error(err);
     }
@@ -312,9 +352,13 @@ mod tests {
 
     #[test]
     fn credits_failure_keeps_the_top_up_url() {
-        let error = anyhow::Error::from(ProviderError::CreditsExhausted {
-            details: "no credits".to_string(),
-            top_up_url: Some("https://example.com/billing".to_string()),
+        let error = anyhow::Error::new(goose_context_management::CompactionFailure {
+            error: ProviderError::CreditsExhausted {
+                details: "no credits".to_string(),
+                top_up_url: Some("https://example.com/billing".to_string()),
+            }
+            .into(),
+            billed_usage: Vec::new(),
         });
         let message = compaction_failure_message(&error);
         let Some(crate::conversation::message::MessageContent::SystemNotification(notification)) =

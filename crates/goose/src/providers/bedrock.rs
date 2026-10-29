@@ -427,7 +427,10 @@ impl BedrockProvider {
     ) -> Result<ConverseRequestParts, ProviderError> {
         let enable_caching = self.should_enable_caching(model);
 
-        let system_blocks = if enable_caching {
+        // Bedrock rejects an empty system text block.
+        let system_blocks = if system.is_empty() {
+            Vec::new()
+        } else if enable_caching {
             vec![
                 bedrock::SystemContentBlock::Text(system.to_string()),
                 // Add cache point AFTER the system prompt content
@@ -529,7 +532,7 @@ impl BedrockProvider {
         let mut request = self
             .client
             .converse()
-            .set_system(Some(parts.system_blocks))
+            .set_system((!parts.system_blocks.is_empty()).then_some(parts.system_blocks))
             .model_id(&model.model_name)
             .set_messages(Some(parts.messages))
             .inference_config(parts.inference_config);
@@ -624,7 +627,7 @@ impl BedrockProvider {
         let mut request = self
             .client
             .converse_stream()
-            .set_system(Some(parts.system_blocks))
+            .set_system((!parts.system_blocks.is_empty()).then_some(parts.system_blocks))
             .model_id(&model.model_name)
             .set_messages(Some(parts.messages))
             .inference_config(parts.inference_config);
@@ -1385,6 +1388,18 @@ mod tests {
             !provider.should_enable_caching(&model),
             "Caching should be disabled for non-Claude models"
         );
+    }
+
+    #[test]
+    fn empty_system_prompt_sends_no_system_blocks() {
+        let (provider, model) =
+            create_mock_provider_and_model("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+        let parts = provider
+            .build_request_parts(&model, "", &[Message::user().with_text("hi")], &[])
+            .unwrap();
+
+        assert!(parts.system_blocks.is_empty());
     }
 
     #[test]

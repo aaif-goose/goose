@@ -291,6 +291,15 @@ pub(crate) async fn stream_response_from_provider(
     // so they can be handled by the existing error handling logic in the agent
     let model_config =
         model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
+    crate::context_mgmt::request_header::record(
+        &session_id,
+        &provider,
+        crate::context_mgmt::request_header::RequestHeader {
+            system_prompt: system_prompt.clone(),
+            tools: tools.clone(),
+            toolshim_tools: toolshim_tools.clone(),
+        },
+    );
     let request_started = std::time::Instant::now();
     debug!("WAITING_LLM_STREAM_START");
     let stream_result = crate::session_context::with_session_id(
