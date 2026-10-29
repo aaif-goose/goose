@@ -1,10 +1,10 @@
 pub use goose_providers::local_inference::*;
 
-use crate::config::ExtensionConfig;
 use crate::providers::api_client::TlsConfig;
 use crate::providers::base::ProviderDef;
 use anyhow::Result;
 use futures::future::BoxFuture;
+use goose_agent::extension::ExtensionConfig;
 use std::collections::HashMap;
 
 const LOCAL_MODEL_SETTINGS_KEY: &str = "GOOSE_LOCAL_MODEL_SETTINGS";

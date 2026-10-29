@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::http::{HeaderMap, HeaderName};
+use http::{HeaderMap, HeaderName};
 use rmcp::model::{
     CallToolResult, ErrorCode, ErrorData, GetPromptResult, ProtocolVersion, ServerConfig,
     ServerNotification,
@@ -20,10 +20,10 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::super::extension::{ExtensionError, ExtensionResult};
-use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
-use super::super::tool_execution::ToolCallContext;
-use crate::oauth::{oauth_flow, oauth_flow_with_challenge, StaticOAuthClientConfig};
+use super::host::{ExtensionAuth, StaticOAuthClientConfig};
+use crate::extension::{ExtensionError, ExtensionResult};
+use crate::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use crate::tool_execution::ToolCallContext;
 
 /// Retry with OAuth for typed auth challenges and wrapped bare HTTP 401 responses.
 fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
@@ -197,12 +197,17 @@ pub(super) fn resolve_static_oauth_client(
     }))
 }
 
-const GOOSE_USER_AGENT: reqwest::header::HeaderValue =
-    reqwest::header::HeaderValue::from_static(concat!("goose/", env!("CARGO_PKG_VERSION")));
-
-fn header_map(headers: &HashMap<String, String>) -> ExtensionResult<HeaderMap> {
+fn header_map(
+    headers: &HashMap<String, String>,
+    client_version: &str,
+) -> ExtensionResult<HeaderMap> {
     let mut map = HeaderMap::new();
-    map.insert(reqwest::header::USER_AGENT, GOOSE_USER_AGENT);
+    map.insert(
+        reqwest::header::USER_AGENT,
+        format!("goose/{client_version}")
+            .parse()
+            .map_err(|_| ExtensionError::ConfigError("invalid client version".to_string()))?,
+    );
     for (key, value) in headers {
         map.insert(
             HeaderName::try_from(key)
@@ -219,11 +224,12 @@ fn header_map(headers: &HashMap<String, String>) -> ExtensionResult<HeaderMap> {
 fn http_client(
     headers: &HashMap<String, String>,
     timeout: Duration,
+    client_version: &str,
 ) -> ExtensionResult<reqwest::Client> {
     #[allow(unused_mut)]
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .default_headers(header_map(headers)?);
+        .default_headers(header_map(headers, client_version)?);
     #[cfg(target_os = "linux")]
     {
         builder = builder.tcp_user_timeout(Some(timeout));
@@ -235,7 +241,7 @@ fn http_client(
 
 fn should_retry_legacy_after_empty_discover(
     result: &Result<McpClient, Box<ClientInitializeError>>,
-    capabilities: &super::super::mcp_client::GooseMcpClientCapabilities,
+    capabilities: &crate::mcp_client::GooseMcpClientCapabilities,
 ) -> bool {
     capabilities.protocol_version.is_none()
         && result.as_ref().is_err_and(|error| {
@@ -273,7 +279,10 @@ async fn connect_with_auth(
     headers: &HashMap<String, String>,
     ctx: ConnectContext,
 ) -> ExtensionResult<McpClient> {
-    let auth_client = AuthClient::new(http_client(headers, ctx.timeout)?, auth_manager);
+    let auth_client = AuthClient::new(
+        http_client(headers, ctx.timeout, ctx.client_version)?,
+        auth_manager,
+    );
     Ok(connect_with_legacy_retry(
         || {
             StreamableHttpClientTransport::with_client(
@@ -295,6 +304,7 @@ pub(super) struct ConnectParams {
     pub(super) headers: HashMap<String, String>,
     pub(super) static_oauth_client: Option<StaticOAuthClientConfig>,
     pub(super) ctx: ConnectContext,
+    pub(super) auth: Arc<dyn ExtensionAuth>,
 }
 
 /// Wraps a streamable HTTP `McpClient` and handles step-up authorization:
@@ -336,25 +346,24 @@ impl OAuthStepUpClient {
         });
     }
 
-    async fn step_up_reconnect(
-        &self,
-        challenge: String,
-    ) -> Result<(), crate::agents::mcp_client::Error> {
+    async fn step_up_reconnect(&self, challenge: String) -> Result<(), crate::mcp_client::Error> {
         let params = self.params.read().await;
-        let auth_manager = oauth_flow_with_challenge(
-            &params.uri,
-            &params.name,
-            params.static_oauth_client.as_ref(),
-            Some(challenge),
-        )
-        .await
-        .map_err(|e| {
-            crate::agents::mcp_client::Error::McpError(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!("step-up authorization failed: {e}"),
-                None,
-            ))
-        })?;
+        let auth_manager = params
+            .auth
+            .authorize(
+                &params.uri,
+                &params.name,
+                params.static_oauth_client.as_ref(),
+                Some(challenge),
+            )
+            .await
+            .map_err(|e| {
+                crate::mcp_client::Error::McpError(ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    format!("step-up authorization failed: {e}"),
+                    None,
+                ))
+            })?;
         let client = connect_with_auth(
             auth_manager,
             &params.uri,
@@ -363,7 +372,7 @@ impl OAuthStepUpClient {
         )
         .await
         .map_err(|e| {
-            crate::agents::mcp_client::Error::McpError(ErrorData::new(
+            crate::mcp_client::Error::McpError(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 format!("reconnect after step-up authorization failed: {e}"),
                 None,
@@ -376,16 +385,12 @@ impl OAuthStepUpClient {
 
     /// Run `op` against the current client; on an auth challenge, re-authorize
     /// and retry once.
-    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::agents::mcp_client::Error>
+    async fn with_step_up_retry<T, F>(&self, op: F) -> Result<T, crate::mcp_client::Error>
     where
         F: for<'a> Fn(
             &'a McpClient,
         ) -> Pin<
-            Box<
-                dyn std::future::Future<Output = Result<T, crate::agents::mcp_client::Error>>
-                    + Send
-                    + 'a,
-            >,
+            Box<dyn std::future::Future<Output = Result<T, crate::mcp_client::Error>> + Send + 'a>,
         >,
     {
         let first = {
@@ -427,7 +432,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListToolsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListToolsResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -448,7 +453,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Option<rmcp::model::JsonObject>,
         cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, crate::agents::mcp_client::Error> {
+    ) -> Result<CallToolResult, crate::mcp_client::Error> {
         let ctx = ctx.clone();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -470,7 +475,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListResourcesResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListResourcesResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -490,7 +495,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         uri: &str,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ReadResourceResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ReadResourceResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         let uri = uri.to_string();
         self.with_step_up_retry(move |client| {
@@ -507,7 +512,7 @@ impl McpClientTrait for OAuthStepUpClient {
         session_id: &str,
         next_cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<rmcp::model::ListPromptsResult, crate::agents::mcp_client::Error> {
+    ) -> Result<rmcp::model::ListPromptsResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         self.with_step_up_retry(move |client| {
             let session_id = session_id.clone();
@@ -528,7 +533,7 @@ impl McpClientTrait for OAuthStepUpClient {
         name: &str,
         arguments: Value,
         cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, crate::agents::mcp_client::Error> {
+    ) -> Result<GetPromptResult, crate::mcp_client::Error> {
         let session_id = session_id.to_string();
         let name = name.to_string();
         self.with_step_up_retry(move |client| {
@@ -578,13 +583,17 @@ pub(super) async fn connect(
         headers,
         static_oauth_client,
         ctx,
+        auth,
     } = &params;
-    let http_client = http_client(headers, ctx.timeout)?;
+    let http_client = http_client(headers, ctx.timeout, ctx.client_version)?;
 
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
     if credential_store.load().await.is_ok_and(|c| c.is_some()) {
-        match oauth_flow(uri, name, static_oauth_client.as_ref()).await {
+        match auth
+            .authorize(uri, name, static_oauth_client.as_ref(), None)
+            .await
+        {
             Ok(auth_manager) => {
                 match connect_with_auth(auth_manager, uri, headers, ctx.clone()).await {
                     Ok(client) => {
@@ -632,7 +641,10 @@ pub(super) async fn connect(
     }
 
     let challenge = auth_challenge_from_result(&client_res);
-    match oauth_flow_with_challenge(uri, name, static_oauth_client.as_ref(), challenge).await {
+    match auth
+        .authorize(uri, name, static_oauth_client.as_ref(), challenge)
+        .await
+    {
         Ok(auth_manager) => {
             let client = connect_with_auth(auth_manager, uri, headers, ctx.clone()).await?;
             Ok(Box::new(OAuthStepUpClient::new(client, params).await))
@@ -655,10 +667,11 @@ async fn connect_over_unix_socket(
     use rmcp::transport::UnixSocketHttpClient;
 
     let unix_client = UnixSocketHttpClient::new(socket_path, &params.uri);
-    let custom_headers: HashMap<HeaderName, axum::http::HeaderValue> = header_map(&params.headers)?
-        .into_iter()
-        .filter_map(|(name, value)| name.map(|name| (name, value)))
-        .collect();
+    let custom_headers: HashMap<HeaderName, http::HeaderValue> =
+        header_map(&params.headers, params.ctx.client_version)?
+            .into_iter()
+            .filter_map(|(name, value)| name.map(|name| (name, value)))
+            .collect();
 
     let client_res = connect_with_legacy_retry(
         || {
@@ -686,14 +699,32 @@ async fn connect_over_unix_socket(
 mod tests {
     use super::*;
     use crate::action_required_manager::ActionRequiredManager;
-    use crate::agents::mcp_client::GooseMcpClientCapabilities;
+    use crate::mcp_client::GooseMcpClientCapabilities;
     use rmcp::transport::auth::InMemoryCredentialStore;
     use tempfile::tempdir;
+
+    struct NoAuth;
+    #[async_trait::async_trait]
+    impl ExtensionAuth for NoAuth {
+        fn credential_store(&self, _: &str) -> Box<dyn CredentialStore> {
+            Box::new(InMemoryCredentialStore::new())
+        }
+        async fn authorize(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<&StaticOAuthClientConfig>,
+            _: Option<String>,
+        ) -> anyhow::Result<rmcp::transport::AuthorizationManager> {
+            anyhow::bail!("OAuth is not available in this test")
+        }
+    }
 
     fn test_ctx(working_dir: &std::path::Path) -> ConnectContext {
         ConnectContext {
             timeout: Duration::from_secs(5),
             client_name: "goose-test".to_string(),
+            client_version: "1.2.3",
             capabilities: GooseMcpClientCapabilities {
                 mcpui: false,
                 host_info: None,
@@ -704,6 +735,7 @@ mod tests {
             docker_container: None,
             action_required: Arc::new(ActionRequiredManager::new()),
             tools_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            trace_context: None,
         }
     }
 
@@ -718,6 +750,7 @@ mod tests {
             headers,
             static_oauth_client: None,
             ctx: test_ctx(working_dir),
+            auth: Arc::new(NoAuth),
         }
     }
 
@@ -791,6 +824,12 @@ mod tests {
 
         assert!(clear_credentials_on_post_refresh_auth_failure(&store, "test-ext", &error).await);
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[test]
+    fn user_agent_uses_host_version() {
+        let headers = header_map(&HashMap::new(), "1.55.0").unwrap();
+        assert_eq!(headers[reqwest::header::USER_AGENT], "goose/1.55.0");
     }
 
     #[tokio::test]

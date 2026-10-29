@@ -2,9 +2,9 @@ use anyhow::Result;
 use rmcp::model::ElicitationAction;
 use serde_json::Value;
 
-use crate::action_required_manager::ElicitationOutcome;
 use crate::conversation::message::{Message, MessageContent};
 use crate::session::SessionManager;
+use goose_agent::action_required_manager::ElicitationOutcome;
 
 fn elicitation_response_user_data(response: &ElicitationOutcome) -> Value {
     match response {

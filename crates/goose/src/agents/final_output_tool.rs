@@ -1,6 +1,6 @@
-use crate::agents::tool_execution::ToolCallResult;
 use crate::conversation::message::{Message, MessageContent};
 use crate::recipe::Response;
+use goose_agent::tool_execution::ToolCallResult;
 use indoc::formatdoc;
 use rmcp::model::{
     CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Tool, ToolAnnotations,

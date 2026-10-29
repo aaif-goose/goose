@@ -3,11 +3,11 @@ pub mod graph;
 pub mod languages;
 pub mod parser;
 
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::tool_execution::ToolCallContext;
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use ignore::WalkBuilder;
 use indoc::indoc;
 use parser::{FileAnalysis, Parser};

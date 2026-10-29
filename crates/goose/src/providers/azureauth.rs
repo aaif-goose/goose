@@ -1,5 +1,5 @@
-use crate::subprocess::SubprocessExt;
 use chrono;
+use goose_agent::subprocess::SubprocessExt;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

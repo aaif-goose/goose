@@ -1,7 +1,27 @@
+#[cfg(not(target_arch = "wasm32"))]
+pub mod action_required_manager;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod container;
 pub mod events;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod extension;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod extension_malware_check;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod extension_manager;
 pub mod inference;
 pub mod machine;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod mcp_client;
 pub mod operation;
 pub mod skills;
 pub mod subagent;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod subprocess;
 pub mod tool;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod tool_execution;
+#[cfg(not(target_arch = "wasm32"))]
+mod tool_schema_normalize;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod tool_visibility;

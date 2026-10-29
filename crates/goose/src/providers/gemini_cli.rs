@@ -14,14 +14,13 @@ use crate::config::search_path::SearchPaths;
 use crate::config::Config;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::base::ConfigKey;
-use crate::subprocess::configure_subprocess;
 use async_stream::try_stream;
 use futures::future::BoxFuture;
+use goose_agent::subprocess::configure_subprocess;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Role;
-use rmcp::model::Tool;
+use rmcp::model::{Role, Tool};
 
 const GEMINI_CLI_PROVIDER_NAME: &str = "gemini-cli";
 pub const GEMINI_CLI_DEFAULT_MODEL: &str = "gemini-2.5-pro";
@@ -187,7 +186,7 @@ impl ProviderDef for GeminiCliProvider {
     const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
+        _extensions: Vec<goose_agent::extension::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))

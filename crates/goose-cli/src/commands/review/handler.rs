@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::session::{build_session, SessionBuilderConfig};
 
 use goose::checks::{discover, DiscoveredReview};
-use goose::subprocess::git_command;
+use goose_agent::subprocess::git_command;
 
 use super::orchestrator::{
     emit_findings, run_checks_in_parallel, run_main_pass_in_parallel, Severity,

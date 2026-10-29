@@ -5,11 +5,11 @@ use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
 use super::active_run::ActiveRunRegistry;
-use super::extension_manager::ClientContext;
 use super::state_machine::SteerQueue;
 use super::tool_confirmation_coordinator::ToolConfirmationCoordinator;
 use crate::conversation::message::Message;
 use crate::session::SessionNameUpdate;
+use goose_agent::extension_manager::ClientContext;
 
 /// A client connection that has a session open.
 #[derive(Clone)]

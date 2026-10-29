@@ -83,6 +83,38 @@ paths, built-in skills, and tool registration remain host responsibilities;
 these helpers do not automatically change the agent pipeline. Filesystem
 discovery is not a secure file-open API.
 
+## Extension runtime
+
+On native targets, `extension_manager` owns extension slots, leases, tool
+catalogs, dispatch, and MCP transports. Its supporting configuration, MCP client,
+container, tool-call, elicitation, malware-checking, and subprocess types live in
+this crate too. Consumers import the moved types directly from `goose_agent`.
+
+The extraction preserves the runtime's behavior, with these necessary boundaries:
+
+- `ExtensionHost` supplies session selection/persistence, config resolution and
+  lookup, config generation, platform/builtin factories, command search paths, and host identity.
+  `goose` implements it using its existing application services and retains a
+  thin manager adapter for application constructors, client defaults, and session snapshots.
+  Per-session client negotiation and config-generation invalidation remain in the runtime.
+- `ExtensionConfigResolver` supplies secret lookup. Environment filtering and
+  substitution remain with `ExtensionConfig`; global config and secret storage
+  remain in `goose`.
+- `ExtensionAuth` supplies credential stores and authorization flows. HTTP
+  connection/retry/step-up handling stays here; keyring, browser, and callback
+  handling stay in `goose`.
+- A trace-context callback preserves application telemetry without making this
+  crate depend on Goose's OpenTelemetry setup. The host also supplies its version
+  so MCP identity and HTTP user-agent headers retain the application's version.
+- Platform extension registration and application-specific types such as
+  `ToolInfo` remain in `goose`. Its recipe DTO conversions are functions rather
+  than foreign-trait impls because `ExtensionConfig` now belongs to this crate.
+
+The native transports and their additional dependencies are target-gated; the
+existing WebAssembly agent loop does not acquire native process/network runtime
+requirements. Runtime-private cache/placement tests move with the implementation;
+application-backed session and platform-extension tests remain in `goose`.
+
 ## WebAssembly
 
 The crate builds for `wasm32-unknown-unknown` and runs without a tokio runtime,

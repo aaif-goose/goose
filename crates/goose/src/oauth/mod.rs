@@ -139,19 +139,7 @@ async fn wait_for_callback(
     }
 }
 
-/// OAuth client credentials registered with the authorization server out of
-/// band, for servers whose authorization server supports neither Dynamic
-/// Client Registration nor Client ID Metadata Documents.
-#[derive(Clone, Debug, PartialEq)]
-pub struct StaticOAuthClientConfig {
-    pub client_id: String,
-    /// Secret paired with the client ID. Optional: public clients using PKCE
-    /// have no secret.
-    pub client_secret: Option<String>,
-    /// Scopes to request. When empty, scopes are selected from server
-    /// metadata, which may be broader than the extension needs.
-    pub scopes: Vec<String>,
-}
+use goose_agent::extension_manager::host::StaticOAuthClientConfig;
 
 /// Pre-registered client supplied through the environment, used by tools that
 /// drive the flow without an extension config (`goose mcp-probe`, conformance

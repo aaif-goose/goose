@@ -475,7 +475,7 @@ impl DummyApiState {
         let body: Value = request.body_json().expect("OpenAI request body");
         let session_id = request
             .headers
-            .get(crate::session_context::SESSION_ID_HEADER)
+            .get(goose_agent::mcp_client::SESSION_ID_HEADER)
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
         self.calls.lock().unwrap().push(ApiCall {

@@ -1,13 +1,13 @@
 use super::javascript::{self, ToolCallback, ToolFuture};
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::{
-    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
-};
-use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::reply_parts::is_tool_visible_to_model;
-use crate::agents::tool_execution::ToolCallContext;
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension_manager::{
+    get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
+};
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
+use goose_agent::tool_visibility::is_tool_visible_to_model;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
     JsonObject, ListToolsResult, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
@@ -160,7 +160,7 @@ fn is_summon_delegate(tool: &McpTool) -> bool {
 fn execution_timeout() -> Duration {
     let secs = crate::config::Config::global()
         .get_goose_default_extension_timeout()
-        .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT);
+        .unwrap_or(goose_agent::extension::DEFAULT_EXTENSION_TIMEOUT);
     Duration::from_secs(secs)
 }
 
@@ -172,7 +172,7 @@ fn dispatching_lease(ctx: &ToolCallContext) -> &ExtensionLease {
 fn dispatch_tool(
     ctx: ToolCallContext,
     full_name: String,
-    manager: Arc<crate::agents::ExtensionManager>,
+    manager: Arc<goose_agent::extension_manager::ExtensionManager>,
     cancellation_token: CancellationToken,
     rt: tokio::runtime::Handle,
     args: Value,
@@ -332,8 +332,8 @@ impl McpClientTrait for CodeExecutionClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension::ExtensionConfig;
     use crate::agents::extension_manager::ExtensionManager;
+    use goose_agent::extension::ExtensionConfig;
     use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
 
     #[test]
@@ -466,7 +466,7 @@ mod tests {
         let mut callback = dispatch_tool(
             ctx,
             "pending__ordinary".into(),
-            manager,
+            manager.runtime().clone(),
             dispatch.clone(),
             tokio::runtime::Handle::current(),
             json!({}),
@@ -680,7 +680,7 @@ mod tests {
         )
         .with_extension_lease(lease);
         let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        context.extension_manager = Some(Arc::downgrade(manager.runtime()));
         let client = CodeExecutionClient::new(context).unwrap();
         let code = format!("async function run() {{ return await tools.call({}, {{action: 'enable', extension_name: 'todo'}}); }}", json!(tool_name));
         let result = client
@@ -748,7 +748,7 @@ mod tests {
         let ctx = ToolCallContext::new(session.id.clone(), None, None)
             .with_extension_lease(lease.clone());
         let mut context = manager.get_context().clone();
-        context.extension_manager = Some(Arc::downgrade(&manager));
+        context.extension_manager = Some(Arc::downgrade(manager.runtime()));
         let client = CodeExecutionClient::new(context).unwrap();
         let listed = client
             .call_tool(&ctx, "list_functions", None, CancellationToken::new())

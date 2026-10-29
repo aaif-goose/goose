@@ -7,9 +7,10 @@ use goose_providers::api_client::{AuthMethod, AuthProvider, TlsConfig};
 use goose_providers::azure_foundry::{endpoint_kind, AzureFoundryProvider, EndpointKind};
 use goose_providers::base::{ProviderDescriptor, ProviderMetadata};
 
-use crate::config::{Config, ExtensionConfig};
+use crate::config::Config;
 use crate::providers::azureauth::{AzureAuth, AzureCredentials};
 use crate::providers::base::ProviderDef;
+use goose_agent::extension::ExtensionConfig;
 
 const AZURE_PROJECT_ENTRA_RESOURCE: &str = "https://ai.azure.com";
 const AZURE_MAAS_ENTRA_RESOURCE: &str = "https://ml.azure.com";

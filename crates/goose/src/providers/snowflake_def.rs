@@ -3,9 +3,10 @@ use futures::future::BoxFuture;
 use goose_providers::base::ProviderDescriptor;
 use goose_providers::snowflake::SnowflakeProvider;
 
-use crate::config::{Config, ConfigError, ExtensionConfig};
+use crate::config::{Config, ConfigError};
 use crate::providers::api_client::TlsConfig;
 use crate::providers::base::{ProviderDef, ProviderMetadata};
+use goose_agent::extension::ExtensionConfig;
 
 pub struct SnowflakeProviderDef;
 

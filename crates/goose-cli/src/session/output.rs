@@ -9,9 +9,9 @@ use goose::conversation::message::{
     ToolNameParts, ToolRequest, ToolResponse,
 };
 use goose::providers::canonical_cost::estimate_model_cost;
-#[cfg(target_os = "windows")]
-use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
+#[cfg(target_os = "windows")]
+use goose_agent::subprocess::SubprocessExt;
 use goose_providers::conversation::token_usage::Usage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};

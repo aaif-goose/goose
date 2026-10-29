@@ -157,7 +157,7 @@ impl ProviderDef for TestProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
+        _extensions: Vec<goose_agent::extension::ExtensionConfig>,
         _tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async { Err(anyhow!("TestProvider must be constructed explicitly")) })

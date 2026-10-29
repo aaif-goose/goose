@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 
-use super::super::container::Container;
-use super::super::extension::{ExtensionError, ExtensionResult};
-use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use super::host::ExtensionHost;
 use super::stdio;
-use crate::builtin_extension::get_builtin_extension;
-use crate::config::extensions::name_to_key;
+use crate::container::Container;
+use crate::extension::name_to_key;
+use crate::extension::{ExtensionError, ExtensionResult};
+use crate::mcp_client::{ConnectContext, McpClient, McpClientTrait};
 
 pub(super) async fn connect(
     name: &str,
     container: Option<&Container>,
     mut ctx: ConnectContext,
+    host: &dyn ExtensionHost,
 ) -> ExtensionResult<Box<dyn McpClientTrait>> {
     let key = name_to_key(name);
-    let extension_fn = get_builtin_extension(&key)
+    let extension_fn = host
+        .builtin_extension(&key)
         .ok_or_else(|| ExtensionError::ConfigError(format!("Unknown extension: {}", name)))?;
 
     if let Some(container) = container {
@@ -23,13 +25,9 @@ pub(super) async fn connect(
             builtin = %name,
             "Starting builtin extension inside Docker container"
         );
-        let command = stdio::docker_exec(
-            container,
-            HashMap::new(),
-            "goose",
-            &["mcp".to_string(), key],
-        );
-        return Ok(Box::new(stdio::spawn(command, ctx).await?));
+        let (program, args) = host.builtin_command(&key)?;
+        let command = stdio::docker_exec(container, HashMap::new(), &program, &args);
+        return Ok(Box::new(stdio::spawn(command, ctx, host).await?));
     }
 
     let (server_read, client_write) = tokio::io::duplex(65536);

@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::conversation::message::{Message, MessageContent};
+use goose_provider_types::conversation::message::{Message, MessageContent};
 
 const ACTION_REQUIRED_STREAM_CAPACITY: usize = 8;
 
@@ -24,13 +24,13 @@ struct PendingRequest {
     response_tx: Option<tokio::sync::oneshot::Sender<ElicitationOutcome>>,
 }
 
-pub(crate) struct PendingResponseClaim {
+pub struct PendingResponseClaim {
     request_id: String,
     pending: OwnedMutexGuard<PendingRequest>,
 }
 
 impl PendingResponseClaim {
-    pub(crate) fn submit(mut self, response: ElicitationOutcome) -> Result<()> {
+    pub fn submit(mut self, response: ElicitationOutcome) -> Result<()> {
         let tx = self
             .pending
             .response_tx
@@ -52,14 +52,20 @@ struct ForwardedRequest {
     request_id: String,
 }
 
-pub(crate) struct ActionRequiredManager {
+pub struct ActionRequiredManager {
     pending: Arc<RwLock<HashMap<String, Arc<Mutex<PendingRequest>>>>>,
     action_required_senders: Mutex<HashMap<(String, String), mpsc::Sender<Message>>>,
     forwarded: std::sync::Mutex<HashMap<String, ForwardedRequest>>,
 }
 
+impl Default for ActionRequiredManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActionRequiredManager {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             pending: Arc::new(RwLock::new(HashMap::new())),
             action_required_senders: Mutex::new(HashMap::new()),
@@ -67,7 +73,7 @@ impl ActionRequiredManager {
         }
     }
 
-    pub(crate) fn forward(&self, parent_id: &str, subagent_id: &str, request_id: &str) -> String {
+    pub fn forward(&self, parent_id: &str, subagent_id: &str, request_id: &str) -> String {
         let id = Uuid::new_v4().to_string();
         self.forwarded
             .lock()
@@ -83,18 +89,14 @@ impl ActionRequiredManager {
         id
     }
 
-    pub(crate) fn is_forwarded(&self, id: &str) -> bool {
+    pub fn is_forwarded(&self, id: &str) -> bool {
         self.forwarded
             .lock()
             .expect("forwarded requests unavailable")
             .contains_key(id)
     }
 
-    pub(crate) fn answered_request(
-        &self,
-        session_id: &str,
-        request_id: &str,
-    ) -> Result<(String, String)> {
+    pub fn answered_request(&self, session_id: &str, request_id: &str) -> Result<(String, String)> {
         let forwarded = self
             .forwarded
             .lock()
@@ -110,14 +112,14 @@ impl ActionRequiredManager {
         }
     }
 
-    pub(crate) fn forget_forwarded_from(&self, subagent_id: &str) {
+    pub fn forget_forwarded_from(&self, subagent_id: &str) {
         self.forwarded
             .lock()
             .expect("forwarded requests unavailable")
             .retain(|_, request| request.subagent_id != subagent_id);
     }
 
-    pub(crate) async fn request_and_wait(
+    pub async fn request_and_wait(
         &self,
         session_id: String,
         tool_call_request_id: String,
@@ -175,7 +177,7 @@ impl ActionRequiredManager {
         result
     }
 
-    pub(crate) async fn claim_response(
+    pub async fn claim_response(
         &self,
         session_id: &str,
         request_id: &str,
@@ -251,7 +253,7 @@ impl ActionRequiredManager {
         }
     }
 
-    pub(crate) async fn register_action_required_stream(
+    pub async fn register_action_required_stream(
         &self,
         session_id: String,
         tool_call_request_id: String,
@@ -264,7 +266,7 @@ impl ActionRequiredManager {
         rx
     }
 
-    pub(crate) async fn has_action_required_stream(
+    pub async fn has_action_required_stream(
         &self,
         session_id: &str,
         tool_call_request_id: &str,
@@ -275,7 +277,7 @@ impl ActionRequiredManager {
             .contains_key(&(session_id.to_string(), tool_call_request_id.to_string()))
     }
 
-    pub(crate) async fn unregister_action_required_stream(
+    pub async fn unregister_action_required_stream(
         &self,
         session_id: &str,
         tool_call_request_id: &str,
@@ -290,7 +292,7 @@ impl ActionRequiredManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::ActionRequiredData;
+    use goose_provider_types::conversation::message::ActionRequiredData;
     use serde_json::json;
 
     fn elicitation_id(message: &Message) -> String {

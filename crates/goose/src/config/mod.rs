@@ -11,7 +11,6 @@ pub mod signup_openrouter;
 pub mod signup_tetrate;
 pub mod tls;
 
-pub use crate::agents::ExtensionConfig;
 pub use base::{merge_config_values, Config, ConfigError};
 pub use declarative_providers::DeclarativeProviderConfig;
 pub use experiments::ExperimentManager;
@@ -25,10 +24,7 @@ pub use permission::PermissionManager;
 pub use signup_openrouter::configure_openrouter;
 pub use signup_tetrate::configure_tetrate;
 
-pub use extensions::DEFAULT_DISPLAY_NAME;
-pub use extensions::DEFAULT_EXTENSION;
 pub use extensions::DEFAULT_EXTENSION_DESCRIPTION;
-pub use extensions::DEFAULT_EXTENSION_TIMEOUT;
 pub use providers::{
     clear_active_provider, get_active_model, get_active_provider, get_provider_entry,
     set_active_provider, set_provider_entry, ProviderEntry,

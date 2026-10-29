@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use crate::agents::extension::ExtensionConfig;
 use crate::agents::types::RetryConfig;
 use crate::recipe::read_recipe_file_content::read_recipe_file;
 use crate::recipe::yaml_format_utils::reformat_fields_with_multiline_values;
 use crate::utils::contains_unicode_tags;
+use goose_agent::extension::ExtensionConfig;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 

@@ -4,6 +4,7 @@ use anyhow::Result;
 use futures::StreamExt;
 use goose::agents::{AgentEvent, GoosePlatform, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::{set_extension, ExtensionEntry};
+use goose_agent::extension::ExtensionConfig;
 
 #[cfg(test)]
 mod tests {
@@ -17,7 +18,6 @@ mod tests {
         use goose::agents::platform_extensions::scheduler::{
             EXTENSION_NAME as SCHEDULER_EXTENSION_NAME, MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
         };
-        use goose::agents::ExtensionConfig;
         use goose::agents::{ScheduleTool, StateMachineServicesConfig};
         use goose::config::permission::PermissionManager;
 
@@ -504,7 +504,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 Box::pin(async { Ok(Self::new()) })
@@ -674,7 +674,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 Box::pin(async { Ok(Self::new()) })
@@ -878,7 +878,6 @@ mod tests {
     #[cfg(test)]
     mod extension_manager_tests {
         use super::*;
-        use goose::agents::extension::ExtensionConfig;
         use goose::agents::platform_extensions::{
             MANAGE_EXTENSIONS_TOOL_NAME, SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME,
         };
@@ -1028,7 +1027,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 unimplemented!()
@@ -1303,7 +1302,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 unimplemented!()
@@ -1502,7 +1501,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 unimplemented!()
@@ -1668,7 +1667,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 Box::pin(async { Ok(Self::new()) })
@@ -2130,7 +2129,7 @@ mod tests {
         use super::*;
         use async_trait::async_trait;
         use goose::agents::{SessionConfig, StateMachineServicesConfig};
-        use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
+        use goose::config::{GooseMode, PermissionManager};
         use goose::conversation::message::{Message, MessageContent};
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
         use goose::session::{SessionManager, SessionType};
@@ -2349,7 +2348,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 unimplemented!()
@@ -2420,7 +2419,7 @@ mod tests {
             type Provider = Self;
 
             fn from_env(
-                _extensions: Vec<goose::config::ExtensionConfig>,
+                _extensions: Vec<goose_agent::extension::ExtensionConfig>,
                 _tls_config: Option<goose::providers::api_client::TlsConfig>,
             ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
                 unimplemented!()

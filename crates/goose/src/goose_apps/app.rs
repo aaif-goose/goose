@@ -1,4 +1,4 @@
-use crate::agents::extension_manager::ExtensionLease;
+use goose_agent::extension_manager::ExtensionLease;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;

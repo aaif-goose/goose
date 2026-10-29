@@ -40,3 +40,26 @@ wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde_yaml.workspace = true
+chrono.workspace = true
+http.workspace = true
+indexmap = "2.0"
+once_cell.workspace = true
+regex.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest", "transport-streamable-http-client-unix-socket"] }
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "net", "io-util", "rt-multi-thread"] }
+tokio-stream.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+url.workspace = true
+blake3 = "1.8.7"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+serial_test.workspace = true
+tempfile.workspace = true
+test-case.workspace = true
+wiremock.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.189"

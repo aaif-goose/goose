@@ -1,7 +1,7 @@
 use super::*;
-use crate::agents::extension_manager::{get_parameter_names, is_tool_owned_by_extension};
-use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::permission::PermissionLevel;
+use goose_agent::extension_manager::{get_parameter_names, is_tool_owned_by_extension};
+use goose_agent::tool_visibility::is_tool_visible_to_app;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
@@ -129,7 +129,7 @@ impl AcpConnection {
             .call_for_app(
                 tool_call,
                 &req.extension_name,
-                crate::agents::extension_manager::CallRequest::default()
+                goose_agent::extension_manager::CallRequest::default()
                     .with_container(container.clone()),
                 CancellationToken::new(),
             )

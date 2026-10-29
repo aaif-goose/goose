@@ -19,7 +19,7 @@ pub mod tom;
 
 use std::collections::HashMap;
 
-use crate::agents::mcp_client::McpClientTrait;
+use goose_agent::mcp_client::McpClientTrait;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -220,7 +220,7 @@ pub struct PlatformExtensionContext {
     /// (extension management, code mode). Everything else uses the fields
     /// below.
     pub extension_manager:
-        Option<std::sync::Weak<crate::agents::extension_manager::ExtensionManager>>,
+        Option<std::sync::Weak<goose_agent::extension_manager::ExtensionManager>>,
     pub providers: std::sync::Arc<crate::agents::provider_manager::ProviderManager>,
     pub session_manager: std::sync::Arc<crate::session::SessionManager>,
     pub scheduler: Option<std::sync::Arc<dyn crate::scheduler_trait::SchedulerTrait>>,

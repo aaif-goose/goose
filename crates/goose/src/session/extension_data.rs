@@ -3,9 +3,9 @@
 
 use crate::config::base::Config;
 use crate::config::extensions::is_extension_available;
-use crate::config::ExtensionConfig;
 use crate::session::{Session, SessionManager};
 use anyhow::Result;
+use goose_agent::extension::ExtensionConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -132,14 +132,7 @@ impl EnabledExtensionsState {
     }
 
     pub fn check_unique_keys(extensions: &[ExtensionConfig]) -> Result<()> {
-        let mut keys = std::collections::HashSet::new();
-        match extensions.iter().find(|config| !keys.insert(config.key())) {
-            Some(config) => Err(anyhow::anyhow!(
-                "extension '{}' appears twice in the selection",
-                config.name()
-            )),
-            None => Ok(()),
-        }
+        goose_agent::extension::check_unique_keys(extensions)
     }
 
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {

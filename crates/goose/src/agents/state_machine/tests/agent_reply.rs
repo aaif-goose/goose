@@ -17,8 +17,6 @@ use super::calculator_extension::{delayed_value, value, CalculatorExtension, ADD
 use super::dummy_api::{ApiCall, DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
 use crate::acp::server::AcpConnection;
-use crate::agents::extension::ExtensionConfig;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{
     AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
@@ -29,6 +27,8 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::mcp_client::McpClientTrait;
 use goose_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(
@@ -1206,7 +1206,7 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
                 &services.session_manager,
                 &session_id,
                 id,
-                crate::action_required_manager::ElicitationOutcome::Accept(
+                goose_agent::action_required_manager::ElicitationOutcome::Accept(
                     json!({ "name": "Ada Lovelace" }),
                 ),
             )
@@ -1700,7 +1700,7 @@ async fn a_parent_tool_call_id_that_looks_forwarded_is_still_the_parents() -> Re
 
 fn attachment() -> crate::agents::Attachment {
     crate::agents::Attachment {
-        client: crate::agents::extension_manager::ClientContext::new(
+        client: crate::agents::extension_manager::client_context(
             &GoosePlatform::GooseDesktop,
             None,
         ),

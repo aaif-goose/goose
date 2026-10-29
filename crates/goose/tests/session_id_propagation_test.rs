@@ -2,11 +2,11 @@ use goose::conversation::message::Message;
 use goose::providers::api_client::{ApiClient, AuthMethod};
 use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProviderBuilder;
-use goose::session_context::{session_id_request_builder, SESSION_ID_HEADER};
+use goose::session_context::session_id_request_builder;
+use goose_agent::mcp_client::SESSION_ID_HEADER;
 use goose_providers::model::ModelConfig;
 use serde_json::json;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 

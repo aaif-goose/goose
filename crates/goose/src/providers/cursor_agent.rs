@@ -15,8 +15,8 @@ use super::catalog::ProviderSetupMetadata;
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
 use crate::conversation::message::{Message, MessageContent};
-use crate::subprocess::configure_subprocess;
 use futures::future::BoxFuture;
+use goose_agent::subprocess::configure_subprocess;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
@@ -491,7 +491,7 @@ impl ProviderDef for CursorAgentProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
+        _extensions: Vec<goose_agent::extension::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))

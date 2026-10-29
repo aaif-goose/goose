@@ -12,7 +12,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing_futures::Instrument;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::ops_toolcalling::{
     emit_post_tool_use, pending_advertised_tool_requests, run_pre_tool_hooks, tool_span,
     ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
@@ -27,6 +26,7 @@ use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
+use goose_agent::extension_manager::ExtensionLease;
 
 const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 

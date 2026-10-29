@@ -1,4 +1,4 @@
-use crate::agents::{ExtensionLoadResult, StateMachineServices};
+use crate::agents::StateMachineServices;
 use crate::config::{Config, GooseMode};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
 use crate::session::session_manager::SessionUsageTotals;
@@ -10,6 +10,7 @@ use agent_client_protocol::schema::v1::{
     SessionModeId, SessionModeState, SessionNotification, SessionUpdate, UnstructuredCommandInput,
 };
 use agent_client_protocol::{Client, ConnectionTo};
+use goose_agent::extension_manager::ExtensionLoadResult;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use serde::Serialize;

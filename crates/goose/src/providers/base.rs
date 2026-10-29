@@ -10,7 +10,7 @@ pub use goose_providers::api_client::{
     DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 
-use crate::config::ExtensionConfig;
+use goose_agent::extension::ExtensionConfig;
 
 use std::path::PathBuf;
 

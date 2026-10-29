@@ -6,10 +6,10 @@ use rmcp::model::{
 use rmcp::model::{JsonObject, ServerCapabilities};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::platform_tools::{manage_schedule_tool, MANAGE_SCHEDULE_TOOL_NAME};
 use crate::agents::schedule_tool::ScheduleTool;
-use crate::agents::tool_execution::ToolCallContext;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 
 use super::PlatformExtensionContext;
 

@@ -1,7 +1,7 @@
-use crate::agents::extension::PLATFORM_EXTENSIONS;
-use crate::agents::ExtensionConfig;
+use crate::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use crate::config::extensions::ExtensionEntry;
 use crate::config::providers::ProviderEntry;
+use goose_agent::extension::ExtensionConfig;
 use serde_yaml::Mapping;
 
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";

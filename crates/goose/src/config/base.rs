@@ -94,7 +94,7 @@ impl From<keyring::Error> for ConfigError {
 /// # Examples
 ///
 /// ```no_run
-/// use goose::config::Config;
+/// use goose::config::{Config};
 /// use serde::Deserialize;
 ///
 /// // Get a string value
@@ -1461,6 +1461,12 @@ pub fn load_init_config_from_workspace() -> Result<Mapping, ConfigError> {
 
     let init_content = std::fs::read_to_string(&init_config_path)?;
     parse_yaml_content(&init_content)
+}
+
+impl goose_agent::extension::ExtensionConfigResolver for Config {
+    fn get_secret(&self, key: &str) -> anyhow::Result<String> {
+        Ok(self.get_secret::<String>(key)?)
+    }
 }
 
 #[cfg(test)]

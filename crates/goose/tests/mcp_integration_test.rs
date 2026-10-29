@@ -13,16 +13,19 @@ use rmcp::model::{
 use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
-use goose::action_required_manager::ElicitationOutcome;
-use goose::agents::extension::{Envs, ExtensionConfig};
-use goose::agents::extension_manager::{
-    CallRequest, ClientContext, ExtensionLease, ExtensionManager, ExtensionSet,
-};
-use goose::agents::mcp_client::GooseMcpClientCapabilities;
+use goose::agents::extension_manager::ExtensionManager;
 use goose::agents::GoosePlatform;
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
 use goose::session::SessionType;
+use goose_agent::action_required_manager::ElicitationOutcome;
+use goose_agent::extension::Envs;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::extension_manager::CallRequest;
+use goose_agent::extension_manager::ClientContext;
+use goose_agent::extension_manager::ExtensionLease;
+use goose_agent::extension_manager::ExtensionSet;
+use goose_agent::mcp_client::GooseMcpClientCapabilities;
 use goose_test_support::mcp::{ContextReport, APP_CARD_HTML, APP_CARD_RESOURCE_URI};
 use goose_test_support::{McpFixture, FAKE_CODE};
 
@@ -702,7 +705,7 @@ async fn extension_protocol_traffic_through_a_lease() {
                 .unwrap()
         }
     };
-    let answer = |call: goose::agents::tool_execution::ToolCallResult, name: &'static str| {
+    let answer = |call: goose_agent::tool_execution::ToolCallResult, name: &'static str| {
         let session_manager = fx.session_manager.clone();
         let session_id = user.id.clone();
         async move {
@@ -938,7 +941,7 @@ async fn test_replayed_session(
             // One dispatch per call, as the recordings were made: a server that
             // sends tools/list_changed between calls gets re-listed. A held
             // lease would freeze the catalog and diverge from the transcript.
-            let ctx = goose::agents::ToolCallContext::new(
+            let ctx = goose_agent::tool_execution::ToolCallContext::new(
                 "test-session-id".to_string(),
                 None,
                 Some("test-id".to_string()),

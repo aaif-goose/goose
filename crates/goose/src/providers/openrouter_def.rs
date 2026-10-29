@@ -8,10 +8,9 @@ use goose_providers::{
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::{
-    config::{Config, ConfigError, ExtensionConfig},
-    providers::base::ProviderDef,
-};
+use crate::config::{Config, ConfigError};
+use crate::providers::base::ProviderDef;
+use goose_agent::extension::ExtensionConfig;
 
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
 

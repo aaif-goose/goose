@@ -13,8 +13,8 @@ use tokio_stream::{wrappers::SplitStream, StreamExt};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::agents::tool_execution::ToolCallNotificationEmitter;
-use crate::subprocess::SubprocessExt;
+use goose_agent::subprocess::SubprocessExt;
+use goose_agent::tool_execution::ToolCallNotificationEmitter;
 
 pub use super::shell_output_streaming::{
     parse_shell_output_notification, ShellOutputNotificationChunk, ShellOutputNotificationParams,
@@ -409,7 +409,7 @@ fn resolve_shell_timeout(timeout_secs: Option<u64>) -> u64 {
     timeout_secs.unwrap_or_else(|| {
         crate::config::Config::global()
             .get_goose_default_extension_timeout()
-            .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
+            .unwrap_or(goose_agent::extension::DEFAULT_EXTENSION_TIMEOUT)
     })
 }
 

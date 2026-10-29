@@ -1,4 +1,4 @@
-use crate::agents::extension::{Envs, ExtensionConfig};
+use goose_agent::extension::{Envs, ExtensionConfig};
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::collections::HashMap;

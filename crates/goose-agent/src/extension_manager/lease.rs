@@ -28,16 +28,17 @@ use super::{
     GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::container::Container;
-use crate::agents::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
-use crate::agents::mcp_client::McpClientTrait;
-use crate::agents::platform_extensions::ext_manager::{
-    EXTENSION_NAME as EXTENSION_MANAGER_NAME, LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
-};
-use crate::agents::reply_parts::is_tool_visible_to_app;
-use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
-use crate::config::extensions::name_to_key;
-use crate::conversation::message::Message;
+use crate::container::Container;
+use crate::extension::name_to_key;
+use crate::extension::{ExtensionConfig, ExtensionError, ExtensionInfo};
+use crate::mcp_client::McpClientTrait;
+use crate::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
+use crate::tool_visibility::is_tool_visible_to_app;
+use goose_provider_types::conversation::message::Message;
+
+pub const EXTENSION_MANAGER_NAME: &str = "Extension Manager";
+pub const LIST_RESOURCES_TOOL_NAME: &str = "list_resources";
+pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
 
 fn require_str_parameter<'a>(value: &'a Value, name: &str) -> Result<&'a str, ErrorData> {
     let value = value.get(name).ok_or_else(|| {
@@ -70,7 +71,7 @@ impl ExtensionSet {
         working_dir: Option<PathBuf>,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Self, ExtensionError> {
-        crate::session::EnabledExtensionsState::check_unique_keys(&extensions)
+        crate::extension::check_unique_keys(&extensions)
             .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
         Ok(Self {
             scope_id: scope_id.into(),
@@ -810,7 +811,7 @@ impl CallRequest {
         }
     }
 
-    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
+    pub fn with_container(mut self, container: Option<Container>) -> Self {
         self.container = container;
         self
     }

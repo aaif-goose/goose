@@ -5,7 +5,7 @@ use std::time::Duration;
 use goose_providers::model::ModelConfig;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::state_machine::{
     BangShellOperation, CompactionOperation, DoctorOperation, EmptyResponseOperation,
     ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
@@ -20,6 +20,7 @@ use crate::hooks::HookManager;
 use crate::providers::base::Provider;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
+use goose_agent::extension_manager::ExtensionLease;
 
 pub(crate) struct StateMachineConfig<'a> {
     pub(crate) provider: Arc<dyn Provider>,

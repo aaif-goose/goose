@@ -5,13 +5,11 @@ use goose::recipe::RECIPE_FILE_EXTENSIONS;
 use serde::{Deserialize, Serialize};
 
 use goose::recipe::read_recipe_file_content::RecipeFile;
-use goose::subprocess::{git_command, SubprocessExt};
-use std::env;
-use std::fs;
+use goose_agent::subprocess::{git_command, SubprocessExt};
+use std::{env, fs};
 
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use tar::Archive;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

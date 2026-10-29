@@ -7,7 +7,7 @@ use futures::StreamExt;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{AgentEvent, ExtensionConfig, SessionConfig, StateMachineServices};
+use crate::agents::{AgentEvent, SessionConfig, StateMachineServices};
 use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::config::Config;
@@ -15,6 +15,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::session::SessionType;
 use crate::session::{EnabledExtensionsState, Session};
+use goose_agent::extension::ExtensionConfig;
 
 use super::pairing::PairingStore;
 use super::{Gateway, GatewayConfig, IncomingMessage, OutgoingMessage, PairingState, PlatformUser};

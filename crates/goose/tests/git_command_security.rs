@@ -1,4 +1,4 @@
-use goose::subprocess::git_command;
+use goose_agent::subprocess::git_command;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};

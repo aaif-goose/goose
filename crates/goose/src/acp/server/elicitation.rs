@@ -10,8 +10,8 @@ use agent_client_protocol::{
 };
 use tracing::warn;
 
-use crate::action_required_manager::ElicitationOutcome;
 use crate::session::SessionManager;
+use goose_agent::action_required_manager::ElicitationOutcome;
 
 impl super::AcpConnection {
     pub(super) async fn handle_form_elicitation(

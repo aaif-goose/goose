@@ -1,6 +1,7 @@
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::conversation::message::{Message, MessageMetadata};
 use crate::conversation::{CURRENT_TIME_TAG, TURN_CONTEXT_TAG, WORKING_DIRECTORY_TAG};
+use goose_agent::extension_manager::ExtensionLease;
 use std::path::{Path, PathBuf};
 
 const MIN_CONTEXT_FOR_MOIM: usize = 32_000;
@@ -166,10 +167,10 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension_manager::ExtensionSet;
-    use crate::agents::mcp_client::McpClientTrait;
-    use crate::agents::tool_execution::ToolCallContext;
-    use crate::config::ExtensionConfig;
+    use goose_agent::extension::ExtensionConfig;
+    use goose_agent::extension_manager::ExtensionSet;
+    use goose_agent::mcp_client::McpClientTrait;
+    use goose_agent::tool_execution::ToolCallContext;
     use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
     use rmcp::ServiceError;
     use std::sync::Arc;

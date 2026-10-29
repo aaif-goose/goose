@@ -9,8 +9,7 @@ use super::calculator_extension::{
 };
 use super::dummy_api::DummyApi;
 use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
-use super::pipeline::TestPipeline;
-use super::pipeline::MAX_TURNS;
+use super::pipeline::{TestPipeline, MAX_TURNS};
 use super::test_pipeline;
 use crate::agents::state_machine::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
@@ -663,7 +662,7 @@ async fn a_pinned_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_go
     pipeline
         .session_manager
         .update_enabled_extensions(&pipeline.session_id, |selected| {
-            selected.push(crate::agents::extension::ExtensionConfig::stdio(
+            selected.push(goose_agent::extension::ExtensionConfig::stdio(
                 "remote",
                 "missing-binary",
                 "",

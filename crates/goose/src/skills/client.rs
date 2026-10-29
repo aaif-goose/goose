@@ -1,9 +1,8 @@
-use super::discover_skills_with_config;
-use super::loaded_skill_context_with_args;
-use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::ToolCallContext;
+use super::{discover_skills_with_config, loaded_skill_context_with_args};
 use crate::config::Config;
 use async_trait::async_trait;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,

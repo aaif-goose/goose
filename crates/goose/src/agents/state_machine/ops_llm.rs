@@ -12,8 +12,8 @@ use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 
-use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::GooseEffect;
+use goose_agent::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 
 pub(super) use goose_agent::inference::{chat_span, record_chat_usage};
 

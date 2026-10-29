@@ -1,9 +1,7 @@
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
 };
-use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
 use crate::conversation::message::Message;
 use crate::goose_apps::McpAppResource;
@@ -11,6 +9,8 @@ use crate::goose_apps::{GooseApp, McpAppCache, WindowProps};
 use crate::prompt_template::render_template;
 use crate::providers::base::{Provider, ProviderUsage};
 use async_trait::async_trait;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
     ListResourcesResult, ListToolsResult, MetaObject, ReadResourceResult, Resource,
@@ -775,9 +775,9 @@ fn extract_tool_response<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
     use crate::providers::base::{stream_from_single_message, MessageStream, Usage};
     use crate::session::SessionManager;
+    use goose_agent::tool_visibility::{is_tool_visible_to_app, is_tool_visible_to_model};
     use goose_providers::errors::ProviderError;
     use std::path::Path;
     use std::sync::Mutex;

@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::agents::tool_execution::ToolCallContext;
 use async_trait::async_trait;
+use goose_agent::tool_execution::ToolCallContext;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
@@ -12,10 +12,10 @@ use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use crate::conversation::message::Message;
 use crate::providers::base::Provider;
+use goose_agent::mcp_client::{Error, McpClientTrait};
 
 pub static EXTENSION_NAME: &str = "summarize";
 

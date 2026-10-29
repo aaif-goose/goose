@@ -5,8 +5,8 @@ use anyhow::{anyhow, Result};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::permission::Permission;
+use goose_agent::extension_manager::ExtensionLease;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ConfirmationAnswer {

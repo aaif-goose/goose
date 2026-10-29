@@ -1,12 +1,12 @@
 use dotenvy::dotenv;
 use futures::StreamExt;
-use goose::agents::{
-    AgentEvent, ExtensionConfig, SessionConfig, StateMachineServices, StateMachineServicesConfig,
-};
-use goose::config::{GooseMode, DEFAULT_EXTENSION_DESCRIPTION, DEFAULT_EXTENSION_TIMEOUT};
+use goose::agents::{AgentEvent, SessionConfig, StateMachineServices, StateMachineServicesConfig};
+use goose::config::{GooseMode, DEFAULT_EXTENSION_DESCRIPTION};
 use goose::conversation::message::Message;
 use goose::providers::create;
 use goose::session::session_manager::SessionType;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::extension::DEFAULT_EXTENSION_TIMEOUT;
 use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 use std::path::PathBuf;
 

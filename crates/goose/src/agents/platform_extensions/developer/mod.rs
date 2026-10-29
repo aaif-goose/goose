@@ -5,11 +5,11 @@ mod shell_output_streaming;
 mod shell_process;
 pub mod tree;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use image::{ImageReadParams, ImageTool};
 use indoc::indoc;
 use rmcp::model::{

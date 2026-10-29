@@ -1,11 +1,11 @@
 use crate::acp::custom_requests::GooseExtension;
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
-use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GooseMode};
 use crate::model_config::resolve_provider_and_model_config;
 use crate::providers::get_from_registry;
 use crate::recipe::Recipe;
 use crate::session::{ExtensionData, Session, SessionType};
+use goose_agent::extension_manager::ExtensionLoadResult;
 
 use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};

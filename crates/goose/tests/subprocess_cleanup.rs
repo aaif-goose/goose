@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-use goose::subprocess::{configure_subprocess, spawn_long_lived_mcp_subprocess};
+use goose_agent::subprocess::{configure_subprocess, spawn_long_lived_mcp_subprocess};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};

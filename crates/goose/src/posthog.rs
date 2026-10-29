@@ -2,9 +2,9 @@ use crate::config::paths::Paths;
 use crate::config::{get_enabled_extensions, Config};
 use crate::session::session_manager::CURRENT_SCHEMA_VERSION;
 use crate::session::SessionManager;
-#[cfg(target_os = "windows")]
-use crate::subprocess::SubprocessExt;
 use chrono::{DateTime, Utc};
+#[cfg(target_os = "windows")]
+use goose_agent::subprocess::SubprocessExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

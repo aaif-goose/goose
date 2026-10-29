@@ -1,13 +1,13 @@
-use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
-use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::tool_execution::ToolCallContext;
-use crate::config::extensions::name_to_key;
+use crate::agents::extension_manager::is_hidden_extension;
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use crate::config::{get_all_extensions, get_extension_by_name};
 use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension::{name_to_key, ExtensionConfig};
+use goose_agent::extension_manager::ExtensionMutation;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult, Implementation,
@@ -63,8 +63,7 @@ pub struct ListResourcesParams {
     pub extension_name: Option<String>,
 }
 
-pub const READ_RESOURCE_TOOL_NAME: &str = "read_resource";
-pub const LIST_RESOURCES_TOOL_NAME: &str = "list_resources";
+use goose_agent::extension_manager::{LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME};
 pub const SEARCH_AVAILABLE_EXTENSIONS_TOOL_NAME: &str = "search_available_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME: &str = "manage_extensions";
 pub const MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE: &str = "extensionmanager__manage_extensions";

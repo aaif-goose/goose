@@ -4,11 +4,10 @@ use rmcp::transport::ConfigureCommandExt;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use super::super::container::Container;
-use super::super::extension::{ExtensionError, ExtensionResult, ProcessExit};
-use super::super::extension_malware_check;
-use super::super::mcp_client::{ConnectContext, McpClient};
-use crate::config::search_path::SearchPaths;
+use super::host::ExtensionHost;
+use crate::container::Container;
+use crate::extension::{ExtensionError, ExtensionResult, ProcessExit};
+use crate::mcp_client::{ConnectContext, McpClient};
 use crate::subprocess::spawn_long_lived_mcp_subprocess;
 
 pub(super) async fn connect(
@@ -17,8 +16,9 @@ pub(super) async fn connect(
     envs: HashMap<String, String>,
     container: Option<&Container>,
     mut ctx: ConnectContext,
+    host: &dyn ExtensionHost,
 ) -> ExtensionResult<McpClient> {
-    extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
+    crate::extension_malware_check::deny_if_malicious_cmd_args(cmd, args).await?;
 
     let command = match container {
         Some(container) => {
@@ -30,11 +30,11 @@ pub(super) async fn connect(
             );
             docker_exec(container, envs, cmd, args)
         }
-        None => Command::new(resolve_command(cmd)).configure(|command| {
+        None => Command::new(host.resolve_command(cmd)).configure(|command| {
             command.args(args).envs(envs);
         }),
     };
-    spawn(command, ctx).await
+    spawn(command, ctx, host).await
 }
 
 pub(super) fn docker_exec(
@@ -52,18 +52,12 @@ pub(super) fn docker_exec(
     })
 }
 
-fn resolve_command(cmd: &str) -> std::path::PathBuf {
-    SearchPaths::builder()
-        .with_npm()
-        .resolve(cmd)
-        .unwrap_or_else(|_| {
-            // let the OS raise the error
-            std::path::PathBuf::from(cmd)
-        })
-}
-
-pub(super) async fn spawn(mut command: Command, ctx: ConnectContext) -> ExtensionResult<McpClient> {
-    if let Ok(path) = SearchPaths::builder().path() {
+pub(super) async fn spawn(
+    mut command: Command,
+    ctx: ConnectContext,
+    host: &dyn ExtensionHost,
+) -> ExtensionResult<McpClient> {
+    if let Ok(path) = host.search_path() {
         command.env("PATH", path);
     }
 

@@ -1,7 +1,7 @@
 use super::*;
-use crate::agents::extension::Envs;
 use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
+use goose_agent::extension::Envs;
 use std::collections::HashSet;
 
 impl AcpConnection {
@@ -409,8 +409,8 @@ fn available_tools_to_wire(available_tools: &[String]) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension::Envs;
     use agent_client_protocol::schema::v1::{McpServer, McpServerSse};
+    use goose_agent::extension::Envs;
     use std::collections::HashMap;
 
     fn builtin_config(name: &str) -> ExtensionConfig {

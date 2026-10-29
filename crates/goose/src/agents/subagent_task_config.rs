@@ -1,5 +1,5 @@
-use crate::agents::ExtensionConfig;
 use crate::providers::base::Provider;
+use goose_agent::extension::ExtensionConfig;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;

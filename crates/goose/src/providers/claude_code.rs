@@ -23,11 +23,12 @@ use super::base::{
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, ExtensionConfig, GooseMode};
+use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
-use crate::subprocess::configure_subprocess;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::subprocess::configure_subprocess;
 use goose_providers::model::ModelConfig;
 
 use super::cli_common::{error_from_event, extract_usage_tokens};
@@ -1039,8 +1040,8 @@ impl Provider for ClaudeCodeProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension::Envs;
     use chrono::Utc;
+    use goose_agent::extension::Envs;
     use goose_test_support::session::TEST_SESSION_ID;
     use serde_json::json;
     use std::collections::HashMap;

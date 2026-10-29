@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 use super::api_client::AuthProvider;
-use crate::subprocess::configure_subprocess;
+use goose_agent::subprocess::configure_subprocess;
 
 const DEFAULT_AUTH_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_STDERR_BYTES: usize = 500;

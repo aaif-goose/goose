@@ -1,12 +1,13 @@
 //! Goose-specific inference request preparation.
 
-use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::PromptManager;
 use crate::config::GooseMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::extension_manager::ExtensionLease;
 use goose_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
 use goose_agent::operation::{messages_since_kickoff, InferenceInput};
 use goose_providers::conversation::message::Message;

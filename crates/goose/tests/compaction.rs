@@ -201,7 +201,7 @@ impl ProviderDef for MockCompactionProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<goose::config::ExtensionConfig>,
+        _extensions: Vec<goose_agent::extension::ExtensionConfig>,
         _tls_config: Option<goose::providers::api_client::TlsConfig>,
     ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
         Box::pin(async { Ok(Self::new()) })

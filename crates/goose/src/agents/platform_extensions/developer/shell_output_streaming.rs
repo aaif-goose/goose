@@ -3,7 +3,7 @@ use std::time::Duration;
 use rmcp::model::{CustomNotification, ServerNotification};
 use serde::{Deserialize, Serialize};
 
-use crate::agents::tool_execution::ToolCallNotificationEmitter;
+use goose_agent::tool_execution::ToolCallNotificationEmitter;
 
 pub(super) const SHELL_LIVE_OUTPUT_FLUSH_INTERVAL: Duration = Duration::from_millis(150);
 const SHELL_LIVE_OUTPUT_BATCH_BYTES: usize = 16 * 1024;

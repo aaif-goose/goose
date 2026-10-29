@@ -76,6 +76,7 @@ axum-server = { workspace = true, optional = true }
 clap_complete_nushell = { version = "4", default-features = false }
 qrcode = { version = "0.14.1", optional = true }
 fs2 = { workspace = true, optional = true }
+goose-agent = { version = "0.1.0-alpha.12", path = "../goose-agent" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 anstream = { version = "1", default-features = false, features = ["wincon"] }

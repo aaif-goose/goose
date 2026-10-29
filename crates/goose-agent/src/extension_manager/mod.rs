@@ -15,30 +15,25 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use super::container::Container;
-use super::extension::{
-    ExtensionConfig, ExtensionError, ExtensionResult, PlatformExtensionContext, PLATFORM_EXTENSIONS,
-};
-use super::tool_execution::ToolCallResult;
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::mcp_client::{
-    ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
-};
-use crate::agents::provider_manager::{provider_name_for, ProviderManager};
-use crate::agents::services::GoosePlatform;
-use crate::config::extensions::name_to_key;
-use crate::config::{get_extension_by_name, Config};
-use crate::oauth::GooseCredentialStore;
-use crate::session::{EnabledExtensionsState, Session};
+use crate::container::Container;
+use crate::extension::{name_to_key, ExtensionConfig, ExtensionError, ExtensionResult};
+use crate::mcp_client::{ConnectContext, GooseMcpClientCapabilities, McpClientTrait};
+use crate::tool_execution::ToolCallResult;
+use host::{ExtensionHost, ExtensionSession};
 use rmcp::model::{CallToolResult, ErrorCode, ErrorData, MetaObject, ServerConfig, Tool};
 use serde_json::Value;
 
 mod builtin;
+pub mod host;
 mod lease;
 mod stdio;
 mod streamable_http;
 
-pub use lease::{CallRequest, ExtensionLease, ExtensionSet, LeaseId};
+pub use lease::{
+    CallRequest, ExtensionLease, ExtensionSet, LeaseId, EXTENSION_MANAGER_NAME,
+    LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
+};
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "action", rename_all = "lowercase")]
@@ -74,7 +69,7 @@ type McpClientBox = Arc<dyn McpClientTrait>;
 const TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY: usize = 32;
 
 struct ActionRequiredStream {
-    inner: ReceiverStream<crate::conversation::message::Message>,
+    inner: ReceiverStream<goose_provider_types::conversation::message::Message>,
     manager: Arc<ActionRequiredManager>,
     session_id: String,
     tool_call_request_id: String,
@@ -82,7 +77,7 @@ struct ActionRequiredStream {
 
 impl ActionRequiredStream {
     fn new(
-        receiver: tokio::sync::mpsc::Receiver<crate::conversation::message::Message>,
+        receiver: tokio::sync::mpsc::Receiver<goose_provider_types::conversation::message::Message>,
         manager: Arc<ActionRequiredManager>,
         session_id: String,
         tool_call_request_id: String,
@@ -97,7 +92,7 @@ impl ActionRequiredStream {
 }
 
 impl Stream for ActionRequiredStream {
-    type Item = crate::conversation::message::Message;
+    type Item = goose_provider_types::conversation::message::Message;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.inner).poll_next(cx)
@@ -120,19 +115,13 @@ impl Drop for ActionRequiredStream {
     }
 }
 
-fn resolve_timeout(timeout: Option<u64>) -> u64 {
-    timeout.unwrap_or_else(|| {
-        Config::global()
-            .get_goose_default_extension_timeout()
-            .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
-    })
-}
-
 pub(super) struct Extension {
     pub(super) key: String,
     pub(super) config: ExtensionConfig,
     resolved_config: ExtensionConfig,
     pub(super) client: McpClientBox,
+    platform: bool,
+    unprefixed: bool,
     server_info: Option<ServerConfig>,
     /// Bumped by the client on tools/list_changed; a cached list is only valid
     /// for the version it was fetched under.
@@ -159,8 +148,10 @@ impl Placement {
         config: &ExtensionConfig,
         working_dir: Option<&Path>,
         container: Option<&Container>,
+        host: &dyn ExtensionHost,
     ) -> Option<Self> {
-        if is_in_process(config) {
+        if matches!(config, ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. } if host.platform_extension(name).is_some())
+        {
             return None;
         }
         let working_dir = working_dir
@@ -215,17 +206,22 @@ impl ExtensionSlot {
     /// Whether the secrets and environment the extension started with still hold. Only
     /// checked after this process wrote config, so a lease does not read the keyring.
     async fn config_is_current(&self) -> bool {
-        let generation = Config::global().generation();
+        let Some(manager) = self.manager.upgrade() else {
+            return self
+                .runtime
+                .get()
+                .is_some_and(|runtime| matches!(runtime, Runtime::Running(_)));
+        };
+        let generation = manager.host.config_generation();
         if self.config_generation.load(Ordering::SeqCst) == generation {
             return true;
         }
         let current = match self.runtime.get() {
             None | Some(Runtime::Declined) => true,
             Some(Runtime::Failed(_)) => false,
-            Some(Runtime::Running(extension)) => self
-                .config
-                .clone()
-                .resolve(Config::global())
+            Some(Runtime::Running(extension)) => manager
+                .host
+                .resolve_config(self.config.clone())
                 .await
                 .is_ok_and(|config| config == extension.resolved_config),
         };
@@ -298,13 +294,7 @@ impl Extension {
     }
 
     pub(super) fn is_platform(&self) -> bool {
-        match &self.config {
-            ExtensionConfig::Platform { .. } => true,
-            ExtensionConfig::Builtin { name, .. } => {
-                PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-            }
-            _ => false,
-        }
+        self.platform
     }
 
     /// The extension's tools as the model sees them: filtered by
@@ -340,7 +330,7 @@ impl Extension {
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
         let cancel_token = CancellationToken::default();
-        let expose_unprefixed = is_unprefixed_extension(&self.config);
+        let expose_unprefixed = self.unprefixed;
         let mut tools = Vec::new();
         let mut cursor = None;
         loop {
@@ -369,7 +359,7 @@ impl Extension {
                 );
                 tool.meta = Some(MetaObject(meta));
                 let mut schema = (*tool.input_schema).clone();
-                if super::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                if crate::tool_schema_normalize::normalize_input_schema(&mut schema) {
                     tool.input_schema = Arc::new(schema);
                 }
                 tools.push(tool);
@@ -391,27 +381,6 @@ pub struct ClientContext {
 }
 
 impl ClientContext {
-    pub fn new(platform: &GoosePlatform, host_info: Option<GooseMcpHostInfo>) -> Self {
-        let mcpui = host_info
-            .as_ref()
-            .filter(|host_info| host_info.explicit_extensions)
-            .map(GooseMcpHostInfo::mcpui_enabled)
-            .unwrap_or(matches!(platform, GoosePlatform::GooseDesktop));
-        let name = host_info
-            .as_ref()
-            .and_then(|host_info| host_info.client_name.clone())
-            .unwrap_or_else(|| platform.to_string());
-        Self {
-            name,
-            capabilities: GooseMcpClientCapabilities {
-                mcpui,
-                host_info,
-                elicitation_handler: None,
-                protocol_version: None,
-            },
-        }
-    }
-
     fn hydrates_mcp_apps(&self) -> bool {
         match &self.capabilities.host_info {
             Some(host_info) if host_info.explicit_extensions => host_info.mcpui_enabled(),
@@ -448,7 +417,7 @@ pub struct GooseMcpAppToolAttachment {
     pub read_error: Option<String>,
 }
 
-pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta";
+pub const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta";
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
@@ -457,7 +426,7 @@ pub struct ExtensionManager {
     /// the old selection in the meantime must not lose them, or the next
     /// lease would start a second process.
     enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
-    context: PlatformExtensionContext,
+    host: Arc<dyn ExtensionHost>,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
 }
@@ -516,7 +485,7 @@ pub fn get_tool_owner(tool: &Tool) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-pub(crate) fn is_tool_owned_by_extension(tool: &Tool, extension_name: &str) -> bool {
+pub fn is_tool_owned_by_extension(tool: &Tool, extension_name: &str) -> bool {
     let expected_owner = name_to_key(extension_name);
     get_tool_owner(tool).is_some_and(|owner| name_to_key(&owner) == expected_owner)
 }
@@ -524,7 +493,7 @@ pub(crate) fn is_tool_owned_by_extension(tool: &Tool, extension_name: &str) -> b
 /// `tools` pairs each advertised public tool name with its owning extension's
 /// key, when known (`None` for tools with no owner metadata, e.g. those
 /// appended outside the extension manager).
-pub(crate) fn recover_mangled_tool_name<'a>(
+pub fn recover_mangled_tool_name<'a>(
     emitted: &str,
     tools: impl Iterator<Item = (&'a str, Option<&'a str>)>,
 ) -> Option<String> {
@@ -570,7 +539,7 @@ fn get_tool_meta_value(tool: &Tool) -> Option<Value> {
     tool.meta.as_ref().map(|meta| Value::Object(meta.0.clone()))
 }
 
-pub(crate) fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
+pub fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
     tool.meta
         .as_ref()
         .and_then(|meta| meta.0.get("ui"))
@@ -640,72 +609,15 @@ fn insert_trusted_tool_update_meta(
     result.meta = Some(MetaObject(meta_map));
 }
 
-fn is_in_process(config: &ExtensionConfig) -> bool {
-    matches!(
-        config,
-        ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
-            if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-    )
-}
-
-fn is_unprefixed_extension(config: &ExtensionConfig) -> bool {
-    match config {
-        ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. } => {
-            PLATFORM_EXTENSIONS
-                .get(name_to_key(name).as_str())
-                .is_some_and(|def| def.unprefixed_tools)
-        }
-        _ => false,
-    }
-}
-
-/// Returns true if the named extension is a first-class platform extension
-/// whose tools are exposed unprefixed and remain visible during code execution mode.
-pub fn is_first_class_extension(name: &str) -> bool {
-    PLATFORM_EXTENSIONS
-        .get(name_to_key(name).as_str())
-        .is_some_and(|def| def.unprefixed_tools)
-}
-
-pub fn is_hidden_extension(name: &str) -> bool {
-    PLATFORM_EXTENSIONS
-        .get(name_to_key(name).as_str())
-        .is_some_and(|def| def.hidden)
-}
-
 impl ExtensionManager {
-    pub fn new(
-        providers: Arc<ProviderManager>,
-        session_manager: Arc<crate::session::SessionManager>,
-        scheduler: Option<Arc<dyn crate::scheduler_trait::SchedulerTrait>>,
-        default_client: ClientContext,
-    ) -> Self {
+    pub fn with_host(host: Arc<dyn ExtensionHost>, default_client: ClientContext) -> Self {
         Self {
             scopes: Mutex::new(HashMap::new()),
             enabling: Mutex::new(HashMap::new()),
-            context: PlatformExtensionContext {
-                extension_manager: None,
-                providers,
-                session_manager,
-                scheduler,
-            },
+            host,
             default_client: Arc::new(default_client),
             clients: std::sync::Mutex::new(HashMap::new()),
         }
-    }
-
-    pub fn with_data_dir(data_dir: std::path::PathBuf) -> Self {
-        let session_manager = Arc::new(crate::session::SessionManager::new(data_dir));
-        Self::new(
-            Default::default(),
-            session_manager,
-            None,
-            ClientContext::new(&GoosePlatform::GooseCli, None),
-        )
-    }
-
-    pub fn get_context(&self) -> &PlatformExtensionContext {
-        &self.context
     }
 
     /// The latest client to attach to a session is the one its extensions start for from
@@ -717,7 +629,7 @@ impl ExtensionManager {
             .insert(session_id.to_string(), Arc::new(client));
     }
 
-    pub(crate) fn client(&self, session_id: &str) -> Arc<ClientContext> {
+    pub fn client(&self, session_id: &str) -> Arc<ClientContext> {
         self.clients
             .lock()
             .expect("clients mutex poisoned")
@@ -737,7 +649,7 @@ impl ExtensionManager {
             scope_id,
             working_dir,
             slots,
-            self.context.session_manager.action_required(),
+            self.host.action_required(),
             client.hydrates_mcp_apps(),
         )
     }
@@ -753,11 +665,11 @@ impl ExtensionManager {
         ExtensionSlot {
             key: config.key(),
             config: config.clone(),
-            placement: Placement::for_config(config, working_dir, container),
+            placement: Placement::for_config(config, working_dir, container, self.host.as_ref()),
             scope_id: scope_id.to_string(),
             manager: Arc::downgrade(self),
             client,
-            config_generation: AtomicU64::new(Config::global().generation()),
+            config_generation: AtomicU64::new(self.host.config_generation()),
             runtime: OnceCell::new(),
         }
     }
@@ -806,29 +718,11 @@ impl ExtensionManager {
     }
 
     pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        let session = self.host.session(session_id).await?;
         self.session_lease(&session).await
     }
 
-    pub async fn current_session_snapshot(
-        self: &Arc<Self>,
-        session: &Session,
-    ) -> Result<(Session, ExtensionLease)> {
-        let session = self
-            .context
-            .session_manager
-            .get_session(&session.id, session.conversation.is_some())
-            .await?;
-        let lease = self.session_lease(&session).await?;
-        Ok((session, lease))
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
+    pub async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
         let client = self.client(scope_id);
         let slots = self
             .scopes
@@ -842,30 +736,27 @@ impl ExtensionManager {
         self.lease(scope_id, None, slots, &client)
     }
 
-    async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
-        // A pinned provider may not be in the registry at all, so it answers
-        // for itself when there is one.
-        let provider_runs_tool_loop = match self.context.providers.pinned(session).await {
-            Some(provider) => provider.manages_own_context(),
-            None => match provider_name_for(session) {
-                Ok(name) => crate::providers::get_from_registry(&name)
-                    .await
-                    .is_ok_and(|entry| entry.runs_own_tool_loop()),
-                Err(_) => false,
-            },
-        };
-        let extensions = selection(session)
-            .into_iter()
-            .filter(|config| {
-                !(provider_runs_tool_loop
-                    && matches!(
-                        config,
-                        ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
-                    ))
-            })
-            .collect();
-        let set = ExtensionSet::new(&session.id, Some(session.working_dir.clone()), extensions)?
-            .with_container(session.container.clone());
+    pub async fn session_lease(
+        self: &Arc<Self>,
+        session: &ExtensionSession,
+    ) -> Result<ExtensionLease> {
+        let set = ExtensionSet::new(
+            &session.id,
+            Some(session.working_dir.clone()),
+            session
+                .extensions
+                .iter()
+                .filter(|config| {
+                    !(session.provider_runs_tool_loop
+                        && matches!(
+                            config,
+                            ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
+                        ))
+                })
+                .cloned()
+                .collect(),
+        )?
+        .with_container(session.container.clone());
         Ok(self.resolve(&set).await)
     }
 
@@ -876,7 +767,7 @@ impl ExtensionManager {
         session_id: &str,
         client: &ClientContext,
     ) -> ExtensionResult<Option<Extension>> {
-        let resolved_config = config.clone().resolve(Config::global()).await?;
+        let resolved_config = self.host.resolve_config(config.clone()).await?;
         let client_working_dir = match &resolved_config {
             ExtensionConfig::Stdio { cwd: Some(cwd), .. } => PathBuf::from(cwd),
             _ => placement
@@ -887,13 +778,15 @@ impl ExtensionManager {
 
         let tools_version = Arc::new(AtomicU64::new(0));
         let ctx = |timeout: Option<u64>, working_dir: PathBuf| ConnectContext {
-            timeout: Duration::from_secs(resolve_timeout(timeout)),
+            timeout: Duration::from_secs(timeout.unwrap_or_else(|| self.host.default_timeout())),
             client_name: client.name.clone(),
+            client_version: self.host.client_version(),
             capabilities: client.capabilities.clone(),
             working_dir,
             docker_container: None,
-            action_required: self.context.session_manager.action_required(),
+            action_required: self.host.action_required(),
             tools_version: Arc::clone(&tools_version),
+            trace_context: self.host.trace_context(),
         };
 
         let mcp_client: Box<dyn McpClientTrait> = match &resolved_config {
@@ -921,30 +814,40 @@ impl ExtensionManager {
                     headers: headers.clone(),
                     static_oauth_client,
                     ctx: ctx(*timeout, client_working_dir),
+                    auth: self.host.auth(),
                 };
                 streamable_http::connect(
                     params,
                     socket.as_deref(),
-                    Box::new(GooseCredentialStore::new(name.clone())),
+                    self.host.auth().credential_store(name),
                 )
                 .await?
             }
             ExtensionConfig::Builtin { name, .. } | ExtensionConfig::Platform { name, .. }
-                if PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str()) =>
+                if self.host.platform_extension(name).is_some() =>
             {
-                let def = &PLATFORM_EXTENSIONS[name_to_key(name).as_str()];
-                let mut context = self.context.clone();
-                context.extension_manager = Some(Arc::downgrade(self));
-                let Some(client) = (def.client_factory)(context) else {
+                let Some(client) = self.host.connect_platform(name, Arc::downgrade(self))? else {
                     return Ok(None);
                 };
                 client
             }
             ExtensionConfig::Builtin { name, timeout, .. } => {
-                builtin::connect(name, container, ctx(*timeout, client_working_dir)).await?
+                builtin::connect(
+                    name,
+                    container,
+                    ctx(*timeout, client_working_dir),
+                    self.host.as_ref(),
+                )
+                .await?
             }
             ExtensionConfig::Platform { name, .. } => {
-                builtin::connect(name, container, ctx(None, client_working_dir)).await?
+                builtin::connect(
+                    name,
+                    container,
+                    ctx(None, client_working_dir),
+                    self.host.as_ref(),
+                )
+                .await?
             }
             ExtensionConfig::Stdio {
                 cmd,
@@ -962,6 +865,7 @@ impl ExtensionManager {
                         envs,
                         container,
                         ctx(*timeout, client_working_dir),
+                        self.host.as_ref(),
                     )
                     .await?,
                 )
@@ -973,6 +877,8 @@ impl ExtensionManager {
             key: config.key(),
             config: config.clone(),
             resolved_config,
+            platform: self.is_platform(config),
+            unprefixed: self.is_unprefixed(config),
             client: Arc::from(mcp_client),
             server_info,
             tools_version,
@@ -980,26 +886,25 @@ impl ExtensionManager {
         }))
     }
 
-    async fn session(&self, session_id: &str) -> ExtensionResult<Session> {
-        self.context
-            .session_manager
-            .get_session(session_id, false)
+    fn is_platform(&self, config: &ExtensionConfig) -> bool {
+        matches!(config, ExtensionConfig::Platform { .. })
+            || matches!(config, ExtensionConfig::Builtin { name, .. } if self.host.platform_extension(name).is_some())
+    }
+
+    fn is_unprefixed(&self, config: &ExtensionConfig) -> bool {
+        matches!(config, ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
+            if self.host.platform_extension(name).is_some_and(|def| def.unprefixed_tools))
+    }
+
+    async fn session(&self, session_id: &str) -> ExtensionResult<ExtensionSession> {
+        self.host
+            .session(session_id)
             .await
             .map_err(|error| ExtensionError::SetupError(error.to_string()))
     }
 
     async fn select(&self, session_id: &str, config: ExtensionConfig) -> ExtensionResult<()> {
-        self.context
-            .session_manager
-            .update_enabled_extensions(session_id, |extensions| {
-                let key = config.key();
-                match extensions.iter_mut().find(|selected| selected.key() == key) {
-                    Some(selected) => *selected = config,
-                    None => extensions.push(config),
-                }
-            })
-            .await
-            .map_err(|error| ExtensionError::SetupError(error.to_string()))
+        self.host.select(session_id, config).await
     }
 
     /// Start the extension and select it for the session. It is started here
@@ -1074,15 +979,7 @@ impl ExtensionManager {
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
-        self.context
-            .session_manager
-            .update_enabled_extensions(session_id, |extensions| {
-                let selected = extensions.len();
-                extensions.retain(|config| config.key() != key);
-                extensions.len() != selected
-            })
-            .await
-            .map_err(|error| ExtensionError::SetupError(error.to_string()))
+        self.host.disable(session_id, key).await
     }
 
     pub async fn apply(
@@ -1092,7 +989,7 @@ impl ExtensionManager {
     ) -> ExtensionResult<()> {
         match mutation {
             ExtensionMutation::Enable { name } => {
-                let config = get_extension_by_name(&name).ok_or_else(|| {
+                let config = self.host.extension_by_name(&name).ok_or_else(|| {
                     ExtensionError::ConfigError(format!("Extension '{}' not found", name))
                 })?;
                 self.enable(session_id, config).await
@@ -1129,6 +1026,64 @@ impl ExtensionManager {
         }
     }
 
+    async fn install(&self, session_id: &str, slot: ExtensionSlot) {
+        self.scopes
+            .lock()
+            .await
+            .entry(session_id.to_string())
+            .or_default()
+            .insert(slot.key.clone(), Arc::new(slot));
+    }
+
+    pub async fn add_client(
+        &self,
+        session_id: &str,
+        config: ExtensionConfig,
+        client: McpClientBox,
+        info: Option<ServerConfig>,
+    ) {
+        self.install_client(session_id, config.clone(), client, info)
+            .await;
+        if let Err(error) = self.select(session_id, config).await {
+            warn!(%error, "failed to select injected extension");
+        }
+    }
+
+    pub async fn install_client(
+        &self,
+        session_id: &str,
+        config: ExtensionConfig,
+        client: McpClientBox,
+        info: Option<ServerConfig>,
+    ) {
+        let key = config.key();
+        let negotiation = self.client(session_id);
+        self.install(
+            session_id,
+            ExtensionSlot {
+                key: key.clone(),
+                config: config.clone(),
+                placement: None,
+                scope_id: session_id.to_string(),
+                manager: Weak::new(),
+                client: negotiation,
+                config_generation: AtomicU64::new(self.host.config_generation()),
+                runtime: OnceCell::new_with(Some(Runtime::Running(Arc::new(Extension {
+                    key,
+                    config: config.clone(),
+                    resolved_config: config.clone(),
+                    platform: self.is_platform(&config),
+                    unprefixed: self.is_unprefixed(&config),
+                    client,
+                    server_info: info,
+                    tools_version: Arc::new(AtomicU64::new(0)),
+                    tools: Mutex::new(None),
+                })))),
+            },
+        )
+        .await;
+    }
+
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
         let mut scopes = self.scopes.lock().await;
@@ -1142,12 +1097,7 @@ impl ExtensionManager {
     }
 
     pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
-        let session = self
-            .context
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
-        Ok(selection(&session))
+        Ok(self.host.session(session_id).await?.extensions)
     }
 
     pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
@@ -1163,12 +1113,6 @@ impl ExtensionManager {
         let key = name_to_key(name);
         Ok(self.list_extensions(session_id).await?.contains(&key))
     }
-}
-
-fn selection(session: &Session) -> Vec<ExtensionConfig> {
-    EnabledExtensionsState::from_extension_data(&session.extension_data)
-        .map(|state| state.extensions)
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

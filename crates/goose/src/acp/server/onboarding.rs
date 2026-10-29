@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::extensions::name_to_key;
+use goose_agent::extension::name_to_key;
 use serde::Deserialize;
 use serde_yaml::Mapping;
 use std::collections::{HashMap, HashSet};
@@ -518,7 +518,7 @@ fn apply_claude_desktop_candidate(
                 args: server.args,
                 envs: Envs::new(server.env),
                 env_keys: Vec::new(),
-                timeout: Some(crate::config::DEFAULT_EXTENSION_TIMEOUT),
+                timeout: Some(goose_agent::extension::DEFAULT_EXTENSION_TIMEOUT),
                 cwd: None,
                 bundled: None,
                 available_tools: Vec::new(),

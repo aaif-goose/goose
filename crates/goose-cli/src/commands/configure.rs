@@ -1,16 +1,15 @@
 use crate::recipes::github_recipe::GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY;
 use cliclack::spinner;
 use console::style;
-use goose::agents::extension::{ToolInfo, PLATFORM_EXTENSIONS};
-use goose::agents::extension_manager::get_parameter_names;
-use goose::agents::{extension::Envs, ExtensionConfig};
+use goose::agents::extension::ToolInfo;
+use goose::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use goose::agents::{StateMachineServices, StateMachineServicesConfig};
 use goose::config::declarative_providers::{
     create_custom_provider, remove_custom_provider, AuthConfig, CreateCustomProviderParams,
 };
 use goose::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
-    name_to_key, remove_extension, set_extension, set_extension_enabled,
+    remove_extension, set_extension, set_extension_enabled,
 };
 use goose::config::paths::Paths;
 use goose::config::permission::PermissionLevel;
@@ -25,6 +24,9 @@ use goose::providers::base::ConfigKey;
 use goose::providers::provider_test::test_provider_configuration;
 use goose::providers::{create, providers, retry_operation, RetryConfig};
 use goose::session::SessionType;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::extension::{name_to_key, Envs};
+use goose_agent::extension_manager::get_parameter_names;
 use goose_providers::thinking::ThinkingEffort;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -1097,7 +1099,7 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
 fn prompt_extension_timeout() -> anyhow::Result<u64> {
     Ok(
         cliclack::input("Please set the timeout for this tool (in secs):")
-            .placeholder(&goose::config::DEFAULT_EXTENSION_TIMEOUT.to_string())
+            .placeholder(&goose_agent::extension::DEFAULT_EXTENSION_TIMEOUT.to_string())
             .validate(|input: &String| match input.parse::<u64>() {
                 Ok(_) => Ok(()),
                 Err(_) => Err("Please enter a valid timeout"),
@@ -2040,7 +2042,9 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                             config: ExtensionConfig::Platform {
                                 name: "developer".to_string(),
                                 description: "Developer extension".to_string(),
-                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                display_name: Some(
+                                    goose_agent::extension::DEFAULT_DISPLAY_NAME.to_string(),
+                                ),
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },
@@ -2109,7 +2113,9 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                             config: ExtensionConfig::Platform {
                                 name: "developer".to_string(),
                                 description: "Developer extension".to_string(),
-                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                display_name: Some(
+                                    goose_agent::extension::DEFAULT_DISPLAY_NAME.to_string(),
+                                ),
                                 bundled: Some(true),
                                 available_tools: Vec::new(),
                             },

@@ -10,8 +10,7 @@ use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
 use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
-use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension_manager::{ClientContext, ExtensionManager};
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::ops_recipe;
@@ -39,6 +38,7 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
+use goose_agent::action_required_manager::ElicitationOutcome;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -252,7 +252,7 @@ pub struct StateMachineServicesConfig {
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
+    pub elicitation_handler: Option<goose_agent::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
     pub providers: Arc<ProviderManager>,
     /// Sessions kept loaded before the least recently used idle one is released.
@@ -340,7 +340,8 @@ fn agent_visible_message_text(message: &Message) -> String {
 
 impl StateMachineServices {
     pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
-        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        let mut default_client =
+            crate::agents::extension_manager::client_context(&config.goose_platform, None);
         default_client.capabilities.elicitation_handler = config.elicitation_handler;
         default_client.capabilities.protocol_version = config.mcp_protocol_version;
         let services = Arc::new(Self {
@@ -1377,11 +1378,11 @@ mod tests {
         use rmcp::ServiceExt;
         use tokio::sync::Barrier;
 
-        use crate::agents::extension::ExtensionConfig;
         use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
         use crate::config::permission::PermissionManager;
         use crate::config::GooseMode;
         use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
+        use goose_agent::extension::ExtensionConfig;
 
         fn test_services(temp_dir: &TempDir, max_sessions: usize) -> Arc<StateMachineServices> {
             let mut config = StateMachineServicesConfig::new(
@@ -1420,7 +1421,7 @@ mod tests {
             services: &StateMachineServices,
             temp_dir: &TempDir,
             fixture: &'static str,
-            serve: crate::builtin_extension::SpawnServerFn,
+            serve: goose_agent::extension_manager::host::SpawnServerFn,
         ) -> String {
             crate::builtin_extension::register_builtin_extension(fixture, serve);
             let session_manager = &services.session_manager;
@@ -1496,7 +1497,7 @@ mod tests {
         }
 
         fn attachment(name: &str) -> crate::agents::Attachment {
-            let mut client = crate::agents::extension_manager::ClientContext::new(
+            let mut client = crate::agents::extension_manager::client_context(
                 &GoosePlatform::GooseDesktop,
                 None,
             );

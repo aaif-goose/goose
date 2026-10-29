@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
-use crate::subprocess::SubprocessExt;
+use goose_agent::subprocess::SubprocessExt;
 
 use crate::agents::types::SuccessCheck;
 

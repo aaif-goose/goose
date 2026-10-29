@@ -8,10 +8,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::calculator_extension::CalculatorExtension;
 use super::dummy_api::{DummyApi, ProviderFeatures};
-use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension::ExtensionConfig;
-use crate::agents::extension_manager::ExtensionLease;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
     messages_since_kickoff, Emitter, GooseEffect, Operation, RunStatus, StateMachine,
 };
@@ -25,6 +21,10 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
+use goose_agent::action_required_manager::ElicitationOutcome;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::extension_manager::ExtensionLease;
+use goose_agent::mcp_client::McpClientTrait;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -404,7 +404,7 @@ impl TestPipeline {
     }
 
     #[cfg(feature = "tree-sitter")]
-    pub(super) fn tool_contexts(&self) -> Vec<crate::agents::tool_execution::ToolCallContext> {
+    pub(super) fn tool_contexts(&self) -> Vec<goose_agent::tool_execution::ToolCallContext> {
         self.calculator.contexts()
     }
 

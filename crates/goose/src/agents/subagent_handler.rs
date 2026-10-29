@@ -297,7 +297,7 @@ async fn build_subagent_prompt(
         .list_tools(session_id, None)
         .await?
         .into_iter()
-        .filter(super::reply_parts::is_tool_visible_to_model)
+        .filter(goose_agent::tool_visibility::is_tool_visible_to_model)
         .map(|t| t.name.to_string())
         .collect();
     tool_names.sort_unstable();

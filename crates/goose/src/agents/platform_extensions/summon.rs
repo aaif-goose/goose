@@ -1,8 +1,6 @@
-use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::platform_extensions::PlatformExtensionContext;
 use crate::agents::state_machine::DELEGATED_META_KEY;
-use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
 use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
 use crate::conversation::message::Message;
@@ -16,6 +14,8 @@ use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::mcp_client::{Error, McpClientTrait};
+use goose_agent::tool_execution::ToolCallContext;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
@@ -62,7 +62,7 @@ const DEFAULT_RESUME_INSTRUCTIONS: &str = "Continue the task from where you left
 struct SubagentConfig {
     provider_name: String,
     model_config: goose_providers::model::ModelConfig,
-    extensions: Vec<crate::config::ExtensionConfig>,
+    extensions: Vec<goose_agent::extension::ExtensionConfig>,
     working_dir: PathBuf,
     max_turns: usize,
 }

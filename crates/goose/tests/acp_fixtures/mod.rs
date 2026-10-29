@@ -20,7 +20,7 @@ use goose::providers::openai::OpenAiProvider;
 use goose::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
 use goose::scheduler_trait::SchedulerTrait;
 use goose::session::Session as GooseSession;
-use goose::session_context::SESSION_ID_HEADER;
+use goose_agent::mcp_client::SESSION_ID_HEADER;
 use goose_test_support::{ExpectedSessionId, TEST_MODEL};
 use std::collections::VecDeque;
 use std::future::Future;

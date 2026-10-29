@@ -17,14 +17,14 @@ use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetad
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, ExtensionConfig, GooseMode};
+use crate::config::{Config, GooseMode};
 use crate::conversation::message::{Message, MessageContent};
-use crate::subprocess::configure_subprocess;
+use goose_agent::extension::ExtensionConfig;
+use goose_agent::subprocess::configure_subprocess;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Role;
-use rmcp::model::Tool;
+use rmcp::model::{Role, Tool};
 
 const CODEX_PROVIDER_NAME: &str = "codex";
 pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.2-codex";
@@ -741,7 +741,7 @@ impl Provider for CodexProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::extension::Envs;
+    use goose_agent::extension::Envs;
     use goose_providers::base::ProviderDescriptor as _;
     use goose_test_support::TEST_IMAGE_B64;
     use std::collections::HashMap;

@@ -13,7 +13,7 @@ use smithy_transport_reqwest::ReqwestHttpClient;
 use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use super::retry::ProviderRetry;
 use crate::conversation::message::{Message, MessageContent};
-use crate::session_context::SESSION_ID_HEADER;
+use goose_agent::mcp_client::SESSION_ID_HEADER;
 use goose_providers::errors::ProviderError;
 
 use chrono::Utc;
@@ -302,7 +302,7 @@ impl ProviderDef for SageMakerTgiProvider {
     type Provider = Self;
 
     fn from_env(
-        _extensions: Vec<crate::config::ExtensionConfig>,
+        _extensions: Vec<goose_agent::extension::ExtensionConfig>,
         tls_config: Option<crate::providers::api_client::TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(Self::from_env(tls_config))

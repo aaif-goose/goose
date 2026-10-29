@@ -1,15 +1,12 @@
 use super::base::Config;
-use crate::agents::extension::PLATFORM_EXTENSIONS;
-use crate::agents::ExtensionConfig;
+use crate::agents::platform_extensions::PLATFORM_EXTENSIONS;
+use goose_agent::extension::ExtensionConfig;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Mapping;
 use tracing::{info, warn};
 
-pub const DEFAULT_EXTENSION: &str = "developer";
-pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
 pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
-pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -19,22 +16,13 @@ pub struct ExtensionEntry {
     pub config: ExtensionConfig,
 }
 
-pub fn name_to_key(name: &str) -> String {
-    let mut result = String::with_capacity(name.len());
-    for c in name.chars() {
-        result.push(match c {
-            c if c.is_ascii_alphanumeric() || c == '_' || c == '-' => c,
-            c if c.is_whitespace() => continue,
-            _ => '_',
-        });
-    }
-    result.to_lowercase()
-}
+use goose_agent::extension::name_to_key;
 
 pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     match config {
         ExtensionConfig::Platform { name, .. } => {
-            crate::agents::extension::PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+            crate::agents::platform_extensions::PLATFORM_EXTENSIONS
+                .contains_key(name_to_key(name).as_str())
         }
         _ => true,
     }
