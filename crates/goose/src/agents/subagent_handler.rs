@@ -2,7 +2,7 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, AgentEvent, SessionConfig,
+        AgentEvent, SessionConfig, StateMachineServices,
     },
     conversation::{
         message::{ActionRequiredData, Message, MessageContent},
@@ -32,7 +32,10 @@ pub struct SubagentPromptContext {
     pub available_tools: String,
 }
 
-pub(crate) async fn prepare_subagent(agent: &Agent, session: &Session) -> Result<SessionConfig> {
+pub(crate) async fn prepare_subagent(
+    services: &StateMachineServices,
+    session: &Session,
+) -> Result<SessionConfig> {
     let session_id = &session.id;
     if session.session_type != SessionType::SubAgent {
         return Err(anyhow!("Session {session_id} is not a subagent"));
@@ -62,13 +65,12 @@ pub(crate) async fn prepare_subagent(agent: &Agent, session: &Session) -> Result
         )
         .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
 
-    agent
+    services
         .switch_provider(session_id, provider_name, model_config.clone())
         .await?;
 
-    let subagent_prompt = build_subagent_prompt(agent, max_turns, session_id).await?;
-    agent
-        .config
+    let subagent_prompt = build_subagent_prompt(services, max_turns, session_id).await?;
+    services
         .session_manager
         .update(session_id)
         .system_prompt_override(Some(subagent_prompt))
@@ -83,16 +85,16 @@ pub(crate) async fn prepare_subagent(agent: &Agent, session: &Session) -> Result
 
 #[derive(Clone)]
 pub(crate) struct ForegroundSubagentRunner {
-    agent: Arc<Agent>,
+    services: Arc<StateMachineServices>,
 }
 
 impl ForegroundSubagentRunner {
-    pub(crate) fn new(agent: Arc<Agent>) -> Self {
-        Self { agent }
+    pub(crate) fn new(services: Arc<StateMachineServices>) -> Self {
+        Self { services }
     }
 
     fn session_manager(&self) -> &SessionManager {
-        &self.agent.config.session_manager
+        &self.services.session_manager
     }
 
     pub(crate) async fn load(&self, subagent_id: &str) -> Result<Session> {
@@ -118,11 +120,8 @@ impl ForegroundSubagentRunner {
             .parent_session_id
             .as_deref()
             .ok_or_else(|| anyhow!("Subagent {} has no parent", subagent.id))?;
-        let session_config = prepare_subagent(&self.agent, subagent).await?;
-        let mut events = self
-            .agent
-            .stream_subagent_turn(session_config, cancel)
-            .await?;
+        let session_config = prepare_subagent(&self.services, subagent).await?;
+        let mut events = self.services.run_subagent_turn(session_config, cancel)?;
         while let Some(event) = events.next().await {
             if let AgentEvent::Message(message) = event? {
                 if asks_for_a_decision(&message) {
@@ -145,7 +144,7 @@ impl ForegroundSubagentRunner {
         to_parent: mpsc::UnboundedSender<Message>,
     ) -> SubagentOutcome {
         let ending = SubagentEnding {
-            agent: Arc::clone(&self.agent),
+            services: Arc::clone(&self.services),
             subagent_id: subagent.id.clone(),
             ended: false,
         };
@@ -196,14 +195,14 @@ fn spawn_run(
 /// Aborting the parent's turn drops a running subagent's task, so the session is also ended
 /// from `Drop`.
 struct SubagentEnding {
-    agent: Arc<Agent>,
+    services: Arc<StateMachineServices>,
     subagent_id: String,
     ended: bool,
 }
 
 impl SubagentEnding {
     async fn end(mut self) {
-        end_subagent(&self.agent, &self.subagent_id).await;
+        end_subagent(&self.services, &self.subagent_id).await;
         self.ended = true;
     }
 }
@@ -216,15 +215,15 @@ impl Drop for SubagentEnding {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
-        let agent = Arc::clone(&self.agent);
+        let services = Arc::clone(&self.services);
         let subagent_id = std::mem::take(&mut self.subagent_id);
-        runtime.spawn(async move { end_subagent(&agent, &subagent_id).await });
+        runtime.spawn(async move { end_subagent(&services, &subagent_id).await });
     }
 }
 
-async fn end_subagent(agent: &Agent, subagent_id: &str) {
-    agent.release_session(subagent_id).await;
-    agent
+async fn end_subagent(services: &StateMachineServices, subagent_id: &str) {
+    services.release_session(subagent_id).await;
+    services
         .emit_hook(crate::hooks::HookEvent::SessionEnd, subagent_id)
         .await;
 }
@@ -290,11 +289,11 @@ fn failure_reason(messages: &[Message]) -> String {
 pub const SUBAGENT_TOOL_REQUEST_TYPE: &str = "subagent_tool_request";
 
 async fn build_subagent_prompt(
-    agent: &Agent,
+    services: &StateMachineServices,
     max_turns: usize,
     session_id: &str,
 ) -> Result<String> {
-    let mut tool_names: Vec<_> = agent
+    let mut tool_names: Vec<_> = services
         .list_tools(session_id, None)
         .await?
         .into_iter()

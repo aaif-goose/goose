@@ -421,6 +421,13 @@ async fn approvals_and_per_tool_permissions() -> Result<()> {
     result.assert_message(-1, Agent, "permissions applied");
     assert_eq!(pipeline.calculator_total(), 4);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn security_inspection_requires_approval_in_auto_mode() -> Result<()> {
+    let _env = env_lock::lock_env([("SECURITY_PROMPT_ENABLED_OVERRIDE", Some("true"))]);
+    let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     pipeline.add_extension("developer").await?;
     api.on("run a dangerous command").calls([(

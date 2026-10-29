@@ -179,15 +179,15 @@ mod tests {
 
     impl Fixture {
         fn runner(&self) -> ForegroundSubagentRunner {
-            let mut agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+            let mut config = crate::agents::StateMachineServicesConfig::new(
                 self.manager.clone(),
                 crate::config::permission::PermissionManager::instance(),
                 None,
                 true,
                 crate::agents::GoosePlatform::GooseCli,
-            ));
-            agent.set_hook_manager_for_test(crate::hooks::HookManager::default());
-            ForegroundSubagentRunner::new(agent)
+            );
+            config.hooks = Some(crate::hooks::HookManager::default());
+            ForegroundSubagentRunner::new(crate::agents::StateMachineServices::with_config(config))
         }
 
         fn operation(&self) -> SubagentOperation<Session> {

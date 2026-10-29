@@ -5,20 +5,24 @@ use crate::config::permission::PermissionLevel;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_tools(
         &self,
         req: GetToolsRequest,
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let goose_mode = agent
-            .goose_mode(session_id)
+        self.open_session(&req.session_id).await?;
+        let goose_mode = self
+            .services
+            .session_manager
+            .get_session(session_id, false)
             .await
-            .internal_err_ctx("Failed to read goose mode")?;
+            .internal_err_ctx("Failed to read goose mode")?
+            .goose_mode;
         let permission_manager = self.permission_manager();
 
-        let mut tools: Vec<ToolListItem> = agent
+        let mut tools: Vec<ToolListItem> = self
+            .services
             .list_tools(session_id, req.extension_name)
             .await
             .internal_err()?
@@ -66,8 +70,9 @@ impl GooseAcpAgent {
         req: GooseToolCallRequest,
     ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let tools = agent
+        self.open_session(&req.session_id).await?;
+        let tools = self
+            .services
             .list_tools(session_id, Some(req.extension_name.clone()))
             .await
             .internal_err()?;
@@ -101,6 +106,7 @@ impl GooseAcpAgent {
         };
 
         let session = self
+            .services
             .session_manager
             .get_session(session_id, false)
             .await
@@ -114,7 +120,8 @@ impl GooseAcpAgent {
         }
 
         let container = session.container;
-        let tool_result = agent
+        let tool_result = self
+            .services
             .extension_manager
             .current_lease(session_id)
             .await
@@ -129,7 +136,8 @@ impl GooseAcpAgent {
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
-        let result = agent
+        let result = self
+            .services
             .extension_manager
             .applying_mutation(tool_result, session_id)
             .result

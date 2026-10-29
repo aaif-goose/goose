@@ -9,14 +9,11 @@ use futures::{StreamExt, TryStreamExt};
 use tracing_futures::Instrument;
 
 use super::gen_ai_telemetry;
-use super::mcp_client::GooseMcpHostInfo;
-use super::tool_confirmation_coordinator::{
-    ActiveTurnGuard, ConfirmationAnswer, ToolConfirmationCoordinator,
-};
+use super::tool_confirmation_coordinator::{ActiveTurnGuard, ConfirmationAnswer};
 use crate::action_required_manager::ElicitationOutcome;
-use crate::agents::extension::{ExtensionConfig, ExtensionResult};
-use crate::agents::extension_manager::{ExtensionManager, ExtensionManagerCapabilities};
+use crate::agents::extension_manager::{ClientContext, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
+use crate::agents::session_runtime::{Attachment, SessionRuntime};
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
@@ -29,7 +26,6 @@ use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
 };
 use crate::agents::AgentEvent;
-use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -40,7 +36,7 @@ use crate::scheduler_trait::SchedulerTrait;
 use crate::security::adversary_inspector::AdversaryInspector;
 use crate::security::egress_inspector::EgressInspector;
 use crate::security::security_inspector::SecurityInspector;
-use crate::session::{Session, SessionManager, SessionNameUpdate};
+use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
@@ -48,9 +44,9 @@ use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
-use rmcp::model::{ElicitationAction, GetPromptResult, Prompt, Tool};
+use rmcp::model::{ElicitationAction, Tool};
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, instrument, warn};
 
@@ -114,6 +110,100 @@ pub(super) fn available_auto_efforts(
     }
 }
 
+/// The knobs a turn runs with.
+#[derive(Clone)]
+pub struct TurnSettings {
+    pub max_turns: u32,
+    pub retry_timeout: std::time::Duration,
+    pub on_failure_timeout: std::time::Duration,
+    pub stop_hook_block_cap: u32,
+    pub tool_pair_summarization: bool,
+    pub compaction_threshold: f64,
+    pub compaction_token_limit: usize,
+    /// `None` derives it from the context limit.
+    pub tool_call_cutoff: Option<usize>,
+    pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
+}
+
+impl TurnSettings {
+    pub fn from_config(
+        provider: &dyn Provider,
+        model_config: &goose_providers::model::ModelConfig,
+    ) -> Self {
+        let config = Config::global();
+        Self {
+            max_turns: config.default_max_turns(),
+            retry_timeout: std::time::Duration::from_secs(
+                config
+                    .get_param::<u64>("GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS")
+                    .unwrap_or(DEFAULT_RETRY_TIMEOUT_SECONDS),
+            ),
+            on_failure_timeout: std::time::Duration::from_secs(
+                config
+                    .get_param::<u64>("GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS")
+                    .unwrap_or(DEFAULT_ON_FAILURE_TIMEOUT_SECONDS),
+            ),
+            stop_hook_block_cap: config
+                .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
+                .unwrap_or(DEFAULT_DENY_LIMIT),
+            tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
+            compaction_threshold: config
+                .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+                .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
+            compaction_token_limit: config
+                .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+                .unwrap_or(crate::context_mgmt::DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+            tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
+            auto_effort: auto_effort_from_config(provider, model_config),
+        }
+    }
+}
+
+fn auto_effort_from_config(
+    provider: &dyn Provider,
+    model_config: &goose_providers::model::ModelConfig,
+) -> Option<Arc<dyn Operation<Session, GooseEffect>>> {
+    let config = Config::global();
+    if !config
+        .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let efforts = available_auto_efforts(
+        provider.get_name(),
+        model_config,
+        provider.thinking_effort_support(),
+    );
+    if efforts.is_empty() {
+        return None;
+    }
+
+    let api_key = config
+        .get_secret::<String>("TYPESAFE_API_KEY")
+        .ok()?
+        .trim()
+        .to_string();
+    if api_key.is_empty() {
+        return None;
+    }
+
+    let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
+    let api_client = ApiClient::with_timeout_and_tls(
+        TYPESAFE_DEFAULT_HOST.to_string(),
+        AuthMethod::BearerToken(api_key),
+        Duration::from_secs(2),
+        tls_config,
+    )
+    .ok()?;
+    Some(Arc::new(AutoEffortOperation::new(
+        Arc::new(TypeSafeProvider::new(api_client)),
+        TYPESAFE_DEFAULT_MODEL.to_string(),
+        efforts,
+    )))
+}
+
 fn provider_creation_error(error: anyhow::Error, context: impl fmt::Display) -> anyhow::Error {
     let message = format!("{context}: {error}");
     error.context(message)
@@ -156,20 +246,37 @@ impl fmt::Display for GoosePlatform {
 }
 
 #[derive(Clone)]
-pub struct AgentConfig {
+pub struct StateMachineServicesConfig {
     pub session_manager: Arc<SessionManager>,
     pub permission_manager: Arc<PermissionManager>,
     pub scheduler_service: Option<Arc<dyn SchedulerTrait>>,
     pub disable_session_naming: bool,
     pub goose_platform: GoosePlatform,
-    pub mcp_host_info: Option<GooseMcpHostInfo>,
     pub elicitation_handler: Option<crate::agents::mcp_client::ElicitationHandler>,
     pub mcp_protocol_version: Option<rmcp::model::ProtocolVersion>,
-    pub session_name_update_tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
     pub providers: Arc<ProviderManager>,
+    /// Sessions kept loaded before the least recently used idle one is released.
+    pub max_sessions: usize,
+    /// `None` reads them from config at the start of every turn.
+    pub turn_settings: Option<TurnSettings>,
+    /// `None` loads the enabled plugins' hooks.
+    pub hooks: Option<crate::hooks::HookManager>,
 }
 
-impl AgentConfig {
+impl StateMachineServicesConfig {
+    /// What a CLI process runs on: the process's session store and permissions.
+    pub fn cli() -> Self {
+        Self::new(
+            Arc::new(SessionManager::instance()),
+            PermissionManager::instance(),
+            None,
+            Config::global()
+                .get_goose_disable_session_naming()
+                .unwrap_or(false),
+            GoosePlatform::GooseCli,
+        )
+    }
+
     pub fn new(
         session_manager: Arc<SessionManager>,
         permission_manager: Arc<PermissionManager>,
@@ -183,40 +290,34 @@ impl AgentConfig {
             scheduler_service,
             disable_session_naming,
             goose_platform,
-            mcp_host_info: None,
             elicitation_handler: None,
             mcp_protocol_version: None,
-            session_name_update_tx: None,
             providers: Arc::default(),
+            max_sessions: Config::global()
+                .get_goose_max_active_agents()
+                .unwrap_or(DEFAULT_MAX_SESSIONS),
+            turn_settings: None,
+            hooks: None,
         }
-    }
-
-    pub fn with_mcp_host_info(mut self, mcp_host_info: Option<GooseMcpHostInfo>) -> Self {
-        self.mcp_host_info = mcp_host_info;
-        self
-    }
-
-    pub fn with_session_name_update_tx(
-        mut self,
-        tx: Option<mpsc::UnboundedSender<SessionNameUpdate>>,
-    ) -> Self {
-        self.session_name_update_tx = tx;
-        self
     }
 }
 
-/// The main goose Agent
-pub struct Agent {
-    pub config: AgentConfig,
+const DEFAULT_MAX_SESSIONS: usize = 100;
+
+pub struct StateMachineServices {
+    pub session_manager: Arc<SessionManager>,
+    pub permission_manager: Arc<PermissionManager>,
+    pub providers: Arc<ProviderManager>,
+    pub scheduler: Option<Arc<dyn SchedulerTrait>>,
+    pub goose_platform: GoosePlatform,
+    pub disable_session_naming: bool,
+    pub runtime: SessionRuntime,
 
     pub extension_manager: Arc<ExtensionManager>,
-    tool_confirmation_coordinator: ToolConfirmationCoordinator,
 
     pub(super) tool_inspection_manager: ToolInspectionManager,
     pub(super) hook_manager: crate::hooks::HookManager,
-    #[cfg(test)]
-    pub(super) stop_hook_block_cap_override: Option<u32>,
-    steer_queues: Mutex<HashMap<String, SteerQueue>>,
+    turn_settings: Option<TurnSettings>,
 }
 
 fn user_event(event: AgentEvent) -> Option<AgentEvent> {
@@ -237,91 +338,47 @@ fn agent_visible_message_text(message: &Message) -> String {
     message.agent_visible_content().as_concat_text()
 }
 
-impl Agent {
-    pub fn new() -> Arc<Self> {
-        let config = Config::global();
-        Self::with_config(AgentConfig::new(
-            Arc::new(SessionManager::instance()),
-            PermissionManager::instance(),
-            None,
-            config.get_goose_disable_session_naming().unwrap_or(false),
-            GoosePlatform::GooseCli,
-        ))
-    }
-
-    pub fn with_config(config: AgentConfig) -> Arc<Self> {
-        let providers = config.providers.clone();
-
-        let goose_platform = config.goose_platform.clone();
-        let explicit_mcp_host_info = config.mcp_host_info.clone();
-        let mcpui = explicit_mcp_host_info
-            .as_ref()
-            .filter(|host_info| host_info.explicit_extensions)
-            .map(GooseMcpHostInfo::mcpui_enabled)
-            .unwrap_or_else(|| match config.goose_platform {
-                GoosePlatform::GooseDesktop => true,
-                GoosePlatform::GooseCli => false,
-            });
-        let capabilities = ExtensionManagerCapabilities {
-            mcpui,
-            host_info: explicit_mcp_host_info.clone(),
-            elicitation_handler: config.elicitation_handler.clone(),
-            protocol_version: config.mcp_protocol_version.clone(),
-        };
-        let client_name = explicit_mcp_host_info
-            .as_ref()
-            .and_then(|host_info| host_info.client_name.clone())
-            .unwrap_or_else(|| goose_platform.to_string());
-        let session_manager = Arc::clone(&config.session_manager);
-        let scheduler = config.scheduler_service.clone();
-        let inspection_session_manager = Arc::clone(&config.session_manager);
-        let permission_manager = Arc::clone(&config.permission_manager);
-        Arc::new(Self {
-            config,
+impl StateMachineServices {
+    pub fn with_config(config: StateMachineServicesConfig) -> Arc<Self> {
+        let mut default_client = ClientContext::new(&config.goose_platform, None);
+        default_client.capabilities.elicitation_handler = config.elicitation_handler;
+        default_client.capabilities.protocol_version = config.mcp_protocol_version;
+        let services = Arc::new(Self {
             extension_manager: Arc::new(ExtensionManager::new(
-                providers.clone(),
-                session_manager,
-                scheduler,
-                client_name,
-                capabilities,
+                config.providers.clone(),
+                config.session_manager.clone(),
+                config.scheduler_service.clone(),
+                default_client,
             )),
-            tool_confirmation_coordinator: ToolConfirmationCoordinator::new(),
             tool_inspection_manager: Self::create_tool_inspection_manager(
-                permission_manager,
-                providers,
-                inspection_session_manager,
+                config.permission_manager.clone(),
+                config.providers.clone(),
+                config.session_manager.clone(),
             ),
-            hook_manager: crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref()),
-            #[cfg(test)]
-            stop_hook_block_cap_override: None,
-            steer_queues: Mutex::new(HashMap::new()),
-        })
+            session_manager: config.session_manager,
+            permission_manager: config.permission_manager,
+            providers: config.providers,
+            scheduler: config.scheduler_service,
+            goose_platform: config.goose_platform,
+            disable_session_naming: config.disable_session_naming,
+            runtime: SessionRuntime::new(config.max_sessions),
+            hook_manager: config.hooks.unwrap_or_else(|| {
+                crate::hooks::HookManager::load(std::env::current_dir().ok().as_deref())
+            }),
+            turn_settings: config.turn_settings,
+        });
+        services
+            .runtime
+            .runs
+            .set_services(Arc::downgrade(&services));
+        if let Some(scheduler) = &services.scheduler {
+            scheduler.run_jobs_on(&services);
+        }
+        services
     }
 
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
-    #[cfg(test)]
-    pub(crate) fn set_hook_manager_for_test(
-        self: &mut Arc<Self>,
-        hook_manager: crate::hooks::HookManager,
-    ) {
-        Arc::get_mut(self).expect("agent is shared").hook_manager = hook_manager;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn clear_extension_lease_for_test(&self, session_id: &str) {
-        self.tool_confirmation_coordinator
-            .session(session_id)
-            .clear_extension_lease();
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_stop_hook_block_cap_for_test(self: &mut Arc<Self>, cap: u32) {
-        Arc::get_mut(self)
-            .expect("agent is shared")
-            .stop_hook_block_cap_override = Some(cap);
-    }
-
     pub async fn emit_hook(&self, event: crate::hooks::HookEvent, session_id: &str) {
         if !self.hook_manager.has_hooks(event) {
             return;
@@ -342,8 +399,7 @@ impl Agent {
             .hook_manager
             .emit_collecting_banners(event, crate::hooks::HookContext::new(event, session_id))
             .await;
-        self.config
-            .session_manager
+        self.session_manager
             .add_message(
                 session_id,
                 &crate::agents::state_machine::session_start_message(&banners),
@@ -353,40 +409,138 @@ impl Agent {
     }
 
     pub async fn steer(&self, session_id: &str, message: Message) {
-        self.steer_queue(session_id)
-            .await
-            .lock()
-            .await
-            .push_back(message);
+        self.runtime.steer(session_id, message).await;
     }
 
-    pub async fn discard_pending_steers(&self, session_id: &str) {
-        self.steer_queues.lock().await.remove(session_id);
+    pub fn discard_pending_steers(&self, session_id: &str) {
+        self.runtime.discard_pending_steers(session_id);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_turn_for_test(&self, session_id: &str) -> impl Drop {
+        self.runtime
+            .confirmations
+            .session(session_id)
+            .try_start_turn()
+            .unwrap()
+    }
+
+    /// Opens the session for a connection, which from now on is who extensions start for
+    /// and who gets its generated names.
+    pub async fn attach_session(&self, session_id: &str, connection: u64, attachment: Attachment) {
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.extension_manager
+                .attach_client(session_id, attachment.client.clone());
+            self.runtime.attach(session_id, connection, attachment);
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
+    }
+
+    /// Closes the session for one connection; the session is released when that was the
+    /// last one. Returns whether it was.
+    pub async fn detach_session(&self, session_id: &str, connection: u64) -> bool {
+        let _lifetime = self.runtime.lock_lifetime(session_id).await;
+        match self.runtime.detach(session_id, connection) {
+            Some(latest) => {
+                self.extension_manager
+                    .attach_client(session_id, latest.client);
+                false
+            }
+            None => {
+                self.release(session_id).await;
+                true
+            }
+        }
+    }
+
+    /// For a connection that went away without closing: its sessions keep running.
+    pub async fn detach_connection(&self, connection: u64) {
+        for session_id in self.runtime.sessions_for_connection(connection) {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            if let Some(latest) = self.runtime.detach(&session_id, connection) {
+                self.extension_manager
+                    .attach_client(&session_id, latest.client);
+            }
+        }
+    }
+
+    pub(crate) async fn start_prompt_run(
+        &self,
+        session_id: &str,
+        connection: u64,
+        attachment: Attachment,
+        run_id: String,
+        cancel_token: CancellationToken,
+    ) -> std::result::Result<(), super::active_run::StartRunError> {
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.runtime
+                .runs
+                .start_prompt_run(session_id, run_id, cancel_token)?;
+            self.extension_manager
+                .attach_client(session_id, attachment.client.clone());
+            self.runtime.attach(session_id, connection, attachment);
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
+        Ok(())
+    }
+
+    pub async fn touch_session(&self, session_id: &str) {
+        let evicted = {
+            let _lifetime = self.runtime.lock_lifetime(session_id).await;
+            self.runtime.touch(session_id)
+        };
+        self.evict(evicted).await;
+    }
+
+    /// Releases what went over the limit while every session was busy.
+    pub(super) async fn trim_sessions(&self) {
+        self.evict(self.runtime.trim()).await;
+    }
+
+    /// Sessions are chosen for eviction before their lifetime lock is held, so each is
+    /// checked again under it: one touched or busy since then is kept.
+    async fn evict(&self, candidates: Vec<String>) {
+        for session_id in candidates {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            if self.runtime.keep_resident(&session_id) {
+                continue;
+            }
+            self.release(&session_id).await;
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn tracks_confirmations_for(&self, session_id: &str) -> bool {
-        self.tool_confirmation_coordinator.tracks(session_id)
+        self.runtime.confirmations.tracks(session_id)
     }
 
+    /// Stops the session's extensions, drops its provider and everything the runtime
+    /// keeps for it, and cancels its run. Connections that had it open attach again on
+    /// their next request.
     pub async fn release_session(&self, session_id: &str) {
-        self.discard_pending_steers(session_id).await;
-        self.tool_confirmation_coordinator.release(session_id);
-        self.config
-            .session_manager
+        let _lifetime = self.runtime.lock_lifetime(session_id).await;
+        self.release(session_id).await;
+    }
+
+    /// Releases the session unless a connection has it open.
+    pub async fn release_session_if_closed(&self, session_id: &str) {
+        let _lifetime = self.runtime.lock_lifetime(session_id).await;
+        if !self.runtime.is_open(session_id) {
+            self.release(session_id).await;
+        }
+    }
+
+    async fn release(&self, session_id: &str) {
+        self.runtime.forget(session_id);
+        self.session_manager
             .action_required()
             .forget_forwarded_from(session_id);
         self.extension_manager.release(session_id).await;
-        self.config.providers.release(session_id);
-    }
-
-    async fn steer_queue(&self, session_id: &str) -> SteerQueue {
-        self.steer_queues
-            .lock()
-            .await
-            .entry(session_id.to_string())
-            .or_default()
-            .clone()
+        self.providers.release(session_id);
     }
 
     /// Create a tool inspection manager with default inspectors
@@ -421,23 +575,15 @@ impl Agent {
     }
 
     pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
-        self.config.providers.provider_for(&session).await
+        let session = self.session_manager.get_session(session_id, false).await?;
+        self.providers.provider_for(&session).await
     }
 
     pub async fn model_config_for_session(
         &self,
         session_id: &str,
     ) -> Result<goose_providers::model::ModelConfig> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        let session = self.session_manager.get_session(session_id, false).await?;
         crate::agents::provider_manager::model_config_for(&session)
     }
 
@@ -455,26 +601,6 @@ impl Agent {
         }
     }
 
-    /// Save the provided extension configuration to session metadata.
-    pub async fn persist_extension_configs(
-        &self,
-        session_id: &str,
-        extensions: Vec<ExtensionConfig>,
-    ) -> Result<()> {
-        self.config
-            .session_manager
-            .update_enabled_extensions(session_id, |selected| *selected = extensions)
-            .await
-    }
-
-    pub async fn add_extension(
-        &self,
-        extension: ExtensionConfig,
-        session_id: &str,
-    ) -> ExtensionResult<()> {
-        self.extension_manager.enable(session_id, extension).await
-    }
-
     pub async fn list_tools(
         &self,
         session_id: &str,
@@ -489,7 +615,6 @@ impl Agent {
 
         if include_final_output {
             let final_output_tool = self
-                .config
                 .session_manager
                 .get_session(session_id, false)
                 .await
@@ -502,44 +627,20 @@ impl Agent {
         Ok(prefixed_tools)
     }
 
-    pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
-        self.remove_extension_by_key(&name_to_key(name), session_id)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn remove_extension_by_key(&self, key: &str, session_id: &str) -> Result<bool> {
-        Ok(self.extension_manager.disable(session_id, key).await?)
-    }
-
-    pub async fn list_extensions(&self, session_id: &str) -> Result<Vec<String>> {
-        self.extension_manager.list_extensions(session_id).await
-    }
-
-    pub async fn get_extension_configs(&self, session_id: &str) -> Result<Vec<ExtensionConfig>> {
-        self.extension_manager
-            .get_extension_configs(session_id)
-            .await
-    }
-
     pub async fn submit_tool_confirmation(
         &self,
         session_id: &str,
         request_id: &str,
         permission: Permission,
     ) -> Result<()> {
-        self.config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        self.session_manager.get_session(session_id, false).await?;
 
         let (session_id, request_id) = self
-            .config
             .session_manager
             .action_required()
             .answered_request(session_id, request_id)?;
         let (session_id, request_id) = (session_id.as_str(), request_id.as_str());
-        let state = self.tool_confirmation_coordinator.session(session_id);
+        let state = self.runtime.confirmations.session(session_id);
         let _confirmation_submission_guard = state.confirmation_submission_lock.lock().await;
         let state_machine_permission = if permission == Permission::Cancel {
             Permission::DenyOnce
@@ -579,7 +680,7 @@ impl Agent {
 
         if state.contains_request(request_id) {
             persist_tool_confirmation_decision(
-                self.config.session_manager.as_ref(),
+                self.session_manager.as_ref(),
                 session_id,
                 request_id,
                 &state_machine_permission,
@@ -624,77 +725,24 @@ impl Agent {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
     ) -> StateMachine<'_, Session, GooseEffect> {
-        let max_turns = session_config
-            .max_turns
-            .unwrap_or_else(|| Config::global().default_max_turns());
+        let settings = match &self.turn_settings {
+            Some(settings) => settings.clone(),
+            None => TurnSettings::from_config(provider.as_ref(), &model_config),
+        };
+        let max_turns = session_config.max_turns.unwrap_or(settings.max_turns);
         let extension_lease = self
-            .tool_confirmation_coordinator
+            .runtime
+            .confirmations
             .session(&session_config.id)
             .extension_lease();
-        let retry_timeout = Config::global()
-            .get_param::<u64>("GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS")
-            .unwrap_or(DEFAULT_RETRY_TIMEOUT_SECONDS);
-        let on_failure_timeout = Config::global()
-            .get_param::<u64>("GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS")
-            .unwrap_or(DEFAULT_ON_FAILURE_TIMEOUT_SECONDS);
-        #[cfg(test)]
-        let stop_hook_block_cap = self.stop_hook_block_cap_override.unwrap_or_else(|| {
-            Config::global()
-                .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_DENY_LIMIT)
+        let compaction_threshold = crate::context_mgmt::capped_compaction_threshold(
+            settings.compaction_threshold,
+            settings.compaction_token_limit,
+            context_limit,
+        );
+        let tool_call_cutoff = settings.tool_call_cutoff.unwrap_or_else(|| {
+            crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
         });
-        #[cfg(not(test))]
-        let stop_hook_block_cap = Config::global()
-            .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-            .unwrap_or(DEFAULT_DENY_LIMIT);
-        let compaction_threshold = crate::context_mgmt::auto_compact_threshold(context_limit);
-        let tool_call_cutoff = Config::global()
-            .get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
-            .unwrap_or_else(|_| {
-                crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
-            });
-
-        let auto_effort = (|| {
-            let config = Config::global();
-            if !config
-                .get_param::<bool>("GOOSE_AUTO_EFFORT_ENABLED")
-                .unwrap_or(false)
-            {
-                return None;
-            }
-
-            let efforts = available_auto_efforts(
-                provider.get_name(),
-                &model_config,
-                provider.thinking_effort_support(),
-            );
-            if efforts.is_empty() {
-                return None;
-            }
-
-            let api_key = config
-                .get_secret::<String>("TYPESAFE_API_KEY")
-                .ok()?
-                .trim()
-                .to_string();
-            if api_key.is_empty() {
-                return None;
-            }
-
-            let tls_config = crate::config::tls::provider_tls_config_from_config(config).ok()?;
-            let api_client = ApiClient::with_timeout_and_tls(
-                TYPESAFE_DEFAULT_HOST.to_string(),
-                AuthMethod::BearerToken(api_key),
-                Duration::from_secs(2),
-                tls_config,
-            )
-            .ok()?;
-            Some(Arc::new(AutoEffortOperation::new(
-                Arc::new(TypeSafeProvider::new(api_client)),
-                TYPESAFE_DEFAULT_MODEL.to_string(),
-                efforts,
-            )) as Arc<dyn Operation<Session, GooseEffect>>)
-        })();
 
         build_state_machine(StateMachineConfig {
             provider,
@@ -702,365 +750,21 @@ impl Agent {
             context_limit,
             compaction_threshold,
             tool_call_cutoff,
-            tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
-            session_manager: self.config.session_manager.clone(),
+            tool_pair_summarization: settings.tool_pair_summarization,
+            session_manager: self.session_manager.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             tool_inspection_manager: &self.tool_inspection_manager,
             hook_manager: self.hook_manager.clone(),
             steer_queue,
             subagent_runner: ForegroundSubagentRunner::new(Arc::clone(self)),
-            retry_timeout: std::time::Duration::from_secs(retry_timeout),
-            on_failure_timeout: std::time::Duration::from_secs(on_failure_timeout),
-            stop_hook_block_cap,
+            retry_timeout: settings.retry_timeout,
+            on_failure_timeout: settings.on_failure_timeout,
+            stop_hook_block_cap: settings.stop_hook_block_cap,
             max_turns,
-            extra_operations: auto_effort.into_iter().collect(),
+            extra_operations: settings.auto_effort.into_iter().collect(),
             cancel,
         })
-    }
-
-    pub(crate) async fn reply_with_state_machine(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let session_id = session_config.id.clone();
-        let events = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.reply_with_state_machine_inner(user_message, session_config, cancel_token),
-        )
-        .await?;
-        Ok(crate::session_context::with_session_id_stream(
-            Some(session_id),
-            events,
-        ))
-    }
-
-    async fn reply_with_state_machine_inner(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let session_manager = self.config.session_manager.clone();
-        let session_id = session_config.id.clone();
-        let turn_guard = self
-            .tool_confirmation_coordinator
-            .session(&session_id)
-            .try_start_turn()?;
-        turn_guard.state().start_new_turn();
-
-        if let Some(schedule_id) = session_config.schedule_id.clone() {
-            session_manager
-                .update(&session_id)
-                .schedule_id(Some(schedule_id))
-                .apply()
-                .await?;
-        }
-        session_manager
-            .add_message(&session_config.id, &user_message)
-            .await?;
-
-        if !self.config.disable_session_naming {
-            let provider = self.provider(&session_config.id).await?;
-            let manager = session_manager.clone();
-            let tx = self.config.session_name_update_tx.clone();
-            let id = session_id.clone();
-            let provider = provider.clone();
-            tokio::spawn(async move {
-                match manager.maybe_update_name(&id, provider).await {
-                    Ok(Some(update)) => {
-                        if let Some(tx) = tx {
-                            if tx.send(update).is_err() {
-                                tracing::warn!("Failed to publish generated session name");
-                            }
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(e) => tracing::warn!("Failed to generate session description: {}", e),
-                }
-            });
-        }
-
-        let cancel = cancel_token.unwrap_or_default();
-        let initial_stream = self
-            .stream_state_machine_session(session_config.clone(), cancel.clone())
-            .await?;
-        Ok(
-            self.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                Some(initial_stream),
-            ),
-        )
-    }
-
-    pub(crate) async fn resume_state_machine_turn(
-        self: &Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
-        let session_id = session_config.id.clone();
-        let stream = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.resume_state_machine_turn_inner(session_config, cancel),
-        )
-        .await?;
-        Ok(stream
-            .map(|stream| crate::session_context::with_session_id_stream(Some(session_id), stream)))
-    }
-
-    async fn resume_state_machine_turn_inner(
-        self: &Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(&session_config.id, true)
-            .await?;
-        let conversation = session
-            .conversation
-            .as_ref()
-            .ok_or_else(|| anyhow!("Session {} has no conversation", session_config.id))?;
-        let pending_confirmations = pending_tool_confirmations(conversation);
-        let resume_from_persisted_response = pending_confirmations.is_empty()
-            && has_unapplied_tool_confirmation_response(conversation);
-        if pending_confirmations.is_empty() && !resume_from_persisted_response {
-            return Ok(None);
-        }
-
-        let turn_guard = self
-            .tool_confirmation_coordinator
-            .session(&session_config.id)
-            .try_start_turn()?;
-        for request in pending_confirmations {
-            turn_guard.state().register_request(request.id);
-        }
-
-        let agent = Arc::clone(self);
-        let stream = Box::pin(async_stream::try_stream! {
-            let initial_stream = if resume_from_persisted_response {
-                Some(
-                    agent
-                        .stream_state_machine_session(
-                            session_config.clone(),
-                            cancel.clone(),
-                        )
-                        .await?,
-                )
-            } else {
-                None
-            };
-            let mut stream = agent.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                initial_stream,
-            );
-            while let Some(event) = stream.next().await {
-                yield event?;
-            }
-        });
-        Ok(Some(stream))
-    }
-
-    fn tool_confirmation_request_ids(&self, event: &AgentEvent) -> Vec<String> {
-        let AgentEvent::Message(message) = event else {
-            return Vec::new();
-        };
-
-        message
-            .content
-            .iter()
-            .filter_map(|content| {
-                let MessageContent::ActionRequired(action) = content else {
-                    return None;
-                };
-                let ActionRequiredData::ToolConfirmation { id, .. } = &action.data else {
-                    return None;
-                };
-                let forwarded = self
-                    .config
-                    .session_manager
-                    .action_required()
-                    .is_forwarded(id);
-                (!forwarded).then(|| id.clone())
-            })
-            .collect()
-    }
-
-    fn stream_state_machine_turn<'a>(
-        self: &'a Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-        turn_guard: ActiveTurnGuard,
-        initial_stream: Option<BoxStream<'a, Result<AgentEvent>>>,
-    ) -> BoxStream<'a, Result<AgentEvent>> {
-        Box::pin(async_stream::try_stream! {
-            let mut stream = initial_stream;
-            loop {
-                if let Some(active_stream) = stream.as_mut() {
-                    let mut has_confirmations = false;
-                    while let Some(event) = active_stream.next().await {
-                        let event = event?;
-                        for request_id in self.tool_confirmation_request_ids(&event) {
-                            turn_guard.state().register_request(request_id);
-                            has_confirmations = true;
-                        }
-                        yield event;
-                    }
-
-                    if !has_confirmations {
-                        turn_guard.state().clear_confirmations();
-                        return;
-                    }
-                }
-
-                let resume = turn_guard
-                    .state()
-                    .wait_for_all_confirmation_answers(&cancel)
-                    .await;
-                if !resume {
-                    turn_guard.state().clear_confirmations();
-                    return;
-                }
-                stream = Some(
-                    self.stream_state_machine_session(
-                        session_config.clone(),
-                        cancel.clone(),
-                    )
-                    .await?,
-                );
-            }
-        })
-    }
-
-    pub(super) async fn stream_subagent_turn(
-        self: &Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let turn_guard = self
-            .tool_confirmation_coordinator
-            .session(&session_config.id)
-            .try_start_turn()?;
-        turn_guard.state().start_new_turn();
-        let initial_stream = self
-            .stream_state_machine_session(session_config.clone(), cancel.clone())
-            .await?;
-        Ok(
-            self.stream_state_machine_turn(
-                session_config,
-                cancel,
-                turn_guard,
-                Some(initial_stream),
-            ),
-        )
-    }
-
-    pub(super) async fn stream_state_machine_session(
-        self: &Arc<Self>,
-        session_config: SessionConfig,
-        cancel: CancellationToken,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let session_manager = self.config.session_manager.clone();
-        let session_id = session_config.id.clone();
-        let provider = self.provider(&session_id).await?;
-        let model_config = self.effective_model_config_for_session(&session_id).await?;
-
-        let session = session_manager.get_session(&session_id, true).await?;
-        let saved_provider_session_id = session
-            .conversation
-            .as_ref()
-            .and_then(|conversation| {
-                super::latest_provider_session_id(conversation.messages(), provider.get_name())
-            })
-            .map(str::to_string);
-        if let Some(saved_provider_session_id) = saved_provider_session_id {
-            if let Err(error) = provider.resume(&saved_provider_session_id).await {
-                warn!(
-                    provider = provider.get_name(),
-                    %error,
-                    "Could not resume provider session; continuing with a handoff"
-                );
-            }
-        }
-        if let Err(error) = provider.apply_model_selection(&model_config).await {
-            warn!(
-                provider = provider.get_name(),
-                %error,
-                "Could not apply model selection before building state machine"
-            );
-        }
-
-        let context_limit =
-            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
-                .await?;
-        let steer_queue = self.steer_queue(&session_id).await;
-        let machine = self
-            .create_state_machine(
-                provider,
-                model_config,
-                context_limit,
-                session_config,
-                cancel.clone(),
-                steer_queue,
-            )
-            .await;
-        let reply_span = tracing::Span::current();
-
-        Ok(Box::pin(
-            async_stream::try_stream! {
-                let (tx, mut rx) = mpsc::unbounded_channel::<AgentEvent>();
-                let emit = Emitter::new(tx, cancel.clone());
-                let result = {
-                    let run = crate::session_context::with_session_id(
-                        Some(session_id.clone()),
-                        run_goose(
-                            &machine,
-                            session_manager.as_ref(),
-                            &self.hook_manager,
-                            &session_id,
-                            &emit,
-                        ),
-                    );
-                    tokio::pin!(run);
-                    loop {
-                        tokio::select! {
-                            biased;
-                            Some(event) = rx.recv() => yield event,
-                            result = &mut run => break result,
-                        }
-                    }
-                };
-                result?;
-                // Without this the drain below never ends: `run` only borrows the emitter.
-                drop(emit);
-                while let Some(event) = rx.recv().await {
-                    yield event;
-                }
-            }
-            .instrument(reply_span),
-        ))
-    }
-
-    pub(crate) async fn reply_live_delegation(
-        self: &Arc<Self>,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: CancellationToken,
-    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
-        let user_message = user_message.agent_only();
-        let events = self
-            .reply_with_state_machine(user_message, session_config, Some(cancel_token))
-            .await?;
-        Ok(Box::pin(events.try_filter_map(|event| async move {
-            Ok(user_event(event))
-        })))
     }
 
     #[instrument(
@@ -1087,12 +791,14 @@ impl Agent {
         let reply_span = tracing::Span::current();
         let session_id = session_config.id.clone();
         let events = crate::session_context::with_session_id(
-            Some(session_id.clone()),
-            self.reply_impl(user_message, session_config, cancel_token),
+            Some(session_id),
+            self.start_reply(
+                user_message,
+                session_config,
+                cancel_token.unwrap_or_default(),
+            ),
         )
         .await?;
-        let events = crate::session_context::with_session_id_stream(Some(session_id), events);
-
         // This is the single live-event boundary. Callers that intentionally stream
         // multiple events for one logical message must assign their shared ID before this point.
         Ok(Box::pin(
@@ -1102,14 +808,15 @@ impl Agent {
         ))
     }
 
-    async fn reply_impl(
+    async fn start_reply(
         self: &Arc<Self>,
         user_message: Message,
         session_config: SessionConfig,
-        cancel_token: Option<CancellationToken>,
+        cancel: CancellationToken,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let user_message = user_message.with_generated_id_if_missing();
-        let session_manager = self.config.session_manager.clone();
+        let session_manager = self.session_manager.clone();
+        let session_id = session_config.id.clone();
 
         let message_text_for_trace = agent_visible_message_text(&user_message);
         if gen_ai_telemetry::capture_message_content() {
@@ -1158,8 +865,263 @@ impl Agent {
             }
         }
 
-        self.reply_with_state_machine(user_message, session_config, cancel_token)
-            .await
+        let (turn_guard, evicted) = {
+            let _lifetime = self.runtime.lock_lifetime(&session_id).await;
+            let turn_guard = self
+                .runtime
+                .confirmations
+                .session(&session_id)
+                .try_start_turn()?;
+            let evicted = self.runtime.touch(&session_id);
+            (turn_guard, evicted)
+        };
+        self.evict(evicted).await;
+        turn_guard.state().start_new_turn();
+
+        if let Some(schedule_id) = session_config.schedule_id.clone() {
+            session_manager
+                .update(&session_id)
+                .schedule_id(Some(schedule_id))
+                .apply()
+                .await?;
+        }
+        session_manager
+            .add_message(&session_config.id, &user_message)
+            .await?;
+
+        if !self.disable_session_naming {
+            let provider = self.provider(&session_config.id).await?;
+            let manager = session_manager.clone();
+            let tx = self.runtime.session_names(&session_id);
+            let id = session_id.clone();
+            let provider = provider.clone();
+            tokio::spawn(async move {
+                match manager.maybe_update_name(&id, provider).await {
+                    Ok(Some(update)) => {
+                        if let Some(tx) = tx {
+                            if tx.send(update).is_err() {
+                                tracing::warn!("Failed to publish generated session name");
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!("Failed to generate session description: {}", e),
+                }
+            });
+        }
+
+        Ok(self.turn(session_config, cancel, turn_guard, true))
+    }
+
+    /// Runs a subagent on the conversation saved for it.
+    pub(super) fn run_subagent_turn(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+    ) -> Result<BoxStream<'static, Result<AgentEvent>>> {
+        let turn_guard = self
+            .runtime
+            .confirmations
+            .session(&session_config.id)
+            .try_start_turn()?;
+        turn_guard.state().start_new_turn();
+        Ok(self.turn(session_config, cancel, turn_guard, true))
+    }
+
+    /// Continues a turn that stopped for tool confirmations, or `None` when there is none.
+    pub(crate) async fn resume_turn(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+    ) -> Result<Option<BoxStream<'static, Result<AgentEvent>>>> {
+        let session = self
+            .session_manager
+            .get_session(&session_config.id, true)
+            .await?;
+        let conversation = session
+            .conversation
+            .as_ref()
+            .ok_or_else(|| anyhow!("Session {} has no conversation", session_config.id))?;
+        let pending_confirmations = pending_tool_confirmations(conversation);
+        let resume_from_persisted_response = pending_confirmations.is_empty()
+            && has_unapplied_tool_confirmation_response(conversation);
+        if pending_confirmations.is_empty() && !resume_from_persisted_response {
+            return Ok(None);
+        }
+
+        let turn_guard = self
+            .runtime
+            .confirmations
+            .session(&session_config.id)
+            .try_start_turn()?;
+        for request in pending_confirmations {
+            turn_guard.state().register_request(request.id);
+        }
+        Ok(Some(self.turn(
+            session_config,
+            cancel,
+            turn_guard,
+            resume_from_persisted_response,
+        )))
+    }
+
+    fn tool_confirmation_request_ids(&self, event: &AgentEvent) -> Vec<String> {
+        let AgentEvent::Message(message) = event else {
+            return Vec::new();
+        };
+
+        message
+            .content
+            .iter()
+            .filter_map(|content| {
+                let MessageContent::ActionRequired(action) = content else {
+                    return None;
+                };
+                let ActionRequiredData::ToolConfirmation { id, .. } = &action.data else {
+                    return None;
+                };
+                let forwarded = self.session_manager.action_required().is_forwarded(id);
+                (!forwarded).then(|| id.clone())
+            })
+            .collect()
+    }
+
+    /// Runs the state machine, and again each time the confirmations it stopped for are
+    /// all answered. `run_first` is false when the turn starts by waiting for answers.
+    fn turn(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+        turn_guard: ActiveTurnGuard,
+        run_first: bool,
+    ) -> BoxStream<'static, Result<AgentEvent>> {
+        let session_id = session_config.id.clone();
+        let services = Arc::clone(self);
+        let turn_end = TurnEnd {
+            services: Arc::clone(self),
+            turn_guard: Some(turn_guard),
+        };
+        let events = async_stream::try_stream! {
+            let mut turn_end = turn_end;
+            let turn_guard = turn_end.turn_guard.as_ref().expect("held until the turn ends");
+            let mut run = run_first;
+            loop {
+                if run {
+                    let mut stream = services
+                        .run_machine(session_config.clone(), cancel.clone())
+                        .await?;
+                    let mut has_confirmations = false;
+                    while let Some(event) = stream.next().await {
+                        let event = event?;
+                        for request_id in services.tool_confirmation_request_ids(&event) {
+                            turn_guard.state().register_request(request_id);
+                            has_confirmations = true;
+                        }
+                        yield event;
+                    }
+                    if !has_confirmations {
+                        break;
+                    }
+                }
+                if !turn_guard
+                    .state()
+                    .wait_for_all_confirmation_answers(&cancel)
+                    .await
+                {
+                    break;
+                }
+                run = true;
+            }
+            turn_guard.state().clear_confirmations();
+            turn_end.finish().await;
+        };
+        crate::session_context::with_session_id_stream(Some(session_id), Box::pin(events))
+    }
+
+    async fn run_machine(
+        self: &Arc<Self>,
+        session_config: SessionConfig,
+        cancel: CancellationToken,
+    ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let session_manager = self.session_manager.clone();
+        let session_id = session_config.id.clone();
+        let provider = self.provider(&session_id).await?;
+        let model_config = self.effective_model_config_for_session(&session_id).await?;
+
+        let session = session_manager.get_session(&session_id, true).await?;
+        let saved_provider_session_id = session
+            .conversation
+            .as_ref()
+            .and_then(|conversation| {
+                super::latest_provider_session_id(conversation.messages(), provider.get_name())
+            })
+            .map(str::to_string);
+        if let Some(saved_provider_session_id) = saved_provider_session_id {
+            if let Err(error) = provider.resume(&saved_provider_session_id).await {
+                warn!(
+                    provider = provider.get_name(),
+                    %error,
+                    "Could not resume provider session; continuing with a handoff"
+                );
+            }
+        }
+        if let Err(error) = provider.apply_model_selection(&model_config).await {
+            warn!(
+                provider = provider.get_name(),
+                %error,
+                "Could not apply model selection before building state machine"
+            );
+        }
+
+        let context_limit =
+            crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
+                .await?;
+        let steer_queue = self.runtime.steer_queue(&session_id);
+        let machine = self
+            .create_state_machine(
+                provider,
+                model_config,
+                context_limit,
+                session_config,
+                cancel.clone(),
+                steer_queue,
+            )
+            .await;
+        let reply_span = tracing::Span::current();
+
+        Ok(Box::pin(
+            async_stream::try_stream! {
+                let (tx, mut rx) = mpsc::unbounded_channel::<AgentEvent>();
+                let emit = Emitter::new(tx, cancel.clone());
+                let result = {
+                    let run = crate::session_context::with_session_id(
+                        Some(session_id.clone()),
+                        run_goose(
+                            &machine,
+                            session_manager.as_ref(),
+                            &self.hook_manager,
+                            &session_id,
+                            &emit,
+                        ),
+                    );
+                    tokio::pin!(run);
+                    loop {
+                        tokio::select! {
+                            biased;
+                            Some(event) = rx.recv() => yield event,
+                            result = &mut run => break result,
+                        }
+                    }
+                };
+                result?;
+                // Without this the drain below never ends: `run` only borrows the emitter.
+                drop(emit);
+                while let Some(event) = rx.recv().await {
+                    yield event;
+                }
+            }
+            .instrument(reply_span),
+        ))
     }
 
     /// Pins `provider` to the session instead of letting the provider manager
@@ -1171,10 +1133,7 @@ impl Agent {
         session_id: &str,
     ) -> Result<()> {
         let provider_name = provider.get_name().to_string();
-        self.config
-            .providers
-            .set_provider(session_id, provider)
-            .await;
+        self.providers.set_provider(session_id, provider).await;
         self.switch_provider(session_id, &provider_name, model_config)
             .await
     }
@@ -1185,11 +1144,7 @@ impl Agent {
         provider_name: &str,
         model_config: goose_providers::model::ModelConfig,
     ) -> Result<()> {
-        let mut session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?;
+        let mut session = self.session_manager.get_session(session_id, false).await?;
         let registry_entry = crate::providers::get_from_registry(provider_name)
             .await
             .ok();
@@ -1203,7 +1158,6 @@ impl Agent {
         session.provider_name = Some(provider_name.to_string());
         session.model_config = Some(model_config.clone());
         let provider = self
-            .config
             .providers
             .provider_for(&session)
             .await
@@ -1230,8 +1184,7 @@ impl Agent {
             warn!("Failed to apply model selection to provider: {e}");
         }
 
-        self.config
-            .session_manager
+        self.session_manager
             .clone()
             .update(session_id)
             .provider_name(provider_name)
@@ -1248,23 +1201,13 @@ impl Agent {
                 .await
                 .map_err(|e| anyhow::anyhow!("Provider rejected mode update: {e}"))?;
         }
-        self.config
-            .session_manager
+        self.session_manager
             .clone()
             .update(session_id)
             .goose_mode(mode)
             .apply()
             .await
             .context("Failed to persist goose_mode to session")
-    }
-
-    pub async fn goose_mode(&self, session_id: &str) -> Result<GooseMode> {
-        Ok(self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await?
-            .goose_mode)
     }
 
     /// Apply a thinking-effort selection. `effort` is the raw option value: a
@@ -1288,7 +1231,6 @@ impl Agent {
                 Value::String(effort.to_string()),
             )]));
             return self
-                .config
                 .session_manager
                 .clone()
                 .update(session_id)
@@ -1394,45 +1336,302 @@ impl Agent {
             })?;
         Ok(true)
     }
+}
 
-    pub async fn list_extension_prompts(
-        &self,
-        session_id: &str,
-    ) -> Result<HashMap<String, Vec<Prompt>>> {
-        Ok(self
-            .extension_manager
-            .current_lease(session_id)
-            .await?
-            .list_prompts(CancellationToken::default())
-            .await)
+/// Ends a turn however its stream stops (finished, failed, cancelled or dropped): frees
+/// the session and trims what went over the limit while every session was busy.
+struct TurnEnd {
+    services: Arc<StateMachineServices>,
+    turn_guard: Option<ActiveTurnGuard>,
+}
+
+impl TurnEnd {
+    async fn finish(&mut self) {
+        drop(self.turn_guard.take());
+        self.services.trim_sessions().await;
     }
+}
 
-    pub async fn get_prompt(
-        &self,
-        session_id: &str,
-        name: &str,
-        arguments: Value,
-    ) -> Result<GetPromptResult> {
-        let lease = self.extension_manager.current_lease(session_id).await?;
-        let prompts = lease.list_prompts(CancellationToken::default()).await;
-
-        if let Some(extension) = prompts
-            .iter()
-            .find(|(_, prompt_list)| prompt_list.iter().any(|p| p.name == name))
-            .map(|(extension, _)| extension)
-        {
-            return lease
-                .get_prompt(extension, name, arguments, CancellationToken::default())
-                .await;
+impl Drop for TurnEnd {
+    fn drop(&mut self) {
+        if self.turn_guard.take().is_none() {
+            return;
         }
-
-        Err(anyhow!("Prompt '{}' not found", name))
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let services = Arc::clone(&self.services);
+            handle.spawn(async move { services.trim_sessions().await });
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod session_lru {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tempfile::TempDir;
+
+        use goose_test_support::mcp::McpFixtureServer;
+        use rmcp::ServiceExt;
+        use tokio::sync::Barrier;
+
+        use crate::agents::extension::ExtensionConfig;
+        use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
+        use crate::config::permission::PermissionManager;
+        use crate::config::GooseMode;
+        use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};
+
+        fn test_services(temp_dir: &TempDir, max_sessions: usize) -> Arc<StateMachineServices> {
+            let mut config = StateMachineServicesConfig::new(
+                Arc::new(SessionManager::new(temp_dir.path().to_path_buf())),
+                PermissionManager::instance(),
+                None,
+                true,
+                GoosePlatform::GooseDesktop,
+            );
+            config.max_sessions = max_sessions;
+            StateMachineServices::with_config(config)
+        }
+
+        fn serve_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            tokio::spawn(async move {
+                let running = McpFixtureServer::new().serve((read, write)).await.unwrap();
+                let _ = running.waiting().await;
+            });
+        }
+
+        static CONCURRENT_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_concurrent_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            CONCURRENT_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        static EVICTION_STARTS: AtomicUsize = AtomicUsize::new(0);
+
+        fn serve_eviction_fixture(read: tokio::io::DuplexStream, write: tokio::io::DuplexStream) {
+            EVICTION_STARTS.fetch_add(1, Ordering::SeqCst);
+            serve_fixture(read, write);
+        }
+
+        async fn session_with_fixture(
+            services: &StateMachineServices,
+            temp_dir: &TempDir,
+            fixture: &'static str,
+            serve: crate::builtin_extension::SpawnServerFn,
+        ) -> String {
+            crate::builtin_extension::register_builtin_extension(fixture, serve);
+            let session_manager = &services.session_manager;
+            let session = session_manager
+                .create_session(
+                    temp_dir.path().to_path_buf(),
+                    "fixture".to_string(),
+                    SessionType::User,
+                    GooseMode::default(),
+                )
+                .await
+                .unwrap();
+            let extension = ExtensionConfig::Builtin {
+                name: fixture.to_string(),
+                display_name: None,
+                description: String::new(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            };
+            let mut extension_data = session.extension_data.clone();
+            EnabledExtensionsState::new(vec![extension])
+                .to_extension_data(&mut extension_data)
+                .unwrap();
+            session_manager
+                .update(&session.id)
+                .extension_data(extension_data)
+                .apply()
+                .await
+                .unwrap();
+            session.id
+        }
+
+        async fn use_session(services: &StateMachineServices, session_id: &str) {
+            services.touch_session(session_id).await;
+            services
+                .extension_manager
+                .current_lease(session_id)
+                .await
+                .unwrap()
+                .start()
+                .await;
+        }
+
+        #[tokio::test]
+        async fn concurrent_first_requests_start_extensions_once() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            let session_id = session_with_fixture(
+                &services,
+                &temp_dir,
+                "concurrent_fixture",
+                serve_concurrent_fixture,
+            )
+            .await;
+
+            let callers = 20;
+            let barrier = Arc::new(Barrier::new(callers));
+            let handles = (0..callers).map(|_| {
+                let services = Arc::clone(&services);
+                let session_id = session_id.clone();
+                let barrier = Arc::clone(&barrier);
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    use_session(&services, &session_id).await;
+                })
+            });
+            for handle in futures::future::join_all(handles).await {
+                handle.unwrap();
+            }
+
+            assert_eq!(CONCURRENT_STARTS.load(Ordering::SeqCst), 1);
+        }
+
+        fn attachment(name: &str) -> crate::agents::Attachment {
+            let mut client = crate::agents::extension_manager::ClientContext::new(
+                &GoosePlatform::GooseDesktop,
+                None,
+            );
+            client.name = name.to_string();
+            crate::agents::Attachment {
+                client,
+                session_names: None,
+            }
+        }
+
+        #[tokio::test]
+        async fn closing_on_one_connection_leaves_the_others_attached() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services.attach_session("s", 1, attachment("first")).await;
+            services.attach_session("s", 2, attachment("second")).await;
+            services.attach_session("s", 1, attachment("first")).await;
+
+            assert!(!services.detach_session("s", 1).await);
+            assert!(services.runtime.is_attached("s", 2));
+            assert_eq!(services.extension_manager.client("s").name, "second");
+
+            assert!(services.detach_session("s", 2).await);
+            assert!(!services.runtime.is_open("s"));
+        }
+
+        #[tokio::test]
+        async fn releasing_a_session_makes_every_connection_attach_again() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            services.attach_session("s", 1, attachment("first")).await;
+            services.attach_session("s", 2, attachment("second")).await;
+
+            services.release_session("s").await;
+
+            assert!(!services.runtime.is_attached("s", 1));
+            assert!(!services.runtime.is_attached("s", 2));
+        }
+
+        #[tokio::test]
+        async fn touching_a_session_never_evicts_it() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 1);
+            services
+                .attach_session("busy", 1, attachment("client"))
+                .await;
+            let _turn = services.hold_turn_for_test("busy");
+
+            services
+                .attach_session("new", 1, attachment("client"))
+                .await;
+
+            assert!(services.runtime.is_attached("new", 1));
+            assert!(services.runtime.is_attached("busy", 1));
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn a_release_never_clears_a_session_attached_while_it_ran() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            for _ in 0..500 {
+                services.attach_session("s", 1, attachment("first")).await;
+                let closing = tokio::spawn({
+                    let services = Arc::clone(&services);
+                    async move { services.detach_session("s", 1).await }
+                });
+                let opening = tokio::spawn({
+                    let services = Arc::clone(&services);
+                    async move { services.attach_session("s", 2, attachment("second")).await }
+                });
+                closing.await.unwrap();
+                opening.await.unwrap();
+
+                if services.runtime.is_attached("s", 2) {
+                    assert_eq!(services.extension_manager.client("s").name, "second");
+                }
+                services.release_session("s").await;
+            }
+        }
+
+        #[tokio::test]
+        async fn a_live_conversation_keeps_its_session() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 1);
+            services
+                .attach_session("live", 1, attachment("client"))
+                .await;
+            assert!(services.runtime.runs.start_live("live"));
+
+            services
+                .attach_session("new", 1, attachment("client"))
+                .await;
+
+            assert!(services.runtime.is_attached("live", 1));
+        }
+
+        #[tokio::test]
+        async fn eviction_releases_the_least_recently_used_idle_session() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 2);
+            let mut sessions = Vec::new();
+            for _ in 0..3 {
+                sessions.push(
+                    session_with_fixture(
+                        &services,
+                        &temp_dir,
+                        "eviction_fixture",
+                        serve_eviction_fixture,
+                    )
+                    .await,
+                );
+            }
+            let [busy, idle, recent] = <[String; 3]>::try_from(sessions).unwrap();
+            for session_id in [&busy, &idle] {
+                use_session(&services, session_id).await;
+            }
+            let _turn = services.hold_turn_for_test(&busy);
+            let starts_before = EVICTION_STARTS.load(Ordering::SeqCst);
+
+            use_session(&services, &recent).await;
+            use_session(&services, &busy).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                1,
+                "only the new session starts; the busy one keeps its extensions"
+            );
+
+            use_session(&services, &idle).await;
+            assert_eq!(
+                EVICTION_STARTS.load(Ordering::SeqCst) - starts_before,
+                2,
+                "the evicted idle session starts its extensions again"
+            );
+        }
+    }
 
     use crate::conversation::message::InferenceMetadata;
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
@@ -1519,14 +1718,14 @@ mod tests {
     }
 
     async fn session_context_agent() -> (
-        Arc<Agent>,
+        Arc<StateMachineServices>,
         Arc<SessionContextProvider>,
         SessionConfig,
         TempDir,
     ) {
         let temp_dir = TempDir::new().unwrap();
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
             None,
@@ -1543,7 +1742,7 @@ mod tests {
             .await
             .unwrap();
         let provider = Arc::new(SessionContextProvider::default());
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
@@ -1576,7 +1775,7 @@ mod tests {
             max_turns: Some(1),
         };
 
-        (agent, provider, session_config, temp_dir)
+        (services, provider, session_config, temp_dir)
     }
 
     fn assert_session_context_calls(
@@ -1598,9 +1797,9 @@ mod tests {
 
     #[tokio::test]
     async fn reply_scopes_resume_model_info_and_stream_to_session() {
-        let (agent, provider, session_config, _temp_dir) = session_context_agent().await;
+        let (services, provider, session_config, _temp_dir) = session_context_agent().await;
         let session_id = session_config.id.clone();
-        let mut events = agent
+        let mut events = services
             .reply(Message::user().with_text("continue"), session_config, None)
             .await
             .unwrap();
@@ -1616,15 +1815,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_delegation_scopes_state_machine_setup_and_stream_to_session() {
-        let (agent, provider, mut session_config, _temp_dir) = session_context_agent().await;
+    async fn an_agent_only_reply_scopes_state_machine_setup_and_stream_to_session() {
+        let (services, provider, mut session_config, _temp_dir) = session_context_agent().await;
         session_config.max_turns = Some(2);
         let session_id = session_config.id.clone();
-        let mut events = agent
-            .reply_live_delegation(
-                Message::user().with_text("continue"),
+        let mut events = services
+            .reply(
+                Message::user().with_text("continue").agent_only(),
                 session_config,
-                CancellationToken::new(),
+                Some(CancellationToken::new()),
             )
             .await
             .unwrap();
@@ -1639,11 +1838,11 @@ mod tests {
         );
     }
 
-    async fn tracing_test_agent_and_session() -> (Arc<Agent>, Session, TempDir) {
+    async fn tracing_test_agent_and_session() -> (Arc<StateMachineServices>, Session, TempDir) {
         let data_dir = TempDir::new().unwrap();
         let data_path = data_dir.path().to_path_buf();
         let session_manager = Arc::new(SessionManager::new(data_path.clone()));
-        let agent = Agent::with_config(AgentConfig::new(
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
             Arc::clone(&session_manager),
             Arc::new(PermissionManager::new(data_path)),
             None,
@@ -1659,7 +1858,7 @@ mod tests {
             )
             .await
             .unwrap();
-        (agent, session, data_dir)
+        (services, session, data_dir)
     }
 
     #[test]
@@ -1728,9 +1927,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_tool_confirmation_routes_to_provider() {
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(ActionRequiredProvider::new());
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("test-model"),
@@ -1739,7 +1938,7 @@ mod tests {
             .await
             .unwrap();
 
-        agent
+        services
             .submit_tool_confirmation(
                 &session.id,
                 "known",
@@ -1749,7 +1948,7 @@ mod tests {
             .unwrap();
         assert_eq!(provider.handled.lock().await.len(), 1);
 
-        let error = agent
+        let error = services
             .submit_tool_confirmation(
                 &session.id,
                 "unknown",
@@ -1849,10 +2048,15 @@ mod tests {
 
     async fn effort_test_agent(
         outcome: EffortOutcome,
-    ) -> (Arc<Agent>, String, Arc<EffortProvider>, TempDir) {
-        let (agent, session, data_dir) = tracing_test_agent_and_session().await;
+    ) -> (
+        Arc<StateMachineServices>,
+        String,
+        Arc<EffortProvider>,
+        TempDir,
+    ) {
+        let (services, session, data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(outcome));
-        agent
+        services
             .update_provider(
                 provider.clone(),
                 goose_providers::model::ModelConfig::new("mock-model"),
@@ -1860,11 +2064,14 @@ mod tests {
             )
             .await
             .unwrap();
-        (agent, session.id, provider, data_dir)
+        (services, session.id, provider, data_dir)
     }
 
-    async fn persisted_thinking_effort(agent: &Arc<Agent>, session_id: &str) -> Option<String> {
-        agent
+    async fn persisted_thinking_effort(
+        services: &Arc<StateMachineServices>,
+        session_id: &str,
+    ) -> Option<String> {
+        services
             .model_config_for_session(session_id)
             .await
             .unwrap()
@@ -1881,7 +2088,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_toolshim_is_effective_without_being_persisted() {
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider_root = TempDir::new().unwrap();
         let provider_root_path = provider_root.path().display().to_string();
         let _guard = env_lock::lock_env([
@@ -1912,7 +2119,7 @@ mod tests {
         let provider = crate::providers::create(&config.name, Vec::new())
             .await
             .unwrap();
-        agent
+        services
             .update_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("test-model"),
@@ -1922,14 +2129,14 @@ mod tests {
             .unwrap();
 
         assert!(
-            !agent
+            !services
                 .model_config_for_session(&session.id)
                 .await
                 .unwrap()
                 .toolshim
         );
         assert!(
-            agent
+            services
                 .effective_model_config_for_session(&session.id)
                 .await
                 .unwrap()
@@ -1958,7 +2165,7 @@ mod tests {
         crate::providers::refresh_custom_providers().await.unwrap();
 
         assert!(
-            !agent
+            !services
                 .effective_model_config_for_session(&session.id)
                 .await
                 .unwrap()
@@ -1972,20 +2179,20 @@ mod tests {
     #[tokio::test]
     async fn update_provider_replaces_harness_only_effort_for_legacy_provider() {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Unhandled));
         let model_config =
             goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
-        agent
+        services
             .update_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
         assert_eq!(
-            persisted_thinking_effort(&agent, &session.id)
+            persisted_thinking_effort(&services, &session.id)
                 .await
                 .as_deref(),
             Some("high")
@@ -1995,20 +2202,20 @@ mod tests {
     #[tokio::test]
     async fn update_provider_preserves_harness_only_effort_for_managed_provider() {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", Some("high"))]);
-        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let (services, session, _data_dir) = tracing_test_agent_and_session().await;
         let provider = Arc::new(EffortProvider::new(EffortOutcome::Applied));
         let model_config =
             goose_providers::model::ModelConfig::new("mock-model").with_merged_request_params(
                 HashMap::from([("thinking_effort".to_string(), serde_json::json!("default"))]),
             );
 
-        agent
+        services
             .update_provider(provider, model_config, &session.id)
             .await
             .unwrap();
 
         assert_eq!(
-            persisted_thinking_effort(&agent, &session.id)
+            persisted_thinking_effort(&services, &session.id)
                 .await
                 .as_deref(),
             Some("default")
@@ -2017,35 +2224,35 @@ mod tests {
 
     #[tokio::test]
     async fn update_thinking_effort_persists_the_raw_value_when_the_provider_applies_it() {
-        let (agent, session_id, provider, _data_dir) =
+        let (services, session_id, provider, _data_dir) =
             effort_test_agent(EffortOutcome::Applied).await;
 
         // "xhigh" is a harness value, not a ThinkingEffort member spelling.
-        agent
+        services
             .update_thinking_effort(&session_id, "xhigh")
             .await
             .unwrap();
 
         assert_eq!(provider.effort_calls(), ["xhigh"]);
         assert_eq!(
-            persisted_thinking_effort(&agent, &session_id)
+            persisted_thinking_effort(&services, &session_id)
                 .await
                 .as_deref(),
             Some("xhigh")
         );
         // The unregistered test provider was not respawned.
         assert_eq!(
-            agent.provider(&session_id).await.unwrap().get_name(),
+            services.provider(&session_id).await.unwrap().get_name(),
             "test-effort"
         );
     }
 
     #[tokio::test]
     async fn update_thinking_effort_rejects_an_unparseable_value_on_the_legacy_path() {
-        let (agent, session_id, provider, _data_dir) =
+        let (services, session_id, provider, _data_dir) =
             effort_test_agent(EffortOutcome::Unhandled).await;
 
-        let err = agent
+        let err = services
             .update_thinking_effort(&session_id, "bogus")
             .await
             .unwrap_err();
@@ -2056,17 +2263,17 @@ mod tests {
         ));
         assert!(err.to_string().contains("Invalid thinking effort"));
         assert_eq!(provider.effort_calls(), ["bogus"]);
-        assert!(persisted_thinking_effort(&agent, &session_id)
+        assert!(persisted_thinking_effort(&services, &session_id)
             .await
             .is_none());
     }
 
     #[tokio::test]
     async fn update_thinking_effort_surfaces_a_provider_rejection() {
-        let (agent, session_id, _provider, _data_dir) =
+        let (services, session_id, _provider, _data_dir) =
             effort_test_agent(EffortOutcome::Rejected).await;
 
-        let err = agent
+        let err = services
             .update_thinking_effort(&session_id, "high")
             .await
             .unwrap_err();
@@ -2078,7 +2285,7 @@ mod tests {
             err.downcast_ref::<ProviderError>(),
             Some(ProviderError::RequestFailed(_))
         ));
-        assert!(persisted_thinking_effort(&agent, &session_id)
+        assert!(persisted_thinking_effort(&services, &session_id)
             .await
             .is_none());
     }
@@ -2373,8 +2580,13 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             call_count: AtomicUsize::new(0),
         });
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
-        let (agent, session_id) =
-            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        let (services, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            hook_manager,
+            provider.clone(),
+            None,
+        )
+        .await?;
 
         let session_config = SessionConfig {
             id: session_id,
@@ -2382,7 +2594,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             max_turns: Some(10),
         };
 
-        let reply_stream = agent
+        let reply_stream = services
             .reply(Message::user().with_text("hi"), session_config, None)
             .await?;
         tokio::pin!(reply_stream);
@@ -2416,18 +2628,20 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         data_dir: PathBuf,
         hook_manager: crate::hooks::HookManager,
         provider: Arc<dyn crate::providers::base::Provider>,
-    ) -> Result<(Arc<Agent>, String)> {
+        turn_settings: Option<TurnSettings>,
+    ) -> Result<(Arc<StateMachineServices>, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
-        let config = AgentConfig::new(
+        let mut config = StateMachineServicesConfig::new(
             session_manager.clone(),
             permission_manager,
             None,
             true,
             GoosePlatform::GooseCli,
         );
-        let mut agent = Agent::with_config(config);
-        agent.set_hook_manager_for_test(hook_manager);
+        config.hooks = Some(hook_manager);
+        config.turn_settings = turn_settings;
+        let services = StateMachineServices::with_config(config);
         let session = session_manager
             .create_session(
                 PathBuf::default(),
@@ -2436,29 +2650,39 @@ echo start >> "$PLUGIN_ROOT/hook.log"
                 GooseMode::Auto,
             )
             .await?;
-        agent
+        services
             .update_provider(
                 provider,
                 goose_providers::model::ModelConfig::new("mock-model"),
                 &session.id,
             )
             .await?;
-        Ok((agent, session.id))
+        Ok((services, session.id))
     }
 
     async fn create_stop_hook_test_agent(
         env: &StopHookTestEnv,
         stop_hook_block_cap: u32,
-    ) -> Result<(Arc<Agent>, String, Arc<CountingTextProvider>)> {
+    ) -> Result<(Arc<StateMachineServices>, String, Arc<CountingTextProvider>)> {
         let provider = Arc::new(CountingTextProvider::new());
-        let (mut agent, session_id) =
-            create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
-        agent.set_stop_hook_block_cap_for_test(stop_hook_block_cap);
-        Ok((agent, session_id, provider))
+        let (services, session_id) = create_test_agent(
+            env.data_dir(),
+            env.hook_manager(),
+            provider.clone(),
+            Some(TurnSettings {
+                stop_hook_block_cap,
+                ..TurnSettings::from_config(
+                    provider.as_ref(),
+                    &goose_providers::model::ModelConfig::new("stop-hook-test"),
+                )
+            }),
+        )
+        .await?;
+        Ok((services, session_id, provider))
     }
 
     async fn run_stop_hook_test_turn(
-        agent: &Arc<Agent>,
+        services: &Arc<StateMachineServices>,
         session_id: &str,
         text: &str,
     ) -> Result<Vec<Message>> {
@@ -2467,7 +2691,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             schedule_id: None,
             max_turns: Some(10),
         };
-        let reply_stream = agent
+        let reply_stream = services
             .reply(Message::user().with_text(text), session_config, None)
             .await?;
         tokio::pin!(reply_stream);
@@ -2498,10 +2722,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let temp_dir = tempfile::tempdir()?;
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let provider = Arc::new(OutputLimitMarkerProvider::new(true));
-        let (agent, session_id) =
-            create_test_agent(temp_dir.path().join("data"), hook_manager, provider).await?;
+        let (services, session_id) =
+            create_test_agent(temp_dir.path().join("data"), hook_manager, provider, None).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let marker = messages
             .iter()
             .find(|message| message.metadata.output_token_limit_reached)
@@ -2509,8 +2733,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         assert!(marker.content.is_empty());
         assert_eq!(marker.id.as_deref(), Some("provider-output-limit"));
 
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2534,14 +2757,18 @@ echo start >> "$PLUGIN_ROOT/hook.log"
         let temp_dir = tempfile::tempdir()?;
         let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
         let provider = Arc::new(OutputLimitMarkerProvider::new(false));
-        let (agent, session_id) =
-            create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        let (services, session_id) = create_test_agent(
+            temp_dir.path().join("data"),
+            hook_manager,
+            provider.clone(),
+            None,
+        )
+        .await?;
 
-        run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        run_stop_hook_test_turn(&services, &session_id, "hello").await?;
 
         assert_eq!(provider.call_count(), 1);
-        let session = agent
-            .config
+        let session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2569,11 +2796,11 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn session_start_hook_emits_once_for_first_reply_turn() -> Result<()> {
         let env = SessionStartHookTestEnv::new()?;
         let provider = Arc::new(CountingTextProvider::new());
-        let (agent, session_id) =
-            create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
+        let (services, session_id) =
+            create_test_agent(env.data_dir(), env.hook_manager(), provider.clone(), None).await?;
 
-        run_stop_hook_test_turn(&agent, &session_id, "first").await?;
-        run_stop_hook_test_turn(&agent, &session_id, "second").await?;
+        run_stop_hook_test_turn(&services, &session_id, "first").await?;
+        run_stop_hook_test_turn(&services, &session_id, "second").await?;
 
         assert_eq!(env.hook_invocations(), 1);
         assert_eq!(provider.call_count(), 2);
@@ -2584,9 +2811,9 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides() -> Result<()>
     {
         let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
-        let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
+        let (services, session_id, provider) = create_stop_hook_test_agent(&env, 2).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let texts = visible_texts(&messages);
 
         assert_eq!(
@@ -2613,8 +2840,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             })
         }));
 
-        let stored_session = agent
-            .config
+        let stored_session = services
             .session_manager
             .get_session(&session_id, true)
             .await?;
@@ -2647,10 +2873,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     #[tokio::test]
     async fn stop_hook_block_cap_counts_only_consecutive_blocks() -> Result<()> {
         let env = StopHookTestEnv::new(ALTERNATE_BLOCK_ALLOW_SCRIPT)?;
-        let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
+        let (services, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
 
-        let first_turn = run_stop_hook_test_turn(&agent, &session_id, "first").await?;
-        let second_turn = run_stop_hook_test_turn(&agent, &session_id, "second").await?;
+        let first_turn = run_stop_hook_test_turn(&services, &session_id, "first").await?;
+        let second_turn = run_stop_hook_test_turn(&services, &session_id, "second").await?;
         let mut texts = visible_texts(&first_turn);
         texts.extend(visible_texts(&second_turn));
 
@@ -2678,10 +2904,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     async fn stop_hook_payload_includes_streamed_assistant_reply_text() -> Result<()> {
         let env = StopHookTestEnv::new(RECORD_PAYLOAD_SCRIPT)?;
         let provider = Arc::new(ChunkedTextProvider);
-        let (agent, session_id) =
-            create_test_agent(env.data_dir(), env.hook_manager(), provider).await?;
+        let (services, session_id) =
+            create_test_agent(env.data_dir(), env.hook_manager(), provider, None).await?;
 
-        let messages = run_stop_hook_test_turn(&agent, &session_id, "hello").await?;
+        let messages = run_stop_hook_test_turn(&services, &session_id, "hello").await?;
         let texts = visible_texts(&messages);
         assert_eq!(texts.join(""), "streamed assistant reply");
 
@@ -2704,10 +2930,10 @@ echo start >> "$PLUGIN_ROOT/hook.log"
 
     #[tokio::test]
     async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
-        let agent = Agent::new();
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
         // Verify that the tool inspection manager has all expected inspectors
-        let inspector_names = agent.tool_inspection_manager.inspector_names();
+        let inspector_names = services.tool_inspection_manager.inspector_names();
 
         assert!(
             inspector_names.contains(&"repetition"),

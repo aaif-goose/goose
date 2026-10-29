@@ -1,7 +1,7 @@
 use super::*;
 use std::path::PathBuf;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_slash_commands(
         &self,
         req: ListSlashCommandsRequest,
@@ -20,7 +20,8 @@ impl GooseAcpAgent {
             .filter(|session_id| !session_id.is_empty())
         {
             Some(
-                self.session_manager
+                self.services
+                    .session_manager
                     .get_session(session_id, false)
                     .await
                     .map_err(|_| {

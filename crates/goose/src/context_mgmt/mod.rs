@@ -29,15 +29,26 @@ pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 /// The configured threshold, lowered so compaction starts by the token limit.
 pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     let config = Config::global();
-    let threshold = config
-        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+    capped_compaction_threshold(
+        config
+            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
+        config
+            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+        context_limit,
+    )
+}
+
+/// `threshold` of the context, but never more than `token_limit` tokens.
+pub fn capped_compaction_threshold(
+    threshold: f64,
+    token_limit: usize,
+    context_limit: usize,
+) -> f64 {
     if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
         return threshold;
     }
-    let token_limit = config
-        .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-        .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
     threshold.min(token_limit as f64 / context_limit as f64)
 }
 

@@ -25,7 +25,7 @@ struct ClaudeMcpServer {
     env: HashMap<String, String>,
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_onboarding_import_scan(
         &self,
         req: OnboardingImportScanRequest,
