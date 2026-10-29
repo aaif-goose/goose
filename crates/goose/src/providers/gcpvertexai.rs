@@ -62,8 +62,6 @@ const OVERLOADED_ERROR_MSG: &str =
     "Vertex AI Provider API is temporarily overloaded. This is similar to a rate limit \
      error but indicates backend processing capacity issues.";
 
-/// Map a 429 response to the retry decision: the error to record and how
-/// long to sleep before the next attempt.
 fn map_429_retry(
     headers: &HeaderMap,
     body: &str,
@@ -376,7 +374,6 @@ impl GcpVertexAIProvider {
                         }),
                     );
                 }
-                // Headers must be captured before the body is consumed.
                 let headers = response.headers().clone();
                 let body = read_error_body(response).await.unwrap_or_default();
                 let (err, sleep_for) =
