@@ -1,5 +1,5 @@
 import type { FixedExtensionEntry } from '../../ConfigContext';
-import type { ExtensionConfig } from '../../../types/extensions';
+import type { ExtensionConfig, ToolCallMeta } from '../../../types/extensions';
 
 // Default extension timeout in seconds
 // TODO: keep in sync with rust better
@@ -44,6 +44,7 @@ export interface ExtensionFormData {
   client_id?: string | null;
   client_secret_key?: string | null;
   scopes?: string[];
+  tool_call_meta?: ToolCallMeta;
 }
 
 export function getDefaultFormData(): ExtensionFormData {
@@ -122,6 +123,7 @@ export function extensionToFormData(extension: FixedExtensionEntry): ExtensionFo
     installation_notes: (extension as Record<string, unknown>)['installation_notes'] as
       string | undefined,
     ...(availableTools ? { available_tools: availableTools } : {}),
+    ...(extension.tool_call_meta ? { tool_call_meta: extension.tool_call_meta } : {}),
     ...(extension.type === 'streamable_http'
       ? {
           socket: extension.socket,
@@ -159,6 +161,7 @@ export function createExtensionConfig(formData: ExtensionFormData): ExtensionCon
       timeout: formData.timeout,
       ...(env_keys.length > 0 ? { env_keys } : {}),
       ...availableToolsConfig(formData.available_tools),
+      ...(formData.tool_call_meta ? { tool_call_meta: formData.tool_call_meta } : {}),
     };
   } else if (formData.type === 'streamable_http') {
     // Extract headers
@@ -187,6 +190,7 @@ export function createExtensionConfig(formData: ExtensionFormData): ExtensionCon
         ? { client_secret_key: formData.client_secret_key }
         : {}),
       ...(formData.scopes?.length ? { scopes: formData.scopes } : {}),
+      ...(formData.tool_call_meta ? { tool_call_meta: formData.tool_call_meta } : {}),
     };
   }
 
