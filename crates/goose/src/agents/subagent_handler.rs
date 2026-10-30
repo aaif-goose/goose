@@ -4,7 +4,7 @@ use crate::{
         SessionConfig, StateMachineServices,
     },
     conversation::{
-        message::{ActionRequiredData, Message, MessageContent},
+        message::{ActionRequiredData, Message, MessageContent, MessageErrorKind},
         Conversation,
     },
     prompt_template::render_template,
@@ -161,7 +161,7 @@ impl ForegroundSubagentRunner {
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());
         }
-        if let Some(error) = subagent
+        if let Some((_, error)) = subagent
             .conversation
             .as_ref()
             .and_then(worker_trailing_error)
@@ -190,7 +190,9 @@ pub(crate) fn worker_successful_output(conversation: &Conversation) -> Option<St
     FinalOutputTool::successful_output(messages)
 }
 
-pub(crate) fn worker_trailing_error(conversation: &Conversation) -> Option<String> {
+pub(crate) fn worker_trailing_error(
+    conversation: &Conversation,
+) -> Option<(MessageErrorKind, String)> {
     let message = conversation.messages().iter().rev().find(|message| {
         message.error_kind().is_some()
             || message
@@ -203,9 +205,12 @@ pub(crate) fn worker_trailing_error(conversation: &Conversation) -> Option<Strin
             MessageContent::Error(error) => Some(error.message.as_str()),
             _ => None,
         });
-        detail.map_or_else(
-            || format!("{kind:?}"),
-            |detail| format!("{kind:?}: {detail}"),
+        (
+            kind,
+            detail.map_or_else(
+                || format!("{kind:?}"),
+                |detail| format!("{kind:?}: {detail}"),
+            ),
         )
     })
 }

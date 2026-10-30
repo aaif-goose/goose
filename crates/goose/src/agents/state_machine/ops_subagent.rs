@@ -8,7 +8,9 @@ use crate::agents::state_machine::Emitter;
 use crate::agents::subagent_handler::{
     worker_successful_output, worker_trailing_error, ForegroundSubagentRunner,
 };
-use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
+use crate::conversation::message::{
+    Message, MessageContent, MessageErrorKind, SystemNotificationType,
+};
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
 
@@ -120,12 +122,15 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
         if cancel.is_cancelled() {
             return ended(SubagentOutcome::Cancelled);
         }
-        if let Some(error) = subagent
+        if let Some((kind, error)) = subagent
             .conversation
             .as_ref()
             .and_then(worker_trailing_error)
         {
-            return ended(SubagentOutcome::Failed(error));
+            // The state machine owns reactive compaction and its retry limit.
+            if kind != MessageErrorKind::ContextLengthExceeded {
+                return ended(SubagentOutcome::Failed(error));
+            }
         }
         if let Some(output) = subagent
             .conversation
@@ -444,6 +449,42 @@ mod tests {
                 "notice={notice}: {updates:?}"
             );
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn saved_context_error_reaches_the_worker_state_machine() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::assistant().with_error(
+                    crate::conversation::message::MessageErrorKind::ContextLengthExceeded,
+                    "recoverable overflow",
+                ),
+            )
+            .await?;
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, true)
+            .await?;
+        let updates: Vec<_> = fixture
+            .runner()
+            .start(&parent, &fixture.subagent_id, CancellationToken::new())
+            .await
+            .collect()
+            .await;
+        assert!(
+            matches!(updates.first(), Some(SubagentUpdate::ToParent(_))),
+            "{updates:?}"
+        );
+        assert!(
+            matches!(updates.last(), Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+            if reason.contains("no saved recipe")),
+            "{updates:?}"
+        );
         Ok(())
     }
 
