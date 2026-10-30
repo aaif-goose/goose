@@ -325,6 +325,7 @@ fn responses_stream_error(error: &Value) -> ProviderError {
                 retry_delay: None,
             }
         }
+        (_, Some("context_length_exceeded")) => ProviderError::ContextLengthExceeded(details),
         _ => ProviderError::RequestFailed(details),
     }
 }
