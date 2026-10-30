@@ -168,8 +168,10 @@ impl ForegroundSubagentRunner {
         {
             return SubagentOutcome::Failed(error);
         }
-        if let Some(output) =
-            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
+        if let Some(output) = subagent
+            .conversation
+            .as_ref()
+            .and_then(worker_successful_output)
         {
             return SubagentOutcome::Completed(output);
         }
@@ -177,6 +179,15 @@ impl ForegroundSubagentRunner {
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
     }
+}
+
+pub(crate) fn worker_successful_output(conversation: &Conversation) -> Option<String> {
+    if worker_trailing_error(conversation).is_some() {
+        return None;
+    }
+    let messages = crate::agents::state_machine::messages_since_kickoff(conversation)
+        .unwrap_or_else(|_| conversation.messages());
+    FinalOutputTool::successful_output(messages)
 }
 
 pub(crate) fn worker_trailing_error(conversation: &Conversation) -> Option<String> {

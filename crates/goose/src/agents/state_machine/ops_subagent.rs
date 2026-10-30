@@ -4,9 +4,10 @@ use futures::stream::{self, BoxStream, StreamExt};
 use goose_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::Emitter;
-use crate::agents::subagent_handler::{worker_trailing_error, ForegroundSubagentRunner};
+use crate::agents::subagent_handler::{
+    worker_successful_output, worker_trailing_error, ForegroundSubagentRunner,
+};
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
@@ -129,7 +130,7 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
         if let Some(output) = subagent
             .conversation
             .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+            .and_then(worker_successful_output)
         {
             return ended(SubagentOutcome::Completed(output));
         }
@@ -443,6 +444,93 @@ mod tests {
                 "notice={notice}: {updates:?}"
             );
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn resumed_worker_does_not_complete_with_historical_output() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::assistant().with_error(
+                    crate::conversation::message::MessageErrorKind::Other,
+                    "provider exhausted",
+                ),
+            )
+            .await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::user().with_text("Try again"),
+            )
+            .await?;
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, true)
+            .await?;
+        let updates: Vec<_> = fixture
+            .runner()
+            .start(&parent, &fixture.subagent_id, CancellationToken::new())
+            .await
+            .collect()
+            .await;
+        assert!(
+            matches!(updates.first(), Some(SubagentUpdate::ToParent(_))),
+            "{updates:?}"
+        );
+        assert!(
+            matches!(updates.last(), Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+            if reason.contains("no saved recipe")),
+            "{updates:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn worker_output_is_scoped_to_the_current_attempt() -> Result<()> {
+        let fixture = fixture().await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::user().with_text("First attempt"),
+            )
+            .await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        for instructions in ["Try again", "Continue without a final output"] {
+            fixture
+                .manager
+                .add_message(
+                    &fixture.subagent_id,
+                    &Message::user().with_text(instructions),
+                )
+                .await?;
+            fixture
+                .manager
+                .add_message(
+                    &fixture.subagent_id,
+                    &Message::assistant().with_text("Still working"),
+                )
+                .await?;
+            let child = fixture
+                .manager
+                .get_session(&fixture.subagent_id, true)
+                .await?;
+            assert!(worker_successful_output(child.conversation.as_ref().unwrap()).is_none());
+        }
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        let child = fixture
+            .manager
+            .get_session(&fixture.subagent_id, true)
+            .await?;
+        assert_eq!(
+            worker_successful_output(child.conversation.as_ref().unwrap()),
+            Some(r#"{"summary":"done"}"#.to_string())
+        );
         Ok(())
     }
 
