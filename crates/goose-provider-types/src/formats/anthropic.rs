@@ -1107,6 +1107,10 @@ where
                 }
                 EVENT_CONTENT_BLOCK_START => {
                     if let Some(content_block) = event.data.get("content_block") {
+                        if matches!(content_block.get(TYPE_FIELD).and_then(|v| v.as_str()),
+                            Some(TOOL_USE_TYPE | THINKING_TYPE)) {
+                            crate::retry::record_stream_output();
+                        }
                         match content_block.get(TYPE_FIELD).and_then(|v| v.as_str()) {
                             Some(TOOL_USE_TYPE) => {
                                 if let (Some(index), Some(id), Some(name)) = (
