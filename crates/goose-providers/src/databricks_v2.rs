@@ -255,12 +255,13 @@ impl DatabricksV2Provider {
         model_name.contains("claude")
     }
 
-    fn is_gemini_model_service(model_name: &str) -> bool {
-        Self::is_model_service_fqn(model_name)
-            && model_name
-                .rsplit('.')
-                .next()
-                .is_some_and(|service| service.to_lowercase().contains("gemini"))
+    fn is_gemini_model(model_name: &str) -> bool {
+        let name = if Self::is_model_service_fqn(model_name) {
+            model_name.rsplit('.').next().unwrap_or(model_name)
+        } else {
+            model_name
+        };
+        name.to_lowercase().contains("gemini")
     }
 
     fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
@@ -400,10 +401,18 @@ impl DatabricksV2Provider {
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
         }
-        // The gateway maps `stream_options` into Gemini's `generation_config`, which rejects it.
-        if Self::is_gemini_model_service(&model_config.model_name) {
+        // The gateway copies fields it doesn't translate into Gemini's `generation_config`.
+        // Gemini rejects `stream_options` there, and the gateway doesn't translate
+        // `reasoning_effort` for every Gemini model, but it does pass `thinking_config` through.
+        if Self::is_gemini_model(&model_config.model_name) {
             if let Some(object) = payload.as_object_mut() {
                 object.remove("stream_options");
+                if let Some(effort) = object.remove("reasoning_effort") {
+                    object.insert(
+                        "thinking_config".to_string(),
+                        serde_json::json!({ "thinking_level": effort }),
+                    );
+                }
             }
         }
         if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
@@ -812,16 +821,20 @@ mod tests {
     }
 
     #[test]
-    fn detects_gemini_only_from_the_model_service_name() {
-        assert!(DatabricksV2Provider::is_gemini_model_service(
-            "catalog.schema.goose-Gemini-3-pro"
-        ));
-        for model in ["team.gemini.kimi-chat", "databricks-gemini-3-pro"] {
+    fn detects_gemini_only_from_the_service_or_endpoint_name() {
+        for model in [
+            "catalog.schema.goose-Gemini-3-pro",
+            "databricks-gemini-3-pro",
+            "gemini-3.6-flash",
+        ] {
             assert!(
-                !DatabricksV2Provider::is_gemini_model_service(model),
-                "{model} is not a Gemini model service"
+                DatabricksV2Provider::is_gemini_model(model),
+                "{model} is a Gemini model"
             );
         }
+        assert!(!DatabricksV2Provider::is_gemini_model(
+            "team.gemini.kimi-chat"
+        ));
     }
 
     #[test]
@@ -1031,9 +1044,10 @@ mod tests {
                 .expect("model service should receive reasoning effort");
         }
 
+        #[test_case::test_case("catalog.schema.goose-gemini-3-pro" ; "model service")]
+        #[test_case::test_case("databricks-gemini-3-pro" ; "serving endpoint")]
         #[tokio::test]
-        async fn gemini_model_service_omits_stream_options_and_keeps_usage() {
-            let model = "catalog.schema.goose-gemini-3-pro";
+        async fn gemini_omits_stream_options_and_keeps_usage(model: &str) {
             let delta = format!(
                 r#"data: {{"model":"{model}","choices":[{{"delta":{{"content":"Hello"}},"finish_reason":null}}]}}"#
             );
@@ -1058,7 +1072,7 @@ mod tests {
             let (message, usage) = provider(server.uri())
                 .complete(&ModelConfig::new(model), "system", &[], &[])
                 .await
-                .expect("Gemini model service should stream without stream_options");
+                .expect("Gemini should stream without stream_options");
 
             let requests = server.received_requests().await.unwrap();
             let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -1067,6 +1081,39 @@ mod tests {
             assert_eq!(usage.usage.input_tokens, Some(7));
             assert_eq!(usage.usage.output_tokens, Some(2));
             assert_eq!(usage.usage.total_tokens, Some(9));
+        }
+
+        #[tokio::test]
+        async fn gemini_sends_thinking_level_instead_of_reasoning_effort() {
+            let model = "system.ai.gemini-4-argon";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "thinking_config": {"thinking_level": "high"}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model).with_thinking_effort(ThinkingEffort::High);
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should receive a thinking level");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("reasoning_effort").is_none());
         }
 
         #[tokio::test]
