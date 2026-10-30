@@ -31,7 +31,7 @@ export type DefaultKeyboardShortcuts = {
 
 // prettier-ignore
 export type LanguageSetting =
-  | 'system' | 'en' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'id' | 'ms' | 'vi'
+  | 'system' | 'en' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'nl' | 'id' | 'ms' | 'vi'
   | 'hi' | 'ja' | 'ko' | 'ru' | 'tr' | 'zh-CN' | 'zh-TW';
 
 export interface Settings {

@@ -77,6 +77,13 @@ const labelsByLocale: Record<string, ExternalLinkLabels> = {
     open: 'Buka',
     cancel: 'Batal',
   },
+  nl: {
+    title: 'Externe link openen',
+    message: '{protocol}-link openen?',
+    detail: 'Dit opent: {href}',
+    open: 'Openen',
+    cancel: 'Annuleren',
+  },
   pt: {
     title: 'Abrir Link Externo',
     message: 'Abrir link {protocol}?',

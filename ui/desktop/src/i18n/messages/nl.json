@@ -1,0 +1,4781 @@
+{
+  "acpReadinessPanel.adapterFound": {
+    "defaultMessage": "ACP-adapter gevonden"
+  },
+  "acpReadinessPanel.adapterNotFound": {
+    "defaultMessage": "ACP-adapter niet gevonden"
+  },
+  "acpReadinessPanel.authenticationHelp": {
+    "defaultMessage": "Log in via de CLI van de provider en controleer het daarna opnieuw."
+  },
+  "acpReadinessPanel.checkAgain": {
+    "defaultMessage": "Opnieuw controleren"
+  },
+  "acpReadinessPanel.checking": {
+    "defaultMessage": "Bezig met controleren..."
+  },
+  "acpReadinessPanel.connected": {
+    "defaultMessage": "Verbinding gelukt"
+  },
+  "acpReadinessPanel.connectionNotChecked": {
+    "defaultMessage": "Controleer je accountverbinding voordat je verdergaat."
+  },
+  "alertBox.autoCompactAt": {
+    "defaultMessage": "Automatisch verdichten bij"
+  },
+  "alertBox.compactNow": {
+    "defaultMessage": "Nu verdichten"
+  },
+  "alertBox.failedToSaveThreshold": {
+    "defaultMessage": "Drempel opslaan mislukt: {error}"
+  },
+  "announcementModal.gotIt": {
+    "defaultMessage": "Duidelijk!"
+  },
+  "appLayout.collapseNavigation": {
+    "defaultMessage": "Navigatie inklappen"
+  },
+  "appLayout.openNavigation": {
+    "defaultMessage": "Navigatie openen"
+  },
+  "appsView.customApp": {
+    "defaultMessage": "Eigen app"
+  },
+  "appsView.deleteApp": {
+    "defaultMessage": "App verwijderen"
+  },
+  "appsView.deleteConfirm": {
+    "defaultMessage": "\"{name}\" verwijderen? Dit kun je niet terugdraaien."
+  },
+  "appsView.description": {
+    "defaultMessage": "Apps uit je MCP-servers en apps die goose zelf heeft gebouwd. Je kunt in de chat om een nieuwe app vragen; die verschijnt dan hier."
+  },
+  "appsView.errorLoading": {
+    "defaultMessage": "Apps laden mislukt: {error}"
+  },
+  "appsView.errorPrefix": {
+    "defaultMessage": "Fout: {error}"
+  },
+  "appsView.importApp": {
+    "defaultMessage": "App importeren"
+  },
+  "appsView.launch": {
+    "defaultMessage": "Starten"
+  },
+  "appsView.loading": {
+    "defaultMessage": "Bezig met laden van apps..."
+  },
+  "appsView.noAppsDescription": {
+    "defaultMessage": "Open een chat en vraag goose om de app die je wilt. Hij kan er een voor je bouwen en die komt hier te staan. Of importeer met de knop hierboven een app die iemand met je heeft gedeeld."
+  },
+  "appsView.noAppsTitle": {
+    "defaultMessage": "Geen apps beschikbaar"
+  },
+  "appsView.retiredChatApp": {
+    "defaultMessage": "Chat-app is gestopt"
+  },
+  "appsView.retiredChatAppDetail": {
+    "defaultMessage": "We hebben deze functie weggehaald omdat MCP-sampling niet meer wordt ondersteund."
+  },
+  "appsView.retry": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "appsView.title": {
+    "defaultMessage": "Apps"
+  },
+  "authSettings.activeProviderWarning": {
+    "defaultMessage": "Dit is de actieve provider. Nieuwe aanvragen kunnen mislukken totdat je andere inloggegevens instelt."
+  },
+  "authSettings.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "authSettings.delete": {
+    "defaultMessage": "Verwijderen"
+  },
+  "authSettings.deleteCredential": {
+    "defaultMessage": "Inloggegevens verwijderen"
+  },
+  "authSettings.deleteMessage": {
+    "defaultMessage": "De inloggegevens {name} voor {provider} verwijderen?"
+  },
+  "authSettings.deleteTitle": {
+    "defaultMessage": "Inloggegevens verwijderen"
+  },
+  "authSettings.deleted": {
+    "defaultMessage": "Inloggegevens verwijderd"
+  },
+  "authSettings.description": {
+    "defaultMessage": "Beheer de providergegevens die goose lokaal bewaart."
+  },
+  "authSettings.empty": {
+    "defaultMessage": "Er zijn lokaal geen providergegevens gevonden."
+  },
+  "authSettings.expiresAt": {
+    "defaultMessage": "Verloopt {date}"
+  },
+  "authSettings.failedToConfigure": {
+    "defaultMessage": "Inloggegevens instellen mislukt: {error}"
+  },
+  "authSettings.failedToDelete": {
+    "defaultMessage": "Inloggegevens verwijderen mislukt: {error}"
+  },
+  "authSettings.failedToLoad": {
+    "defaultMessage": "Providergegevens laden mislukt"
+  },
+  "authSettings.loading": {
+    "defaultMessage": "Bezig met laden van inloggegevens..."
+  },
+  "authSettings.reauthorize": {
+    "defaultMessage": "Opnieuw toestemming geven"
+  },
+  "authSettings.signIn": {
+    "defaultMessage": "Inloggen"
+  },
+  "authSettings.signedIn": {
+    "defaultMessage": "Inloggegevens ingesteld"
+  },
+  "authSettings.storageProviderCache": {
+    "defaultMessage": "Providercache"
+  },
+  "authSettings.storageSecretStore": {
+    "defaultMessage": "Kluis"
+  },
+  "authSettings.title": {
+    "defaultMessage": "Providergegevens"
+  },
+  "backButton.back": {
+    "defaultMessage": "Terug"
+  },
+  "baseChat.failedToLoadSession": {
+    "defaultMessage": "Sessie laden mislukt"
+  },
+  "baseChat.goHome": {
+    "defaultMessage": "Naar start"
+  },
+  "baseChat.reconnecting": {
+    "defaultMessage": "Verbinding verbroken. Opnieuw verbinden…"
+  },
+  "baseChat.retry": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "bottomMenuExtensionSelection.extensionUpdated": {
+    "defaultMessage": "Extensie bijgewerkt"
+  },
+  "bottomMenuExtensionSelection.extensionWillBeDisabled": {
+    "defaultMessage": "{name} staat uit in nieuwe chats"
+  },
+  "bottomMenuExtensionSelection.extensionWillBeEnabled": {
+    "defaultMessage": "{name} staat aan in nieuwe chats"
+  },
+  "bottomMenuExtensionSelection.extensionsForNewChats": {
+    "defaultMessage": "Extensies voor nieuwe chats"
+  },
+  "bottomMenuExtensionSelection.extensionsForThisSession": {
+    "defaultMessage": "Extensies voor deze chatsessie"
+  },
+  "bottomMenuExtensionSelection.manageExtensions": {
+    "defaultMessage": "extensies beheren"
+  },
+  "bottomMenuExtensionSelection.noExtensionsAvailable": {
+    "defaultMessage": "geen extensies beschikbaar"
+  },
+  "bottomMenuExtensionSelection.noExtensionsFound": {
+    "defaultMessage": "geen extensies gevonden"
+  },
+  "bottomMenuExtensionSelection.searchExtensions": {
+    "defaultMessage": "zoek extensies..."
+  },
+  "cardButtons.configure": {
+    "defaultMessage": "Instellen"
+  },
+  "cardButtons.launch": {
+    "defaultMessage": "Starten"
+  },
+  "chat.notification.taskComplete.body": {
+    "defaultMessage": "Klik hier om Goose weer naar voren te halen."
+  },
+  "chat.notification.taskComplete.title": {
+    "defaultMessage": "Goose is klaar met de taak."
+  },
+  "chatInput.contextWindow": {
+    "defaultMessage": "Contextvenster"
+  },
+  "chatInput.dictationError": {
+    "defaultMessage": "Fout bij dicteren"
+  },
+  "chatInput.failedToReadImage": {
+    "defaultMessage": "Afbeelding lezen mislukt"
+  },
+  "chatInput.navigationShortcut": {
+    "defaultMessage": "{prefix}↑/{prefix}↓ om door berichten te lopen"
+  },
+  "chatInput.processingDroppedFiles": {
+    "defaultMessage": "Bezig met de gesleepte bestanden..."
+  },
+  "chatInput.recording": {
+    "defaultMessage": "Bezig met opnemen..."
+  },
+  "chatInput.removeFile": {
+    "defaultMessage": "Bestand weghalen"
+  },
+  "chatInput.removeImage": {
+    "defaultMessage": "Afbeelding weghalen"
+  },
+  "chatInput.restartingSession": {
+    "defaultMessage": "Sessie wordt opnieuw gestart..."
+  },
+  "chatInput.send": {
+    "defaultMessage": "Verstuur"
+  },
+  "chatInput.transcribing": {
+    "defaultMessage": "Bezig met uitschrijven..."
+  },
+  "chatInput.typeMessage": {
+    "defaultMessage": "Typ een bericht om te versturen"
+  },
+  "chatInput.unknownType": {
+    "defaultMessage": "Onbekend type"
+  },
+  "chatInput.viewEditRecipe": {
+    "defaultMessage": "Recept bekijken/bewerken"
+  },
+  "chatInput.waitingForCancellation": {
+    "defaultMessage": "Wachten tot het afbreken klaar is"
+  },
+  "chatInput.waitingForImages": {
+    "defaultMessage": "Wachten tot de afbeeldingen zijn opgeslagen..."
+  },
+  "chatSettings.modeDescription": {
+    "defaultMessage": "Kies de modus die Goose standaard gebruikt voor nieuwe sessies. Bestaande sessies houden hun huidige modus."
+  },
+  "chatSettings.modeTitle": {
+    "defaultMessage": "Standaardmodus"
+  },
+  "chatSettings.responseStylesDescription": {
+    "defaultMessage": "Kies hoe Goose zijn antwoorden opmaakt"
+  },
+  "chatSettings.responseStylesTitle": {
+    "defaultMessage": "Antwoordstijlen"
+  },
+  "configSettings.configReset": {
+    "defaultMessage": "Configuratie teruggezet"
+  },
+  "configSettings.configResetMsg": {
+    "defaultMessage": "Alle wijzigingen zijn teruggedraaid"
+  },
+  "configSettings.configUpdated": {
+    "defaultMessage": "Configuratie bijgewerkt"
+  },
+  "configSettings.configUpdatedMsg": {
+    "defaultMessage": "\"{name}\" opgeslagen"
+  },
+  "configSettings.configurationEditor": {
+    "defaultMessage": "Configuratie-editor"
+  },
+  "configSettings.description": {
+    "defaultMessage": "Pas je goose-configuratie aan"
+  },
+  "configSettings.descriptionWithProvider": {
+    "defaultMessage": "Pas je goose-configuratie aan (huidige instellingen voor {provider})"
+  },
+  "configSettings.done": {
+    "defaultMessage": "Klaar"
+  },
+  "configSettings.editConfiguration": {
+    "defaultMessage": "Configuratie bewerken"
+  },
+  "configSettings.enterValue": {
+    "defaultMessage": "Vul {name} in"
+  },
+  "configSettings.noSettings": {
+    "defaultMessage": "Geen configuratie-instellingen gevonden."
+  },
+  "configSettings.resetChanges": {
+    "defaultMessage": "Wijzigingen terugzetten"
+  },
+  "configSettings.saveFailed": {
+    "defaultMessage": "Opslaan mislukt"
+  },
+  "configSettings.saveFailedMsg": {
+    "defaultMessage": "\"{name}\" opslaan mislukt"
+  },
+  "configSettings.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "configSettings.title": {
+    "defaultMessage": "Configuratie"
+  },
+  "configureApproveMode.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "configureApproveMode.description": {
+    "defaultMessage": "Je kunt elke toolaanvraag laten goedkeuren, of goose laten bepalen welke acties aandacht nodig hebben"
+  },
+  "configureApproveMode.manualApproval": {
+    "defaultMessage": "Handmatig goedkeuren"
+  },
+  "configureApproveMode.manualApprovalDescription": {
+    "defaultMessage": "Alle tools, extensies en wijzigingen in bestanden moeten door een mens worden goedgekeurd"
+  },
+  "configureApproveMode.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "configureApproveMode.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "configureApproveMode.smartApproval": {
+    "defaultMessage": "Slim goedkeuren"
+  },
+  "configureApproveMode.smartApprovalDescription": {
+    "defaultMessage": "Bepaal op basis van het risico welke acties goedkeuring nodig hebben"
+  },
+  "configureApproveMode.title": {
+    "defaultMessage": "Goedkeuringsmodus instellen"
+  },
+  "confirmationModal.defaultCancel": {
+    "defaultMessage": "Nee"
+  },
+  "confirmationModal.defaultConfirm": {
+    "defaultMessage": "Ja"
+  },
+  "confirmationModal.processing": {
+    "defaultMessage": "Bezig..."
+  },
+  "conversationLimitsDropdown.conversationLimits": {
+    "defaultMessage": "Gesprekslimieten"
+  },
+  "conversationLimitsDropdown.maxTurns": {
+    "defaultMessage": "Max. aantal rondes"
+  },
+  "conversationLimitsDropdown.maxTurnsDescription": {
+    "defaultMessage": "Hoeveel rondes de agent mag doen voordat Goose je om input vraagt"
+  },
+  "costTracker.costUnavailable": {
+    "defaultMessage": "Geen kostengegevens voor {model} ({inputTokens} in, {outputTokens} uit)"
+  },
+  "costTracker.inputOutputTooltip": {
+    "defaultMessage": "In: {inputTokens} tokens ({inputCost}) | Uit: {outputTokens} tokens ({outputCost})"
+  },
+  "costTracker.pricingUnavailable": {
+    "defaultMessage": "Geen prijsgegevens voor {model}"
+  },
+  "costTracker.totalSessionCost": {
+    "defaultMessage": "Kosten van deze sessie: {cost}"
+  },
+  "createEditRecipe.clickToGenerateDeeplink": {
+    "defaultMessage": "Klik om een deeplink te maken"
+  },
+  "createEditRecipe.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "createEditRecipe.copied": {
+    "defaultMessage": "Gekopieerd!"
+  },
+  "createEditRecipe.copy": {
+    "defaultMessage": "Kopiëren"
+  },
+  "createEditRecipe.copyLinkDescription": {
+    "defaultMessage": "Kopieer deze link om te delen, of plak hem in Chrome om hem te openen"
+  },
+  "createEditRecipe.createRecipeTitle": {
+    "defaultMessage": "Recept maken"
+  },
+  "createEditRecipe.createSubtitle": {
+    "defaultMessage": "Maak een nieuw recept dat vastlegt wat de agent doet en kan, zodat je het opnieuw kunt gebruiken."
+  },
+  "createEditRecipe.editSubtitle": {
+    "defaultMessage": "Je kunt het recept hieronder aanpassen om het gedrag van de agent in een nieuwe sessie te veranderen."
+  },
+  "createEditRecipe.generatingDeeplink": {
+    "defaultMessage": "Bezig met het maken van de deeplink..."
+  },
+  "createEditRecipe.learnMore": {
+    "defaultMessage": "Meer hierover"
+  },
+  "createEditRecipe.recipeSavedAndLaunchedMsg": {
+    "defaultMessage": "Recept opgeslagen en gestart"
+  },
+  "createEditRecipe.recipeSavedMsg": {
+    "defaultMessage": "Recept opgeslagen"
+  },
+  "createEditRecipe.saveAndRunFailed": {
+    "defaultMessage": "Opslaan en uitvoeren mislukt"
+  },
+  "createEditRecipe.saveAndRunFailedMsg": {
+    "defaultMessage": "Recept opslaan en uitvoeren mislukt: {error}"
+  },
+  "createEditRecipe.saveAndRunRecipe": {
+    "defaultMessage": "Recept opslaan en uitvoeren"
+  },
+  "createEditRecipe.saveFailed": {
+    "defaultMessage": "Opslaan mislukt"
+  },
+  "createEditRecipe.saveFailedMsg": {
+    "defaultMessage": "Recept opslaan mislukt: {error}"
+  },
+  "createEditRecipe.saveRecipe": {
+    "defaultMessage": "Recept opslaan"
+  },
+  "createEditRecipe.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "createEditRecipe.validationFailed": {
+    "defaultMessage": "Controle mislukt"
+  },
+  "createEditRecipe.validationMsg": {
+    "defaultMessage": "Vul alle verplichte velden in en zorg dat het JSON-schema geldig is."
+  },
+  "createEditRecipe.viewEditRecipeTitle": {
+    "defaultMessage": "Recept bekijken/bewerken"
+  },
+  "createSubRecipeInline.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "createSubRecipeInline.closeModal": {
+    "defaultMessage": "Venster voor subrecept maken sluiten"
+  },
+  "createSubRecipeInline.createAndAdd": {
+    "defaultMessage": "Subrecept maken en toevoegen"
+  },
+  "createSubRecipeInline.createdSuccess": {
+    "defaultMessage": "Subrecept gemaakt"
+  },
+  "createSubRecipeInline.creating": {
+    "defaultMessage": "Bezig met maken..."
+  },
+  "createSubRecipeInline.duplicateName": {
+    "defaultMessage": "Naam bestaat al"
+  },
+  "createSubRecipeInline.duplicateNameMsg": {
+    "defaultMessage": "Er is al een subrecept met de naam \"{name}\". Kies een andere naam."
+  },
+  "createSubRecipeInline.instructionsLabel": {
+    "defaultMessage": "Instructies"
+  },
+  "createSubRecipeInline.instructionsPlaceholder": {
+    "defaultMessage": "Instructies voor de AI wanneer dit subrecept wordt aangeroepen..."
+  },
+  "createSubRecipeInline.nameHint": {
+    "defaultMessage": "Unieke naam waarmee de toolnaam wordt gemaakt"
+  },
+  "createSubRecipeInline.nameLabel": {
+    "defaultMessage": "Naam"
+  },
+  "createSubRecipeInline.namePlaceholder": {
+    "defaultMessage": "bijv. security_scan"
+  },
+  "createSubRecipeInline.preconfiguredValues": {
+    "defaultMessage": "Vaste waarden"
+  },
+  "createSubRecipeInline.preconfiguredValuesHint": {
+    "defaultMessage": "Waarden die altijd aan het subrecept worden meegegeven (niet verplicht)"
+  },
+  "createSubRecipeInline.recipeDescriptionLabel": {
+    "defaultMessage": "Omschrijving van het recept"
+  },
+  "createSubRecipeInline.recipeDescriptionPlaceholder": {
+    "defaultMessage": "Wat dit recept doet als je het uitvoert"
+  },
+  "createSubRecipeInline.recipeTitleLabel": {
+    "defaultMessage": "Titel van het recept"
+  },
+  "createSubRecipeInline.recipeTitlePlaceholder": {
+    "defaultMessage": "bijv. Veiligheidsanalyse"
+  },
+  "createSubRecipeInline.saveFailed": {
+    "defaultMessage": "Opslaan mislukt"
+  },
+  "createSubRecipeInline.saveFailedMsg": {
+    "defaultMessage": "Subrecept opslaan mislukt: {error}"
+  },
+  "createSubRecipeInline.sequentialHint": {
+    "defaultMessage": "(Dwingt af dat meerdere instanties na elkaar lopen)"
+  },
+  "createSubRecipeInline.sequentialLabel": {
+    "defaultMessage": "Achter elkaar bij herhaling"
+  },
+  "createSubRecipeInline.subtitle": {
+    "defaultMessage": "Maak een eenvoudig recept dat je als tool kunt aanroepen vanuit je hoofdrecept"
+  },
+  "createSubRecipeInline.title": {
+    "defaultMessage": "Nieuw subrecept maken"
+  },
+  "createSubRecipeInline.toolDescriptionLabel": {
+    "defaultMessage": "Toolomschrijving"
+  },
+  "createSubRecipeInline.toolDescriptionPlaceholder": {
+    "defaultMessage": "Omschrijving die te zien is als dit als tool wordt aangeroepen (niet verplicht)"
+  },
+  "createSubRecipeInline.validationFailed": {
+    "defaultMessage": "Controle mislukt"
+  },
+  "createSubRecipeInline.validationMsg": {
+    "defaultMessage": "Naam, titel, omschrijving van het recept en instructies zijn verplicht."
+  },
+  "creditsExhaustedNotification.addCredits": {
+    "defaultMessage": "Credits toevoegen"
+  },
+  "creditsExhaustedNotification.insufficientCredits": {
+    "defaultMessage": "Niet genoeg credits"
+  },
+  "cronPicker.april": {
+    "defaultMessage": "april"
+  },
+  "cronPicker.at": {
+    "defaultMessage": "om"
+  },
+  "cronPicker.atMinute": {
+    "defaultMessage": "op minuut"
+  },
+  "cronPicker.atSecond": {
+    "defaultMessage": "op seconde"
+  },
+  "cronPicker.august": {
+    "defaultMessage": "augustus"
+  },
+  "cronPicker.cronExpression": {
+    "defaultMessage": "Cron-expressie"
+  },
+  "cronPicker.custom": {
+    "defaultMessage": "Eigen cron"
+  },
+  "cronPicker.day": {
+    "defaultMessage": "Dag"
+  },
+  "cronPicker.december": {
+    "defaultMessage": "december"
+  },
+  "cronPicker.emptyCronError": {
+    "defaultMessage": "De cron-expressie mag niet leeg zijn"
+  },
+  "cronPicker.every": {
+    "defaultMessage": "Elke"
+  },
+  "cronPicker.february": {
+    "defaultMessage": "februari"
+  },
+  "cronPicker.friday": {
+    "defaultMessage": "vrijdag"
+  },
+  "cronPicker.hour": {
+    "defaultMessage": "Uur"
+  },
+  "cronPicker.inMonth": {
+    "defaultMessage": "in"
+  },
+  "cronPicker.invalidDayOfMonth": {
+    "defaultMessage": "De dag moet tussen 1 en {max} liggen"
+  },
+  "cronPicker.january": {
+    "defaultMessage": "januari"
+  },
+  "cronPicker.july": {
+    "defaultMessage": "juli"
+  },
+  "cronPicker.june": {
+    "defaultMessage": "juni"
+  },
+  "cronPicker.march": {
+    "defaultMessage": "maart"
+  },
+  "cronPicker.may": {
+    "defaultMessage": "mei"
+  },
+  "cronPicker.minute": {
+    "defaultMessage": "Minuut"
+  },
+  "cronPicker.mode": {
+    "defaultMessage": "Modus"
+  },
+  "cronPicker.monday": {
+    "defaultMessage": "maandag"
+  },
+  "cronPicker.month": {
+    "defaultMessage": "Maand"
+  },
+  "cronPicker.november": {
+    "defaultMessage": "november"
+  },
+  "cronPicker.october": {
+    "defaultMessage": "oktober"
+  },
+  "cronPicker.on": {
+    "defaultMessage": "op"
+  },
+  "cronPicker.onDay": {
+    "defaultMessage": "op dag"
+  },
+  "cronPicker.quarter": {
+    "defaultMessage": "Kwartaal"
+  },
+  "cronPicker.saturday": {
+    "defaultMessage": "zaterdag"
+  },
+  "cronPicker.september": {
+    "defaultMessage": "september"
+  },
+  "cronPicker.startingMonth": {
+    "defaultMessage": "beginmaand"
+  },
+  "cronPicker.sunday": {
+    "defaultMessage": "zondag"
+  },
+  "cronPicker.thursday": {
+    "defaultMessage": "donderdag"
+  },
+  "cronPicker.tuesday": {
+    "defaultMessage": "dinsdag"
+  },
+  "cronPicker.wednesday": {
+    "defaultMessage": "woensdag"
+  },
+  "cronPicker.week": {
+    "defaultMessage": "Week"
+  },
+  "cronPicker.year": {
+    "defaultMessage": "Jaar"
+  },
+  "customProviderForm.add": {
+    "defaultMessage": "Toevoegen"
+  },
+  "customProviderForm.alwaysUseToolshim": {
+    "defaultMessage": "Altijd Toolshim gebruiken voor deze provider"
+  },
+  "customProviderForm.anthropicCompatible": {
+    "defaultMessage": "Anthropic-compatibel"
+  },
+  "customProviderForm.apiBasePath": {
+    "defaultMessage": "API-basispad (niet verplicht)"
+  },
+  "customProviderForm.apiBasePathHint": {
+    "defaultMessage": "Overschrijf het standaard API-pad. Laat leeg om het standaardpad van de provider te gebruiken."
+  },
+  "customProviderForm.apiBasePathPlaceholder": {
+    "defaultMessage": "bijv. v1/chat/completions of project_id/v1"
+  },
+  "customProviderForm.apiKey": {
+    "defaultMessage": "API-sleutel"
+  },
+  "customProviderForm.apiKeyPlaceholderExisting": {
+    "defaultMessage": "Laat leeg om de huidige sleutel te houden"
+  },
+  "customProviderForm.apiKeyPlaceholderNew": {
+    "defaultMessage": "Je API-sleutel"
+  },
+  "customProviderForm.apiKeyRequired": {
+    "defaultMessage": "Een API-sleutel is verplicht"
+  },
+  "customProviderForm.apiUrl": {
+    "defaultMessage": "API-URL"
+  },
+  "customProviderForm.apiUrlPlaceholder": {
+    "defaultMessage": "https://api.example.com"
+  },
+  "customProviderForm.apiUrlRequired": {
+    "defaultMessage": "Een API-URL is verplicht"
+  },
+  "customProviderForm.attachments": {
+    "defaultMessage": "Bijlagen"
+  },
+  "customProviderForm.authHint": {
+    "defaultMessage": "Lokale LLM's zoals Ollama hebben meestal geen API-sleutel nodig."
+  },
+  "customProviderForm.authentication": {
+    "defaultMessage": "Aanmelden"
+  },
+  "customProviderForm.availableModels": {
+    "defaultMessage": "Beschikbare modellen (met komma's gescheiden)"
+  },
+  "customProviderForm.back": {
+    "defaultMessage": "← Terug"
+  },
+  "customProviderForm.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "customProviderForm.cannotDeleteActive": {
+    "defaultMessage": "Je kunt deze provider niet verwijderen zolang hij in gebruik is. Schakel eerst over naar een ander model."
+  },
+  "customProviderForm.chooseSetup": {
+    "defaultMessage": "Kies hoe je je provider wilt instellen."
+  },
+  "customProviderForm.clear": {
+    "defaultMessage": "Leegmaken"
+  },
+  "customProviderForm.configureManually": {
+    "defaultMessage": "Zelf instellen"
+  },
+  "customProviderForm.configureManuallyDesc": {
+    "defaultMessage": "Vul alle gegevens van de provider zelf in"
+  },
+  "customProviderForm.confirmDelete": {
+    "defaultMessage": "Verwijderen bevestigen"
+  },
+  "customProviderForm.createProvider": {
+    "defaultMessage": "Provider maken"
+  },
+  "customProviderForm.customHeaders": {
+    "defaultMessage": "Eigen headers"
+  },
+  "customProviderForm.customHeadersHint": {
+    "defaultMessage": "Voeg eigen HTTP-headers toe aan de aanvragen naar de provider. Vul beide velden en klik dan op \"+\"."
+  },
+  "customProviderForm.deleteConfirmation": {
+    "defaultMessage": "Weet je zeker dat je deze eigen provider wilt verwijderen? De provider en de opgeslagen API-sleutel verdwijnen definitief. Dit kun je niet terugdraaien."
+  },
+  "customProviderForm.deleteProvider": {
+    "defaultMessage": "Provider verwijderen"
+  },
+  "customProviderForm.displayName": {
+    "defaultMessage": "Weergavenaam"
+  },
+  "customProviderForm.displayNamePlaceholder": {
+    "defaultMessage": "Naam van je provider"
+  },
+  "customProviderForm.displayNameRequired": {
+    "defaultMessage": "Een weergavenaam is verplicht"
+  },
+  "customProviderForm.docs": {
+    "defaultMessage": "Documentatie"
+  },
+  "customProviderForm.headerBothRequired": {
+    "defaultMessage": "Vul zowel de naam als de waarde van de header in"
+  },
+  "customProviderForm.headerDuplicate": {
+    "defaultMessage": "Er is al een header met deze naam"
+  },
+  "customProviderForm.headerNamePlaceholder": {
+    "defaultMessage": "Naam van de header"
+  },
+  "customProviderForm.headerNoSpaces": {
+    "defaultMessage": "De naam van een header mag geen spaties bevatten"
+  },
+  "customProviderForm.modelsPlaceholder": {
+    "defaultMessage": "model-a, model-b, model-c"
+  },
+  "customProviderForm.modelsRequired": {
+    "defaultMessage": "Er is minstens één model nodig"
+  },
+  "customProviderForm.ollamaCompatible": {
+    "defaultMessage": "Ollama-compatibel"
+  },
+  "customProviderForm.openaiCompatible": {
+    "defaultMessage": "OpenAI-compatibel"
+  },
+  "customProviderForm.providerType": {
+    "defaultMessage": "Soort provider"
+  },
+  "customProviderForm.reasoning": {
+    "defaultMessage": "Redeneren"
+  },
+  "customProviderForm.requiresApiKey": {
+    "defaultMessage": "Deze provider heeft een API-sleutel nodig"
+  },
+  "customProviderForm.startFromTemplate": {
+    "defaultMessage": "Begin met een providersjabloon"
+  },
+  "customProviderForm.startFromTemplateDesc": {
+    "defaultMessage": "Kies een bekende provider; wij vullen de configuratie voor je in"
+  },
+  "customProviderForm.submitError": {
+    "defaultMessage": "Provider opslaan mislukt. Controleer je configuratie en probeer het opnieuw."
+  },
+  "customProviderForm.supportsStreaming": {
+    "defaultMessage": "Provider ondersteunt streaming antwoorden"
+  },
+  "customProviderForm.toolCalling": {
+    "defaultMessage": "Tools aanroepen"
+  },
+  "customProviderForm.updateProvider": {
+    "defaultMessage": "Provider bijwerken"
+  },
+  "customProviderForm.usingTemplate": {
+    "defaultMessage": "Sjabloon in gebruik: {name}"
+  },
+  "customProviderForm.valuePlaceholder": {
+    "defaultMessage": "Waarde"
+  },
+  "defaultCardButtons.configureSettings": {
+    "defaultMessage": "Instellingen van {name} aanpassen"
+  },
+  "defaultCardButtons.deleteSettings": {
+    "defaultMessage": "Instellingen van {name} verwijderen"
+  },
+  "defaultCardButtons.editSettings": {
+    "defaultMessage": "Instellingen van {name} bewerken"
+  },
+  "defaultCardButtons.getStarted": {
+    "defaultMessage": "Ga aan de slag met goose!"
+  },
+  "defaultProviderSetupForm.apiHostLabel": {
+    "defaultMessage": "API-host"
+  },
+  "defaultProviderSetupForm.apiHostPlaceholder": {
+    "defaultMessage": "https://api.example.com"
+  },
+  "defaultProviderSetupForm.apiKeyLabel": {
+    "defaultMessage": "API-sleutel"
+  },
+  "defaultProviderSetupForm.apiKeyPlaceholder": {
+    "defaultMessage": "Je API-sleutel"
+  },
+  "defaultProviderSetupForm.hideOptions": {
+    "defaultMessage": "{count} opties verbergen"
+  },
+  "defaultProviderSetupForm.loadingConfig": {
+    "defaultMessage": "Bezig met laden van de configuratie..."
+  },
+  "defaultProviderSetupForm.modelsLabel": {
+    "defaultMessage": "Modellen"
+  },
+  "defaultProviderSetupForm.modelsPlaceholder": {
+    "defaultMessage": "model-a, model-b"
+  },
+  "defaultProviderSetupForm.noConfigParameters": {
+    "defaultMessage": "Deze provider heeft geen instellingen."
+  },
+  "defaultProviderSetupForm.showOptions": {
+    "defaultMessage": "{count} opties tonen"
+  },
+  "diagnosticsModal.attachHint": {
+    "defaultMessage": "Doe het diagnoserapport erbij als je een bug meldt."
+  },
+  "diagnosticsModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "diagnosticsModal.configSettings": {
+    "defaultMessage": "Configuratie-instellingen"
+  },
+  "diagnosticsModal.description": {
+    "defaultMessage": "Je kunt een diagnoserapport in JSON downloaden om met het team te delen, of direct een bug melden op GitHub met je systeemgegevens al ingevuld. In een diagnoserapport zit het volgende:"
+  },
+  "diagnosticsModal.diagnosticsErrorMsg": {
+    "defaultMessage": "Diagnoserapport downloaden mislukt"
+  },
+  "diagnosticsModal.diagnosticsErrorTitle": {
+    "defaultMessage": "Fout bij diagnose"
+  },
+  "diagnosticsModal.download": {
+    "defaultMessage": "Downloaden"
+  },
+  "diagnosticsModal.downloading": {
+    "defaultMessage": "Bezig met downloaden..."
+  },
+  "diagnosticsModal.fileBug": {
+    "defaultMessage": "Bug melden op GitHub"
+  },
+  "diagnosticsModal.logFiles": {
+    "defaultMessage": "Recente logbestanden"
+  },
+  "diagnosticsModal.opening": {
+    "defaultMessage": "Bezig met openen..."
+  },
+  "diagnosticsModal.reportProblem": {
+    "defaultMessage": "Probleem melden"
+  },
+  "diagnosticsModal.sensitiveWarning": {
+    "defaultMessage": "Deel het diagnosebestand niet in het openbaar als er gevoelige informatie in je sessie staat."
+  },
+  "diagnosticsModal.sessionMessages": {
+    "defaultMessage": "De berichten uit je huidige sessie"
+  },
+  "diagnosticsModal.systemInfo": {
+    "defaultMessage": "Basisgegevens over je systeem"
+  },
+  "diagnosticsModal.systemInfoErrorMsg": {
+    "defaultMessage": "Systeemgegevens ophalen mislukt"
+  },
+  "diagnosticsModal.systemInfoErrorTitle": {
+    "defaultMessage": "Fout"
+  },
+  "dialog.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "dictationSettings.addApiKey": {
+    "defaultMessage": "API-sleutel toevoegen"
+  },
+  "dictationSettings.apiKey": {
+    "defaultMessage": "API-sleutel"
+  },
+  "dictationSettings.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "dictationSettings.chooseVoiceConversion": {
+    "defaultMessage": "Kies hoe spraak naar tekst wordt omgezet"
+  },
+  "dictationSettings.configureApiKey": {
+    "defaultMessage": "Stel de API-sleutel in bij <b>{settingsPath}</b>"
+  },
+  "dictationSettings.configured": {
+    "defaultMessage": "(ingesteld)"
+  },
+  "dictationSettings.configuredIn": {
+    "defaultMessage": "✓ Ingesteld bij {settingsPath}"
+  },
+  "dictationSettings.disabled": {
+    "defaultMessage": "Uit"
+  },
+  "dictationSettings.enterApiKey": {
+    "defaultMessage": "Vul je API-sleutel in"
+  },
+  "dictationSettings.notConfigured": {
+    "defaultMessage": "(niet ingesteld)"
+  },
+  "dictationSettings.removeApiKey": {
+    "defaultMessage": "API-sleutel weghalen"
+  },
+  "dictationSettings.requiredForTranscription": {
+    "defaultMessage": "Nodig om spraak uit te schrijven"
+  },
+  "dictationSettings.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "dictationSettings.updateApiKey": {
+    "defaultMessage": "API-sleutel bijwerken"
+  },
+  "dictationSettings.voiceDictationProvider": {
+    "defaultMessage": "Provider voor dicteren"
+  },
+  "dirSwitcher.chooseDirectory": {
+    "defaultMessage": "Map kiezen…"
+  },
+  "dirSwitcher.currentDirectory": {
+    "defaultMessage": "Huidige map"
+  },
+  "dirSwitcher.enterPath": {
+    "defaultMessage": "Pad invullen"
+  },
+  "dirSwitcher.enterPathInvalid": {
+    "defaultMessage": "De werkmap moet een absoluut pad zijn"
+  },
+  "dirSwitcher.enterPathPlaceholder": {
+    "defaultMessage": "Vul een absoluut pad in (bijv. /home/goose/workspace)"
+  },
+  "dirSwitcher.failedToUpdateWorkingDir": {
+    "defaultMessage": "Werkmap wijzigen mislukt"
+  },
+  "dirSwitcher.gitWorktrees": {
+    "defaultMessage": "Git-worktrees"
+  },
+  "dirSwitcher.noWorktreesFound": {
+    "defaultMessage": "Geen worktrees gevonden"
+  },
+  "dirSwitcher.openInFinder": {
+    "defaultMessage": "Openen in verkenner"
+  },
+  "dirSwitcher.recentDirectories": {
+    "defaultMessage": "Recente mappen"
+  },
+  "elicitationRequest.accept": {
+    "defaultMessage": "Akkoord"
+  },
+  "elicitationRequest.cancelled": {
+    "defaultMessage": "De vraag om informatie is afgebroken."
+  },
+  "elicitationRequest.defaultMessage": {
+    "defaultMessage": "Goose heeft informatie van je nodig."
+  },
+  "elicitationRequest.expired": {
+    "defaultMessage": "Deze vraag is verlopen. De extensie moet het opnieuw vragen."
+  },
+  "elicitationRequest.submit": {
+    "defaultMessage": "Versturen"
+  },
+  "elicitationRequest.submitError": {
+    "defaultMessage": "Deze vraag is niet meer actief. De extensie moet het opnieuw vragen."
+  },
+  "elicitationRequest.submitted": {
+    "defaultMessage": "Informatie verstuurd"
+  },
+  "elicitationRequest.waitingForResponse": {
+    "defaultMessage": "Wachten op je antwoord (nog {timeRemaining})"
+  },
+  "envVarsSection.add": {
+    "defaultMessage": "Toevoegen"
+  },
+  "envVarsSection.bothRequired": {
+    "defaultMessage": "Vul zowel de naam als de waarde van de variabele in"
+  },
+  "envVarsSection.envVarsDescription": {
+    "defaultMessage": "Voeg naam-waardeparen toe voor omgevingsvariabelen. Vul beide velden en klik dan op \"+\". Klik bij bestaande geheime waarden op de bewerkknop om ze aan te passen."
+  },
+  "envVarsSection.environmentVariables": {
+    "defaultMessage": "Omgevingsvariabelen"
+  },
+  "envVarsSection.noSpaces": {
+    "defaultMessage": "De naam van een variabele mag geen spaties bevatten"
+  },
+  "envVarsSection.value": {
+    "defaultMessage": "Waarde"
+  },
+  "envVarsSection.variableName": {
+    "defaultMessage": "Naam van de variabele"
+  },
+  "environmentBadge.dev": {
+    "defaultMessage": "Dev"
+  },
+  "errorBoundary.errorGeneric": {
+    "defaultMessage": "Er is iets fout gegaan."
+  },
+  "errorBoundary.errorWithVersion": {
+    "defaultMessage": "Er is iets fout gegaan in Goose v{version}."
+  },
+  "errorBoundary.heading": {
+    "defaultMessage": "Honk!"
+  },
+  "errorBoundary.reload": {
+    "defaultMessage": "Opnieuw laden"
+  },
+  "extensionConfigFields.commandLabel": {
+    "defaultMessage": "Commando"
+  },
+  "extensionConfigFields.commandPlaceholder": {
+    "defaultMessage": "bijv. npx -y @modelcontextprotocol/my-extension [bestandspad]"
+  },
+  "extensionConfigFields.commandRequired": {
+    "defaultMessage": "Een commando is verplicht"
+  },
+  "extensionConfigFields.endpointLabel": {
+    "defaultMessage": "Endpoint"
+  },
+  "extensionConfigFields.endpointPlaceholder": {
+    "defaultMessage": "Vul de endpoint-URL in..."
+  },
+  "extensionConfigFields.endpointRequired": {
+    "defaultMessage": "Een endpoint-URL is verplicht"
+  },
+  "extensionInfoFields.descriptionLabel": {
+    "defaultMessage": "Omschrijving"
+  },
+  "extensionInfoFields.descriptionPlaceholder": {
+    "defaultMessage": "Omschrijving (niet verplicht)..."
+  },
+  "extensionInfoFields.extensionName": {
+    "defaultMessage": "Naam van de extensie"
+  },
+  "extensionInfoFields.extensionNamePlaceholder": {
+    "defaultMessage": "Vul de naam van de extensie in..."
+  },
+  "extensionInfoFields.nameRequired": {
+    "defaultMessage": "Een naam is verplicht"
+  },
+  "extensionInfoFields.typeHttp": {
+    "defaultMessage": "HTTP"
+  },
+  "extensionInfoFields.typeLabel": {
+    "defaultMessage": "Type"
+  },
+  "extensionInfoFields.typeStandardIo": {
+    "defaultMessage": "Standard IO (STDIO)"
+  },
+  "extensionInfoFields.typeStdio": {
+    "defaultMessage": "STDIO"
+  },
+  "extensionInfoFields.typeStreamableHttp": {
+    "defaultMessage": "Streamable HTTP"
+  },
+  "extensionInstallModal.alreadyInstalledMessage": {
+    "defaultMessage": "De extensie ''{name}'' is al geïnstalleerd. Start een nieuwe chatsessie om hem te gebruiken."
+  },
+  "extensionInstallModal.alreadyInstalledTitle": {
+    "defaultMessage": "Extensie ''{name}'' is al geïnstalleerd"
+  },
+  "extensionInstallModal.blockedMessage": {
+    "defaultMessage": "Dit extensiecommando staat niet op de toegestane lijst en wordt daarom niet geïnstalleerd. Extensie: {name} Commando: {command} Vraag je beheerder om deze extensie goed te keuren."
+  },
+  "extensionInstallModal.blockedTitle": {
+    "defaultMessage": "Extensie installeren geblokkeerd"
+  },
+  "extensionInstallModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "extensionInstallModal.installAnyway": {
+    "defaultMessage": "Toch installeren"
+  },
+  "extensionInstallModal.installing": {
+    "defaultMessage": "Bezig met installeren..."
+  },
+  "extensionInstallModal.no": {
+    "defaultMessage": "Nee"
+  },
+  "extensionInstallModal.ok": {
+    "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "De toegestane lijst voor extensies kon niet worden opgehaald. Zolang die lijst er niet is, kun je geen extensies installeren. Vraag je beheerder om de instelling GOOSE_ALLOWLIST na te kijken."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extensiebeleid niet beschikbaar"
+  },
+  "extensionInstallModal.trustedMessage": {
+    "defaultMessage": "Weet je zeker dat je de extensie {name} wilt installeren? Commando: {command}"
+  },
+  "extensionInstallModal.trustedTitle": {
+    "defaultMessage": "Extensie installeren bevestigen"
+  },
+  "extensionInstallModal.unknownCommand": {
+    "defaultMessage": "Onbekend commando"
+  },
+  "extensionInstallModal.untrustedMessageWithCommand": {
+    "defaultMessage": "{securityMessage} Extensie: {name} Commando: {command} Vraag je beheerder als je twijfelt."
+  },
+  "extensionInstallModal.untrustedMessageWithUrl": {
+    "defaultMessage": "{securityMessage} Extensie: {name} URL: {url} Vraag je beheerder als je twijfelt."
+  },
+  "extensionInstallModal.untrustedSecurityMessage": {
+    "defaultMessage": "Dit extensiecommando staat niet op de toegestane lijst. De extensie kan bij je gesprekken komen en voegt functies toe. Extensies uit bronnen die je niet vertrouwt kunnen een veiligheidsrisico zijn."
+  },
+  "extensionInstallModal.untrustedTitle": {
+    "defaultMessage": "Niet-vertrouwde extensie installeren?"
+  },
+  "extensionInstallModal.yes": {
+    "defaultMessage": "Ja"
+  },
+  "extensionItem.configureExtension": {
+    "defaultMessage": "Extensie {name} instellen"
+  },
+  "extensionItem.toggleExtension": {
+    "defaultMessage": "Extensie {name} aan- of uitzetten"
+  },
+  "extensionList.availableExtensions": {
+    "defaultMessage": "Beschikbare extensies ({count})"
+  },
+  "extensionList.builtInExtension": {
+    "defaultMessage": "Ingebouwde extensie"
+  },
+  "extensionList.defaultExtensions": {
+    "defaultMessage": "Standaardextensies ({count})"
+  },
+  "extensionList.noExtensions": {
+    "defaultMessage": "Geen extensies beschikbaar"
+  },
+  "extensionModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "extensionModal.closeWithoutSaving": {
+    "defaultMessage": "Sluiten zonder opslaan"
+  },
+  "extensionModal.confirmRemoval": {
+    "defaultMessage": "Verwijderen bevestigen"
+  },
+  "extensionModal.deleteDescription": {
+    "defaultMessage": "Deze extensie en al zijn instellingen verdwijnen definitief."
+  },
+  "extensionModal.deleteExtensionTitle": {
+    "defaultMessage": "Extensie \"{name}\" verwijderen"
+  },
+  "extensionModal.installationNotes": {
+    "defaultMessage": "Opmerkingen bij de installatie"
+  },
+  "extensionModal.removeExtension": {
+    "defaultMessage": "Extensie weghalen"
+  },
+  "extensionModal.unsavedChangesMessage": {
+    "defaultMessage": "Je hebt de instellingen van de extensie aangepast maar niet opgeslagen. Wil je echt sluiten zonder op te slaan?"
+  },
+  "extensionModal.unsavedChangesTitle": {
+    "defaultMessage": "Niet opgeslagen wijzigingen"
+  },
+  "extensionTimeoutField.timeoutLabel": {
+    "defaultMessage": "Time-out"
+  },
+  "extensionsSection.addCustomExtension": {
+    "defaultMessage": "Eigen extensie toevoegen"
+  },
+  "extensionsSection.addExtension": {
+    "defaultMessage": "Extensie toevoegen"
+  },
+  "extensionsSection.browseExtensions": {
+    "defaultMessage": "Extensies bekijken"
+  },
+  "extensionsSection.saveChanges": {
+    "defaultMessage": "Wijzigingen opslaan"
+  },
+  "extensionsSection.updateExtension": {
+    "defaultMessage": "Extensie bijwerken"
+  },
+  "extensionsView.addCustomExtension": {
+    "defaultMessage": "Eigen extensie toevoegen"
+  },
+  "extensionsView.addExtension": {
+    "defaultMessage": "Extensie toevoegen"
+  },
+  "extensionsView.browseExtensions": {
+    "defaultMessage": "Extensies bekijken"
+  },
+  "extensionsView.defaultNote": {
+    "defaultMessage": "Extensies die je hier aanzet, staan standaard aan in nieuwe chats. Je kunt ze ook tijdens een chat aan- en uitzetten."
+  },
+  "extensionsView.description": {
+    "defaultMessage": "Deze extensies werken met het Model Context Protocol (MCP). Ze breiden uit wat Goose kan, met drie onderdelen: prompts, bronnen en tools. {searchShortcut} om te zoeken."
+  },
+  "extensionsView.heading": {
+    "defaultMessage": "Extensies"
+  },
+  "extensionsView.searchPlaceholder": {
+    "defaultMessage": "Zoek extensies..."
+  },
+  "externalBackendSection.certFingerprint": {
+    "defaultMessage": "Vingerafdruk van het certificaat (niet verplicht)"
+  },
+  "externalBackendSection.certFingerprintHelp": {
+    "defaultMessage": "Zet een bepaalde TLS-vingerafdruk vast. Laat je dit leeg, dan wordt het certificaat bij het eerste gebruik vertrouwd (TOFU)."
+  },
+  "externalBackendSection.certFingerprintPlaceholder": {
+    "defaultMessage": "AA:BB:CC:... of sha256/base64"
+  },
+  "externalBackendSection.description": {
+    "defaultMessage": "Goose start standaard een lokale backend. Gebruik dit om met een externe ACP-backend te verbinden."
+  },
+  "externalBackendSection.fingerprintRequiresHttps": {
+    "defaultMessage": "Een certificaat-vingerafdruk vraagt een https-URL"
+  },
+  "externalBackendSection.restartNote": {
+    "defaultMessage": "Wijzigingen gelden voor nieuwe chatvensters. Herstart Goose om bestaande vensters bij te werken."
+  },
+  "externalBackendSection.secretKey": {
+    "defaultMessage": "Geheime sleutel"
+  },
+  "externalBackendSection.secretKeyHelp": {
+    "defaultMessage": "De geheime sleutel die op de externe backend is ingesteld (GOOSE_SERVER__SECRET_KEY)."
+  },
+  "externalBackendSection.secretKeyPlaceholder": {
+    "defaultMessage": "Vul de geheime sleutel van de server in"
+  },
+  "externalBackendSection.serverUrl": {
+    "defaultMessage": "Basis-URL van de backend"
+  },
+  "externalBackendSection.serverUrlHelp": {
+    "defaultMessage": "Vul de HTTP(S)-basis-URL in. Goose kijkt op /status en verbindt met /acp onder die basis."
+  },
+  "externalBackendSection.title": {
+    "defaultMessage": "Externe backend (ACP)"
+  },
+  "externalBackendSection.urlBaseError": {
+    "defaultMessage": "Gebruik de basis-URL van de backend, dus het stuk vóór /acp, zonder query of fragment"
+  },
+  "externalBackendSection.urlFormatError": {
+    "defaultMessage": "Ongeldige URL"
+  },
+  "externalBackendSection.urlProtocolError": {
+    "defaultMessage": "De URL moet http of https gebruiken"
+  },
+  "externalBackendSection.useExternalServer": {
+    "defaultMessage": "Externe backend gebruiken"
+  },
+  "externalBackendSection.useExternalServerDescription": {
+    "defaultMessage": "Verbind met een ACP-backend die ergens anders draait."
+  },
+  "externalBackendSection.workingDir": {
+    "defaultMessage": "Werkmap op afstand (niet verplicht)"
+  },
+  "externalBackendSection.workingDirHelp": {
+    "defaultMessage": "Absoluut pad op de externe backend. Laat leeg om de lokale werkmap mee te sturen."
+  },
+  "externalBackendSection.workingDirPlaceholder": {
+    "defaultMessage": "/home/goose/workspace"
+  },
+  "gitBranchIndicator.failedToSwitch": {
+    "defaultMessage": "Overschakelen naar {branch} mislukt"
+  },
+  "gitBranchIndicator.noBranchesFound": {
+    "defaultMessage": "Geen branches gevonden"
+  },
+  "gitBranchIndicator.searchBranches": {
+    "defaultMessage": "Zoek branches…"
+  },
+  "gitBranchIndicator.uncommittedChanges": {
+    "defaultMessage": "Je hebt misschien wijzigingen die nog niet gecommit zijn."
+  },
+  "goosehintsModal.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "goosehintsModal.developer": {
+    "defaultMessage": "Developer"
+  },
+  "goosehintsModal.dialogDescription": {
+    "defaultMessage": "Geef extra context over je project, zodat Goose je beter begrijpt"
+  },
+  "goosehintsModal.dialogTitle": {
+    "defaultMessage": "Projecthints instellen (.goosehints)"
+  },
+  "goosehintsModal.errorReading": {
+    "defaultMessage": "Fout bij het lezen van het .goosehints-bestand: {error}"
+  },
+  "goosehintsModal.failedToAccess": {
+    "defaultMessage": "Geen toegang tot het .goosehints-bestand"
+  },
+  "goosehintsModal.failedToSave": {
+    "defaultMessage": ".goosehints-bestand opslaan mislukt"
+  },
+  "goosehintsModal.fileCreating": {
+    "defaultMessage": "Nieuw .goosehints-bestand aanmaken op: {filePath}"
+  },
+  "goosehintsModal.fileFound": {
+    "defaultMessage": ".goosehints-bestand gevonden op: {filePath}"
+  },
+  "goosehintsModal.helpText1": {
+    "defaultMessage": ".goosehints is een tekstbestand waarin je extra context over je project zet, zodat Goose je beter begrijpt."
+  },
+  "goosehintsModal.helpText2": {
+    "defaultMessage": "Zorg dat de extensie {bold} aanstaat op de extensiepagina. Die extensie is nodig voor .goosehints. Je moet je sessie opnieuw starten voordat wijzigingen in .goosehints werken."
+  },
+  "goosehintsModal.helpText3": {
+    "defaultMessage": "Zie {link} voor meer informatie."
+  },
+  "goosehintsModal.helpTextLink": {
+    "defaultMessage": ".goosehints gebruiken"
+  },
+  "goosehintsModal.placeholder": {
+    "defaultMessage": "Zet hier je projecthints..."
+  },
+  "goosehintsModal.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "goosehintsModal.savedSuccessfully": {
+    "defaultMessage": "Opgeslagen"
+  },
+  "goosehintsModal.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "goosehintsSection.configure": {
+    "defaultMessage": "Instellen"
+  },
+  "goosehintsSection.description": {
+    "defaultMessage": "Stel het .goosehints-bestand van je project in om Goose extra context te geven"
+  },
+  "goosehintsSection.title": {
+    "defaultMessage": "Projecthints (.goosehints)"
+  },
+  "groupedExtensionLoadingToast.askGoose": {
+    "defaultMessage": "Vraag het goose"
+  },
+  "groupedExtensionLoadingToast.collapseDetails": {
+    "defaultMessage": "Details inklappen"
+  },
+  "groupedExtensionLoadingToast.copied": {
+    "defaultMessage": "Gekopieerd!"
+  },
+  "groupedExtensionLoadingToast.copyError": {
+    "defaultMessage": "Fout kopiëren"
+  },
+  "groupedExtensionLoadingToast.expandDetails": {
+    "defaultMessage": "Details uitklappen"
+  },
+  "groupedExtensionLoadingToast.failedToAddExtension": {
+    "defaultMessage": "Extensie toevoegen mislukt"
+  },
+  "groupedExtensionLoadingToast.failedToLoad": {
+    "defaultMessage": "{count,plural,one{# extensie kon niet worden geladen} other{# extensies konden niet worden geladen}}"
+  },
+  "groupedExtensionLoadingToast.loadingExtensions": {
+    "defaultMessage": "{count,plural,one{Bezig met laden van # extensie...} other{Bezig met laden van # extensies...}}"
+  },
+  "groupedExtensionLoadingToast.partiallyLoaded": {
+    "defaultMessage": "{totalCount,plural,one{{successCount}/# extensie geladen} other{{successCount}/# extensies geladen}}"
+  },
+  "groupedExtensionLoadingToast.showDetails": {
+    "defaultMessage": "Details tonen"
+  },
+  "groupedExtensionLoadingToast.showLess": {
+    "defaultMessage": "Minder tonen"
+  },
+  "groupedExtensionLoadingToast.successfullyLoaded": {
+    "defaultMessage": "{count,plural,one{# extensie geladen} other{# extensies geladen}}"
+  },
+  "headersSection.add": {
+    "defaultMessage": "Toevoegen"
+  },
+  "headersSection.bothRequired": {
+    "defaultMessage": "Vul zowel de naam als de waarde van de header in"
+  },
+  "headersSection.duplicateHeader": {
+    "defaultMessage": "Er is al een header met deze naam"
+  },
+  "headersSection.headerName": {
+    "defaultMessage": "Naam van de header"
+  },
+  "headersSection.headersDescription": {
+    "defaultMessage": "Voeg eigen HTTP-headers toe aan de aanvragen naar de MCP-server. Vul beide velden en klik dan op \"+\"."
+  },
+  "headersSection.noSpaces": {
+    "defaultMessage": "De naam van een header mag geen spaties bevatten"
+  },
+  "headersSection.requestHeaders": {
+    "defaultMessage": "Request-headers"
+  },
+  "headersSection.value": {
+    "defaultMessage": "Waarde"
+  },
+  "hub.goodAfternoon": {
+    "defaultMessage": "Goedemiddag"
+  },
+  "hub.goodEvening": {
+    "defaultMessage": "Goedenavond"
+  },
+  "hub.goodMorning": {
+    "defaultMessage": "Goedemorgen"
+  },
+  "huggingFaceModelSearch.download": {
+    "defaultMessage": "Downloaden"
+  },
+  "huggingFaceModelSearch.downloaded": {
+    "defaultMessage": "Gedownload"
+  },
+  "huggingFaceModelSearch.downloading": {
+    "defaultMessage": "Bezig met downloaden…"
+  },
+  "huggingFaceModelSearch.loadingVariants": {
+    "defaultMessage": "Bezig met laden van varianten..."
+  },
+  "huggingFaceModelSearch.noGgufModels": {
+    "defaultMessage": "Geen geschikte lokale modellen gevonden voor deze zoekopdracht."
+  },
+  "huggingFaceModelSearch.recommended": {
+    "defaultMessage": "Aanbevolen"
+  },
+  "huggingFaceModelSearch.searchError": {
+    "defaultMessage": "Fout bij zoeken: {details}"
+  },
+  "huggingFaceModelSearch.searchFailed": {
+    "defaultMessage": "Zoeken mislukt. Probeer het opnieuw."
+  },
+  "huggingFaceModelSearch.searchHuggingFace": {
+    "defaultMessage": "Zoek op HuggingFace"
+  },
+  "huggingFaceModelSearch.searchNoData": {
+    "defaultMessage": "Zoeken leverde niets op."
+  },
+  "huggingFaceModelSearch.searchPlaceholder": {
+    "defaultMessage": "Zoek naar lokale modellen..."
+  },
+  "huggingFaceModelSearch.tooLarge": {
+    "defaultMessage": "Past misschien niet in het geheugen (model van {size}, {available} beschikbaar)"
+  },
+  "huggingFaceSignInPrompt.failedToConfigure": {
+    "defaultMessage": "Inloggen bij Hugging Face mislukt: {error}"
+  },
+  "huggingFaceSignInPrompt.signIn": {
+    "defaultMessage": "Inloggen"
+  },
+  "huggingFaceSignInPrompt.signedIn": {
+    "defaultMessage": "Ingelogd bij Hugging Face"
+  },
+  "huggingFaceSignInPrompt.signingIn": {
+    "defaultMessage": "Bezig met inloggen..."
+  },
+  "huggingFaceSignInPrompt.title": {
+    "defaultMessage": "Hugging Face"
+  },
+  "imagePreview.altText": {
+    "defaultMessage": "goose-afbeelding"
+  },
+  "imagePreview.clickToCollapse": {
+    "defaultMessage": "Klik om in te klappen"
+  },
+  "imagePreview.clickToExpand": {
+    "defaultMessage": "Klik om uit te klappen"
+  },
+  "imagePreview.unableToLoad": {
+    "defaultMessage": "Afbeelding kan niet worden geladen"
+  },
+  "importRecipeForm.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "importRecipeForm.deeplinkHint": {
+    "defaultMessage": "Plak een recept-deeplink die begint met \"goose://recipe?config=\""
+  },
+  "importRecipeForm.deeplinkPlaceholder": {
+    "defaultMessage": "Plak hier je goose://recipe?config=...-deeplink"
+  },
+  "importRecipeForm.example": {
+    "defaultMessage": "voorbeeld"
+  },
+  "importRecipeForm.expectedRecipeStructure": {
+    "defaultMessage": "Verwachte opbouw van het recept"
+  },
+  "importRecipeForm.importRecipeButton": {
+    "defaultMessage": "Recept importeren"
+  },
+  "importRecipeForm.importRecipeTitle": {
+    "defaultMessage": "Recept importeren"
+  },
+  "importRecipeForm.importing": {
+    "defaultMessage": "Bezig met importeren..."
+  },
+  "importRecipeForm.or": {
+    "defaultMessage": "OF"
+  },
+  "importRecipeForm.recipeDeeplinkLabel": {
+    "defaultMessage": "Recept-deeplink"
+  },
+  "importRecipeForm.recipeFileHint": {
+    "defaultMessage": "Upload een YAML- of JSON-bestand met de opbouw van het recept"
+  },
+  "importRecipeForm.recipeFileLabel": {
+    "defaultMessage": "Receptbestand"
+  },
+  "importRecipeForm.reviewWarning": {
+    "defaultMessage": "Kijk receptbestanden eerst na voordat je ze aan goose toevoegt."
+  },
+  "importRecipeForm.schemaDescription": {
+    "defaultMessage": "Je YAML- of JSON-bestand moet deze opbouw hebben. Verplicht zijn: title, description, en instructions óf prompt."
+  },
+  "inlineEditText.clickToEdit": {
+    "defaultMessage": "Klik om te bewerken"
+  },
+  "inlineEditText.doubleClickToEdit": {
+    "defaultMessage": "Dubbelklik om te bewerken"
+  },
+  "inlineEditText.enterText": {
+    "defaultMessage": "Vul tekst in"
+  },
+  "inlineEditText.failedToSave": {
+    "defaultMessage": "Opslaan mislukt"
+  },
+  "instructionsEditor.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "instructionsEditor.insertExample": {
+    "defaultMessage": "Voorbeeld invoegen"
+  },
+  "instructionsEditor.label": {
+    "defaultMessage": "Instructies"
+  },
+  "instructionsEditor.placeholder": {
+    "defaultMessage": "Uitgebreide instructies voor de AI, niet zichtbaar voor de gebruiker"
+  },
+  "instructionsEditor.save": {
+    "defaultMessage": "Instructies opslaan"
+  },
+  "instructionsEditor.syntaxHelp": {
+    "defaultMessage": "Gebruik {code} om parameters te maken die gebruikers zelf invullen"
+  },
+  "instructionsEditor.title": {
+    "defaultMessage": "Instructies bewerken"
+  },
+  "jsonSchemaEditor.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "jsonSchemaEditor.description": {
+    "defaultMessage": "Leg met JSON Schema vast hoe het antwoord van de AI eruit moet zien"
+  },
+  "jsonSchemaEditor.insertExample": {
+    "defaultMessage": "Voorbeeld invoegen"
+  },
+  "jsonSchemaEditor.invalidJson": {
+    "defaultMessage": "Ongeldige JSON"
+  },
+  "jsonSchemaEditor.label": {
+    "defaultMessage": "JSON-schema voor het antwoord"
+  },
+  "jsonSchemaEditor.save": {
+    "defaultMessage": "Schema opslaan"
+  },
+  "jsonSchemaEditor.title": {
+    "defaultMessage": "JSON-schema bewerken"
+  },
+  "jsonSchemaForm.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "jsonSchemaForm.fieldRequired": {
+    "defaultMessage": "Dit veld is verplicht"
+  },
+  "jsonSchemaForm.maxLength": {
+    "defaultMessage": "Maximale lengte is {maxLength}"
+  },
+  "jsonSchemaForm.maxValue": {
+    "defaultMessage": "Maximale waarde is {maximum}"
+  },
+  "jsonSchemaForm.minLength": {
+    "defaultMessage": "Minimale lengte is {minLength}"
+  },
+  "jsonSchemaForm.minValue": {
+    "defaultMessage": "Minimale waarde is {minimum}"
+  },
+  "jsonSchemaForm.noFields": {
+    "defaultMessage": "Geen velden om te tonen"
+  },
+  "jsonSchemaForm.selectPlaceholder": {
+    "defaultMessage": "Kies..."
+  },
+  "jsonSchemaForm.submit": {
+    "defaultMessage": "Versturen"
+  },
+  "keyValueEditor.addValue": {
+    "defaultMessage": "Vaste waarde toevoegen"
+  },
+  "keyValueEditor.defaultKeyPlaceholder": {
+    "defaultMessage": "Naam van de parameter..."
+  },
+  "keyValueEditor.defaultValuePlaceholder": {
+    "defaultMessage": "Waarde van de parameter..."
+  },
+  "keyValueEditor.removeValue": {
+    "defaultMessage": "Vaste waarde {key} weghalen"
+  },
+  "keyboardShortcuts.alwaysOnTopDescription": {
+    "defaultMessage": "Venster altijd bovenop zetten of niet"
+  },
+  "keyboardShortcuts.alwaysOnTopLabel": {
+    "defaultMessage": "Altijd bovenop"
+  },
+  "keyboardShortcuts.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "keyboardShortcuts.categoryApplication": {
+    "defaultMessage": "Sneltoetsen in de app"
+  },
+  "keyboardShortcuts.categoryApplicationDescription": {
+    "defaultMessage": "Deze sneltoetsen werken als Goose de actieve app is"
+  },
+  "keyboardShortcuts.categoryGlobal": {
+    "defaultMessage": "Sneltoetsen voor het hele systeem"
+  },
+  "keyboardShortcuts.categoryGlobalDescription": {
+    "defaultMessage": "Deze sneltoetsen werken overal, ook als Goose niet actief is"
+  },
+  "keyboardShortcuts.categorySearch": {
+    "defaultMessage": "Sneltoetsen bij zoeken"
+  },
+  "keyboardShortcuts.categorySearchDescription": {
+    "defaultMessage": "Deze sneltoetsen werken als je in een gesprek zoekt"
+  },
+  "keyboardShortcuts.categoryWindow": {
+    "defaultMessage": "Sneltoetsen voor vensters"
+  },
+  "keyboardShortcuts.categoryWindowDescription": {
+    "defaultMessage": "Deze sneltoetsen regelen hoe het venster zich gedraagt"
+  },
+  "keyboardShortcuts.change": {
+    "defaultMessage": "Wijzigen"
+  },
+  "keyboardShortcuts.disabled": {
+    "defaultMessage": "Uit"
+  },
+  "keyboardShortcuts.dismiss": {
+    "defaultMessage": "Sluiten"
+  },
+  "keyboardShortcuts.findDescription": {
+    "defaultMessage": "Zoeken openen in het gesprek"
+  },
+  "keyboardShortcuts.findLabel": {
+    "defaultMessage": "Zoeken"
+  },
+  "keyboardShortcuts.findNextDescription": {
+    "defaultMessage": "Naar het volgende zoekresultaat"
+  },
+  "keyboardShortcuts.findNextLabel": {
+    "defaultMessage": "Volgende zoeken"
+  },
+  "keyboardShortcuts.findPreviousDescription": {
+    "defaultMessage": "Naar het vorige zoekresultaat"
+  },
+  "keyboardShortcuts.findPreviousLabel": {
+    "defaultMessage": "Vorige zoeken"
+  },
+  "keyboardShortcuts.focusWindowDescription": {
+    "defaultMessage": "Het Goose-venster van waar dan ook naar voren halen"
+  },
+  "keyboardShortcuts.focusWindowLabel": {
+    "defaultMessage": "Goose-venster naar voren"
+  },
+  "keyboardShortcuts.loading": {
+    "defaultMessage": "Bezig met laden..."
+  },
+  "keyboardShortcuts.newChatDescription": {
+    "defaultMessage": "Een nieuwe chat in dit venster beginnen"
+  },
+  "keyboardShortcuts.newChatLabel": {
+    "defaultMessage": "Nieuwe chat"
+  },
+  "keyboardShortcuts.newChatWindowDescription": {
+    "defaultMessage": "Een nieuw Goose-venster openen"
+  },
+  "keyboardShortcuts.newChatWindowLabel": {
+    "defaultMessage": "Nieuw chatvenster"
+  },
+  "keyboardShortcuts.openDirectoryDescription": {
+    "defaultMessage": "Venster openen om een map te kiezen"
+  },
+  "keyboardShortcuts.openDirectoryLabel": {
+    "defaultMessage": "Map openen"
+  },
+  "keyboardShortcuts.quickLauncherDescription": {
+    "defaultMessage": "De snelstarter openen"
+  },
+  "keyboardShortcuts.quickLauncherLabel": {
+    "defaultMessage": "Snelstarter"
+  },
+  "keyboardShortcuts.reassignShortcut": {
+    "defaultMessage": "Sneltoets verplaatsen"
+  },
+  "keyboardShortcuts.resetAllShortcuts": {
+    "defaultMessage": "Alle sneltoetsen terugzetten"
+  },
+  "keyboardShortcuts.resetShortcutsDetail": {
+    "defaultMessage": "Alle sneltoetsen gaan terug naar hun oorspronkelijke instelling."
+  },
+  "keyboardShortcuts.resetShortcutsMessage": {
+    "defaultMessage": "Alle sneltoetsen terugzetten naar de standaardwaarden?"
+  },
+  "keyboardShortcuts.resetShortcutsTitle": {
+    "defaultMessage": "Sneltoetsen terugzetten"
+  },
+  "keyboardShortcuts.resetToDefaultsDescription": {
+    "defaultMessage": "Alle sneltoetsen terugzetten naar hun oorspronkelijke instelling"
+  },
+  "keyboardShortcuts.resetToDefaultsHeading": {
+    "defaultMessage": "Terug naar standaard"
+  },
+  "keyboardShortcuts.restartDescription": {
+    "defaultMessage": "Wijzigingen in sneltoetsen van de app (zoals Nieuwe chat of Instellingen) werken pas na een herstart van Goose. Sneltoetsen voor het hele systeem (Venster naar voren, Snelstarter) werken direct."
+  },
+  "keyboardShortcuts.restartRequired": {
+    "defaultMessage": "Herstart nodig"
+  },
+  "keyboardShortcuts.settingsDescription": {
+    "defaultMessage": "Instellingen openen"
+  },
+  "keyboardShortcuts.settingsLabel": {
+    "defaultMessage": "Instellingen"
+  },
+  "keyboardShortcuts.shortcutConflictSaveDetail": {
+    "defaultMessage": "Als je dit opslaat, raakt \"{conflictLabel}\" de sneltoets kwijt en gaat hij naar \"{targetLabel}\". Wil je doorgaan?"
+  },
+  "keyboardShortcuts.shortcutConflictTitle": {
+    "defaultMessage": "Sneltoets al in gebruik"
+  },
+  "keyboardShortcuts.shortcutConflictToggleDetail": {
+    "defaultMessage": "Als je dit aanzet, raakt \"{conflictLabel}\" de sneltoets kwijt en gaat hij naar \"{targetLabel}\". Wil je doorgaan?"
+  },
+  "keyboardShortcuts.shortcutConflictToggleMessage": {
+    "defaultMessage": "De sneltoets {shortcut} is al in gebruik voor \"{conflictLabel}\"."
+  },
+  "keyboardShortcuts.toggleNavigationDescription": {
+    "defaultMessage": "Het navigatiemenu tonen of verbergen"
+  },
+  "keyboardShortcuts.toggleNavigationLabel": {
+    "defaultMessage": "Navigatie aan/uit"
+  },
+  "launcher.placeholder": {
+    "defaultMessage": "Vraag goose wat je wilt..."
+  },
+  "liveVoice.connecting": {
+    "defaultMessage": "Bezig met verbinden van Live spraak"
+  },
+  "liveVoice.emptyComposerRequired": {
+    "defaultMessage": "Maak het bericht en de bijlagen leeg om Live spraak te gebruiken"
+  },
+  "liveVoice.error": {
+    "defaultMessage": "Live spraak mislukt. Probeer het opnieuw"
+  },
+  "liveVoice.live": {
+    "defaultMessage": "Live spraak stoppen"
+  },
+  "liveVoice.mute": {
+    "defaultMessage": "Microfoon uit"
+  },
+  "liveVoice.returnToActive": {
+    "defaultMessage": "Terug naar de actieve Live spraak"
+  },
+  "liveVoice.stopping": {
+    "defaultMessage": "Live spraak wordt gestopt"
+  },
+  "liveVoice.unmute": {
+    "defaultMessage": "Microfoon aan"
+  },
+  "liveVoiceSettings.description": {
+    "defaultMessage": "Praat live met Goose"
+  },
+  "liveVoiceSettings.title": {
+    "defaultMessage": "Live spraak"
+  },
+  "loadingGoose.compacting": {
+    "defaultMessage": "goose is het gesprek aan het verdichten..."
+  },
+  "loadingGoose.idle": {
+    "defaultMessage": "goose is ermee bezig…"
+  },
+  "loadingGoose.loadingConversation": {
+    "defaultMessage": "bezig met laden van het gesprek..."
+  },
+  "loadingGoose.restartingAgent": {
+    "defaultMessage": "sessie wordt opnieuw gestart..."
+  },
+  "loadingGoose.streaming": {
+    "defaultMessage": "goose is ermee bezig…"
+  },
+  "loadingGoose.thinking": {
+    "defaultMessage": "goose denkt na…"
+  },
+  "loadingGoose.waiting": {
+    "defaultMessage": "goose wacht…"
+  },
+  "localInferenceSettings.deleteConfirm": {
+    "defaultMessage": "Dit model verwijderen? Je kunt het later opnieuw downloaden."
+  },
+  "localInferenceSettings.description": {
+    "defaultMessage": "Download en beheer lokale LLM-modellen, zodat je geen API-sleutels nodig hebt. Zoek op Hugging Face naar GGUF- of MLX-modellen."
+  },
+  "localInferenceSettings.dismiss": {
+    "defaultMessage": "Sluiten"
+  },
+  "localInferenceSettings.downloadCancelled": {
+    "defaultMessage": "Download afgebroken"
+  },
+  "localInferenceSettings.downloadFailed": {
+    "defaultMessage": "Download mislukt"
+  },
+  "localInferenceSettings.downloadProgress": {
+    "defaultMessage": "{downloaded} / {total} ({percent}%)"
+  },
+  "localInferenceSettings.downloadedModels": {
+    "defaultMessage": "Gedownloade modellen"
+  },
+  "localInferenceSettings.downloading": {
+    "defaultMessage": "Bezig met downloaden"
+  },
+  "localInferenceSettings.evictFromMemory": {
+    "defaultMessage": "Uit het geheugen halen"
+  },
+  "localInferenceSettings.huggingFaceSignInNote": {
+    "defaultMessage": "Log in voor ruimere limieten bij het zoeken en downloaden van modellen, en voor toegang tot privé- of afgeschermde Hugging Face-repo's."
+  },
+  "localInferenceSettings.loadedInMemory": {
+    "defaultMessage": "In het geheugen geladen"
+  },
+  "localInferenceSettings.modelSettings": {
+    "defaultMessage": "Modelinstellingen"
+  },
+  "localInferenceSettings.modelSettingsTitle": {
+    "defaultMessage": "Modelinstellingen"
+  },
+  "localInferenceSettings.noModels": {
+    "defaultMessage": "Geen modellen beschikbaar"
+  },
+  "localInferenceSettings.recommended": {
+    "defaultMessage": "Aanbevolen"
+  },
+  "localInferenceSettings.remaining": {
+    "defaultMessage": "nog {time}"
+  },
+  "localInferenceSettings.retry": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "localInferenceSettings.title": {
+    "defaultMessage": "Lokale modellen"
+  },
+  "localInferenceSettings.vision": {
+    "defaultMessage": "Beeld"
+  },
+  "localInferenceSettings.visionEncoderDownloading": {
+    "defaultMessage": "Beeld-encoder wordt gedownload…"
+  },
+  "localInferenceSettings.visionEncoderNotDownloaded": {
+    "defaultMessage": "Beeld-encoder is niet gedownload"
+  },
+  "localModelManager.active": {
+    "defaultMessage": "Actief"
+  },
+  "localModelManager.deleteConfirm": {
+    "defaultMessage": "Dit model verwijderen? Je kunt het later opnieuw downloaden."
+  },
+  "localModelManager.download": {
+    "defaultMessage": "Downloaden"
+  },
+  "localModelManager.downloaded": {
+    "defaultMessage": "Gedownload"
+  },
+  "localModelManager.gpuAcceleration": {
+    "defaultMessage": "Ondersteunt GPU-versnelling (CUDA voor NVIDIA, Metal voor Apple Silicon). GPU-functies moeten bij het bouwen zijn aangezet om de hardware te kunnen gebruiken."
+  },
+  "localModelManager.noModels": {
+    "defaultMessage": "Geen modellen beschikbaar"
+  },
+  "localModelManager.recommended": {
+    "defaultMessage": "Aanbevolen"
+  },
+  "localModelManager.recommendedForHardware": {
+    "defaultMessage": "Aanbevolen voor jouw hardware"
+  },
+  "localModelManager.showAllModels": {
+    "defaultMessage": "Alle modellen tonen ({count} meer)"
+  },
+  "localModelManager.showRecommendedOnly": {
+    "defaultMessage": "Alleen aanbevolen tonen"
+  },
+  "localModelPicker.bestForMachine": {
+    "defaultMessage": "Beste keuze voor jouw machine"
+  },
+  "localModelPicker.cancelDownload": {
+    "defaultMessage": "Download afbreken"
+  },
+  "localModelPicker.checkingModels": {
+    "defaultMessage": "Bezig met controleren welke modellen er zijn..."
+  },
+  "localModelPicker.downloadModel": {
+    "defaultMessage": "{modelId} downloaden ({size})"
+  },
+  "localModelPicker.downloading": {
+    "defaultMessage": "Bezig met downloaden van {modelId}"
+  },
+  "localModelPicker.failedToLoad": {
+    "defaultMessage": "Beschikbare modellen laden mislukt. Probeer het opnieuw."
+  },
+  "localModelPicker.failedToStartDownload": {
+    "defaultMessage": "Download starten mislukt. Probeer het opnieuw."
+  },
+  "localModelPicker.hideOtherSizes": {
+    "defaultMessage": "Andere maten verbergen"
+  },
+  "localModelPicker.localModelsNote": {
+    "defaultMessage": "Bij lokale modellen blijft alles op je eigen machine, dus volledig privé. Hoe snel het is en hoe groot het contextvenster is, hangt af van je hardware en het model; dat kan minder zijn dan bij providers in de cloud."
+  },
+  "localModelPicker.lostConnection": {
+    "defaultMessage": "Verbinding met de download verbroken. Probeer het opnieuw."
+  },
+  "localModelPicker.modelNotFound": {
+    "defaultMessage": "Model niet gevonden"
+  },
+  "localModelPicker.ready": {
+    "defaultMessage": "Klaar"
+  },
+  "localModelPicker.selectModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "localModelPicker.showOtherSizes": {
+    "defaultMessage": "{count} andere maten tonen"
+  },
+  "localModelPicker.startingDownload": {
+    "defaultMessage": "Download wordt gestart..."
+  },
+  "localModelPicker.tryAgain": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "localModelPicker.useModel": {
+    "defaultMessage": "{modelId} gebruiken"
+  },
+  "markdownContent.copyCode": {
+    "defaultMessage": "Code kopiëren"
+  },
+  "markdownContent.failedToOpenLink": {
+    "defaultMessage": "Link openen mislukt"
+  },
+  "markdownContent.noApplicationFound": {
+    "defaultMessage": "Er is geen app om deze link mee te openen."
+  },
+  "mcpAppRenderer.appFallbackTitle": {
+    "defaultMessage": "App"
+  },
+  "mcpAppRenderer.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "mcpAppRenderer.exitFullscreen": {
+    "defaultMessage": "Volledig scherm verlaten"
+  },
+  "mcpAppRenderer.exitFullscreenTitle": {
+    "defaultMessage": "Volledig scherm verlaten (Esc)"
+  },
+  "mcpAppRenderer.failedToInitSandbox": {
+    "defaultMessage": "Sandbox-proxy starten mislukt"
+  },
+  "mcpAppRenderer.failedToLoadResource": {
+    "defaultMessage": "Bron laden mislukt"
+  },
+  "mcpAppRenderer.fullscreen": {
+    "defaultMessage": "Volledig scherm"
+  },
+  "mcpAppRenderer.invalidUrl": {
+    "defaultMessage": "Ongeldige URL"
+  },
+  "mcpAppRenderer.movePipWindow": {
+    "defaultMessage": "Beeld-in-beeldvenster verplaatsen"
+  },
+  "mcpAppRenderer.pictureInPicture": {
+    "defaultMessage": "Beeld in beeld"
+  },
+  "mcpAppRenderer.playingInPip": {
+    "defaultMessage": "Speelt in beeld-in-beeld"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Grootte van beeld-in-beeldvenster aanpassen"
+  },
+  "mentionPopover.itemsFound": {
+    "defaultMessage": "{count,plural,one{# resultaat gevonden} other{# resultaten gevonden}}"
+  },
+  "mentionPopover.loadingCommands": {
+    "defaultMessage": "Bezig met laden van commando's..."
+  },
+  "mentionPopover.noCommandsFound": {
+    "defaultMessage": "Geen commando's gevonden voor \"{query}\""
+  },
+  "mentionPopover.noItemsFound": {
+    "defaultMessage": "Niets gevonden voor \"{query}\""
+  },
+  "mentionPopover.scanningFiles": {
+    "defaultMessage": "Bezig met doorzoeken van bestanden..."
+  },
+  "messageCopyLink.copied": {
+    "defaultMessage": "Gekopieerd!"
+  },
+  "messageCopyLink.copy": {
+    "defaultMessage": "Kopiëren"
+  },
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count,plural,one{# bericht verborgen} other{# berichten verborgen}}"
+  },
+  "messageList.modelChanged": {
+    "defaultMessage": "Model gewijzigd: {previousModel} → {currentModel}"
+  },
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (gevraagd)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Alles tonen"
+  },
+  "messageQueue.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "messageQueue.cannotSendWhileEditing": {
+    "defaultMessage": "Versturen kan niet tijdens het bewerken"
+  },
+  "messageQueue.clearAll": {
+    "defaultMessage": "Alles leegmaken"
+  },
+  "messageQueue.clickToEdit": {
+    "defaultMessage": "{content} (klik om te bewerken)"
+  },
+  "messageQueue.collapseQueue": {
+    "defaultMessage": "Wachtrij inklappen"
+  },
+  "messageQueue.dragToReorder": {
+    "defaultMessage": "Sleep berichten om de volgorde te wijzigen"
+  },
+  "messageQueue.expandQueue": {
+    "defaultMessage": "Wachtrij uitklappen"
+  },
+  "messageQueue.messageCount": {
+    "defaultMessage": "{count,plural,one{# bericht {status}} other{# berichten {status}}}"
+  },
+  "messageQueue.messageQueue": {
+    "defaultMessage": "Wachtrij met berichten"
+  },
+  "messageQueue.next": {
+    "defaultMessage": "Volgende"
+  },
+  "messageQueue.paused": {
+    "defaultMessage": "Gepauzeerd"
+  },
+  "messageQueue.queuePaused": {
+    "defaultMessage": "Wachtrij gepauzeerd"
+  },
+  "messageQueue.queuePausedCompact": {
+    "defaultMessage": "Wachtrij gepauzeerd - klik op \"Verstuur\" of voeg een bericht toe om verder te gaan"
+  },
+  "messageQueue.queuePausedExpanded": {
+    "defaultMessage": "De wachtrij is gepauzeerd omdat er iets tussendoor kwam. Klik op \"Nu versturen\" of voeg een bericht toe om verder te gaan."
+  },
+  "messageQueue.queued": {
+    "defaultMessage": "in de wachtrij"
+  },
+  "messageQueue.removeFromQueue": {
+    "defaultMessage": "Dit bericht uit de wachtrij halen"
+  },
+  "messageQueue.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "messageQueue.sendNow": {
+    "defaultMessage": "Dit bericht nu versturen"
+  },
+  "messageQueue.stopAndSend": {
+    "defaultMessage": "Stop waar goose mee bezig is en verstuur dit bericht nu"
+  },
+  "messageQueue.waiting": {
+    "defaultMessage": "wacht"
+  },
+  "messageUsageStats.cacheHitRate": {
+    "defaultMessage": "({percent}% van de input)"
+  },
+  "messageUsageStats.cacheRead": {
+    "defaultMessage": "uit cache"
+  },
+  "messageUsageStats.cacheWrite": {
+    "defaultMessage": "naar cache"
+  },
+  "messageUsageStats.compaction": {
+    "defaultMessage": "Verdichting"
+  },
+  "messageUsageStats.cost": {
+    "defaultMessage": "Kosten"
+  },
+  "messageUsageStats.estimated": {
+    "defaultMessage": "(schatting)"
+  },
+  "messageUsageStats.firstToken": {
+    "defaultMessage": "Eerste token"
+  },
+  "messageUsageStats.input": {
+    "defaultMessage": "In"
+  },
+  "messageUsageStats.output": {
+    "defaultMessage": "Uit"
+  },
+  "messageUsageStats.reported": {
+    "defaultMessage": "(opgegeven)"
+  },
+  "messageUsageStats.speed": {
+    "defaultMessage": "Snelheid"
+  },
+  "messageUsageStats.tokenUnit": {
+    "defaultMessage": "tok"
+  },
+  "messageUsageStats.tokensPerSecondUnit": {
+    "defaultMessage": "tok/s"
+  },
+  "messageUsageStats.total": {
+    "defaultMessage": "Totaal"
+  },
+  "messageUsageStats.totalTime": {
+    "defaultMessage": "Totale tijd"
+  },
+  "microphoneSelector.chooseDescription": {
+    "defaultMessage": "Kies welke microfoon je voor dicteren gebruikt"
+  },
+  "microphoneSelector.grantAccess": {
+    "defaultMessage": "Toegang geven"
+  },
+  "microphoneSelector.grantAccessDescription": {
+    "defaultMessage": "Geef toegang om de beschikbare microfoons te zien"
+  },
+  "microphoneSelector.microphone": {
+    "defaultMessage": "Microfoon"
+  },
+  "microphoneSelector.microphoneLabel": {
+    "defaultMessage": "Microfoon {index}"
+  },
+  "microphoneSelector.selectedMicrophone": {
+    "defaultMessage": "Gekozen microfoon"
+  },
+  "microphoneSelector.speakToTest": {
+    "defaultMessage": "Spreek om je microfoon te testen ({seconds}s)"
+  },
+  "microphoneSelector.stop": {
+    "defaultMessage": "Stoppen"
+  },
+  "microphoneSelector.systemDefault": {
+    "defaultMessage": "Standaard van het systeem"
+  },
+  "microphoneSelector.test": {
+    "defaultMessage": "Testen"
+  },
+  "modeSelectionItem.autonomousDescription": {
+    "defaultMessage": "Mag bestanden vrij bewerken, maken en verwijderen."
+  },
+  "modeSelectionItem.autonomousLabel": {
+    "defaultMessage": "Zelfstandig"
+  },
+  "modeSelectionItem.chatOnlyDescription": {
+    "defaultMessage": "Praat met de gekozen provider, zonder tools of extensies."
+  },
+  "modeSelectionItem.chatOnlyLabel": {
+    "defaultMessage": "Alleen chatten"
+  },
+  "modeSelectionItem.manualDescription": {
+    "defaultMessage": "Alle tools, extensies en wijzigingen in bestanden moeten door een mens worden goedgekeurd"
+  },
+  "modeSelectionItem.manualLabel": {
+    "defaultMessage": "Handmatig"
+  },
+  "modeSelectionItem.smartDescription": {
+    "defaultMessage": "Bepaal op basis van het risico welke acties goedkeuring nodig hebben"
+  },
+  "modeSelectionItem.smartLabel": {
+    "defaultMessage": "Slim"
+  },
+  "modelAndProviderContext.modelChangeFailed": {
+    "defaultMessage": "{provider}/{model} mislukt"
+  },
+  "modelAndProviderContext.modelChangedTitle": {
+    "defaultMessage": "Model gewijzigd"
+  },
+  "modelAndProviderContext.selectModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "modelAndProviderContext.switchModelSuccess": {
+    "defaultMessage": "Model gewijzigd -- je gebruikt nu {model} van {provider}"
+  },
+  "modelAndProviderContext.unknownProviderMsg": {
+    "defaultMessage": "Onbekende provider in de configuratie -- kijk je config.yaml na"
+  },
+  "modelAndProviderContext.unknownProviderTitle": {
+    "defaultMessage": "Provider opzoeken"
+  },
+  "modelSettingsButtons.configureProviders": {
+    "defaultMessage": "Providers instellen"
+  },
+  "modelSettingsButtons.switchModels": {
+    "defaultMessage": "Van model wisselen"
+  },
+  "modelSettingsPanel.batchSize": {
+    "defaultMessage": "Batchgrootte"
+  },
+  "modelSettingsPanel.batchSizeDescription": {
+    "defaultMessage": "Batch voor het verwerken van prompts"
+  },
+  "modelSettingsPanel.builtinChatTemplate": {
+    "defaultMessage": "Ingebouwd sjabloon"
+  },
+  "modelSettingsPanel.builtinChatTemplateDescription": {
+    "defaultMessage": "Kies de naam van een ingebouwd llama.cpp-sjabloon"
+  },
+  "modelSettingsPanel.chatTemplate": {
+    "defaultMessage": "Chatsjabloon"
+  },
+  "modelSettingsPanel.chatTemplateBuiltin": {
+    "defaultMessage": "Ingebouwd"
+  },
+  "modelSettingsPanel.chatTemplateCustomInline": {
+    "defaultMessage": "Eigen sjabloon"
+  },
+  "modelSettingsPanel.chatTemplateDescription": {
+    "defaultMessage": "Gebruik de GGUF-metadata, een ingebouwd llama.cpp-sjabloon, of je eigen Jinja"
+  },
+  "modelSettingsPanel.chatTemplateEmbedded": {
+    "defaultMessage": "Meegeleverd"
+  },
+  "modelSettingsPanel.contextAndGeneration": {
+    "defaultMessage": "Context en genereren"
+  },
+  "modelSettingsPanel.contextSize": {
+    "defaultMessage": "Contextgrootte"
+  },
+  "modelSettingsPanel.contextSizeDescription": {
+    "defaultMessage": "Grootste contextvenster (0 = standaard van het model)"
+  },
+  "modelSettingsPanel.customChatTemplate": {
+    "defaultMessage": "Eigen chatsjabloon"
+  },
+  "modelSettingsPanel.customChatTemplateDescription": {
+    "defaultMessage": "Plak de volledige Jinja-broncode van het chatsjabloon"
+  },
+  "modelSettingsPanel.etaLearningRate": {
+    "defaultMessage": "Eta (learning rate)"
+  },
+  "modelSettingsPanel.flashAttention": {
+    "defaultMessage": "Flash attention"
+  },
+  "modelSettingsPanel.flashAttentionDescription": {
+    "defaultMessage": "Flash attention aanzetten"
+  },
+  "modelSettingsPanel.frequencyPenalty": {
+    "defaultMessage": "Frequency penalty"
+  },
+  "modelSettingsPanel.frequencyPenaltyDescription": {
+    "defaultMessage": "0,0 = uit"
+  },
+  "modelSettingsPanel.gpuLayers": {
+    "defaultMessage": "GPU-lagen"
+  },
+  "modelSettingsPanel.gpuLayersDescription": {
+    "defaultMessage": "Lagen die naar de GPU gaan"
+  },
+  "modelSettingsPanel.loadingSettings": {
+    "defaultMessage": "Bezig met laden van de instellingen..."
+  },
+  "modelSettingsPanel.lockModelInRam": {
+    "defaultMessage": "Model vastzetten in RAM (mlock)"
+  },
+  "modelSettingsPanel.lockModelInRamDescription": {
+    "defaultMessage": "Voorkom dat het model naar schijf wordt geswapt"
+  },
+  "modelSettingsPanel.maxOutputTokens": {
+    "defaultMessage": "Max. tokens uit"
+  },
+  "modelSettingsPanel.maxOutputTokensDescription": {
+    "defaultMessage": "Maximum aantal tokens dat wordt gegenereerd"
+  },
+  "modelSettingsPanel.minP": {
+    "defaultMessage": "Min P"
+  },
+  "modelSettingsPanel.performance": {
+    "defaultMessage": "Prestaties"
+  },
+  "modelSettingsPanel.presencePenalty": {
+    "defaultMessage": "Presence penalty"
+  },
+  "modelSettingsPanel.presencePenaltyDescription": {
+    "defaultMessage": "0,0 = uit"
+  },
+  "modelSettingsPanel.repeatPenalty": {
+    "defaultMessage": "Repeat penalty"
+  },
+  "modelSettingsPanel.repeatPenaltyDescription": {
+    "defaultMessage": "1,0 = uit"
+  },
+  "modelSettingsPanel.repeatWindow": {
+    "defaultMessage": "Repeat window"
+  },
+  "modelSettingsPanel.repeatWindowDescription": {
+    "defaultMessage": "Hoeveel tokens terug wordt gekeken"
+  },
+  "modelSettingsPanel.repetitionPenalty": {
+    "defaultMessage": "Repetition penalty"
+  },
+  "modelSettingsPanel.reset": {
+    "defaultMessage": "Terugzetten"
+  },
+  "modelSettingsPanel.resetToDefaults": {
+    "defaultMessage": "Terug naar standaard"
+  },
+  "modelSettingsPanel.samplingStrategy": {
+    "defaultMessage": "Sampling-strategie"
+  },
+  "modelSettingsPanel.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "modelSettingsPanel.seed": {
+    "defaultMessage": "Seed"
+  },
+  "modelSettingsPanel.tauTargetEntropy": {
+    "defaultMessage": "Tau (doel-entropie)"
+  },
+  "modelSettingsPanel.temperature": {
+    "defaultMessage": "Temperature"
+  },
+  "modelSettingsPanel.threads": {
+    "defaultMessage": "Threads"
+  },
+  "modelSettingsPanel.threadsDescription": {
+    "defaultMessage": "CPU-threads voor het genereren"
+  },
+  "modelSettingsPanel.toolCalling": {
+    "defaultMessage": "Tools aanroepen"
+  },
+  "modelSettingsPanel.toolCallingAuto": {
+    "defaultMessage": "Automatisch"
+  },
+  "modelSettingsPanel.toolCallingDescription": {
+    "defaultMessage": "Kies hoe lokale modellen tools aanroepen: via de eigen manier of nagebootst"
+  },
+  "modelSettingsPanel.toolCallingForceEmulated": {
+    "defaultMessage": "Altijd nagebootst"
+  },
+  "modelSettingsPanel.toolCallingForceNative": {
+    "defaultMessage": "Altijd eigen manier"
+  },
+  "modelSettingsPanel.topK": {
+    "defaultMessage": "Top K"
+  },
+  "modelSettingsPanel.topP": {
+    "defaultMessage": "Top P"
+  },
+  "modelsBottomBar.changeModel": {
+    "defaultMessage": "Model wijzigen"
+  },
+  "modelsBottomBar.currentModel": {
+    "defaultMessage": "Huidig model"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "Bezig met laden van het model..."
+  },
+  "modelsBottomBar.localModelSettings": {
+    "defaultMessage": "Instellingen lokaal model"
+  },
+  "modelsBottomBar.localModelSettingsTitle": {
+    "defaultMessage": "Instellingen lokaal model — {modelName}"
+  },
+  "modelsBottomBar.recentModels": {
+    "defaultMessage": "Recent"
+  },
+  "modelsBottomBar.resolvedModel": {
+    "defaultMessage": "Gekozen model"
+  },
+  "modelsBottomBar.selectModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "modelsSection.resetDescription": {
+    "defaultMessage": "Wis je gekozen model en provider om opnieuw te beginnen"
+  },
+  "modelsSection.resetTitle": {
+    "defaultMessage": "Provider en model terugzetten"
+  },
+  "navigation.itemApps": {
+    "defaultMessage": "Apps"
+  },
+  "navigation.itemExtensions": {
+    "defaultMessage": "Extensies"
+  },
+  "navigation.itemHome": {
+    "defaultMessage": "Nieuwe chat"
+  },
+  "navigation.itemRecipes": {
+    "defaultMessage": "Recepten"
+  },
+  "navigation.itemScheduler": {
+    "defaultMessage": "Planning"
+  },
+  "navigation.itemSessions": {
+    "defaultMessage": "Sessiegeschiedenis"
+  },
+  "navigation.itemSettings": {
+    "defaultMessage": "Instellingen"
+  },
+  "navigation.itemSkills": {
+    "defaultMessage": "Vaardigheden"
+  },
+  "navigationPanel.chats": {
+    "defaultMessage": "Chats"
+  },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Bezig met laden van chats…"
+  },
+  "navigationPanel.metaCreated": {
+    "defaultMessage": "Gemaakt"
+  },
+  "navigationPanel.metaDirectory": {
+    "defaultMessage": "Map"
+  },
+  "navigationPanel.metaModel": {
+    "defaultMessage": "Model"
+  },
+  "navigationPanel.metaStatus": {
+    "defaultMessage": "Status"
+  },
+  "navigationPanel.metaUpdated": {
+    "defaultMessage": "Bijgewerkt"
+  },
+  "navigationPanel.noChats": {
+    "defaultMessage": "Geen recente chats"
+  },
+  "navigationPanel.statusError": {
+    "defaultMessage": "Fout"
+  },
+  "navigationPanel.statusIdle": {
+    "defaultMessage": "Niets te doen"
+  },
+  "navigationPanel.statusStreaming": {
+    "defaultMessage": "Bezig"
+  },
+  "navigationPanel.statusUnread": {
+    "defaultMessage": "Ongelezen activiteit"
+  },
+  "navigationPanel.untitledSession": {
+    "defaultMessage": "Sessie zonder titel"
+  },
+  "onboardingGuard.checkProviderErrorDescription": {
+    "defaultMessage": "De server is misschien aan het opstarten of even niet bereikbaar."
+  },
+  "onboardingGuard.checkProviderErrorTitle": {
+    "defaultMessage": "Geen verbinding met de Goose-server"
+  },
+  "onboardingGuard.retry": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "onboardingGuard.welcomeDescription": {
+    "defaultMessage": "Je eigen AI-agent op deze machine. Verbind met een provider van AI-modellen om te beginnen."
+  },
+  "onboardingGuard.welcomeTitle": {
+    "defaultMessage": "Welkom bij goose"
+  },
+  "onboardingSuccess.allSet": {
+    "defaultMessage": "Je kunt aan de slag met goose."
+  },
+  "onboardingSuccess.connectedTo": {
+    "defaultMessage": "Verbonden met {providerName}"
+  },
+  "onboardingSuccess.getStarted": {
+    "defaultMessage": "Aan de slag"
+  },
+  "onboardingSuccess.learnMore": {
+    "defaultMessage": "Meer hierover"
+  },
+  "onboardingSuccess.localModelReady": {
+    "defaultMessage": "Lokaal model klaar"
+  },
+  "onboardingSuccess.privacyDescription": {
+    "defaultMessage": "Anonieme gebruiksgegevens helpen goose beter te maken. We verzamelen nooit je gesprekken, je code of persoonlijke gegevens."
+  },
+  "onboardingSuccess.privacyTitle": {
+    "defaultMessage": "Privacy"
+  },
+  "onboardingSuccess.shareUsageData": {
+    "defaultMessage": "Anonieme gebruiksgegevens delen"
+  },
+  "parameterInput.defaultValue": {
+    "defaultMessage": "Standaardwaarde"
+  },
+  "parameterInput.defaultValuePlaceholder": {
+    "defaultMessage": "Vul een standaardwaarde in"
+  },
+  "parameterInput.deleteParameter": {
+    "defaultMessage": "Parameter verwijderen: {key}"
+  },
+  "parameterInput.description": {
+    "defaultMessage": "omschrijving"
+  },
+  "parameterInput.descriptionHelp": {
+    "defaultMessage": "Dit is de tekst die de gebruiker te zien krijgt."
+  },
+  "parameterInput.descriptionPlaceholder": {
+    "defaultMessage": "Bijv. \"Vul de naam van het nieuwe onderdeel in\""
+  },
+  "parameterInput.inputType": {
+    "defaultMessage": "Soort invoer"
+  },
+  "parameterInput.optional": {
+    "defaultMessage": "Niet verplicht"
+  },
+  "parameterInput.optionsHelp": {
+    "defaultMessage": "Zet elke optie op een nieuwe regel. Ze komen in een keuzelijst te staan."
+  },
+  "parameterInput.optionsLabel": {
+    "defaultMessage": "Opties (één per regel)"
+  },
+  "parameterInput.optionsPlaceholder": {
+    "defaultMessage": "Optie 1 Optie 2 Optie 3"
+  },
+  "parameterInput.required": {
+    "defaultMessage": "Verplicht"
+  },
+  "parameterInput.requirement": {
+    "defaultMessage": "Verplicht of niet"
+  },
+  "parameterInput.typeBoolean": {
+    "defaultMessage": "Ja/nee"
+  },
+  "parameterInput.typeNumber": {
+    "defaultMessage": "Getal"
+  },
+  "parameterInput.typeSelect": {
+    "defaultMessage": "Keuzelijst"
+  },
+  "parameterInput.typeString": {
+    "defaultMessage": "Tekst"
+  },
+  "parameterInput.unused": {
+    "defaultMessage": "Niet gebruikt"
+  },
+  "parameterInput.unusedWarningTitle": {
+    "defaultMessage": "Deze parameter komt niet voor in de instructies of de prompt. Je kunt hem handmatig invullen, maar misschien heb je hem niet nodig."
+  },
+  "parameterInputModal.backToForm": {
+    "defaultMessage": "Terug naar het parameterformulier"
+  },
+  "parameterInputModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "parameterInputModal.cancelRecipeSetup": {
+    "defaultMessage": "Recept instellen annuleren"
+  },
+  "parameterInputModal.enterValue": {
+    "defaultMessage": "Vul een waarde in voor {key}..."
+  },
+  "parameterInputModal.false": {
+    "defaultMessage": "Nee"
+  },
+  "parameterInputModal.recipeParameters": {
+    "defaultMessage": "Receptparameters"
+  },
+  "parameterInputModal.select": {
+    "defaultMessage": "Kies..."
+  },
+  "parameterInputModal.selectOption": {
+    "defaultMessage": "Kies een optie..."
+  },
+  "parameterInputModal.startNewChat": {
+    "defaultMessage": "Nieuwe chat beginnen (zonder recept)"
+  },
+  "parameterInputModal.startRecipe": {
+    "defaultMessage": "Recept starten"
+  },
+  "parameterInputModal.true": {
+    "defaultMessage": "Ja"
+  },
+  "parameterInputModal.whatToDo": {
+    "defaultMessage": "Wat wil je doen?"
+  },
+  "permissionModal.alwaysAllow": {
+    "defaultMessage": "Altijd toestaan"
+  },
+  "permissionModal.askBefore": {
+    "defaultMessage": "Eerst vragen"
+  },
+  "permissionModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "permissionModal.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "permissionModal.failedToLoadTools": {
+    "defaultMessage": "Tools laden mislukt"
+  },
+  "permissionModal.failedToLoadToolsDescription": {
+    "defaultMessage": "De tools van deze extensie konden niet worden geladen. Misschien is de extensie niet geladen in deze sessie."
+  },
+  "permissionModal.neverAllow": {
+    "defaultMessage": "Nooit toestaan"
+  },
+  "permissionModal.noActiveSession": {
+    "defaultMessage": "Geen actieve sessie"
+  },
+  "permissionModal.noActiveSessionDescription": {
+    "defaultMessage": "Begin eerst een chatsessie om de toolrechten van deze extensie in te stellen. Toolrechten komen uit de extensies van de actieve sessie."
+  },
+  "permissionModal.noToolsAvailable": {
+    "defaultMessage": "Deze extensie heeft geen tools."
+  },
+  "permissionModal.saveChanges": {
+    "defaultMessage": "Wijzigingen opslaan"
+  },
+  "permissionRulesModal.description": {
+    "defaultMessage": "Stel per extensie in wat de tools mogen doen op je systeem."
+  },
+  "permissionRulesModal.extensionRules": {
+    "defaultMessage": "Regels per extensie"
+  },
+  "permissionRulesModal.title": {
+    "defaultMessage": "Toestemmingsregels"
+  },
+  "permissionSetting.extensionRules": {
+    "defaultMessage": "Regels per extensie"
+  },
+  "permissionSetting.permissionRules": {
+    "defaultMessage": "Toestemmingsregels"
+  },
+  "permissionSetting.permissionRulesDescription": {
+    "defaultMessage": "Verborgen instructies die naar de provider gaan om je antwoorden te sturen en context te geven."
+  },
+  "privacyInfoModal.collectErrors": {
+    "defaultMessage": "Soorten fouten (bijv. \"rate_limit\", \"auth\" - zonder details)"
+  },
+  "privacyInfoModal.collectExtensions": {
+    "defaultMessage": "Extensies en hoe vaak tools zijn gebruikt (alleen namen)"
+  },
+  "privacyInfoModal.collectOs": {
+    "defaultMessage": "Besturingssysteem, versie en architectuur"
+  },
+  "privacyInfoModal.collectProvider": {
+    "defaultMessage": "Gebruikte provider en model"
+  },
+  "privacyInfoModal.collectSession": {
+    "defaultMessage": "Cijfers over de sessie (duur, aantal interacties, tokengebruik)"
+  },
+  "privacyInfoModal.collectVersion": {
+    "defaultMessage": "goose-versie en hoe het is geïnstalleerd"
+  },
+  "privacyInfoModal.description": {
+    "defaultMessage": "Anonieme gebruiksgegevens helpen ons begrijpen hoe goose wordt gebruikt en wat er beter kan."
+  },
+  "privacyInfoModal.neverCollect": {
+    "defaultMessage": "We verzamelen nooit je gesprekken, je code, toolargumenten, foutmeldingen of persoonlijke gegevens. Je kunt dit altijd aanpassen bij Instellingen."
+  },
+  "privacyInfoModal.title": {
+    "defaultMessage": "Over privacy"
+  },
+  "privacyInfoModal.whatWeCollect": {
+    "defaultMessage": "Wat we verzamelen:"
+  },
+  "promptsSettings.allPromptsReset": {
+    "defaultMessage": "Alle prompts staan weer op de standaardwaarde"
+  },
+  "promptsSettings.backToList": {
+    "defaultMessage": "Terug naar de lijst"
+  },
+  "promptsSettings.confirmReplaceWithDefault": {
+    "defaultMessage": "De huidige inhoud vervangen door de standaardversie? Je wijzigingen gaan verloren."
+  },
+  "promptsSettings.confirmResetAll": {
+    "defaultMessage": "Weet je zeker dat je alle prompts terugzet naar de standaardversie? Dit kun je niet terugdraaien."
+  },
+  "promptsSettings.confirmResetOne": {
+    "defaultMessage": "Weet je zeker dat je deze prompt terugzet naar de standaardversie? Dit kun je niet terugdraaien."
+  },
+  "promptsSettings.confirmUnsavedBack": {
+    "defaultMessage": "Je hebt wijzigingen die niet zijn opgeslagen. Weet je zeker dat je terug wilt?"
+  },
+  "promptsSettings.customized": {
+    "defaultMessage": "Aangepast"
+  },
+  "promptsSettings.edit": {
+    "defaultMessage": "Bewerken"
+  },
+  "promptsSettings.editPromptTitle": {
+    "defaultMessage": "Bewerken: {name}"
+  },
+  "promptsSettings.editingLabel": {
+    "defaultMessage": "Bezig met: {name}"
+  },
+  "promptsSettings.enterPromptContent": {
+    "defaultMessage": "Zet hier de tekst van de prompt..."
+  },
+  "promptsSettings.failedToLoadPrompt": {
+    "defaultMessage": "Prompt laden mislukt"
+  },
+  "promptsSettings.failedToLoadPrompts": {
+    "defaultMessage": "Prompts laden mislukt"
+  },
+  "promptsSettings.failedToResetPrompt": {
+    "defaultMessage": "Prompt terugzetten mislukt"
+  },
+  "promptsSettings.failedToResetPrompts": {
+    "defaultMessage": "Prompts terugzetten mislukt"
+  },
+  "promptsSettings.failedToSavePrompt": {
+    "defaultMessage": "Prompt opslaan mislukt"
+  },
+  "promptsSettings.promptEditingDescription": {
+    "defaultMessage": "Pas de prompts aan die bepalen hoe goose zich in verschillende situaties gedraagt. Deze prompts gebruiken Jinja2. Wees voorzichtig met de variabelen in het sjabloon: een verkeerde wijziging kan dingen stukmaken. Deel verbeteringen met de community."
+  },
+  "promptsSettings.promptEditingTitle": {
+    "defaultMessage": "Prompts bewerken"
+  },
+  "promptsSettings.promptResetToDefault": {
+    "defaultMessage": "Prompt staat weer op de standaardwaarde"
+  },
+  "promptsSettings.promptSaved": {
+    "defaultMessage": "Prompt opgeslagen"
+  },
+  "promptsSettings.resetAll": {
+    "defaultMessage": "Alles terugzetten"
+  },
+  "promptsSettings.resetToDefault": {
+    "defaultMessage": "Terug naar standaard"
+  },
+  "promptsSettings.restoreDefault": {
+    "defaultMessage": "Standaardversie terugzetten"
+  },
+  "promptsSettings.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "promptsSettings.templateTip": {
+    "defaultMessage": "Variabelen als {extensionsExample} of {forExample} worden tijdens het uitvoeren vervangen door echte waarden. Haal geen variabelen weg die nodig zijn."
+  },
+  "promptsSettings.unsavedChanges": {
+    "defaultMessage": "Je hebt wijzigingen die niet zijn opgeslagen"
+  },
+  "providerCard.deprecatedReplacement": {
+    "defaultMessage": "Verouderd — gebruik {replacement}."
+  },
+  "providerCard.unknownProvider": {
+    "defaultMessage": "Onbekende provider"
+  },
+  "providerCatalogPicker.anthropicCompatible": {
+    "defaultMessage": "Anthropic-compatibel"
+  },
+  "providerCatalogPicker.apiFormat": {
+    "defaultMessage": "API-formaat"
+  },
+  "providerCatalogPicker.chooseProvider": {
+    "defaultMessage": "Kies een provider"
+  },
+  "providerCatalogPicker.errorPrefix": {
+    "defaultMessage": "Fout: {error}"
+  },
+  "providerCatalogPicker.loadingProviders": {
+    "defaultMessage": "Bezig met laden van providers..."
+  },
+  "providerCatalogPicker.modelsAvailable": {
+    "defaultMessage": "{count} modellen beschikbaar"
+  },
+  "providerCatalogPicker.noProvidersAvailable": {
+    "defaultMessage": "Geen providers beschikbaar"
+  },
+  "providerCatalogPicker.noProvidersFound": {
+    "defaultMessage": "Geen providers gevonden voor \"{query}\""
+  },
+  "providerCatalogPicker.openaiCompatible": {
+    "defaultMessage": "OpenAI-compatibel"
+  },
+  "providerCatalogPicker.requiresEnvVar": {
+    "defaultMessage": "• Heeft {envVar} nodig"
+  },
+  "providerCatalogPicker.searchProviders": {
+    "defaultMessage": "Zoek providers..."
+  },
+  "providerCatalogPicker.selectFormatDescription": {
+    "defaultMessage": "Kies een API-formaat en een provider. Wij vullen de configuratie voor je in."
+  },
+  "providerConfigForm.browserWindowOpen": {
+    "defaultMessage": "Er gaat een browservenster open waarin je kunt inloggen."
+  },
+  "providerConfigForm.configuring": {
+    "defaultMessage": "Bezig met instellen..."
+  },
+  "providerConfigForm.continue": {
+    "defaultMessage": "Doorgaan"
+  },
+  "providerConfigForm.deviceCodeAndEnter": {
+    "defaultMessage": "en vul in:"
+  },
+  "providerConfigForm.deviceCodeCopy": {
+    "defaultMessage": "Kopiëren"
+  },
+  "providerConfigForm.deviceCodeFlowHint": {
+    "defaultMessage": "Er gaat een browservenster open. De verificatiecode komt hier te staan, zodat je hem kunt invullen om het inloggen af te maken."
+  },
+  "providerConfigForm.deviceCodeVisit": {
+    "defaultMessage": "Ga naar"
+  },
+  "providerConfigForm.noApiKey": {
+    "defaultMessage": "Nog geen API-sleutel?"
+  },
+  "providerConfigForm.signInWith": {
+    "defaultMessage": "Inloggen met {providerName}"
+  },
+  "providerConfigForm.signingIn": {
+    "defaultMessage": "Bezig met inloggen..."
+  },
+  "providerConfigurationModal.addApiKeyDescription": {
+    "defaultMessage": "Voeg je API-sleutel(s) voor deze provider toe om hem in goose te gebruiken"
+  },
+  "providerConfigurationModal.browserWindowHint": {
+    "defaultMessage": "Er gaat een browservenster open waarin je kunt inloggen."
+  },
+  "providerConfigurationModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "providerConfigurationModal.cannotDeleteActive": {
+    "defaultMessage": "Je kunt deze provider niet verwijderen zolang hij in gebruik is. Schakel eerst over naar een ander model."
+  },
+  "providerConfigurationModal.checkConfigAgain": {
+    "defaultMessage": "Kijk je configuratie nog eens na om deze provider te gebruiken."
+  },
+  "providerConfigurationModal.chooseModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "providerConfigurationModal.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "providerConfigurationModal.configureHeader": {
+    "defaultMessage": "{providerName} instellen"
+  },
+  "providerConfigurationModal.deleteConfigHeader": {
+    "defaultMessage": "Configuratie van {providerName} verwijderen"
+  },
+  "providerConfigurationModal.deleteConfirmation": {
+    "defaultMessage": "De huidige configuratie van deze provider verdwijnt definitief."
+  },
+  "providerConfigurationModal.deviceCodeAndEnter": {
+    "defaultMessage": "en vul in:"
+  },
+  "providerConfigurationModal.deviceCodeCopy": {
+    "defaultMessage": "Kopiëren"
+  },
+  "providerConfigurationModal.deviceCodeFlowHint": {
+    "defaultMessage": "Er gaat een browservenster open. De verificatiecode komt hier te staan, zodat je hem kunt invullen om het inloggen af te maken."
+  },
+  "providerConfigurationModal.deviceCodeVisit": {
+    "defaultMessage": "Ga naar"
+  },
+  "providerConfigurationModal.errorCheckingConfig": {
+    "defaultMessage": "Er ging iets fout bij het controleren van deze providerconfiguratie."
+  },
+  "providerConfigurationModal.errorTitle": {
+    "defaultMessage": "Fout"
+  },
+  "providerConfigurationModal.externalSetupIntro": {
+    "defaultMessage": "Deze provider wordt buiten goose ingesteld. Doe het volgende:"
+  },
+  "providerConfigurationModal.goBack": {
+    "defaultMessage": "Terug"
+  },
+  "providerConfigurationModal.huggingFaceOAuthDescription": {
+    "defaultMessage": "Log in om de Inference Providers van Hugging Face te gebruiken zonder zelf een API-token in te vullen."
+  },
+  "providerConfigurationModal.oauthLoginFailed": {
+    "defaultMessage": "Inloggen via OAuth mislukt: {error}"
+  },
+  "providerConfigurationModal.oauthSignInDescription": {
+    "defaultMessage": "Log in met je {providerName}-account om deze provider te gebruiken"
+  },
+  "providerConfigurationModal.parameterRequired": {
+    "defaultMessage": "{paramName} is verplicht"
+  },
+  "providerConfigurationModal.removeConfiguration": {
+    "defaultMessage": "Configuratie weghalen"
+  },
+  "providerConfigurationModal.seeDocumentation": {
+    "defaultMessage": "Zie de <link>documentatie</link> voor meer details."
+  },
+  "providerConfigurationModal.signInWith": {
+    "defaultMessage": "Inloggen met {providerName}"
+  },
+  "providerConfigurationModal.signingIn": {
+    "defaultMessage": "Bezig met inloggen..."
+  },
+  "providerGrid.addProvider": {
+    "defaultMessage": "Provider toevoegen"
+  },
+  "providerGrid.addProviderTitle": {
+    "defaultMessage": "Provider toevoegen"
+  },
+  "providerGrid.chooseModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "providerGrid.configureProvider": {
+    "defaultMessage": "Provider instellen"
+  },
+  "providerGrid.editProvider": {
+    "defaultMessage": "Provider bewerken"
+  },
+  "providerGrid.fromTemplateOrManual": {
+    "defaultMessage": "Via een sjabloon of zelf instellen"
+  },
+  "providerGrid.noMatch": {
+    "defaultMessage": "Geen providers gevonden voor \"{query}\""
+  },
+  "providerGrid.searchPlaceholder": {
+    "defaultMessage": "Zoek providers..."
+  },
+  "providerLogo.alt": {
+    "defaultMessage": "logo van {providerName}"
+  },
+  "providerSelector.addCustomProvider": {
+    "defaultMessage": "Een eigen provider toevoegen"
+  },
+  "providerSelector.addCustomProviderTitle": {
+    "defaultMessage": "Eigen provider toevoegen"
+  },
+  "providerSelector.connectProvider": {
+    "defaultMessage": "Verbinden met een provider"
+  },
+  "providerSelector.connectProviderDescription": {
+    "defaultMessage": "Verbind met OpenAI, Anthropic, Google, enz."
+  },
+  "providerSelector.localModelDescription": {
+    "defaultMessage": "Download een model en laat het op dit apparaat draaien. Geen API-sleutel of account nodig."
+  },
+  "providerSelector.selectProvider": {
+    "defaultMessage": "Kies een provider"
+  },
+  "providerSelector.useLocalModel": {
+    "defaultMessage": "Een lokaal model gebruiken"
+  },
+  "providerSettings.configurationSettings": {
+    "defaultMessage": "Providerconfiguratie"
+  },
+  "providerSettings.loadingProviders": {
+    "defaultMessage": "Bezig met laden van providers..."
+  },
+  "providerSettings.onboardingDescription": {
+    "defaultMessage": "Kies een provider van AI-modellen om met goose te beginnen. Je gebruikt daarvoor API-sleutels die je bij de provider aanmaakt; die worden versleuteld en lokaal opgeslagen. Je kunt je provider altijd wijzigen bij de instellingen."
+  },
+  "providerSettings.otherProviders": {
+    "defaultMessage": "Andere providers"
+  },
+  "providerSetupActions.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "providerSetupActions.cannotDeleteActive": {
+    "defaultMessage": "Je kunt {providerName} niet verwijderen zolang hij in gebruik is. Schakel eerst over naar een ander model."
+  },
+  "providerSetupActions.confirmDelete": {
+    "defaultMessage": "Verwijderen bevestigen"
+  },
+  "providerSetupActions.confirmDeleteMessage": {
+    "defaultMessage": "Weet je zeker dat je de configuratie van {providerName} wilt verwijderen? Dit kun je niet terugdraaien."
+  },
+  "providerSetupActions.deleteProvider": {
+    "defaultMessage": "Provider verwijderen"
+  },
+  "providerSetupActions.enableProvider": {
+    "defaultMessage": "Provider aanzetten"
+  },
+  "providerSetupActions.ok": {
+    "defaultMessage": "Ok"
+  },
+  "providerSetupActions.submit": {
+    "defaultMessage": "Versturen"
+  },
+  "recipeActivityEditor.activitiesDescription": {
+    "defaultMessage": "De prompts bovenaan en de activiteitsknoppen die in het chatvenster van het recept verschijnen."
+  },
+  "recipeActivityEditor.activitiesLabel": {
+    "defaultMessage": "Activiteiten"
+  },
+  "recipeActivityEditor.activityButtonsDescription": {
+    "defaultMessage": "Knoppen onder het bericht waarmee gebruikers met je recept aan de slag kunnen."
+  },
+  "recipeActivityEditor.activityButtonsLabel": {
+    "defaultMessage": "Activiteitsknoppen"
+  },
+  "recipeActivityEditor.addActivity": {
+    "defaultMessage": "Activiteit toevoegen"
+  },
+  "recipeActivityEditor.addNewActivityPlaceholder": {
+    "defaultMessage": "Nieuwe activiteit toevoegen..."
+  },
+  "recipeActivityEditor.messageDescription": {
+    "defaultMessage": "Een opgemaakt bericht dat bovenaan het recept komt te staan. Markdown mag."
+  },
+  "recipeActivityEditor.messageLabel": {
+    "defaultMessage": "Bericht"
+  },
+  "recipeActivityEditor.messagePlaceholder": {
+    "defaultMessage": "Schrijf een introductie bij je recept voor de gebruiker (**vet**, *cursief*, `code` mag)"
+  },
+  "recipeExtensionSelector.description": {
+    "defaultMessage": "Kies welke extensies beschikbaar zijn als dit recept loopt. Laat leeg om de standaardextensies te gebruiken."
+  },
+  "recipeExtensionSelector.extensionsSelected": {
+    "defaultMessage": "{count,plural,one{# extensie gekozen} other{# extensies gekozen}}"
+  },
+  "recipeExtensionSelector.label": {
+    "defaultMessage": "Extensies (niet verplicht)"
+  },
+  "recipeExtensionSelector.noExtensionsAvailable": {
+    "defaultMessage": "Geen extensies beschikbaar"
+  },
+  "recipeExtensionSelector.noExtensionsFound": {
+    "defaultMessage": "Geen extensies gevonden"
+  },
+  "recipeExtensionSelector.searchPlaceholder": {
+    "defaultMessage": "Zoek extensies..."
+  },
+  "recipeFormFields.addParameter": {
+    "defaultMessage": "Parameter toevoegen"
+  },
+  "recipeFormFields.advancedOptions": {
+    "defaultMessage": "Geavanceerde opties"
+  },
+  "recipeFormFields.advancedOptionsHint": {
+    "defaultMessage": "Activiteiten, parameters, model, extensies, antwoordschema, subrecepten"
+  },
+  "recipeFormFields.descriptionLabel": {
+    "defaultMessage": "Omschrijving"
+  },
+  "recipeFormFields.descriptionPlaceholder": {
+    "defaultMessage": "Korte omschrijving van wat dit recept doet"
+  },
+  "recipeFormFields.enterValueFor": {
+    "defaultMessage": "Vul een waarde in voor {key}"
+  },
+  "recipeFormFields.initialPrompt": {
+    "defaultMessage": "Eerste prompt"
+  },
+  "recipeFormFields.instructionsLabel": {
+    "defaultMessage": "Instructies"
+  },
+  "recipeFormFields.instructionsPlaceholder": {
+    "defaultMessage": "Uitgebreide instructies voor de AI, niet zichtbaar voor de gebruiker"
+  },
+  "recipeFormFields.openEditor": {
+    "defaultMessage": "Editor openen"
+  },
+  "recipeFormFields.parameterNamePlaceholder": {
+    "defaultMessage": "Vul de naam van de parameter in..."
+  },
+  "recipeFormFields.parametersDescription": {
+    "defaultMessage": "Parameters worden automatisch opgepikt uit '{{parameter_name}}' in de instructies, de prompt of de activiteiten. Je kunt ze hieronder ook zelf toevoegen."
+  },
+  "recipeFormFields.parametersLabel": {
+    "defaultMessage": "Parameters"
+  },
+  "recipeFormFields.promptOptionalHint": {
+    "defaultMessage": "(Niet verplicht - instructies óf een prompt is wel nodig)"
+  },
+  "recipeFormFields.promptPlaceholder": {
+    "defaultMessage": "Prompt die al klaarstaat als het recept begint"
+  },
+  "recipeFormFields.responseJsonSchema": {
+    "defaultMessage": "JSON-schema voor het antwoord"
+  },
+  "recipeFormFields.responseJsonSchemaDescription": {
+    "defaultMessage": "Leg met JSON Schema vast hoe het antwoord van de AI eruit moet zien"
+  },
+  "recipeFormFields.templateVarHint": {
+    "defaultMessage": "Gebruik '{{parameter_name}}' voor parameters die bij het uitvoeren van het recept worden ingevuld."
+  },
+  "recipeFormFields.titleLabel": {
+    "defaultMessage": "Titel"
+  },
+  "recipeFormFields.titlePlaceholder": {
+    "defaultMessage": "Titel van het recept"
+  },
+  "recipeHeader.recipeLabel": {
+    "defaultMessage": "Recept"
+  },
+  "recipeModelSelector.backToModelList": {
+    "defaultMessage": "Terug naar de lijst met modellen"
+  },
+  "recipeModelSelector.enterCustomModel": {
+    "defaultMessage": "Vul een eigen modelnaam in"
+  },
+  "recipeModelSelector.enterModelNotListed": {
+    "defaultMessage": "Vul een model in dat er niet bij staat..."
+  },
+  "recipeModelSelector.fetchError": {
+    "defaultMessage": "Modellen ophalen mislukt. Probeer het later opnieuw."
+  },
+  "recipeModelSelector.loadingModels": {
+    "defaultMessage": "Bezig met laden van modellen…"
+  },
+  "recipeModelSelector.modelHint": {
+    "defaultMessage": "Laat leeg om het standaardmodel van de gekozen provider te gebruiken"
+  },
+  "recipeModelSelector.modelLabel": {
+    "defaultMessage": "Model (niet verplicht)"
+  },
+  "recipeModelSelector.providerHint": {
+    "defaultMessage": "Laat leeg om de provider uit de instellingen te gebruiken"
+  },
+  "recipeModelSelector.providerLabel": {
+    "defaultMessage": "Provider (niet verplicht)"
+  },
+  "recipeModelSelector.selectModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "recipeModelSelector.selectProvider": {
+    "defaultMessage": "Kies een provider"
+  },
+  "recipeModelSelector.useDefaultProvider": {
+    "defaultMessage": "Standaardprovider gebruiken"
+  },
+  "recipeWarningModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "recipeWarningModal.descriptionLabel": {
+    "defaultMessage": "Omschrijving:"
+  },
+  "recipeWarningModal.firstTimeDescription": {
+    "defaultMessage": "Je gaat een recept uitvoeren dat je nog niet eerder hebt gebruikt."
+  },
+  "recipeWarningModal.hiddenCharsWarning": {
+    "defaultMessage": "In dit recept zitten verborgen tekens. Die worden voor je veiligheid genegeerd, want ze kunnen misbruikt worden."
+  },
+  "recipeWarningModal.instructionsLabel": {
+    "defaultMessage": "Instructies:"
+  },
+  "recipeWarningModal.newRecipeWarningTitle": {
+    "defaultMessage": "⚠️ Nieuw recept"
+  },
+  "recipeWarningModal.recipePreview": {
+    "defaultMessage": "Voorbeeld van het recept:"
+  },
+  "recipeWarningModal.securityWarningTitle": {
+    "defaultMessage": "⚠️ Let op: veiligheid"
+  },
+  "recipeWarningModal.titleLabel": {
+    "defaultMessage": "Titel:"
+  },
+  "recipeWarningModal.trustAndExecute": {
+    "defaultMessage": "Vertrouwen en uitvoeren"
+  },
+  "recipeWarningModal.trustSource": {
+    "defaultMessage": "Ga alleen verder als je de bron van dit recept vertrouwt."
+  },
+  "recipesView.addSchedule": {
+    "defaultMessage": "Planning toevoegen"
+  },
+  "recipesView.addSlashCommand": {
+    "defaultMessage": "Slash-commando toevoegen"
+  },
+  "recipesView.adjustSearchTerms": {
+    "defaultMessage": "Probeer het met andere zoekwoorden"
+  },
+  "recipesView.allFiles": {
+    "defaultMessage": "Alle bestanden"
+  },
+  "recipesView.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "recipesView.copyDeeplink": {
+    "defaultMessage": "Deeplink kopiëren"
+  },
+  "recipesView.copyDeeplinkFailedMsg": {
+    "defaultMessage": "Deeplink naar het klembord kopiëren mislukt"
+  },
+  "recipesView.copyFailedTitle": {
+    "defaultMessage": "Kopiëren mislukt"
+  },
+  "recipesView.copyYaml": {
+    "defaultMessage": "YAML kopiëren"
+  },
+  "recipesView.copyYamlFailedMsg": {
+    "defaultMessage": "YAML van het recept naar het klembord kopiëren mislukt"
+  },
+  "recipesView.createRecipe": {
+    "defaultMessage": "Recept maken"
+  },
+  "recipesView.deeplinkCopiedMsg": {
+    "defaultMessage": "De deeplink van het recept staat op het klembord"
+  },
+  "recipesView.deeplinkCopiedTitle": {
+    "defaultMessage": "Deeplink gekopieerd"
+  },
+  "recipesView.deleteRecipe": {
+    "defaultMessage": "Recept verwijderen"
+  },
+  "recipesView.deleteRecipeConfirm": {
+    "defaultMessage": "Weet je zeker dat je \"{title}\" wilt verwijderen?"
+  },
+  "recipesView.deleteRecipeDetail": {
+    "defaultMessage": "Het receptbestand wordt verwijderd."
+  },
+  "recipesView.deleteRecipeTitle": {
+    "defaultMessage": "Recept verwijderen"
+  },
+  "recipesView.editRecipe": {
+    "defaultMessage": "Recept bewerken"
+  },
+  "recipesView.editSchedule": {
+    "defaultMessage": "Planning bewerken"
+  },
+  "recipesView.editSlashCommand": {
+    "defaultMessage": "Slash-commando bewerken"
+  },
+  "recipesView.errorLoadingRecipes": {
+    "defaultMessage": "Recepten laden mislukt"
+  },
+  "recipesView.exportFailedMsg": {
+    "defaultMessage": "Recept naar een bestand exporteren mislukt"
+  },
+  "recipesView.exportFailedTitle": {
+    "defaultMessage": "Exporteren mislukt"
+  },
+  "recipesView.exportRecipeDialogTitle": {
+    "defaultMessage": "Recept exporteren"
+  },
+  "recipesView.exportToFile": {
+    "defaultMessage": "Naar bestand exporteren"
+  },
+  "recipesView.noMatchingRecipes": {
+    "defaultMessage": "Geen recepten gevonden"
+  },
+  "recipesView.noSavedRecipes": {
+    "defaultMessage": "Geen opgeslagen recepten"
+  },
+  "recipesView.noSavedRecipesDescription": {
+    "defaultMessage": "Opgeslagen recepten komen hier te staan."
+  },
+  "recipesView.openInNewWindow": {
+    "defaultMessage": "In een nieuw venster openen"
+  },
+  "recipesView.recipeDeletedSuccess": {
+    "defaultMessage": "Recept verwijderd"
+  },
+  "recipesView.recipeExportedMsg": {
+    "defaultMessage": "Recept opgeslagen in {filePath}"
+  },
+  "recipesView.recipeExportedTitle": {
+    "defaultMessage": "Recept geëxporteerd"
+  },
+  "recipesView.recipesDescription": {
+    "defaultMessage": "Bekijk en beheer je opgeslagen recepten, zodat je snel een sessie kunt starten met een opzet die al klaarstaat. {shortcut} om te zoeken."
+  },
+  "recipesView.recipesTitle": {
+    "defaultMessage": "Recepten"
+  },
+  "recipesView.remove": {
+    "defaultMessage": "Weghalen"
+  },
+  "recipesView.removeSchedule": {
+    "defaultMessage": "Planning weghalen"
+  },
+  "recipesView.runs": {
+    "defaultMessage": "Loopt {schedule}"
+  },
+  "recipesView.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "recipesView.scheduleDialogTitle": {
+    "defaultMessage": "{action} planning"
+  },
+  "recipesView.scheduleRemovedMsg": {
+    "defaultMessage": "Het recept loopt niet meer automatisch"
+  },
+  "recipesView.scheduleRemovedTitle": {
+    "defaultMessage": "Planning weggehaald"
+  },
+  "recipesView.scheduleSavedMsg": {
+    "defaultMessage": "Het recept loopt {schedule}"
+  },
+  "recipesView.scheduleSavedTitle": {
+    "defaultMessage": "Planning opgeslagen"
+  },
+  "recipesView.searchRecipesPlaceholder": {
+    "defaultMessage": "Zoek recepten..."
+  },
+  "recipesView.shareRecipe": {
+    "defaultMessage": "Recept delen"
+  },
+  "recipesView.slashCommandDescription": {
+    "defaultMessage": "Stel een slash-commando in om dit recept snel uit elke chat te starten"
+  },
+  "recipesView.slashCommandPlaceholder": {
+    "defaultMessage": "commando-naam"
+  },
+  "recipesView.slashCommandRemovedMsg": {
+    "defaultMessage": "Het slash-commando van het recept is weggehaald"
+  },
+  "recipesView.slashCommandRemovedTitle": {
+    "defaultMessage": "Slash-commando weggehaald"
+  },
+  "recipesView.slashCommandSavedMsg": {
+    "defaultMessage": "Gebruik /{command} om dit recept uit te voeren"
+  },
+  "recipesView.slashCommandSavedTitle": {
+    "defaultMessage": "Slash-commando opgeslagen"
+  },
+  "recipesView.slashCommandTitle": {
+    "defaultMessage": "Slash-commando"
+  },
+  "recipesView.slashCommandUsageHint": {
+    "defaultMessage": "Gebruik /{command} in elke chat om dit recept uit te voeren"
+  },
+  "recipesView.tryAgain": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "recipesView.useRecipe": {
+    "defaultMessage": "Recept gebruiken"
+  },
+  "recipesView.yamlCopiedMsg": {
+    "defaultMessage": "De YAML van het recept staat op het klembord"
+  },
+  "recipesView.yamlCopiedTitle": {
+    "defaultMessage": "YAML gekopieerd"
+  },
+  "recipesView.yamlFiles": {
+    "defaultMessage": "YAML-bestanden"
+  },
+  "resetProviderSection.resetButton": {
+    "defaultMessage": "Provider en model terugzetten"
+  },
+  "resetProviderSection.resetDescription": {
+    "defaultMessage": "Hiermee wis je je gekozen model en provider. Zijn er geen standaardwaarden, dan kom je in het welkomstscherm om ze opnieuw in te stellen."
+  },
+  "responseStyle.conciseDescription": {
+    "defaultMessage": "Toolaanroepen staan standaard dicht en laten alleen zien welke tool is gebruikt"
+  },
+  "responseStyle.conciseLabel": {
+    "defaultMessage": "Kort"
+  },
+  "responseStyle.detailedDescription": {
+    "defaultMessage": "Toolaanroepen staan standaard open, zodat je de details ziet"
+  },
+  "responseStyle.detailedLabel": {
+    "defaultMessage": "Uitgebreid"
+  },
+  "scheduleDetailView.actions": {
+    "defaultMessage": "Acties"
+  },
+  "scheduleDetailView.cannotModifyRunning": {
+    "defaultMessage": "Je kunt een planning niet starten of wijzigen terwijl hij al loopt."
+  },
+  "scheduleDetailView.completedSession": {
+    "defaultMessage": "Sessie: {sessionId}"
+  },
+  "scheduleDetailView.created": {
+    "defaultMessage": "Gemaakt: {date}"
+  },
+  "scheduleDetailView.cronExpression": {
+    "defaultMessage": "Cron-expressie:"
+  },
+  "scheduleDetailView.currentSession": {
+    "defaultMessage": "Huidige sessie:"
+  },
+  "scheduleDetailView.currentlyRunning": {
+    "defaultMessage": "Loopt nu"
+  },
+  "scheduleDetailView.dir": {
+    "defaultMessage": "Map: {path}"
+  },
+  "scheduleDetailView.editSchedule": {
+    "defaultMessage": "Planning bewerken"
+  },
+  "scheduleDetailView.errorPrefix": {
+    "defaultMessage": "Fout: {error}"
+  },
+  "scheduleDetailView.idLabel": {
+    "defaultMessage": "ID:"
+  },
+  "scheduleDetailView.inspectJobError": {
+    "defaultMessage": "Fout bij bekijken van de taak"
+  },
+  "scheduleDetailView.inspectNoInfo": {
+    "defaultMessage": "Geen verdere informatie beschikbaar"
+  },
+  "scheduleDetailView.inspectRunningJob": {
+    "defaultMessage": "Lopende taak bekijken"
+  },
+  "scheduleDetailView.jobCancelled": {
+    "defaultMessage": "Taak afgebroken"
+  },
+  "scheduleDetailView.jobCancelledMsg": {
+    "defaultMessage": "De taak is tijdens het opstarten afgebroken."
+  },
+  "scheduleDetailView.jobInspection": {
+    "defaultMessage": "Taak bekijken"
+  },
+  "scheduleDetailView.jobKilled": {
+    "defaultMessage": "Taak gestopt"
+  },
+  "scheduleDetailView.killJobError": {
+    "defaultMessage": "Fout bij stoppen van de taak"
+  },
+  "scheduleDetailView.killRunningJob": {
+    "defaultMessage": "Lopende taak stoppen"
+  },
+  "scheduleDetailView.lastRun": {
+    "defaultMessage": "Laatste keer:"
+  },
+  "scheduleDetailView.loadingSchedule": {
+    "defaultMessage": "Bezig met laden van de planning..."
+  },
+  "scheduleDetailView.loadingSessions": {
+    "defaultMessage": "Bezig met laden van sessies..."
+  },
+  "scheduleDetailView.messages": {
+    "defaultMessage": "Berichten: {count}"
+  },
+  "scheduleDetailView.noScheduleId": {
+    "defaultMessage": "Geen planning-ID meegegeven. Ga terug naar de lijst met planningen."
+  },
+  "scheduleDetailView.noSessions": {
+    "defaultMessage": "Geen sessies gevonden voor deze planning."
+  },
+  "scheduleDetailView.pauseSchedule": {
+    "defaultMessage": "Planning pauzeren"
+  },
+  "scheduleDetailView.pauseUnpauseError": {
+    "defaultMessage": "Fout bij pauzeren of hervatten"
+  },
+  "scheduleDetailView.paused": {
+    "defaultMessage": "Gepauzeerd"
+  },
+  "scheduleDetailView.pausedMsg": {
+    "defaultMessage": "\"{id}\" gepauzeerd"
+  },
+  "scheduleDetailView.pausedWarning": {
+    "defaultMessage": "Deze planning is gepauzeerd en loopt niet automatisch. Gebruik \"Planning nu uitvoeren\" om hem zelf te starten, of hervat hem zodat hij weer automatisch loopt."
+  },
+  "scheduleDetailView.processStarted": {
+    "defaultMessage": "Proces gestart:"
+  },
+  "scheduleDetailView.recentSessions": {
+    "defaultMessage": "Recente sessies"
+  },
+  "scheduleDetailView.recipeSource": {
+    "defaultMessage": "Bron van het recept:"
+  },
+  "scheduleDetailView.runScheduleError": {
+    "defaultMessage": "Fout bij uitvoeren van de planning"
+  },
+  "scheduleDetailView.runScheduleNow": {
+    "defaultMessage": "Planning nu uitvoeren"
+  },
+  "scheduleDetailView.scheduleCompleted": {
+    "defaultMessage": "Uitvoering klaar"
+  },
+  "scheduleDetailView.scheduleDetails": {
+    "defaultMessage": "Details van de planning"
+  },
+  "scheduleDetailView.scheduleInformation": {
+    "defaultMessage": "Informatie over de planning"
+  },
+  "scheduleDetailView.scheduleLabel": {
+    "defaultMessage": "Planning:"
+  },
+  "scheduleDetailView.scheduleNotFound": {
+    "defaultMessage": "Planning niet gevonden"
+  },
+  "scheduleDetailView.scheduleNotFoundError": {
+    "defaultMessage": "Planning niet gevonden"
+  },
+  "scheduleDetailView.schedulePaused": {
+    "defaultMessage": "Planning gepauzeerd"
+  },
+  "scheduleDetailView.scheduleUnpaused": {
+    "defaultMessage": "Planning hervat"
+  },
+  "scheduleDetailView.scheduleUpdated": {
+    "defaultMessage": "Planning bijgewerkt"
+  },
+  "scheduleDetailView.sessionId": {
+    "defaultMessage": "Sessie-ID: {id}"
+  },
+  "scheduleDetailView.unpauseSchedule": {
+    "defaultMessage": "Planning hervatten"
+  },
+  "scheduleDetailView.unpausedMsg": {
+    "defaultMessage": "\"{id}\" hervat"
+  },
+  "scheduleDetailView.updateScheduleError": {
+    "defaultMessage": "Fout bij bijwerken van de planning"
+  },
+  "scheduleDetailView.updatedMsg": {
+    "defaultMessage": "\"{id}\" bijgewerkt"
+  },
+  "scheduleDetailView.viewingScheduleId": {
+    "defaultMessage": "Planning-ID: {id}"
+  },
+  "scheduleModal.alreadyScheduledOption": {
+    "defaultMessage": "{title} (al ingepland)"
+  },
+  "scheduleModal.browseYaml": {
+    "defaultMessage": "YAML-bestand zoeken..."
+  },
+  "scheduleModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "scheduleModal.createNewSchedule": {
+    "defaultMessage": "Nieuwe planning maken"
+  },
+  "scheduleModal.createSchedule": {
+    "defaultMessage": "Planning maken"
+  },
+  "scheduleModal.creating": {
+    "defaultMessage": "Bezig met maken..."
+  },
+  "scheduleModal.deepLink": {
+    "defaultMessage": "Deeplink"
+  },
+  "scheduleModal.deepLinkPlaceholder": {
+    "defaultMessage": "Plak hier een goose://recipe-link..."
+  },
+  "scheduleModal.editSchedule": {
+    "defaultMessage": "Planning bewerken"
+  },
+  "scheduleModal.failedLoadRecipes": {
+    "defaultMessage": "Recepten laden mislukt."
+  },
+  "scheduleModal.failedParseRecipe": {
+    "defaultMessage": "Het recept in dit bestand kon niet worden gelezen."
+  },
+  "scheduleModal.failedReadFile": {
+    "defaultMessage": "Het gekozen bestand kon niet worden gelezen."
+  },
+  "scheduleModal.invalidDeepLink": {
+    "defaultMessage": "Ongeldige deeplink. Gebruik een goose://recipe-link."
+  },
+  "scheduleModal.invalidFileType": {
+    "defaultMessage": "Verkeerd bestandstype: kies een YAML-bestand (.yaml of .yml)"
+  },
+  "scheduleModal.loadingRecipes": {
+    "defaultMessage": "Bezig met laden van recepten..."
+  },
+  "scheduleModal.nameLabel": {
+    "defaultMessage": "Naam:"
+  },
+  "scheduleModal.namePlaceholder": {
+    "defaultMessage": "bijv. dagelijkse-samenvatting"
+  },
+  "scheduleModal.noSavedRecipes": {
+    "defaultMessage": "Geen opgeslagen recepten gevonden."
+  },
+  "scheduleModal.provideValidRecipe": {
+    "defaultMessage": "Geef een geldige bron voor het recept."
+  },
+  "scheduleModal.recipeAlreadyScheduled": {
+    "defaultMessage": "Dit recept heeft al een planning. Pas die aan via de lijst met recepten."
+  },
+  "scheduleModal.recipeDescription": {
+    "defaultMessage": "Omschrijving: {description}"
+  },
+  "scheduleModal.recipeParsed": {
+    "defaultMessage": "Recept gelezen"
+  },
+  "scheduleModal.recipeTitle": {
+    "defaultMessage": "Titel: {title}"
+  },
+  "scheduleModal.savedRecipes": {
+    "defaultMessage": "Opgeslagen recepten"
+  },
+  "scheduleModal.scheduleIdRequired": {
+    "defaultMessage": "Een planning-ID is verplicht."
+  },
+  "scheduleModal.scheduleLabel": {
+    "defaultMessage": "Planning:"
+  },
+  "scheduleModal.selectRecipePlaceholder": {
+    "defaultMessage": "Kies een opgeslagen recept"
+  },
+  "scheduleModal.selected": {
+    "defaultMessage": "Gekozen: {path}"
+  },
+  "scheduleModal.sourceLabel": {
+    "defaultMessage": "Bron:"
+  },
+  "scheduleModal.updateSchedule": {
+    "defaultMessage": "Planning bijwerken"
+  },
+  "scheduleModal.updating": {
+    "defaultMessage": "Bezig met bijwerken..."
+  },
+  "scheduleModal.yaml": {
+    "defaultMessage": "YAML"
+  },
+  "schedulesView.confirmDelete": {
+    "defaultMessage": "Planning \"{id}\" weghalen? Het recept blijft staan."
+  },
+  "schedulesView.createSchedule": {
+    "defaultMessage": "Planning maken"
+  },
+  "schedulesView.description": {
+    "defaultMessage": "Maak en beheer taken die recepten automatisch op vaste tijden uitvoeren."
+  },
+  "schedulesView.edit": {
+    "defaultMessage": "Bewerken"
+  },
+  "schedulesView.errorPrefix": {
+    "defaultMessage": "Fout: {error}"
+  },
+  "schedulesView.inspect": {
+    "defaultMessage": "Bekijken"
+  },
+  "schedulesView.inspectError": {
+    "defaultMessage": "Fout bij bekijken van de taak"
+  },
+  "schedulesView.inspectNoInfo": {
+    "defaultMessage": "Geen verdere informatie over deze taak"
+  },
+  "schedulesView.jobInspection": {
+    "defaultMessage": "Taak bekijken"
+  },
+  "schedulesView.jobKilled": {
+    "defaultMessage": "Taak gestopt"
+  },
+  "schedulesView.kill": {
+    "defaultMessage": "Stoppen"
+  },
+  "schedulesView.killError": {
+    "defaultMessage": "Fout bij stoppen van de taak"
+  },
+  "schedulesView.lastRun": {
+    "defaultMessage": "Laatste keer: {date}"
+  },
+  "schedulesView.noSchedules": {
+    "defaultMessage": "Nog geen planningen"
+  },
+  "schedulesView.pause": {
+    "defaultMessage": "Pauzeren"
+  },
+  "schedulesView.pauseError": {
+    "defaultMessage": "Fout bij pauzeren van de planning"
+  },
+  "schedulesView.paused": {
+    "defaultMessage": "Gepauzeerd"
+  },
+  "schedulesView.refresh": {
+    "defaultMessage": "Verversen"
+  },
+  "schedulesView.refreshing": {
+    "defaultMessage": "Bezig met verversen..."
+  },
+  "schedulesView.resume": {
+    "defaultMessage": "Hervatten"
+  },
+  "schedulesView.running": {
+    "defaultMessage": "Loopt"
+  },
+  "schedulesView.schedulePaused": {
+    "defaultMessage": "Planning gepauzeerd"
+  },
+  "schedulesView.schedulePausedMsg": {
+    "defaultMessage": "Planning \"{id}\" is gepauzeerd"
+  },
+  "schedulesView.scheduleUnpaused": {
+    "defaultMessage": "Planning hervat"
+  },
+  "schedulesView.scheduleUnpausedMsg": {
+    "defaultMessage": "Planning \"{id}\" is hervat"
+  },
+  "schedulesView.scheduleUpdated": {
+    "defaultMessage": "Planning bijgewerkt"
+  },
+  "schedulesView.scheduleUpdatedMsg": {
+    "defaultMessage": "Planning \"{id}\" is bijgewerkt"
+  },
+  "schedulesView.scheduler": {
+    "defaultMessage": "Planning"
+  },
+  "schedulesView.unpauseError": {
+    "defaultMessage": "Fout bij hervatten van de planning"
+  },
+  "searchBar.caseSensitive": {
+    "defaultMessage": "Hoofdlettergevoelig"
+  },
+  "searchBar.close": {
+    "defaultMessage": "Sluiten ({shortcut})"
+  },
+  "searchBar.next": {
+    "defaultMessage": "Volgende ({shortcut})"
+  },
+  "searchBar.placeholder": {
+    "defaultMessage": "Zoek in het gesprek..."
+  },
+  "searchBar.previous": {
+    "defaultMessage": "Vorige ({shortcut})"
+  },
+  "secureStorageNotice.defaultMessage": {
+    "defaultMessage": "Sleutels worden veilig bewaard in de sleutelhanger"
+  },
+  "securityToggle.apiTokenDescription": {
+    "defaultMessage": "Token om in te loggen bij de classificatiedienst"
+  },
+  "securityToggle.apiTokenOptional": {
+    "defaultMessage": "API-token (niet verplicht)"
+  },
+  "securityToggle.classificationEndpoint": {
+    "defaultMessage": "Endpoint voor classificatie"
+  },
+  "securityToggle.classificationEndpointDescription": {
+    "defaultMessage": "Vul de volledige URL van je classificatiedienst in"
+  },
+  "securityToggle.commandClassifierActive": {
+    "defaultMessage": "Commando-classificatie actief (automatisch ingesteld uit de omgeving)"
+  },
+  "securityToggle.commandEndpointDescription": {
+    "defaultMessage": "Vul de volledige URL in van je dienst die command injection herkent"
+  },
+  "securityToggle.commandInjectionDescription": {
+    "defaultMessage": "Gebruik ML-modellen om kwaadaardige shell-commando's te herkennen"
+  },
+  "securityToggle.detectionModel": {
+    "defaultMessage": "Model voor herkenning"
+  },
+  "securityToggle.detectionModelDescription": {
+    "defaultMessage": "Kies welk ML-model prompt injection moet herkennen"
+  },
+  "securityToggle.detectionThreshold": {
+    "defaultMessage": "Drempel voor herkenning"
+  },
+  "securityToggle.enableCommandInjection": {
+    "defaultMessage": "ML-herkenning van command injection aanzetten"
+  },
+  "securityToggle.enablePromptInjection": {
+    "defaultMessage": "Herkenning van prompt injection aanzetten"
+  },
+  "securityToggle.enablePromptInjectionMl": {
+    "defaultMessage": "ML-herkenning van prompt injection aanzetten"
+  },
+  "securityToggle.mlEndpointDescription": {
+    "defaultMessage": "Vul de volledige URL van je ML-classificatiedienst in (inclusief de naam van het model)"
+  },
+  "securityToggle.mlTokenDescription": {
+    "defaultMessage": "Token om in te loggen bij de ML-dienst (bijv. een HuggingFace-token)"
+  },
+  "securityToggle.overrideNotice": {
+    "defaultMessage": "Deze instelling wordt door je organisatie beheerd en kun je niet wijzigen."
+  },
+  "securityToggle.promptInjectionDescription": {
+    "defaultMessage": "Herken pogingen tot prompt injection en houd ze tegen"
+  },
+  "securityToggle.promptInjectionMlDescription": {
+    "defaultMessage": "Gebruik ML-modellen om mogelijke prompt injection in je chat te herkennen"
+  },
+  "securityToggle.thresholdDescription": {
+    "defaultMessage": "Hoe hoger, hoe strenger (0,01 = heel soepel, 1,0 = zo streng mogelijk)"
+  },
+  "securityToggle.warpNotice": {
+    "defaultMessage": "Herkenning van command injection werkt het best met een WARP-verbinding (die is nodig om de classificatiedienst te bereiken)."
+  },
+  "sessionActionsHeader.actionsLabel": {
+    "defaultMessage": "Sessieacties"
+  },
+  "sessionActionsHeader.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "sessionActionsHeader.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "sessionActionsHeader.copiedJson": {
+    "defaultMessage": "JSON van de sessie gekopieerd"
+  },
+  "sessionActionsHeader.copiedModelInteractions": {
+    "defaultMessage": "Recente modelaanroepen gekopieerd"
+  },
+  "sessionActionsHeader.copiedText": {
+    "defaultMessage": "Tekst gekopieerd"
+  },
+  "sessionActionsHeader.copyJson": {
+    "defaultMessage": "JSON kopiëren"
+  },
+  "sessionActionsHeader.copyText": {
+    "defaultMessage": "Tekst kopiëren"
+  },
+  "sessionActionsHeader.duplicateFailed": {
+    "defaultMessage": "Sessie dupliceren mislukt: {error}"
+  },
+  "sessionActionsHeader.duplicateSession": {
+    "defaultMessage": "Sessie dupliceren"
+  },
+  "sessionActionsHeader.duplicated": {
+    "defaultMessage": "Sessie gedupliceerd"
+  },
+  "sessionActionsHeader.fullTextTitle": {
+    "defaultMessage": "Tekstwaarde"
+  },
+  "sessionActionsHeader.jsonFailed": {
+    "defaultMessage": "JSON van de sessie laden mislukt: {error}"
+  },
+  "sessionActionsHeader.jsonTitle": {
+    "defaultMessage": "JSON van de sessie"
+  },
+  "sessionActionsHeader.loadingJson": {
+    "defaultMessage": "Bezig met laden van de JSON..."
+  },
+  "sessionActionsHeader.modelInteractionsFailed": {
+    "defaultMessage": "Modelaanroepen laden mislukt: {error}"
+  },
+  "sessionActionsHeader.modelInteractionsTitle": {
+    "defaultMessage": "Recente modelaanroepen"
+  },
+  "sessionActionsHeader.renameFailed": {
+    "defaultMessage": "Sessie hernoemen mislukt: {error}"
+  },
+  "sessionActionsHeader.renamePlaceholder": {
+    "defaultMessage": "Vul een naam voor de sessie in"
+  },
+  "sessionActionsHeader.renameSession": {
+    "defaultMessage": "Sessie hernoemen"
+  },
+  "sessionActionsHeader.renameTitle": {
+    "defaultMessage": "Sessie hernoemen"
+  },
+  "sessionActionsHeader.renamed": {
+    "defaultMessage": "Sessie hernoemd"
+  },
+  "sessionActionsHeader.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "sessionActionsHeader.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "sessionActionsHeader.viewJson": {
+    "defaultMessage": "JSON van de sessie bekijken"
+  },
+  "sessionActionsHeader.viewModelInteractions": {
+    "defaultMessage": "Recente modelaanroepen bekijken"
+  },
+  "sessionIndicators.error": {
+    "defaultMessage": "Er ging iets fout in deze sessie"
+  },
+  "sessionIndicators.newActivity": {
+    "defaultMessage": "Heeft nieuwe activiteit"
+  },
+  "sessionIndicators.streaming": {
+    "defaultMessage": "Bezig"
+  },
+  "sessions.acpBadge": {
+    "defaultMessage": "ACP"
+  },
+  "sessions.action.delete": {
+    "defaultMessage": "Sessie verwijderen"
+  },
+  "sessions.action.duplicate": {
+    "defaultMessage": "Sessie dupliceren"
+  },
+  "sessions.action.editName": {
+    "defaultMessage": "Naam van de sessie wijzigen"
+  },
+  "sessions.action.export": {
+    "defaultMessage": "Sessie exporteren"
+  },
+  "sessions.action.exportJson": {
+    "defaultMessage": "JSON"
+  },
+  "sessions.action.exportMarkdown": {
+    "defaultMessage": "Markdown"
+  },
+  "sessions.action.openNewWindow": {
+    "defaultMessage": "In een nieuw venster openen"
+  },
+  "sessions.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "sessions.chatHistory": {
+    "defaultMessage": "Chatgeschiedenis"
+  },
+  "sessions.chatHistoryDesc": {
+    "defaultMessage": "Bekijk en doorzoek je eerdere gesprekken met Goose. {shortcut} om te zoeken."
+  },
+  "sessions.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "sessions.delete.message": {
+    "defaultMessage": "Weet je zeker dat je de sessie \"{name}\" wilt verwijderen? Dit kun je niet terugdraaien."
+  },
+  "sessions.delete.title": {
+    "defaultMessage": "Sessie verwijderen"
+  },
+  "sessions.edit.placeholder": {
+    "defaultMessage": "Vul een omschrijving van de sessie in"
+  },
+  "sessions.edit.title": {
+    "defaultMessage": "Omschrijving van de sessie wijzigen"
+  },
+  "sessions.empty.description": {
+    "defaultMessage": "Je chatgeschiedenis komt hier te staan"
+  },
+  "sessions.empty.title": {
+    "defaultMessage": "Geen chatsessies gevonden"
+  },
+  "sessions.error.loading": {
+    "defaultMessage": "Sessies laden mislukt"
+  },
+  "sessions.error.tryAgain": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "sessions.import": {
+    "defaultMessage": "Sessie importeren"
+  },
+  "sessions.includeAcp": {
+    "defaultMessage": "ACP-sessies meenemen"
+  },
+  "sessions.loadingMore": {
+    "defaultMessage": "Bezig met laden van meer sessies..."
+  },
+  "sessions.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "sessions.saving": {
+    "defaultMessage": "Bezig met opslaan..."
+  },
+  "sessions.scheduledJobs": {
+    "defaultMessage": "Geplande taken"
+  },
+  "sessions.scheduledJobsCount": {
+    "defaultMessage": "{count,plural,one{{count} taak} other{{count} taken}}"
+  },
+  "sessions.search.noResults": {
+    "defaultMessage": "Geen sessies gevonden"
+  },
+  "sessions.search.noResultsDesc": {
+    "defaultMessage": "Probeer het met andere zoekwoorden"
+  },
+  "sessions.searchPlaceholder": {
+    "defaultMessage": "Zoek in de geschiedenis..."
+  },
+  "sessions.toast.copied": {
+    "defaultMessage": "Naar het klembord gekopieerd"
+  },
+  "sessions.toast.deleteFailed": {
+    "defaultMessage": "Sessie \"{name}\" verwijderen mislukt: {error}"
+  },
+  "sessions.toast.deleted": {
+    "defaultMessage": "Sessie verwijderd"
+  },
+  "sessions.toast.duplicateFailed": {
+    "defaultMessage": "Sessie dupliceren mislukt: {error}"
+  },
+  "sessions.toast.duplicated": {
+    "defaultMessage": "Sessie \"{name}\" gedupliceerd"
+  },
+  "sessions.toast.exportFailed": {
+    "defaultMessage": "Sessie exporteren mislukt: {error}"
+  },
+  "sessions.toast.exported": {
+    "defaultMessage": "Sessie geëxporteerd"
+  },
+  "sessions.toast.importFailed": {
+    "defaultMessage": "Sessie importeren mislukt: {error}"
+  },
+  "sessions.toast.imported": {
+    "defaultMessage": "Sessie geïmporteerd"
+  },
+  "sessions.toast.updateFailed": {
+    "defaultMessage": "Omschrijving van de sessie bijwerken mislukt: {error}"
+  },
+  "sessions.toast.updated": {
+    "defaultMessage": "Omschrijving van de sessie bijgewerkt"
+  },
+  "settings.agentLoop.operations.auto.placeholder": {
+    "defaultMessage": "Automatisch"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Ingesteld"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API-sleutel"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Vul de API-sleutel in"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Sleutel weghalen"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Sleutel opslaan"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Laat Jev per aanvraag bepalen hoe diep er nagedacht wordt. De tekst van de aanvraag gaat naar TypeSafe AI; bij slash-commando's van vaardigheden en recepten gaan ook de uitgewerkte lokale instructies mee."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatisch denkwerk"
+  },
+  "settings.agentLoop.operations.blockLimit.label": {
+    "defaultMessage": "Blokkeerlimiet"
+  },
+  "settings.agentLoop.operations.contextCompaction.description": {
+    "defaultMessage": "Vat de geschiedenis van het gesprek samen voordat het contextvenster volloopt."
+  },
+  "settings.agentLoop.operations.contextCompaction.title": {
+    "defaultMessage": "Context verdichten"
+  },
+  "settings.agentLoop.operations.cutoff.label": {
+    "defaultMessage": "Afkappunt"
+  },
+  "settings.agentLoop.operations.enable": {
+    "defaultMessage": "{operation} aanzetten"
+  },
+  "settings.agentLoop.operations.failureTimeout.label": {
+    "defaultMessage": "Time-out bij fouten"
+  },
+  "settings.agentLoop.operations.heading": {
+    "defaultMessage": "Instelbare onderdelen"
+  },
+  "settings.agentLoop.operations.maxTurns.description": {
+    "defaultMessage": "Stopt het zelfstandige werk en vraagt de gebruiker of het verder mag."
+  },
+  "settings.agentLoop.operations.maxTurns.title": {
+    "defaultMessage": "Max. aantal rondes"
+  },
+  "settings.agentLoop.operations.recipeRetry.description": {
+    "defaultMessage": "Voert de controles van een recept opnieuw uit als een ingestelde controle faalt."
+  },
+  "settings.agentLoop.operations.recipeRetry.title": {
+    "defaultMessage": "Recept opnieuw proberen"
+  },
+  "settings.agentLoop.operations.retryTimeout.label": {
+    "defaultMessage": "Time-out bij opnieuw proberen"
+  },
+  "settings.agentLoop.operations.slashCommands.description": {
+    "defaultMessage": "Herkent commando's als /compact en /skills, en de snelkoppelingen van recepten."
+  },
+  "settings.agentLoop.operations.slashCommands.title": {
+    "defaultMessage": "Slash-commando's"
+  },
+  "settings.agentLoop.operations.stopHooks.description": {
+    "defaultMessage": "Laat hooks het afronden tegenhouden, zonder dat het eindeloos doorgaat."
+  },
+  "settings.agentLoop.operations.stopHooks.title": {
+    "defaultMessage": "Stop-hooks"
+  },
+  "settings.agentLoop.operations.threshold.label": {
+    "defaultMessage": "Drempel %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Tokenlimiet"
+  },
+  "settings.agentLoop.operations.toolPairCompaction.description": {
+    "defaultMessage": "Vat oudere toolaanroepen en hun antwoorden samen om context te sparen. Laat je dit leeg, dan bepaalt goose het afkappunt zelf."
+  },
+  "settings.agentLoop.operations.toolPairCompaction.title": {
+    "defaultMessage": "Toolaanroepen verdichten"
+  },
+  "settings.agentLoop.operations.turns.label": {
+    "defaultMessage": "Rondes"
+  },
+  "settings.agentLoop.title": {
+    "defaultMessage": "Agent-loop"
+  },
+  "settings.appearance.description": {
+    "defaultMessage": "Stel in hoe goose eruitziet op je systeem"
+  },
+  "settings.appearance.title": {
+    "defaultMessage": "Weergave"
+  },
+  "settings.close": {
+    "defaultMessage": "Sluiten"
+  },
+  "settings.costTracking.description": {
+    "defaultMessage": "Laat de prijzen van modellen en de kosten van je gebruik zien"
+  },
+  "settings.costTracking.title": {
+    "defaultMessage": "Kosten bijhouden"
+  },
+  "settings.dockIcon.description": {
+    "defaultMessage": "goose in het dock laten zien"
+  },
+  "settings.dockIcon.title": {
+    "defaultMessage": "Dock-icoon"
+  },
+  "settings.help.description": {
+    "defaultMessage": "Help goose beter te maken door problemen te melden of nieuwe functies te vragen"
+  },
+  "settings.help.reportBug": {
+    "defaultMessage": "Bug melden"
+  },
+  "settings.help.requestFeature": {
+    "defaultMessage": "Functie aanvragen"
+  },
+  "settings.help.title": {
+    "defaultMessage": "Hulp en feedback"
+  },
+  "settings.language.description": {
+    "defaultMessage": "Kies in welke taal goose je dingen laat zien"
+  },
+  "settings.language.dutch": {
+    "defaultMessage": "Nederlands"
+  },
+  "settings.language.english": {
+    "defaultMessage": "Engels"
+  },
+  "settings.language.french": {
+    "defaultMessage": "Frans"
+  },
+  "settings.language.german": {
+    "defaultMessage": "Duits"
+  },
+  "settings.language.hindi": {
+    "defaultMessage": "Hindi"
+  },
+  "settings.language.indonesian": {
+    "defaultMessage": "Indonesisch"
+  },
+  "settings.language.italian": {
+    "defaultMessage": "Italiaans"
+  },
+  "settings.language.japanese": {
+    "defaultMessage": "Japans"
+  },
+  "settings.language.korean": {
+    "defaultMessage": "Koreaans"
+  },
+  "settings.language.malay": {
+    "defaultMessage": "Maleis"
+  },
+  "settings.language.portuguese": {
+    "defaultMessage": "Portugees"
+  },
+  "settings.language.russian": {
+    "defaultMessage": "Russisch"
+  },
+  "settings.language.spanish": {
+    "defaultMessage": "Spaans"
+  },
+  "settings.language.systemDefault": {
+    "defaultMessage": "Standaard van het systeem"
+  },
+  "settings.language.title": {
+    "defaultMessage": "Taal"
+  },
+  "settings.language.turkish": {
+    "defaultMessage": "Turks"
+  },
+  "settings.language.vietnamese": {
+    "defaultMessage": "Vietnamees"
+  },
+  "settings.language.zhCN": {
+    "defaultMessage": "Chinees (vereenvoudigd)"
+  },
+  "settings.language.zhTW": {
+    "defaultMessage": "Chinees (traditioneel)"
+  },
+  "settings.menuBarIcon.description": {
+    "defaultMessage": "goose in de menubalk laten zien"
+  },
+  "settings.menuBarIcon.title": {
+    "defaultMessage": "Icoon in de menubalk"
+  },
+  "settings.notifications.configGuide": {
+    "defaultMessage": "Handleiding"
+  },
+  "settings.notifications.description": {
+    "defaultMessage": "Meldingen regel je in je besturingssysteem - {link}"
+  },
+  "settings.notifications.modal.macInstructions": {
+    "defaultMessage": "Meldingen aanzetten op macOS:"
+  },
+  "settings.notifications.modal.macStep1": {
+    "defaultMessage": "Open Systeemvoorkeuren"
+  },
+  "settings.notifications.modal.macStep2": {
+    "defaultMessage": "Klik op Meldingen"
+  },
+  "settings.notifications.modal.macStep3": {
+    "defaultMessage": "Zoek goose op in de lijst met apps en klik erop"
+  },
+  "settings.notifications.modal.macStep4": {
+    "defaultMessage": "Zet meldingen aan en stel ze naar wens in"
+  },
+  "settings.notifications.modal.title": {
+    "defaultMessage": "Meldingen aanzetten"
+  },
+  "settings.notifications.modal.winInstructions": {
+    "defaultMessage": "Meldingen aanzetten op Windows:"
+  },
+  "settings.notifications.modal.winStep1": {
+    "defaultMessage": "Open Instellingen"
+  },
+  "settings.notifications.modal.winStep2": {
+    "defaultMessage": "Ga naar Systeem > Meldingen"
+  },
+  "settings.notifications.modal.winStep3": {
+    "defaultMessage": "Zoek goose op in de lijst met apps en klik erop"
+  },
+  "settings.notifications.modal.winStep4": {
+    "defaultMessage": "Zet meldingen aan en stel ze naar wens in"
+  },
+  "settings.notifications.openSettings": {
+    "defaultMessage": "Instellingen openen"
+  },
+  "settings.notifications.task.description": {
+    "defaultMessage": "Geef een melding als Goose een taak afrondt terwijl het venster op de achtergrond staat"
+  },
+  "settings.notifications.task.title": {
+    "defaultMessage": "Melding bij afgeronde taak"
+  },
+  "settings.notifications.title": {
+    "defaultMessage": "Meldingen"
+  },
+  "settings.preventSleep.description": {
+    "defaultMessage": "Houd je computer wakker zolang goose aan een taak werkt (het scherm mag wel op slot)"
+  },
+  "settings.preventSleep.title": {
+    "defaultMessage": "Slaapstand voorkomen"
+  },
+  "settings.theme.description": {
+    "defaultMessage": "Pas aan hoe goose eruitziet"
+  },
+  "settings.theme.title": {
+    "defaultMessage": "Thema"
+  },
+  "settings.updates.description": {
+    "defaultMessage": "Controleer op updates en installeer ze, zodat goose op zijn best blijft werken"
+  },
+  "settings.updates.title": {
+    "defaultMessage": "Updates"
+  },
+  "settings.version.title": {
+    "defaultMessage": "Versie"
+  },
+  "settingsView.tabApp": {
+    "defaultMessage": "App"
+  },
+  "settingsView.tabAuth": {
+    "defaultMessage": "Inloggen"
+  },
+  "settingsView.tabChat": {
+    "defaultMessage": "Chat"
+  },
+  "settingsView.tabExternalBackend": {
+    "defaultMessage": "Agent"
+  },
+  "settingsView.tabKeyboard": {
+    "defaultMessage": "Toetsenbord"
+  },
+  "settingsView.tabLocalInference": {
+    "defaultMessage": "Lokale modellen"
+  },
+  "settingsView.tabModels": {
+    "defaultMessage": "Modellen"
+  },
+  "settingsView.tabPrompts": {
+    "defaultMessage": "Prompts"
+  },
+  "settingsView.title": {
+    "defaultMessage": "Instellingen"
+  },
+  "shortcutRecorder.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "shortcutRecorder.clickToRecord": {
+    "defaultMessage": "Klik om op te nemen..."
+  },
+  "shortcutRecorder.conflictWarning": {
+    "defaultMessage": "Deze sneltoets is al in gebruik voor {label}. Als je opslaat, gaat hij naar deze actie."
+  },
+  "shortcutRecorder.pressShortcut": {
+    "defaultMessage": "Druk op de sneltoets..."
+  },
+  "shortcutRecorder.save": {
+    "defaultMessage": "Opslaan"
+  },
+  "skillsView.addSkill": {
+    "defaultMessage": "Vaardigheid toevoegen"
+  },
+  "skillsView.adjustSearchTerms": {
+    "defaultMessage": "Probeer het met andere zoekwoorden"
+  },
+  "skillsView.comingSoon": {
+    "defaultMessage": "Komt nog"
+  },
+  "skillsView.errorLoadingSkills": {
+    "defaultMessage": "Vaardigheden laden mislukt"
+  },
+  "skillsView.noMatchingSkills": {
+    "defaultMessage": "Geen vaardigheden gevonden"
+  },
+  "skillsView.noSkillsDescription": {
+    "defaultMessage": "Vaardigheden komen uit SKILL.md-bestanden in ~/.config/agents/skills/, .goose/skills/ of andere ondersteunde mappen."
+  },
+  "skillsView.noSkillsInstalled": {
+    "defaultMessage": "Geen vaardigheden geïnstalleerd"
+  },
+  "skillsView.searchSkillsPlaceholder": {
+    "defaultMessage": "Zoek vaardigheden..."
+  },
+  "skillsView.skillsDescription": {
+    "defaultMessage": "Bekijk de vaardigheden die zijn geïnstalleerd en die Goose meer laten kunnen. {shortcut} om te zoeken."
+  },
+  "skillsView.skillsTitle": {
+    "defaultMessage": "Vaardigheden"
+  },
+  "skillsView.tryAgain": {
+    "defaultMessage": "Opnieuw proberen"
+  },
+  "spellcheckToggle.description": {
+    "defaultMessage": "Controleer de spelling in het chatveld. Werkt pas na een herstart."
+  },
+  "spellcheckToggle.title": {
+    "defaultMessage": "Spellingcontrole aanzetten"
+  },
+  "standaloneAppView.failedToLoad": {
+    "defaultMessage": "App laden mislukt"
+  },
+  "standaloneAppView.initializing": {
+    "defaultMessage": "App wordt gestart..."
+  },
+  "standaloneAppView.missingParams": {
+    "defaultMessage": "Er ontbreken verplichte parameters"
+  },
+  "stringUtils.configuredProvider": {
+    "defaultMessage": "De provider {name} is ingesteld"
+  },
+  "subRecipeEditor.addExisting": {
+    "defaultMessage": "Bestaand toevoegen"
+  },
+  "subRecipeEditor.createNew": {
+    "defaultMessage": "Nieuw subrecept maken"
+  },
+  "subRecipeEditor.deleteSubrecipe": {
+    "defaultMessage": "Subrecept {name} verwijderen"
+  },
+  "subRecipeEditor.description": {
+    "defaultMessage": "Subrecepten zijn recepten die je tijdens het uitvoeren als tool kunt aanroepen. Daarmee maak je werkwijzen in meerdere stappen en onderdelen die je opnieuw kunt gebruiken."
+  },
+  "subRecipeEditor.duplicateName": {
+    "defaultMessage": "Naam bestaat al"
+  },
+  "subRecipeEditor.duplicateNameMsg": {
+    "defaultMessage": "Er is al een subrecept met de naam \"{name}\". Kies een andere naam."
+  },
+  "subRecipeEditor.editSubrecipe": {
+    "defaultMessage": "Subrecept {name} bewerken"
+  },
+  "subRecipeEditor.label": {
+    "defaultMessage": "Subrecepten"
+  },
+  "subRecipeEditor.preconfiguredValues": {
+    "defaultMessage": "Vaste waarden:"
+  },
+  "subRecipeEditor.sequential": {
+    "defaultMessage": "Achter elkaar"
+  },
+  "subRecipeModal.addTitle": {
+    "defaultMessage": "Subrecept toevoegen"
+  },
+  "subRecipeModal.apply": {
+    "defaultMessage": "Toepassen"
+  },
+  "subRecipeModal.browse": {
+    "defaultMessage": "Zoeken"
+  },
+  "subRecipeModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "subRecipeModal.closeModal": {
+    "defaultMessage": "Venster voor subrecept sluiten"
+  },
+  "subRecipeModal.configureTitle": {
+    "defaultMessage": "Subrecept instellen"
+  },
+  "subRecipeModal.descriptionLabel": {
+    "defaultMessage": "Omschrijving"
+  },
+  "subRecipeModal.descriptionPlaceholder": {
+    "defaultMessage": "Omschrijving van wat dit subrecept doet (niet verplicht)..."
+  },
+  "subRecipeModal.invalidFile": {
+    "defaultMessage": "Verkeerd bestand"
+  },
+  "subRecipeModal.invalidFileMsg": {
+    "defaultMessage": "Kies een YAML-bestand (.yaml of .yml)."
+  },
+  "subRecipeModal.nameHint": {
+    "defaultMessage": "Unieke naam waarmee de toolnaam wordt gemaakt"
+  },
+  "subRecipeModal.nameLabel": {
+    "defaultMessage": "Naam"
+  },
+  "subRecipeModal.namePlaceholder": {
+    "defaultMessage": "bijv. security_scan"
+  },
+  "subRecipeModal.pathHint": {
+    "defaultMessage": "Zoek een bestaand receptbestand of vul zelf een pad in"
+  },
+  "subRecipeModal.pathLabel": {
+    "defaultMessage": "Pad"
+  },
+  "subRecipeModal.pathPlaceholder": {
+    "defaultMessage": "bijv. ./subrecipes/security-analysis.yaml"
+  },
+  "subRecipeModal.preconfiguredValues": {
+    "defaultMessage": "Vaste waarden"
+  },
+  "subRecipeModal.preconfiguredValuesHint": {
+    "defaultMessage": "Waarden die altijd aan het subrecept worden meegegeven (niet verplicht)"
+  },
+  "subRecipeModal.sequentialHint": {
+    "defaultMessage": "(Dwingt af dat meerdere instanties van het subrecept na elkaar lopen)"
+  },
+  "subRecipeModal.sequentialLabel": {
+    "defaultMessage": "Achter elkaar bij herhaling"
+  },
+  "subRecipeModal.subtitle": {
+    "defaultMessage": "Stel een subrecept in dat tijdens het uitvoeren van een recept als tool kan worden aangeroepen"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Laatste stand laden"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Je ziet hier niet live wat de subagent doet."
+  },
+  "switchModelModal.backToModelList": {
+    "defaultMessage": "Terug naar de lijst met modellen"
+  },
+  "switchModelModal.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "switchModelModal.checkProviderConfig": {
+    "defaultMessage": "Kijk je providerinstellingen na bij Instellingen → Providers"
+  },
+  "switchModelModal.chooseModel": {
+    "defaultMessage": "Kies een model:"
+  },
+  "switchModelModal.claudeAdaptive": {
+    "defaultMessage": "Aanpassend - Claude bepaalt zelf wanneer en hoeveel hij nadenkt"
+  },
+  "switchModelModal.claudeDisabled": {
+    "defaultMessage": "Uit - Niet extra nadenken"
+  },
+  "switchModelModal.claudeEffortHigh": {
+    "defaultMessage": "Hoog - Diep nadenken (standaard)"
+  },
+  "switchModelModal.claudeEffortLow": {
+    "defaultMessage": "Laag - Zo min mogelijk nadenken, snelste antwoorden"
+  },
+  "switchModelModal.claudeEffortMax": {
+    "defaultMessage": "Max - Geen grens aan het nadenken"
+  },
+  "switchModelModal.claudeEffortMedium": {
+    "defaultMessage": "Gemiddeld - Redelijk nadenken"
+  },
+  "switchModelModal.claudeEnabled": {
+    "defaultMessage": "Aan - Vast tokenbudget om na te denken"
+  },
+  "switchModelModal.couldNotContactProvider": {
+    "defaultMessage": "Provider niet bereikbaar"
+  },
+  "switchModelModal.customModelName": {
+    "defaultMessage": "Eigen modelnaam"
+  },
+  "switchModelModal.description": {
+    "defaultMessage": "Kies de provider en het model die je voor je gesprekken gebruikt."
+  },
+  "switchModelModal.enterModelNotListed": {
+    "defaultMessage": "Vul een model in dat er niet bij staat..."
+  },
+  "switchModelModal.extendedThinking": {
+    "defaultMessage": "Extra nadenken"
+  },
+  "switchModelModal.geminiOnly": {
+    "defaultMessage": "(alleen Gemini 3-modellen)"
+  },
+  "switchModelModal.goToSettings": {
+    "defaultMessage": "Naar Instellingen"
+  },
+  "switchModelModal.loadingModels": {
+    "defaultMessage": "Bezig met laden van modellen…"
+  },
+  "switchModelModal.localModelsDescription": {
+    "defaultMessage": "Om lokaal te werken moet je eerst een model naar je computer downloaden. Ga naar Instellingen → Modellen om lokale modellen te beheren."
+  },
+  "switchModelModal.localModelsTitle": {
+    "defaultMessage": "Lokale modellen moet je eerst downloaden"
+  },
+  "switchModelModal.providerPlaceholder": {
+    "defaultMessage": "Provider, typ om te zoeken"
+  },
+  "switchModelModal.quickStartGuide": {
+    "defaultMessage": "Snel aan de slag"
+  },
+  "switchModelModal.recommended": {
+    "defaultMessage": "Aanbevolen"
+  },
+  "switchModelModal.selectEffortLevel": {
+    "defaultMessage": "Kies hoeveel denkwerk"
+  },
+  "switchModelModal.selectModel": {
+    "defaultMessage": "Kies een model"
+  },
+  "switchModelModal.selectModelButton": {
+    "defaultMessage": "Model kiezen"
+  },
+  "switchModelModal.selectModelPlaceholder": {
+    "defaultMessage": "Kies een model, typ om te zoeken"
+  },
+  "switchModelModal.selectOrEnterModel": {
+    "defaultMessage": "Kies een model of vul er een in"
+  },
+  "switchModelModal.selectProvider": {
+    "defaultMessage": "Kies een provider"
+  },
+  "switchModelModal.selectThinkingLevel": {
+    "defaultMessage": "Kies hoe diep er nagedacht wordt"
+  },
+  "switchModelModal.selectThinkingMode": {
+    "defaultMessage": "Kies de manier van nadenken"
+  },
+  "switchModelModal.thinkingBudget": {
+    "defaultMessage": "Denkbudget (tokens)"
+  },
+  "switchModelModal.thinkingEffort": {
+    "defaultMessage": "Hoeveel denkwerk"
+  },
+  "switchModelModal.thinkingEffortOff": {
+    "defaultMessage": "Uit - Niet extra nadenken"
+  },
+  "switchModelModal.thinkingLevel": {
+    "defaultMessage": "Hoe diep nadenken"
+  },
+  "switchModelModal.thinkingLevelHigh": {
+    "defaultMessage": "Hoog - Dieper nadenken, langzamer"
+  },
+  "switchModelModal.thinkingLevelLow": {
+    "defaultMessage": "Laag - Sneller, minder diep nadenken"
+  },
+  "switchModelModal.title": {
+    "defaultMessage": "Van model wisselen"
+  },
+  "switchModelModal.typeModelName": {
+    "defaultMessage": "Typ hier de naam van het model"
+  },
+  "switchModelModal.useOtherProvider": {
+    "defaultMessage": "Andere provider gebruiken"
+  },
+  "telemetryConsentPrompt.description": {
+    "defaultMessage": "Wil je anonieme gebruiksgegevens delen om goose beter te maken? We verzamelen nooit je gesprekken, je code of persoonlijke gegevens."
+  },
+  "telemetryConsentPrompt.heading": {
+    "defaultMessage": "Help goose beter te maken"
+  },
+  "telemetryConsentPrompt.learnMore": {
+    "defaultMessage": "Meer hierover"
+  },
+  "telemetryConsentPrompt.optIn": {
+    "defaultMessage": "Ja, deel anonieme gebruiksgegevens"
+  },
+  "telemetryConsentPrompt.optOut": {
+    "defaultMessage": "Nee, bedankt"
+  },
+  "telemetrySettings.configErrorTitle": {
+    "defaultMessage": "Fout in de configuratie"
+  },
+  "telemetrySettings.description": {
+    "defaultMessage": "Bepaal wat er met je gegevens gebeurt"
+  },
+  "telemetrySettings.learnMore": {
+    "defaultMessage": "Meer hierover"
+  },
+  "telemetrySettings.loadError": {
+    "defaultMessage": "Telemetrie-instellingen laden mislukt."
+  },
+  "telemetrySettings.title": {
+    "defaultMessage": "Privacy"
+  },
+  "telemetrySettings.toggleDescription": {
+    "defaultMessage": "Help goose beter te maken door anonieme gebruiksstatistieken te delen."
+  },
+  "telemetrySettings.toggleLabel": {
+    "defaultMessage": "Anonieme gebruiksgegevens"
+  },
+  "telemetrySettings.updateError": {
+    "defaultMessage": "Telemetrie-instellingen bijwerken mislukt."
+  },
+  "themeSelector.aura": {
+    "defaultMessage": "Aura"
+  },
+  "themeSelector.dark": {
+    "defaultMessage": "Donker"
+  },
+  "themeSelector.light": {
+    "defaultMessage": "Licht"
+  },
+  "themeSelector.system": {
+    "defaultMessage": "Systeem"
+  },
+  "themeSelector.theme": {
+    "defaultMessage": "Thema"
+  },
+  "toolApprovalButtons.allowOnce": {
+    "defaultMessage": "Eenmalig toestaan"
+  },
+  "toolApprovalButtons.allowedOnce": {
+    "defaultMessage": "Eenmalig toegestaan"
+  },
+  "toolApprovalButtons.alwaysAllow": {
+    "defaultMessage": "Altijd toestaan"
+  },
+  "toolApprovalButtons.alwaysAllowed": {
+    "defaultMessage": "Altijd toegestaan"
+  },
+  "toolApprovalButtons.cancelled": {
+    "defaultMessage": "Afgebroken"
+  },
+  "toolApprovalButtons.denied": {
+    "defaultMessage": "Geweigerd"
+  },
+  "toolApprovalButtons.deniedOnce": {
+    "defaultMessage": "Eenmalig geweigerd"
+  },
+  "toolApprovalButtons.deny": {
+    "defaultMessage": "Weigeren"
+  },
+  "toolApprovalButtons.staleApprovalRequest": {
+    "defaultMessage": "Deze vraag om goedkeuring is niet meer actief."
+  },
+  "toolCallStatusIndicator.toolStatus": {
+    "defaultMessage": "Status van de tool: {status}"
+  },
+  "toolCallWithResponse.activityCount": {
+    "defaultMessage": "Activiteit ({count})"
+  },
+  "toolCallWithResponse.code": {
+    "defaultMessage": "Code"
+  },
+  "toolCallWithResponse.loadingSpinner": {
+    "defaultMessage": "Laad-animatie"
+  },
+  "toolCallWithResponse.logs": {
+    "defaultMessage": "Logboek"
+  },
+  "toolCallWithResponse.output": {
+    "defaultMessage": "Uitvoer"
+  },
+  "toolCallWithResponse.toolDetails": {
+    "defaultMessage": "Details van de tool"
+  },
+  "toolCallWithResponse.toolResultAlt": {
+    "defaultMessage": "Resultaat van de tool"
+  },
+  "toolCallWithResponse.viewSubagentSession": {
+    "defaultMessage": "Sessie van de subagent bekijken"
+  },
+  "toolConfirmation.allowToolCallWithName": {
+    "defaultMessage": "{toolName} toestaan?"
+  },
+  "toolConfirmation.gooseWouldLikeToCallWithName": {
+    "defaultMessage": "Goose wil {toolName} aanroepen. Toestaan?"
+  },
+  "updateSection.autoDownload": {
+    "defaultMessage": "Goose downloadt de update op de achtergrond en installeert hem zodra je afsluit of herstart."
+  },
+  "updateSection.autoDownloadDisabledByEnv": {
+    "defaultMessage": "Automatisch downloaden staat uit via de omgevingsvariabele GOOSE_DISABLE_AUTO_DOWNLOAD."
+  },
+  "updateSection.autoDownloadDisabledNote": {
+    "defaultMessage": "Automatisch downloaden staat uit. Klik op \"Nu downloaden\" om het zelf te doen."
+  },
+  "updateSection.checkForUpdates": {
+    "defaultMessage": "Controleren op updates"
+  },
+  "updateSection.checking": {
+    "defaultMessage": "Bezig met controleren op updates..."
+  },
+  "updateSection.currentVersion": {
+    "defaultMessage": "Huidige versie"
+  },
+  "updateSection.disableAutoDownload": {
+    "defaultMessage": "Updates niet automatisch downloaden"
+  },
+  "updateSection.disableAutoDownloadDesc": {
+    "defaultMessage": "Staat dit aan, dan meldt Goose wel nieuwe versies maar downloadt ze niet automatisch."
+  },
+  "updateSection.downloadNow": {
+    "defaultMessage": "Nu downloaden"
+  },
+  "updateSection.downloadReady": {
+    "defaultMessage": "Update gedownload en klaar om te installeren!"
+  },
+  "updateSection.downloadingProgress": {
+    "defaultMessage": "Bezig met downloaden van de update... {percent}%"
+  },
+  "updateSection.downloadingUpdate": {
+    "defaultMessage": "Bezig met downloaden van de update..."
+  },
+  "updateSection.installAndRestart": {
+    "defaultMessage": "Installeren en herstarten"
+  },
+  "updateSection.latestVersion": {
+    "defaultMessage": "Je hebt de nieuwste versie!"
+  },
+  "updateSection.loading": {
+    "defaultMessage": "Bezig met laden..."
+  },
+  "updateSection.upToDate": {
+    "defaultMessage": "(up-to-date)"
+  },
+  "updateSection.updateAvailable": {
+    "defaultMessage": "Er is een update!"
+  },
+  "updateSection.versionAvailable": {
+    "defaultMessage": "→ {version} beschikbaar"
+  },
+  "updateSection.versionIsAvailable": {
+    "defaultMessage": "Versie {version} is beschikbaar"
+  },
+  "userMessage.cancel": {
+    "defaultMessage": "Annuleren"
+  },
+  "userMessage.cancelAriaLabel": {
+    "defaultMessage": "Bewerken annuleren"
+  },
+  "userMessage.editAriaLabel": {
+    "defaultMessage": "Inhoud van het bericht bewerken"
+  },
+  "userMessage.editButton": {
+    "defaultMessage": "Bewerken"
+  },
+  "userMessage.editImagesHeading": {
+    "defaultMessage": "Bijgevoegde afbeeldingen:"
+  },
+  "userMessage.editInPlace": {
+    "defaultMessage": "Hier aanpassen"
+  },
+  "userMessage.editInPlaceAriaLabel": {
+    "defaultMessage": "Bericht hier aanpassen"
+  },
+  "userMessage.editInPlaceDescription": {
+    "defaultMessage": "<b>Hier aanpassen</b> werkt deze sessie bij • <b>Sessie afsplitsen</b> maakt een nieuwe sessie"
+  },
+  "userMessage.editInPlaceTitle": {
+    "defaultMessage": "Het bericht in deze sessie bijwerken"
+  },
+  "userMessage.editMessageAriaLabel": {
+    "defaultMessage": "Bericht bewerken: {preview}"
+  },
+  "userMessage.editMessageTitle": {
+    "defaultMessage": "Bericht bewerken"
+  },
+  "userMessage.editPlaceholder": {
+    "defaultMessage": "Pas je bericht aan..."
+  },
+  "userMessage.emptyError": {
+    "defaultMessage": "Een bericht mag niet leeg zijn"
+  },
+  "userMessage.forkSession": {
+    "defaultMessage": "Sessie afsplitsen"
+  },
+  "userMessage.forkSessionAriaLabel": {
+    "defaultMessage": "Sessie afsplitsen met het aangepaste bericht"
+  },
+  "userMessage.forkSessionTitle": {
+    "defaultMessage": "Een nieuwe sessie maken met het aangepaste bericht"
+  },
+  "userMessage.removeImageFromEdit": {
+    "defaultMessage": "Afbeelding uit het bericht halen"
+  }
+}
