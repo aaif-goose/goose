@@ -342,6 +342,10 @@ html[data-theme="light"] .hide-in-light {
   margin-right: 0px;
 }
 
+.menu__list-item.mcp-servers-sidebar {
+  display: none;
+}
+
 /* Dropdown styles */
 .navbar__link--active {
   color: var(--text-prominent);

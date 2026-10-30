@@ -467,6 +467,12 @@ const config: Config = {
           position: "left",
         },
         {
+          to: "/docs/gdk/",
+          label: "GDK",
+          position: "left",
+        },
+        { to: "/blog", label: "Blog", position: "left" },
+        {
           to: "/docs/category/guides",
           position: "left",
           label: "Docs",
@@ -476,27 +482,6 @@ const config: Config = {
           position: "left",
           label: "Tutorials",
         },
-        { to: "/blog", label: "Blog", position: "left" },
-        {
-          type: "dropdown",
-          label: "Resources",
-          position: "left",
-          items: [
-            {
-              to: "/extensions",
-              label: "Extensions",
-            },
-            {
-              to: "/recipes",
-              label: "Recipe Cookbook",
-            },
-            {
-              to: "deeplink-generator",
-              label: "Deeplink Generator",
-            },
-          ],
-        },
-
         {
           href: "https://discord.gg/n8R5VaWDAn",
           label: "Discord",
