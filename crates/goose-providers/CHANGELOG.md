@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-10-30
+
+### Added
+
+- add AIHubMix declarative provider ([#12997](https://github.com/aaif-goose/goose/pull/12997))
+- *(providers)* add RouterPlex declarative provider ([#13068](https://github.com/aaif-goose/goose/pull/13068))
+
+### Fixed
+
+- *(providers)* replace retired Spark X2 with Spark X2.5 in iflytek_astron ([#12772](https://github.com/aaif-goose/goose/pull/12772))
+- *(providers)* replay OpenAI Responses reasoning across tool turns ([#13222](https://github.com/aaif-goose/goose/pull/13222))
+- *(providers)* honor Retry-After on 429s mapped outside handle_status ([#12986](https://github.com/aaif-goose/goose/pull/12986))
+- *(openrouter)* classify typed context_length_exceeded errors as context overflow ([#13154](https://github.com/aaif-goose/goose/pull/13154))
+- *(openrouter)* resolve variant suffixes like :free and :nitro to the base model ([#12979](https://github.com/aaif-goose/goose/pull/12979))
+- *(voice)* use system trust for WebSockets ([#13075](https://github.com/aaif-goose/goose/pull/13075))
+
+### Other
+
+- Add Lemonade as a provider ([#12920](https://github.com/aaif-goose/goose/pull/12920))
+- *(release)* bump version to 1.57.0 (minor) ([#13161](https://github.com/aaif-goose/goose/pull/13161))
+
 ## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
 
 ### Added

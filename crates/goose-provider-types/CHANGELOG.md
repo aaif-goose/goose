@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.13...gdk-v0.1.0-alpha.14) - 2026-10-30
+
+### Added
+
+- context window report and viewer ([#10462](https://github.com/aaif-goose/goose/pull/10462))
+
+### Fixed
+
+- *(providers)* replay OpenAI Responses reasoning across tool turns ([#13222](https://github.com/aaif-goose/goose/pull/13222))
+- *(deps)* bump zstd to 0.14.3 for RUSTSEC advisories ([#13162](https://github.com/aaif-goose/goose/pull/13162))
+- *(openrouter)* resolve variant suffixes like :free and :nitro to the base model ([#12979](https://github.com/aaif-goose/goose/pull/12979))
+
+### Other
+
+- *(release)* bump version to 1.57.0 (minor) ([#13161](https://github.com/aaif-goose/goose/pull/13161))
+
 ## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
 
 ### Fixed

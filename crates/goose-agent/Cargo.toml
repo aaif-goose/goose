@@ -1,6 +1,6 @@
 [package]
 name = "goose-agent"
-version = "0.1.0-alpha.13"
+version = "0.1.0-alpha.14"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -16,7 +16,7 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
 tokio-util = { workspace = true, features = ["compat"] }
 async-trait = { workspace = true }
-goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
+goose-provider-types = { version = "0.1.0-alpha.14", path = "../goose-provider-types", default-features = false }
 rmcp = { workspace = true, features = ["server"] }
 uuid = { workspace = true }
 serde_json = { workspace = true }
@@ -25,7 +25,7 @@ tracing = { workspace = true }
 tracing-futures = { workspace = true }
 serde.workspace = true
 regex = { workspace = true, features = ["unicode-perl"] }
-goose-sdk-types = { version = "0.1.0-alpha.13", path = "../goose-sdk-types", default-features = false }
+goose-sdk-types = { version = "0.1.0-alpha.14", path = "../goose-sdk-types", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rmcp = { workspace = true, features = ["local"] }
