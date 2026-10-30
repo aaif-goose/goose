@@ -943,13 +943,18 @@ impl CliSession {
         if options.provider.is_none() && options.model.is_none() {
             if let Some(effort) = effort {
                 return self
-                    .set_session_thinking_effort(effort, &current_model_config)
+                    .set_session_thinking_effort(effort, &current_model_name)
                     .await;
             }
+            let effort_info = current_model_config
+                .thinking_effort()
+                .or(Config::global().get_goose_thinking_effort())
+                .map(|effort| format!(", thinking effort '{effort}'"))
+                .unwrap_or_default();
             output::goose_mode_message(&format!(
-                "Current session model: '{}' (provider '{}')\n\
+                "Current session model: '{}' (provider '{}'{})\n\
                  Tip: use '/model <name>' to switch model, '/model --provider <name> [model]' to switch provider, or '/model --effort <level>' to set thinking effort.",
-                current_model_name, current_provider_name
+                current_model_name, current_provider_name, effort_info
             ));
             return Ok(());
         }
@@ -1125,19 +1130,8 @@ impl CliSession {
     async fn set_session_thinking_effort(
         &mut self,
         effort: ThinkingEffort,
-        current_model_config: &goose_providers::model::ModelConfig,
+        model_name: &str,
     ) -> Result<()> {
-        let current_effort = current_model_config
-            .thinking_effort()
-            .or(Config::global().get_goose_thinking_effort());
-        if current_effort == Some(effort) {
-            output::goose_mode_message(&format!(
-                "Session already using thinking effort '{}' for model '{}'",
-                effort, current_model_config.model_name
-            ));
-            return Ok(());
-        }
-
         if let Err(e) = self
             .services
             .update_thinking_effort(&self.session_id, &effort.to_string())
@@ -1149,7 +1143,7 @@ impl CliSession {
 
         output::goose_mode_message(&format!(
             "Session thinking effort set to '{}' for model '{}'",
-            effort, current_model_config.model_name
+            effort, model_name
         ));
         Ok(())
     }
