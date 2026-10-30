@@ -277,6 +277,7 @@ pub struct CompletionCache {
     pub provider_names: Vec<String>,
     pub provider_models: HashMap<String, Vec<String>>,
     pub current_session_provider: String,
+    pub thinking_effort_values: Vec<String>,
     pub last_updated: Instant,
     pub hint_status: HintStatus,
 }
@@ -289,6 +290,7 @@ impl CompletionCache {
             provider_names: Vec::new(),
             provider_models: HashMap::new(),
             current_session_provider: String::new(),
+            thinking_effort_values: THINKING_EFFORTS.map(|effort| effort.to_string()).to_vec(),
             last_updated: Instant::now(),
             hint_status: HintStatus::Default,
         }
@@ -1926,7 +1928,9 @@ impl CliSession {
             .list_prompts(CancellationToken::default())
             .await;
         let all_providers = goose::providers::providers().await;
-        let session_provider = services.provider(session_id).await?.get_name().to_string();
+        let current_provider = services.provider(session_id).await?;
+        let session_provider = current_provider.get_name().to_string();
+        let thinking_effort_values = thinking_effort_values(current_provider.as_ref());
 
         let provider_ids: Vec<String> = all_providers.iter().map(|(m, _)| m.name.clone()).collect();
         let inventory_models: HashMap<String, Vec<String>> = {
@@ -1978,6 +1982,7 @@ impl CliSession {
 
         cache.provider_names = all_providers.iter().map(|(m, _)| m.name.clone()).collect();
         cache.current_session_provider = session_provider;
+        cache.thinking_effort_values = thinking_effort_values;
         cache.provider_models.clear();
         for (metadata, _) in &all_providers {
             let mut models: Vec<String> = metadata
@@ -2894,6 +2899,21 @@ fn active_thinking_effort(
     }
 }
 
+fn thinking_effort_values(provider: &dyn Provider) -> Vec<String> {
+    match provider.thinking_effort_support() {
+        ThinkingEffortSupport::Options(capability) => capability
+            .values
+            .into_iter()
+            .map(|option| option.value)
+            .collect(),
+        ThinkingEffortSupport::Unsupported => vec![],
+        ThinkingEffortSupport::Unspecified if provider.manages_own_context() => vec![],
+        ThinkingEffortSupport::Unspecified => {
+            THINKING_EFFORTS.map(|effort| effort.to_string()).to_vec()
+        }
+    }
+}
+
 fn warn_if_effort_may_be_ignored(
     model_config: &goose_providers::model::ModelConfig,
     effort: ThinkingEffort,
@@ -3638,6 +3658,39 @@ mod tests {
             )
             .as_deref(),
             Some("xhigh")
+        );
+    }
+
+    #[test]
+    fn thinking_effort_values_follow_provider_support() {
+        let values = |manages_own_context, support| {
+            thinking_effort_values(&EffortSupportProvider {
+                manages_own_context,
+                support,
+            })
+        };
+
+        assert_eq!(
+            values(false, ThinkingEffortSupport::Unspecified),
+            ["off", "low", "medium", "high", "max"]
+        );
+        assert!(values(true, ThinkingEffortSupport::Unspecified).is_empty());
+        assert!(values(true, ThinkingEffortSupport::Unsupported).is_empty());
+        assert_eq!(
+            values(
+                true,
+                ThinkingEffortSupport::Options(
+                    goose_providers::thinking::ThinkingEffortCapability {
+                        option_id: "effort".to_string(),
+                        values: vec![goose_providers::thinking::ThinkingEffortOption {
+                            value: "minimal".to_string(),
+                            label: "Minimal".to_string(),
+                        }],
+                        current: None,
+                    }
+                ),
+            ),
+            ["minimal"]
         );
     }
 

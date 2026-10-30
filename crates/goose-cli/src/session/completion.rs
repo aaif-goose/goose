@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use strum::VariantNames;
 
-use super::{CompletionCache, HintStatus, THINKING_EFFORTS};
+use super::{CompletionCache, HintStatus};
 
 /// Completer for goose CLI commands
 pub struct GooseCompleter {
@@ -174,7 +174,7 @@ impl GooseCompleter {
         let cache = self.completion_cache.read().unwrap();
         let options: Vec<String> = match pending_flag {
             Some("--provider") => cache.provider_names.clone(),
-            Some(_) => THINKING_EFFORTS.iter().map(ToString::to_string).collect(),
+            Some(_) => cache.thinking_effort_values.clone(),
             None if partial.starts_with("--") => {
                 vec!["--provider".to_string(), "--effort".to_string()]
             }
@@ -772,6 +772,15 @@ mod tests {
             .complete_model_names("/model claude-sonnet-4 ")
             .unwrap();
         assert!(candidates.is_empty());
+
+        completer
+            .completion_cache
+            .write()
+            .unwrap()
+            .thinking_effort_values = vec!["minimal".to_string(), "high".to_string()];
+        let (_pos, candidates) = completer.complete_model_names("/model --effort ").unwrap();
+        let displays: Vec<&str> = candidates.iter().map(|c| c.display.as_str()).collect();
+        assert_eq!(displays, ["minimal", "high"]);
 
         let (pos, candidates) = completer
             .complete_model_names("/model claude-sonnet-4 --e")
