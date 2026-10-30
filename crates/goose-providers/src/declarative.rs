@@ -19,6 +19,7 @@ pub(crate) mod declarative_providers {
         atomic_chat,
         celeris,
         cerebras,
+        cortecs,
         deepseek,
         empiriolabs,
         eurouter,
