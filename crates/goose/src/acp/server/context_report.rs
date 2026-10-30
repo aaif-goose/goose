@@ -1,7 +1,7 @@
 use super::*;
 use crate::token_counter::create_token_counter;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_context_report(
         &self,
         req: ContextReportRequest,
