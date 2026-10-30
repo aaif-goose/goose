@@ -60,7 +60,25 @@ impl Operation<Session, GooseEffect> for StatusOperation {
         } else {
             "N/A".to_string()
         };
-        let response = Message::assistant().with_text(format!("**Session status**\n\n- Model: {}\n- Provider: {}\n- Mode: {}\n- Tokens (lifetime): {}\n- Context: {} / {} tokens ({})", self.model_config.model_name, self.provider.get_name(), session.goose_mode, lifetime_tokens, context_tokens, context_limit, context_pct)).with_visibility(true, false);
+        let response = Message::assistant()
+            .with_text(format!(
+                "**Session status**\n\n\
+                 - Session ID: `{}`\n\
+                 - Model: {}\n\
+                 - Provider: {}\n\
+                 - Mode: {}\n\
+                 - Tokens (lifetime): {}\n\
+                 - Context: {} / {} tokens ({})",
+                session.id,
+                self.model_config.model_name,
+                self.provider.get_name(),
+                session.goose_mode,
+                lifetime_tokens,
+                context_tokens,
+                context_limit,
+                context_pct,
+            ))
+            .with_visibility(true, false);
         let command_message = messages_since_kickoff(conversation)?
             .first()
             .cloned()

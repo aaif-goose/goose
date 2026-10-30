@@ -225,7 +225,8 @@ async function submitMessage(
 }
 
 function stop(sessionId: string): void {
-  const storedPromptAttemptId = acpChatSessionStore.getSnapshot(sessionId)?.activePromptAttemptId;
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  const storedPromptAttemptId = snapshot?.activePromptAttemptId;
   const hasStoredAcpPrompt = storedPromptAttemptId !== null && storedPromptAttemptId !== undefined;
 
   if (hasStoredAcpPrompt) {
@@ -235,6 +236,11 @@ function stop(sessionId: string): void {
     acpCancelPrompt(sessionId).catch((error) => {
       console.warn('Failed to cancel ACP prompt:', error);
     });
+    return;
+  }
+
+  // A session load has nothing to cancel; ending it here would leave the replay fast path.
+  if (snapshot?.chatState === ChatState.LoadingConversation) {
     return;
   }
 

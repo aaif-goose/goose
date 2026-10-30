@@ -15,8 +15,8 @@ use crate::formats::openai::{
     record_response_metadata, response_to_message, OpenAiFormatOptions,
 };
 use crate::formats::openai_responses::{
-    create_responses_request_for_model, get_responses_usage, responses_api_to_message,
-    ResponsesApiResponse,
+    create_responses_request_for_model, get_responses_usage, is_encrypted_reasoning_error,
+    responses_api_to_message, strip_reasoning_items, ResponsesApiResponse,
 };
 use crate::http_status::{extract_request_id, read_json_response};
 use crate::images::ImageFormat;
@@ -341,6 +341,29 @@ impl OpenAiProvider {
             .or_insert_with(|| serde_json::Value::String(session_id));
     }
 
+    async fn post_responses(
+        &self,
+        model_config: &ModelConfig,
+        payload: &serde_json::Value,
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.with_retry(|| async {
+            handle_status(
+                self.api_client
+                    .request(&Self::map_base_path(
+                        &self.base_path,
+                        "responses",
+                        OPEN_AI_DEFAULT_RESPONSES_PATH,
+                    ))
+                    .model_headers(model_config)?
+                    .streaming(self.supports_streaming)
+                    .response_post(payload)
+                    .await?,
+            )
+            .await
+        })
+        .await
+    }
+
     async fn stream_responses_payload(
         &self,
         model_config: &ModelConfig,
@@ -348,26 +371,24 @@ impl OpenAiProvider {
     ) -> Result<MessageStream, ProviderError> {
         self.insert_prompt_cache_key(&mut payload);
         let mut log = start_log(model_config, &payload)?;
-        let response = self
-            .with_retry(|| async {
-                handle_status(
-                    self.api_client
-                        .request(&Self::map_base_path(
-                            &self.base_path,
-                            "responses",
-                            OPEN_AI_DEFAULT_RESPONSES_PATH,
-                        ))
-                        .model_headers(model_config)?
-                        .streaming(self.supports_streaming)
-                        .response_post(&payload)
-                        .await?,
-                )
-                .await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
+        let response = match self.post_responses(model_config, &payload).await {
+            Err(ProviderError::RequestFailed(message))
+                if is_encrypted_reasoning_error(&message) =>
+            {
+                tracing::warn!(
+                    error = %message,
+                    "API rejected replayed reasoning; retrying once without it"
+                );
+                let _ = log.error(&message);
+                strip_reasoning_items(&mut payload);
+                log = start_log(model_config, &payload)?;
+                self.post_responses(model_config, &payload).await
+            }
+            other => other,
+        }
+        .inspect_err(|e| {
+            let _ = log.error(e);
+        })?;
         if self.supports_streaming {
             stream_responses_compat(response, log)
         } else {

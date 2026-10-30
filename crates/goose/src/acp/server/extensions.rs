@@ -4,16 +4,17 @@ use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
 use std::collections::HashSet;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_add_session_extension(
         &self,
         req: AddSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let config = goose_extension_to_config_without_secrets(req.extension)?;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        agent
-            .add_extension(config, session_id)
+        self.open_session(&req.session_id).await?;
+        self.services
+            .extension_manager
+            .enable(session_id, config)
             .await
             .internal_err()?;
         Ok(EmptyResponse {})
@@ -24,9 +25,11 @@ impl GooseAcpAgent {
         req: RemoveSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let removed = agent
-            .remove_extension_by_key(&req.extension_key, session_id)
+        self.open_session(&req.session_id).await?;
+        let removed = self
+            .services
+            .extension_manager
+            .disable(session_id, &req.extension_key)
             .await
             .internal_err()?;
         if !removed {
@@ -104,6 +107,7 @@ impl GooseAcpAgent {
     ) -> Result<GetSessionExtensionsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let session = self
+            .services
             .session_manager
             .get_session(session_id, false)
             .await

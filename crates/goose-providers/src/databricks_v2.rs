@@ -971,7 +971,8 @@ mod tests {
                 .and(path("/ai-gateway/anthropic/v1/messages"))
                 .and(body_partial_json(json!({
                     "model": model,
-                    "system": [{"cache_control": {"type": "ephemeral"}}]
+                    "system": [{"cache_control": {"type": "ephemeral"}}],
+                    "thinking": {"type": "adaptive", "display": "summarized"}
                 })))
                 .respond_with(
                     ResponseTemplate::new(200)

@@ -34,7 +34,6 @@ pub const AZURE_FOUNDRY_KNOWN_MODELS: &[&str] = &[
     "Mistral-large-2411",
     "Cohere-command-r-plus-08-2024",
     "AI21-Jamba-1.5-Large",
-    "DeepSeek-R1",
     "DeepSeek-V3",
     "glm-4.7",
     "Kimi-K2-Instruct",

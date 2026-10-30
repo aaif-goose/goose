@@ -713,7 +713,7 @@ goose acp
 ```
 
 :::info
-This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/gdk/acp) for details.
+This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Set up goose in Zed](/docs/guides/zed) for an editor setup example, or [Build an app with goose](/docs/gdk/acp) to create your own client.
 :::
 
 :::warning Unattended environments
@@ -828,6 +828,7 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills [<name>...]`** - List available skills, or load one or more skills by name
+- **`/status`** - Show the current session ID, model, provider, mode, and token usage. Use the ID to resume the same session in another client, or with `goose session --resume --session-id <session_id>` in the CLI.
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)
 

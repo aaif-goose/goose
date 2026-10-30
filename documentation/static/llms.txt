@@ -1,87 +1,58 @@
-# goose
+# goose and GDK
 
-goose is an extensible, open source AI agent that enhances software development by automating coding tasks.
-It runs locally on your machine and connects to various tools and services through the Model Context Protocol (MCP).
-goose is available as both a desktop application and a command-line interface (CLI).
+> This site covers using goose, the open-source agent application, and building applications with the goose Development Kit (GDK).
 
-## Key Features
+Read the relevant documentation before writing commands, configuration, or code. Guides and Python/Kotlin references below are Markdown; native Rust APIs link to docs.rs.
 
-- **Local-first**: Runs on your machine with full access to your development environment
-- **Extensible**: Add capabilities through MCP extensions (servers)
-- **Multi-provider**: Works with OpenAI, Anthropic, Google, Meta, Ollama, and more
-- **Cross-platform**: Available on macOS, Linux, and Windows
-- **Open source**: MIT licensed, community-driven development
+## Using goose
 
-## Core Concepts
+- [Quickstart](/docs/quickstart.md): Run your first session in goose Desktop or the CLI.
+- [Installation](/docs/getting-started/installation.md): Install goose for your platform.
+- [Model providers](/docs/getting-started/providers.md): Connect goose to a hosted or local model.
+- [Configuration files](/docs/guides/config-files.md): Find settings and credential storage locations for your platform and configure providers, models, and extensions.
+- [Extensions](/docs/getting-started/using-extensions.md): Add and configure tools through MCP.
+- [Permissions](/docs/guides/managing-tools/goose-permissions.md): Choose when goose may act without approval.
+- [CLI reference](/docs/guides/goose-cli-commands.md): Look up command names, flags, and examples.
+- [Recipes](/docs/guides/recipes/recipe-reference.md): Write reusable workflows; consult the field reference before creating recipe YAML.
+- [Sessions](/docs/guides/sessions/session-management.md): Start, resume, and manage conversations.
+- [Project instructions](/docs/guides/context-engineering/using-goosehints.md): Supply context through AGENTS.md, .goosehints, or custom filenames.
+- [Skills](/docs/guides/context-engineering/using-skills.md): Create and install reusable agent instructions.
 
-- **Extensions**: Plugins that give goose new capabilities via MCP servers (GitHub, Slack, databases, etc.)
-- **Recipes**: Reusable task templates that can be shared and automated
-- **Sessions**: Conversation contexts that maintain state across interactions
-- **Providers**: LLM backends that power goose (OpenAI, Anthropic, Ollama, etc.)
-- **Goosehints**: Project-specific instructions that customize goose behavior
+## For developers
 
-## Documentation
+Use GDK's Rust crates to assemble an agent or call models directly. Python and Kotlin bindings expose providers and conversation compaction, not the full agent runtime. Use ACP to make the pre-built goose agent the backend for your application.
 
-- Quickstart: /docs/quickstart
-- Installation: /docs/getting-started/installation
-- LLM Providers: /docs/getting-started/providers
-- Using Extensions: /docs/getting-started/using-extensions
-- CLI Commands: /docs/guides/goose-cli-commands
-- Recipes Guide: /docs/guides/recipes/
-- Tutorials: /docs/tutorials/
-- MCP Servers/Extensions: /docs/mcp/
+- [Introduction](/docs/gdk/index.md): Choose how GDK and goose fit your application.
+- [Getting Started](/docs/gdk/hello-world.md): Build a small Rust agent with tools, streaming, and a saved conversation.
+- [Demos](/docs/gdk/demos/index.md): Find working projects, source code, and explanations of their architectural choices.
+- [State machine](/docs/gdk/concepts/state-machine.md): Understand execution order, effects, persistence, yielding, and resuming.
+- [Operations](/docs/gdk/concepts/operations.md): Compose behavior, inspect existing implementations, and write your own operation.
+- [Providers](/docs/gdk/concepts/providers.md): Choose or implement a model backend, including declarative providers, local inference and voice.
+- [Authentication](/docs/gdk/concepts/authentication.md): Supply provider credentials or integrate your own authentication.
+- [Build an app with goose](/docs/gdk/acp/index.md): Launch goose over ACP, connect, send prompts, and handle streamed updates and permissions.
+- [goose ACP extensions](/docs/gdk/acp/reference.md): Look up goose-specific protocol methods, notifications, and types; use the linked ACP specification for standard methods.
+- [Reference](/docs/gdk/reference/index.md): Choose crates and follow links to generated Rust, Python, and Kotlin API documentation. Check the API version against your dependencies before writing code.
 
-## Installation
+### Generated Rust APIs
 
-### macOS/Linux/Windows (CLI)
+Use the docs.rs version selector to match your dependencies; `latest` may differ from the version you installed.
 
-```sh
-curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
-```
+- [StateMachine](https://docs.rs/goose-agent/latest/goose_agent/machine/struct.StateMachine.html): Assemble and run steps, or drive stepping and effect application yourself.
+- [Operation](https://docs.rs/goose-agent/latest/goose_agent/operation/trait.Operation.html): Implement custom behavior and inference contributions.
+- [Tools](https://docs.rs/goose-agent/latest/goose_agent/tool/index.html): Define and execute typed tools.
+- [Provider contract](https://docs.rs/goose-provider-types/latest/goose_provider_types/base/trait.Provider.html): Implement streaming model calls and inspect capabilities.
+- [Provider implementations](https://docs.rs/goose-providers/latest/goose_providers/): Construct backends and configure HTTP authentication.
+- [Compaction](https://docs.rs/goose-context-management/latest/goose_context_management/): Summarize conversations through your own storage interfaces.
 
-### macOS (Homebrew)
+### Generated Python and Kotlin APIs
 
-```sh
-brew install --cask block-goose
-```
+These references require no JavaScript. Each identifies the exact API snapshot and links to a versioned copy.
 
-Desktop applications are available for macOS, Linux, and Windows at /docs/getting-started/installation
+- [Python API](/docs/gdk/sdk/api-reference-python.md): Provider constructors, records, enums, callbacks, and errors. Start at [functions](/docs/gdk/sdk/api-reference-python.md#functions) to construct a provider.
+- Python calls: [completion](/docs/gdk/sdk/api-reference-python.md#provider-complete), [streaming](/docs/gdk/sdk/api-reference-python.md#provider-stream), [stream chunks](/docs/gdk/sdk/api-reference-python.md#providerstream-next-chunk), [compaction](/docs/gdk/sdk/api-reference-python.md#provider-compact).
+- [Kotlin API](/docs/gdk/sdk/api-reference-kotlin.md): The same bindings surface with Kotlin names, types, and signatures; includes [completion](/docs/gdk/sdk/api-reference-kotlin.md#provider-complete), [streaming](/docs/gdk/sdk/api-reference-kotlin.md#provider-stream), and [compaction](/docs/gdk/sdk/api-reference-kotlin.md#provider-compact).
 
-## Common Use Cases
+## More documentation
 
-- Automating repetitive coding tasks
-- Interacting with GitHub (PRs, issues, code review)
-- Database queries and management
-- File system operations
-- Web scraping and API interactions
-- CI/CD pipeline management
-- Code generation and refactoring
-
-## Built-in Extensions
-
-- **Developer**: Shell commands, file editing, code analysis
-- **Computer Controller**: System automation, web scraping
-- **Memory**: Persistent storage across sessions
-- **Todo**: Task management within sessions
-- **Extension Manager**: Enable/disable extensions dynamically
-- **Chat Recall**: Search and reference past conversations
-
-## Configuration
-
-goose configuration is stored in `~/.config/goose/` with:
-- `profiles.yaml`: Provider and extension settings
-- `config.yaml`: Global preferences
-
-Project-specific hints can be added via `.goosehints` and/or `AGENT.md` files.
-
-## Links
-
-- Website: https://goose-docs.ai/
-- GitHub: https://github.com/aaif-goose/goose
-- Discord: https://discord.gg/n8R5VaWDAn
-- Extensions Registry: https://goose-docs.ai/extensions/
-- Blog: https://goose-docs.ai/blog/
-
-## About
-
-goose is developed by AAIF (Agentic AI Foundation) as an open source project under the Apache 2.0 license.
+- [Documentation map](/goose-docs-map.md): Find additional guides and GDK pages by topic, with Markdown paths and section headings.
+- [Source repository](https://github.com/aaif-goose/goose): Inspect implementations and examples. The main branch may be ahead of published releases.

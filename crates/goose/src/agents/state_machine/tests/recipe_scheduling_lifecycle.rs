@@ -14,16 +14,10 @@ use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 #[cfg(feature = "scheduler")]
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
-#[cfg(feature = "code-mode")]
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
-#[cfg(feature = "code-mode")]
-use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::Message;
-#[cfg(feature = "code-mode")]
-use crate::conversation::message::MessageContent;
 #[cfg(feature = "tree-sitter")]
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
@@ -506,12 +500,12 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
 
 #[cfg(feature = "code-mode")]
 #[tokio::test]
-async fn unadvertised_final_output_is_neither_approved_nor_executed() -> Result<()> {
+async fn code_mode_advertises_and_accepts_final_output() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let recipe = Recipe::builder()
-        .title("Structured output boundary")
-        .description("Structured output boundary")
-        .instructions("Return structured output")
+        .title("Structured output")
+        .description("Return structured output")
+        .instructions("Compute the answer")
         .response(Response {
             json_schema: Some(json!({
                 "type": "object",
@@ -523,59 +517,16 @@ async fn unadvertised_final_output_is_neither_approved_nor_executed() -> Result<
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
     pipeline.add_extension("code_execution").await?;
-    pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::AlwaysAllow);
-    let pipeline = pipeline
-        .with_max_turns(2)
-        .with_goose_mode(GooseMode::Approve)
-        .await;
-    api.on("try the hidden final output")
-        .unadvertised_call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "escaped" }));
-    api.on("not available").reply("recipe call blocked");
+    api.on("compute the answer")
+        .call(FINAL_OUTPUT_TOOL_NAME, json!({ "result": "42" }));
 
-    let result = pipeline.run(["try the hidden final output"]).await?;
+    let result = pipeline.run(["compute the answer"]).await?;
 
-    assert!(!api.calls()[0].advertises_tool(FINAL_OUTPUT_TOOL_NAME));
-    assert!(result.conversation().messages().iter().any(|message| {
-        message.content.iter().any(|content| {
-            matches!(content, MessageContent::ToolResponse(response)
-            if response.tool_result.as_ref().is_ok_and(|result| {
-                result.content.iter().any(|content| {
-                    content.as_text().is_some_and(|text| {
-                        text.text.contains("Tool 'recipe__final_output' is not available")
-                    })
-                })
-            }))
-        })
-    }));
-    assert!(result.conversation().messages().iter().any(|message| {
-        message.content.iter().any(|content| {
-            matches!(content, MessageContent::Text(text) if text.text == "recipe call blocked")
-        })
-    }));
-    assert!(!result.conversation().messages().iter().any(|message| {
-        message
-            .content
-            .iter()
-            .any(|content| matches!(content, MessageContent::ActionRequired(_)))
-    }));
-    let request = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .find(|request| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
-        })
-        .expect("final_output request");
-    assert!(request
-        .tool_meta
-        .as_ref()
-        .and_then(|metadata| metadata.get(TOOL_EXECUTABLE_KEY))
-        .is_none());
+    assert_eq!(api.call_count(), 1);
+    assert!(api.calls()[0].advertises_tool("execute_javascript"));
+    assert!(api.calls()[0].system_contains("You MUST use the `final_output` tool"));
+    assert!(api.calls()[0].advertises_tool(FINAL_OUTPUT_TOOL_NAME));
+    result.assert_message(-1, Agent, r#"{"result":"42"}"#);
 
     Ok(())
 }
@@ -634,7 +585,8 @@ async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Resu
         "version: 1.0.0\n\
          title: Scheduled task\n\
          description: A scheduled task\n\
-         prompt: Do the scheduled work\n",
+         prompt: Do the scheduled work\n\
+         extensions: []\n",
     )?;
     let recipe_path = recipe_path.to_string_lossy();
 
@@ -723,6 +675,29 @@ async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Resu
     let rejected = pipeline.run(["schedule an empty recipe"]).await?;
     rejected.assert_message(-2, ToolResponse, "Recipe must specify");
     rejected.assert_message(-1, Agent, "empty recipe rejected");
+
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("GOOSE_PROVIDER", Some("openai")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("GOOSE_MODEL", Some("gpt-4o")),
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    api.on("Do the scheduled work").reply("scheduled work done");
+    let run_id = scheduler.run_now(&job_id).await?;
+    let run = pipeline.session_manager.get_session(&run_id, true).await?;
+    assert_eq!(
+        run.conversation
+            .expect("the run has a conversation")
+            .messages()
+            .last()
+            .map(Message::as_concat_text)
+            .as_deref(),
+        Some("scheduled work done")
+    );
+    assert!(!pipeline.services().await.tracks_confirmations_for(&run_id));
 
     Ok(())
 }
@@ -823,6 +798,15 @@ prompt: check
         session_manager.clone(),
     )
     .await?;
+    let _services = crate::agents::StateMachineServices::with_config(
+        crate::agents::StateMachineServicesConfig::new(
+            session_manager.clone(),
+            crate::config::permission::PermissionManager::instance(),
+            Some(scheduler.clone()),
+            true,
+            crate::agents::GoosePlatform::GooseCli,
+        ),
+    );
     let job = crate::scheduler::ScheduledJob {
         id: "ordering_guard".to_string(),
         source: recipe_path.to_string_lossy().into_owned(),

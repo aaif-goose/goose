@@ -54,7 +54,7 @@ async fn capture_state_machine_trace_fields(
         .await?;
 
     let cancel = CancellationToken::new();
-    let machine = pipeline.machine(cancel.clone());
+    let machine = pipeline.machine(cancel.clone()).await;
     let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let span = tracing::info_span!(
@@ -67,7 +67,7 @@ async fn capture_state_machine_trace_fields(
     super::session::run(
         &machine,
         pipeline.session_manager.as_ref(),
-        &pipeline.hook_manager,
+        &pipeline.services().await.hook_manager,
         &pipeline.session_id,
         &emit,
     )
@@ -213,7 +213,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::agents::agent::available_auto_efforts;
+    use crate::agents::services::available_auto_efforts;
     use crate::agents::state_machine::AutoEffortOperation;
 
     let (pipeline, api) = test_pipeline().await?;
@@ -334,7 +334,7 @@ async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Re
         )
         .await
         .record_model_configs()
-        .with_operation(Arc::new(AutoEffortOperation::new(
+        .with_auto_effort(Arc::new(AutoEffortOperation::new(
             Arc::new(decision_provider),
             "test-effort-model".to_string(),
             efforts,
@@ -515,6 +515,7 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
 
     let status = pipeline.run(["/status"]).await?;
     assert_eq!(api.call_count(), 0);
+    status.assert_message(-1, Agent, &format!("Session ID: `{}`", pipeline.session_id));
     status.assert_message(-1, Agent, "Provider:");
     assert!(status
         .conversation()

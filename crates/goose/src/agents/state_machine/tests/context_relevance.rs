@@ -436,6 +436,7 @@ async fn steering_after_an_observation_does_not_repeat_it_after_reconstruction()
     };
     pipeline
         .machine(cancel)
+        .await
         .apply(
             pipeline.session_manager.as_ref(),
             &session,

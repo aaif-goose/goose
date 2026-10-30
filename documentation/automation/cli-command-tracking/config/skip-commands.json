@@ -1,9 +1,0 @@
-{
-  "description": "Commands to skip during extraction (not documented intentionally)",
-  "skip_commands": [
-    {
-      "name": "term",
-      "reason": "Terminal integration documented via @goose/@g aliases"
-    }
-  ]
-}

@@ -159,7 +159,7 @@ fn unix_shell() -> String {
 }
 
 const OUTPUT_LIMIT_LINES: usize = 2000;
-pub const OUTPUT_LIMIT_BYTES: usize = 50_000;
+const OUTPUT_LIMIT_BYTES: usize = 50_000;
 const OUTPUT_PREVIEW_LINES: usize = 50;
 const OUTPUT_PREVIEW_BYTES: usize = 10_000;
 

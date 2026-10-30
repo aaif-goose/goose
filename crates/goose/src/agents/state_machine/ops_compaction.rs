@@ -51,7 +51,7 @@ impl CompactionOperation {
 
     fn command_error(
         conversation: &Conversation,
-        message: String,
+        error: &anyhow::Error,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let command = messages_since_kickoff(conversation)?
@@ -63,9 +63,7 @@ impl CompactionOperation {
             .clone()
             .ok_or_else(|| anyhow!("Persisted slash command message has no id"))?;
         let command = command.with_visibility(true, false);
-        let response = Message::assistant()
-            .with_text(message)
-            .with_visibility(true, false);
+        let response = compaction_failure_message(error).with_visibility(true, false);
         emit.message(command);
         let response = emit.message(response);
         yielded_with([
@@ -136,7 +134,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             Ok(result) => result,
             Err(error) => {
                 span.record("error.type", "compaction_error");
-                return Self::command_error(conversation, error.to_string(), emit);
+                return Self::command_error(conversation, &error, emit);
             }
         };
         let compacted = result.conversation;

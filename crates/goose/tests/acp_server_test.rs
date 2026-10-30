@@ -20,16 +20,14 @@ use common_tests::fixtures::{
 use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
-    run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
-    run_fs_write_text_file_true, run_initialize_doesnt_hit_provider, run_list_sessions,
-    run_load_mode, run_load_model, run_load_session_error, run_load_session_mcp,
+    run_delete_session, run_initialize_doesnt_hit_provider, run_list_sessions, run_load_mode,
+    run_load_model, run_load_session_error, run_load_session_mcp,
     run_load_session_replays_image_attachment, run_mode_set, run_model_list, run_model_set,
     run_model_set_error_session_not_found, run_new_session_returns_initial_config,
     run_new_session_uses_current_config_mode, run_permission_persistence, run_prompt_basic,
     run_prompt_error, run_prompt_image, run_prompt_image_attachment, run_prompt_mcp,
-    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification,
-    run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
-    OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
+    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification, run_shell,
+    run_write_file, GENERATED_SESSION_TITLE, OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
@@ -792,18 +790,8 @@ fn test_delete_session() {
 }
 
 #[test]
-fn test_fs_read_text_file_true() {
-    run_test(async { run_fs_read_text_file_true::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_false() {
-    run_test(async { run_fs_write_text_file_false::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_true() {
-    run_test(async { run_fs_write_text_file_true::<AcpServerConnection>().await });
+fn test_write_file() {
+    run_test(async { run_write_file::<AcpServerConnection>().await });
 }
 
 #[test]
@@ -999,6 +987,30 @@ fn test_new_session_honors_recipe_model_without_recipe_provider() {
             meta.get("providerId").and_then(|v| v.as_str()),
             Some("openai")
         );
+    });
+}
+
+#[test]
+fn test_new_session_rejects_unknown_provider_as_invalid_params() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "provider".to_string(),
+            serde_json::Value::String("not-a-provider".to_string()),
+        );
+
+        let error: anyhow::Error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(work_dir.path()).meta(meta))
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+
+        assert_invalid_params(error);
     });
 }
 
@@ -1336,13 +1348,8 @@ fn test_prompt_skill() {
 }
 
 #[test]
-fn test_shell_terminal_false() {
-    run_test(async { run_shell_terminal_false::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_shell_terminal_true() {
-    run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+fn test_shell() {
+    run_test(async { run_shell::<AcpServerConnection>().await });
 }
 
 const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
@@ -1438,6 +1445,80 @@ fn test_prompt_fails_and_streams_the_error() {
         assert!(
             streamed.contains("partial answer") && streamed.contains("upstream exploded"),
             "streamed text: {streamed:?}"
+        );
+    });
+}
+
+#[test]
+fn test_manual_compaction_refusal_fails_without_replacing_context() {
+    run_test(async {
+        let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let refusal =
+            r#"status:400 {"error":{"message":"summary refused","type":"invalid_request_error"}}"#;
+        let openai = OpenAiFixture::new(
+            vec![
+                (format!("what is 1+1{TURN_CONTEXT_OPEN}"), basic),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (format!("still there?{TURN_CONTEXT_OPEN}"), basic),
+            ],
+            expected_session_id.clone(),
+        )
+        .await;
+        let mut conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+        session
+            .prompt("what is 1+1", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+        let manager = SessionManager::new(conn.data_root());
+        let before = manager
+            .get_session(&session.session_id().0, true)
+            .await
+            .unwrap();
+
+        let result = session.prompt("/compact", PermissionDecision::Cancel).await;
+        let streamed: String = session
+            .session_updates()
+            .into_iter()
+            .filter_map(|update| match update {
+                SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                    ContentBlock::Text(text) => Some(text.text),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert!(streamed.contains("summary refused"), "{streamed:?}");
+        assert!(!streamed.contains("Compaction complete"), "{streamed:?}");
+        let error = prompt_acp_error(result.unwrap_err());
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert_eq!(error.data.unwrap()["reason"], "turn_failed");
+        let after = manager
+            .get_session(&session.session_id().0, true)
+            .await
+            .unwrap();
+        assert_eq!(after.usage, before.usage);
+        for original in before.conversation.unwrap().messages() {
+            assert!(after
+                .conversation
+                .as_ref()
+                .unwrap()
+                .messages()
+                .contains(original));
+        }
+        assert_eq!(
+            session
+                .prompt("still there?", PermissionDecision::Cancel)
+                .await
+                .unwrap()
+                .text,
+            "2"
         );
     });
 }

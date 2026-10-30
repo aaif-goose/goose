@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::agents::{Agent, SessionConfig};
+use goose::agents::{SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::{Config, GooseMode};
 use goose::context_mgmt::auto_compact_threshold;
 use goose::conversation::message::Message;
@@ -78,9 +78,8 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
     assert_eq!(auto_compact_threshold(200_000), 0.8);
     assert_eq!(auto_compact_threshold(0), 0.8);
 
-    let agent = Agent::new();
-    let session = agent
-        .config
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
+    let session = services
         .session_manager
         .create_session(
             temp_dir.path().to_path_buf(),
@@ -104,7 +103,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
             percentage.min(cap as f64 / context as f64)
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
-            verify_reply(&agent, &session.id, context, tokens, expected).await?;
+            verify_reply(&services, &session.id, context, tokens, expected).await?;
         }
     }
 
@@ -113,29 +112,28 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
         for context in [1_000_000, 200_000] {
             assert_eq!(auto_compact_threshold(context), disabled);
-            verify_reply(&agent, &session.id, context, 900_000, false).await?;
+            verify_reply(&services, &session.id, context, 900_000, false).await?;
         }
     }
     Ok(())
 }
 
 async fn verify_reply(
-    agent: &Arc<Agent>,
+    services: &Arc<StateMachineServices>,
     session_id: &str,
     context: usize,
     tokens: i32,
     expected_compaction: bool,
 ) -> Result<()> {
     let provider = Arc::new(CompactionProvider::default());
-    agent
+    services
         .update_provider(
             provider.clone(),
             ModelConfig::new(context.to_string()),
             session_id,
         )
         .await?;
-    agent
-        .config
+    services
         .session_manager
         .replace_conversation(
             session_id,
@@ -145,14 +143,13 @@ async fn verify_reply(
             ]),
         )
         .await?;
-    agent
-        .config
+    services
         .session_manager
         .update(session_id)
         .usage(Usage::new(Some(tokens), Some(0), Some(tokens)))
         .apply()
         .await?;
-    let stream = agent
+    let stream = services
         .reply(
             Message::user().with_text("continue"),
             SessionConfig {

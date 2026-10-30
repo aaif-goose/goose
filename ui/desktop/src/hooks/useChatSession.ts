@@ -198,9 +198,14 @@ export function useChatSession({
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
       }
 
-      const newMessage = hasNewMessage
-        ? createUserMessage(userMessage, images)
-        : currentMessages[currentMessages.length - 1];
+      const lastMessage = currentMessages[currentMessages.length - 1];
+      // An empty submit sends the last message again as the prompt; an assistant
+      // reply sent that way reaches the model as if the user had pasted it.
+      if (!hasNewMessage && lastMessage.role !== 'user') {
+        return;
+      }
+
+      const newMessage = hasNewMessage ? createUserMessage(userMessage, images) : lastMessage;
       const messagesForStore = clearsConversation
         ? []
         : hasNewMessage

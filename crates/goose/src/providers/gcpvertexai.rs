@@ -8,7 +8,7 @@ use futures::future::BoxFuture;
 use futures::StreamExt;
 use futures::TryStreamExt;
 use once_cell::sync::Lazy;
-use reqwest::{Client, StatusCode};
+use reqwest::{header::HeaderMap, Client, StatusCode};
 use serde_json::Value;
 use tokio::time::sleep;
 use tokio_util::io::StreamReader;
@@ -30,7 +30,7 @@ use crate::providers::gcpauth::GcpAuth;
 use crate::providers::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use crate::providers::retry::RetryConfig;
 use goose_providers::errors::ProviderError;
-use goose_providers::http_status::read_error_body;
+use goose_providers::http_status::{extract_retry_after, read_error_body};
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 
@@ -61,6 +61,25 @@ fn rate_limit_error_message(response_text: &str) -> String {
 const OVERLOADED_ERROR_MSG: &str =
     "Vertex AI Provider API is temporarily overloaded. This is similar to a rate limit \
      error but indicates backend processing capacity issues.";
+
+fn map_429_retry(
+    headers: &HeaderMap,
+    body: &str,
+    attempt: usize,
+    retry_config: &RetryConfig,
+) -> (ProviderError, Duration) {
+    let details = rate_limit_error_message(body);
+    let payload = serde_json::from_str::<Value>(body).ok();
+    let retry_delay = extract_retry_after(headers, payload.as_ref());
+    let sleep_for = retry_delay.unwrap_or_else(|| retry_config.delay_for_attempt(attempt));
+    (
+        ProviderError::RateLimitExceeded {
+            details,
+            retry_delay,
+        },
+        sleep_for,
+    )
+}
 
 fn build_vertex_url(
     host: &str,
@@ -355,14 +374,15 @@ impl GcpVertexAIProvider {
                         }),
                     );
                 }
-                let msg =
-                    rate_limit_error_message(&read_error_body(response).await.unwrap_or_default());
-                tracing::warn!("429 (attempt {rate_limit_attempts}/{max_retries}): {msg}");
-                last_error = Some(ProviderError::RateLimitExceeded {
-                    details: msg,
-                    retry_delay: None,
-                });
-                sleep(self.retry_config.delay_for_attempt(rate_limit_attempts)).await;
+                let headers = response.headers().clone();
+                let body = read_error_body(response).await.unwrap_or_default();
+                let (err, sleep_for) =
+                    map_429_retry(&headers, &body, rate_limit_attempts, &self.retry_config);
+                if let ProviderError::RateLimitExceeded { details, .. } = &err {
+                    tracing::warn!("429 (attempt {rate_limit_attempts}/{max_retries}): {details}");
+                }
+                last_error = Some(err);
+                sleep(sleep_for).await;
             } else if status == *STATUS_API_OVERLOADED {
                 overloaded_attempts += 1;
                 if overloaded_attempts > max_retries {
@@ -703,6 +723,55 @@ mod tests {
         // Check that max interval is respected
         let delay10 = config.delay_for_attempt(10);
         assert!(delay10.as_millis() <= 38400); // max_interval_ms * 1.2 (max jitter)
+    }
+
+    #[test]
+    fn test_429_retry_honors_retry_after_header() {
+        let config = RetryConfig::new(5, 1000, 2.0, 32000);
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", "30".parse().unwrap());
+        let (err, sleep_for) =
+            map_429_retry(&headers, r#"{"error":{"message":"slow"}}"#, 1, &config);
+        match err {
+            ProviderError::RateLimitExceeded { retry_delay, .. } => {
+                assert_eq!(retry_delay, Some(Duration::from_secs(30)));
+            }
+            other => panic!("expected rate limit, got: {other:?}"),
+        }
+        assert_eq!(sleep_for, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_429_retry_honors_retry_after_body_seconds() {
+        let config = RetryConfig::new(5, 1000, 2.0, 32000);
+        let body = r#"{"error":{"metadata":{"retry_after_seconds":45.0}}}"#;
+        let (err, sleep_for) = map_429_retry(&HeaderMap::new(), body, 1, &config);
+        match err {
+            ProviderError::RateLimitExceeded { retry_delay, .. } => {
+                assert_eq!(retry_delay, Some(Duration::from_secs(45)));
+            }
+            other => panic!("expected rate limit, got: {other:?}"),
+        }
+        assert_eq!(sleep_for, Duration::from_secs(45));
+    }
+
+    #[test]
+    fn test_429_retry_falls_back_to_backoff_without_hint() {
+        let config = RetryConfig::new(5, 1000, 2.0, 32000);
+        let (err, sleep_for) = map_429_retry(
+            &HeaderMap::new(),
+            r#"{"error":{"message":"slow"}}"#,
+            1,
+            &config,
+        );
+        match err {
+            ProviderError::RateLimitExceeded { retry_delay, .. } => {
+                assert_eq!(retry_delay, None);
+            }
+            other => panic!("expected rate limit, got: {other:?}"),
+        }
+        let ms = sleep_for.as_millis();
+        assert!((800..=1200).contains(&ms), "unexpected backoff: {ms}ms");
     }
 
     #[test]

@@ -54,32 +54,26 @@ function getProviders(): ProviderConfig[] {
     {
       provider: 'openrouter',
       models: [
-        'google/gemini-2.5-pro',
-        'anthropic/claude-sonnet-4.5',
+        'google/gemini-3.8-flash',
+        'anthropic/claude-sonnet-5.5',
         { name: 'qwen/qwen3-coder:exacto', flaky: true },
         'z-ai/glm-4.6:exacto',
-        { name: 'nvidia/nemotron-3-nano-30b-a3b:free', flaky: true },
       ],
       available: () => hasEnv('OPENROUTER_API_KEY'),
     },
     {
       provider: 'xai',
-      models: ['grok-3'],
+      models: ['grok-4.7'],
       available: () => hasEnv('XAI_API_KEY'),
     },
     {
       provider: 'openai',
-      models: [
-        'gpt-4o',
-        'gpt-4o-mini',
-        { name: 'gpt-3.5-turbo', flaky: true },
-        { name: 'gpt-5', flaky: true },
-      ],
+      models: ['gpt-6-luna'],
       available: () => hasEnv('OPENAI_API_KEY'),
     },
     {
       provider: 'anthropic',
-      models: ['claude-sonnet-4-5-20250929', 'claude-opus-4-5-20251101'],
+      models: ['claude-sonnet-5-5'],
       available: () => hasEnv('ANTHROPIC_API_KEY'),
     },
     {
@@ -89,7 +83,7 @@ function getProviders(): ProviderConfig[] {
     },
     {
       provider: 'tetrate',
-      models: ['claude-sonnet-4-20250514'],
+      models: ['claude-sonnet-5-5'],
       available: () => hasEnv('TETRATE_API_KEY'),
     },
     {

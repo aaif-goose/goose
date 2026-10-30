@@ -6,10 +6,6 @@ yanked = "deny"
 unmaintained = "none"
 unsound = "none"
 
-[[advisories.ignore]]
-id = "RUSTSEC-2023-0071"
-reason = "rsa: Marvin Attack timing sidechannel. No safe upgrade is available; the reachable path is through jsonwebtoken."
-
 # These releases require zip 8 but only read or write individual archive entries;
 # none calls ZipArchive::extract or ZipStreamReader::extract. Goose uses zip 9.
 # Reassess if these dependencies or their zip callers change. Reviewed versions:

@@ -102,6 +102,7 @@ fn is_permanent_request_failure(message: &str) -> bool {
         .iter()
         .any(|marker| message.contains(marker))
         || crate::formats::anthropic::is_thinking_signature_error(message)
+        || crate::formats::openai_responses::is_encrypted_reasoning_error(message)
 }
 
 pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {

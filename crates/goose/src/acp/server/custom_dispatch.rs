@@ -2,7 +2,7 @@ use super::*;
 use goose_acp_macros::custom_methods;
 
 #[custom_methods]
-impl GooseAcpAgent {
+impl AcpConnection {
     pub async fn dispatch_custom_request(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,

@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
-use goose::agents::GoosePlatform;
+use goose::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
 #[cfg(feature = "bundled-mcp")]
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::{Config, GooseMode};
@@ -18,7 +18,7 @@ use goose_mcp::{AutoVisualiserRouter, ComputerControllerServer, MemoryServer, Tu
 
 #[cfg(feature = "telemetry")]
 use crate::commands::configure::configure_telemetry_consent_dialog;
-use crate::commands::configure::handle_configure;
+use crate::commands::configure::{configure_provider_dialog, handle_configure};
 use crate::commands::info::handle_info;
 use crate::commands::plugin::{handle_plugin_install, handle_plugin_update};
 use crate::commands::recipe::{handle_deeplink, handle_list, handle_open, handle_validate};
@@ -38,7 +38,9 @@ use crate::commands::session::{handle_session_list, handle_session_remove, handl
 use crate::commands::skills::handle_skills_list;
 use crate::recipes::extract_from_cli::extract_recipe_info_from_cli;
 use crate::recipes::recipe::{explain_recipe, render_recipe_as_yaml};
-use crate::session::{build_session, SessionBuilderConfig};
+use crate::session::{
+    build_session, is_provider_unavailable_error, try_build_session, SessionBuilderConfig,
+};
 use goose::agents::Container;
 use goose::session::session_manager::SessionType;
 use goose::session::SessionManager;
@@ -1460,7 +1462,7 @@ enum McpProbeElicitation {
 
 async fn handle_mcp_probe(extension_command: String, script_path: Option<String>) -> Result<()> {
     use goose::agents::extension_manager::CallRequest;
-    use goose::agents::{Agent, AgentConfig};
+    use goose::agents::{StateMachineServices, StateMachineServicesConfig};
     use goose::config::ExtensionConfig;
     use rmcp::model::{ElicitRequestParams, ElicitResult, ElicitationAction};
     use tokio_util::sync::CancellationToken;
@@ -1515,20 +1517,15 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
     }
 
     let config = goose::config::Config::global();
-    let mut agent_config = AgentConfig::new(
-        std::sync::Arc::new(SessionManager::instance()),
-        goose::config::permission::PermissionManager::instance(),
-        None,
-        true,
-        GoosePlatform::GooseCli,
-    );
+    let mut services_config = StateMachineServicesConfig::cli();
+    services_config.disable_session_naming = true;
     if let Some(protocol_version) = script.protocol_version.as_deref() {
-        agent_config.mcp_protocol_version = Some(serde_json::from_value(
+        services_config.mcp_protocol_version = Some(serde_json::from_value(
             serde_json::Value::String(protocol_version.to_string()),
         )?);
     }
     if let Some(action) = script.elicitation.clone() {
-        agent_config.elicitation_handler =
+        services_config.elicitation_handler =
             Some(std::sync::Arc::new(move |request| match &action {
                 McpProbeElicitation::Accept { content } => {
                     ElicitResult::new(ElicitationAction::Accept).with_content(content.clone())
@@ -1559,9 +1556,8 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
                 McpProbeElicitation::Cancel => ElicitResult::new(ElicitationAction::Cancel),
             }));
     }
-    let agent = Agent::with_config(agent_config);
-    let session = agent
-        .config
+    let services = StateMachineServices::with_config(services_config);
+    let session = services
         .session_manager
         .create_session(
             std::env::current_dir()?,
@@ -1571,11 +1567,14 @@ async fn handle_mcp_probe(extension_command: String, script_path: Option<String>
         )
         .await?;
     let session_id = session.id.as_str();
-    agent.add_extension(extension, session_id).await?;
+    services
+        .extension_manager
+        .enable(session_id, extension)
+        .await?;
 
     let mut results = Vec::new();
     for step in script.steps {
-        let lease = agent.extension_manager.current_lease(session_id).await?;
+        let lease = services.extension_manager.current_lease(session_id).await?;
         let result = match step {
             McpProbeStep::ListTools => serde_json::json!({
                 "action": "listTools",
@@ -2366,8 +2365,9 @@ async fn handle_run_command(
 async fn handle_gateway_command(command: GatewayCommand) -> Result<()> {
     use crate::commands::gateway;
 
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
     match command {
-        GatewayCommand::Status {} => gateway::handle_gateway_status().await,
+        GatewayCommand::Status {} => gateway::handle_gateway_status(services).await,
         GatewayCommand::Start {
             gateway_type,
             bot_token,
@@ -2376,10 +2376,14 @@ async fn handle_gateway_command(command: GatewayCommand) -> Result<()> {
             if let Some(ids) = goose::gateway::manager::saved_allowed_user_ids(&gateway_type) {
                 platform_config["allowed_user_ids"] = serde_json::json!(ids);
             }
-            gateway::handle_gateway_start(gateway_type, platform_config).await
+            gateway::handle_gateway_start(services, gateway_type, platform_config).await
         }
-        GatewayCommand::Stop { gateway_type } => gateway::handle_gateway_stop(gateway_type).await,
-        GatewayCommand::Pair { gateway_type } => gateway::handle_gateway_pair(gateway_type).await,
+        GatewayCommand::Stop { gateway_type } => {
+            gateway::handle_gateway_stop(services, gateway_type).await
+        }
+        GatewayCommand::Pair { gateway_type } => {
+            gateway::handle_gateway_pair(services, gateway_type).await
+        }
     }
 }
 
@@ -2781,7 +2785,7 @@ async fn handle_default_session() -> Result<()> {
     let goose_mode = Config::global().get_goose_mode().unwrap_or_default();
     let session_id = get_or_create_session_id(None, false, false, goose_mode).await?;
 
-    let mut session = build_session(SessionBuilderConfig {
+    let mut session = match try_build_session(SessionBuilderConfig {
         session_id,
         resume: false,
         fork: false,
@@ -2804,7 +2808,16 @@ async fn handle_default_session() -> Result<()> {
         container: None,
         stats: false,
     })
-    .await;
+    .await
+    {
+        Ok(session) => session,
+        Err(error) if is_provider_unavailable_error(&error) => loop {
+            if configure_provider_dialog().await? {
+                return Ok(());
+            }
+        },
+        Err(error) => return Err(error),
+    };
     session.interactive(None).await
 }
 
