@@ -941,10 +941,10 @@ impl CliSession {
         };
 
         if options.provider.is_none() && options.model.is_none() {
+            let effort_supported = !(provider.manages_own_context()
+                && provider.thinking_effort_support() == ThinkingEffortSupport::Unspecified);
             if let Some(effort) = effort {
-                if provider.manages_own_context()
-                    && provider.thinking_effort_support() == ThinkingEffortSupport::Unspecified
-                {
+                if !effort_supported {
                     output::render_error(&format!(
                         "Thinking effort is not supported for provider '{}' because it manages its own conversation context.",
                         current_provider_name
@@ -958,6 +958,7 @@ impl CliSession {
             let effort_info = current_model_config
                 .thinking_effort()
                 .or(Config::global().get_goose_thinking_effort())
+                .filter(|_| effort_supported)
                 .map(|effort| format!(", thinking effort '{effort}'"))
                 .unwrap_or_default();
             output::goose_mode_message(&format!(
