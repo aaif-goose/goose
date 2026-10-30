@@ -34,6 +34,7 @@ use goose::agents::SUBAGENT_TOOL_REQUEST_TYPE;
 use goose::permission::Permission;
 use goose::providers::base::{Provider, ProviderUsage};
 use goose::utils::safe_truncate;
+use goose_providers::thinking::ThinkingEffort;
 
 use anyhow::Result;
 use completion::GooseCompleter;
@@ -76,6 +77,14 @@ const SHELL_STATUS_RESERVED_WIDTH: usize = 2;
 /// `{extension}__{tool}`, and several providers cap tool name length, so a name
 /// built out of a whole command line has to be clipped.
 const DERIVED_EXTENSION_NAME_MAX_LEN: usize = 32;
+
+const THINKING_EFFORTS: [ThinkingEffort; 5] = [
+    ThinkingEffort::Off,
+    ThinkingEffort::Low,
+    ThinkingEffort::Medium,
+    ThinkingEffort::High,
+    ThinkingEffort::Max,
+];
 
 pub(crate) fn split_extension_name_prefix(extension_command: &str) -> (Option<String>, &str) {
     let Some((candidate, rest)) = extension_command.split_once(':') else {
@@ -918,10 +927,28 @@ impl CliSession {
             .await?;
         let current_model_name = current_model_config.model_name.clone();
 
+        let effort = match options
+            .effort
+            .as_deref()
+            .map(parse_thinking_effort)
+            .transpose()
+        {
+            Ok(effort) => effort,
+            Err(message) => {
+                output::render_error(&message);
+                return Ok(());
+            }
+        };
+
         if options.provider.is_none() && options.model.is_none() {
+            if let Some(effort) = effort {
+                return self
+                    .set_session_thinking_effort(effort, &current_model_config)
+                    .await;
+            }
             output::goose_mode_message(&format!(
                 "Current session model: '{}' (provider '{}')\n\
-                 Tip: use '/model <name>' to switch model, or '/model --provider <name> [model]' to switch provider.",
+                 Tip: use '/model <name>' to switch model, '/model --provider <name> [model]' to switch provider, or '/model --effort <level>' to set thinking effort.",
                 current_model_name, current_provider_name
             ));
             return Ok(());
@@ -995,11 +1022,14 @@ impl CliSession {
             }
         };
 
-        let new_model_config = build_switched_model_config(
+        let mut new_model_config = build_switched_model_config(
             target_provider_name,
             &target_model_name,
             &current_model_config,
         )?;
+        if let Some(effort) = effort {
+            new_model_config = new_model_config.with_thinking_effort(effort);
+        }
 
         let configured_effort = Config::global().get_goose_thinking_effort();
         let new_effort = new_model_config.thinking_effort().or(configured_effort);
@@ -1071,17 +1101,56 @@ impl CliSession {
 
         self.update_completion_cache().await?;
 
+        let effort_suffix = effort
+            .map(|effort| format!(" with thinking effort '{effort}'"))
+            .unwrap_or_default();
         if provider_unchanged {
             output::goose_mode_message(&format!(
-                "Session model switched from '{}' to '{}' for provider '{}'",
-                current_model_name, target_model_name, current_provider_name
+                "Session model switched from '{}' to '{}' for provider '{}'{}",
+                current_model_name, target_model_name, current_provider_name, effort_suffix
             ));
         } else {
             output::goose_mode_message(&format!(
-                "Session switched from provider '{}' / model '{}' to provider '{}' / model '{}'",
-                current_provider_name, current_model_name, target_provider_name, target_model_name
+                "Session switched from provider '{}' / model '{}' to provider '{}' / model '{}'{}",
+                current_provider_name,
+                current_model_name,
+                target_provider_name,
+                target_model_name,
+                effort_suffix
             ));
         }
+        Ok(())
+    }
+
+    async fn set_session_thinking_effort(
+        &mut self,
+        effort: ThinkingEffort,
+        current_model_config: &goose_providers::model::ModelConfig,
+    ) -> Result<()> {
+        let current_effort = current_model_config
+            .thinking_effort()
+            .or(Config::global().get_goose_thinking_effort());
+        if current_effort == Some(effort) {
+            output::goose_mode_message(&format!(
+                "Session already using thinking effort '{}' for model '{}'",
+                effort, current_model_config.model_name
+            ));
+            return Ok(());
+        }
+
+        if let Err(e) = self
+            .services
+            .update_thinking_effort(&self.session_id, &effort.to_string())
+            .await
+        {
+            output::render_error(&format!("Failed to set thinking effort: {e:#}"));
+            return Ok(());
+        }
+
+        output::goose_mode_message(&format!(
+            "Session thinking effort set to '{}' for model '{}'",
+            effort, current_model_config.model_name
+        ));
         Ok(())
     }
 
@@ -2773,6 +2842,19 @@ fn format_elapsed_time(duration: std::time::Duration) -> String {
     }
 }
 
+fn parse_thinking_effort(value: &str) -> std::result::Result<ThinkingEffort, String> {
+    let valid = THINKING_EFFORTS.map(|effort| effort.to_string()).join(", ");
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!(
+            "Thinking effort is required after '--effort'. Valid values: {valid}."
+        ));
+    }
+    value
+        .parse()
+        .map_err(|_| format!("Invalid thinking effort '{value}'. Valid values: {valid}."))
+}
+
 fn build_switched_model_config(
     provider_name: &str,
     model_name: &str,
@@ -3090,6 +3172,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_thinking_effort() {
+        assert_eq!(parse_thinking_effort("low"), Ok(ThinkingEffort::Low));
+        assert_eq!(parse_thinking_effort(" MAX "), Ok(ThinkingEffort::Max));
+        assert_eq!(parse_thinking_effort("none"), Ok(ThinkingEffort::Off));
+        assert_eq!(
+            parse_thinking_effort(""),
+            Err(
+                "Thinking effort is required after '--effort'. Valid values: off, low, medium, high, max."
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            parse_thinking_effort("extreme"),
+            Err(
+                "Invalid thinking effort 'extreme'. Valid values: off, low, medium, high, max."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
     fn test_build_switched_model_config_detects_effort_suffix_change() {
         let _guard = env_lock::lock_env([
             ("GOOSE_MAX_TOKENS", None::<&str>),
@@ -3294,6 +3397,14 @@ mod tests {
                 ),
             ))
         }
+
+        async fn set_thinking_effort(
+            &self,
+            _session_id: &str,
+            _value: &str,
+        ) -> std::result::Result<bool, goose_providers::errors::ProviderError> {
+            Ok(true)
+        }
     }
 
     async fn session_with_loader(
@@ -3374,6 +3485,28 @@ mod tests {
 
         release.send(()).unwrap();
         handled.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn model_effort_flag_persists_session_thinking_effort() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let mut session = session_with_loader(None, false).await;
+
+        session
+            .handle_model(input::ModelCommandOptions {
+                effort: Some("low".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let model_config = session
+            .services
+            .model_config_for_session(&session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(model_config.model_name, "stub-model");
+        assert_eq!(model_config.thinking_effort(), Some(ThinkingEffort::Low));
     }
 
     #[tokio::test]

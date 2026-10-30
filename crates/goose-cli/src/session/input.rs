@@ -44,6 +44,7 @@ pub struct PromptCommandOptions {
 pub struct ModelCommandOptions {
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 struct CtrlCHandler {
@@ -293,34 +294,9 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             s.get(CMD_MODE.len()..).unwrap_or("").to_string(),
         )),
         s if s == CMD_MODEL => Some(InputResult::Model(ModelCommandOptions::default())),
-        s if s.starts_with(CMD_MODEL_WITH_SPACE) => {
-            let rest = s
-                .get(CMD_MODEL_WITH_SPACE.len()..)
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if rest.is_empty() {
-                Some(InputResult::Model(ModelCommandOptions::default()))
-            } else if let Some(after_flag) = rest.strip_prefix("--provider ") {
-                let parts: Vec<&str> = after_flag.split_whitespace().collect();
-                let provider = parts.first().map(|s| s.to_string());
-                let model = parts
-                    .get(1..)
-                    .filter(|parts| !parts.is_empty())
-                    .map(|parts| parts.join(" "));
-                Some(InputResult::Model(ModelCommandOptions { provider, model }))
-            } else if rest == "--provider" {
-                Some(InputResult::Model(ModelCommandOptions {
-                    provider: Some(String::new()),
-                    model: None,
-                }))
-            } else {
-                Some(InputResult::Model(ModelCommandOptions {
-                    provider: None,
-                    model: Some(rest),
-                }))
-            }
-        }
+        s if s.starts_with(CMD_MODEL_WITH_SPACE) => Some(InputResult::Model(parse_model_command(
+            s.get(CMD_MODEL_WITH_SPACE.len()..).unwrap_or(""),
+        ))),
         s if s == CMD_CLEAR => Some(InputResult::Clear),
         s if s == CMD_NEW => Some(InputResult::New),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
@@ -353,6 +329,23 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         }
         _ => None,
     }
+}
+
+fn parse_model_command(args: &str) -> ModelCommandOptions {
+    let mut options = ModelCommandOptions::default();
+    let mut model_parts = Vec::new();
+    let mut tokens = args.split_whitespace();
+    while let Some(token) = tokens.next() {
+        match token {
+            "--provider" => options.provider = Some(tokens.next().unwrap_or_default().to_string()),
+            "--effort" => options.effort = Some(tokens.next().unwrap_or_default().to_string()),
+            _ => model_parts.push(token),
+        }
+    }
+    if !model_parts.is_empty() {
+        options.model = Some(model_parts.join(" "));
+    }
+    options
 }
 
 fn parse_prompts_command(args: &str) -> Option<InputResult> {
@@ -431,6 +424,7 @@ fn help_text() -> String {
 /mode <name> - Set the goose mode to use ({modes})
 /model [name] - Show the current model, or switch models for this session while keeping the same provider
 /model --provider <name> [model] - Switch to a different provider (optionally specifying a model)
+/model --effort <level> [model] - Set the thinking effort for this session (off, low, medium, high, max)
 /compact - Compact the current conversation to reduce context length while preserving key information.
 {additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
@@ -547,18 +541,21 @@ mod tests {
             handle_slash_command("/model"),
             Some(InputResult::Model(ModelCommandOptions {
                 provider: None,
-                model: None
+                model: None,
+                effort: None
             }))
         ));
         assert!(matches!(
             handle_slash_command("/model   "),
             Some(InputResult::Model(ModelCommandOptions {
                 provider: None,
-                model: None
+                model: None,
+                effort: None
             }))
         ));
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model gpt-4.1")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model gpt-4.1")
         {
             assert_eq!(model.as_deref(), Some("gpt-4.1"));
             assert!(provider.is_none());
@@ -566,8 +563,9 @@ mod tests {
             panic!("Expected Model");
         }
 
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model --provider anthropic")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model --provider anthropic")
         {
             assert_eq!(provider.as_deref(), Some("anthropic"));
             assert!(model.is_none());
@@ -575,8 +573,9 @@ mod tests {
             panic!("Expected Model with provider");
         }
 
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model --provider anthropic claude-sonnet-4")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model --provider anthropic claude-sonnet-4")
         {
             assert_eq!(provider.as_deref(), Some("anthropic"));
             assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
@@ -584,8 +583,9 @@ mod tests {
             panic!("Expected Model with provider and model");
         }
 
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model --provider")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model --provider")
         {
             assert_eq!(provider.as_deref(), Some(""));
             assert!(model.is_none());
@@ -593,8 +593,9 @@ mod tests {
             panic!("Expected Model with empty provider");
         }
 
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model --provider ")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model --provider ")
         {
             assert_eq!(provider.as_deref(), Some(""));
             assert!(model.is_none());
@@ -602,13 +603,66 @@ mod tests {
             panic!("Expected Model with empty provider (trailing space)");
         }
 
-        if let Some(InputResult::Model(ModelCommandOptions { provider, model })) =
-            handle_slash_command("/model --provider   anthropic    claude-sonnet-4")
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider, model, ..
+        })) = handle_slash_command("/model --provider   anthropic    claude-sonnet-4")
         {
             assert_eq!(provider.as_deref(), Some("anthropic"));
             assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
         } else {
             panic!("Expected Model with extra whitespace handled");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider,
+            model,
+            effort,
+        })) = handle_slash_command("/model --effort low")
+        {
+            assert!(provider.is_none());
+            assert!(model.is_none());
+            assert_eq!(effort.as_deref(), Some("low"));
+        } else {
+            panic!("Expected Model with effort");
+        }
+
+        for input in [
+            "/model --effort max claude-sonnet-4",
+            "/model claude-sonnet-4 --effort max",
+        ] {
+            if let Some(InputResult::Model(ModelCommandOptions {
+                provider,
+                model,
+                effort,
+            })) = handle_slash_command(input)
+            {
+                assert!(provider.is_none());
+                assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
+                assert_eq!(effort.as_deref(), Some("max"));
+            } else {
+                panic!("Expected Model with effort and model for {input}");
+            }
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions {
+            provider,
+            model,
+            effort,
+        })) = handle_slash_command("/model --provider anthropic --effort high claude-sonnet-4")
+        {
+            assert_eq!(provider.as_deref(), Some("anthropic"));
+            assert_eq!(model.as_deref(), Some("claude-sonnet-4"));
+            assert_eq!(effort.as_deref(), Some("high"));
+        } else {
+            panic!("Expected Model with provider, effort and model");
+        }
+
+        if let Some(InputResult::Model(ModelCommandOptions { effort, .. })) =
+            handle_slash_command("/model --effort")
+        {
+            assert_eq!(effort.as_deref(), Some(""));
+        } else {
+            panic!("Expected Model with empty effort");
         }
 
         // Test unknown commands

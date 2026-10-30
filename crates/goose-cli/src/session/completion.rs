@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use strum::VariantNames;
 
-use super::{CompletionCache, HintStatus};
+use super::{CompletionCache, HintStatus, THINKING_EFFORTS};
 
 /// Completer for goose CLI commands
 pub struct GooseCompleter {
@@ -183,29 +183,58 @@ impl GooseCompleter {
             return self.models_completion_from_cache(provider_name, partial, line);
         }
 
-        if after_cmd.starts_with("--") {
-            let flag_partial = &after_cmd;
-            if "--provider".starts_with(flag_partial) {
-                return Ok((
-                    line.len() - flag_partial.len(),
-                    vec![Pair {
-                        display: "--provider".to_string(),
-                        replacement: "--provider ".to_string(),
-                    }],
-                ));
+        if let Some(flag_rest) = after_cmd.strip_prefix("--effort ") {
+            let parts: Vec<&str> = flag_rest.split_whitespace().collect();
+            let trailing_space = flag_rest.ends_with(' ');
+
+            if parts.is_empty() || (parts.len() == 1 && !trailing_space) {
+                let partial = parts.first().copied().unwrap_or("");
+                let candidates: Vec<Pair> = THINKING_EFFORTS
+                    .iter()
+                    .map(|effort| effort.to_string())
+                    .filter(|effort| effort.starts_with(partial))
+                    .map(|effort| Pair {
+                        replacement: format!("{} ", effort),
+                        display: effort,
+                    })
+                    .collect();
+                return Ok((line.len() - partial.len(), candidates));
             }
-            return Ok((line.len(), vec![]));
+
+            let partial = if parts.len() > 1 && !trailing_space {
+                parts[1]
+            } else {
+                ""
+            };
+            return self.models_completion_from_cache(&self.current_provider(), partial, line);
         }
 
-        let current_provider = {
-            let cache = self.completion_cache.read().unwrap();
-            if cache.current_session_provider.is_empty() {
-                Config::global().get_goose_provider().unwrap_or_default()
-            } else {
-                cache.current_session_provider.clone()
+        if after_cmd.starts_with("--") {
+            let flag_partial = &after_cmd;
+            let candidates: Vec<Pair> = ["--provider", "--effort"]
+                .iter()
+                .filter(|flag| flag.starts_with(flag_partial))
+                .map(|flag| Pair {
+                    display: flag.to_string(),
+                    replacement: format!("{} ", flag),
+                })
+                .collect();
+            if candidates.is_empty() {
+                return Ok((line.len(), vec![]));
             }
-        };
-        self.models_completion_from_cache(&current_provider, after_cmd, line)
+            return Ok((line.len() - flag_partial.len(), candidates));
+        }
+
+        self.models_completion_from_cache(&self.current_provider(), after_cmd, line)
+    }
+
+    fn current_provider(&self) -> String {
+        let cache = self.completion_cache.read().unwrap();
+        if cache.current_session_provider.is_empty() {
+            Config::global().get_goose_provider().unwrap_or_default()
+        } else {
+            cache.current_session_provider.clone()
+        }
     }
 
     fn models_completion_from_cache(
@@ -745,6 +774,34 @@ mod tests {
         assert_eq!(pos, "/model ".len());
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].display, "--provider");
+    }
+
+    #[test]
+    fn test_complete_model_names_effort() {
+        let cache = create_test_cache();
+        let completer = GooseCompleter::new(cache);
+
+        let (pos, candidates) = completer.complete_model_names("/model --e").unwrap();
+        assert_eq!(pos, "/model ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].replacement, "--effort ");
+
+        let (pos, candidates) = completer.complete_model_names("/model --effort ").unwrap();
+        assert_eq!(pos, "/model --effort ".len());
+        let displays: Vec<&str> = candidates.iter().map(|c| c.display.as_str()).collect();
+        assert_eq!(displays, ["off", "low", "medium", "high", "max"]);
+
+        let (pos, candidates) = completer.complete_model_names("/model --effort h").unwrap();
+        assert_eq!(pos, "/model --effort ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].replacement, "high ");
+
+        let (pos, candidates) = completer
+            .complete_model_names("/model --effort high claude-s")
+            .unwrap();
+        assert_eq!(pos, "/model --effort high ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].display, "claude-sonnet-4");
     }
 
     #[test]
