@@ -34,7 +34,7 @@ use goose::agents::SUBAGENT_TOOL_REQUEST_TYPE;
 use goose::permission::Permission;
 use goose::providers::base::{Provider, ProviderUsage};
 use goose::utils::safe_truncate;
-use goose_providers::thinking::ThinkingEffort;
+use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
 
 use anyhow::Result;
 use completion::GooseCompleter;
@@ -942,6 +942,15 @@ impl CliSession {
 
         if options.provider.is_none() && options.model.is_none() {
             if let Some(effort) = effort {
+                if provider.manages_own_context()
+                    && provider.thinking_effort_support() == ThinkingEffortSupport::Unspecified
+                {
+                    output::render_error(&format!(
+                        "Thinking effort is not supported for provider '{}' because it manages its own conversation context.",
+                        current_provider_name
+                    ));
+                    return Ok(());
+                }
                 return self
                     .set_session_thinking_effort(effort, &current_model_name)
                     .await;
@@ -3501,6 +3510,65 @@ mod tests {
             .unwrap();
         assert_eq!(model_config.model_name, "stub-model");
         assert_eq!(model_config.thinking_effort(), Some(ThinkingEffort::Low));
+    }
+
+    struct OwnContextProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for OwnContextProvider {
+        fn get_name(&self) -> &str {
+            "own-context"
+        }
+
+        fn manages_own_context(&self) -> bool {
+            true
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &goose_providers::model::ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> std::result::Result<
+            goose::providers::base::MessageStream,
+            goose_providers::errors::ProviderError,
+        > {
+            unimplemented!()
+        }
+    }
+
+    #[tokio::test]
+    async fn model_effort_flag_is_rejected_for_providers_that_ignore_it() {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+        let mut session = session_with_loader(None, false).await;
+        session
+            .services
+            .update_provider(
+                Arc::new(OwnContextProvider),
+                goose_providers::model::ModelConfig::new("own-model"),
+                &session.session_id,
+            )
+            .await
+            .unwrap();
+
+        session
+            .handle_model(input::ModelCommandOptions {
+                effort: Some("low".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let model_config = session
+            .services
+            .model_config_for_session(&session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            model_config.request_param::<String>("thinking_effort"),
+            None
+        );
     }
 
     #[tokio::test]
