@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "Ngữ cảnh lượt"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Sử dụng vòng lặp tác nhân dựa trên thao tác. Tắt tùy chọn này để dùng vòng lặp cũ."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Tự động"
   },

@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "Контекст хода"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Использовать цикл агента на основе операций. Отключите, чтобы использовать прежний цикл."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
   },

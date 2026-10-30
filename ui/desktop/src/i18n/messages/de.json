@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "Zugkontext"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Verwende die operationsbasierte Agentenschleife. Deaktiviere sie, um die Legacy-Schleife zu verwenden."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatisch"
   },

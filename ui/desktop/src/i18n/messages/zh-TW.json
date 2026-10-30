@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "回合上下文"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "使用以操作為基礎的代理程式迴圈。關閉後將使用舊版迴圈。"
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },

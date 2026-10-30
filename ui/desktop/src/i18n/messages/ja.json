@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "ターンコンテキスト"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "オペレーションベースのエージェントループを使用します。オフにすると従来のループを使用します。"
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },

@@ -4724,9 +4724,6 @@
   "contextXray.category.turnContext": {
     "defaultMessage": "Konteks giliran"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Gunakan gelung ejen berasaskan operasi. Matikan untuk menggunakan gelung legasi."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatik"
   },
