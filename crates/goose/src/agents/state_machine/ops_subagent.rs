@@ -119,9 +119,6 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
                 "it does not belong to this session".to_string(),
             ));
         }
-        if cancel.is_cancelled() {
-            return ended(SubagentOutcome::Cancelled);
-        }
         if let Some((kind, error)) = subagent
             .conversation
             .as_ref()
@@ -138,6 +135,9 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
             .and_then(worker_successful_output)
         {
             return ended(SubagentOutcome::Completed(output));
+        }
+        if cancel.is_cancelled() {
+            return ended(SubagentOutcome::Cancelled);
         }
         let task = subagent
             .recipe
@@ -576,28 +576,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancelled_start_cannot_be_hidden_by_saved_final_output() -> Result<()> {
+    async fn stop_reports_a_saved_final_output_as_completed() -> Result<()> {
+        // Resume rejects workers with saved output, so calling them cancelled would strand them.
         let fixture = fixture().await?;
         save_final_output(&fixture.manager, &fixture.subagent_id).await?;
         let parent = fixture
             .manager
             .get_session(&fixture.parent_id, true)
             .await?;
+        let child = fixture
+            .manager
+            .get_session(&fixture.subagent_id, true)
+            .await?;
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let updates: Vec<_> = fixture
+        let started: Vec<_> = fixture
             .runner()
-            .start(&parent, &fixture.subagent_id, cancel)
+            .start(&parent, &fixture.subagent_id, cancel.clone())
             .await
             .collect()
             .await;
-        assert!(
-            matches!(
-                updates.last(),
-                Some(SubagentUpdate::Finished(SubagentOutcome::Cancelled))
-            ),
-            "{updates:?}"
-        );
+        let ran: Vec<_> = fixture.runner().spawn(child, cancel).collect().await;
+        for updates in [started, ran] {
+            assert!(
+                matches!(updates.last(), Some(SubagentUpdate::Finished(SubagentOutcome::Completed(output)))
+                if output.contains("done")),
+                "{updates:?}"
+            );
+        }
         Ok(())
     }
 

@@ -156,7 +156,11 @@ impl ForegroundSubagentRunner {
         };
         let messages = subagent.conversation.as_ref().map(Conversation::messages);
         if stopped {
-            return SubagentOutcome::Cancelled;
+            return subagent
+                .conversation
+                .as_ref()
+                .and_then(worker_successful_output)
+                .map_or(SubagentOutcome::Cancelled, SubagentOutcome::Completed);
         }
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());
