@@ -157,12 +157,13 @@ impl GooseCompleter {
 
         let mut provider = None;
         let mut pending_flag = None;
+        let mut model_given = false;
         for token in tokens {
             match pending_flag.take() {
                 Some("--provider") => provider = Some(token.to_string()),
                 Some(_) => {}
                 None if token == "--provider" || token == "--effort" => pending_flag = Some(token),
-                None => {}
+                None => model_given = true,
             }
         }
 
@@ -177,6 +178,7 @@ impl GooseCompleter {
             None if partial.starts_with("--") => {
                 vec!["--provider".to_string(), "--effort".to_string()]
             }
+            None if model_given => vec![],
             None => provider
                 .and_then(|provider| cache.provider_models.get(&provider).cloned())
                 .unwrap_or_default(),
@@ -765,6 +767,18 @@ mod tests {
         assert_eq!(pos, "/model --provider zai --effort ".len());
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].display, "medium");
+
+        let (_pos, candidates) = completer
+            .complete_model_names("/model claude-sonnet-4 ")
+            .unwrap();
+        assert!(candidates.is_empty());
+
+        let (pos, candidates) = completer
+            .complete_model_names("/model claude-sonnet-4 --e")
+            .unwrap();
+        assert_eq!(pos, "/model claude-sonnet-4 ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].replacement, "--effort ");
     }
 
     #[test]

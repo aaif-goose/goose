@@ -927,21 +927,10 @@ impl CliSession {
             .await?;
         let current_model_name = current_model_config.model_name.clone();
 
-        let effort = match options
-            .effort
-            .as_deref()
-            .map(parse_thinking_effort)
-            .transpose()
-        {
-            Ok(effort) => effort,
-            Err(message) => {
-                output::render_error(&message);
-                return Ok(());
-            }
-        };
+        let requested_effort = options.effort.as_deref().map(str::trim);
 
         if options.provider.is_none() && options.model.is_none() {
-            if let Some(effort) = effort {
+            if let Some(requested_effort) = requested_effort {
                 if ignores_thinking_effort(provider.as_ref()) {
                     output::render_error(&format!(
                         "Thinking effort is not supported for provider '{}' because it manages its own conversation context.",
@@ -949,8 +938,23 @@ impl CliSession {
                     ));
                     return Ok(());
                 }
+                let harness_options = matches!(
+                    provider.thinking_effort_support(),
+                    ThinkingEffortSupport::Options(_)
+                );
+                let value = if harness_options && !requested_effort.is_empty() {
+                    requested_effort.to_string()
+                } else {
+                    match parse_thinking_effort(requested_effort) {
+                        Ok(effort) => effort.to_string(),
+                        Err(message) => {
+                            output::render_error(&message);
+                            return Ok(());
+                        }
+                    }
+                };
                 return self
-                    .set_session_thinking_effort(effort, &current_model_config)
+                    .set_session_thinking_effort(&value, &current_model_config, !harness_options)
                     .await;
             }
             let effort_info = active_thinking_effort(provider.as_ref(), &current_model_config)
@@ -1029,6 +1033,14 @@ impl CliSession {
                         target_entry.metadata().default_model.clone()
                     }
                 }
+            }
+        };
+
+        let effort = match requested_effort.map(parse_thinking_effort).transpose() {
+            Ok(effort) => effort,
+            Err(message) => {
+                output::render_error(&message);
+                return Ok(());
             }
         };
 
@@ -1138,12 +1150,13 @@ impl CliSession {
 
     async fn set_session_thinking_effort(
         &mut self,
-        effort: ThinkingEffort,
+        effort: &str,
         model_config: &goose_providers::model::ModelConfig,
+        check_reasoning_support: bool,
     ) -> Result<()> {
         if let Err(e) = self
             .services
-            .update_thinking_effort(&self.session_id, &effort.to_string())
+            .update_thinking_effort(&self.session_id, effort)
             .await
         {
             output::render_error(&format!("Failed to set thinking effort: {e:#}"));
@@ -1154,7 +1167,9 @@ impl CliSession {
             "Session thinking effort set to '{}' for model '{}'",
             effort, model_config.model_name
         ));
-        warn_if_effort_may_be_ignored(model_config, effort);
+        if let (true, Ok(effort)) = (check_reasoning_support, effort.parse()) {
+            warn_if_effort_may_be_ignored(model_config, effort);
+        }
         Ok(())
     }
 
@@ -3568,6 +3583,14 @@ mod tests {
             self.support.clone()
         }
 
+        async fn set_thinking_effort(
+            &self,
+            _session_id: &str,
+            _value: &str,
+        ) -> std::result::Result<bool, goose_providers::errors::ProviderError> {
+            Ok(matches!(self.support, ThinkingEffortSupport::Options(_)))
+        }
+
         async fn stream(
             &self,
             _model_config: &goose_providers::model::ModelConfig,
@@ -3615,6 +3638,49 @@ mod tests {
             )
             .as_deref(),
             Some("xhigh")
+        );
+    }
+
+    #[tokio::test]
+    async fn model_effort_flag_forwards_harness_values_unparsed() {
+        let mut session = session_with_loader(None, false).await;
+        session
+            .services
+            .update_provider(
+                Arc::new(EffortSupportProvider {
+                    manages_own_context: true,
+                    support: ThinkingEffortSupport::Options(
+                        goose_providers::thinking::ThinkingEffortCapability {
+                            option_id: "effort".to_string(),
+                            values: vec![],
+                            current: None,
+                        },
+                    ),
+                }),
+                goose_providers::model::ModelConfig::new("harness-model"),
+                &session.session_id,
+            )
+            .await
+            .unwrap();
+
+        session
+            .handle_model(input::ModelCommandOptions {
+                effort: Some("minimal".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let model_config = session
+            .services
+            .model_config_for_session(&session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            model_config
+                .request_param::<String>("thinking_effort")
+                .as_deref(),
+            Some("minimal")
         );
     }
 
