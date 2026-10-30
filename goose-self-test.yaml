@@ -492,6 +492,16 @@ prompt: |
   4. Verify ACP-only effort values are removed when switching to a legacy provider while
      managed providers preserve values they support.
 
+  ### CLI Effort Command Test
+  1. Run `cargo test -p goose-cli effort`.
+  2. In an interactive `goose session` on a reasoning-capable model, run `/model --effort low`
+     and verify `/model` then reports thinking effort 'low' for the same model.
+  3. Run `/model --effort bogus` and verify the error lists `off, low, medium, high, max`
+     and `/model` still reports 'low'.
+  4. Exit, resume the session with `goose session --resume`, and verify `/model` still
+     reports 'low'.
+  In headless mode, mark steps 2-4 SKIPPED rather than claiming success.
+
   Log results to: {{ workspace_dir }}/phase3d_acp_effort.md
   {% endif %}
 
