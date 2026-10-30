@@ -8,7 +8,8 @@ use agent_client_protocol::schema::v1::{
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
-    run_test, send_custom, Connection, Session, SessionData, TestConnectionConfig,
+    run_test, send_custom, Connection, PermissionDecision, Session, SessionData,
+    TestConnectionConfig,
 };
 use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
