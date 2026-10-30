@@ -1,0 +1,116 @@
+{
+  "name": "amazeeai",
+  "engine": "openai",
+  "display_name": "amazee.ai",
+  "description": "Private AI gateway with regional data residency (CH, EU, UK, US, AU) and zero data retention by default. Claude, GPT, Gemini, Mistral, Qwen and more behind one OpenAI-compatible API.",
+  "api_key_env": "AMAZEEAI_API_KEY",
+  "base_url": "${AMAZEEAI_ENDPOINT}",
+  "env_vars": [
+    {
+      "name": "AMAZEEAI_ENDPOINT",
+      "required": true,
+      "secret": false,
+      "description": "Regional endpoint shown next to your key, e.g. https://llm.de-eu101.amazee.ai/v1"
+    }
+  ],
+  "dynamic_models": true,
+  "skip_canonical_filtering": true,
+  "models": [
+    {
+      "name": "chat",
+      "context_limit": 200000,
+      "supports_vision": true
+    },
+    {
+      "name": "chat_with_image_vision",
+      "context_limit": 200000,
+      "supports_vision": true
+    },
+    {
+      "name": "claude-sonnet-5-5",
+      "context_limit": 1000000,
+      "input_token_cost": 2.42e-06,
+      "output_token_cost": 1.21e-05,
+      "currency": "USD",
+      "supports_vision": true,
+      "reasoning": true,
+      "supports_cache_control": true
+    },
+    {
+      "name": "claude-opus-5-5",
+      "context_limit": 1000000,
+      "input_token_cost": 4.84e-06,
+      "output_token_cost": 2.42e-05,
+      "currency": "USD",
+      "supports_vision": true,
+      "reasoning": true,
+      "supports_cache_control": true
+    },
+    {
+      "name": "claude-haiku-5-5",
+      "context_limit": 200000,
+      "supports_vision": true,
+      "reasoning": true,
+      "supports_cache_control": true
+    },
+    {
+      "name": "gpt-5-6-terra",
+      "context_limit": 1000000,
+      "input_token_cost": 2.42e-06,
+      "output_token_cost": 1.452e-05,
+      "currency": "USD",
+      "supports_vision": true,
+      "reasoning": true,
+      "supports_cache_control": false
+    },
+    {
+      "name": "gemini-3.5-flash",
+      "context_limit": 1048576,
+      "input_token_cost": 1.65e-06,
+      "output_token_cost": 9.9e-06,
+      "currency": "USD",
+      "supports_vision": true,
+      "reasoning": true,
+      "supports_cache_control": true
+    },
+    {
+      "name": "mistral-large-latest",
+      "context_limit": 262144,
+      "input_token_cost": 5.5e-07,
+      "output_token_cost": 1.65e-06,
+      "currency": "USD",
+      "supports_vision": true,
+      "reasoning": false,
+      "supports_cache_control": false
+    },
+    {
+      "name": "qwen3-235b",
+      "context_limit": 262144,
+      "input_token_cost": 2.42e-07,
+      "output_token_cost": 9.68e-07,
+      "currency": "USD",
+      "supports_vision": false,
+      "reasoning": true,
+      "supports_cache_control": false
+    },
+    {
+      "name": "gpt-oss-120b",
+      "context_limit": 128000,
+      "input_token_cost": 1.65e-07,
+      "output_token_cost": 6.6e-07,
+      "currency": "USD",
+      "supports_vision": false,
+      "reasoning": true,
+      "supports_cache_control": false
+    }
+  ],
+  "supports_streaming": true,
+  "model_doc_link": "https://docs.amazee.ai/getting-started/models/",
+  "setup_steps": [
+    "Learn more and get access at https://amazee.ai",
+    "Sign in at https://my.amazee.io",
+    "Open your workspace and go to AI keys",
+    "Create a key and copy both the API key and its regional endpoint",
+    "Paste the key as AMAZEEAI_API_KEY and the endpoint as AMAZEEAI_ENDPOINT"
+  ]
+}

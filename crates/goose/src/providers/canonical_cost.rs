@@ -270,6 +270,21 @@ mod tests {
     }
 
     #[test]
+    fn amazeeai_uses_gateway_rates_not_upstream_catalog() {
+        assert_cost("amazeeai", "gpt-5-6-terra", 16.94);
+        assert_cost("amazeeai", "claude-sonnet-5-5", 14.52);
+
+        // Region-mapped aliases and unpriced models must not fall back to vendor rates.
+        for model in ["chat", "claude-haiku-5-5"] {
+            assert!(
+                estimate_model_cost("amazeeai", model, &usage(Some(1_000), Some(1_000), None))
+                    .is_none(),
+                "{model} should have no estimate"
+            );
+        }
+    }
+
+    #[test]
     fn pricing_from_model_info_converts_per_token_to_per_million_usd() {
         let info = ModelInfo::with_cost("m", 262_144, 0.000002, 0.000006);
         let pricing = pricing_from_model_info(&info).unwrap();
