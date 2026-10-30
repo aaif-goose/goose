@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
+
+### Added
+
+- add IO Intelligence provider ([#12795](https://github.com/aaif-goose/goose/pull/12795))
+
+### Fixed
+
+- *(providers)* request summarized thinking from Claude models ([#13029](https://github.com/aaif-goose/goose/pull/13029))
+- *(databricks)* send the system prompt as system on the MLflow chat route ([#13057](https://github.com/aaif-goose/goose/pull/13057))
+- *(databricks)* omit stream_options for Gemini model services ([#12675](https://github.com/aaif-goose/goose/pull/12675))
+- fix stale models ([#13054](https://github.com/aaif-goose/goose/pull/13054))
+- *(providers)* add missing GLM models to OpenCode Go and Zen ([#12057](https://github.com/aaif-goose/goose/pull/12057))
+- *(openrouter)* use the context length OpenRouter reports ([#12853](https://github.com/aaif-goose/goose/pull/12853))
+- *(openai)* send session id as prompt_cache_key on Responses requests ([#12420](https://github.com/aaif-goose/goose/pull/12420))
+
+### Other
+
+- Support provider-defined cache prices ([#12944](https://github.com/aaif-goose/goose/pull/12944))
+- *(release)* bump version to 1.55.0 (minor) ([#12863](https://github.com/aaif-goose/goose/pull/12863))
+
+## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
+
+### Added
+
+- surface provider x-request-id on responses and errors ([#12587](https://github.com/aaif-goose/goose/pull/12587))
+- add AIgateway declarative provider ([#12528](https://github.com/aaif-goose/goose/pull/12528))
+- *(providers)* honor supports_vision declared on custom provider mo… ([#12769](https://github.com/aaif-goose/goose/pull/12769))
+- Use live model metadata for OpenAI reasoning and prefer the Responses API ([#12568](https://github.com/aaif-goose/goose/pull/12568))
+
+### Fixed
+
+- *(openrouter)* do not set transforms field unconditionally ([#11374](https://github.com/aaif-goose/goose/pull/11374))
+- *(anthropic)* forward unknown request_params to wire, mirroring openai engine ([#12720](https://github.com/aaif-goose/goose/pull/12720))
+
+### Other
+
+- detect vision support ([#12594](https://github.com/aaif-goose/goose/pull/12594))
+- Run the GDK agent loop on wasm32 ([#12569](https://github.com/aaif-goose/goose/pull/12569))
+- Add Meta Muse Code provider ([#11765](https://github.com/aaif-goose/goose/pull/11765))
+
+## [0.1.0-alpha.11](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.10...gdk-v0.1.0-alpha.11) - 2026-09-28
+
+### Added
+
+- *(gdk)* add model discovery to the Provider API ([#12497](https://github.com/aaif-goose/goose/pull/12497))
+
+### Fixed
+
+- *(provider)* passing thinking effort to ollama models ([#12555](https://github.com/aaif-goose/goose/pull/12555))
+- *(costs)* estimate through canonical provider aliases ([#11916](https://github.com/aaif-goose/goose/pull/11916))
+- *(databricks_v2)* send Claude model services through the Anthropic route ([#12486](https://github.com/aaif-goose/goose/pull/12486))
+
+## [0.1.0-alpha.10](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.9...gdk-v0.1.0-alpha.10) - 2026-09-24
+
+### Added
+
+- *(providers)* add Z.AI Coding Plan with streaming tool calls ([#12205](https://github.com/aaif-goose/goose/pull/12205))
+- *(sdk)* allow OpenAI provider to accept a custom base URL ([#11868](https://github.com/aaif-goose/goose/pull/11868)) ([#11967](https://github.com/aaif-goose/goose/pull/11967))
+- add Live voice conversations to the desktop app ([#12093](https://github.com/aaif-goose/goose/pull/12093))
+- *(providers)* add EUrouter as a declarative provider ([#11619](https://github.com/aaif-goose/goose/pull/11619))
+- *(acp)* scope Toolshim to custom providers ([#11414](https://github.com/aaif-goose/goose/pull/11414))
+
+### Fixed
+
+- *(gdk)* resolve vision support from the canonical catalog so tool result images reach the model ([#12440](https://github.com/aaif-goose/goose/pull/12440))
+- *(providers)* rename deepseek-v4-flash to deepseek-flash ([#12269](https://github.com/aaif-goose/goose/pull/12269))
+- *(providers)* classify many-image dimension limit errors as context length-exceeded ([#12208](https://github.com/aaif-goose/goose/pull/12208))
+- *(providers)* drive pre-key model lists from the canonical registry ([#11475](https://github.com/aaif-goose/goose/pull/11475))
+- fix Databricks GLM-5.3 and Kimi K3 reasoning effort ([#12079](https://github.com/aaif-goose/goose/pull/12079))
+- *(anthropic)* preserved-thinking compliance for the provider layer ([#11836](https://github.com/aaif-goose/goose/pull/11836))
+- send session ID header for OpenCode Go ([#11944](https://github.com/aaif-goose/goose/pull/11944))
+
+### Other
+
+- Add a decisions provider crate, with impls for openrouter and jev ([#12418](https://github.com/aaif-goose/goose/pull/12418))
+- gpt-live API support ([#12011](https://github.com/aaif-goose/goose/pull/12011))
+
 ## [0.1.0-alpha.9](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.8...gdk-v0.1.0-alpha.9) - 2026-09-08
 
 ### Fixed

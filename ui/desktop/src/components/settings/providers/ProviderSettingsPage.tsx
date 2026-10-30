@@ -34,14 +34,9 @@ const i18n = defineMessages({
 interface ProviderSettingsProps {
   onClose: () => void;
   isOnboarding: boolean;
-  onProviderLaunched?: (model?: string) => void;
 }
 
-export default function ProviderSettings({
-  onClose,
-  isOnboarding,
-  onProviderLaunched,
-}: ProviderSettingsProps) {
+export default function ProviderSettings({ onClose, isOnboarding }: ProviderSettingsProps) {
   const intl = useIntl();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -118,7 +113,6 @@ export default function ProviderSettings({
                   isOnboarding={isOnboarding}
                   refreshProviders={refreshProviders}
                   setView={setView}
-                  onModelSelected={onProviderLaunched}
                 />
               )}
             </div>

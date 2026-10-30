@@ -178,8 +178,6 @@ import type {
   SetSessionSystemPromptRequest_unstable,
   SetToolPermissionsRequest_unstable,
   SetToolPermissionsResponse_unstable,
-  ShareSessionNostrRequest_unstable,
-  ShareSessionNostrResponse_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
   TruncateSessionConversationRequest_unstable,
@@ -266,7 +264,6 @@ import {
   zSaveRecipeResponse_unstable,
   zScanRecipeResponse_unstable,
   zSetToolPermissionsResponse_unstable,
-  zShareSessionNostrResponse_unstable,
   zSteerSessionResponse_unstable,
   zUpdateScheduleResponse_unstable,
   zUpdateSourceResponse_unstable,
@@ -894,18 +891,6 @@ export class GooseExtClient {
     return zImportSessionResponse_unstable.parse(
       raw,
     ) as ImportSessionResponse_unstable;
-  }
-
-  async sessionShareNostr_unstable(
-    params: ShareSessionNostrRequest_unstable,
-  ): Promise<ShareSessionNostrResponse_unstable> {
-    const raw = await this.conn.request(
-      "_goose/unstable/session/share/nostr",
-      params,
-    );
-    return zShareSessionNostrResponse_unstable.parse(
-      raw,
-    ) as ShareSessionNostrResponse_unstable;
   }
 
   async recipesEncode_unstable(

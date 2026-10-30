@@ -65,7 +65,17 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           async sidebarItemsGenerator(args) {
-            const items = await args.defaultSidebarItemsGenerator(args);
+            const generatedItems = await args.defaultSidebarItemsGenerator(args);
+            const items =
+              args.item.dirName === "."
+                ? generatedItems.map((item) =>
+                    item.type === "category" &&
+                    item.link?.type === "doc" &&
+                    item.link.id === "gdk/index"
+                      ? { type: "link" as const, label: "GDK", href: "/docs/gdk" }
+                      : item,
+                  )
+                : generatedItems;
 
             const contextEngineeringItems = [
               {
@@ -145,6 +155,14 @@ const config: Config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
+          {
+            from: "/docs/gdk/acp/zed",
+            to: "/docs/guides/zed",
+          },
+          {
+            from: "/docs/gdk/sdk",
+            to: "/docs/gdk/reference",
+          },
           {
             from: "/docs/getting-started/using-goose-free",
             to: "/docs/getting-started/providers#using-goose-for-free",
@@ -504,6 +522,10 @@ const config: Config = {
               label: "Extensions",
               to: "/extensions",
             },
+            {
+              label: "GDK",
+              to: "/docs/gdk/",
+            },
           ],
         },
         {
@@ -558,14 +580,6 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.nightOwl,
-    },
-    announcementBar: {
-      id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
-      content:
-        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
-      backgroundColor: '#20232a',
-      textColor: '#fff',
-      isCloseable: true,
     },
   } satisfies Preset.ThemeConfig,
 };

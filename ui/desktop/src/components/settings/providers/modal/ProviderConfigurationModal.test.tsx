@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { acpEnableProvider, acpRefreshProviderDetails } from '../../../../acp/providers';
+import {
+  acpEnableProvider,
+  acpRefreshProviderDetails,
+  acpSaveProviderConfig,
+} from '../../../../acp/providers';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 import type { ProviderDetails } from '../../../../types/providers';
 import ProviderConfigurationModal from './ProviderConfigurationModal';
@@ -22,6 +26,7 @@ vi.mock('../../../../acp/providers', () => ({
   acpEnableProvider: vi.fn(),
   acpRefreshProviderDetails: vi.fn(),
   acpSaveProviderConfig: vi.fn(),
+  acpReadProviderConfig: vi.fn().mockResolvedValue([]),
 }));
 
 const oauthProvider: ProviderDetails = {
@@ -51,6 +56,49 @@ const oauthProvider: ProviderDetails = {
 };
 
 describe('ProviderConfigurationModal', () => {
+  it('configures Z.AI Coding Plan through the standard Desktop API key form', async () => {
+    const user = userEvent.setup();
+    const onConfigured = vi.fn();
+    const provider: ProviderDetails = {
+      ...oauthProvider,
+      name: 'zai_coding_plan',
+      provider_type: 'Declarative',
+      is_configured: false,
+      supports_refresh: true,
+      metadata: {
+        ...oauthProvider.metadata,
+        name: 'zai_coding_plan',
+        display_name: 'Z.AI Coding Plan',
+        default_model: 'glm-5.3',
+        config_keys: [
+          { name: 'ZAI_CODING_PLAN_API_KEY', required: true, secret: true, oauth_flow: false },
+        ],
+      },
+    };
+    vi.mocked(acpSaveProviderConfig).mockResolvedValue(undefined);
+    render(
+      <ProviderConfigurationModal
+        provider={provider}
+        onClose={vi.fn()}
+        onConfigured={onConfigured}
+      />,
+      {
+        wrapper: IntlTestWrapper,
+      }
+    );
+
+    expect(screen.getByRole('heading', { name: /Configure Z.AI Coding Plan/ })).toBeInTheDocument();
+    await user.type(await screen.findByPlaceholderText('Your API key'), 'test-coding-plan-key');
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() =>
+      expect(acpSaveProviderConfig).toHaveBeenCalledWith('zai_coding_plan', [
+        { key: 'ZAI_CODING_PLAN_API_KEY', value: 'test-coding-plan-key' },
+      ])
+    );
+    expect(onConfigured).toHaveBeenCalledWith(provider);
+  });
+
   it('offers to remove an existing OAuth configuration without an ACP readiness check', () => {
     render(<ProviderConfigurationModal provider={oauthProvider} onClose={vi.fn()} />, {
       wrapper: IntlTestWrapper,

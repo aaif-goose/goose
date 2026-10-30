@@ -6,8 +6,22 @@ yanked = "deny"
 unmaintained = "none"
 unsound = "none"
 
-ignore = [
-    # rsa: Marvin Attack timing sidechannel. No safe upgrade is available, and
-    # the reachable path is through jsonwebtoken.
-    "RUSTSEC-2023-0071",
-]
+# These releases require zip 8 but only read or write individual archive entries;
+# none calls ZipArchive::extract or ZipStreamReader::extract. Goose uses zip 9.
+# Reassess if these dependencies or their zip callers change. Reviewed versions:
+# candle-core 0.11.0, docx-rs 0.4.22, umya-spreadsheet 3.1.0.
+# Remove when releases supporting zip 9 are available:
+# https://github.com/huggingface/candle/issues/4042
+# https://github.com/bokuweb/docx-rs/issues/943
+# https://github.com/MathNya/umya-spreadsheet/issues/383
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0367"
+reason = "The reviewed dependents do not call the extraction helpers that preserve privileged Unix permission bits."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0368"
+reason = "The reviewed dependents do not call the extraction helpers that create archive symlinks."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0369"
+reason = "The reviewed dependents do not call the extraction helpers that apply permissions through symlinks."

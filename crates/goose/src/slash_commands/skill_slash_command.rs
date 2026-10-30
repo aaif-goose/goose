@@ -2,6 +2,8 @@ use std::path::Path;
 
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 
+use super::recipe_slash_command::get_existing_recipe_for_command;
+use super::slash_command::is_builtin_command;
 use super::types::{SlashCommandEntry, SlashCommandSource};
 use super::util::normalize_command_name;
 
@@ -45,9 +47,13 @@ pub fn resolve_command(
     params_str: &str,
     working_dir: Option<&Path>,
 ) -> Result<Option<String>, String> {
+    if is_builtin_command(command) || get_existing_recipe_for_command(command).is_some() {
+        return Ok(None);
+    }
+    let command_name = normalize_command_name(command);
     let Some(skill) = crate::skills::list_installed_skills(working_dir)
         .into_iter()
-        .find(|skill| skill.name.eq_ignore_ascii_case(command))
+        .find(|skill| normalize_command_name(&skill.name) == command_name)
     else {
         return Ok(None);
     };

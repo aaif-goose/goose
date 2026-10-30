@@ -14,7 +14,7 @@ SCRIPT_DIR=$(pwd)
 GOOSE_BIN="$SCRIPT_DIR/target/debug/goose"
 
 TEST_PROVIDER=${GOOSE_PROVIDER:-anthropic}
-TEST_MODEL=${GOOSE_MODEL:-claude-haiku-4-5-20251001}
+TEST_MODEL=${GOOSE_MODEL:-claude-haiku-5-5}
 
 RESULTS=()
 

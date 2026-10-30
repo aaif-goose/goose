@@ -106,12 +106,12 @@ impl Operation<Session, GooseEffect> for StopHookOperation {
                     + 1;
                 if blocks > self.block_cap {
                     let warning = block_cap_warning(&plugin, self.block_cap);
-                    let warning = emit.message(warning).await;
+                    let warning = emit.message(warning);
                     yielded_with([warning.into()])
                 } else {
                     let mut denial = denial_context_message(&plugin, &reason);
                     self.set_message_meta(&mut denial, DENIED, serde_json::json!(true));
-                    emit.message(denial_notification(&plugin)).await;
+                    emit.message(denial_notification(&plugin));
                     applied([denial.into()])
                 }
             }

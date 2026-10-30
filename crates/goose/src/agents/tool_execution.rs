@@ -1,20 +1,16 @@
-use async_stream::try_stream;
-use futures::stream::{self, BoxStream};
 use futures::{Stream, StreamExt};
 use rmcp::model::CallToolResult;
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 use std::path::PathBuf;
 
-use crate::config::permission::PermissionLevel;
+use crate::agents::container::Container;
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
-use crate::permission::Permission;
-use rmcp::model::{ContentBlock, ServerNotification};
+use rmcp::model::ServerNotification;
 
 #[derive(Clone)]
 pub(crate) struct ToolCallNotificationEmitter {
@@ -38,6 +34,8 @@ pub struct ToolCallContext {
     pub session_id: String,
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
+    container: Option<Container>,
+    extension_lease: Option<Arc<ExtensionLease>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
 }
 
@@ -51,8 +49,28 @@ impl ToolCallContext {
             session_id,
             working_dir,
             tool_call_request_id,
+            container: None,
+            extension_lease: None,
             notification_emitter: None,
         }
+    }
+
+    pub(crate) fn with_container(mut self, container: Option<Container>) -> Self {
+        self.container = container;
+        self
+    }
+
+    pub(crate) fn container(&self) -> Option<&Container> {
+        self.container.as_ref()
+    }
+
+    pub(crate) fn with_extension_lease(mut self, extension_lease: Arc<ExtensionLease>) -> Self {
+        self.extension_lease = Some(extension_lease);
+        self
+    }
+
+    pub(crate) fn extension_lease(&self) -> Option<&Arc<ExtensionLease>> {
+        self.extension_lease.as_ref()
     }
 
     pub fn working_dir_str(&self) -> Option<&str> {
@@ -90,10 +108,8 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
     }
 }
 
-use crate::agents::Agent;
-use crate::conversation::message::ToolRequest;
-use crate::session::Session;
-use crate::tool_inspection::get_security_finding_id_from_results;
+use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::StateMachineServices;
 
 pub(super) enum ToolStreamItem<T> {
     ActionRequired(Message),
@@ -145,101 +161,4 @@ pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool ca
                                         2. **Outline Steps** - Break down the steps.\n \
                                         If needed, adjust the explanation based on user preferences or questions.";
 
-impl Agent {
-    pub(super) fn handle_approval_tool_requests<'a>(
-        &'a self,
-        tool_requests: &'a [ToolRequest],
-        tool_futures: &'a mut Vec<(String, ToolStream)>,
-        request_to_response_map: &'a mut HashMap<String, Message>,
-        cancellation_token: Option<CancellationToken>,
-        session: &'a Session,
-        inspection_results: &'a [crate::tool_inspection::InspectionResult],
-    ) -> BoxStream<'a, anyhow::Result<Message>> {
-        try_stream! {
-        for request in tool_requests.iter() {
-            if let Ok(tool_call) = request.tool_call.clone() {
-                let security_message = inspection_results.iter()
-                    .find(|result| result.tool_request_id == request.id)
-                    .and_then(|result| {
-                        if let crate::tool_inspection::InspectionAction::RequireApproval(Some(message)) = &result.action {
-                            Some(message.clone())
-                        } else {
-                            None
-                        }
-                    });
-
-                let confirmation_rx = self
-                    .tool_confirmation_router
-                    .register(session.id.clone(), request.id.clone())
-                    .await;
-
-                let action_required_msg = Message::assistant()
-                    .with_action_required(
-                        request.id.clone(),
-                        tool_call.name.to_string().clone(),
-                        tool_call.arguments.clone().unwrap_or_default(),
-                        security_message,
-                    )
-                    .user_only();
-                yield action_required_msg;
-
-                let confirmation = confirmation_rx.await
-                    .map_err(|_| anyhow::anyhow!("Confirmation channel closed for request {}", request.id))?;
-
-                if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
-                    let action = match confirmation.permission {
-                        Permission::AllowOnce | Permission::AlwaysAllow => "ALLOW",
-                        _ => "BLOCK",
-                    };
-                    tracing::info!(
-                        monotonic_counter.goose.prompt_injection_user_decisions = 1,
-                        security.event_type = "user_decision",
-                        security.action = action,
-                        security.finding_id = %finding_id,
-                        tool.request_id = %request.id,
-                        user.decision = ?confirmation.permission,
-                        "security finding: user decision"
-                    );
-                }
-
-                if confirmation.permission == Permission::AllowOnce || confirmation.permission == Permission::AlwaysAllow {
-                    let (req_id, tool_result) = self.dispatch_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
-
-                    tool_futures.push((req_id, match tool_result {
-                        Ok(result) => tool_stream(
-                            result.notification_stream.unwrap_or_else(|| Box::new(stream::empty())),
-                            result.action_required_stream.unwrap_or_else(|| Box::new(stream::empty())),
-                            result.result,
-                        ),
-                        Err(e) => tool_stream(
-                            Box::new(stream::empty()),
-                            Box::new(stream::empty()),
-                            futures::future::ready(Err(e)),
-                        ),
-                    }));
-
-                    if confirmation.permission == Permission::AlwaysAllow {
-                        self.tool_inspection_manager
-                            .update_permission_manager(&tool_call.name, PermissionLevel::AlwaysAllow)
-                            .await;
-                    }
-                } else {
-                    if let Some(response) = request_to_response_map.get_mut(&request.id) {
-                        response.add_tool_response_with_metadata(
-                            request.id.clone(),
-                            Ok(CallToolResult::error(vec![ContentBlock::text(DECLINED_RESPONSE)])),
-                            request.metadata.as_ref(),
-                        );
-                    }
-
-                    if confirmation.permission == Permission::AlwaysDeny {
-                        self.tool_inspection_manager
-                            .update_permission_manager(&tool_call.name, PermissionLevel::NeverAllow)
-                            .await;
-                    }
-                }
-            }
-        }
-    }.boxed()
-    }
-}
+impl StateMachineServices {}

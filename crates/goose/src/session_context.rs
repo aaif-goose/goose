@@ -1,3 +1,5 @@
+use futures::stream::BoxStream;
+use futures::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 
 pub const SESSION_ID_HEADER: &str = "agent-session-id";
@@ -14,6 +16,20 @@ where
     F: std::future::Future,
 {
     SESSION_ID.scope(session_id, f).await
+}
+
+pub fn with_session_id_stream<'a, T: Send + 'a>(
+    session_id: Option<String>,
+    stream: BoxStream<'a, T>,
+) -> BoxStream<'a, T> {
+    Box::pin(futures::stream::unfold(
+        (stream, session_id),
+        |(mut stream, session_id)| async move {
+            with_session_id(session_id.clone(), stream.next())
+                .await
+                .map(|item| (item, (stream, session_id)))
+        },
+    ))
 }
 
 pub fn current_session_id() -> Option<String> {
@@ -138,6 +154,24 @@ mod tests {
             assert_eq!(current_session_id(), Some("persistent-session".to_string()));
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_session_id_scopes_each_stream_poll() {
+        let stream = futures::stream::iter([(), ()]).then(|()| async { current_session_id() });
+        let mut stream =
+            with_session_id_stream(Some("stream-session".to_string()), Box::pin(stream));
+
+        assert_eq!(
+            stream.next().await,
+            Some(Some("stream-session".to_string()))
+        );
+        assert_eq!(
+            stream.next().await,
+            Some(Some("stream-session".to_string()))
+        );
+        assert_eq!(stream.next().await, None);
+        assert_eq!(current_session_id(), None);
     }
 
     #[tokio::test]

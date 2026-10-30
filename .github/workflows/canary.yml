@@ -39,6 +39,12 @@ jobs:
           VERSION="${VERSION}-canary+${SHORT_SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+  build-acp:
+    needs: [prepare-version]
+    uses: ./.github/workflows/build-acp.yml
+    with:
+      version: ${{ needs.prepare-version.outputs.version }}
+
   # ------------------------------------
   # 2) Bundle CLI and Desktop (Linux)
   # ------------------------------------
@@ -126,7 +132,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
+    needs: [build-acp, build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing

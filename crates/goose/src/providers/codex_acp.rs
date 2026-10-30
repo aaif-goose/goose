@@ -7,7 +7,7 @@ use crate::acp::{
     extension_configs_to_mcp_servers, AcpProvider, AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, ConfigError, GooseMode};
+use crate::config::{Config, GooseMode};
 use crate::providers::base::{
     current_working_dir, ProviderDef, ProviderDescriptor, ProviderMetadata,
 };
@@ -17,16 +17,6 @@ pub(crate) const CODEX_ACP_PROVIDER_NAME: &str = "codex-acp";
 const CODEX_ACP_DOC_URL: &str = "https://github.com/agentclientprotocol/codex-acp";
 
 pub struct CodexAcpProvider;
-
-fn resolve_goose_mode(
-    configured_mode: Result<GooseMode, ConfigError>,
-) -> Result<GooseMode, ConfigError> {
-    match configured_mode {
-        Ok(mode) => Ok(mode),
-        Err(ConfigError::NotFound(_)) => Ok(GooseMode::Auto),
-        Err(error) => Err(error),
-    }
-}
 
 impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
     fn metadata() -> ProviderMetadata {
@@ -41,7 +31,7 @@ impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
         )
         .with_setup_steps(vec![
             "Verify `codex-acp --version` shows `@agentclientprotocol/codex-acp`",
-            "If `--version` is rejected, remove `@zed-industries/codex-acp`: `npm uninstall -g @zed-industries/codex-acp`",
+            "If `--version` is rejected, remove `@agentclientprotocol/codex-acp`: `npm uninstall -g @agentclientprotocol/codex-acp`",
             "If `codex-acp` is missing or was removed, install `@agentclientprotocol/codex-acp`: `npm install -g @agentclientprotocol/codex-acp`",
             "Authenticate with OpenAI: run `codex` and follow the prompts",
         ])
@@ -56,6 +46,8 @@ impl goose_providers::base::ProviderDescriptor for CodexAcpProvider {
 
 impl ProviderDef for CodexAcpProvider {
     type Provider = AcpProvider;
+    const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,
@@ -75,7 +67,7 @@ impl ProviderDef for CodexAcpProvider {
             let resolved_command = SearchPaths::builder()
                 .with_npm()
                 .resolve(CODEX_ACP_PROVIDER_NAME)?;
-            let goose_mode = resolve_goose_mode(config.get_goose_mode_strict())?;
+            let goose_mode = config.resolve_goose_mode()?;
             let mcp_servers = extension_configs_to_mcp_servers(&extensions);
 
             let mode_mapping = HashMap::from([
@@ -108,6 +100,7 @@ impl ProviderDef for CodexAcpProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConfigError;
     #[cfg(unix)]
     use std::fs;
     #[cfg(unix)]
@@ -128,40 +121,6 @@ mod tests {
         Directory,
         DanglingSymlink,
         DanglingParentSymlink,
-    }
-
-    #[test]
-    fn missing_goose_mode_defaults_to_auto() {
-        assert_eq!(
-            resolve_goose_mode(Err(ConfigError::NotFound("GOOSE_MODE".to_string()))).unwrap(),
-            GooseMode::Auto
-        );
-    }
-
-    #[test]
-    fn configured_goose_modes_are_preserved() {
-        for mode in [
-            GooseMode::Auto,
-            GooseMode::SmartApprove,
-            GooseMode::Approve,
-            GooseMode::Chat,
-        ] {
-            assert_eq!(resolve_goose_mode(Ok(mode)).unwrap(), mode);
-        }
-    }
-
-    #[test]
-    fn invalid_goose_mode_errors_are_preserved() {
-        assert!(matches!(
-            resolve_goose_mode(Err(ConfigError::DeserializeError("invalid".to_string()))),
-            Err(ConfigError::DeserializeError(_))
-        ));
-        assert!(matches!(
-            resolve_goose_mode(Err(ConfigError::FileError(std::io::Error::other(
-                "unreadable"
-            )))),
-            Err(ConfigError::FileError(_))
-        ));
     }
 
     #[cfg(unix)]

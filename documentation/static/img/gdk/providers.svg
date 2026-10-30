@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="460" viewBox="0 0 420 460" role="img" aria-labelledby="provider-title provider-desc" style="display:block;max-width:100%;height:auto;margin:1.5rem auto">
+  <title id="provider-title">One provider interface, different model backends</title>
+  <desc id="provider-desc">An application or InferenceRunner sends GDK requests through the Provider interface and receives a MessageStream. An HTTP provider connects to a hosted API or local model server. LocalInferenceProvider runs a model inside the application process.</desc>
+  <g fill="var(--background-subtle)" stroke="var(--border-standard)" stroke-width="1.5">
+    <rect x="85" y="10" width="250" height="62" rx="6"/>
+    <rect x="85" y="160" width="250" height="62" rx="6"/>
+    <rect x="10" y="290" width="190" height="64" rx="6"/>
+    <rect x="220" y="290" width="190" height="64" rx="6"/>
+    <rect x="10" y="400" width="190" height="56" rx="6"/>
+    <rect x="220" y="400" width="190" height="56" rx="6"/>
+  </g>
+  <g fill="none" stroke="var(--text-subtle)" stroke-width="1.5">
+    <path d="M140 72V160"/>
+    <path d="M280 160V72"/>
+    <path d="M150 222V254H105V290"/>
+    <path d="M270 222V254H315V290"/>
+    <path d="M105 354V400"/>
+    <path d="M315 354V400"/>
+    <path d="M135 153 140 160 145 153 M275 79 280 72 285 79 M145 229 150 222 155 229 M265 229 270 222 275 229 M100 283 105 290 110 283 M310 283 315 290 320 283 M100 361 105 354 110 361 M310 361 315 354 320 361 M100 393 105 400 110 393 M310 393 315 400 320 393"/>
+  </g>
+  <g fill="currentColor" font-family="inherit" font-size="18" text-anchor="middle">
+    <text x="210" y="36">Your application<tspan x="210" dy="23" font-size="16">or InferenceRunner</tspan></text>
+    <text x="210" y="187">Provider<tspan x="210" dy="23" font-size="16">One contract for model calls</tspan></text>
+    <text x="105" y="317">HTTP provider<tspan x="105" dy="23" font-size="16">OpenAI, Ollama, etc.</tspan></text>
+    <text x="315" y="317">Local inference<tspan x="315" dy="23" font-size="16">LocalInferenceProvider</tspan></text>
+    <text x="105" y="423" font-size="16">Hosted API or<tspan x="105" dy="22">local model server</tspan></text>
+    <text x="315" y="423" font-size="16">Model in your<tspan x="315" dy="22">application process</tspan></text>
+  </g>
+  <g fill="var(--text-subtle)" font-family="inherit" font-size="16">
+    <text x="17" y="111">GDK request</text>
+    <text x="292" y="111">MessageStream</text>
+    <text x="210" y="274" text-anchor="middle">Choose an implementation</text>
+  </g>
+</svg>

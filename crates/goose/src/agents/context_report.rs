@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use anyhow::Result;
 use rmcp::model::{Role, Tool};
+use tokio_util::sync::CancellationToken;
 
 pub use goose_sdk_types::custom_requests::{
     ContextCategory, ContextPart, ContextReportModel, ContextReportResponse, ContextSegment,
@@ -9,7 +11,7 @@ pub use goose_sdk_types::custom_requests::{
 
 use crate::agents::extension_manager::get_tool_owner;
 use crate::agents::state_machine::enrich_unclaimed_tool_errors;
-use crate::agents::Agent;
+use crate::agents::{PromptManager, SessionConfig, StateMachineServices};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{
     effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
@@ -33,11 +35,8 @@ fn preview(text: &str) -> String {
 
 pub(super) const NEXT_PROMPT_STAND_IN: &str = "[next user prompt]";
 
-/// The persisted conversation as the next request will carry it. Both loops
-/// repair the agent-visible messages with `fix_conversation` after appending
-/// the new user prompt, so a stand-in takes the prompt's place here; without it
-/// the repair would read the last reply as a dangling trailing assistant
-/// message and drop it.
+/// A stand-in keeps the last assistant reply from looking like a dangling
+/// message while the next request is repaired, then disappears from the report.
 fn next_request_messages(persisted: &Conversation) -> Vec<Message> {
     let mut messages = persisted.agent_visible_messages();
     messages.push(Message::user().with_text(NEXT_PROMPT_STAND_IN));
@@ -74,19 +73,14 @@ fn text_segment(
     }
 }
 
-impl Agent {
+impl StateMachineServices {
     pub async fn build_context_report(
-        &self,
+        self: &Arc<Self>,
         session_id: &str,
         token_counter: &TokenCounter,
-        unrolled_agent_loop: bool,
     ) -> Result<ContextReportResponse> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, true)
-            .await?;
-        let provider = self.provider().await?;
+        let session = self.session_manager.get_session(session_id, true).await?;
+        let provider = self.provider(session_id).await?;
         let model_config = self.effective_model_config_for_session(session_id).await?;
         let context_limit =
             crate::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
@@ -116,42 +110,77 @@ impl Agent {
         )
         .await?;
 
-        let (prepared, turn_context) = if unrolled_agent_loop {
-            self.prepare_unrolled_prompt(&session).await?
-        } else {
-            (
-                self.prepare_prompt(session_id, &session.working_dir)
-                    .await?,
-                self.upcoming_legacy_turn_context(&session).await,
-            )
+        let (session, lease) = self
+            .extension_manager
+            .current_session_snapshot(&session)
+            .await?;
+        let code_execution_active = {
+            #[cfg(feature = "code-mode")]
+            {
+                lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
+            }
+            #[cfg(not(feature = "code-mode"))]
+            {
+                false
+            }
         };
-        // The unrolled loop's ProjectOperation already contributes these as a
-        // prompt extra; the legacy loop appends them last, after the toolshim
-        // appendix.
-        let project_instructions = if unrolled_agent_loop {
-            None
-        } else {
-            self.load_project_instructions(&session).await
-        };
-        let toolshim = prepared.model_config.toolshim;
+        let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
 
-        let mut system_prompt = prepared.prompt.join();
-        if toolshim {
-            system_prompt = modify_system_prompt_for_tool_json(&system_prompt, &prepared.tools);
+        let mut next_messages = session
+            .conversation
+            .clone()
+            .unwrap_or_else(Conversation::empty)
+            .into_iter()
+            .collect::<Vec<_>>();
+        next_messages.push(Message::user().with_text(NEXT_PROMPT_STAND_IN));
+        let next_conversation = Conversation::new_unvalidated(next_messages);
+        let machine = self
+            .create_state_machine_with_lease(
+                provider.clone(),
+                model_config.clone(),
+                context_limit,
+                SessionConfig {
+                    id: session.id.clone(),
+                    schedule_id: session.schedule_id.clone(),
+                    max_turns: None,
+                },
+                CancellationToken::new(),
+                self.runtime.steer_queue(session_id),
+                extension_lease,
+            )
+            .await;
+        let input = machine
+            .collect_inference_input(&session, &next_conversation)
+            .await?;
+        if session.goose_mode == crate::config::GooseMode::SmartApprove {
+            self.tool_inspection_manager
+                .apply_tool_annotations(&input.tools);
         }
-        if let Some(project_instructions) = &project_instructions {
-            system_prompt = format!("{system_prompt}\n\n{project_instructions}");
+        let tools =
+            crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_active);
+        let prompt = PromptManager::new().build_system_prompt_parts(
+            &session,
+            input.prompt_parts,
+            session.goose_mode,
+        )?;
+        let turn_context = crate::agents::moim::turn_context_event(
+            &session.working_dir,
+            Some(context_limit),
+            input.moim_parts,
+            chrono::Local::now(),
+        );
+        let toolshim = model_config.toolshim;
+
+        let mut system_prompt = prompt.join();
+        if toolshim {
+            system_prompt = modify_system_prompt_for_tool_json(&system_prompt, &tools);
         }
 
         let mut messages = next_request_messages(&persisted);
         // The prompt that will follow is unknown, but the turn-context event
         // appended after it is not.
         messages.extend(turn_context);
-        // The unrolled loop's inference provider appends the available tool
-        // list to unclaimed-tool errors on every request, not just the first.
-        if unrolled_agent_loop {
-            messages = enrich_unclaimed_tool_errors(&messages, &prepared.tools);
-        }
+        messages = enrich_unclaimed_tool_errors(&messages, &tools);
         let messages = Conversation::new_unvalidated(messages);
         let request_messages = merge_consecutive_messages_for_request(messages.messages().clone());
         let (request_tools, request_messages, counted_messages) = if toolshim {
@@ -162,7 +191,7 @@ impl Agent {
             )
         } else {
             (
-                prepared.tools.clone(),
+                tools.clone(),
                 Conversation::new_unvalidated(request_messages),
                 messages.clone(),
             )
@@ -177,40 +206,22 @@ impl Agent {
         segments.push(text_segment(
             ContextCategory::SystemPrompt,
             "Base system prompt",
-            Some(if prepared.prompt.base_is_override {
+            Some(if prompt.base_is_override {
                 "override".to_string()
             } else {
                 "prompts/system.md".to_string()
             }),
-            &prepared.prompt.base,
+            &prompt.base,
             token_counter,
         ));
-        for (name, instructions) in &prepared.prompt.extension_instructions {
-            segments.push(text_segment(
-                ContextCategory::ExtensionInstructions,
-                name,
-                None,
-                instructions,
-                token_counter,
-            ));
-        }
-        for (key, value) in &prepared.prompt.extras {
+        for (key, value) in &prompt.extras {
             let (category, label, source) = extra_descriptor(key);
             segments.push(text_segment(category, label, source, value, token_counter));
         }
-        if let Some(project_instructions) = &project_instructions {
-            segments.push(text_segment(
-                ContextCategory::AdditionalInstructions,
-                "Project instructions",
-                session.project_id.clone(),
-                project_instructions,
-                token_counter,
-            ));
-        }
         if toolshim {
-            segments.push(toolshim_tool_segment(&prepared.tools, token_counter));
+            segments.push(toolshim_tool_segment(&tools, token_counter));
         } else {
-            segments.extend(tool_segments(&prepared.tools, token_counter));
+            segments.extend(tool_segments(&tools, token_counter));
         }
         segments.extend(message_segments(
             messages.messages(),
@@ -253,9 +264,6 @@ impl Agent {
     }
 }
 
-/// The unrolled loop contributes the extension block as prompt extras: a header
-/// followed by one extra per extension, so those report as extension
-/// instructions the way the legacy loop's own per-extension rows do.
 fn extra_descriptor(key: &str) -> (ContextCategory, String, Option<String>) {
     if key == "hints" {
         (

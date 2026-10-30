@@ -151,7 +151,7 @@ mod tests {
             .with_configured_limits([("configured".to_string(), 64_000)]);
 
         assert_eq!(resolver.resolve_local("configured", None), 64_000);
-        assert_eq!(resolver.resolve_local("claude-sonnet-4-5", None), 1_000_000);
+        assert_eq!(resolver.resolve_local("claude-sonnet-5-5", None), 1_000_000);
         assert_eq!(
             resolver.resolve_local("unknown", None),
             DEFAULT_CONTEXT_LIMIT
@@ -181,7 +181,7 @@ mod tests {
         );
         assert_eq!(
             resolver
-                .resolve("claude-sonnet-4-5", None, || async { Ok(None) })
+                .resolve("claude-sonnet-5-5", None, || async { Ok(None) })
                 .await,
             1_000_000
         );

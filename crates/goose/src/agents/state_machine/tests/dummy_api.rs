@@ -41,12 +41,13 @@ enum ApiResponse {
     Mixed {
         reasoning: String,
         text: Option<String>,
-        call: Option<ApiToolCall>,
+        calls: Vec<ApiToolCall>,
     },
     NoChoices,
     OutputLimit,
     ContextLimitError(String),
     ServerError(String),
+    HttpError(u16),
     EmptyServerError,
     ReplyThenServerError {
         reply: String,
@@ -65,6 +66,7 @@ struct ApiRule {
     matcher: ApiMatcher,
     response: ApiResponse,
     gate: Option<ResponseGate>,
+    remaining: Option<usize>,
 }
 
 enum ApiMatcher {
@@ -135,11 +137,16 @@ impl ResponseGate {
 #[derive(Clone)]
 pub(super) struct ApiCall {
     body: Value,
+    session_id: Option<String>,
 }
 
 impl ApiCall {
     pub(super) fn input_tokens(&self) -> i32 {
         serialized_chars(&self.body)
+    }
+
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 
     pub(super) fn input_contains(&self, needle: &str) -> bool {
@@ -148,6 +155,28 @@ impl ApiCall {
 
     pub(super) fn uses_model(&self, model: &str) -> bool {
         self.body["model"].as_str() == Some(model)
+    }
+
+    pub(super) fn answers_every_tool_call_next(&self) -> bool {
+        let messages: Vec<_> = self.body["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .collect();
+        messages.iter().enumerate().all(|(index, message)| {
+            let requested = message["tool_calls"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|call| call["id"].as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let answered = messages[index + 1..]
+                .iter()
+                .take_while(|next| next["role"] == "tool")
+                .filter_map(|next| next["tool_call_id"].as_str())
+                .collect::<std::collections::HashSet<_>>();
+            requested.is_subset(&answered)
+        })
     }
 
     pub(super) fn input_occurrences(&self, needle: &str) -> usize {
@@ -174,6 +203,12 @@ impl ApiCall {
             .map(|tool| &tool["function"]["parameters"])
     }
 
+    pub(super) fn messages(&self) -> &[Value] {
+        self.body["messages"]
+            .as_array()
+            .expect("OpenAI request messages")
+    }
+
     pub(super) fn input_has_image(&self, mime_type: &str, data: &str) -> bool {
         let expected = format!("data:{mime_type};base64,{data}");
         self.body["messages"]
@@ -196,7 +231,7 @@ impl DummyApi {
         });
         let responder = state.clone();
         Mock::given(method("POST"))
-            .and(path("/v1/chat/completions"))
+            .and(path("/chat/completions"))
             .respond_with(move |request: &Request| responder.respond(request))
             .mount(&server)
             .await;
@@ -235,6 +270,7 @@ impl DummyApi {
             matcher,
             response,
             gate: None,
+            remaining: None,
         });
         rules.len() - 1
     }
@@ -244,6 +280,7 @@ impl DummyApi {
             matcher,
             response,
             gate: Some(gate),
+            remaining: None,
         });
     }
 }
@@ -283,7 +320,7 @@ impl<'a> ApiRuleBuilder<'a> {
         self.configured(ApiResponse::Mixed {
             reasoning: text.into(),
             text: None,
-            call: None,
+            calls: Vec::new(),
         })
     }
 
@@ -343,6 +380,10 @@ impl<'a> ApiRuleBuilder<'a> {
         self.configured(ApiResponse::ServerError(message.into()))
     }
 
+    pub(super) fn http_error(self, status: u16) -> ConfiguredResponse<'a> {
+        self.configured(ApiResponse::HttpError(status))
+    }
+
     pub(super) fn no_choices(self) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::NoChoices)
     }
@@ -364,6 +405,11 @@ impl<'a> ApiRuleBuilder<'a> {
 }
 
 impl<'a> ConfiguredResponse<'a> {
+    pub(super) fn times(self, count: usize) -> Self {
+        self.api.state.rules.lock().unwrap()[self.rule].remaining = Some(count);
+        self
+    }
+
     pub(super) fn reply(self, text: impl Into<String>) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
         let ApiResponse::Mixed {
@@ -380,10 +426,10 @@ impl<'a> ConfiguredResponse<'a> {
 
     pub(super) fn call(self, name: impl Into<String>, arguments: Value) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
-        let ApiResponse::Mixed { call, .. } = &mut rules[self.rule].response else {
+        let ApiResponse::Mixed { calls, .. } = &mut rules[self.rule].response else {
             panic!("call can only follow reasoning");
         };
-        *call = Some(ApiToolCall {
+        calls.push(ApiToolCall {
             id: String::new(),
             name: name.into(),
             arguments: arguments.to_string(),
@@ -398,10 +444,10 @@ impl<'a> ConfiguredResponse<'a> {
         arguments: impl Into<String>,
     ) -> Self {
         let mut rules = self.api.state.rules.lock().unwrap();
-        let ApiResponse::Mixed { call, .. } = &mut rules[self.rule].response else {
+        let ApiResponse::Mixed { calls, .. } = &mut rules[self.rule].response else {
             panic!("malformed_call can only follow reasoning");
         };
-        *call = Some(ApiToolCall {
+        calls.push(ApiToolCall {
             id: String::new(),
             name: name.into(),
             arguments: arguments.into(),
@@ -427,10 +473,15 @@ impl<'a> ConfiguredResponse<'a> {
 impl DummyApiState {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         let body: Value = request.body_json().expect("OpenAI request body");
-        self.calls
-            .lock()
-            .unwrap()
-            .push(ApiCall { body: body.clone() });
+        let session_id = request
+            .headers
+            .get(crate::session_context::SESSION_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        self.calls.lock().unwrap().push(ApiCall {
+            body: body.clone(),
+            session_id,
+        });
 
         let input_tokens = serialized_chars(&body);
         let model = body["model"].as_str().expect("OpenAI request model");
@@ -444,17 +495,23 @@ impl DummyApiState {
         let input = request_input(&body);
         let system = request_system(&body);
         let (response, gate) = {
-            let rules = self.rules.lock().unwrap();
+            let mut rules = self.rules.lock().unwrap();
             let rule = rules
-                .iter()
+                .iter_mut()
                 .rev()
-                .find(|rule| match &rule.matcher {
-                    ApiMatcher::InputContains(needle) => input.contains(needle),
-                    ApiMatcher::SystemContains(needle) => system.contains(needle),
+                .find(|rule| {
+                    rule.remaining != Some(0)
+                        && match &rule.matcher {
+                            ApiMatcher::InputContains(needle) => input.contains(needle),
+                            ApiMatcher::SystemContains(needle) => system.contains(needle),
+                        }
                 })
                 .unwrap_or_else(|| {
                     panic!("dummy API has no rule matching input {input:?}, system {system:?}")
                 });
+            if let Some(remaining) = &mut rule.remaining {
+                *remaining -= 1;
+            }
             (rule.response.clone(), rule.gate.clone())
         };
         if let Some(gate) = gate {
@@ -511,26 +568,24 @@ impl DummyApiState {
             ApiResponse::Mixed {
                 reasoning,
                 text,
-                mut call,
+                mut calls,
             } => {
-                if let Some(call) = &mut call {
+                let suffix = id.strip_prefix("chatcmpl-test-").unwrap();
+                for (index, call) in calls.iter_mut().enumerate() {
                     assert_tool_advertised(&body, &call.name);
-                    call.id = format!(
-                        "dummy-tool-call-{}",
-                        id.strip_prefix("chatcmpl-test-").unwrap()
-                    );
+                    call.id = format!("dummy-tool-call-{suffix}-{index}");
                 }
                 let output_tokens = reasoning.chars().count()
                     + text.as_deref().unwrap_or_default().chars().count()
-                    + call
-                        .as_ref()
+                    + calls
+                        .iter()
                         .map(|call| call.name.chars().count() + call.arguments.chars().count())
-                        .unwrap_or_default();
+                        .sum::<usize>();
                 sse_response(mixed_events(
                     &meta(output_tokens as i32),
                     &reasoning,
                     text.as_deref(),
-                    call.as_ref(),
+                    &calls,
                 ))
             }
             ApiResponse::NoChoices => sse_response(no_choices_events(&id, model)),
@@ -540,6 +595,9 @@ impl DummyApiState {
             ),
             ApiResponse::ServerError(message) => {
                 sse_response(format!("data: {}\n\n", api_error(message)))
+            }
+            ApiResponse::HttpError(status) => {
+                ResponseTemplate::new(status).set_body_json(api_error("rejected"))
             }
             ApiResponse::EmptyServerError => ResponseTemplate::new(500),
             ApiResponse::ReplyThenServerError { reply, error } => sse_response(reply_events(
@@ -590,7 +648,7 @@ fn request_input(body: &Value) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|message| message["role"] != "system")
+        .filter(|message| message["role"] != "system" && message["role"] != "developer")
     {
         collect_strings(message, &mut values);
     }
@@ -603,7 +661,7 @@ fn request_system(body: &Value) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|message| message["role"] == "system")
+        .filter(|message| message["role"] == "system" || message["role"] == "developer")
     {
         collect_strings(message, &mut values);
     }
@@ -847,7 +905,7 @@ fn mixed_events(
     meta: &ResponseMeta,
     reasoning: &str,
     text: Option<&str>,
-    call: Option<&ApiToolCall>,
+    calls: &[ApiToolCall],
 ) -> String {
     let ResponseMeta { id, model, .. } = meta;
     let mut events = String::new();
@@ -883,14 +941,8 @@ fn mixed_events(
             );
         }
     }
-    if let Some(call) = call {
-        push_tool_call_events(
-            &mut events,
-            id,
-            model,
-            std::slice::from_ref(call),
-            Some(reasoning),
-        );
+    if !calls.is_empty() {
+        push_tool_call_events(&mut events, id, model, calls, Some(reasoning));
     } else {
         push_event(
             &mut events,

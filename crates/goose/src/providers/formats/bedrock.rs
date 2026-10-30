@@ -34,10 +34,13 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
     let anthropic_config = bedrock_anthropic_model_config(model_config)?;
     let thinking_type = thinking_type_for_provider(ANTHROPIC_PROVIDER_NAME, &anthropic_config);
     let thinking = match thinking_type {
-        ThinkingType::Adaptive => Document::Object(HashMap::from([(
-            "type".to_string(),
-            Document::String("adaptive".to_string()),
-        )])),
+        ThinkingType::Adaptive => Document::Object(HashMap::from([
+            ("type".to_string(), Document::String("adaptive".to_string())),
+            (
+                "display".to_string(),
+                Document::String("summarized".to_string()),
+            ),
+        ])),
         ThinkingType::Enabled => {
             // Thinking tokens count against `maxTokens`, which `bedrock_inference_config`
             // now sends when explicitly configured. Mirror the Anthropic formatter: clamp
@@ -56,6 +59,10 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
                 (
                     "budget_tokens".to_string(),
                     Document::Number(Number::PosInt(budget_tokens as u64)),
+                ),
+                (
+                    "display".to_string(),
+                    Document::String("summarized".to_string()),
                 ),
             ]))
         }
@@ -159,12 +166,19 @@ pub fn to_bedrock_message_with_caching(
     message: &Message,
     enable_caching: bool,
     current_model: Option<&str>,
+    documents_supported: bool,
 ) -> Result<bedrock::Message> {
     let thinking_is_stale = thinking_block_is_stale(message, current_model);
     let mut content_blocks: Vec<bedrock::ContentBlock> = message
         .content
         .iter()
         .filter(|content| {
+            if matches!(
+                content,
+                MessageContent::ActionRequired(_) | MessageContent::ToolConfirmationRequest(_)
+            ) {
+                return false;
+            }
             if !thinking_is_stale {
                 return true;
             }
@@ -174,7 +188,7 @@ pub fn to_bedrock_message_with_caching(
                 _ => true,
             }
         })
-        .map(to_bedrock_message_content)
+        .map(|content| to_bedrock_message_content(content, documents_supported))
         .collect::<Result<_>>()?;
 
     if enable_caching && !content_blocks.is_empty() {
@@ -193,14 +207,17 @@ pub fn to_bedrock_message_with_caching(
         .map_err(|err| anyhow!("Failed to construct Bedrock message: {}", err))
 }
 
-pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::ContentBlock> {
+pub fn to_bedrock_message_content(
+    content: &MessageContent,
+    documents_supported: bool,
+) -> Result<bedrock::ContentBlock> {
     Ok(match content {
         MessageContent::Text(text) => bedrock::ContentBlock::Text(text.text.to_string()),
-        MessageContent::ToolConfirmationRequest(_tool_confirmation_request) => {
-            bedrock::ContentBlock::Text("".to_string())
+        MessageContent::ToolConfirmationRequest(_) => {
+            bail!("ToolConfirmationRequest should be filtered before Bedrock conversion")
         }
-        MessageContent::ActionRequired(_action_required) => {
-            bedrock::ContentBlock::Text("".to_string())
+        MessageContent::ActionRequired(_) => {
+            bail!("ActionRequired should be filtered before Bedrock conversion")
         }
         MessageContent::Image(image) => {
             bedrock::ContentBlock::Image(to_bedrock_image(&image.data, &image.mime_type)?)
@@ -260,7 +277,13 @@ pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::C
                     result
                         .content
                         .iter()
-                        .map(|c| to_bedrock_tool_result_content_block(&tool_res.id, c.clone()))
+                        .map(|c| {
+                            to_bedrock_tool_result_content_block(
+                                &tool_res.id,
+                                c.clone(),
+                                documents_supported,
+                            )
+                        })
                         .collect::<Result<_>>()?,
                 ),
                 Err(error) => {
@@ -292,6 +315,7 @@ pub fn to_bedrock_message_content(content: &MessageContent) -> Result<bedrock::C
 pub fn to_bedrock_tool_result_content_block(
     tool_use_id: &str,
     content: ContentBlock,
+    documents_supported: bool,
 ) -> Result<bedrock::ToolResultContentBlock> {
     Ok(match content {
         ContentBlock::Text(text) => bedrock::ToolResultContentBlock::Text(text.text),
@@ -302,13 +326,16 @@ pub fn to_bedrock_tool_result_content_block(
             bedrock::ToolResultContentBlock::Text("[Resource link]".to_string())
         }
         ContentBlock::Resource(resource) => match &resource.resource {
-            ResourceContents::TextResourceContents { text, .. } => {
+            ResourceContents::TextResourceContents { text, .. } if documents_supported => {
                 match to_bedrock_document(tool_use_id, &resource.resource)? {
                     Some(doc) => bedrock::ToolResultContentBlock::Document(doc),
                     None => {
                         bedrock::ToolResultContentBlock::Text(sanitize_unicode_tags(text.as_str()))
                     }
                 }
+            }
+            ResourceContents::TextResourceContents { text, .. } => {
+                bedrock::ToolResultContentBlock::Text(sanitize_unicode_tags(text.as_str()))
             }
             ResourceContents::BlobResourceContents { .. } => {
                 bail!("Blob resource content is not supported by Bedrock provider yet")
@@ -612,13 +639,18 @@ pub fn from_bedrock_role(role: &bedrock::ConversationRole) -> Result<Role> {
 }
 
 pub fn from_bedrock_usage(usage: &bedrock::TokenUsage) -> Usage {
-    Usage::from_cache_exclusive_input(
-        Some(usage.input_tokens),
+    let cache_read = usage.cache_read_input_tokens;
+    let cache_write = usage.cache_write_input_tokens;
+    let input_tokens = usage
+        .input_tokens
+        .saturating_add(cache_read.unwrap_or(0))
+        .saturating_add(cache_write.unwrap_or(0));
+    Usage::new(
+        Some(input_tokens),
         Some(usage.output_tokens),
         Some(usage.total_tokens),
-        usage.cache_read_input_tokens,
-        usage.cache_write_input_tokens,
     )
+    .with_cache_tokens(cache_read, cache_write)
 }
 
 pub fn from_bedrock_json(document: &Document) -> Result<Value> {
@@ -666,7 +698,8 @@ mod tests {
             json!({
                 "thinking": {
                     "type": "enabled",
-                    "budget_tokens": 4000
+                    "budget_tokens": 4000,
+                    "display": "summarized"
                 }
             })
         );
@@ -690,7 +723,8 @@ mod tests {
             json!({
                 "thinking": {
                     "type": "enabled",
-                    "budget_tokens": 3000 - 1024
+                    "budget_tokens": 3000 - 1024,
+                    "display": "summarized"
                 }
             })
         );
@@ -742,7 +776,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "high"}
             })
         );
@@ -761,7 +795,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "low"}
             })
         );
@@ -780,7 +814,7 @@ mod tests {
         assert_eq!(
             from_bedrock_json(&fields).unwrap(),
             json!({
-                "thinking": {"type": "adaptive"},
+                "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "low"}
             })
         );
@@ -911,7 +945,7 @@ mod tests {
         let image = ImageContent::new(TEST_IMAGE_B64.to_string(), "image/png".to_string());
 
         let message_content = MessageContent::Image(image);
-        let result = to_bedrock_message_content(&message_content)?;
+        let result = to_bedrock_message_content(&message_content, true)?;
 
         // Verify we get an Image content block
         assert!(matches!(result, bedrock::ContentBlock::Image(_)));
@@ -977,7 +1011,7 @@ mod tests {
     #[test]
     fn test_to_bedrock_tool_result_content_block_image() -> Result<()> {
         let content = ContentBlock::image(TEST_IMAGE_B64.to_string(), "image/png".to_string());
-        let result = to_bedrock_tool_result_content_block("test_id", content)?;
+        let result = to_bedrock_tool_result_content_block("test_id", content, true)?;
 
         // Verify the wrapper correctly converts ContentBlock::Image to ToolResultContentBlock::Image
         assert!(matches!(result, bedrock::ToolResultContentBlock::Image(_)));
@@ -988,7 +1022,21 @@ mod tests {
     #[test]
     fn test_to_bedrock_tool_result_sanitizes_text_resource_fallback() -> Result<()> {
         let content = ContentBlock::embedded_text("file:///result.bin", "visible\u{E0041}text");
-        let result = to_bedrock_tool_result_content_block("test_id", content)?;
+        let result = to_bedrock_tool_result_content_block("test_id", content, true)?;
+
+        let bedrock::ToolResultContentBlock::Text(text) = result else {
+            panic!("expected text fallback");
+        };
+        assert_eq!(text, "visibletext");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_bedrock_tool_result_demotes_document_resource_when_unsupported() -> Result<()> {
+        let content =
+            ContentBlock::embedded_text("file:///repro/sample.md", "visible\u{E0041}text");
+        let result = to_bedrock_tool_result_content_block("test_id", content, false)?;
 
         let bedrock::ToolResultContentBlock::Text(text) = result else {
             panic!("expected text fallback");
@@ -1001,7 +1049,7 @@ mod tests {
     #[test]
     fn test_to_bedrock_tool_result_sanitizes_document_resource() -> Result<()> {
         let content = ContentBlock::embedded_text("file:///result.txt", "visible\u{E0041}text");
-        let result = to_bedrock_tool_result_content_block("test_id", content)?;
+        let result = to_bedrock_tool_result_content_block("test_id", content, true)?;
 
         let bedrock::ToolResultContentBlock::Document(document) = result else {
             panic!("expected document");
@@ -1028,7 +1076,7 @@ mod tests {
                 MessageContent::text("Second text"),
             ],
         );
-        let bedrock_message = to_bedrock_message_with_caching(&message, true, None)?;
+        let bedrock_message = to_bedrock_message_with_caching(&message, true, None, true)?;
         assert_eq!(bedrock_message.content.len(), 3);
         if let bedrock::ContentBlock::Text(text) = &bedrock_message.content[0] {
             assert_eq!(text, "First text");
@@ -1046,7 +1094,7 @@ mod tests {
         ));
 
         // Caching disabled: no cache point added
-        let no_cache = to_bedrock_message_with_caching(&message, false, None)?;
+        let no_cache = to_bedrock_message_with_caching(&message, false, None, true)?;
         assert_eq!(no_cache.content.len(), 2);
         for block in &no_cache.content {
             assert!(!matches!(block, bedrock::ContentBlock::CachePoint(_)));
@@ -1054,7 +1102,7 @@ mod tests {
 
         // Empty content: no cache point added even with caching enabled
         let empty = Message::new(Role::User, Utc::now().timestamp(), vec![]);
-        let empty_msg = to_bedrock_message_with_caching(&empty, true, None)?;
+        let empty_msg = to_bedrock_message_with_caching(&empty, true, None, true)?;
         assert_eq!(empty_msg.content.len(), 0);
 
         Ok(())
@@ -1077,8 +1125,12 @@ mod tests {
     #[test]
     fn keeps_signed_thinking_from_the_same_model() -> Result<()> {
         let message = signed_thinking_from_model("anthropic.claude-sonnet-4");
-        let formatted =
-            to_bedrock_message_with_caching(&message, false, Some("anthropic.claude-sonnet-4"))?;
+        let formatted = to_bedrock_message_with_caching(
+            &message,
+            false,
+            Some("anthropic.claude-sonnet-4"),
+            true,
+        )?;
 
         assert!(matches!(
             formatted.content[0],
@@ -1094,8 +1146,12 @@ mod tests {
     #[test]
     fn drops_signed_thinking_from_a_different_model() -> Result<()> {
         let message = signed_thinking_from_model("anthropic.claude-opus-4");
-        let formatted =
-            to_bedrock_message_with_caching(&message, false, Some("anthropic.claude-sonnet-4"))?;
+        let formatted = to_bedrock_message_with_caching(
+            &message,
+            false,
+            Some("anthropic.claude-sonnet-4"),
+            true,
+        )?;
 
         assert_eq!(formatted.content.len(), 1);
         assert!(matches!(
@@ -1106,11 +1162,11 @@ mod tests {
     }
 
     #[test]
-    fn test_from_bedrock_usage_folds_cache_tokens_into_input() {
+    fn test_from_bedrock_usage_includes_cache_in_input_and_preserves_total() {
         let usage = bedrock::TokenUsage::builder()
             .input_tokens(7)
             .output_tokens(50)
-            .total_tokens(57)
+            .total_tokens(6057)
             .cache_read_input_tokens(5000)
             .cache_write_input_tokens(1000)
             .build()
@@ -1223,7 +1279,7 @@ mod tests {
     #[test]
     fn test_to_bedrock_message_content_thinking() -> Result<()> {
         let message_content = MessageContent::thinking("because of X", "sig-abc");
-        let block = to_bedrock_message_content(&message_content)?;
+        let block = to_bedrock_message_content(&message_content, true)?;
 
         match block {
             bedrock::ContentBlock::ReasoningContent(
@@ -1243,7 +1299,7 @@ mod tests {
     #[test]
     fn test_to_bedrock_message_content_thinking_without_signature() -> Result<()> {
         let message_content = MessageContent::thinking("silent reasoning", "");
-        let block = to_bedrock_message_content(&message_content)?;
+        let block = to_bedrock_message_content(&message_content, true)?;
 
         match block {
             bedrock::ContentBlock::ReasoningContent(
@@ -1266,7 +1322,7 @@ mod tests {
         let encoded = base64::prelude::BASE64_STANDARD.encode(raw);
         let message_content = MessageContent::redacted_thinking(encoded);
 
-        let block = to_bedrock_message_content(&message_content)?;
+        let block = to_bedrock_message_content(&message_content, true)?;
         match block {
             bedrock::ContentBlock::ReasoningContent(
                 bedrock::ReasoningContentBlock::RedactedContent(blob),
@@ -1285,7 +1341,7 @@ mod tests {
     fn test_to_bedrock_message_content_redacted_thinking_opaque_payload() -> Result<()> {
         let message_content = MessageContent::redacted_thinking("opaque_not_base64!@#".to_string());
 
-        let block = to_bedrock_message_content(&message_content)?;
+        let block = to_bedrock_message_content(&message_content, true)?;
         match block {
             bedrock::ContentBlock::Text(text) => assert_eq!(text, ""),
             other => panic!(
@@ -1307,7 +1363,7 @@ mod tests {
             ));
 
         let message_content = from_bedrock_content_block(&original)?;
-        let round_tripped = to_bedrock_message_content(&message_content)?;
+        let round_tripped = to_bedrock_message_content(&message_content, true)?;
 
         match round_tripped {
             bedrock::ContentBlock::ReasoningContent(
@@ -1334,7 +1390,7 @@ mod tests {
         );
 
         let message_content = from_bedrock_content_block(&original)?;
-        let round_tripped = to_bedrock_message_content(&message_content)?;
+        let round_tripped = to_bedrock_message_content(&message_content, true)?;
 
         match round_tripped {
             bedrock::ContentBlock::ReasoningContent(
@@ -1446,7 +1502,7 @@ mod tests {
             ],
         );
 
-        let bedrock_message = to_bedrock_message_with_caching(&message, true, None)?;
+        let bedrock_message = to_bedrock_message_with_caching(&message, true, None, true)?;
 
         // Verify cache point is added after all content blocks (text + tool request + cache point)
         assert_eq!(bedrock_message.content.len(), 3);
@@ -1478,7 +1534,7 @@ mod tests {
             None,
         );
         let content = MessageContent::tool_request("call_bad".to_string(), Err(err));
-        match to_bedrock_message_content(&content)? {
+        match to_bedrock_message_content(&content, true)? {
             bedrock::ContentBlock::ToolUse(tu) => {
                 assert_eq!(tu.tool_use_id, "call_bad");
                 assert_eq!(tu.name, "unparseable_tool_call");
@@ -1497,7 +1553,7 @@ mod tests {
         );
         let content = MessageContent::tool_response("call_hidden".to_string(), Err(error));
 
-        let bedrock::ContentBlock::ToolResult(result) = to_bedrock_message_content(&content)?
+        let bedrock::ContentBlock::ToolResult(result) = to_bedrock_message_content(&content, true)?
         else {
             panic!("expected ToolResult");
         };
@@ -1519,7 +1575,7 @@ mod tests {
         );
         let content = MessageContent::tool_response("call_error".to_string(), Err(error));
 
-        let bedrock::ContentBlock::ToolResult(result) = to_bedrock_message_content(&content)?
+        let bedrock::ContentBlock::ToolResult(result) = to_bedrock_message_content(&content, true)?
         else {
             panic!("expected ToolResult");
         };
@@ -1547,7 +1603,7 @@ mod tests {
             )],
         );
 
-        let bedrock_message = to_bedrock_message_with_caching(&message, true, None)?;
+        let bedrock_message = to_bedrock_message_with_caching(&message, true, None, true)?;
 
         // Verify cache point is added after tool response content
         assert_eq!(bedrock_message.content.len(), 2);
@@ -1587,7 +1643,7 @@ mod tests {
             ],
         );
 
-        let bedrock_message = to_bedrock_message_with_caching(&message, true, None)?;
+        let bedrock_message = to_bedrock_message_with_caching(&message, true, None, true)?;
 
         // Verify cache point is added at the end after all tool requests
         assert_eq!(bedrock_message.content.len(), 4);
@@ -1660,5 +1716,43 @@ mod tests {
 
         assert!(!bedrock_model_supports_temperature(&config));
         assert_eq!(inference_config.temperature(), None);
+    }
+
+    #[test]
+    fn test_elicitation_message_becomes_empty() {
+        use crate::conversation::message::{ActionRequired, ActionRequiredData};
+        use rmcp::model::Role;
+
+        let elicitation_request = Message::new(
+            Role::Assistant,
+            Utc::now().timestamp(),
+            vec![MessageContent::ActionRequired(ActionRequired {
+                data: ActionRequiredData::Elicitation {
+                    id: "elicit-1".to_string(),
+                    message: "Choose something".to_string(),
+                    requested_schema: serde_json::json!({}),
+                },
+            })],
+        );
+
+        let elicitation_response = Message::new(
+            Role::User,
+            Utc::now().timestamp(),
+            vec![MessageContent::ActionRequired(ActionRequired {
+                data: ActionRequiredData::ElicitationResponse {
+                    id: "elicit-1".to_string(),
+                    user_data: serde_json::json!({"choice": "yes"}),
+                    action: rmcp::model::ElicitationAction::Accept,
+                },
+            })],
+        );
+
+        let request_result =
+            to_bedrock_message_with_caching(&elicitation_request, false, None, true).unwrap();
+        let response_result =
+            to_bedrock_message_with_caching(&elicitation_response, false, None, true).unwrap();
+
+        assert!(request_result.content().is_empty());
+        assert!(response_result.content().is_empty());
     }
 }

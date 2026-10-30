@@ -55,6 +55,7 @@ function stripFrontmatter(content) {
   
   // Remove excessive empty lines and trim
   return withoutImports
+    .replace(/\]\(pathname:\/\/\//g, '](/')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

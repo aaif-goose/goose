@@ -2,7 +2,7 @@ use super::*;
 use goose_acp_macros::custom_methods;
 
 #[custom_methods]
-impl GooseAcpAgent {
+impl AcpConnection {
     pub async fn dispatch_custom_request(
         self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
@@ -500,14 +500,6 @@ impl GooseAcpAgent {
         req: ImportSessionRequest,
     ) -> Result<ImportSessionResponse, agent_client_protocol::Error> {
         self.on_import_session(req).await
-    }
-
-    #[custom_method(ShareSessionNostrRequest)]
-    async fn dispatch_share_session_nostr(
-        &self,
-        req: ShareSessionNostrRequest,
-    ) -> Result<ShareSessionNostrResponse, agent_client_protocol::Error> {
-        self.on_share_session_nostr(req).await
     }
 
     #[custom_method(EncodeRecipeRequest)]

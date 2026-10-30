@@ -1,19 +1,6 @@
 import fs from "fs";
 import path from "path";
-
-const GITHUB_BASE_URL = "https://github.com/aaif-goose/goose/blob/main";
-
-function getCodebaseDir(): string {
-  return process.env.CODEBASE_PATH || path.join(process.cwd(), "../..");
-}
-
-function generateGitHubUrl(filePath: string, startLine?: number): string {
-  const url = `${GITHUB_BASE_URL}/${filePath}`;
-  if (startLine && startLine > 0) {
-    return `${url}#L${startLine}`;
-  }
-  return url;
-}
+import { getCodebaseDir, sourceUrl } from "../source";
 
 function getCodeChunk(
   filePath: string,
@@ -24,6 +11,9 @@ function getCodeChunk(
   content: string;
   totalLines: number;
   githubUrl: string;
+  startLine: number;
+  endLine: number;
+  truncated: boolean;
 } {
   const baseDir = path.resolve(getCodebaseDir());
   const fullPath = path.resolve(path.join(baseDir, filePath));
@@ -47,7 +37,9 @@ function getCodeChunk(
   const lines = content.split("\n");
   const totalLines = lines.length;
 
-  const actualStart = Math.max(0, Math.min(startLine, lines.length - 1));
+  if (startLine < 0 || startLine >= totalLines)
+    throw new Error(`File has ${totalLines} lines; startLine is out of range.`);
+  const actualStart = startLine;
   const actualEnd = Math.min(actualStart + lineCount, lines.length);
   const chunkLines = lines.slice(actualStart, actualEnd);
 
@@ -59,7 +51,10 @@ function getCodeChunk(
     filePath,
     content: numberedContent,
     totalLines,
-    githubUrl: generateGitHubUrl(
+    startLine: actualStart + 1,
+    endLine: actualEnd,
+    truncated: actualEnd < totalLines,
+    githubUrl: sourceUrl(
       filePath,
       actualStart > 0 ? actualStart + 1 : undefined,
     ),
@@ -70,19 +65,8 @@ export function viewCodebaseFiles(
   filePaths: string | string[],
   startLine: number = 0,
   lineCount: number = 200,
-): string {
+) {
   const paths = Array.isArray(filePaths) ? filePaths : [filePaths];
 
-  const results = paths.map((filePath) => {
-    const chunk = getCodeChunk(filePath, startLine, lineCount);
-    const ext = path.extname(filePath).slice(1) || "text";
-    const lineInfo =
-      startLine > 0
-        ? ` (lines ${startLine + 1}-${Math.min(startLine + lineCount, chunk.totalLines)} of ${chunk.totalLines})`
-        : ` (${chunk.totalLines} lines total)`;
-
-    return `**${chunk.filePath}**${lineInfo}\nGitHub: <${chunk.githubUrl}>\n\`\`\`${ext}\n${chunk.content}\n\`\`\``;
-  });
-
-  return results.join("\n\n---\n\n");
+  return paths.map((filePath) => getCodeChunk(filePath, startLine, lineCount));
 }

@@ -16,8 +16,6 @@ export interface NavItem {
   path: string;
   label: string;
   icon: LucideIcon;
-  getTag?: () => string;
-  tagAlign?: 'left' | 'right';
 }
 
 /** Top-level nav items (excluding Settings which is pinned to the bottom). */

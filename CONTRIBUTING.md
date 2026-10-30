@@ -37,6 +37,14 @@ The best place to contribute is the discussion between **Accepted / design** and
 
 Substantial contributors at any stage may be recognized as co-authors. The unit of contribution is taking a problem to a verified solution, not writing the patch.
 
+## LLM Provider Integrations
+
+If you run an LLM service that uses an OpenAI, Anthropic, or Ollama compatible API, the best way to support goose users is usually to publish a goose custom-provider JSON file with your own documentation. Users can download that file into their local `custom_providers` directory and select the provider without waiting for a goose release.
+
+See [Custom Provider configuration](documentation/docs/getting-started/providers.md#configure-custom-provider) for the JSON format and installation location. Include clear setup instructions for credentials, supported models, streaming support, and any custom headers your service requires. Do not include real API keys, tokens, tenant secrets, or other credentials in the JSON file.
+
+Issues opened for custom LLM providers will only occasionally be accepted by exception. The best way to support goose users is to provide a documented provider config that users can install themselves.
+
 ## From Issue to Pull Request
 
 Do not begin implementation or open a pull request until the issue has reached **Ready** on the Goose Issues board.
@@ -51,12 +59,6 @@ Every external pull request must:
 Pull requests that do not implement a Ready issue will be closed. Automated dependency and release pull requests, urgent security fixes, and work explicitly directed by the core team are exempt.
 
 Don't open many pull requests in quick succession. Submit them in order of preference and wait for them to land before opening more.
-
-## Agent Loop Migration
-
-We are replacing the legacy agent loop in `crates/goose/src/agents/agent.rs` with the state machine in `crates/goose/src/agents/state_machine/`. The state-machine path is enabled with `GOOSE_STATE_MACHINE=1`.
-
-Until the migration is complete, changes to agent-loop behavior must be implemented and tested in both paths. Pull requests should explain how parity between the two paths was verified.
 
 ## AI Code Reviews
 

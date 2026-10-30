@@ -300,6 +300,23 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
             custom_provider_path.exists(),
             "custom provider should be saved in Goose's declarative provider store"
         );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&custom_provider_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            std::fs::set_permissions(
+                &custom_provider_path,
+                std::fs::Permissions::from_mode(0o644),
+            )
+            .unwrap();
+        }
         let saved_provider: DeclarativeProviderConfig =
             serde_json::from_str(&std::fs::read_to_string(&custom_provider_path).unwrap())
                 .expect("saved provider should be core-compatible declarative config");
@@ -395,6 +412,18 @@ fn acp_catalog_and_custom_provider_methods_use_core_provider_store() {
         )
         .await
         .expect("custom provider update should succeed");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&custom_provider_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
         assert_eq!(
             updated.get("status"),
             Some(&serde_json::json!({

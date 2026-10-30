@@ -8,6 +8,7 @@ use crate::documents::{
 use crate::errors::ProviderError;
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::json::{parse_tool_arguments, truncation_error_message};
+use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::{is_goose_internal_request_param, ModelConfig};
 use crate::thinking::{
@@ -198,6 +199,35 @@ fn extract_content_and_signature(
     }
 }
 
+#[derive(Default, Serialize)]
+struct OpenAiMessage {
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAiToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OpenAiToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: OpenAiFunctionCall,
+    #[serde(flatten)]
+    metadata: serde_json::Map<String, Value>,
+}
+
+#[derive(Serialize)]
+struct OpenAiFunctionCall {
+    name: String,
+    arguments: String,
+}
+
 pub fn format_messages(messages: &[Message], image_format: &ImageFormat) -> Vec<Value> {
     format_messages_with_options(
         messages,
@@ -247,11 +277,20 @@ pub fn format_messages_with_options(
             saw_tool_response = false;
         }
 
-        let mut converted = json!({
-            "role": message.role
-        });
+        let mut converted = OpenAiMessage {
+            role: match message.role {
+                Role::User => "user",
+                Role::Assistant => "assistant",
+            }
+            .to_string(),
+            ..Default::default()
+        };
 
         let mut output = Vec::new();
+        // Deferred to the end of the message so every tool result in a batch stays
+        // consecutive; a strict OpenAI-compatible API rejects a request where a
+        // synthetic user image message splits one assistant tool_calls batch.
+        let mut pending_image_messages = Vec::new();
         let mut content_array = Vec::new();
         let mut has_non_text_content = false;
         let mut reasoning_text = String::new();
@@ -302,28 +341,18 @@ pub fn format_messages_with_options(
                             None => "{}".to_string(),
                         };
 
-                        let tool_calls = converted
-                            .as_object_mut()
-                            .unwrap()
-                            .entry("tool_calls")
-                            .or_insert(json!([]));
-
-                        let mut tool_call_json = json!({
-                            "id": request.id,
-                            "type": "function",
-                            "function": {
-                                "name": sanitized_name,
-                                "arguments": arguments_str,
-                            }
-                        });
-
-                        if let Some(metadata) = &request.metadata {
-                            for (key, value) in metadata {
-                                tool_call_json[key] = value.clone();
-                            }
-                        }
-
-                        tool_calls.as_array_mut().unwrap().push(tool_call_json);
+                        converted
+                            .tool_calls
+                            .get_or_insert_default()
+                            .push(OpenAiToolCall {
+                                id: request.id.clone(),
+                                kind: "function",
+                                function: OpenAiFunctionCall {
+                                    name: sanitized_name,
+                                    arguments: arguments_str,
+                                },
+                                metadata: request.metadata.clone().unwrap_or_default(),
+                            });
                     }
                     Err(_e) => {
                         // An unparseable tool call still needs a valid assistant
@@ -334,19 +363,18 @@ pub fn format_messages_with_options(
                         // OpenAI-compatible APIs reject. Emit a placeholder call with the
                         // same id so the history stays well-formed; the error rides on the
                         // following tool response.
-                        let tool_calls = converted
-                            .as_object_mut()
-                            .unwrap()
-                            .entry("tool_calls")
-                            .or_insert(json!([]));
-                        tool_calls.as_array_mut().unwrap().push(json!({
-                            "id": request.id,
-                            "type": "function",
-                            "function": {
-                                "name": "unparseable_tool_call",
-                                "arguments": "{}",
-                            }
-                        }));
+                        converted
+                            .tool_calls
+                            .get_or_insert_default()
+                            .push(OpenAiToolCall {
+                                id: request.id.clone(),
+                                kind: "function",
+                                function: OpenAiFunctionCall {
+                                    name: "unparseable_tool_call".to_string(),
+                                    arguments: "{}".to_string(),
+                                },
+                                metadata: serde_json::Map::new(),
+                            });
                     }
                 },
                 MessageContentBlock::ToolResponse(response) => {
@@ -354,7 +382,6 @@ pub fn format_messages_with_options(
                         Ok(result) => {
                             // Process all content, replacing images with placeholder text
                             let mut tool_content = Vec::new();
-                            let mut image_messages = Vec::new();
 
                             for content in result.content.iter() {
                                 match content {
@@ -364,10 +391,14 @@ pub fn format_messages_with_options(
                                             tool_content.push(ContentBlock::text("This tool result included an image that is uploaded in the next message."));
 
                                             // Create a separate image message
-                                            image_messages.push(json!({
-                                                "role": "user",
-                                                "content": [convert_image(&image.clone(), image_format)]
-                                            }));
+                                            pending_image_messages.push(OpenAiMessage {
+                                                role: "user".to_string(),
+                                                content: Some(json!([convert_image(
+                                                    &image.clone(),
+                                                    image_format
+                                                )])),
+                                                ..Default::default()
+                                            });
                                         } else {
                                             // Add placeholder text in the tool response
                                             tool_content.push(ContentBlock::text("This tool result included an image that was omitted as the model does not support vision."));
@@ -391,22 +422,24 @@ pub fn format_messages_with_options(
                                 .collect::<Vec<String>>()
                                 .join(" "));
 
-                            // First add the tool response with all content
-                            output.push(json!({
-                                "role": "tool",
-                                "content": tool_response_content,
-                                "tool_call_id": response.id
-                            }));
-                            // Then add any image messages that need to follow
-                            output.extend(image_messages);
+                            output.push(OpenAiMessage {
+                                role: "tool".to_string(),
+                                content: Some(tool_response_content),
+                                tool_call_id: Some(response.id.clone()),
+                                ..Default::default()
+                            });
                         }
                         Err(e) => {
                             // A tool result error is shown as output so the model can interpret the error message
-                            output.push(json!({
-                                "role": "tool",
-                                "content": format!("The tool call returned the following error:\n{}", e),
-                                "tool_call_id": response.id
-                            }));
+                            output.push(OpenAiMessage {
+                                role: "tool".to_string(),
+                                content: Some(json!(format!(
+                                    "The tool call returned the following error:\n{}",
+                                    e
+                                ))),
+                                tool_call_id: Some(response.id.clone()),
+                                ..Default::default()
+                            });
                         }
                     }
                 }
@@ -449,29 +482,30 @@ pub fn format_messages_with_options(
             }
         }
 
+        output.append(&mut pending_image_messages);
+
         if !content_array.is_empty() {
             if has_non_text_content {
-                converted["content"] = json!(content_array);
+                converted.content = Some(json!(content_array));
             } else {
                 let texts: Vec<String> = content_array
                     .iter()
                     .filter_map(|v| v["text"].as_str().map(|s| s.to_string()))
                     .collect();
-                converted["content"] = json!(texts.join("\n"));
+                converted.content = Some(json!(texts.join("\n")));
             }
         }
 
         // Some strict OpenAI-compatible providers require "content" to be present
         // (even as null) when tool_calls are provided. See #6717.
         if message.role == Role::Assistant
-            && converted.get("tool_calls").is_some()
-            && converted.get("content").is_none()
+            && converted.tool_calls.is_some()
+            && converted.content.is_none()
         {
-            converted["content"] = json!(null);
+            converted.content = Some(Value::Null);
         }
 
-        let has_message_payload =
-            converted.get("content").is_some() || converted.get("tool_calls").is_some();
+        let has_message_payload = converted.content.is_some() || converted.tool_calls.is_some();
 
         if options.preserve_thinking_context && message.role == Role::Assistant {
             if !has_message_payload && output.is_empty() && !reasoning_text.is_empty() {
@@ -485,10 +519,7 @@ pub fn format_messages_with_options(
                 pending_assistant_reasoning.clear();
             }
 
-            let has_tool_calls = converted
-                .get("tool_calls")
-                .and_then(|tc| tc.as_array())
-                .is_some_and(|a| !a.is_empty());
+            let has_tool_calls = converted.tool_calls.as_ref().is_some_and(|a| !a.is_empty());
 
             if has_tool_calls {
                 if reasoning_text.is_empty() {
@@ -508,14 +539,16 @@ pub fn format_messages_with_options(
         // Include reasoning_content only when non-empty. Kimi rejects empty
         // reasoning_content (""), so we must omit it entirely.
         if options.preserve_thinking_context && !reasoning_text.is_empty() {
-            converted["reasoning_content"] = json!(reasoning_text);
+            converted.reasoning_content = Some(reasoning_text);
         }
 
         if has_message_payload {
             output.insert(0, converted);
         }
 
-        messages_spec.extend(output);
+        messages_spec.extend(output.into_iter().map(|message| {
+            serde_json::to_value(message).expect("OpenAI message fields are JSON serializable")
+        }));
     }
 
     merge_split_tool_call_messages(&mut messages_spec);
@@ -678,6 +711,7 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.input_schema,
+                "strict": false,
             }
         }));
     }
@@ -1234,7 +1268,7 @@ pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
-    S: Stream<Item = anyhow::Result<String>> + Unpin + Send + 'static,
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
     try_stream! {
         use futures::StreamExt;
@@ -1718,14 +1752,8 @@ pub fn create_request_for_model_with_options(
     for_streaming: bool,
     format_options: OpenAiFormatOptions,
 ) -> anyhow::Result<Value, Error> {
-    if model_config.model_name.starts_with("o1-mini") {
-        return Err(anyhow!(
-            "o1-mini model is not currently supported since goose uses tool calling and o1-mini does not support it. Please use o1 or o3 models instead."
-        ));
-    }
-
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
-    let is_reasoning_model = is_openai_responses_model(&model_name);
+    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let supports_xai_effort = supports_xai_reasoning_effort(&model_name);
     let reasoning_effort = if is_reasoning_model {
         model_config
@@ -1741,10 +1769,16 @@ pub fn create_request_for_model_with_options(
         None
     };
 
-    let system_message = json!({
-        "role": if is_reasoning_model { "developer" } else { "system" },
-        "content": system
-    });
+    let system_message = serde_json::to_value(OpenAiMessage {
+        role: if is_reasoning_model {
+            "developer"
+        } else {
+            "system"
+        }
+        .to_string(),
+        content: Some(Value::String(system.to_string())),
+        ..Default::default()
+    })?;
 
     let messages_spec = format_messages_with_options(messages, image_format, format_options);
     let mut tools_spec = format_tools(tools)?;
@@ -1901,42 +1935,32 @@ pub fn openai_reasoning_effort_for_thinking(
     model_name: &str,
     effort: ThinkingEffort,
 ) -> Option<String> {
-    let supported = openai_reasoning_efforts_for_model(model_name);
+    let catalog = crate::canonical::maybe_get_canonical_model("openai", model_name);
+    let catalog_efforts = catalog
+        .as_ref()
+        .and_then(|model| model.reasoning_efforts.as_deref());
 
     let preferred: &[&str] = match effort {
-        ThinkingEffort::Off => &["none", "low"],
-        ThinkingEffort::Low => &["low", "medium", "high", "xhigh"],
+        ThinkingEffort::Off => &["none", "minimal", "low"],
+        ThinkingEffort::Low => &["low", "minimal", "medium", "high", "xhigh"],
         ThinkingEffort::Medium => &["medium", "high", "low", "xhigh"],
         ThinkingEffort::High => &["high", "medium", "xhigh", "low"],
-        ThinkingEffort::Max => &["xhigh", "high", "medium", "low"],
+        ThinkingEffort::Max => &["max", "xhigh", "high", "medium", "low"],
     };
 
     preferred
         .iter()
-        .find(|level| supported.contains(level))
+        .find(|level| match catalog_efforts {
+            Some(values) => values.iter().any(|value| value == **level),
+            None => openai_reasoning_efforts_for_model(model_name).contains(level),
+        })
         .map(|level| (*level).to_string())
 }
 
-pub(crate) fn openai_reasoning_efforts_for_model(model_name: &str) -> &'static [&'static str] {
-    let normalized = model_name.to_ascii_lowercase();
-
-    if normalized.contains("gpt-5") || normalized.contains("gpt-6") {
-        if normalized.contains("-pro") || normalized.contains("/pro") {
-            &["high"]
-        } else if normalized.contains("gpt-5.4")
-            || normalized.contains("gpt-5-4")
-            || normalized.contains("gpt-5.5")
-            || normalized.contains("gpt-5-5")
-            || normalized.contains("gpt-5.6")
-            || normalized.contains("gpt-5-6")
-        {
-            &["none", "low", "medium", "high", "xhigh"]
-        } else {
-            &["low", "medium", "high"]
-        }
-    } else {
-        &["low", "medium", "high"]
-    }
+pub(crate) fn openai_reasoning_efforts_for_model(_model_name: &str) -> &'static [&'static str] {
+    // For aliases without catalog effort options, send only widely supported
+    // levels. Catalog entries override this fallback, including `none` and `max`.
+    &["low", "medium", "high"]
 }
 
 const MAX_FUNCTION_NAME_LENGTH: usize = 128;
@@ -2259,6 +2283,11 @@ mod tests {
         assert_eq!(spec.len(), 1);
         assert_eq!(spec[0]["type"], "function");
         assert_eq!(spec[0]["function"]["name"], "test_tool");
+        assert_eq!(
+            spec[0]["function"]["strict"],
+            json!(false),
+            "Some chat-completions upstreams default strict to true when the flag is absent, but MCP tool schemas are not strict-compatible; must explicitly set strict: false"
+        );
         Ok(())
     }
 
@@ -2639,6 +2668,99 @@ mod tests {
             .contains("This tool result included an image that is uploaded in the next message."));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parallel_tool_responses_with_images_are_consecutive() {
+        // #11893: a synthetic user image message between the tool results of one
+        // tool_calls batch makes strict OpenAI-compatible APIs reject the request.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYg==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+    }
+
+    #[test]
+    fn test_mixed_tool_responses_image_and_text_ordering() {
+        // A text-only result between two image results must not let the image
+        // messages split the batch either.
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_image")))
+                .with_tool_request("call_b", Ok(CallToolRequestParams::new("shell")))
+                .with_tool_request("call_c", Ok(CallToolRequestParams::new("read_image"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYQ==",
+                        "image/png",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_b",
+                    Ok(CallToolResult::success(vec![ContentBlock::text(
+                        "text result",
+                    )])),
+                )
+                .with_tool_response(
+                    "call_c",
+                    Ok(CallToolResult::success(vec![ContentBlock::image(
+                        "aW1hZ2VkYXRhYw==",
+                        "image/png",
+                    )])),
+                ),
+        ];
+
+        let spec = format_messages_with_options(
+            &messages,
+            &ImageFormat::OpenAi,
+            OpenAiFormatOptions {
+                preserve_thinking_context: true,
+                supports_vision: true,
+                ..Default::default()
+            },
+        );
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(
+            roles,
+            vec!["assistant", "tool", "tool", "tool", "user", "user"]
+        );
+        assert_eq!(spec[1]["tool_call_id"], "call_a");
+        assert_eq!(spec[2]["tool_call_id"], "call_b");
+        assert_eq!(spec[3]["tool_call_id"], "call_c");
     }
 
     #[test]
@@ -3028,6 +3150,71 @@ mod tests {
     }
 
     #[test]
+    fn test_request_serializes_content_before_tool_calls() -> anyhow::Result<()> {
+        let messages = vec![
+            Message::user().with_text("Find the answer"),
+            Message::assistant()
+                .with_text("I'll look it up")
+                .with_tool_request("call_1", Ok(CallToolRequestParams::new("lookup"))),
+            Message::user().with_tool_response(
+                "call_1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("42")])),
+            ),
+        ];
+        let request = create_request(
+            &test_model_config("model-service"),
+            "system",
+            &messages,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+        )?;
+        let wire = serde_json::to_string(&request)?;
+        let parsed: Value = serde_json::from_str(&wire)?;
+        let assistant = serde_json::to_string(&parsed["messages"][2])?;
+        assert!(assistant.find("\"content\"").unwrap() < assistant.find("\"tool_calls\"").unwrap());
+        assert_eq!(parsed["messages"].as_array().unwrap().len(), 4);
+        assert_eq!(parsed["messages"][3]["role"], "tool");
+        assert_eq!(parsed["messages"][3]["tool_call_id"], "call_1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_tool_call_serialization_preserves_provider_metadata() {
+        let metadata = json!({
+            "extra_content": {"google": {"thought_signature": "signature"}},
+        });
+        let call = OpenAiToolCall {
+            id: "original".to_string(),
+            kind: "function",
+            function: OpenAiFunctionCall {
+                name: "lookup".to_string(),
+                arguments: "{}".to_string(),
+            },
+            metadata: metadata.as_object().unwrap().clone(),
+        };
+        let wire = serde_json::to_string(&call).unwrap();
+        let serialized: Value = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serialized["id"], "original");
+        assert_eq!(serialized["type"], "function");
+        assert_eq!(serialized["function"]["name"], "lookup");
+        assert_eq!(serialized["function"]["arguments"], "{}");
+        assert_eq!(serialized["extra_content"], metadata["extra_content"]);
+    }
+
+    #[test]
+    fn test_message_serialization_distinguishes_missing_and_null_content() {
+        let missing = serde_json::to_value(OpenAiMessage::default()).unwrap();
+        assert!(missing.get("content").is_none());
+        let null = serde_json::to_value(OpenAiMessage {
+            content: Some(Value::Null),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(null.get("content"), Some(&Value::Null));
+    }
+
+    #[test]
     fn test_format_messages_tool_request_with_none_arguments() -> anyhow::Result<()> {
         // Test that tool calls with None arguments are formatted as "{}" string
         let message = Message::assistant()
@@ -3265,7 +3452,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_request_gpt56_max_effort_uses_xhigh() -> anyhow::Result<()> {
+    fn test_create_request_gpt56_max_effort_uses_max() -> anyhow::Result<()> {
         let model_config = test_model_config("gpt-5.6-luna")
             .with_max_tokens(Some(1024))
             .with_thinking_effort(ThinkingEffort::Max);
@@ -3279,10 +3466,44 @@ mod tests {
         )?;
         let obj = request.as_object().unwrap();
 
-        assert_eq!(obj.get("reasoning_effort"), Some(&json!("xhigh")));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("max")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_openai_reasoning_effort_gpt6_sol_and_luna() {
+        for model in ["gpt-6-sol", "gpt-6-luna"] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("none".to_string())
+            );
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Max),
+                Some("max".to_string())
+            );
+            assert_eq!(
+                crate::canonical::maybe_get_canonical_model("openai", model)
+                    .unwrap()
+                    .reasoning_efforts
+                    .unwrap(),
+                ["none", "low", "medium", "high", "xhigh", "max"]
+            );
+            assert!(
+                is_openai_responses_model(model),
+                "{model} uses /v1/responses"
+            );
+        }
+
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-6-astra", ThinkingEffort::Max),
+            Some("max".to_string())
+        );
+        assert_eq!(
+            openai_reasoning_effort_for_thinking("gpt-5.6-sol", ThinkingEffort::Max),
+            Some("max".to_string())
+        );
     }
 
     #[test]
@@ -3291,6 +3512,21 @@ mod tests {
             "gpt-6-astra",
             "data_workflow_tools.goose.goose-gpt-6-astra",
             "openrouter/openai/gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6.1-sol-high",
+            "data_workflow_tools.goose.goose-gpt-6.1-sol",
+            "openrouter/openai/gpt-6.1-sol",
+            "gpt-6.1-sol@eu",
+            "openai/gpt-6.1-sol-fast",
+            "openai/gpt-6.1-sol-fast-high",
+            "gpt-6-1-sol",
+            "gpt-6-1-sol-high",
+            "goose-gpt-6-1-sol",
+            "catalog.schema.goose-gpt-6-1-sol",
+            "openrouter/openai/gpt-6-1-sol",
+            "gpt-6-1-sol@eu",
+            "openai/gpt-6-1-sol-fast-high",
+            "GOOSE-GPT-6-1-SOL",
         ] {
             assert_eq!(
                 openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
@@ -3318,8 +3554,26 @@ mod tests {
         );
         assert_eq!(
             openai_reasoning_effort_for_thinking("gpt-5", ThinkingEffort::Off),
-            Some("low".to_string())
+            Some("minimal".to_string())
         );
+    }
+
+    #[test]
+    fn test_gpt6_1_sol_effort_matching_respects_model_boundaries() {
+        for model in [
+            "gpt-6.1-solstice",
+            "gpt-6-1-solstice",
+            "gpt-6.10-sol",
+            "gpt-6-10-sol",
+            "notgpt-6-1-sol",
+            "catalog.schema.notgpt-6-1-sol",
+        ] {
+            assert_eq!(
+                openai_reasoning_effort_for_thinking(model, ThinkingEffort::Off),
+                Some("low".to_string()),
+                "{model} must use the unknown-model fallback"
+            );
+        }
     }
 
     #[test]
@@ -3337,7 +3591,7 @@ mod tests {
         )?;
         let obj = request.as_object().unwrap();
 
-        assert_eq!(obj.get("reasoning_effort"), Some(&json!("high")));
+        assert_eq!(obj.get("reasoning_effort"), Some(&json!("xhigh")));
         assert!(obj.get("thinking_effort").is_none());
 
         Ok(())

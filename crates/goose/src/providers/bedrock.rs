@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
@@ -169,6 +171,21 @@ fn find_model_entry(name: &str) -> Option<&'static BedrockModelEntry> {
     BEDROCK_MODEL_TABLE.iter().find(|e| e.name == candidate)
 }
 
+/// Model ID to send to Mantle, or `None` for Converse. Bedrock serves the
+/// closed-weight OpenAI GPT models by bare ID only on Mantle (Converse needs a
+/// `us.`/`global.` inference profile), so those route by ID shape without a
+/// table row. GPT OSS, inference profiles and ARNs stay on Converse.
+fn mantle_model_id(name: &str) -> Option<String> {
+    if let Some(entry) = find_model_entry(name) {
+        return (entry.endpoint == BedrockEndpoint::MantleResponses)
+            .then(|| entry.wire_model_id.to_string());
+    }
+    let (base, _) = extract_reasoning_effort(name.strip_prefix("openai.").unwrap_or(name));
+    base.strip_prefix("gpt-")?
+        .starts_with(|c: char| c.is_ascii_digit())
+        .then(|| format!("openai.{base}"))
+}
+
 pub const BEDROCK_DEFAULT_MAX_RETRIES: usize = 6;
 pub const BEDROCK_DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
 pub const BEDROCK_DEFAULT_BACKOFF_MULTIPLIER: f64 = 2.0;
@@ -190,6 +207,8 @@ pub struct BedrockProvider {
     http_client: reqwest::Client,
     #[serde(skip)]
     mantle_base_url: Option<String>,
+    #[serde(skip)]
+    documents_unsupported: AtomicBool,
 }
 
 /// Request inputs shared by the `Converse` and `ConverseStream` APIs.
@@ -309,6 +328,7 @@ impl BedrockProvider {
                 ))
                 .build()?,
             mantle_base_url: None,
+            documents_unsupported: AtomicBool::new(false),
         })
     }
 
@@ -447,8 +467,12 @@ impl BedrockProvider {
 
         let mut bedrock_messages: Vec<bedrock::Message> = Vec::new();
         for message in visible_messages {
-            let formatted =
-                to_bedrock_message_with_caching(message, false, Some(&model.model_name))?;
+            let formatted = to_bedrock_message_with_caching(
+                message,
+                false,
+                Some(&model.model_name),
+                self.documents_supported(),
+            )?;
             if formatted.content().is_empty() {
                 continue;
             }
@@ -485,6 +509,26 @@ impl BedrockProvider {
             thinking_fields: bedrock_anthropic_thinking_fields(model),
             inference_config: bedrock_inference_config(model),
         })
+    }
+
+    fn documents_supported(&self) -> bool {
+        !self.documents_unsupported.load(Ordering::Relaxed)
+    }
+
+    async fn send_with_document_fallback<T, Fut>(
+        &self,
+        request: impl Fn() -> Fut,
+    ) -> Result<T, ProviderError>
+    where
+        Fut: Future<Output = Result<T, ProviderError>>,
+    {
+        match request().await {
+            Err(err) if is_documents_unsupported_error(&err) => {
+                self.documents_unsupported.store(true, Ordering::Relaxed);
+                request().await
+            }
+            result => result,
+        }
     }
 
     async fn converse(
@@ -549,10 +593,9 @@ impl BedrockProvider {
                         err
                     ))
                 }
-                ConverseError::ValidationException(err) => ProviderError::ExecutionError(format!(
-                    "Bedrock validation error: {}",
-                    err.message().unwrap_or("unknown validation error")
-                )),
+                ConverseError::ValidationException(err) => {
+                    ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+                }
                 ConverseError::ModelErrorException(err) => {
                     ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
                 }
@@ -623,33 +666,7 @@ impl BedrockProvider {
         request
             .send()
             .await
-            .map_err(|err| match err.into_service_error() {
-                ConverseStreamError::ThrottlingException(throttle_err) => {
-                    ProviderError::RateLimitExceeded {
-                        details: format!("Bedrock throttling error: {:?}", throttle_err),
-                        retry_delay: None,
-                    }
-                }
-                ConverseStreamError::AccessDeniedException(err) => {
-                    ProviderError::Authentication(format!("Failed to call Bedrock: {:?}", err))
-                }
-                ConverseStreamError::ValidationException(err)
-                    if {
-                        let msg = err.message().unwrap_or_default();
-                        msg.contains("Input is too long for requested model.")
-                            || msg.contains("prompt is too long")
-                    } =>
-                {
-                    ProviderError::ContextLengthExceeded(format!(
-                        "Failed to call Bedrock: {:?}",
-                        err
-                    ))
-                }
-                ConverseStreamError::ModelErrorException(err) => {
-                    ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
-                }
-                err => ProviderError::ServerError(format!("Failed to call Bedrock: {:?}", err)),
-            })
+            .map_err(|err| map_converse_stream_error(err.into_service_error()))
     }
 
     /// Pre-ConverseStream behaviour: blocking `Converse` call wrapped in a
@@ -665,7 +682,11 @@ impl BedrockProvider {
         model_name: &str,
     ) -> Result<MessageStream, ProviderError> {
         let (bedrock_message, bedrock_usage) = self
-            .with_retry(|| self.converse(model, session_id, system, messages, tools))
+            .with_retry(|| {
+                self.send_with_document_fallback(|| {
+                    self.converse(model, session_id, system, messages, tools)
+                })
+            })
             .await?;
 
         let usage = bedrock_usage
@@ -706,6 +727,8 @@ struct StreamBlockState {
     reasoning_blocks: HashMap<i32, (String, String)>,
     /// content_block_index -> accumulated redacted (encrypted) reasoning bytes
     redacted_blocks: HashMap<i32, Vec<u8>>,
+    /// StopReason carried by the stream's MessageStop event, if seen
+    stop_reason: Option<bedrock::StopReason>,
 }
 
 /// Convert a single `ConverseStream` event into zero or more [`Message`]s
@@ -814,7 +837,10 @@ fn process_stream_event(
                             }),
                         Err(_) => Err(ErrorData::new(
                             ErrorCode::INVALID_PARAMS,
-                            format!("Could not parse tool arguments: {}", input_json),
+                            goose_providers::json::truncation_error_message(&input_json)
+                                .unwrap_or_else(|| {
+                                    format!("Could not parse tool arguments: {}", input_json)
+                                }),
                             None,
                         )),
                     }
@@ -826,17 +852,79 @@ fn process_stream_event(
                 );
             }
         }
+        bedrock::ConverseStreamOutput::MessageStop(ev) => {
+            state.stop_reason = Some(ev.stop_reason);
+        }
         bedrock::ConverseStreamOutput::Metadata(ev) => {
             if let Some(u) = ev.usage {
                 usage = Some(from_bedrock_usage(&u));
             }
         }
-        // MessageStart / MessageStop / unknown variants carry no content
-        // that needs forwarding.
+        // MessageStart / unknown variants carry no content that needs
+        // forwarding.
         _ => {}
     }
 
     (messages, usage)
+}
+
+/// Flush tool blocks left open when the stream ended without their
+/// ContentBlockStop. Their arguments are incomplete, so each becomes a failed
+/// tool request carrying guidance for the model, matching how the Anthropic
+/// provider reports truncated tool calls.
+fn flush_incomplete_tool_blocks(
+    state: &mut StreamBlockState,
+    truncated_by_limit: bool,
+    message_id: &str,
+) -> Vec<Message> {
+    let mut messages = Vec::new();
+    let mut indices: Vec<i32> = state.tool_blocks.keys().copied().collect();
+    indices.sort_unstable();
+    for index in indices {
+        if let Some((id, _name, input_json)) = state.tool_blocks.remove(&index) {
+            let guidance = if truncated_by_limit {
+                "The model's response was truncated because it reached the output token limit while generating this tool call. \
+                 Try increasing max_tokens for this provider or breaking the task into smaller steps."
+            } else {
+                "A tool call was not completed before the stream ended. \
+                 Try resending your message or breaking the task into smaller steps."
+            };
+            let snippet_len = input_json.chars().count();
+            let tail: String = input_json
+                .chars()
+                .rev()
+                .take(80)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            let message_text = format!(
+                "{guidance}\nReceived {snippet_len} characters of arguments; cut off at: …{tail}"
+            );
+            let error = ErrorData::new(ErrorCode::INVALID_PARAMS, message_text, None);
+            messages.push(
+                Message::assistant()
+                    .with_tool_request(id, Err(error))
+                    .with_id(message_id),
+            );
+        }
+    }
+    messages
+}
+
+/// Flag a turn the model cut off at the output token limit so consumers can
+/// warn and compact, matching formats::anthropic::response_to_streaming_message.
+fn output_token_limit_marker(
+    stop_reason: Option<&bedrock::StopReason>,
+    message_id: &str,
+) -> Option<Message> {
+    if stop_reason == Some(&bedrock::StopReason::MaxTokens) {
+        let mut message = Message::assistant().with_id(message_id);
+        message.metadata.output_token_limit_reached = true;
+        Some(message)
+    } else {
+        None
+    }
 }
 
 impl goose_providers::base::ProviderDescriptor for BedrockProvider {
@@ -936,30 +1024,29 @@ impl Provider for BedrockProvider {
             Some(session_id.as_str())
         };
 
-        if let Some(entry) = find_model_entry(&model_config.model_name) {
-            if entry.endpoint == BedrockEndpoint::MantleResponses {
-                let capability_model_name =
-                    entry.name.strip_prefix("openai.").unwrap_or(entry.name);
-                let mut normalized_config = model_config.clone();
-                normalized_config.model_name = capability_model_name.to_string();
-                let mut payload =
-                    create_responses_request(&normalized_config, system, messages, tools)?;
-                payload["model"] = Value::String(entry.wire_model_id.to_string());
-                payload["stream"] = Value::Bool(true);
-                if entry.name.starts_with("google.gemma-4-") {
-                    payload["parallel_tool_calls"] = Value::Bool(false);
-                }
-                let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
-
-                let response = self
-                    .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
-                    .await
-                    .inspect_err(|e| {
-                        let _ = log.error(e);
-                    })?;
-
-                return stream_responses_compat(response, log);
+        if let Some(wire_model_id) = mantle_model_id(&model_config.model_name) {
+            let capability_model_name = wire_model_id
+                .strip_prefix("openai.")
+                .unwrap_or(&wire_model_id);
+            let mut normalized_config = model_config.clone();
+            normalized_config.model_name = capability_model_name.to_string();
+            let mut payload =
+                create_responses_request(&normalized_config, system, messages, tools)?;
+            payload["model"] = Value::String(wire_model_id.clone());
+            payload["stream"] = Value::Bool(true);
+            if wire_model_id.starts_with("google.gemma-4-") {
+                payload["parallel_tool_calls"] = Value::Bool(false);
             }
+            let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
+
+            let response = self
+                .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
+                .await
+                .inspect_err(|e| {
+                    let _ = log.error(e);
+                })?;
+
+            return stream_responses_compat(response, log);
         }
 
         let model_name = model_config.model_name.clone();
@@ -983,7 +1070,9 @@ impl Provider for BedrockProvider {
         // the Anthropic provider's behaviour).
         let response = self
             .with_retry(|| {
-                self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                self.send_with_document_fallback(|| {
+                    self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                })
             })
             .await?;
 
@@ -1069,15 +1158,70 @@ impl Provider for BedrockProvider {
                 }
             }
 
-            let usage = final_usage.unwrap_or_else(|| {
+            // The stream ended with tool blocks that never saw their
+            // ContentBlockStop, so Bedrock cut the response off mid arguments.
+            // Surface them as failed tool requests so the agent can react, and
+            // flag the token limit so the CLI/ACP warning and compaction kick
+            // in, mirroring the Anthropic provider.
+            let stop_reason = state.stop_reason.take();
+            let truncated_by_limit = stop_reason.as_ref() == Some(&bedrock::StopReason::MaxTokens);
+            for message in flush_incomplete_tool_blocks(&mut state, truncated_by_limit, &message_id)
+            {
+                yield (Some(message), None);
+            }
+            if let Some(message) = output_token_limit_marker(stop_reason.as_ref(), &message_id) {
+                yield (Some(message), None);
+            }
+
+            let mut usage = final_usage.unwrap_or_else(|| {
                 ProviderUsage::new(model_name.clone(), Usage::default())
             });
+            if let Some(reason) = stop_reason.as_ref().map(|reason| reason.as_str().to_string()) {
+                usage.finish_reasons = Some(vec![reason]);
+            }
             let _ = log.write(
                 &serde_json::json!({ "streamed_text": full_text }),
                 Some(&usage.usage),
             );
             yield (None, Some(usage));
         }))
+    }
+}
+
+fn is_documents_unsupported_error(err: &ProviderError) -> bool {
+    matches!(
+        err,
+        ProviderError::ExecutionError(details) if details.contains("doesn't support documents")
+    )
+}
+
+fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
+    match err {
+        ConverseStreamError::ThrottlingException(throttle_err) => {
+            ProviderError::RateLimitExceeded {
+                details: format!("Bedrock throttling error: {:?}", throttle_err),
+                retry_delay: None,
+            }
+        }
+        ConverseStreamError::AccessDeniedException(err) => {
+            ProviderError::Authentication(format!("Failed to call Bedrock: {:?}", err))
+        }
+        ConverseStreamError::ValidationException(err)
+            if {
+                let msg = err.message().unwrap_or_default();
+                msg.contains("Input is too long for requested model.")
+                    || msg.contains("prompt is too long")
+            } =>
+        {
+            ProviderError::ContextLengthExceeded(format!("Failed to call Bedrock: {:?}", err))
+        }
+        ConverseStreamError::ValidationException(err) => {
+            ProviderError::ExecutionError(format!("Bedrock validation error: {:?}", err))
+        }
+        ConverseStreamError::ModelErrorException(err) => {
+            ProviderError::ExecutionError(format!("Failed to call Bedrock: {:?}", err))
+        }
+        err => ProviderError::ServerError(format!("Failed to call Bedrock: {:?}", err)),
     }
 }
 
@@ -1096,6 +1240,7 @@ mod tests {
 
         (
             BedrockProvider {
+                documents_unsupported: AtomicBool::new(false),
                 client,
                 retry_config: RetryConfig::default(),
                 name: "aws_bedrock".to_string(),
@@ -1117,6 +1262,72 @@ mod tests {
                 request_headers: None,
             },
         )
+    }
+
+    #[test]
+    fn documents_unsupported_error_is_detected() {
+        let err = ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"This model doesn't support documents.\") }"
+                .to_string(),
+        );
+        assert!(is_documents_unsupported_error(&err));
+
+        assert!(!is_documents_unsupported_error(&ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"Input is too long.\") }"
+                .to_string(),
+        )));
+        assert!(!is_documents_unsupported_error(
+            &ProviderError::ServerError("doesn't support documents".to_string(),)
+        ));
+    }
+
+    #[test]
+    fn stream_validation_error_is_not_retried() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("The model returned the following errors: invalid tool schema")
+                .build(),
+        );
+        let mapped = map_converse_stream_error(err);
+        assert!(matches!(mapped, ProviderError::ExecutionError(_)));
+        assert!(!super::super::retry::should_retry(
+            &mapped,
+            &RetryConfig::default()
+        ));
+    }
+
+    #[test]
+    fn stream_context_validation_error_is_context_length() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("prompt is too long")
+                .build(),
+        );
+        assert!(matches!(
+            map_converse_stream_error(err),
+            ProviderError::ContextLengthExceeded(_)
+        ));
+    }
+
+    #[test]
+    fn stream_validation_error_preserves_aws_diagnostics() {
+        let err = ConverseStreamError::ValidationException(
+            bedrock::error::ValidationException::builder()
+                .message("invalid tool schema")
+                .meta(
+                    aws_smithy_types::error::ErrorMetadata::builder()
+                        .code("ValidationException")
+                        .custom("request_id", "bedrock-validation-request-id")
+                        .build(),
+                )
+                .build(),
+        );
+        let mapped = map_converse_stream_error(err);
+        assert!(matches!(mapped, ProviderError::ExecutionError(_)));
+        let details = mapped.to_string();
+        assert!(details.contains("invalid tool schema"));
+        assert!(details.contains("ValidationException"));
+        assert!(details.contains("bedrock-validation-request-id"));
     }
 
     #[test]
@@ -1314,6 +1525,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.5");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -1378,6 +1590,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.6-terra");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -1587,6 +1800,41 @@ mod tests {
                 assert!(
                     req.tool_call.is_err(),
                     "unparseable input should yield an error tool request, not a stream failure"
+                );
+            }
+            other => panic!("expected ToolRequest, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_stream_tool_use_truncated_json_reports_output_token_limit() {
+        // Live max_tokens cut-off on Bedrock: ContentBlockStop still arrives for
+        // the open block, so the truncation guidance has to come from this arm.
+        let mut state = StreamBlockState::default();
+
+        process_stream_event(
+            tool_start_event(0, "tool-4", "write_file"),
+            &mut state,
+            TEST_MESSAGE_ID,
+        );
+        process_stream_event(
+            tool_delta_event(0, "{\"path\": \"/report.md\""),
+            &mut state,
+            TEST_MESSAGE_ID,
+        );
+
+        let (messages, _) = process_stream_event(stop_event(0), &mut state, TEST_MESSAGE_ID);
+        assert_eq!(messages.len(), 1);
+        match &messages[0].content[0] {
+            MessageContent::ToolRequest(req) => {
+                let err = req
+                    .tool_call
+                    .as_ref()
+                    .expect_err("truncated input should yield an error tool request");
+                assert!(
+                    err.message.contains("output token limit"),
+                    "truncated tool arguments should carry the token-limit guidance, got: {}",
+                    err.message
                 );
             }
             other => panic!("expected ToolRequest, got {:?}", other),
@@ -1875,6 +2123,7 @@ mod tests {
 
         let model = ModelConfig::new("google.gemma-4-31b");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -1942,6 +2191,27 @@ mod tests {
     }
 
     #[test]
+    fn test_gpt_routes_to_mantle_by_id_shape() {
+        for (model, expected) in [
+            ("openai.gpt-6-sol", Some("openai.gpt-6-sol")),
+            ("openai.gpt-6.1-sol-high", Some("openai.gpt-6.1-sol")),
+            ("gpt-6-astra", Some("openai.gpt-6-astra")),
+            ("openai.gpt-5.6-sol", Some("openai.gpt-5.6-sol")),
+            ("google.gemma-4-31b", Some("google.gemma-4-31b")),
+            ("openai.gpt-oss-120b-1:0", None),
+            ("us.openai.gpt-6-sol", None),
+            ("global.openai.gpt-6-sol", None),
+            (
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6-sol",
+                None,
+            ),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", None),
+        ] {
+            assert_eq!(mantle_model_id(model).as_deref(), expected, "{model}");
+        }
+    }
+
+    #[test]
     fn test_gemma_context_limit_in_metadata() {
         let metadata = BedrockProvider::metadata();
         let model = metadata
@@ -1970,5 +2240,120 @@ mod tests {
     fn test_converse_model_not_mantle() {
         let entry = find_model_entry("us.anthropic.claude-sonnet-4-5-20250929-v1:0").unwrap();
         assert_eq!(entry.endpoint, BedrockEndpoint::Converse);
+    }
+
+    fn stream_tool_call(state: &mut StreamBlockState, input: &str) {
+        process_stream_event(
+            bedrock::ConverseStreamOutput::ContentBlockStart(
+                bedrock::ContentBlockStartEvent::builder()
+                    .content_block_index(0)
+                    .start(bedrock::ContentBlockStart::ToolUse(
+                        bedrock::ToolUseBlockStart::builder()
+                            .tool_use_id("call_1")
+                            .name("search")
+                            .build()
+                            .unwrap(),
+                    ))
+                    .build()
+                    .unwrap(),
+            ),
+            state,
+            "msg_1",
+        );
+        process_stream_event(
+            bedrock::ConverseStreamOutput::ContentBlockDelta(
+                bedrock::ContentBlockDeltaEvent::builder()
+                    .content_block_index(0)
+                    .delta(bedrock::ContentBlockDelta::ToolUse(
+                        bedrock::ToolUseBlockDelta::builder()
+                            .input(input)
+                            .build()
+                            .unwrap(),
+                    ))
+                    .build()
+                    .unwrap(),
+            ),
+            state,
+            "msg_1",
+        );
+    }
+
+    fn message_stop(reason: bedrock::StopReason) -> bedrock::ConverseStreamOutput {
+        bedrock::ConverseStreamOutput::MessageStop(
+            bedrock::MessageStopEvent::builder()
+                .stop_reason(reason)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn content_block_stop(index: i32) -> bedrock::ConverseStreamOutput {
+        bedrock::ConverseStreamOutput::ContentBlockStop(
+            bedrock::ContentBlockStopEvent::builder()
+                .content_block_index(index)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn truncated_tool_call_is_flushed_as_failed_request_and_flagged() {
+        let mut state = StreamBlockState::default();
+        stream_tool_call(&mut state, "{\"query\": \"tes");
+
+        process_stream_event(
+            message_stop(bedrock::StopReason::MaxTokens),
+            &mut state,
+            "msg_1",
+        );
+
+        let stop_reason = state.stop_reason.take();
+        let flushed = flush_incomplete_tool_blocks(&mut state, true, "msg_1");
+        assert_eq!(flushed.len(), 1);
+        use crate::conversation::message::MessageContent;
+        match &flushed[0].content[0] {
+            MessageContent::ToolRequest(req) => {
+                let err = req
+                    .tool_call
+                    .as_ref()
+                    .expect_err("truncated tool call must surface as a failed tool request");
+                assert!(err.message.contains("output token limit"));
+            }
+            other => panic!("expected tool request, got {:?}", other),
+        }
+        assert_eq!(flushed[0].id.as_deref(), Some("msg_1"));
+
+        let marker = output_token_limit_marker(stop_reason.as_ref(), "msg_1")
+            .expect("marker message expected for max_tokens stop");
+        assert!(marker.metadata.output_token_limit_reached);
+    }
+
+    #[test]
+    fn end_turn_with_completed_tool_call_emits_no_truncation_marker() {
+        let mut state = StreamBlockState::default();
+        stream_tool_call(&mut state, "{\"query\": \"test\"}");
+
+        process_stream_event(content_block_stop(0), &mut state, "msg_1");
+        process_stream_event(
+            message_stop(bedrock::StopReason::EndTurn),
+            &mut state,
+            "msg_1",
+        );
+
+        use crate::conversation::message::MessageContent;
+        let stop_reason = state.stop_reason.take();
+        assert!(matches!(stop_reason, Some(bedrock::StopReason::EndTurn)));
+        let flushed = flush_incomplete_tool_blocks(&mut state, false, "msg_1");
+        assert!(flushed.is_empty());
+        assert!(output_token_limit_marker(stop_reason.as_ref(), "msg_1").is_none());
+
+        let mut fresh = StreamBlockState::default();
+        stream_tool_call(&mut fresh, "{\"query\": \"test\"}");
+        let (stopped, _) = process_stream_event(content_block_stop(0), &mut fresh, "msg_1");
+        assert_eq!(stopped.len(), 1);
+        assert!(matches!(
+            &stopped[0].content[0],
+            MessageContent::ToolRequest(req) if req.tool_call.is_ok()
+        ));
     }
 }

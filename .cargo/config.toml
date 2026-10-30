@@ -3,3 +3,6 @@ rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]
+
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

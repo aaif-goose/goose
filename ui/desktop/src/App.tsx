@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, type RefObject } from 'react';
 import { IpcRendererEvent } from 'electron';
 import { HashRouter, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router';
-import { importNostrSessionFromDeepLink } from './sessionLinks';
 import { ErrorUI } from './components/ErrorBoundary';
 import { ExtensionInstallModal } from './components/ExtensionInstallModal';
 import RecipeParamsModalContainer from './components/RecipeParamsModalContainer';
@@ -17,6 +16,7 @@ import TelemetryConsentPrompt from './components/TelemetryConsentPrompt';
 import OnboardingGuard from './components/onboarding/OnboardingGuard';
 import { createSession } from './sessions';
 import { acpListSessions, acpDeleteSession } from './acp/sessions';
+import { acpChatSessionStore } from './acp/chatSessionStore';
 
 import { ChatType } from './types/chat';
 import Hub from './components/Hub';
@@ -225,8 +225,7 @@ const SessionsRoute = () => {
 };
 
 const SchedulesRoute = () => {
-  const navigate = useNavigate();
-  return <SchedulesView onClose={() => navigate('/')} />;
+  return <SchedulesView />;
 };
 
 const RecipesRoute = () => {
@@ -331,8 +330,6 @@ const ExtensionsRoute = () => {
 
 export function AppInner() {
   const [fatalError, setFatalError] = useState<string | null>(null);
-
-  const nostrImportInFlight = useRef<string | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -457,47 +454,6 @@ export function AppInner() {
   }, []);
 
   useEffect(() => {
-    const handleOpenSharedSession = async (_event: IpcRendererEvent, ...args: unknown[]) => {
-      const link = args[0] as string;
-      window.electron.logInfo('Opening session share link');
-
-      if (!link.startsWith('goose://sessions/nostr')) {
-        toast.error('Unsupported session share link');
-        navigate('/sessions');
-        return;
-      }
-
-      if (nostrImportInFlight.current === link) {
-        window.electron.logInfo('Skipping duplicate Nostr deep link import');
-        return;
-      }
-      nostrImportInFlight.current = link;
-
-      try {
-        await importNostrSessionFromDeepLink(link);
-        navigate('/sessions');
-      } catch (error) {
-        console.error('Unexpected error opening Nostr session share:', error);
-        trackErrorWithContext(error, {
-          component: 'AppInner',
-          action: 'open_nostr_session_share',
-          recoverable: true,
-        });
-        toast.error(`Failed to import Nostr session: ${errorMessage(error, 'Unknown error')}`);
-        navigate('/sessions');
-      } finally {
-        if (nostrImportInFlight.current === link) {
-          nostrImportInFlight.current = null;
-        }
-      }
-    };
-    window.electron.on('open-shared-session', handleOpenSharedSession);
-    return () => {
-      window.electron.off('open-shared-session', handleOpenSharedSession);
-    };
-  }, [navigate]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       if ((isMac ? event.metaKey : event.ctrlKey) && event.key === 'n') {
@@ -590,12 +546,21 @@ export function AppInner() {
 
   useEffect(() => {
     const handleNewChat = (_event: IpcRendererEvent, ..._args: unknown[]) => {
-      navigate('/');
+      if (location.pathname === '/') return;
+
+      const sessionId =
+        location.pathname === '/pair'
+          ? new URLSearchParams(location.search).get('resumeSessionId')
+          : null;
+      const workingDir = sessionId
+        ? acpChatSessionStore.getSnapshot(sessionId)?.session?.working_dir
+        : undefined;
+      navigate('/', { state: { workingDir } });
     };
 
     window.electron.on('new-chat', handleNewChat);
     return () => window.electron.off('new-chat', handleNewChat);
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   useEffect(() => {
     const handleFocusInput = (_event: IpcRendererEvent, ..._args: unknown[]) => {

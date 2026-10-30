@@ -1,9 +1,4 @@
-use crate::providers::base::Provider;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub type SharedProvider = Arc<Mutex<Option<Arc<dyn Provider>>>>;
 
 /// Default timeout for retry operations (5 minutes)
 pub const DEFAULT_RETRY_TIMEOUT_SECONDS: u64 = 300;
@@ -75,9 +70,6 @@ pub struct SessionConfig {
     pub schedule_id: Option<String>,
     /// Maximum number of turns (iterations) allowed without user input
     pub max_turns: Option<u32>,
-    /// Retry configuration for automated validation and recovery
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry_config: Option<RetryConfig>,
 }
 
 #[cfg(test)]

@@ -8,9 +8,7 @@ export type ContextCategory = ContextSegment['category'];
 
 export async function getContextReport(sessionId: string): Promise<ContextReport> {
   const client = await getAcpClient();
-  const useLegacyAgentLoop = await window.electron.getSetting('useLegacyAgentLoop');
   return client.goose.contextReport_unstable({
     sessionId,
-    unrolledAgentLoop: !useLegacyAgentLoop,
   });
 }

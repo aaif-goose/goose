@@ -7,7 +7,6 @@ interface CardContainerProps {
   grayedOut: boolean;
   testId?: string;
   borderStyle?: 'solid' | 'dashed';
-  className?: string;
 }
 
 function GlowingRing() {
@@ -33,10 +32,9 @@ export default function CardContainer({
   header,
   body,
   onClick,
-  grayedOut = false,
+  grayedOut,
   testId,
   borderStyle = 'solid',
-  className = '',
 }: CardContainerProps) {
   return (
     <div
@@ -61,8 +59,7 @@ export default function CardContainer({
                      grayedOut
                        ? 'border-border-primary'
                        : 'border-border-primary hover:border-border-primary'
-                   }
-                   ${className}`}
+                   }`}
       >
         {header && (
           <div style={{ opacity: grayedOut ? '0.5' : '1' }}>

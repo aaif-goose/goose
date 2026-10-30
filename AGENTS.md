@@ -36,12 +36,6 @@ Write issue and pull request comments for humans, not as exhaustive work logs.
 - Use short paragraphs or bullets, and include implementation details only when they affect a decision or review.
 - Prefer one clear summary over multiple incremental comments.
 
-## Agent Loop Migration
-
-We are replacing the legacy agent loop in `crates/goose/src/agents/agent.rs` with the state machine in `crates/goose/src/agents/state_machine/`. The state-machine path is enabled with `GOOSE_STATE_MACHINE=1`.
-
-Until the migration is complete, changes to agent-loop behavior must be implemented and tested in both paths. When reviewing code, check whether a change to either path also applies to the other and flag missing parity.
-
 ## Setup
 ```bash
 source bin/activate-hermit
@@ -59,6 +53,7 @@ just release-binary           # release binary
 
 ### Test
 ```bash
+export GOOSE_DISABLE_KEYRING=1  # avoid system keyring prompts
 cargo test                   # all tests
 cargo test -p goose          # specific crate
 cargo test --package goose --test mcp_integration_test
@@ -85,6 +80,8 @@ ui/desktop/   # Electron app
 ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
+Some workspace crates, including those that make up the GDK, are published to crates.io and expose public APIs. The authoritative list of GDK crates is the `release = true`, `version_group = "gdk"` package set in `release-plz.toml`, which drives the GDK release; run `python3 crates/goose-sdk/scripts/gdk-release.py crates` to print it. Other crates, such as `goose` and `goose-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
+
 ## Development Loop
 ```bash
 # 1. source bin/activate-hermit
@@ -95,7 +92,7 @@ ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ### Run these only if the user has asked you to build/test your changes:
 ```
 # 1. cargo build
-# 2. cargo test -p <crate>
+# 2. GOOSE_DISABLE_KEYRING=1 cargo test -p <crate>
 # 3. cargo clippy --all-targets -- -D warnings
 ```
 

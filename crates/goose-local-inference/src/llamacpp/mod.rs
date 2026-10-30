@@ -13,14 +13,13 @@ use llama_cpp_2::model::{ChatTemplateResult, LlamaChatTemplate, LlamaModel};
 use llama_cpp_2::openai::OpenAIChatTemplateParams;
 use llama_cpp_2::{list_llama_ggml_backend_devices, LlamaBackendDeviceType, LogOptions};
 
-use self::inference_emulated_tools::{
-    build_emulator_tool_description, generate_with_emulated_tools, load_tiny_model_prompt,
-};
+use self::inference_emulated_tools::generate_with_emulated_tools;
 use self::inference_engine::{GenerationContext, LoadedChatTemplates, LoadedModel};
 use self::inference_native_tools::generate_with_native_tools;
 use crate::backend::{BackendLoadedModel, LocalGenerationRequest, LocalInferenceBackend};
 use crate::model::{ChatTemplate, ModelSettings, ToolCallingMode};
 use crate::multimodal::ExtractedImage;
+use crate::tool_emulation::{build_emulator_tool_description, load_tiny_model_prompt};
 use crate::tool_parsing::compact_tools_json;
 use crate::{build_openai_messages_json, build_openai_text_messages_json, ResolvedModelPaths};
 use goose_provider_types::errors::ProviderError;
@@ -28,7 +27,7 @@ use goose_provider_types::formats::openai::format_tools;
 
 pub(super) const LLAMACPP_BACKEND_ID: &str = "llamacpp";
 
-const CODE_EXECUTION_TOOL: &str = "code_execution__execute_typescript";
+const CODE_EXECUTION_TOOL: &str = "execute_javascript";
 
 pub(super) fn builtin_chat_template_names() -> Vec<String> {
     let count = unsafe { llama_cpp_sys_2::llama_chat_builtin_templates(std::ptr::null_mut(), 0) };

@@ -1079,6 +1079,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "ठीक है"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "क्या आप वाकई {name} एक्सटेंशन इंस्टॉल करना चाहते हैं? आदेश: {command}"
   },
@@ -1950,13 +1956,16 @@
     "defaultMessage": "अमान्य URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो को स्थानांतरित करें (तीर कुंजियों का उपयोग करें)"
+    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो को स्थानांतरित करें"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "चित्र-में-चित्र"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "पिक्चर-इन-पिक्चर में बजाना"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "पिक्चर-इन-पिक्चर विंडो का आकार बदलें"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# आइटम मिला} other{# आइटम मिले}}"
@@ -2369,6 +2378,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "चैट"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "चैट लोड हो रही हैं…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "बनाया गया"
   },
@@ -2615,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "हम क्या एकत्र करते हैं:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "संदेश लोड हो रहे हैं... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# संदेश छिपाया गया} other {# संदेश छिपाए गए}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "मॉडल बदला गया: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "खोज के लिए सभी संदेशों को तुरंत लोड करने के लिए Cmd/Ctrl+F दबाएँ"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (अनुरोधित)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "सभी दिखाएँ"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "सभी संकेत डिफ़ॉल्ट पर रीसेट हो गए"
@@ -2702,9 +2717,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "आपके पास सहेजे नहीं गए परिवर्तन हैं"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "प्रदाता कार्ड त्रुटि: कोई मेटाडेटा प्रदान नहीं किया गया"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "अज्ञात प्रदाता"
   },
@@ -2713,9 +2725,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API प्रारूप"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "रद्द करें"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "प्रदाता चुनें"
@@ -3812,9 +3821,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "नई विंडो में खोलें"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र लिंक साझा करें"
-  },
   "sessions.cancel": {
     "defaultMessage": "रद्द करें"
   },
@@ -3854,21 +3860,6 @@
   "sessions.import": {
     "defaultMessage": "आयात सत्र"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "लिंक आयात करें"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "सत्र लाने, डिक्रिप्ट करने और आयात करने के लिए Goose नॉस्ट्र शेयर लिंक चिपकाएँ।"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "नोस्ट्र सत्र आयात करें"
-  },
-  "sessions.importing": {
-    "defaultMessage": "आयात किया जा रहा है..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP सत्र शामिल करें"
   },
@@ -3896,12 +3887,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "खोज इतिहास..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "इस लिंक वाला कोई भी व्यक्ति सत्र को ला सकता है और डिक्रिप्ट कर सकता है। इसे एक रहस्य की तरह समझो."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र शेयर लिंक"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "क्लिपबोर्ड पर कॉपी किया गया"
   },
@@ -3928,12 +3913,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "सत्र सफलतापूर्वक आयात किया गया"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "एन्क्रिप्टेड नोस्ट्र शेयर लिंक बनाया गया"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr शेयर लिंक बनाने में विफल: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "सत्र विवरण अद्यतन करने में विफल: {error}"
@@ -4294,6 +4273,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "ऐसी सबरेसिपी कॉन्फ़िगर करें जिसे रेसिपी निष्पादन के दौरान टूल की तरह कॉल किया जा सके"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "नवीनतम प्रगति लोड करें"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "सबएजेंट की प्रगति यहाँ लाइव नहीं दिखाई जाती।"
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "मॉडल सूची पर वापस जाएँ"
@@ -4745,6 +4730,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "स्वचालित"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "कॉन्फ़िगर किया गया"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API कुंजी"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API कुंजी दर्ज करें"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "कुंजी हटाएँ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "कुंजी सहेजें"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "हर अनुरोध के लिए सोचने का स्तर चुनने हेतु Jev का उपयोग करता है। अनुरोध का पाठ TypeSafe AI को भेजा जाता है; स्किल और रेसिपी स्लैश कमांड में उनके विस्तारित स्थानीय निर्देश शामिल होते हैं।"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "स्वचालित सोचने का स्तर"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "ब्लॉक सीमा"
   },
@@ -4795,6 +4801,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "थ्रेशोल्ड %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "टोकन सीमा"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "कॉन्टेक्स्ट बचाने के लिए पुराने टूल अनुरोधों और उत्तरों का सारांश बनाता है। खाली छोड़ने पर कटऑफ स्वचालित होता है।"

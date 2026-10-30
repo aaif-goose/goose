@@ -43,6 +43,8 @@ goose is compatible with a wide range of LLM providers, allowing you to choose a
 | [Groq](https://groq.com/)                                                   | High-performance inference hardware and tools for LLMs.                                                                                                                                                                   | `GROQ_API_KEY`                                                                                                                                                                      |
 | [iFlytek Spark](https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html) | iFlytek Spark (讯飞星火) models (4.0Ultra, generalv3.5, max-32k) via the OpenAI-compatible HTTP API. Best for chat: Spark needs `tool_calls_switch=true` (not injectable here) to return OpenAI-style tool calls. | `SPARK_API_PASSWORD` |
 | [iFlytek Astron MaaS](https://maas.xfyun.cn/)                               | iFlytek Astron MaaS (讯飞星辰) hosting Spark X2, DeepSeek, GLM, Kimi, MiniMax, Qwen, and Astron coding models via an OpenAI-compatible API. Set `ASTRON_BASE_URL` to switch between the Token Plan and Coding Plan endpoints. | `ASTRON_API_KEY`, `ASTRON_BASE_URL` (optional) |
+| [IO Intelligence](https://io.net/) | Inference for open-weight models (DeepSeek, Qwen, Llama, GLM, Kimi, gpt-oss and more) through io.net's OpenAI-compatible API. | `IONET_API_KEY` |
+| [Lemonade](https://lemonade-server.ai/)                                     | Run local models with the Lemonade server's OpenAI-compatible API. **Because this provider runs locally, you must first [download a model](#local-llms).** | None required. Connects to local server at `localhost:13305` by default. |
 | [LiteLLM](https://docs.litellm.ai/docs/) | LiteLLM proxy supporting multiple models with automatic prompt caching and unified API access. | `LITELLM_HOST`, `LITELLM_BASE_PATH` (optional), `LITELLM_API_KEY` (optional), `LITELLM_CUSTOM_HEADERS` (optional), `LITELLM_TIMEOUT` (optional) |
 | [LM Studio](https://lmstudio.ai/)                                          | Run local models with LM Studio's OpenAI-compatible server. **Because this provider runs locally, you must first [download a model](#local-llms).**                                                           | None required. Connects to local server at `localhost:1234` by default.                                                                                                             |
 | [Meta](https://dev.meta.ai/)                                                | Meta's Model API, home of the Muse Spark models.                                                                                                                                | `META_MODEL_API_KEY`                                                                                                                                                                |
@@ -90,6 +92,29 @@ goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) a
 :::tip ACP Providers
 See the [ACP Providers guide](/docs/guides/acp-providers) for detailed setup instructions.
 :::
+
+### Z.AI Coding Plan
+
+In goose Desktop, open **Settings → Models**, choose **Z.AI Coding Plan**, and
+enter your Coding Plan API key. The model selector discovers available models
+from your Coding Plan endpoint; use **Refresh** to update the list.
+Z.AI may list models that your subscription cannot use; access is checked when
+you send a request.
+
+In the CLI, select **Z.AI Coding Plan** in `goose configure` and supply your Coding Plan API key,
+or set `GOOSE_PROVIDER=zai_coding_plan`, `GOOSE_MODEL=glm-5.3`, and
+`ZAI_CODING_PLAN_API_KEY`. GLM-5.3 and GLM-5.3-Flash are the fallback choices
+when the endpoint does not support model discovery.
+
+This provider uses the dedicated OpenAI-compatible endpoint
+`https://api.z.ai/api/coding/paas/v4`. It enables both `stream` and `tool_stream`
+for streaming requests, including newly discovered models, so tool arguments arrive incrementally, and preserves
+`reasoning_content` across tool-result turns. The existing **Z.AI** provider
+continues to use the Anthropic-compatible endpoint.
+
+See Z.AI's [Coding Plan model availability](https://docs.z.ai/devpack/overview),
+[tool streaming](https://docs.z.ai/guides/capabilities/stream-tool), and
+[thinking preservation](https://docs.z.ai/guides/capabilities/thinking-mode) documentation.
 
 ## Configure Provider and Model
 
@@ -335,6 +360,14 @@ You can reach a [LiteLLM](https://docs.litellm.ai/) proxy in either of two ways�
     OPENAI_PROJECT=compliance-approved
     ```
   </TabItem>
+  <TabItem value="fikra" label="Fikra API">
+    For hosted inference on DeepSeek-family and GLM/Kimi/StepFun models through the OpenAI-compatible Fikra API:
+    ```sh
+    OPENAI_HOST=https://fikraapi.co.ke
+    OPENAI_API_KEY=your-fikra-api-key
+    ```
+    Model ids come from `https://fikraapi.co.ke/v1/models`, for example `GOOSE_MODEL=deepseek-v4.1-flash`. Served models include DeepSeek V4.1 Flash ($0.045 per 1M input, $0.09 per 1M output, 1M context), GLM 5.3, GLM 5.3 Flash, GLM 5.2, Kimi K3 and StepFun Step 5. Pricing is per-token USD with a $1 minimum top-up (M-Pesa and cards), documented at https://fikraapi.co.ke/pricing (verified 2026-10-19).
+  </TabItem>
   <TabItem value="custom-headers" label="Custom Headers">
     For OpenAI-compatible endpoints that require custom headers:
     ```sh
@@ -525,6 +558,30 @@ Custom providers must use OpenAI, Anthropic, or Ollama compatible API formats. T
 
   </TabItem>
 </Tabs>
+
+### Custom Model Prices
+
+Each model in a custom provider's JSON file can declare prices in USD **per token**:
+
+```json
+{
+  "name": "my-model",
+  "input_token_cost": 0.00000242,
+  "output_token_cost": 0.00001,
+  "cache_read_token_cost": 0.000000242,
+  "cache_write_token_cost": 0.000003025
+}
+```
+
+Both `input_token_cost` and `output_token_cost` must be present for goose to
+use a model's configured pricing. If either is missing, goose falls back to
+catalog pricing for the model.
+
+Cache-read and cache-write prices are independently optional. Supplied cache
+prices, including `0`, override catalog cache rates. Omitted cache prices use
+catalog cache rates when available, otherwise the input price. Declaring both
+input and output prices as `0` keeps the model free unless you explicitly set
+a cache price. Provider-reported costs take precedence over estimates.
 
 ### Command-Based Authentication
 
@@ -737,7 +794,7 @@ Groq offers several open source models that support tool calling, including:
 - **llama-3.3-70b-versatile** - Meta's Llama 3.3 model for versatile applications
 - **llama-3.1-8b-instant** - Meta's Llama 3.1 model for fast inference
 
-For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/groq.json).
+For the complete list of supported Groq models, see [groq.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/groq.json).
 
 To set up Groq with goose, follow these steps:
 
@@ -778,7 +835,7 @@ EmpirioLabs offers models that support tool calling, including:
 - **kimi-k2-7-code** - Kimi K2.7 Code with a 256K context window
 - **minimax-m3** - MiniMax M3 with a 524K context window
 
-The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
+The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in goose, see [empiriolabs.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
 
 To set up EmpirioLabs with goose, follow these steps:
 
@@ -817,7 +874,7 @@ FuturMix offers models that support tool calling, including:
 - **deepseek-chat** - DeepSeek V3 with 131K context
 - **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
 
-For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/futurmix.json).
+For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/futurmix.json).
 
 To set up FuturMix with goose, follow these steps:
 
@@ -856,7 +913,7 @@ Novita AI offers many models that support tool calling, including:
 - **deepseek/deepseek-v3.2** - DeepSeek V3.2 with 164K context
 - **google/gemma-4-31b-it** - Google Gemma 4 31B with 262K context
 
-For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/novita.json).
+For the complete list of supported Novita AI models, see [novita.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/novita.json).
 
 To set up Novita AI with goose, follow these steps:
 
@@ -893,7 +950,7 @@ Routstr aggregates models from many upstream providers, including:
 - **deepseek-v4-pro** — DeepSeek V4 Pro
 - **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
 
-`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/providers/declarative/routstr.json).
+`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with goose, see [routstr.json](https://github.com/aaif-goose/goose/blob/main/crates/goose-providers/src/declarative/definitions/routstr.json).
 
 To set up Routstr with goose, follow these steps:
 
@@ -1357,6 +1414,55 @@ Here are some local providers we support:
 
     :::tip Model Name
     Make sure the model name you enter in goose matches the model identifier shown in LM Studio's server panel.
+    :::
+  </TabItem>
+  <TabItem value="lemonade" label="Lemonade">
+    [Lemonade](https://lemonade-server.ai/) lets you run open-source models locally with an OpenAI-compatible API server.
+
+    1. [Download and install Lemonade](https://lemonade-server.ai/).
+    2. Download a model that supports tool calling (e.g., Qwen, Llama, or Mistral variants).
+    3. Start the Lemonade server. The server runs on `http://localhost:13305` by default.
+
+    4. Configure goose to use Lemonade:
+
+    <Tabs groupId="interface">
+      <TabItem value="ui" label="goose Desktop" default>
+        1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+        2. Click the `Settings` button on the sidebar.
+        3. Click the `Models` tab.
+        4. Click `Configure providers`.
+        5. Choose `Lemonade` from the provider list and click `Configure`.
+        6. Click `Submit` (no API key is needed).
+        7. Select the model you have loaded in Lemonade.
+      </TabItem>
+      <TabItem value="cli" label="goose CLI">
+        1. Run:
+        ```sh
+        goose configure
+        ```
+        2. Select `Configure Providers` from the menu.
+        3. Choose `Lemonade` as the provider.
+        4. Enter the model name that matches the model loaded in Lemonade.
+
+        ```
+        ┌   goose-configure
+        │
+        ◇  What would you like to configure?
+        │  Configure Providers
+        │
+        ◇  Which model provider should we use?
+        │  Lemonade
+        │
+        ◇  Enter a model from that provider:
+        │  qwen2.5-7b-instruct
+        │
+        └  Configuration saved successfully
+        ```
+      </TabItem>
+    </Tabs>
+
+    :::tip Model Name
+    Make sure the model name you enter in goose matches the model identifier shown in Lemonade's server panel.
     :::
   </TabItem>
   <TabItem value="atomic-chat" label="Atomic Chat">

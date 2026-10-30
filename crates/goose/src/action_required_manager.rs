@@ -13,7 +13,7 @@ use crate::conversation::message::{Message, MessageContent};
 const ACTION_REQUIRED_STREAM_CAPACITY: usize = 8;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ElicitationOutcome {
+pub enum ElicitationOutcome {
     Accept(Value),
     Decline,
     Cancel,
@@ -46,9 +46,16 @@ impl PendingResponseClaim {
     }
 }
 
+struct ForwardedRequest {
+    parent_id: String,
+    subagent_id: String,
+    request_id: String,
+}
+
 pub(crate) struct ActionRequiredManager {
     pending: Arc<RwLock<HashMap<String, Arc<Mutex<PendingRequest>>>>>,
     action_required_senders: Mutex<HashMap<(String, String), mpsc::Sender<Message>>>,
+    forwarded: std::sync::Mutex<HashMap<String, ForwardedRequest>>,
 }
 
 impl ActionRequiredManager {
@@ -56,7 +63,58 @@ impl ActionRequiredManager {
         Self {
             pending: Arc::new(RwLock::new(HashMap::new())),
             action_required_senders: Mutex::new(HashMap::new()),
+            forwarded: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    pub(crate) fn forward(&self, parent_id: &str, subagent_id: &str, request_id: &str) -> String {
+        let id = Uuid::new_v4().to_string();
+        self.forwarded
+            .lock()
+            .expect("forwarded requests unavailable")
+            .insert(
+                id.clone(),
+                ForwardedRequest {
+                    parent_id: parent_id.to_string(),
+                    subagent_id: subagent_id.to_string(),
+                    request_id: request_id.to_string(),
+                },
+            );
+        id
+    }
+
+    pub(crate) fn is_forwarded(&self, id: &str) -> bool {
+        self.forwarded
+            .lock()
+            .expect("forwarded requests unavailable")
+            .contains_key(id)
+    }
+
+    pub(crate) fn answered_request(
+        &self,
+        session_id: &str,
+        request_id: &str,
+    ) -> Result<(String, String)> {
+        let forwarded = self
+            .forwarded
+            .lock()
+            .expect("forwarded requests unavailable");
+        match forwarded.get(request_id) {
+            None => Ok((session_id.to_string(), request_id.to_string())),
+            Some(request) if request.parent_id == session_id => {
+                Ok((request.subagent_id.clone(), request.request_id.clone()))
+            }
+            Some(_) => Err(anyhow::anyhow!(
+                "Request {request_id} was not forwarded to session {session_id}"
+            )),
+        }
+    }
+
+    pub(crate) fn forget_forwarded_from(&self, subagent_id: &str) {
+        self.forwarded
+            .lock()
+            .expect("forwarded requests unavailable")
+            .retain(|_, request| request.subagent_id != subagent_id);
     }
 
     pub(crate) async fn request_and_wait(

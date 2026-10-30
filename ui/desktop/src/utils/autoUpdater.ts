@@ -12,7 +12,7 @@ import {
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import log from './logger';
-import { githubUpdater } from './githubUpdater';
+import { githubUpdater, isInstallerManaged } from './githubUpdater';
 import { loadRecentDirs } from './recentDirs';
 import { errorMessage } from './conversionUtils';
 import {
@@ -54,6 +54,18 @@ export function setAutoDownloadDisabled(disabled: boolean) {
 
 export function getAutoDownloadDisabled(): boolean {
   return autoDownloadDisabled;
+}
+
+// A copy set up by the Windows installer updates by running the next installer, so it never
+// uses the GitHub fallback: the fallback's directory swap would delete the uninstaller.
+function canUseGithubFallback(error: Error): boolean {
+  return (
+    !isInstallerManaged(app.getPath('exe')) &&
+    (error.message.includes('HttpError: 404') ||
+      error.message.includes('ERR_CONNECTION_REFUSED') ||
+      error.message.includes('ENOTFOUND') ||
+      error.message.includes('No published versions'))
+  );
 }
 
 // Register IPC handlers (only once)
@@ -121,13 +133,7 @@ export function registerUpdateIpcHandlers() {
       });
 
       // If electron-updater fails, try GitHub API fallback
-      if (
-        error instanceof Error &&
-        (error.message.includes('HttpError: 404') ||
-          error.message.includes('ERR_CONNECTION_REFUSED') ||
-          error.message.includes('ENOTFOUND') ||
-          error.message.includes('No published versions'))
-      ) {
+      if (error instanceof Error && canUseGithubFallback(error)) {
         log.info('Using GitHub API fallback in check-for-updates...');
         log.info('Manual fallback triggered by error:', error.message);
         isUsingGitHubFallback = true;
@@ -269,42 +275,50 @@ export function registerUpdateIpcHandlers() {
   });
 
   ipcMain.handle('install-update', async () => {
-    if (isUsingGitHubFallback) {
-      log.info('Installing update from GitHub fallback...');
+    try {
+      if (isUsingGitHubFallback) {
+        log.info('Installing update from GitHub fallback...');
 
-      const downloadPath = githubUpdateInfo.downloadPath;
-      if (!downloadPath) {
-        throw new Error('Update file path not found. Please download the update first.');
+        const downloadPath = githubUpdateInfo.downloadPath;
+        if (!downloadPath) {
+          throw new Error('Update file path not found. Please download the update first.');
+        }
+
+        try {
+          await fs.access(downloadPath);
+        } catch {
+          throw new Error('Update file not found. Please download the update first.');
+        }
+
+        trackUpdateInstallInitiated(
+          githubUpdateInfo.latestVersion || 'unknown',
+          'github-fallback',
+          'auto_swap_and_relaunch'
+        );
+
+        const result = await githubUpdater.installUpdate(downloadPath);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to install update');
+        }
+
+        log.info('Quitting app so the update swap can complete...');
+        setTimeout(() => app.quit(), 0);
+      } else {
+        // Use electron-updater's built-in install
+        trackUpdateInstallInitiated(
+          lastUpdateState?.latestVersion || 'unknown',
+          'electron-updater',
+          'quit_and_install'
+        );
+        autoUpdater.quitAndInstall(false, true);
       }
-
-      try {
-        await fs.access(downloadPath);
-      } catch {
-        throw new Error('Update file not found. Please download the update first.');
-      }
-
-      trackUpdateInstallInitiated(
-        githubUpdateInfo.latestVersion || 'unknown',
-        'github-fallback',
-        'auto_swap_and_relaunch'
-      );
-
-      const result = await githubUpdater.installUpdate(downloadPath);
-      if (!result.success) {
-        log.error('Error installing GitHub update:', result.error);
-        throw new Error(result.error || 'Failed to install update');
-      }
-
-      log.info('Quitting app so the update swap can complete...');
-      setTimeout(() => app.quit(), 0);
-    } else {
-      // Use electron-updater's built-in install
-      trackUpdateInstallInitiated(
-        lastUpdateState?.latestVersion || 'unknown',
-        'electron-updater',
-        'quit_and_install'
-      );
-      autoUpdater.quitAndInstall(false, true);
+      return { success: true, error: null };
+    } catch (error) {
+      log.error('Error installing update:', error);
+      return {
+        success: false,
+        error: errorMessage(error, 'Unknown error'),
+      };
     }
   });
 
@@ -326,11 +340,7 @@ export function registerUpdateIpcHandlers() {
 }
 
 // Configure auto-updater
-export function setupAutoUpdater(tray?: Tray) {
-  if (tray) {
-    trayRef = tray;
-  }
-
+export function setupAutoUpdater() {
   log.info('Setting up auto-updater...');
   log.info(`Current app version: ${app.getVersion()}`);
   log.info(`Platform: ${process.platform}, Arch: ${process.arch}`);
@@ -345,6 +355,9 @@ export function setupAutoUpdater(tray?: Tray) {
     owner: 'aaif-goose',
     repo: 'goose',
     releaseType: 'release' as const,
+    // The installer manifest has its own name (scripts/generate-windows-update-manifest.js) so
+    // ZIP copies, which request latest.yml, are never moved onto the installer.
+    ...(isInstallerManaged(app.getPath('exe')) ? { channel: 'installer' } : {}),
   };
 
   log.info('Setting feed URL with config:', feedConfig);
@@ -447,12 +460,7 @@ export function setupAutoUpdater(tray?: Tray) {
         });
 
         // If electron-updater fails, try GitHub API as fallback
-        if (
-          err.message.includes('HttpError: 404') ||
-          err.message.includes('ERR_CONNECTION_REFUSED') ||
-          err.message.includes('ENOTFOUND') ||
-          err.message.includes('No published versions')
-        ) {
+        if (canUseGithubFallback(err)) {
           log.info('Using GitHub API fallback for startup update check...');
           log.info('Fallback triggered by error containing:', err.message);
           isUsingGitHubFallback = true;
@@ -486,7 +494,11 @@ export function setupAutoUpdater(tray?: Tray) {
 
                 if (!autoDownloadDisabled) {
                   log.info('Auto-downloading update via GitHub fallback on startup...');
-                  await githubAutoDownload(result.downloadUrl!, result.latestVersion!, 'on startup');
+                  await githubAutoDownload(
+                    result.downloadUrl!,
+                    result.latestVersion!,
+                    'on startup'
+                  );
                 } else {
                   log.info('Auto-download disabled — skipping GitHub fallback download on startup');
                 }
@@ -568,12 +580,7 @@ export function setupAutoUpdater(tray?: Tray) {
     });
 
     // Check if this is a 404 error (missing update files) or connection error
-    if (
-      err.message.includes('HttpError: 404') ||
-      err.message.includes('ERR_CONNECTION_REFUSED') ||
-      err.message.includes('ENOTFOUND') ||
-      err.message.includes('No published versions')
-    ) {
+    if (canUseGithubFallback(err)) {
       log.info('Falling back to GitHub API for update check...');
       log.info('Fallback triggered by error:', err.message);
       isUsingGitHubFallback = true;

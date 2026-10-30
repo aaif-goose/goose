@@ -1079,6 +1079,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Möchten Sie die Erweiterung {name} wirklich installieren? Befehl: {command}"
   },
@@ -1950,13 +1956,16 @@
     "defaultMessage": "Ungültige URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Bild-in-Bild-Fenster verschieben (Pfeiltasten verwenden)"
+    "defaultMessage": "Bild-in-Bild-Fenster verschieben"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Bild-in-Bild"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Wiedergabe im Bild-in-Bild-Modus"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Bild-in-Bild-Fenster in der Größe ändern"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# Element gefunden} other{# Elemente gefunden}}"
@@ -2369,6 +2378,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Chats"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chats werden geladen…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Erstellt"
   },
@@ -2615,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Was wir erfassen:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Nachrichten werden geladen... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# Nachricht ausgeblendet} other {# Nachrichten ausgeblendet}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Modell geändert: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Drücken Sie Cmd/Ctrl+F, um alle Nachrichten sofort für die Suche zu laden"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (angefordert)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Alle anzeigen"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Alle Prompts auf die Standardwerte zurückgesetzt"
@@ -2702,9 +2717,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Sie haben nicht gespeicherte Änderungen"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard-Fehler: Keine Metadaten bereitgestellt"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Unbekannter Anbieter"
   },
@@ -2713,9 +2725,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API-Format"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Abbrechen"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Anbieter auswählen"
@@ -3812,9 +3821,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "In neuem Fenster öffnen"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Verschlüsselten Nostr-Link teilen"
-  },
   "sessions.cancel": {
     "defaultMessage": "Abbrechen"
   },
@@ -3854,21 +3860,6 @@
   "sessions.import": {
     "defaultMessage": "Sitzung importieren"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Link importieren"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Fügen Sie einen Goose-Nostr-Freigabelink ein, um die Sitzung abzurufen, zu entschlüsseln und zu importieren."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Nostr-Sitzung importieren"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Wird importiert..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "ACP-Sitzungen einschließen"
   },
@@ -3896,12 +3887,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Verlauf durchsuchen..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Jeder mit diesem Link kann die Sitzung abrufen und entschlüsseln. Behandeln Sie ihn wie ein Geheimnis."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Verschlüsselter Nostr-Freigabelink"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "In die Zwischenablage kopiert"
   },
@@ -3928,12 +3913,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Sitzung erfolgreich importiert"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Verschlüsselter Nostr-Freigabelink erstellt"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Nostr-Freigabelink konnte nicht erstellt werden: {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Sitzungsbeschreibung konnte nicht aktualisiert werden: {error}"
@@ -4294,6 +4273,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Konfigurieren Sie ein Subrezept, das während der Rezeptausführung als Tool aufgerufen werden kann"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Neuesten Fortschritt laden"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Der Fortschritt des Subagenten wird hier nicht live angezeigt."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Zurück zur Modellliste"
@@ -4745,6 +4730,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatisch"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Konfiguriert"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe-API-Schlüssel"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API-Schlüssel eingeben"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Schlüssel entfernen"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Schlüssel speichern"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Verwendet Jev, um den Denkaufwand für jede Anfrage auszuwählen. Anfragetext wird an TypeSafe AI gesendet; Slash-Befehle für Skills und Rezepte enthalten deren erweiterte lokale Anweisungen."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Automatischer Denkaufwand"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Blockierungslimit"
   },
@@ -4795,6 +4801,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Schwellenwert %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Token-Limit"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Fasst ältere Werkzeuganfragen und -antworten zusammen, um Kontext zu sparen. Ohne Eingabe wird der Grenzwert automatisch festgelegt."

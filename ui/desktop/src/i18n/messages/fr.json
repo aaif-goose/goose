@@ -1079,6 +1079,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Voulez-vous vraiment installer l'extension {name} ? Commande : {command}"
   },
@@ -1950,13 +1956,16 @@
     "defaultMessage": "URL non valide"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "Déplacer la fenêtre Picture-in-Picture (utilisez les touches fléchées)"
+    "defaultMessage": "Déplacer la fenêtre Picture-in-Picture"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "Picture-in-Picture"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "Lecture en Picture-in-Picture"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "Redimensionner la fenêtre Picture-in-Picture"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{# élément trouvé} other{# éléments trouvés}}"
@@ -2369,6 +2378,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "Discussions"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "Chargement des discussions…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "Créé"
   },
@@ -2615,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Ce que nous collectons :"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Chargement des messages... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# message masqué} other {# messages masqués}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Modèle modifié : {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Appuyez sur Cmd/Ctrl+F pour charger immédiatement tous les messages et effectuer une recherche"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (demandé)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Tout afficher"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Toutes les invites ont été réinitialisées aux valeurs par défaut"
@@ -2702,9 +2717,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Vous avez des modifications non enregistrées"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "Erreur ProviderCard : aucune métadonnée fournie"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Fournisseur inconnu"
   },
@@ -2713,9 +2725,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "Format d'API"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Annuler"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Choisir un fournisseur"
@@ -3812,9 +3821,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "Ouvrir dans une nouvelle fenêtre"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "Partager un lien Nostr chiffré"
-  },
   "sessions.cancel": {
     "defaultMessage": "Annuler"
   },
@@ -3854,21 +3860,6 @@
   "sessions.import": {
     "defaultMessage": "Importer une session"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "Importer un lien"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "Collez un lien de partage Goose Nostr pour récupérer, déchiffrer et importer la session."
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "Importer une session Nostr"
-  },
-  "sessions.importing": {
-    "defaultMessage": "Importation..."
-  },
   "sessions.includeAcp": {
     "defaultMessage": "Inclure les sessions ACP"
   },
@@ -3896,12 +3887,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "Rechercher dans l'historique..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "Toute personne disposant de ce lien peut récupérer et déchiffrer la session. Traitez-le comme un secret."
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "Lien de partage Nostr chiffré"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "Copié dans le presse-papiers"
   },
@@ -3928,12 +3913,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "Session importée avec succès"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "Lien de partage Nostr chiffré créé"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "Échec de la création du lien de partage Nostr : {error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "Échec de la mise à jour de la description de la session : {error}"
@@ -4294,6 +4273,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configurez une sous-recette qui peut être appelée en tant qu'outil lors de l'exécution de la recette"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Charger la progression la plus récente"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "La progression du sous-agent n'est pas affichée en direct ici."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Retour à la liste des modèles"
@@ -4745,6 +4730,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatique"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configurée"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Clé API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Saisissez la clé API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Supprimer la clé"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Enregistrer la clé"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Utilise Jev pour choisir l’effort de raisonnement de chaque requête. Le texte est envoyé à TypeSafe AI ; les commandes de compétences et de recettes incluent leurs instructions locales développées."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Effort de raisonnement automatique"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Limite de blocage"
   },
@@ -4795,6 +4801,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Seuil %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Limite de tokens"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Résume les anciennes requêtes et réponses d’outils pour économiser le contexte. Le seuil est automatique si le champ est vide."

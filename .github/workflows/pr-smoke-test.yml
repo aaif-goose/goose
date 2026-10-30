@@ -93,12 +93,12 @@ jobs:
         run: chmod +x target/debug/goose
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
           node-version: '22'
 
       - name: Install agentic providers
-        run: npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp @zed-industries/codex-acp
+        run: npm install -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp @agentclientprotocol/codex-acp
 
       - name: Install Node.js Dependencies
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile
@@ -127,7 +127,7 @@ jobs:
         working-directory: ui/desktop
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
 
@@ -154,7 +154,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOSE_PROVIDER: anthropic
-          GOOSE_MODEL: claude-sonnet-4-5-20250929
+          GOOSE_MODEL: claude-sonnet-5-5
           HOME: /tmp/goose-home
           GOOSE_DISABLE_KEYRING: 1
           SKIP_BUILD: 1
@@ -224,7 +224,7 @@ jobs:
         run: chmod +x target/debug/goose
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.12'
 
@@ -235,7 +235,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOSE_PROVIDER: anthropic
-          GOOSE_MODEL: claude-sonnet-4-5-20250929
+          GOOSE_MODEL: claude-sonnet-5-5
           HOME: /tmp/goose-home
           GOOSE_DISABLE_KEYRING: 1
           SKIP_BUILD: 1

@@ -28,22 +28,20 @@ const i18n = defineMessages({
 });
 
 interface ThemeSelectorProps {
-  className?: string;
-  hideTitle?: boolean;
-  horizontal?: boolean;
+  className: string;
+  hideTitle: boolean;
+  horizontal: boolean;
 }
 
-const ThemeSelector: React.FC<ThemeSelectorProps> = ({
-  className = '',
-  hideTitle = false,
-  horizontal = false,
-}) => {
+const ThemeSelector: React.FC<ThemeSelectorProps> = ({ className, hideTitle, horizontal }) => {
   const intl = useIntl();
   const { userThemePreference, setUserThemePreference } = useTheme();
 
   return (
     <div className={`${!horizontal ? 'px-1 py-2 space-y-2' : ''} ${className}`}>
-      {!hideTitle && <div className="text-xs text-text-primary px-3">{intl.formatMessage(i18n.theme)}</div>}
+      {!hideTitle && (
+        <div className="text-xs text-text-primary px-3">{intl.formatMessage(i18n.theme)}</div>
+      )}
       <div
         className={`${horizontal ? 'flex' : 'grid grid-cols-4'} gap-1 ${!horizontal ? 'px-3' : ''}`}
       >

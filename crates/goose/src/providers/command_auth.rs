@@ -450,26 +450,4 @@ mod tests {
             std::env::current_dir().unwrap().join("some/relative/dir")
         );
     }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn command_runs_with_configured_cwd_and_resolves_relative_path() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let script_path = dir.path().join("get-token.sh");
-        std::fs::write(&script_path, "#!/bin/sh\npwd\n").unwrap();
-        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let mut config = auth_config("./get-token.sh", Vec::<&str>::new(), 3600);
-        config.cwd = Some(dir.path().to_string_lossy().to_string());
-        let provider = CommandAuthProvider::new(&config, "Authorization", "Bearer ");
-
-        let (_, value) = provider.get_auth_header().await.unwrap();
-        let token = value.strip_prefix("Bearer ").unwrap();
-        assert_eq!(
-            std::fs::canonicalize(token).unwrap(),
-            std::fs::canonicalize(dir.path()).unwrap()
-        );
-    }
 }

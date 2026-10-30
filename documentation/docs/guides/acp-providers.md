@@ -136,10 +136,10 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 
 2. **Install or replace only if needed**
 
-   If `--version` is rejected, remove `@zed-industries/codex-acp`:
+   If `--version` is rejected, remove `@agentclientprotocol/codex-acp`:
 
    ```bash
-   npm uninstall -g @zed-industries/codex-acp
+   npm uninstall -g @agentclientprotocol/codex-acp
    ```
 
    If `codex-acp` is missing or was removed, install `@agentclientprotocol/codex-acp`:

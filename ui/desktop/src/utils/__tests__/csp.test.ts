@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildConnectSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
+import {
+  buildConnectSrc,
+  shouldUpgradeInsecureRequests,
+  shouldApplyRendererCsp,
+  buildCSP,
+} from '../csp';
 import type { ExternalBackendConfig } from '../settings';
 
 describe('buildConnectSrc', () => {
@@ -144,5 +149,20 @@ describe('buildCSP', () => {
     expect(csp).toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).toContain('connect-src');
     expect(csp).toContain("object-src 'none'");
+  });
+});
+
+describe('shouldApplyRendererCsp', () => {
+  it('applies to the renderer main frame', () => {
+    expect(shouldApplyRendererCsp('mainFrame')).toBe(true);
+  });
+
+  it('skips iframe documents so MCP app guests keep their own policy', () => {
+    expect(shouldApplyRendererCsp('subFrame')).toBe(false);
+  });
+
+  it('leaves non-document responses unchanged', () => {
+    expect(shouldApplyRendererCsp('script')).toBe(true);
+    expect(shouldApplyRendererCsp('xhr')).toBe(true);
   });
 });

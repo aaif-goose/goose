@@ -1079,6 +1079,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "確定"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "您確定要安裝 {name} 擴充功能嗎？命令：{command}"
   },
@@ -1950,13 +1956,16 @@
     "defaultMessage": "無效的 URL"
   },
   "mcpAppRenderer.movePipWindow": {
-    "defaultMessage": "移動子母畫面視窗（使用方向鍵）"
+    "defaultMessage": "移動子母畫面視窗"
   },
   "mcpAppRenderer.pictureInPicture": {
     "defaultMessage": "子母畫面"
   },
   "mcpAppRenderer.playingInPip": {
     "defaultMessage": "正在子母畫面中播放"
+  },
+  "mcpAppRenderer.resizePipWindow": {
+    "defaultMessage": "調整子母畫面視窗大小"
   },
   "mentionPopover.itemsFound": {
     "defaultMessage": "{count,plural,one{找到 # 個項目} other{找到 # 個項目}}"
@@ -2369,6 +2378,9 @@
   "navigationPanel.chats": {
     "defaultMessage": "交談"
   },
+  "navigationPanel.loadingChats": {
+    "defaultMessage": "正在載入聊天…"
+  },
   "navigationPanel.metaCreated": {
     "defaultMessage": "建立時間"
   },
@@ -2615,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "我們收集的內容："
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "正在載入訊息... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "已隱藏 {count, plural, other {# 則訊息}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "模型已變更：{previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "按 Cmd/Ctrl+F 立即載入所有訊息以進行搜尋"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (已請求)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "全部顯示"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "所有提示已重設為預設值"
@@ -2702,9 +2717,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "您有未儲存的變更"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard 錯誤：未提供中繼資料"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "未知的提供者"
   },
@@ -2713,9 +2725,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API 格式"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "取消"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "選擇提供者"
@@ -3812,9 +3821,6 @@
   "sessions.action.openNewWindow": {
     "defaultMessage": "在新視窗中開啟"
   },
-  "sessions.action.shareNostr": {
-    "defaultMessage": "分享加密的 Nostr 連結"
-  },
   "sessions.cancel": {
     "defaultMessage": "取消"
   },
@@ -3854,21 +3860,6 @@
   "sessions.import": {
     "defaultMessage": "匯入工作階段"
   },
-  "sessions.importNostr": {
-    "defaultMessage": "匯入連結"
-  },
-  "sessions.importNostr.description": {
-    "defaultMessage": "貼上 Goose Nostr 分享連結，以擷取、解密並匯入該工作階段。"
-  },
-  "sessions.importNostr.placeholder": {
-    "defaultMessage": "goose://sessions/nostr?nevent=...&key=..."
-  },
-  "sessions.importNostr.title": {
-    "defaultMessage": "匯入 Nostr 工作階段"
-  },
-  "sessions.importing": {
-    "defaultMessage": "正在匯入…"
-  },
   "sessions.includeAcp": {
     "defaultMessage": "包含 ACP 工作階段"
   },
@@ -3896,12 +3887,6 @@
   "sessions.searchPlaceholder": {
     "defaultMessage": "搜尋記錄..."
   },
-  "sessions.shareNostr.description": {
-    "defaultMessage": "任何持有此連結的人都能擷取並解密該工作階段。請將其視為機密。"
-  },
-  "sessions.shareNostr.title": {
-    "defaultMessage": "加密的 Nostr 分享連結"
-  },
   "sessions.toast.copied": {
     "defaultMessage": "已複製到剪貼簿"
   },
@@ -3928,12 +3913,6 @@
   },
   "sessions.toast.imported": {
     "defaultMessage": "已成功匯入工作階段"
-  },
-  "sessions.toast.shareNostr": {
-    "defaultMessage": "已建立加密的 Nostr 分享連結"
-  },
-  "sessions.toast.shareNostrFailed": {
-    "defaultMessage": "無法建立 Nostr 分享連結：{error}"
   },
   "sessions.toast.updateFailed": {
     "defaultMessage": "無法更新工作階段描述：{error}"
@@ -4294,6 +4273,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "設定可在配方執行期間作為工具呼叫的子配方"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "載入最新進度"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "子代理的進度不會在此即時顯示。"
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "返回模型清單"
@@ -4745,6 +4730,27 @@
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "自動"
   },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "已設定"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "輸入 API 金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "移除金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "儲存金鑰"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "使用 Jev 為每個請求選擇思考層級。請求文字會傳送至 TypeSafe AI；技能和配方斜線命令會包含展開後的本機指示。"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "自動思考層級"
+  },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "封鎖上限"
   },
@@ -4795,6 +4801,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "閾值 %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "詞元上限"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "摘要較早的工具請求和回應以節省內容。留空時自動設定截斷值。"

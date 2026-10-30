@@ -4,10 +4,11 @@ import { defineMessages, useIntl } from '../i18n';
 import { useLocation, useNavigate } from 'react-router';
 import { SearchView } from './conversation/SearchView';
 import LoadingGoose from './LoadingGoose';
-import ProgressiveMessageList from './ProgressiveMessageList';
+import MessageList from './MessageList';
 import { MainPanelLayout } from './Layout/MainPanelLayout';
 import ChatInput from './ChatInput';
 import { ChatInputCard } from './ChatInputCard';
+import { SubagentSessionNotice } from './SubagentSessionNotice';
 import { Button } from './ui/button';
 import { ScrollArea, ScrollAreaHandle } from './ui/scroll-area';
 import { useFileDrop } from '../hooks/useFileDrop';
@@ -28,7 +29,6 @@ import {
   type Message,
   type UserInput,
 } from '../types/message';
-import { substituteParameters } from '../utils/parameterSubstitution';
 import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Goose } from './icons';
 import EnvironmentBadge from './GooseSidebar/EnvironmentBadge';
@@ -63,12 +63,6 @@ const isUserMessage = (message: Message) => message.role === 'user';
 
 interface BaseChatProps {
   setChat: (chat: ChatType) => void;
-  onMessageSubmit?: (message: string) => void;
-  renderHeader?: () => React.ReactNode;
-  customChatInputProps?: Record<string, unknown>;
-  customMainLayoutProps?: Record<string, unknown>;
-  contentClassName?: string;
-  disableSearch?: boolean;
   suppressEmptyState: boolean;
   sessionId: string;
   isActiveSession: boolean;
@@ -79,9 +73,6 @@ interface BaseChatProps {
 
 export default function BaseChat({
   setChat,
-  renderHeader,
-  customChatInputProps = {},
-  customMainLayoutProps = {},
   sessionId,
   initialMessage,
   noAutoSubmit,
@@ -125,6 +116,30 @@ export default function BaseChat({
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
   const onStreamFinish = useCallback(() => {}, []);
 
+  const [pendingQuote, setPendingQuote] = useState<string | null>(null);
+  const [quoteButtonPos, setQuoteButtonPos] = useState<{ x: number; y: number } | null>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setQuoteButtonPos(null);
+        return;
+      }
+      if (!conversationRef.current || !conversationRef.current.contains(sel.anchorNode)) {
+        setQuoteButtonPos(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      setQuoteButtonPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
   useEffect(() => subscribeToAcpRecovery(setAcpRecovering), []);
 
   const {
@@ -138,6 +153,7 @@ export default function BaseChat({
     submitElicitationResponse,
     stopStreaming,
     retrySessionLoad,
+    refreshSession,
     sessionLoadError,
     tokenState,
     notifications: toolCallNotifications,
@@ -155,6 +171,7 @@ export default function BaseChat({
   );
 
   const sessionLoaded = session !== undefined;
+  const isSubagentSession = session?.session_type === 'sub_agent';
   const liveVoiceChatBusy = chatState !== ChatState.Idle;
 
   useEffect(() => {
@@ -227,17 +244,6 @@ export default function BaseChat({
 
   const recipe = session?.recipe as Recipe | null | undefined;
 
-  const resolvedInitialMessage = useMemo((): UserInput | undefined => {
-    if (!initialMessage) return undefined;
-    if (recipe?.prompt && session?.user_recipe_values) {
-      return {
-        ...initialMessage,
-        msg: substituteParameters(initialMessage.msg, session.user_recipe_values),
-      };
-    }
-    return initialMessage;
-  }, [initialMessage, recipe?.prompt, session?.user_recipe_values]);
-
   // noAutoSubmit only suppresses auto-submitting the initial prompt of a fresh session
   // (goose://new-session?prompt=...). Once the conversation has messages, later flows
   // such as forks or resumes should auto-submit normally.
@@ -249,7 +255,7 @@ export default function BaseChat({
     session,
     messages,
     chatState,
-    initialMessage: resolvedInitialMessage,
+    initialMessage,
     canAutoSubmit,
     handleSubmit,
   });
@@ -414,28 +420,17 @@ export default function BaseChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.name, setChat]);
 
-  // If we have a recipe prompt and user recipe values, substitute parameters
-  let recipePrompt = '';
-  if (messages.length === 0 && recipe?.prompt) {
-    recipePrompt = session?.user_recipe_values
-      ? substituteParameters(recipe.prompt, session.user_recipe_values)
-      : recipe.prompt;
-  }
+  const recipePrompt = messages.length === 0 ? (recipe?.prompt ?? '') : '';
 
   const initialPrompt =
-    noAutoSubmit && messages.length === 0 && resolvedInitialMessage?.msg
-      ? resolvedInitialMessage.msg
+    noAutoSubmit && messages.length === 0 && initialMessage?.msg
+      ? initialMessage.msg
       : recipePrompt;
 
   if (sessionLoadError) {
     return (
       <div className="h-full flex flex-col min-h-0">
-        <MainPanelLayout
-          backgroundColor={'bg-background-primary'}
-          removeTopPadding={true}
-          {...customMainLayoutProps}
-        >
-          {renderHeader && renderHeader()}
+        <MainPanelLayout backgroundColor={'bg-background-primary'} removeTopPadding={true}>
           <div className="flex flex-col flex-1 min-h-0 relative">
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center justify-center p-8">
@@ -463,14 +458,7 @@ export default function BaseChat({
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <MainPanelLayout
-        backgroundColor={'bg-background-primary'}
-        removeTopPadding={true}
-        {...customMainLayoutProps}
-      >
-        {/* Custom header */}
-        {renderHeader && renderHeader()}
-
+      <MainPanelLayout backgroundColor={'bg-background-primary'} removeTopPadding={true}>
         {/* Chat container with sticky recipe header */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           {/* Goose watermark - top right */}
@@ -507,31 +495,31 @@ export default function BaseChat({
               </div>
             )}
 
-            {recipe && (
+            {recipe && !isSubagentSession && (
               <div className={hasStartedUsingRecipe ? 'mb-6' : ''}>
                 <RecipeActivities
                   append={appendToChat}
                   activities={Array.isArray(recipe.activities) ? recipe.activities : null}
-                  title={recipe.title}
-                  parameterValues={session?.user_recipe_values || {}}
                 />
               </div>
             )}
 
             {messages.length > 0 || recipe ? (
               <>
-                <SearchView>
-                  <ProgressiveMessageList
-                    messages={messages}
-                    sessionId={sessionId}
-                    toolCallNotifications={toolCallNotifications}
-                    append={appendToChat}
-                    isUserMessage={isUserMessage}
-                    isStreamingMessage={chatState !== ChatState.Idle}
-                    onRenderingComplete={handleRenderingComplete}
-                    onMessageUpdate={onMessageUpdate}
-                    submitElicitationResponse={submitElicitationResponse}
-                  />
+                <SearchView key={sessionId}>
+                  <div ref={conversationRef}>
+                    <MessageList
+                      messages={messages}
+                      sessionId={sessionId}
+                      toolCallNotifications={toolCallNotifications}
+                      append={isSubagentSession ? undefined : appendToChat}
+                      isUserMessage={isUserMessage}
+                      isStreamingMessage={chatState !== ChatState.Idle}
+                      onRenderingComplete={handleRenderingComplete}
+                      onMessageUpdate={isSubagentSession ? undefined : onMessageUpdate}
+                      submitElicitationResponse={submitElicitationResponse}
+                    />
+                  </div>
                 </SearchView>
 
                 <div className="block h-8" />
@@ -552,62 +540,91 @@ export default function BaseChat({
           </div>
         )}
 
-        <ChatInputCard
-          className={cn(
-            'relative z-30 mx-4 mb-4',
-            !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
-          )}
-        >
-          <ChatInput
-            inputRef={chatInputRef}
-            sessionId={sessionId}
-            handleSubmit={chatInputSubmit}
-            chatState={chatState}
-            hasActiveRun={hasActiveRun}
-            onStop={stopStreaming}
-            onSteerQueuedMessage={onSteerQueuedMessage}
-            pauseQueueOnStop={pauseQueueOnStop}
-            queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
-            commandHistory={commandHistory}
-            initialValue={initialPrompt}
-            setView={setView}
-            totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
-            contextLimit={tokenState?.contextLimit}
-            accumulatedInputTokens={
-              tokenState?.accumulatedInputTokens ??
-              session?.accumulated_usage?.input_tokens ??
-              undefined
-            }
-            accumulatedOutputTokens={
-              tokenState?.accumulatedOutputTokens ??
-              session?.accumulated_usage?.output_tokens ??
-              undefined
-            }
-            accumulatedCost={tokenState?.accumulatedCost ?? session?.accumulated_cost ?? undefined}
-            droppedFiles={droppedFiles}
-            onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
-            messages={messages}
-            disableAnimation={disableAnimation}
-            recipe={recipe}
-            initialPrompt={initialPrompt}
-            sessionModel={sessionModel}
-            sessionProvider={sessionProvider}
-            sessionLoaded={sessionLoaded}
-            workingDir={session?.working_dir}
-            onWorkingDirChange={handleWorkingDirChange}
-            latestInference={latestInference}
-            liveVoice={{
-              availability: liveVoiceAvailability,
-              phase: ownsLiveVoice ? liveVoice.phase : 'idle',
-              muted: ownsLiveVoice ? liveVoice.muted : false,
-              activeInAnotherSession: liveVoiceActiveInAnotherSession,
-              start: () => startLiveVoice(),
-              stop: liveVoice.stop,
-              toggleMute: liveVoice.toggleMute,
+        {quoteButtonPos && !isSubagentSession && (
+          <button
+            className="fixed z-50 -translate-x-1/2 -translate-y-full rounded-md bg-background-inverse px-2 py-1 text-xs font-medium text-text-inverse shadow-md hover:opacity-90"
+            style={{ left: quoteButtonPos.x, top: quoteButtonPos.y }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const sel = window.getSelection();
+              const text = sel?.toString().trim() ?? '';
+              if (text) {
+                setPendingQuote(text);
+                sel?.removeAllRanges();
+              }
+              setQuoteButtonPos(null);
             }}
-            {...customChatInputProps}
+          >
+            Add to message
+          </button>
+        )}
+
+        {isSubagentSession ? (
+          <SubagentSessionNotice
+            refreshing={chatState === ChatState.LoadingConversation}
+            onRefresh={() => void refreshSession()}
           />
-        </ChatInputCard>
+        ) : (
+          <ChatInputCard
+            className={cn(
+              'relative z-30 mx-4 mb-4',
+              !disableAnimation && 'animate-[fadein_400ms_ease-in_forwards]'
+            )}
+          >
+            <ChatInput
+              inputRef={chatInputRef}
+              sessionId={sessionId}
+              handleSubmit={chatInputSubmit}
+              chatState={chatState}
+              hasActiveRun={hasActiveRun}
+              onStop={stopStreaming}
+              onSteerQueuedMessage={onSteerQueuedMessage}
+              pauseQueueOnStop={pauseQueueOnStop}
+              queueProcessingBlocked={queueProcessingBlocked || acpRecovering}
+              commandHistory={commandHistory}
+              initialValue={initialPrompt}
+              setView={setView}
+              totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
+              contextLimit={tokenState?.contextLimit}
+              accumulatedInputTokens={
+                tokenState?.accumulatedInputTokens ??
+                session?.accumulated_usage?.input_tokens ??
+                undefined
+              }
+              accumulatedOutputTokens={
+                tokenState?.accumulatedOutputTokens ??
+                session?.accumulated_usage?.output_tokens ??
+                undefined
+              }
+              accumulatedCost={
+                tokenState?.accumulatedCost ?? session?.accumulated_cost ?? undefined
+              }
+              droppedFiles={droppedFiles}
+              onFilesProcessed={() => setDroppedFiles([])} // Clear dropped files after processing
+              messages={messages}
+              disableAnimation={disableAnimation}
+              recipe={recipe}
+              initialPrompt={initialPrompt}
+              sessionModel={sessionModel}
+              sessionProvider={sessionProvider}
+              sessionLoaded={sessionLoaded}
+              workingDir={session?.working_dir}
+              onWorkingDirChange={handleWorkingDirChange}
+              latestInference={latestInference}
+              liveVoice={{
+                availability: liveVoiceAvailability,
+                phase: ownsLiveVoice ? liveVoice.phase : 'idle',
+                muted: ownsLiveVoice ? liveVoice.muted : false,
+                activeInAnotherSession: liveVoiceActiveInAnotherSession,
+                start: () => startLiveVoice(),
+                stop: liveVoice.stop,
+                toggleMute: liveVoice.toggleMute,
+              }}
+              appendQuote={pendingQuote}
+              onAppendQuoteConsumed={() => setPendingQuote(null)}
+            />
+          </ChatInputCard>
+        )}
       </MainPanelLayout>
     </div>
   );

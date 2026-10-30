@@ -318,7 +318,7 @@ else
     export ANTHROPIC_HOST="http://localhost:$PROXY_PORT"
     export GOOSE_PROVIDER_SKIP_BACKOFF=true
     export GOOSE_PROVIDER=anthropic
-    export GOOSE_MODEL=claude-haiku-4-5
+    export GOOSE_MODEL=claude-haiku-5-5
 
     # Session naming runs as a background completion request spawned at the
     # start of the turn, so it races the turn completion for the proxy's single

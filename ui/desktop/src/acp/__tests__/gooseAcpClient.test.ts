@@ -33,7 +33,7 @@ function callbacks(): GooseAcpCallbacks {
       outcome: { outcome: 'selected', optionId: 'allow' },
     }),
     sessionUpdate: vi.fn(),
-    unstable_createElicitation: vi.fn(),
+    createElicitation: vi.fn(),
     unstable_sessionRecipeRequestParams: vi.fn().mockResolvedValue({
       action: 'submit',
       values: { name: 'Ada' },

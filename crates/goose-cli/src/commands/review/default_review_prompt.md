@@ -74,13 +74,12 @@ Alongside the correctness pass, walk every changed hunk and call out:
 
 ## Checks
 
-If the request below lists subagent **checks**, **dispatch them all in
-parallel** before doing anything else. For each check:
+If the request below lists subagent **checks**, delegate each one before
+doing your own pass. For each check:
 
 ```
 delegate(
   instructions = <check body>,
-  async        = true,                  # IMPORTANT: parallelize
   model        = <check model>,
   max_turns    = <check turn_limit>,
 )
@@ -94,14 +93,7 @@ tools at all. Treat the per-check `tools` column in the request as
 informational guidance for the subagent's prompt, not as an
 extensions filter.
 
-This returns a `taskId` immediately. After dispatching every check, call
-`load(taskId)` once per check to wait for the results. **Do not** issue
-the next `delegate` call after the previous one has completed — that is
-sequential and slow; we want every check executing concurrently.
-
-Run your own correctness pass while the subagents are in flight, so the
-wall-clock time is bounded by the slowest single check rather than by
-their sum.
+Each `delegate` call returns the subagent's findings when it finishes.
 
 Each subagent must include the originating check's `name` in the `check`
 field of every finding so attribution is preserved end-to-end.

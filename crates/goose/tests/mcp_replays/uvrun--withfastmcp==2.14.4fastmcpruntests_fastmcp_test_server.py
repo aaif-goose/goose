@@ -1,4 +1,4 @@
-STDIN: {"jsonrpc":"2.0","id":0,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"goose-desktop","version":"0.0.0"},"io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}},"roots":{},"sampling":{},"elicitation":{}}}}}
+STDIN: {"jsonrpc":"2.0","id":0,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"goose-desktop","version":"0.0.0"},"io.modelcontextprotocol/clientCapabilities":{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}},"roots":{},"elicitation":{}}}}}
 STDERR: warning: The `native-tls` setting is deprecated and will be removed in a future release. Use `system-certs` instead.
 STDERR: /Users/jackamadeo/.cache/uv/archive-v0/bp02wML-MrQTiYuR/lib/python3.14/site-packages/fastmcp/server/auth/providers/jwt.py:10: AuthlibDeprecationWarning: authlib.jose module is deprecated, please use joserfc instead.
 STDERR: It will be compatible before version 2.0.0.
@@ -131,7 +131,7 @@ STDERR: CancelTaskRequest.params.taskId
 STDERR:   Field required [type=missing, input_value={'_meta': {'io.modelconte...{}, 'elicitation': {}}}}, input_type=dict]
 STDERR:     For further information visit https://errors.pydantic.dev/2.13/v/missing
 STDOUT: {"jsonrpc":"2.0","id":0,"error":{"code":-32602,"message":"Invalid request parameters","data":""}}
-STDIN: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}},"roots":{},"sampling":{},"elicitation":{}},"clientInfo":{"name":"goose-desktop","version":"0.0.0"}}}
+STDIN: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"extensions":{"io.modelcontextprotocol/ui":{"mimeTypes":["text/html;profile=mcp-app"]}},"roots":{},"elicitation":{}},"clientInfo":{"name":"goose-desktop","version":"0.0.0"}}}
 STDOUT: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{"experimental":{},"prompts":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":true},"tasks":{"list":{},"cancel":{},"requests":{"tools":{"call":{}},"prompts":{"get":{}},"resources":{"read":{}}}}},"serverInfo":{"name":"mymcp","version":"2.14.4"}}}
 STDIN: {"jsonrpc":"2.0","method":"notifications/initialized"}
 STDIN: {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{"agent-session-id":"test-session-id","progressToken":0}}}

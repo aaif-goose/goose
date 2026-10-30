@@ -1,4 +1,3 @@
-use crate::acp::tools::AcpAwareToolMeta;
 use crate::agents::extension_manager::TRUSTED_TOOL_UPDATE_META_KEY;
 use crate::conversation::message::{Message, ToolNameParts, ToolRequest, ToolResponse};
 use crate::mcp_utils::ToolResult;
@@ -213,16 +212,29 @@ fn extract_tool_locations_from_request(tool_request: &ToolRequest) -> Vec<ToolCa
     vec![ToolCallLocation::new(path).line(line)]
 }
 
-pub(crate) fn trusted_update_meta(tool_response: &ToolResponse) -> Option<Meta> {
+pub(crate) fn tool_response_meta(tool_response: &ToolResponse) -> Option<Meta> {
     let tool_result = tool_response.tool_result.as_ref().ok()?;
-    let goose_meta = tool_result
-        .meta
-        .as_ref()?
+    let result_meta = tool_result.meta.as_ref()?;
+    let mut goose_meta = result_meta
         .0
-        .get(TRUSTED_TOOL_UPDATE_META_KEY)?
-        .clone();
+        .get(TRUSTED_TOOL_UPDATE_META_KEY)
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(subagent_id) = result_meta
+        .0
+        .get("subagent_session_id")
+        .and_then(serde_json::Value::as_str)
+    {
+        goose_meta.insert("subagentSessionId".to_string(), subagent_id.into());
+    }
+
+    if goose_meta.is_empty() {
+        return None;
+    }
     let mut meta_map = serde_json::Map::new();
-    meta_map.insert("goose".to_string(), goose_meta);
+    meta_map.insert("goose".to_string(), serde_json::Value::Object(goose_meta));
     Some(meta_map)
 }
 
@@ -284,7 +296,6 @@ fn extract_tool_raw_output(tool_result: &ToolResult<CallToolResult>) -> Option<s
 pub(crate) fn tool_call_update_fields_from_response(
     tool_response: &ToolResponse,
     tool_request: Option<&ToolRequest>,
-    include_content_for_acp_aware_tools: bool,
 ) -> ToolCallUpdateFields {
     let is_failed = match &tool_response.tool_result {
         Ok(result) => result.is_error == Some(true),
@@ -300,26 +311,15 @@ pub(crate) fn tool_call_update_fields_from_response(
     if let Some(raw_output) = extract_tool_raw_output(&tool_response.tool_result) {
         fields = fields.raw_output(raw_output);
     }
-    let is_acp_aware = tool_response
-        .tool_result
-        .as_ref()
-        .is_ok_and(|result| result.is_acp_aware());
-    let include_content = include_content_for_acp_aware_tools || is_failed || !is_acp_aware;
-    let include_locations = !is_acp_aware;
+    fields = fields.content(build_tool_call_content(&tool_response.tool_result));
 
-    if include_content {
-        fields = fields.content(build_tool_call_content(&tool_response.tool_result));
-    }
-
-    if include_locations {
-        let locations = extract_tool_locations_from_response(tool_response).unwrap_or_else(|| {
-            tool_request
-                .map(extract_tool_locations_from_request)
-                .unwrap_or_default()
-        });
-        if !locations.is_empty() {
-            fields = fields.locations(locations);
-        }
+    let locations = extract_tool_locations_from_response(tool_response).unwrap_or_else(|| {
+        tool_request
+            .map(extract_tool_locations_from_request)
+            .unwrap_or_default()
+    });
+    if !locations.is_empty() {
+        fields = fields.locations(locations);
     }
 
     fields
@@ -720,8 +720,23 @@ mod tests {
             .map(|locs| locs.into_iter().map(|loc| (loc.path, loc.line)).collect())
     }
 
-    mod trusted_update_meta {
+    mod tool_response_meta {
         use super::*;
+
+        #[test]
+        fn forwards_subagent_session_id() {
+            let response = response_with_meta(Some(serde_json::json!({
+                "subagent_session_id": "child-session",
+                "foreground_subagent": true,
+                "unrelated": "not forwarded",
+            })));
+
+            let meta = tool_response_meta(&response).expect("expected subagent metadata");
+            assert_eq!(
+                serde_json::Value::Object(meta),
+                serde_json::json!({"goose": {"subagentSessionId": "child-session"}}),
+            );
+        }
 
         #[test]
         fn ignores_untrusted_goose_meta() {
@@ -733,12 +748,13 @@ mod tests {
                 },
             })));
 
-            assert_eq!(trusted_update_meta(&response), None);
+            assert_eq!(tool_response_meta(&response), None);
         }
 
         #[test]
-        fn uses_trusted_meta_only() {
+        fn preserves_trusted_app_meta_alongside_subagent_session() {
             let response = response_with_meta(Some(serde_json::json!({
+                "subagent_session_id": "child-session",
                 "goose": {
                     "mcpApp": {
                         "resourceUri": "ui://spoofed/app",
@@ -753,10 +769,11 @@ mod tests {
                 },
             })));
 
-            let extracted = trusted_update_meta(&response).expect("expected trusted meta");
+            let extracted = tool_response_meta(&response).expect("expected trusted meta");
             assert_eq!(
                 extracted.get("goose"),
                 Some(&serde_json::json!({
+                    "subagentSessionId": "child-session",
                     "mcpApp": {
                         "resourceUri": "ui://trusted/app",
                         "extensionName": "weather",
@@ -812,7 +829,7 @@ mod tests {
             let response = response_from_tool_result(Ok(result));
             let request = write_request("/tmp/request.txt");
 
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
+            let fields = tool_call_update_fields_from_response(&response, Some(&request));
 
             assert_eq!(fields.status, Some(ToolCallStatus::Completed));
             assert_eq!(fields.raw_output, Some(raw_output));
@@ -830,39 +847,11 @@ mod tests {
                     "write failed",
                 )])));
 
-            let fields = tool_call_update_fields_from_response(&response, None, false);
+            let fields = tool_call_update_fields_from_response(&response, None);
 
             assert_eq!(fields.status, Some(ToolCallStatus::Failed));
             assert_eq!(first_tool_call_text(&fields), Some("write failed"));
             assert!(fields.locations.is_none());
-        }
-
-        #[test]
-        fn suppresses_acp_aware_success_details() {
-            let raw_output = serde_json::json!({ "changed": true });
-            let mut result = CallToolResult::success(vec![RmcpContent::text("write completed")]);
-            result.structured_content = Some(raw_output.clone());
-            let response = response_from_tool_result(Ok(result.with_acp_aware_meta()));
-            let request = write_request("/tmp/request.txt");
-
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Completed));
-            assert_eq!(fields.raw_output, Some(raw_output));
-            assert!(fields.content.is_none());
-            assert!(fields.locations.is_none());
-        }
-
-        #[test]
-        fn includes_acp_aware_success_content_when_requested() {
-            let result = CallToolResult::success(vec![RmcpContent::text("write completed")])
-                .with_acp_aware_meta();
-            let response = response_from_tool_result(Ok(result));
-
-            let fields = tool_call_update_fields_from_response(&response, None, true);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Completed));
-            assert_eq!(first_tool_call_text(&fields), Some("write completed"));
         }
 
         #[test]
@@ -872,26 +861,12 @@ mod tests {
             })));
             let request = write_request("/tmp/request.txt");
 
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
+            let fields = tool_call_update_fields_from_response(&response, Some(&request));
 
             let locations = fields.locations.as_deref().expect("expected location");
             assert_eq!(locations.len(), 1);
             assert_eq!(locations[0].path, PathBuf::from("/tmp/response.txt"));
             assert_eq!(locations[0].line, Some(7));
-        }
-
-        #[test]
-        fn includes_acp_aware_error_content() {
-            let result = CallToolResult::error(vec![RmcpContent::text("write failed")])
-                .with_acp_aware_meta();
-            let response = response_from_tool_result(Ok(result));
-            let request = write_request("/tmp/request.txt");
-
-            let fields = tool_call_update_fields_from_response(&response, Some(&request), false);
-
-            assert_eq!(fields.status, Some(ToolCallStatus::Failed));
-            assert_eq!(first_tool_call_text(&fields), Some("write failed"));
-            assert!(fields.locations.is_none());
         }
 
         #[test]
@@ -902,7 +877,7 @@ mod tests {
                 None,
             )));
 
-            let fields = tool_call_update_fields_from_response(&response, None, false);
+            let fields = tool_call_update_fields_from_response(&response, None);
 
             assert_eq!(fields.status, Some(ToolCallStatus::Failed));
             assert_eq!(first_tool_call_text(&fields), Some("transport failed"));

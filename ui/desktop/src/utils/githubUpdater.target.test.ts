@@ -120,4 +120,14 @@ describe('resolveInstallTarget', () => {
       /Refusing to auto-update/
     );
   });
+
+  it('refuses to update a copy set up by the Windows installer', async () => {
+    setPlatform('win32');
+    const root = await makeTempDir();
+    const exePath = await makeInstallDir(root, 'Goose');
+    const uninstaller = `Uninstall ${path.basename(exePath, '.exe')}.exe`;
+    await fs.writeFile(path.join(path.dirname(exePath), uninstaller), 'binary');
+
+    await expect(resolveInstallTarget(exePath)).rejects.toThrow(/was set up by the installer/);
+  });
 });

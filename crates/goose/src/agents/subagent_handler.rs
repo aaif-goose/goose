@@ -1,260 +1,301 @@
 use crate::{
-    agents::{subagent_task_config::TaskConfig, Agent, AgentConfig, AgentEvent, SessionConfig},
+    agents::{
+        final_output_tool::FinalOutputTool,
+        state_machine::{trailing_error, MAX_TURNS_MESSAGE},
+        AgentEvent, SessionConfig, StateMachineServices,
+    },
     conversation::{
-        message::{Message, MessageContent},
+        message::{ActionRequiredData, Message, MessageContent},
         Conversation,
     },
     prompt_template::render_template,
-    recipe::Recipe,
+    session::extension_data::{EnabledExtensionsState, ExtensionState},
+    session::{Session, SessionManager, SessionType},
 };
 use anyhow::{anyhow, Result};
+use futures::stream::BoxStream;
 use futures::StreamExt;
-use rmcp::model::{ErrorCode, ErrorData, Notification, ServerNotification};
-#[expect(deprecated)]
-use rmcp::model::{LoggingLevel, LoggingMessageNotificationParam};
+use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
+use rmcp::model::Role;
 use serde::Serialize;
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info};
-
-pub type OnMessageCallback = Arc<dyn Fn(&Message) + Send + Sync>;
+use tokio_util::task::AbortOnDropHandle;
+use tracing::Instrument;
 
 #[derive(Serialize)]
 pub struct SubagentPromptContext {
     pub max_turns: usize,
-    pub task_instructions: String,
     pub tool_count: usize,
     pub available_tools: String,
 }
 
-type AgentMessagesFuture =
-    Pin<Box<dyn Future<Output = Result<(Conversation, Option<String>)>> + Send>>;
+pub(crate) async fn prepare_subagent(
+    services: &StateMachineServices,
+    session: &Session,
+) -> Result<SessionConfig> {
+    let session_id = &session.id;
+    if session.session_type != SessionType::SubAgent {
+        return Err(anyhow!("Session {session_id} is not a subagent"));
+    }
+    let recipe = session
+        .recipe
+        .as_ref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved recipe"))?;
+    let max_turns = recipe
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.max_turns)
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved turn limit"))?;
+    let provider_name = session
+        .provider_name
+        .as_deref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved provider"))?;
+    let model_config = session
+        .model_config
+        .as_ref()
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved model"))?;
+    session
+        .extension_data
+        .get_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+        )
+        .ok_or_else(|| anyhow!("Subagent {session_id} has no saved extension selection"))?;
 
-pub struct SubagentRunParams {
-    pub config: AgentConfig,
-    pub recipe: Recipe,
-    pub task_config: TaskConfig,
-    pub return_last_only: bool,
-    pub session_id: String,
-    pub cancellation_token: Option<CancellationToken>,
-    pub on_message: Option<OnMessageCallback>,
-    pub notification_tx: Option<tokio::sync::mpsc::UnboundedSender<ServerNotification>>,
+    services
+        .switch_provider(session_id, provider_name, model_config.clone())
+        .await?;
+
+    let subagent_prompt = build_subagent_prompt(services, max_turns, session_id).await?;
+    services
+        .session_manager
+        .update(session_id)
+        .system_prompt_override(Some(subagent_prompt))
+        .apply()
+        .await?;
+    Ok(SessionConfig {
+        id: session_id.to_string(),
+        schedule_id: None,
+        max_turns: Some(max_turns as u32),
+    })
 }
 
-pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyhow::Error> {
-    let return_last_only = params.return_last_only;
-    let (messages, final_output) = get_agent_messages(params).await.map_err(|e| {
-        ErrorData::new(
-            ErrorCode::INTERNAL_ERROR,
-            format!("Failed to execute task: {}", e),
-            None,
-        )
-    })?;
+#[derive(Clone)]
+pub(crate) struct ForegroundSubagentRunner {
+    services: Arc<StateMachineServices>,
+}
 
-    if let Some(output) = final_output {
-        return Ok(output);
+impl ForegroundSubagentRunner {
+    pub(crate) fn new(services: Arc<StateMachineServices>) -> Self {
+        Self { services }
     }
 
-    Ok(extract_response_text(&messages, return_last_only))
+    fn session_manager(&self) -> &SessionManager {
+        &self.services.session_manager
+    }
+
+    pub(crate) async fn load(&self, subagent_id: &str) -> Result<Session> {
+        self.session_manager().get_session(subagent_id, true).await
+    }
+
+    pub(crate) fn spawn(
+        &self,
+        subagent: Session,
+        cancel: CancellationToken,
+    ) -> BoxStream<'static, SubagentUpdate> {
+        let (to_parent, from_subagent) = mpsc::unbounded_channel();
+        spawn_run(self.clone().run(subagent, cancel, to_parent), from_subagent)
+    }
+
+    async fn run_to_end(
+        &self,
+        subagent: &Session,
+        cancel: CancellationToken,
+        to_parent: &mpsc::UnboundedSender<Message>,
+    ) -> Result<()> {
+        let parent_id = subagent
+            .parent_session_id
+            .as_deref()
+            .ok_or_else(|| anyhow!("Subagent {} has no parent", subagent.id))?;
+        let session_config = prepare_subagent(&self.services, subagent).await?;
+        let mut events = self.services.run_subagent_turn(session_config, cancel)?;
+        while let Some(event) = events.next().await {
+            if let AgentEvent::Message(message) = event? {
+                if asks_for_a_decision(&message) {
+                    let _ = to_parent.send(forwarded(
+                        message,
+                        parent_id,
+                        &subagent.id,
+                        self.session_manager(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn run(
+        self,
+        subagent: Session,
+        cancel: CancellationToken,
+        to_parent: mpsc::UnboundedSender<Message>,
+    ) -> SubagentOutcome {
+        let ending = SubagentEnding {
+            services: Arc::clone(&self.services),
+            subagent_id: subagent.id.clone(),
+            ended: false,
+        };
+        let run_result = self.run_to_end(&subagent, cancel.clone(), &to_parent).await;
+        ending.end().await;
+        let stopped = cancel.is_cancelled();
+        let subagent = match self.session_manager().get_session(&subagent.id, true).await {
+            Ok(subagent) => subagent,
+            Err(error) => return SubagentOutcome::Failed(error.to_string()),
+        };
+        let messages = subagent.conversation.as_ref().map(Conversation::messages);
+        if let Some(output) =
+            messages.and_then(|messages| FinalOutputTool::successful_output(messages))
+        {
+            return SubagentOutcome::Completed(output);
+        }
+        if stopped {
+            return SubagentOutcome::Cancelled;
+        }
+        if let Err(error) = run_result {
+            return SubagentOutcome::Failed(error.to_string());
+        }
+        if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
+            return SubagentOutcome::Failed(format!("{error:?}"));
+        }
+        SubagentOutcome::Failed(failure_reason(
+            messages.map(Vec::as_slice).unwrap_or_default(),
+        ))
+    }
 }
 
-fn extract_response_text(messages: &Conversation, return_last_only: bool) -> String {
-    if return_last_only {
-        messages
-            .messages()
-            .last()
-            .and_then(|message| {
-                message.content.iter().find_map(|content| match content {
-                    crate::conversation::message::MessageContent::Text(text_content) => {
-                        Some(text_content.text.clone())
-                    }
-                    _ => None,
-                })
-            })
-            .unwrap_or_else(|| String::from("No text content in last message"))
-    } else {
-        let all_text_content: Vec<String> = messages
-            .iter()
-            .flat_map(|message| {
-                message.content.iter().filter_map(|content| match content {
-                    crate::conversation::message::MessageContent::Text(text_content) => {
-                        Some(text_content.text.clone())
-                    }
-                    crate::conversation::message::MessageContent::ToolResponse(tool_response) => {
-                        if let Ok(result) = &tool_response.tool_result {
-                            let texts: Vec<String> = result
-                                .content
-                                .iter()
-                                .filter_map(|content| {
-                                    if let rmcp::model::ContentBlock::Text(raw_text_content) =
-                                        content
-                                    {
-                                        Some(raw_text_content.text.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                            if !texts.is_empty() {
-                                Some(format!("Tool result: {}", texts.join("\n")))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                })
-            })
-            .collect();
+fn spawn_run(
+    run: impl Future<Output = SubagentOutcome> + Send + 'static,
+    mut from_subagent: mpsc::UnboundedReceiver<Message>,
+) -> BoxStream<'static, SubagentUpdate> {
+    let task = AbortOnDropHandle::new(tokio::spawn(run.in_current_span()));
+    Box::pin(async_stream::stream! {
+        while let Some(message) = from_subagent.recv().await {
+            yield SubagentUpdate::ToParent(message);
+        }
+        yield SubagentUpdate::Finished(
+            task.await
+                .unwrap_or_else(|error| SubagentOutcome::Failed(error.to_string())),
+        );
+    })
+}
 
-        all_text_content.join("\n")
+/// Aborting the parent's turn drops a running subagent's task, so the session is also ended
+/// from `Drop`.
+struct SubagentEnding {
+    services: Arc<StateMachineServices>,
+    subagent_id: String,
+    ended: bool,
+}
+
+impl SubagentEnding {
+    async fn end(mut self) {
+        end_subagent(&self.services, &self.subagent_id).await;
+        self.ended = true;
+    }
+}
+
+impl Drop for SubagentEnding {
+    fn drop(&mut self) {
+        if self.ended {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let services = Arc::clone(&self.services);
+        let subagent_id = std::mem::take(&mut self.subagent_id);
+        runtime.spawn(async move { end_subagent(&services, &subagent_id).await });
+    }
+}
+
+async fn end_subagent(services: &StateMachineServices, subagent_id: &str) {
+    services.release_session(subagent_id).await;
+    services
+        .emit_hook(crate::hooks::HookEvent::SessionEnd, subagent_id)
+        .await;
+}
+
+fn forwarded(
+    mut message: Message,
+    parent_id: &str,
+    subagent_id: &str,
+    session_manager: &SessionManager,
+) -> Message {
+    for content in &mut message.content {
+        if let MessageContent::ActionRequired(action) = content {
+            if let ActionRequiredData::ToolConfirmation { id, .. }
+            | ActionRequiredData::Elicitation { id, .. } = &mut action.data
+            {
+                *id = session_manager
+                    .action_required()
+                    .forward(parent_id, subagent_id, id);
+            }
+        }
+    }
+    message
+}
+
+fn asks_for_a_decision(message: &Message) -> bool {
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            MessageContent::ActionRequired(action)
+                if matches!(
+                    action.data,
+                    ActionRequiredData::ToolConfirmation { .. }
+                        | ActionRequiredData::Elicitation { .. }
+                )
+        )
+    })
+}
+
+fn failure_reason(messages: &[Message]) -> String {
+    let Some(last) = messages.last() else {
+        return "stopped without final output".to_string();
+    };
+    let last_text = last.as_concat_text();
+    if last_text == MAX_TURNS_MESSAGE {
+        let last_response = messages
+            .iter()
+            .rev()
+            .filter(|message| message.role == Role::Assistant)
+            .map(Message::as_concat_text)
+            .find(|text| !text.is_empty() && text != MAX_TURNS_MESSAGE);
+        return match last_response {
+            Some(text) => format!("max turns reached; last response: {text}"),
+            None => "max turns reached".to_string(),
+        };
+    }
+    if last_text.is_empty() {
+        "stopped without final output".to_string()
+    } else {
+        last_text
     }
 }
 
 pub const SUBAGENT_TOOL_REQUEST_TYPE: &str = "subagent_tool_request";
 
-fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
-    Box::pin(async move {
-        let SubagentRunParams {
-            config,
-            recipe,
-            task_config,
-            session_id,
-            cancellation_token,
-            on_message,
-            notification_tx,
-            ..
-        } = params;
-
-        let system_instructions = recipe.instructions.clone().unwrap_or_default();
-        let user_task = recipe
-            .prompt
-            .clone()
-            .unwrap_or_else(|| "Begin.".to_string());
-
-        let agent = Arc::new(Agent::with_config(config));
-
-        agent
-            .update_provider(
-                task_config.provider.clone(),
-                task_config.model_config.clone(),
-                &session_id,
-            )
-            .await
-            .map_err(|e| anyhow!("Failed to set provider on sub agent: {}", e))?;
-
-        for extension in &task_config.extensions {
-            if let Err(e) = agent.add_extension(extension.clone(), &session_id).await {
-                debug!(
-                    "Failed to add extension '{}' to subagent: {}",
-                    extension.name(),
-                    e
-                );
-            }
-        }
-
-        let has_response_schema = recipe.response.is_some();
-        agent
-            .apply_recipe_components(recipe.response.clone(), true)
-            .await?;
-
-        let max_turns = task_config
-            .max_turns
-            .expect("TaskConfig always sets max_turns");
-        let subagent_prompt =
-            build_subagent_prompt(&agent, max_turns, &session_id, system_instructions).await?;
-        agent.override_system_prompt(subagent_prompt).await;
-
-        let user_message =
-            Message::user().with_text(format!("Subagent ID: {session_id}\n\n{user_task}"));
-        let mut conversation = Conversation::new_unvalidated(vec![user_message.clone()]);
-
-        agent
-            .config
-            .session_manager
-            .update(&session_id)
-            .recipe(Some(recipe.clone()))
-            .apply()
-            .await?;
-
-        if let Some(activities) = recipe.activities {
-            for activity in activities {
-                info!("Recipe activity: {}", activity);
-            }
-        }
-        let session_config = SessionConfig {
-            id: session_id.clone(),
-            schedule_id: None,
-            max_turns: task_config.max_turns.map(|v| v as u32),
-            retry_config: recipe.retry,
-        };
-
-        let mut stream =
-            crate::session_context::with_session_id(Some(session_id.to_string()), async {
-                agent
-                    .reply(
-                        user_message,
-                        session_config,
-                        crate::agents::state_machine::enabled(),
-                        cancellation_token,
-                    )
-                    .await
-            })
-            .await
-            .map_err(|e| anyhow!("Failed to get reply from agent: {}", e))?;
-
-        while let Some(message_result) = stream.next().await {
-            match message_result {
-                Ok(AgentEvent::Message(msg)) => {
-                    if let Some(ref callback) = on_message {
-                        callback(&msg);
-                    }
-                    if let Some(ref tx) = notification_tx {
-                        for content in &msg.content {
-                            if let Some(notif) = create_tool_notification(content, &session_id) {
-                                if tx.send(notif).is_err() {
-                                    debug!(
-                                        "Notification receiver dropped for subagent {}",
-                                        session_id
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    conversation.push(msg);
-                }
-                Ok(AgentEvent::Usage(_)) => {}
-                Ok(AgentEvent::MessageUsage { .. }) => {}
-                Ok(AgentEvent::McpNotification(_)) => {}
-                Ok(AgentEvent::HistoryReplaced(updated_conversation)) => {
-                    conversation = updated_conversation;
-                }
-                Err(e) => {
-                    tracing::error!("Error receiving message from subagent: {}", e);
-                    break;
-                }
-            }
-        }
-
-        let final_output = get_final_output(&agent, has_response_schema).await;
-
-        Ok((conversation, final_output))
-    })
-}
-
 async fn build_subagent_prompt(
-    agent: &Agent,
+    services: &StateMachineServices,
     max_turns: usize,
     session_id: &str,
-    system_instructions: String,
 ) -> Result<String> {
-    let mut tool_names: Vec<_> = agent
+    let mut tool_names: Vec<_> = services
         .list_tools(session_id, None)
-        .await
+        .await?
         .into_iter()
         .filter(super::reply_parts::is_tool_visible_to_model)
         .map(|t| t.name.to_string())
@@ -264,7 +305,6 @@ async fn build_subagent_prompt(
         "subagent_system.md",
         &SubagentPromptContext {
             max_turns,
-            task_instructions: system_instructions,
             tool_count: tool_names.len(),
             available_tools: tool_names.join(", "),
         },
@@ -272,93 +312,108 @@ async fn build_subagent_prompt(
     .map_err(|e| anyhow!("Failed to render subagent system prompt: {}", e))
 }
 
-async fn get_final_output(agent: &Agent, has_response_schema: bool) -> Option<String> {
-    if has_response_schema {
-        agent
-            .final_output_tool
-            .lock()
-            .await
-            .as_ref()
-            .and_then(|tool| tool.final_output.clone())
-    } else {
-        None
-    }
-}
-
-#[expect(deprecated)]
-pub fn create_tool_notification(
-    content: &MessageContent,
-    subagent_id: &str,
-) -> Option<ServerNotification> {
-    if let MessageContent::ToolRequest(req) = content {
-        let tool_call = req.tool_call.as_ref().ok()?;
-
-        Some(ServerNotification::LoggingMessageNotification(
-            Notification::new(
-                LoggingMessageNotificationParam::new(
-                    LoggingLevel::Info,
-                    serde_json::json!({
-                        "type": SUBAGENT_TOOL_REQUEST_TYPE,
-                        "subagent_id": subagent_id,
-                        "tool_call": {
-                            "name": tool_call.name,
-                            "arguments": tool_call.arguments
-                        }
-                    }),
-                )
-                .with_logger(format!("subagent:{}", subagent_id)),
-            ),
-        ))
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{create_tool_notification, SUBAGENT_TOOL_REQUEST_TYPE};
-    use crate::conversation::message::MessageContent;
-    use rmcp::model::{CallToolRequestParams, ServerNotification};
-    use serde_json::json;
+    use std::time::Duration;
 
-    #[test]
-    #[expect(deprecated)]
-    fn create_tool_notification_for_tool_request() {
-        let tool_call = CallToolRequestParams::new("developer__shell".to_string())
-            .with_arguments(json!({"command": "ls"}).as_object().unwrap().clone());
-        let content = MessageContent::tool_request("req1", Ok(tool_call));
-        let notification =
-            create_tool_notification(&content, "session_1").expect("expected notification");
+    use futures::StreamExt;
 
-        let ServerNotification::LoggingMessageNotification(log_notif) = notification else {
-            panic!("expected logging notification");
-        };
-        let data = log_notif
-            .params
-            .data
-            .as_object()
-            .expect("expected object data");
-        assert_eq!(
-            data.get("type").and_then(|v| v.as_str()),
-            Some(SUBAGENT_TOOL_REQUEST_TYPE)
+    use super::{failure_reason, spawn_run};
+    use crate::agents::state_machine::MAX_TURNS_MESSAGE;
+    use crate::conversation::message::Message;
+    use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
+    use tokio::sync::{mpsc, oneshot};
+
+    #[tokio::test]
+    async fn dropping_a_started_run_aborts_its_task() {
+        let (alive, aborted) = oneshot::channel::<()>();
+        let (to_parent, from_subagent) = mpsc::unbounded_channel();
+        let run = spawn_run(
+            async move {
+                let _alive = alive;
+                let _to_parent = to_parent;
+                std::future::pending::<SubagentOutcome>().await
+            },
+            from_subagent,
         );
-        assert_eq!(
-            data.get("subagent_id").and_then(|v| v.as_str()),
-            Some("session_1")
+
+        drop(run);
+
+        let ended = tokio::time::timeout(Duration::from_secs(5), aborted).await;
+        assert!(ended.expect("the task was not aborted").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_run_reports_what_it_forwarded_then_its_outcome() {
+        let (to_parent, from_subagent) = mpsc::unbounded_channel();
+        let run = spawn_run(
+            async move {
+                to_parent
+                    .send(Message::assistant().with_text("may I run cargo test?"))
+                    .unwrap();
+                SubagentOutcome::Completed("done".to_string())
+            },
+            from_subagent,
         );
-        let tool_call = data
-            .get("tool_call")
-            .and_then(|v| v.as_object())
-            .expect("expected tool_call object");
-        assert_eq!(
-            tool_call.get("name").and_then(|v| v.as_str()),
-            Some("developer__shell")
+
+        let updates: Vec<_> = run.collect().await;
+
+        assert!(matches!(
+            updates.as_slice(),
+            [
+                SubagentUpdate::ToParent(_),
+                SubagentUpdate::Finished(SubagentOutcome::Completed(_))
+            ]
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_panicking_run_is_reported_as_failed() {
+        let (to_parent, from_subagent) = mpsc::unbounded_channel::<Message>();
+        let run = spawn_run(
+            async move {
+                let _to_parent = to_parent;
+                panic!("subagent crashed")
+            },
+            from_subagent,
         );
+
+        let updates: Vec<_> = run.collect().await;
+
+        assert!(matches!(
+            updates.as_slice(),
+            [SubagentUpdate::Finished(SubagentOutcome::Failed(_))]
+        ));
     }
 
     #[test]
-    fn create_tool_notification_ignores_non_tool_request() {
-        let content = MessageContent::text("hello");
-        assert!(create_tool_notification(&content, "session_1").is_none());
+    fn failure_reason_describes_how_the_subagent_stopped() {
+        let max_turns = Message::assistant().with_text(MAX_TURNS_MESSAGE);
+        let cases = [
+            (vec![], "stopped without final output".to_string()),
+            (
+                vec![Message::assistant().with_text("")],
+                "stopped without final output".to_string(),
+            ),
+            (
+                vec![Message::assistant().with_text("I gave up")],
+                "I gave up".to_string(),
+            ),
+            (
+                vec![Message::user().with_text("go"), max_turns.clone()],
+                "max turns reached".to_string(),
+            ),
+            (
+                vec![
+                    Message::assistant().with_text("halfway there"),
+                    Message::user().with_text("tool result"),
+                    max_turns,
+                ],
+                "max turns reached; last response: halfway there".to_string(),
+            ),
+        ];
+        for (messages, expected) in cases {
+            assert_eq!(failure_reason(&messages), expected);
+        }
     }
 }

@@ -6,9 +6,11 @@ use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 
 mod agent_reply;
 mod calculator_extension;
+mod cancellation;
 mod compaction_lifecycle;
 mod dummy_api;
 mod hooks_lifecycle;
@@ -51,8 +53,8 @@ async fn capture_state_machine_trace_fields(
         .await?;
 
     let cancel = CancellationToken::new();
-    let machine = pipeline.machine(cancel.clone());
-    let (tx, _rx) = mpsc::channel(1024);
+    let machine = pipeline.machine(cancel.clone()).await;
+    let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
     let span = tracing::info_span!(
         "state_machine_security_trace",
@@ -64,6 +66,7 @@ async fn capture_state_machine_trace_fields(
     super::session::run(
         &machine,
         pipeline.session_manager.as_ref(),
+        &pipeline.services().await.hook_manager,
         &pipeline.session_id,
         &emit,
     )
@@ -99,6 +102,50 @@ async fn state_machine_trace_retains_content_with_capture() -> Result<()> {
     Ok(())
 }
 
+async fn capture_tool_span_fields(
+    capture_setting: Option<&'static str>,
+) -> Result<(serde_json::Map<String, serde_json::Value>, String)> {
+    use crate::agents::gen_ai_telemetry::{
+        test_support::SpanFieldCapture, CAPTURE_MESSAGE_CONTENT_ENV,
+    };
+    use goose_test_support::otel::clear_otel_env;
+
+    let _env = match capture_setting {
+        Some(value) => clear_otel_env(&[(CAPTURE_MESSAGE_CONTENT_ENV, value)]),
+        None => clear_otel_env(&[]),
+    };
+    let capture = SpanFieldCapture::new("execute_tool");
+    let _subscriber = capture.clone().set_default();
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("add the secret").calls([(
+        "call-secret",
+        ADD,
+        serde_json::json!({ "value": 1, "note": "tool-input-super-secret-token" }),
+    )]);
+    api.on("result: 1").reply("done");
+
+    pipeline.run(["add the secret"]).await?;
+    Ok((capture.fields(), pipeline.session_id.clone()))
+}
+
+#[tokio::test]
+async fn tool_span_records_gen_ai_attributes_and_gates_arguments() -> Result<()> {
+    for capture_setting in [None, Some("false")] {
+        let (fields, session_id) = capture_tool_span_fields(capture_setting).await?;
+        assert!(!serde_json::to_string(&fields)?.contains("tool-input-super-secret-token"));
+        assert_eq!(fields["gen_ai.operation.name"], "execute_tool");
+        assert_eq!(fields["gen_ai.tool.name"], ADD);
+        assert_eq!(fields["gen_ai.tool.call.id"], "call-secret");
+        assert_eq!(fields["gen_ai.conversation.id"], session_id.as_str());
+    }
+
+    let (fields, _) = capture_tool_span_fields(Some("true")).await?;
+    let arguments: serde_json::Value =
+        serde_json::from_str(fields["gen_ai.tool.call.arguments"].as_str().unwrap())?;
+    assert_eq!(arguments["note"], "tool-input-super-secret-token");
+    Ok(())
+}
+
 #[tokio::test]
 async fn bang_shell_requests_the_shell_tool() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -113,13 +160,13 @@ async fn bang_shell_requests_the_shell_tool() -> Result<()> {
 #[tokio::test]
 async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let agent = crate::execution::manager::AgentManager::instance()
-        .await?
-        .get_or_create_agent(pipeline.session_id.clone())
-        .await?;
-    agent
-        .extension_manager
-        .remove_extension(crate::agents::platform_extensions::developer::EXTENSION_NAME)
+    let mut extension_data = ExtensionData::default();
+    EnabledExtensionsState::new(Vec::new()).to_extension_data(&mut extension_data)?;
+    pipeline
+        .session_manager
+        .update(&pipeline.session_id)
+        .extension_data(extension_data)
+        .apply()
         .await?;
 
     let result = pipeline.run(["/doctor"]).await?;
@@ -130,12 +177,6 @@ async fn doctor_refuses_without_developer_before_inference() -> Result<()> {
         crate::doctor::DEVELOPER_EXTENSION_REQUIRED_MESSAGE,
     );
     assert_eq!(api.call_count(), 0);
-    assert!(
-        !agent
-            .extension_manager
-            .is_extension_enabled(crate::agents::platform_extensions::developer::EXTENSION_NAME)
-            .await
-    );
 
     Ok(())
 }
@@ -148,7 +189,7 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
     let result = pipeline.run(["keep going"]).await?;
     let calls = api.calls();
     assert_eq!(calls.len(), MAX_TURNS as usize);
-    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64 - 1);
+    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64);
 
     let first_budgeted_call = MAX_TURNS.div_ceil(2) as usize;
     assert!(!calls[first_budgeted_call - 1].input_contains("<turn-budget>"));
@@ -160,13 +201,168 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
 }
 
 #[tokio::test]
-async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() -> Result<()> {
+async fn auto_effort_is_scoped_to_each_turn_and_reused_across_inferences() -> Result<()> {
+    use std::sync::Arc;
+
+    use goose_providers::api_client::{ApiClient, AuthMethod};
+    use goose_providers::model::ModelConfig;
+    use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
+    use goose_providers::typesafe::TypeSafeProvider;
+    use serde_json::json;
+    use wiremock::matchers::{body_partial_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use crate::agents::services::available_auto_efforts;
+    use crate::agents::state_machine::AutoEffortOperation;
+
     let (pipeline, api) = test_pipeline().await?;
+    let skill_dir = pipeline
+        .working_dir()
+        .join(".agents/skills/auto-effort-review");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: auto-effort-review\ndescription: Review helper\n---\nReview the expanded request carefully.\n",
+    )?;
+    let skill = crate::skills::list_installed_skills(Some(pipeline.working_dir()))
+        .into_iter()
+        .find(|skill| skill.name == "auto-effort-review")
+        .expect("project skill should be installed");
+    let expanded_skill_prompt = crate::skills::loaded_skill_context_with_args(&skill, None)?;
+
+    let jev = MockServer::start().await;
+    for (request, effort) in [
+        ("add one", "high"),
+        (expanded_skill_prompt.as_str(), "high"),
+        ("hello", "off"),
+    ] {
+        let probabilities = std::collections::HashMap::from([(effort, 0.9)]);
+        Mock::given(method("POST"))
+            .and(path("/v1/systemone"))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_partial_json(json!({
+                "model": "test-effort-model",
+                "state": request
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "model": "jev-latest",
+                "answers": {
+                    "effort": {
+                        "type": "choice",
+                        "choice": effort,
+                        "confidence": 0.9,
+                        "probabilities": probabilities
+                    }
+                },
+                "usage": {"input_tokens": 12, "output_tokens": 3}
+            })))
+            .expect(1)
+            .mount(&jev)
+            .await;
+    }
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .and(header("authorization", "Bearer test-key"))
+        .and(body_partial_json(json!({
+            "model": "test-effort-model",
+            "state": "fallback"
+        })))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(1)
+        .mount(&jev)
+        .await;
+
+    let decision_provider = TypeSafeProvider::new(ApiClient::new_with_tls(
+        jev.uri(),
+        AuthMethod::BearerToken("test-key".to_string()),
+        None,
+    )?);
+    let efforts = vec![ThinkingEffort::Off, ThinkingEffort::High];
+    assert_eq!(
+        available_auto_efforts(
+            "openai",
+            &ModelConfig::new("gpt-5-pro"),
+            ThinkingEffortSupport::Unspecified,
+        ),
+        vec![ThinkingEffort::High]
+    );
+    assert_eq!(
+        available_auto_efforts(
+            "anthropic",
+            &ModelConfig::new("claude-opus-5-5").with_canonical_limits("anthropic"),
+            ThinkingEffortSupport::Unspecified,
+        ),
+        vec![
+            ThinkingEffort::Low,
+            ThinkingEffort::Medium,
+            ThinkingEffort::High,
+            ThinkingEffort::Max,
+        ]
+    );
+    assert!(available_auto_efforts(
+        "claude-acp",
+        &ModelConfig::new("current"),
+        ThinkingEffortSupport::Options(goose_providers::thinking::ThinkingEffortCapability {
+            option_id: "effort".to_string(),
+            values: vec![goose_providers::thinking::ThinkingEffortOption {
+                value: "high".to_string(),
+                label: "High".to_string(),
+            }],
+            current: Some("high".to_string()),
+        }),
+    )
+    .is_empty());
+    for (provider, model) in [
+        ("snowflake", "openai-gpt-5"),
+        ("snowflake", "claude-sonnet-4-5"),
+        ("zhipu", "glm-5.3"),
+        ("ollama", "qwen3"),
+    ] {
+        assert!(available_auto_efforts(
+            provider,
+            &ModelConfig::new(model),
+            ThinkingEffortSupport::Unspecified,
+        )
+        .is_empty());
+    }
+    let pipeline = pipeline
+        .with_model_config(
+            ModelConfig::new(goose_providers::openai::OPEN_AI_DEFAULT_MODEL)
+                .with_canonical_limits("openai")
+                .with_thinking_effort(ThinkingEffort::Low),
+        )
+        .await
+        .record_model_configs()
+        .with_auto_effort(Arc::new(AutoEffortOperation::new(
+            Arc::new(decision_provider),
+            "test-effort-model".to_string(),
+            efforts,
+        )));
     api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("The total is 1");
+    api.on("Review the expanded request carefully")
+        .reply("reviewed");
     api.on("hello").reply("hi there!");
+    api.on("fallback").reply("using configured effort");
 
-    let result = pipeline.run(["add one", "hello"]).await?;
+    let result = pipeline
+        .run(["add one", "/auto-effort-review", "hello", "fallback"])
+        .await?;
+
+    let requests = jev
+        .received_requests()
+        .await
+        .expect("requests should be recorded");
+    assert_eq!(requests.len(), 4);
+    for request in requests {
+        let body: serde_json::Value = serde_json::from_slice(&request.body)?;
+        let criteria = body["questions"]["effort"]["criteria"]
+            .as_object()
+            .expect("effort criteria should be an object");
+        assert_eq!(criteria.len(), 2);
+        assert!(criteria.contains_key("off"));
+        assert!(criteria.contains_key("high"));
+    }
 
     let conversation = result.conversation();
     let events: Vec<_> = conversation
@@ -176,7 +372,7 @@ async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() 
         .collect();
     assert_eq!(
         events.len(),
-        2,
+        4,
         "one turn-context event per turn; the turn's second inference reuses it"
     );
     assert!(events.iter().all(|event| !event.is_user_visible()));
@@ -184,6 +380,58 @@ async fn turn_context_is_persisted_once_per_turn_and_reused_across_inferences() 
         .calls()
         .iter()
         .all(|call| call.input_contains("<turn-context>")));
+    assert_eq!(
+        pipeline.recorded_efforts(),
+        vec![
+            Some(ThinkingEffort::High),
+            Some(ThinkingEffort::High),
+            Some(ThinkingEffort::High),
+            Some(ThinkingEffort::Off),
+            Some(ThinkingEffort::Low),
+        ]
+    );
+
+    let decisions: Vec<_> = conversation
+        .messages()
+        .iter()
+        .filter_map(|message| message.metadata.operation_note("auto_effort", "decision"))
+        .collect();
+    assert_eq!(decisions.len(), 4);
+    assert_eq!(decisions[0]["effort"], "high");
+    assert_eq!(decisions[0]["probabilities"]["high"], 0.9);
+    assert_eq!(decisions[1]["effort"], "high");
+    assert_eq!(decisions[2]["effort"], "off");
+    assert!(decisions[3]["effort"].is_null());
+
+    let logged_messages: Vec<_> = conversation
+        .messages()
+        .iter()
+        .filter(|message| !message.metadata.operation_logs.is_empty())
+        .collect();
+    assert_eq!(logged_messages.len(), 3);
+    assert_eq!(
+        logged_messages[0].metadata.operation_logs,
+        ["ops_auto_effort: thinking high"]
+    );
+    assert_eq!(
+        logged_messages[1].metadata.operation_logs,
+        ["ops_auto_effort: thinking high"]
+    );
+    assert_eq!(
+        logged_messages[2].metadata.operation_logs,
+        ["ops_auto_effort: thinking off"]
+    );
+    assert!(logged_messages[0].is_tool_call());
+    assert_eq!(logged_messages[1].as_concat_text(), "reviewed");
+    assert_eq!(logged_messages[2].as_concat_text(), "hi there!");
+    assert_eq!(
+        result
+            .session
+            .model_config
+            .as_ref()
+            .and_then(|config| config.thinking_effort()),
+        Some(ThinkingEffort::Low)
+    );
 
     Ok(())
 }
@@ -266,6 +514,7 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
 
     let status = pipeline.run(["/status"]).await?;
     assert_eq!(api.call_count(), 0);
+    status.assert_message(-1, Agent, &format!("Session ID: `{}`", pipeline.session_id));
     status.assert_message(-1, Agent, "Provider:");
     assert!(status
         .conversation()
@@ -285,6 +534,21 @@ async fn slash_commands_yield_or_fall_through_to_inference() -> Result<()> {
         .expect("persisted user message");
     assert!(command.is_user_visible());
     assert!(command.is_agent_visible());
+
+    pipeline
+        .set_goal(Some("finish the migration".to_string()))
+        .await;
+    let shown = pipeline.run(["/goal"]).await?;
+    shown.assert_message(-1, Agent, "Current goal: finish the migration");
+    assert_eq!(
+        pipeline.get_goal().await.as_deref(),
+        Some("finish the migration")
+    );
+
+    let cleared = pipeline.run(["/goal clear"]).await?;
+    cleared.assert_message(-1, Agent, "Goal cleared");
+    assert!(pipeline.get_goal().await.is_none());
+    assert_eq!(api.call_count(), 1);
 
     Ok(())
 }

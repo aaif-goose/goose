@@ -226,10 +226,10 @@ impl DatabricksV2Provider {
         let (clean_name, _) = extract_reasoning_effort(routing_name);
         let lower = clean_name.to_lowercase();
 
+        // Claude model services also serve `anthropic/v1/messages`; the MLflow
+        // chat route drops the prompt-cache breakpoints Anthropic needs.
         if is_openai_responses_model(&clean_name) || Self::looks_like_gpt5(&lower) {
             DatabricksV2Route::OpenAiResponses
-        } else if is_model_service {
-            DatabricksV2Route::MlflowChatCompletions
         } else if Self::is_claude_model(&lower) {
             DatabricksV2Route::AnthropicMessages
         } else {
@@ -253,6 +253,14 @@ impl DatabricksV2Provider {
 
     fn is_claude_model(model_name: &str) -> bool {
         model_name.contains("claude")
+    }
+
+    fn is_gemini_model_service(model_name: &str) -> bool {
+        Self::is_model_service_fqn(model_name)
+            && model_name
+                .rsplit('.')
+                .next()
+                .is_some_and(|service| service.to_lowercase().contains("gemini"))
     }
 
     fn always_on_reasoning_effort(model_config: &ModelConfig) -> Option<&'static str> {
@@ -387,8 +395,16 @@ impl DatabricksV2Provider {
             &ImageFormat::OpenAi,
             true,
         )?;
+        // MLflow chat uses system; Gemini rejects the OpenAI developer role.
+        payload["messages"][0]["role"] = "system".into();
         if is_model_service {
             payload["model"] = Value::String(model_config.model_name.clone());
+        }
+        // The gateway maps `stream_options` into Gemini's `generation_config`, which rejects it.
+        if Self::is_gemini_model_service(&model_config.model_name) {
+            if let Some(object) = payload.as_object_mut() {
+                object.remove("stream_options");
+            }
         }
         if let Some(effort) = Self::always_on_reasoning_effort(model_config) {
             payload["reasoning_effort"] = Value::String(effort.to_string());
@@ -682,7 +698,12 @@ mod tests {
             );
         }
 
-        for model in ["databricks-claude-opus-4-7", "databricks-claude-sonnet-4-6"] {
+        for model in [
+            "databricks-claude-opus-4-7",
+            "databricks-claude-sonnet-4-6",
+            "catalog.schema.claude-alias",
+            "data_workflow_tools.goose.goose-claude-fable-5-1",
+        ] {
             assert_eq!(
                 DatabricksV2Provider::route_for_model(model),
                 DatabricksV2Route::AnthropicMessages,
@@ -692,10 +713,6 @@ mod tests {
 
         assert_eq!(
             DatabricksV2Provider::route_for_model("custom-model"),
-            DatabricksV2Route::MlflowChatCompletions
-        );
-        assert_eq!(
-            DatabricksV2Provider::route_for_model("catalog.schema.claude-alias"),
             DatabricksV2Route::MlflowChatCompletions
         );
     }
@@ -792,6 +809,19 @@ mod tests {
                 "embedding_catalog.gte_schema.chat-model",
             ]
         );
+    }
+
+    #[test]
+    fn detects_gemini_only_from_the_model_service_name() {
+        assert!(DatabricksV2Provider::is_gemini_model_service(
+            "catalog.schema.goose-Gemini-3-pro"
+        ));
+        for model in ["team.gemini.kimi-chat", "databricks-gemini-3-pro"] {
+            assert!(
+                !DatabricksV2Provider::is_gemini_model_service(model),
+                "{model} is not a Gemini model service"
+            );
+        }
     }
 
     #[test]
@@ -924,6 +954,50 @@ mod tests {
                 .expect("GPT-6 model service should use the Responses API");
         }
 
+        #[tokio::test]
+        async fn model_service_claude_uses_messages_route_with_cache_breakpoints() {
+            let model = "data_workflow_tools.goose.goose-claude-fable-5-1";
+            let body = concat!(
+                r#"data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}"#,
+                "\n",
+                r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#,
+                "\n",
+                r#"data: {"type":"message_stop"}"#,
+                "\n",
+            );
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/anthropic/v1/messages"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "system": [{"cache_control": {"type": "ephemeral"}}],
+                    "thinking": {"type": "adaptive", "display": "summarized"}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(
+                    &ModelConfig::new(model),
+                    "system",
+                    &[
+                        Message::user().with_text("hi"),
+                        Message::assistant().with_text("hello"),
+                        Message::user().with_text("continue"),
+                    ],
+                    &[],
+                )
+                .await
+                .expect("Claude model service should use the Anthropic Messages API");
+        }
+
         #[test_case::test_case("catalog.schema.goose-glm-5-3" ; "glm 5.3")]
         #[test_case::test_case("catalog.schema.goose-kimi-k3" ; "kimi k3")]
         #[tokio::test]
@@ -955,6 +1029,71 @@ mod tests {
                 )
                 .await
                 .expect("model service should receive reasoning effort");
+        }
+
+        #[tokio::test]
+        async fn gemini_model_service_omits_stream_options_and_keeps_usage() {
+            let model = "catalog.schema.goose-gemini-3-pro";
+            let delta = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{"content":"Hello"}},"finish_reason":null}}]}}"#
+            );
+            let last = format!(
+                r#"data: {{"model":"{model}","choices":[{{"delta":{{}},"finish_reason":"stop"}}],"usage":{{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}}}"#
+            );
+            let body = format!("{delta}\n\n{last}\n\ndata: [DONE]\n\n");
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({"model": model, "stream": true})))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let (message, usage) = provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("Gemini model service should stream without stream_options");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("stream_options").is_none());
+            assert_eq!(message.as_concat_text(), "Hello");
+            assert_eq!(usage.usage.input_tokens, Some(7));
+            assert_eq!(usage.usage.output_tokens, Some(2));
+            assert_eq!(usage.usage.total_tokens, Some(9));
+        }
+
+        #[tokio::test]
+        async fn non_gemini_model_service_keeps_stream_options() {
+            let model = "catalog.schema.goose-kimi-k3";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .and(body_partial_json(json!({
+                    "model": model,
+                    "stream_options": {"include_usage": true}
+                })))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            provider(server.uri())
+                .complete(&ModelConfig::new(model), "system", &[], &[])
+                .await
+                .expect("non-Gemini model service should keep stream_options");
         }
 
         #[tokio::test]

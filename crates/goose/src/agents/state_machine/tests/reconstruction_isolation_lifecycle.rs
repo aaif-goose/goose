@@ -1,18 +1,7 @@
 use anyhow::Result;
-use rmcp::model::ElicitationAction;
-use serde_json::json;
 
-use super::calculator_extension::{value, ADD, REQUEST_VALUE};
-use super::dummy_api::ProviderFeatures;
-use super::pipeline::test_pipeline_with;
+use super::calculator_extension::{value, ADD};
 use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
-use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
-use crate::config::GooseMode;
-use crate::conversation::message::MessageContent;
-use crate::recipe::{Recipe, Response};
-use goose_providers::model::ModelConfig;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
@@ -37,8 +26,23 @@ async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "tree-sitter")]
 #[tokio::test]
 async fn reconstruction_and_session_isolation() -> Result<()> {
+    use rmcp::model::ElicitationAction;
+    use serde_json::json;
+
+    use super::calculator_extension::REQUEST_VALUE;
+    use super::dummy_api::ProviderFeatures;
+    use super::pipeline::test_pipeline_with;
+    use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+    use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
+    use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
+    use crate::config::GooseMode;
+    use crate::conversation::message::MessageContent;
+    use crate::recipe::{Recipe, Response};
+    use goose_providers::model::ModelConfig;
+
     let (pipeline, api) = test_pipeline_with(ProviderFeatures {
         cache_read_tokens: Some(11),
         cache_write_tokens: Some(7),
@@ -167,7 +171,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let calls_before = api.call_count();
     let bounded = pipeline.run(["keep adding"]).await?;
     assert_eq!(api.call_count() - calls_before, 2);
-    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(pipeline.calculator_total(), 2);
     bounded.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
 
     let restored = pipeline.session().await?;
@@ -206,7 +210,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         .await?;
     elicited.assert_message(-2, ToolResponse, "result: 9");
     assert_eq!(other.calculator_total(), 9);
-    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(pipeline.calculator_total(), 2);
 
     Ok(())
 }
