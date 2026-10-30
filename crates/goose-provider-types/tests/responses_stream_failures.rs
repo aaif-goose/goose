@@ -156,3 +156,22 @@ async fn interrupted_response_does_not_emit_buffered_tool_calls() {
         "must not execute buffered tools from an incomplete response"
     );
 }
+
+#[tokio::test]
+async fn context_overflow_stays_compactable() {
+    let lines = vec![Ok(format!(
+        "data: {}",
+        json!({"type":"error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model.","param":"input","sequence_number":2})
+    ))];
+    let results = responses_api_to_streaming_message(futures::stream::iter(lines))
+        .collect::<Vec<_>>()
+        .await;
+    let error = results.iter().find_map(|result| result.as_ref().err());
+    assert!(
+        matches!(
+            error.and_then(|error| error.downcast_ref::<ProviderError>()),
+            Some(ProviderError::ContextLengthExceeded(_))
+        ),
+        "context overflow must stay typed so compaction can recover: {error:?}"
+    );
+}
