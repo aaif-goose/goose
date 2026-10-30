@@ -148,84 +148,49 @@ impl GooseCompleter {
 
     fn complete_model_names(&self, line: &str) -> Result<(usize, Vec<Pair>)> {
         let after_cmd = line.strip_prefix("/model").unwrap_or("").trim_start();
+        let mut tokens: Vec<&str> = after_cmd.split_whitespace().collect();
+        let partial = if after_cmd.is_empty() || after_cmd.ends_with(char::is_whitespace) {
+            ""
+        } else {
+            tokens.pop().unwrap_or_default()
+        };
 
-        if after_cmd == "--provider" || after_cmd.starts_with("--provider ") {
-            let flag_rest = after_cmd.strip_prefix("--provider").unwrap_or("").trim();
-            if after_cmd == "--provider" {
-                return Ok((line.len(), vec![]));
+        let mut provider = None;
+        let mut pending_flag = None;
+        for token in tokens {
+            match pending_flag.take() {
+                Some("--provider") => provider = Some(token.to_string()),
+                Some(_) => {}
+                None if token == "--provider" || token == "--effort" => pending_flag = Some(token),
+                None => {}
             }
-
-            let parts: Vec<&str> = flag_rest.split_whitespace().collect();
-            let trailing_space = after_cmd.ends_with(' ');
-
-            if parts.is_empty() || (parts.len() == 1 && !trailing_space) {
-                let partial = if parts.is_empty() { "" } else { parts[0] };
-                let cache = self.completion_cache.read().unwrap();
-                let candidates: Vec<Pair> = cache
-                    .provider_names
-                    .iter()
-                    .filter(|name| name.starts_with(partial))
-                    .map(|name| Pair {
-                        display: name.clone(),
-                        replacement: format!("{} ", name),
-                    })
-                    .collect();
-                let pos = line.len() - partial.len();
-                return Ok((pos, candidates));
-            }
-
-            let provider_name = parts[0];
-            let partial = if parts.len() > 1 && !trailing_space {
-                parts[1]
-            } else {
-                ""
-            };
-            return self.models_completion_from_cache(provider_name, partial, line);
         }
 
-        if let Some(flag_rest) = after_cmd.strip_prefix("--effort ") {
-            let parts: Vec<&str> = flag_rest.split_whitespace().collect();
-            let trailing_space = flag_rest.ends_with(' ');
-
-            if parts.is_empty() || (parts.len() == 1 && !trailing_space) {
-                let partial = parts.first().copied().unwrap_or("");
-                let candidates: Vec<Pair> = THINKING_EFFORTS
-                    .iter()
-                    .map(|effort| effort.to_string())
-                    .filter(|effort| effort.starts_with(partial))
-                    .map(|effort| Pair {
-                        replacement: format!("{} ", effort),
-                        display: effort,
-                    })
-                    .collect();
-                return Ok((line.len() - partial.len(), candidates));
+        let provider = match (pending_flag, provider) {
+            (None, None) if !partial.starts_with("--") => Some(self.current_provider()),
+            (_, provider) => provider,
+        };
+        let cache = self.completion_cache.read().unwrap();
+        let options: Vec<String> = match pending_flag {
+            Some("--provider") => cache.provider_names.clone(),
+            Some(_) => THINKING_EFFORTS.iter().map(ToString::to_string).collect(),
+            None if partial.starts_with("--") => {
+                vec!["--provider".to_string(), "--effort".to_string()]
             }
+            None => provider
+                .and_then(|provider| cache.provider_models.get(&provider).cloned())
+                .unwrap_or_default(),
+        };
+        let candidates = options
+            .into_iter()
+            .filter(|option| option.starts_with(partial))
+            .map(|option| Pair {
+                replacement: format!("{} ", option),
+                display: option,
+            })
+            .collect();
 
-            let partial = if parts.len() > 1 && !trailing_space {
-                parts[1]
-            } else {
-                ""
-            };
-            return self.models_completion_from_cache(&self.current_provider(), partial, line);
-        }
-
-        if after_cmd.starts_with("--") {
-            let flag_partial = &after_cmd;
-            let candidates: Vec<Pair> = ["--provider", "--effort"]
-                .iter()
-                .filter(|flag| flag.starts_with(flag_partial))
-                .map(|flag| Pair {
-                    display: flag.to_string(),
-                    replacement: format!("{} ", flag),
-                })
-                .collect();
-            if candidates.is_empty() {
-                return Ok((line.len(), vec![]));
-            }
-            return Ok((line.len() - flag_partial.len(), candidates));
-        }
-
-        self.models_completion_from_cache(&self.current_provider(), after_cmd, line)
+        Ok((line.len() - partial.len(), candidates))
     }
 
     fn current_provider(&self) -> String {
@@ -235,29 +200,6 @@ impl GooseCompleter {
         } else {
             cache.current_session_provider.clone()
         }
-    }
-
-    fn models_completion_from_cache(
-        &self,
-        provider_name: &str,
-        partial: &str,
-        full_line: &str,
-    ) -> Result<(usize, Vec<Pair>)> {
-        let cache = self.completion_cache.read().unwrap();
-        let models = cache.provider_models.get(provider_name);
-        let candidates: Vec<Pair> = match models {
-            Some(names) if !names.is_empty() => names
-                .iter()
-                .filter(|name| name.starts_with(partial))
-                .map(|name| Pair {
-                    display: name.clone(),
-                    replacement: format!("{} ", name),
-                })
-                .collect(),
-            _ => vec![],
-        };
-        let pos = full_line.len() - partial.len();
-        Ok((pos, candidates))
     }
 
     /// Complete slash commands
@@ -802,6 +744,27 @@ mod tests {
         assert_eq!(pos, "/model --effort high ".len());
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].display, "claude-sonnet-4");
+
+        let (pos, candidates) = completer
+            .complete_model_names("/model --effort low --p")
+            .unwrap();
+        assert_eq!(pos, "/model --effort low ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].replacement, "--provider ");
+
+        let (pos, candidates) = completer
+            .complete_model_names("/model --effort low --provider zai ")
+            .unwrap();
+        assert_eq!(pos, "/model --effort low --provider zai ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].display, "glm-4.5");
+
+        let (pos, candidates) = completer
+            .complete_model_names("/model --provider zai --effort me")
+            .unwrap();
+        assert_eq!(pos, "/model --provider zai --effort ".len());
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].display, "medium");
     }
 
     #[test]
