@@ -1069,6 +1069,11 @@ where
 
             let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
 
+            // An empty data field is a valid SSE keepalive
+            if data_part.trim().is_empty() {
+                continue;
+            }
+
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
                 break;
