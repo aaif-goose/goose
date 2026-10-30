@@ -952,7 +952,7 @@ impl CliSession {
                     return Ok(());
                 }
                 return self
-                    .set_session_thinking_effort(effort, &current_model_name)
+                    .set_session_thinking_effort(effort, &current_model_config)
                     .await;
             }
             let effort_info = current_model_config
@@ -1110,6 +1110,10 @@ impl CliSession {
             );
         }
 
+        if let Some(effort) = effort {
+            warn_if_effort_may_be_ignored(&new_model_config, effort);
+        }
+
         self.services
             .switch_provider(&self.session_id, target_provider_name, new_model_config)
             .await?;
@@ -1140,7 +1144,7 @@ impl CliSession {
     async fn set_session_thinking_effort(
         &mut self,
         effort: ThinkingEffort,
-        model_name: &str,
+        model_config: &goose_providers::model::ModelConfig,
     ) -> Result<()> {
         if let Err(e) = self
             .services
@@ -1153,8 +1157,9 @@ impl CliSession {
 
         output::goose_mode_message(&format!(
             "Session thinking effort set to '{}' for model '{}'",
-            effort, model_name
+            effort, model_config.model_name
         ));
+        warn_if_effort_may_be_ignored(model_config, effort);
         Ok(())
     }
 
@@ -2857,6 +2862,22 @@ fn parse_thinking_effort(value: &str) -> std::result::Result<ThinkingEffort, Str
     value
         .parse()
         .map_err(|_| format!("Invalid thinking effort '{value}'. Valid values: {valid}."))
+}
+
+fn warn_if_effort_may_be_ignored(
+    model_config: &goose_providers::model::ModelConfig,
+    effort: ThinkingEffort,
+) {
+    if effort != ThinkingEffort::Off && !model_config.is_reasoning_model() {
+        eprintln!(
+            "{}",
+            console::style(format!(
+                "Warning: '{}' is not known to support thinking effort, so '{}' may have no effect.",
+                model_config.model_name, effort
+            ))
+            .yellow()
+        );
+    }
 }
 
 fn build_switched_model_config(
