@@ -1439,4 +1439,88 @@ mod tests {
             ServerNotification::ProgressNotification(_)
         ));
     }
+
+    struct CancellationProbe {
+        cancelled: mpsc::UnboundedSender<()>,
+    }
+
+    impl rmcp::ServerHandler for CancellationProbe {
+        fn get_info(&self) -> rmcp::model::ServerConfig {
+            InitializeResult::new(
+                rmcp::model::ServerCapabilities::builder()
+                    .enable_tools()
+                    .build(),
+            )
+        }
+
+        async fn call_tool(
+            &self,
+            _request: CallToolRequestParams,
+            context: RequestContext<rmcp::RoleServer>,
+        ) -> Result<rmcp::model::CallToolResponse, ErrorData> {
+            context.ct.cancelled().await;
+            let _ = self.cancelled.send(());
+            Ok(CallToolResult::success(vec![]).into())
+        }
+    }
+
+    #[test_case(Duration::from_secs(60), true; "cancelled")]
+    #[test_case(Duration::from_millis(100), false; "timed out")]
+    #[tokio::test]
+    async fn abandoned_tool_call_notifies_2026_07_28_server(timeout: Duration, cancel: bool) {
+        use rmcp::ServiceExt;
+
+        let (server_read, client_write) = tokio::io::duplex(65536);
+        let (client_read, server_write) = tokio::io::duplex(65536);
+        let (cancelled_tx, mut cancelled_rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let running = CancellationProbe {
+                cancelled: cancelled_tx,
+            }
+            .serve((server_read, server_write))
+            .await
+            .unwrap();
+            let _ = running.waiting().await;
+        });
+
+        let client = McpClient::connect(
+            (client_read, client_write),
+            ConnectContext {
+                timeout,
+                client_name: "test".to_string(),
+                capabilities: GooseMcpClientCapabilities {
+                    mcpui: false,
+                    host_info: None,
+                    elicitation_handler: None,
+                    protocol_version: None,
+                },
+                working_dir: std::env::temp_dir(),
+                docker_container: None,
+                action_required: Arc::new(ActionRequiredManager::new()),
+                tools_version: Arc::new(AtomicU64::new(0)),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            client.get_info().unwrap().protocol_version,
+            ProtocolVersion::V_2026_07_28
+        );
+
+        let cancel_token = CancellationToken::new();
+        if cancel {
+            let cancel_token = cancel_token.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                cancel_token.cancel();
+            });
+        }
+        let ctx = ToolCallContext::new("session".to_string(), None, None);
+        let result = client.call_tool(&ctx, "slow", None, cancel_token).await;
+        assert!(result.is_err());
+
+        tokio::time::timeout(Duration::from_secs(5), cancelled_rx.recv())
+            .await
+            .expect("server should receive notifications/cancelled");
+    }
 }
