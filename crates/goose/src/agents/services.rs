@@ -123,6 +123,7 @@ pub struct TurnSettings {
     /// `None` derives it from the context limit.
     pub tool_call_cutoff: Option<usize>,
     pub auto_effort: Option<Arc<dyn Operation<Session, GooseEffect>>>,
+    pub context_relevance: Option<Arc<dyn goose_providers::decision::DecisionProvider>>,
 }
 
 impl TurnSettings {
@@ -155,6 +156,9 @@ impl TurnSettings {
                 .unwrap_or(crate::context_mgmt::DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
             tool_call_cutoff: config.get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF").ok(),
             auto_effort: auto_effort_from_config(provider, model_config),
+            context_relevance: crate::agents::state_machine_builder::context_relevance_provider(
+                config, provider,
+            ),
         }
     }
 }
@@ -764,6 +768,7 @@ impl StateMachineServices {
             max_turns,
             extra_operations: settings.auto_effort.into_iter().collect(),
             cancel,
+            context_relevance: settings.context_relevance,
         })
     }
 

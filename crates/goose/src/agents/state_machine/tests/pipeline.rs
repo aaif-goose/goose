@@ -254,6 +254,22 @@ impl TestPipeline {
         self.reconstruct().await
     }
 
+    pub(super) fn provider(&self) -> &dyn Provider {
+        self.provider.as_ref()
+    }
+
+    pub(super) fn with_context_relevance(
+        mut self,
+        decisions: Arc<dyn goose_providers::decision::DecisionProvider>,
+    ) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.context_relevance = Some(decisions);
+        self
+    }
+
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
         self.max_turns = max_turns;
         self
@@ -899,6 +915,7 @@ async fn build_test_pipeline(
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,
             auto_effort: None,
+            context_relevance: None,
         },
         max_turns: MAX_TURNS,
         session_id: session.id.clone(),
