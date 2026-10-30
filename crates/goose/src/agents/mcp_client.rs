@@ -1517,10 +1517,15 @@ mod tests {
         }
         let ctx = ToolCallContext::new("session".to_string(), None, None);
         let result = client.call_tool(&ctx, "slow", None, cancel_token).await;
-        assert!(result.is_err());
+        if cancel {
+            assert!(matches!(result, Err(ServiceError::Cancelled { .. })));
+        } else {
+            assert!(matches!(result, Err(ServiceError::Timeout { .. })));
+        }
 
         tokio::time::timeout(Duration::from_secs(5), cancelled_rx.recv())
             .await
-            .expect("server should receive notifications/cancelled");
+            .expect("server should receive notifications/cancelled")
+            .expect("probe server stopped before observing cancellation");
     }
 }
