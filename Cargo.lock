@@ -4334,6 +4334,7 @@ version = "0.1.0-alpha.13"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blake3",
  "futures",
  "goose-provider-types",
  "goose-sdk-types",

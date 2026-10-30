@@ -207,3 +207,29 @@ from JavaScript. Some things differ from native:
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
+
+## Connected MCP tools (native)
+
+`mcp::McpTools::discover` takes already-connected clients under explicit namespaces
+and produces an immutable tool/routing snapshot. An `rmcp::Peer<RoleClient>` can be
+used directly; applications with an existing client implement the two-method
+`McpToolClient<S>` interface instead. The adapter implements `ToolProvider<S>` and
+can be registered with `ToolOperation::with_provider`, including its post-tool
+hook and the pipeline's separate approval/pre-tool operations.
+
+Discovery follows pagination and fails on discovery errors, repeated cursors, or
+colliding public tool names. Public names are provider-safe; dispatch retains the
+original server names and preserves arguments, request metadata, and results.
+Discovery is explicit: retain a snapshot for the session and inference that used
+it, and build a new one for subsequent work when the tool list changes. Do not
+share a session-specific snapshot across sessions with different tool visibility.
+
+`McpToolCatalog<T>` is the lower-level catalog for applications that retain their
+own execution pipeline. Goose's extension leases use it for immutable routing and
+provider-safe names while retaining application-specific dispatch and policy.
+
+This module does not connect transports, launch processes, resolve configuration,
+store sessions, authorize users, or own server shutdown. The caller retains the
+running MCP service and configures its notification/elicitation handlers. The
+basic peer adapter does not drive input-required/MRTR follow-up rounds, forward
+request-scoped notifications to agent events, or automatically refresh catalogs.

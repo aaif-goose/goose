@@ -39,4 +39,6 @@ wasm-bindgen-futures = "0.4.78"
 wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+blake3 = { version = "1", default-features = false, features = ["std"] }
+rmcp = { workspace = true, features = ["client"] }
 serde_yaml.workspace = true

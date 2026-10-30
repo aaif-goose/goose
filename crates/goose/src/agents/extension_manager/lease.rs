@@ -3,12 +3,14 @@
 //! resolved lease sees them.
 
 use std::collections::HashMap;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use futures::stream;
 use futures::{FutureExt, Stream};
+use goose_agent::mcp::{provider_safe_tool_name, McpTool, McpToolCatalog};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult,
     ListResourcesResult, ListToolsResult, Prompt, ReadResourceResult, Resource, ResourceContents,
@@ -104,16 +106,9 @@ impl LeaseId {
     }
 }
 
-struct CatalogEntry {
-    tool: Tool,
-    extension: Arc<Extension>,
-    server_name: String,
-}
+type CatalogEntry = McpTool<Arc<Extension>>;
 
-struct ToolCatalog {
-    entries: Vec<CatalogEntry>,
-    by_name: HashMap<String, usize>,
-}
+struct ToolCatalog(McpToolCatalog<Arc<Extension>>);
 
 impl ToolCatalog {
     async fn build(scope_id: &str, extensions: &[Arc<Extension>]) -> Self {
@@ -129,11 +124,11 @@ impl ToolCatalog {
         .await;
 
         let mut entries = Vec::new();
-        let mut by_name = HashMap::new();
+        let mut names = std::collections::HashSet::new();
         for (extension, tools) in extensions.iter().zip(lists) {
             for tool in tools.iter() {
                 let name = provider_safe_tool_name(&tool.name);
-                if by_name.contains_key(&name) {
+                if !names.insert(name.clone()) {
                     warn!(
                         tool = %name,
                         extension = %extension.key,
@@ -157,38 +152,19 @@ impl ToolCatalog {
                 }
                 let mut tool = tool.clone();
                 tool.name = name.clone().into();
-                by_name.insert(name, entries.len());
                 entries.push(CatalogEntry {
                     tool,
-                    extension: Arc::clone(extension),
+                    target: Arc::clone(extension),
                     server_name,
                 });
             }
         }
-        Self { entries, by_name }
+        Self(McpToolCatalog::new(entries).expect("duplicate names were filtered"))
     }
 
     fn get(&self, name: &str) -> Option<&CatalogEntry> {
-        self.by_name.get(name).map(|&i| &self.entries[i])
+        self.0.get(name)
     }
-}
-
-/// MCP allows tool names that providers reject (OpenAI requires
-/// `^[a-zA-Z0-9_-]{1,64}$`). A rewritten name carries a hash of the original
-/// so that `db.query` and `db_query`, or two names sharing their first 64
-/// characters, stay distinct tools.
-fn provider_safe_tool_name(name: &str) -> String {
-    let is_safe = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
-    if name.len() <= 64 && name.chars().all(is_safe) {
-        return name.to_string();
-    }
-    let sanitized: String = name
-        .chars()
-        .map(|c| if is_safe(c) { c } else { '_' })
-        .take(55)
-        .collect();
-    let hash = blake3::hash(name.as_bytes()).to_hex();
-    format!("{sanitized}_{:.8}", hash.as_str())
 }
 
 #[derive(Clone)]
@@ -269,7 +245,8 @@ impl ExtensionLease {
     pub async fn tools(&self) -> Vec<Tool> {
         self.tool_catalog()
             .await
-            .entries
+            .0
+            .entries()
             .iter()
             .map(|entry| entry.tool.clone())
             .collect()
@@ -279,9 +256,10 @@ impl ExtensionLease {
         let key = name_to_key(extension);
         self.tool_catalog()
             .await
-            .entries
+            .0
+            .entries()
             .iter()
-            .filter(|entry| entry.extension.key == key)
+            .filter(|entry| entry.target.key == key)
             .map(|entry| entry.tool.clone())
             .collect()
     }
@@ -290,9 +268,10 @@ impl ExtensionLease {
         let key = name_to_key(extension);
         self.tool_catalog()
             .await
-            .entries
+            .0
+            .entries()
             .iter()
-            .filter(|entry| entry.extension.key != key)
+            .filter(|entry| entry.target.key != key)
             .map(|entry| entry.tool.clone())
             .collect()
     }
@@ -600,14 +579,15 @@ impl ExtensionLease {
         let belongs_to_extension = |entry: &&CatalogEntry| {
             extension_key
                 .as_ref()
-                .is_none_or(|key| entry.extension.key == *key)
+                .is_none_or(|key| entry.target.key == *key)
         };
         let entry = catalog
             .get(tool_name)
             .filter(belongs_to_extension)
             .or_else(|| {
                 let tool_owners = catalog
-                    .entries
+                    .0
+                    .entries()
                     .iter()
                     .filter(belongs_to_extension)
                     .map(|entry| (entry.tool.name.as_ref(), get_tool_owner(&entry.tool)))
@@ -623,7 +603,8 @@ impl ExtensionLease {
 
         let Some(entry) = entry else {
             let available = catalog
-                .entries
+                .0
+                .entries()
                 .iter()
                 .filter(belongs_to_extension)
                 .map(|entry| entry.tool.name.as_ref())
@@ -648,7 +629,7 @@ impl ExtensionLease {
         }
 
         Ok(ResolvedTool {
-            extension: &entry.extension,
+            extension: &entry.target,
             server_name: &entry.server_name,
             tool: &entry.tool,
         })

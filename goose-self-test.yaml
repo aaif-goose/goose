@@ -268,6 +268,11 @@ prompt: |
   3. Test enabling and disabling dynamic extensions (if any available)
   4. Verify extension isolation between enabled extensions
 
+  ### Connected MCP Tool Snapshots
+  1. Run `cargo test -p goose-agent --test mcp_tools`.
+  2. Verify pagination, namespaced routing, result/metadata preservation, snapshot lifetime, cancellation, and attachment of a connected rmcp peer.
+  3. Run `cargo test -p goose --lib --features tree-sitter agents::extension_manager` to check that application leases still use the shared catalog without changing extension behavior.
+
   Log results to: {{ workspace_dir }}/phase2_extensions.md
   {% endif %}
 
