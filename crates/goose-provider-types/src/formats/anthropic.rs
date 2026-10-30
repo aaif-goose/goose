@@ -1086,7 +1086,9 @@ where
                     let error = match error_type {
                         "overloaded_error" | "api_error" => ProviderError::ServerError(details),
                         "rate_limit_error" => ProviderError::RateLimitExceeded { details, retry_delay: None },
-                        "authentication_error" => ProviderError::Authentication(details),
+                        "authentication_error" | "permission_error" => ProviderError::Authentication(details),
+                        "billing_error" => ProviderError::CreditsExhausted { details, top_up_url: None },
+                        "request_too_large" => ProviderError::ContextLengthExceeded(details),
                         _ => ProviderError::RequestFailed(details),
                     };
                     Err(error)?;
@@ -2951,6 +2953,54 @@ mod tests {
         assert_eq!(merged.output_tokens, Some(510));
         assert_eq!(merged.cache_read_input_tokens, Some(5000));
         assert_eq!(merged.cache_write_input_tokens, Some(10000));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_permission_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"permission_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::Authentication(details))
+                    if details == "permission_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_billing_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"billing_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::CreditsExhausted { details, top_up_url: None })
+                    if details == "billing_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_request_too_large_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"request_too_large","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::ContextLengthExceeded(details))
+                    if details == "request_too_large: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     fn expect_refusal(
