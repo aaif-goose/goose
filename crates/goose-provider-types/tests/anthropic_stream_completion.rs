@@ -177,6 +177,8 @@ async fn ping_and_unknown_events_remain_compatible() {
         "event: ping",
         r#"data:{"type":"ping"}"#,
         r#"data: {"type":"future_event"}"#,
+        "data:",
+        "data: ",
         START,
         DELTA,
         STOP,
