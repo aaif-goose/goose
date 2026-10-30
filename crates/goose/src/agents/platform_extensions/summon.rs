@@ -904,7 +904,7 @@ impl SummonClient {
         if subagent
             .conversation
             .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+            .and_then(crate::agents::subagent_handler::worker_successful_output)
             .is_some()
         {
             return Err(format!("Subagent {subagent_id} already completed"));
@@ -1911,6 +1911,33 @@ mod tests {
             let error = resume(&client, session_id, args.clone()).await.unwrap_err();
             assert!(error.contains(expected), "{args}: {error}");
         }
+        manager
+            .add_message(
+                &completed.id,
+                &Message::assistant().with_error(
+                    crate::conversation::message::MessageErrorKind::Other,
+                    "provider exhausted after output",
+                ),
+            )
+            .await?;
+        resume(
+            &client,
+            &parent.id,
+            serde_json::json!({"resume": completed.id, "instructions": "Try again"}),
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        let resumed = manager.get_session(&completed.id, true).await?;
+        assert_eq!(
+            resumed
+                .conversation
+                .as_ref()
+                .unwrap()
+                .last()
+                .unwrap()
+                .as_concat_text(),
+            "Try again"
+        );
         let untouched = manager.get_session(&subagent.id, true).await?;
         assert!(untouched.conversation.as_ref().unwrap().is_empty());
         Ok(())
