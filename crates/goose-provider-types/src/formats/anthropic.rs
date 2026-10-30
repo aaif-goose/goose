@@ -136,6 +136,13 @@ impl AnthropicFormatOptions {
     }
 }
 
+pub fn is_reserved_request_param_key(key: &str) -> bool {
+    matches!(
+        key,
+        "messages" | "model" | "stream" | "max_tokens" | "system" | "tools"
+    )
+}
+
 pub fn thinking_block_is_stale(message: &Message, current_model: Option<&str>) -> bool {
     let Some(current_model) = current_model else {
         return false;
@@ -875,6 +882,17 @@ fn apply_thinking_config(
         && requires_explicit_thinking_disable(provider_name, &model_config.model_name)
     {
         obj.insert("thinking".to_string(), json!({"type": "disabled"}));
+    }
+
+    // Newer Claude models default to `display: "omitted"` and return empty thinking
+    // blocks. Request summaries explicitly; other models sharing this format don't
+    // accept the field.
+    if model_config.model_name.to_lowercase().contains("claude") {
+        if let Some(thinking) = obj.get_mut("thinking").and_then(|t| t.as_object_mut()) {
+            if thinking.get("type").and_then(|t| t.as_str()) != Some("disabled") {
+                thinking.insert("display".to_string(), json!("summarized"));
+            }
+        }
     }
 
     // `block_binding` is only accepted alongside adaptive or enabled thinking.
@@ -1826,9 +1844,11 @@ mod tests {
         let messages = vec![Message::user().with_text("Hello")];
         let payload = create_request_with_default_options(&config, "system", &messages, &[])?;
 
-        assert_eq!(payload["thinking"]["type"], "adaptive");
+        assert_eq!(
+            payload["thinking"],
+            json!({"type": "adaptive", "display": "summarized"})
+        );
         assert_eq!(payload["output_config"]["effort"], "high");
-        assert!(payload["thinking"].get("budget_tokens").is_none());
 
         Ok(())
     }
@@ -1847,6 +1867,7 @@ mod tests {
         let payload = create_request_with_default_options(&config, "system", &messages, &[])?;
 
         assert_eq!(payload["thinking"]["type"], "enabled");
+        assert_eq!(payload["thinking"]["display"], "summarized");
         let budget = payload["thinking"]["budget_tokens"].as_i64().unwrap();
         assert!(budget > 0);
         assert_eq!(payload["max_tokens"], 64000);
@@ -1906,6 +1927,27 @@ mod tests {
     }
 
     #[test]
+    fn test_create_request_non_claude_adaptive_omits_thinking_display() -> Result<()> {
+        let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
+
+        let mut config = cfg("muse-spark");
+        config.reasoning = Some(true);
+        let messages = vec![Message::user().with_text("Hello")];
+        let payload = create_request(
+            "muse_code",
+            &config,
+            "system",
+            &messages,
+            &[],
+            AnthropicFormatOptions::default(),
+        )?;
+
+        assert_eq!(payload["thinking"], json!({"type": "adaptive"}));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_create_request_preserves_thinking_context_for_compatible_models() -> Result<()> {
         let _guard = env_lock::lock_env([
             ("CLAUDE_THINKING_ENABLED", None::<&str>),
@@ -1936,6 +1978,7 @@ mod tests {
         assert_eq!(payload["thinking"]["type"], "enabled");
         assert!(payload["thinking"]["budget_tokens"].as_i64().unwrap() >= 1024);
         assert_eq!(payload["thinking"]["clear_thinking"], false);
+        assert!(payload["thinking"].get("display").is_none());
         assert_eq!(payload["max_tokens"], 64000);
         assert_eq!(payload["messages"][0]["content"][0]["type"], "thinking");
         assert_eq!(payload["messages"][0]["content"][0]["thinking"], "internal");

@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use futures::Stream;
 use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc;
@@ -17,6 +18,14 @@ pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[cfg(target_arch = "wasm32")]
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
+
+#[cfg(target_arch = "wasm32")]
+pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + 'a>>;
+
+pub const CLIENT_LOG: &str = "client_log";
+
 pub struct SlashCommand<'a> {
     pub command: &'a str,
     pub params_str: &'a str,
@@ -24,12 +33,14 @@ pub struct SlashCommand<'a> {
 
 pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]> {
     let messages = conversation.messages();
+    let is_kickoff = |msg: &Message| msg.role == rmcp::model::Role::User && !msg.is_tool_response();
     let start = messages
         .iter()
-        .rposition(|message| {
-            message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
+        .rposition(|msg| is_kickoff(msg) && msg.is_user_visible())
+        .or_else(|| {
+            messages
+                .iter()
+                .rposition(|msg| is_kickoff(msg) && msg.is_agent_visible())
         })
         .ok_or_else(|| anyhow!("state machine conversation has no kickoff message"))?;
     Ok(&messages[start..])
@@ -92,14 +103,13 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         message.metadata.operation_note(self.name(), key)
     }
 
-    async fn cancel(
+    async fn finalize_cancellation(
         &self,
         _session: &S,
         _conversation: &Conversation,
-        result: OperationResult<E>,
         _emit: &Emitter,
-    ) -> Result<OperationResult<E>> {
-        Ok(result)
+    ) -> Vec<E> {
+        Vec::new()
     }
 
     async fn run_command(
@@ -152,6 +162,10 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
     /// firing the hooks that mark the start of a turn.
     fn applies(&self, conversation: &Conversation) -> bool;
 
+    async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {
+        Ok(None)
+    }
+
     async fn infer(
         &self,
         session: &S,
@@ -161,10 +175,17 @@ pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S
     ) -> Result<OperationResult<E>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    Continuing,
+    Yielded,
+    Cancelled,
+}
+
 pub struct StepResult<E = ConversationEffect> {
     pub effects: Vec<E>,
     pub applied_step: Option<&'static str>,
-    pub yield_to_client: bool,
+    pub status: RunStatus,
 }
 
 pub enum OperationResult<E = ConversationEffect> {
@@ -180,7 +201,7 @@ pub fn applied<E>(effects: impl IntoIterator<Item = E>) -> Result<OperationResul
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: false,
+        status: RunStatus::Continuing,
     }))
 }
 
@@ -188,7 +209,7 @@ pub fn yielded<E>() -> Result<OperationResult<E>> {
     Ok(OperationResult::Applied(StepResult {
         effects: Vec::new(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
@@ -196,7 +217,7 @@ pub fn yielded_with<E>(effects: impl IntoIterator<Item = E>) -> Result<Operation
     Ok(OperationResult::Applied(StepResult {
         effects: effects.into_iter().collect(),
         applied_step: None,
-        yield_to_client: true,
+        status: RunStatus::Yielded,
     }))
 }
 
@@ -210,6 +231,12 @@ pub enum ConversationEffect {
     PatchToolRequestMeta {
         tool_call_id: String,
         patch: serde_json::Value,
+    },
+    SetMessageOperationNote {
+        message_id: String,
+        operation: String,
+        key: String,
+        value: serde_json::Value,
     },
     SetMessageVisibility {
         message_id: String,
@@ -248,22 +275,22 @@ impl From<Conversation> for ConversationEffect {
 }
 
 pub struct Emitter {
-    tx: mpsc::Sender<AgentEvent>,
+    tx: mpsc::UnboundedSender<AgentEvent>,
     cancel: CancellationToken,
 }
 
 impl Emitter {
-    pub fn new(tx: mpsc::Sender<AgentEvent>, cancel: CancellationToken) -> Self {
+    pub fn new(tx: mpsc::UnboundedSender<AgentEvent>, cancel: CancellationToken) -> Self {
         Self { tx, cancel }
     }
 
-    pub async fn emit(&self, event: AgentEvent) {
-        let _ = self.tx.send(event).await;
+    pub fn emit(&self, event: AgentEvent) {
+        let _ = self.tx.send(event);
     }
 
-    pub async fn message(&self, message: Message) -> Message {
+    pub fn message(&self, message: Message) -> Message {
         let message = message.with_generated_id_if_missing();
-        self.emit(AgentEvent::Message(message.clone())).await;
+        self.emit(AgentEvent::Message(message.clone()));
         message
     }
 

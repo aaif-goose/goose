@@ -1,0 +1,41 @@
+# NSIS installer for the Windows desktop app. electron-builder wraps the directory that
+# electron-forge packaged (pnpm run make:win32-installer <dir>), so the ZIP output and the
+# swap updater that ZIP copies use are unchanged. electron-builder never packs or signs the app.
+
+# Also the shortcut AppUserModelID and the registry key the install is recorded under. Matches
+# the macOS bundle identifier electron-packager derives from the product name. Updates and
+# uninstalls find the existing install through it, so it must never change.
+appId: com.electron.goose
+# Publisher shown by Apps & features, the same as the deb and rpm maintainer. Injected here so
+# package.json and the forge build stay unchanged.
+extraMetadata:
+  author:
+    name: AAIF (Agentic AI Foundation)
+directories:
+  output: out/make/nsis/win32/x64
+# release.yml generates installer.yml from the published setup executable instead.
+publish: null
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: src/images/icon.ico
+  signtoolOptions:
+    # The signing job passes a sign hook on the command line. sha256 only means one call per file.
+    signingHashAlgorithms:
+      - sha256
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  include: electron-builder.nsis.nsh
+  # Both bitmaps are scaled from the docs site logo assets (documentation/static/img) on the
+  # site's light background: the 164x314 welcome and finish sidebar stacks the glyph over the
+  # wordmark, the 150x57 page header is the horizontal lockup.
+  installerSidebar: electron-builder.nsis.sidebar.bmp
+  installerHeader: electron-builder.nsis.header.bmp
+  artifactName: ${productName}-win32-x64-setup.${ext}
+  differentialPackage: false
+  # Per-user updates never elevate, and packing the helper would write into the packaged directory.
+  packElevateHelper: false

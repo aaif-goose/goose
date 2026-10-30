@@ -5,6 +5,7 @@ bun.lockb
 yarn.lock
 pnpm-lock.yaml
 .env
+.data/
 .discraft
 
 *.tsbuildinfo

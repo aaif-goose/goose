@@ -183,6 +183,8 @@ impl goose_providers::base::ProviderDescriptor for GeminiCliProvider {
 
 impl ProviderDef for GeminiCliProvider {
     type Provider = Self;
+    const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         _extensions: Vec<crate::config::ExtensionConfig>,

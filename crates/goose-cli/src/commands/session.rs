@@ -3,8 +3,8 @@ use anyhow::{Context, Result};
 use cliclack::{confirm, multiselect, select};
 use etcetera::home_dir;
 use goose::session::{
-    export_session_to_markdown, generate_diagnostics, DiagnosticsLevel, Session, SessionManager,
-    SessionType,
+    export_session_to_html, export_session_to_markdown, generate_diagnostics, DiagnosticsLevel,
+    Session, SessionManager, SessionType,
 };
 use goose::utils::safe_truncate;
 use regex::Regex;
@@ -313,9 +313,11 @@ pub async fn handle_session_export(
         "markdown" => {
             let conversation = session
                 .conversation
+                .clone()
                 .ok_or_else(|| anyhow::anyhow!("Session has no messages"))?;
             export_session_to_markdown(conversation.user_visible_messages(), &session.name)
         }
+        "html" => export_session_to_html(&session)?,
         _ => return Err(anyhow::anyhow!("Unsupported format: {}", format)),
     };
 

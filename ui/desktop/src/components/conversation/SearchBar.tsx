@@ -36,8 +36,8 @@ interface SearchBarProps {
   onSearch: (term: string, caseSensitive: boolean) => void;
   /** Callback fired when the search bar is closed */
   onClose: () => void;
-  /** Optional callback for navigating between search results */
-  onNavigate?: (direction: 'next' | 'prev') => void;
+  /** Callback for navigating between search results */
+  onNavigate: (direction: 'next' | 'prev') => void;
   /** Current search results state */
   searchResults?: {
     count: number;
@@ -153,7 +153,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     e?.preventDefault();
     if (searchResults && searchResults.count > 0) {
       inputRef.current?.focus();
-      onNavigate?.(direction);
+      onNavigate(direction);
     }
   };
 

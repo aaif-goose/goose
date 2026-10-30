@@ -153,7 +153,7 @@ describe('RTL chat direction', () => {
     });
 
     it('updates the edit textarea direction as the content changes', () => {
-      renderWithIntl(<UserMessage message={makeUserMessage('hello')} />);
+      renderWithIntl(<UserMessage message={makeUserMessage('hello')} onMessageUpdate={vi.fn()} />);
 
       fireEvent.click(screen.getByRole('button', { name: /Edit message/ }));
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;

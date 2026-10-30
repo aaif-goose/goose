@@ -1,6 +1,6 @@
 use super::{
     canonical_name, CanonicalModel, CanonicalModelRegistry, Limit, Modalities, Modality, Pricing,
-    ThinkingMode,
+    PricingTier, ThinkingMode,
 };
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -40,6 +40,8 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-opus-4.8" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-4.6" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
+        "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "anthropic/claude-haiku-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         _ => None,
     }
 }
@@ -58,6 +60,25 @@ fn parse_modalities(model_data: &Value, field: &str) -> Vec<Modality> {
                 .collect()
         })
         .unwrap_or_else(|| vec![Modality::Text])
+}
+
+fn parse_context_tiers(cost: &Value) -> Vec<PricingTier> {
+    let Some(tiers) = cost.get("tiers").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    tiers
+        .iter()
+        .filter(|t| t["tier"]["type"] == "context")
+        .filter_map(|t| {
+            Some(PricingTier {
+                above_input_tokens: t["tier"]["size"].as_u64()?,
+                input: t.get("input").and_then(|v| v.as_f64()),
+                output: t.get("output").and_then(|v| v.as_f64()),
+                cache_read: t.get("cache_read").and_then(|v| v.as_f64()),
+                cache_write: t.get("cache_write").and_then(|v| v.as_f64()),
+            })
+        })
+        .collect()
 }
 
 fn process_model(
@@ -82,13 +103,9 @@ fn process_model(
             output: c.get("output").and_then(|v| v.as_f64()),
             cache_read: c.get("cache_read").and_then(|v| v.as_f64()),
             cache_write: c.get("cache_write").and_then(|v| v.as_f64()),
+            tiers: parse_context_tiers(c),
         },
-        _ => Pricing {
-            input: None,
-            output: None,
-            cache_read: None,
-            cache_write: None,
-        },
+        _ => Pricing::default(),
     };
 
     let limit = Limit {
@@ -110,6 +127,23 @@ fn process_model(
         family: get_string(model_data, "family"),
         attachment: model_data.get("attachment").and_then(|v| v.as_bool()),
         reasoning: model_data.get("reasoning").and_then(|v| v.as_bool()),
+        reasoning_efforts: model_data
+            .get("reasoning_options")
+            .and_then(|v| v.as_array())
+            .and_then(|options| {
+                options
+                    .iter()
+                    .find(|option| option.get("type").and_then(Value::as_str) == Some("effort"))
+            })
+            .and_then(|option| option.get("values"))
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            }),
         thinking_mode: get_thinking_mode(&canonical_id, model_data),
         tool_call: model_data
             .get("tool_call")
@@ -192,6 +226,7 @@ mod tests {
                 family: None,
                 attachment: None,
                 reasoning: None,
+                reasoning_efforts: None,
                 thinking_mode: None,
                 tool_call: false,
                 temperature: None,
@@ -227,6 +262,16 @@ mod tests {
         assert_eq!(
             variants[pick_winning_variant(&variants)].0,
             "claude-haiku-4-5"
+        );
+    }
+
+    #[test]
+    fn parses_effort_options_without_confusing_other_reasoning_options() {
+        let json = r#"{"openai":{"models":{"future":{"name":"Future","reasoning":true,"reasoning_options":[{"type":"budget","values":[100]},{"type":"effort","values":["low","max"]}]}}}}"#;
+        let registry = from_models_dev(json).unwrap();
+        assert_eq!(
+            registry.get("openai", "future").unwrap().reasoning_efforts,
+            Some(vec!["low".to_string(), "max".to_string()])
         );
     }
 

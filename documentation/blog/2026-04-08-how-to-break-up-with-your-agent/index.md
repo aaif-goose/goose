@@ -4,6 +4,7 @@ description: "ACP lets you keep your favorite editor but swap the AI agent, or k
 authors:
     - codefromthecrypt
 image: /img/blog/how-to-break-up-with-your-agent.png
+tags: [gdk]
 ---
 
 ![Editors connect to Goose via ACP, and Goose connects to multiple agents](/img/blog/how-to-break-up-with-your-agent.png)

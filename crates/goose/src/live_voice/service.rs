@@ -1,8 +1,8 @@
 use super::interaction::{LiveMainAgent, LiveVoiceInteraction, LiveVoiceInteractionId};
+use crate::agents::ActiveRunRegistry;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
-use crate::execution::ActiveRunRegistry;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
@@ -369,14 +369,20 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     let voice = config
         .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
         .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
-    OpenAiLiveVoiceProvider::new(
+    let tls_config = crate::config::tls::provider_tls_config_from_config(config)
+        .map_err(|_| "Live voice TLS configuration is invalid")?;
+    let provider = OpenAiLiveVoiceProvider::new(
         api_key,
         voice,
         LIVE_SESSION_INSTRUCTIONS.into(),
         DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
     )
-    .map(|provider| Arc::new(provider) as Arc<dyn LiveVoiceProvider>)
-    .map_err(|_| "Live voice provider is not configured")
+    .map_err(|_| "Live voice provider is not configured")?;
+    let provider = match tls_config {
+        Some(tls_config) => provider.with_tls_config(tls_config),
+        None => provider,
+    };
+    Ok(Arc::new(provider))
 }
 
 #[cfg(not(feature = "live-voice"))]

@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io;
 use tokio::pin;
 use tokio_util::io::StreamReader;
@@ -19,13 +20,14 @@ use super::base::{
 };
 pub use super::formats::anthropic::AnthropicFormatOptions;
 use super::formats::anthropic::{
-    block_binding_behavior, create_request_for_model, is_thinking_signature_error,
-    response_to_streaming_message, PrefixMismatchBehavior, ANTHROPIC_PROVIDER_NAME,
-    INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
+    block_binding_behavior, create_request_for_model, is_reserved_request_param_key,
+    is_thinking_signature_error, response_to_streaming_message, PrefixMismatchBehavior,
+    ANTHROPIC_PROVIDER_NAME, INPUT_TRANSFORMATIONS_FIELD, THINKING_BINDING_CONTROLS_BETA,
 };
 use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
+use crate::http_status::extract_request_id;
 use crate::model::ModelConfig;
 use rmcp::model::Tool;
 
@@ -163,7 +165,20 @@ impl AnthropicProvider {
             format_options,
         )?;
         payload["stream"] = Value::Bool(true);
+        if let Some(params) = self
+            .declared_model(&model_config.model_name)
+            .and_then(|m| m.request_params.as_ref())
+        {
+            apply_declared_request_params(&mut payload, params);
+        }
         Ok(payload)
+    }
+
+    fn declared_model(&self, model_name: &str) -> Option<&ModelInfo> {
+        self.custom_models
+            .as_ref()?
+            .iter()
+            .find(|m| m.name == model_name)
     }
 
     async fn post_messages(
@@ -228,6 +243,8 @@ impl AnthropicProvider {
         .inspect_err(|e| {
             let _ = log.error(e);
         })?;
+        // Must be read before `bytes_stream()` consumes the response.
+        let request_id = extract_request_id(response.headers());
         let stream = response.bytes_stream().map_err(io::Error::other);
         Ok(Box::pin(try_stream! {
             let reader = StreamReader::new(stream);
@@ -235,7 +252,10 @@ impl AnthropicProvider {
             let messages = response_to_streaming_message(framed);
             pin!(messages);
             while let Some(message) = futures::StreamExt::next(&mut messages).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+                let (message, mut usage) = message.map_err(ProviderError::from_stream_error)?;
+                if let Some(usage) = usage.as_mut() {
+                    usage.request_id = request_id.clone();
+                }
                 if let Some(transformations) = usage
                     .as_ref()
                     .and_then(|usage| usage.additional_data.as_ref())
@@ -459,6 +479,17 @@ fn beta_header_value(
         features.push(THINKING_BINDING_CONTROLS_BETA.to_string());
     }
     (!features.is_empty()).then(|| features.join(","))
+}
+
+fn apply_declared_request_params(payload: &mut Value, params: &HashMap<String, Value>) {
+    let Some(object) = payload.as_object_mut() else {
+        return;
+    };
+    for (key, value) in params {
+        if !is_reserved_request_param_key(key) {
+            object.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 fn format_options_for_provider(
@@ -869,8 +900,8 @@ mod tests {
         let sonnet = metadata
             .known_models
             .iter()
-            .find(|model| model.name == "claude-sonnet-4-5")
-            .expect("claude-sonnet-4-5 should come from the catalog");
+            .find(|model| model.name == "claude-sonnet-5-5")
+            .expect("claude-sonnet-5-5 should come from the catalog");
         assert_eq!(sonnet.context_limit, Some(1_000_000));
         assert!(
             metadata
@@ -879,5 +910,31 @@ mod tests {
                 .all(|model| !model.name.contains('.')),
             "Anthropic picker ids must be dashed wire names, not dotted catalog names"
         );
+    }
+
+    #[test]
+    fn apply_declared_request_params_skips_reserved_keys() {
+        let mut payload = json!({
+            "model": "claude-sonnet-4-5",
+            "stream": true,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8096,
+        });
+
+        let params = HashMap::from([
+            ("output_config".to_string(), json!({"effort": "low"})),
+            ("model".to_string(), json!("hijacked")),
+            ("stream".to_string(), json!(false)),
+            ("messages".to_string(), json!([])),
+            ("max_tokens".to_string(), json!(1)),
+        ]);
+
+        apply_declared_request_params(&mut payload, &params);
+
+        assert_eq!(payload["output_config"], json!({"effort": "low"}));
+        assert_eq!(payload["model"], json!("claude-sonnet-4-5"));
+        assert_eq!(payload["stream"], json!(true));
+        assert_eq!(payload["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["max_tokens"], json!(8096));
     }
 }

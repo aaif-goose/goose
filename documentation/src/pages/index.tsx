@@ -36,12 +36,12 @@ function HeroSection() {
         </div>
         <div className={styles.heroStats}>
           <div className={styles.stat}>
-            <span className={styles.statNumber}>45k+</span>
+            <span className={styles.statNumber}>55k+</span>
             <span className={styles.statLabel}>GitHub stars</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
-            <span className={styles.statNumber}>500+</span>
+            <span className={styles.statNumber}>600+</span>
             <span className={styles.statLabel}>Contributors</span>
           </div>
           <div className={styles.statDivider} />
@@ -222,7 +222,7 @@ function StandardsSection() {
               an ACP server — connect from Zed, JetBrains, or VS Code — and can
               use ACP agents like Claude Code and Codex as providers.
             </p>
-            <Link to="/docs/gdk/acp">goose as ACP server →</Link>
+            <Link to="/docs/guides/zed">Set up goose in Zed →</Link>
           </div>
           <div className={styles.standardCard}>
             <h3>Agentic AI Foundation</h3>

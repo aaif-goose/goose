@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      environment:
+        description: 'GitHub Environment containing signing secrets'
+        required: true
+        type: environment
+        default: signing
       package_cli:
         description: 'Whether to package and upload the CLI artifact'
         required: false
@@ -330,6 +335,16 @@ jobs:
             Write-Output "Signature valid: $file"
           }
 
+      - name: Upload signed distribution
+        if: ${{ inputs.windows_variant != 'cuda' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: internal-windows-signed
+          path: dist-windows/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
       - name: Create Windows zip package
         shell: bash
         env:
@@ -367,5 +382,125 @@ jobs:
         with:
           name: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}
           path: Goose-win32-x64${{ inputs.windows_variant == 'cuda' && '-cuda' || '' }}.zip
+          if-no-files-found: error
+          overwrite: true
+
+  # Wraps the flat distribution in the NSIS installer. The uninstaller is generated during the
+  # build, so a signing run signs it and the setup executable through the electron-builder hook
+  # with the account the signing job used for the app executables.
+  package-installer-windows:
+    name: Package Installer (Windows)
+    needs: [build-desktop-windows, sign-desktop-windows]
+    if: ${{ !cancelled() && inputs.package_desktop && inputs.windows_variant != 'cuda' && needs.build-desktop-windows.result == 'success' && (!inputs.signing || needs.sign-desktop-windows.result == 'success') }}
+    runs-on: windows-latest
+    environment: ${{ inputs.signing && inputs.environment || '' }}
+    permissions:
+      id-token: write
+    # Non-blocking until the first installer release is verified: a failure here must not
+    # fail the called workflow and skip the release job, which then finds no installer to upload.
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || '' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: 24.10.0
+
+      - name: Update desktop version
+        if: ${{ inputs.version != '' }}
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd ui/desktop
+          npm pkg set "version=${VERSION}"
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.30.3
+
+      - name: Cache node_modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            node_modules
+            ui/desktop/node_modules
+            .hermit/node/cache
+          key: windows-pnpm-cache-v1-${{ runner.os }}-node24-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            windows-pnpm-cache-v1-${{ runner.os }}-node24-
+
+      - name: Force GitHub HTTPS for npm git dependencies
+        shell: bash
+        run: |
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
+
+      - name: Install desktop dependencies
+        shell: bash
+        run: |
+          cd ui/desktop
+          pnpm install --frozen-lockfile
+
+      - name: Download distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: ${{ inputs.signing && 'internal-windows-signed' || 'internal-windows-unsigned' }}
+          path: dist-windows
+
+      - name: Build Windows installer
+        if: ${{ !inputs.signing }}
+        shell: bash
+        run: |
+          cd ui/desktop
+          pnpm run make:win32-installer ../../dist-windows
+
+      - name: Azure login
+        if: ${{ inputs.signing }}
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c  # v3.0.2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Artifact Signing module
+        if: ${{ inputs.signing }}
+        shell: pwsh
+        run: Install-Module -Name ArtifactSigning -RequiredVersion 0.1.8 -Force -Repository PSGallery
+
+      - name: Build and sign Windows installer
+        if: ${{ inputs.signing }}
+        shell: bash
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_SIGNING_ACCOUNT_NAME }}
+          AZURE_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+        run: |
+          cd ui/desktop
+          pnpm run make:win32-installer ../../dist-windows -c.win.signtoolOptions.sign=./scripts/sign-windows-installer.js
+
+      - name: Verify signed installer and uninstaller
+        if: ${{ inputs.signing }}
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path "ui/desktop/out/make/nsis/win32/x64/Goose-win32-x64-setup.exe").Path
+          Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+          $files = @($setup, "$env:LOCALAPPDATA\Programs\Goose\Uninstall Goose.exe")
+          foreach ($file in $files) {
+            Write-Output "Verifying signature: $file"
+            $sig = Get-AuthenticodeSignature $file
+            if ($sig.Status -ne "Valid") { throw "Signature invalid for ${file}: $($sig.Status)" }
+            Write-Output "Signature valid: $file"
+          }
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: Goose-win32-x64-setup
+          path: ui/desktop/out/make/nsis/win32/x64/Goose-win32-x64-setup.exe
           if-no-files-found: error
           overwrite: true

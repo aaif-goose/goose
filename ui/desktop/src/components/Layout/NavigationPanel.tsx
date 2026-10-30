@@ -109,9 +109,6 @@ const NavRow: React.FC<NavRowProps> = ({ item, active, onClick }) => {
     <button onClick={onClick} className={navItemClass(active)}>
       <Icon className="w-5 h-5 flex-shrink-0 text-text-secondary" />
       <span className="text-left flex-1 truncate">{getNavItemLabel(item, intl)}</span>
-      {item.getTag && (
-        <span className="text-xs font-mono text-text-secondary">{item.getTag()}</span>
-      )}
     </button>
   );
 };
@@ -242,15 +239,14 @@ const SessionRow: React.FC<SessionRowProps> = ({
 };
 
 export const Navigation: React.FC<{
-  className?: string;
   activeLiveVoiceSessionId: string | null;
-}> = ({ className, activeLiveVoiceSessionId }) => {
+}> = ({ activeLiveVoiceSessionId }) => {
   const intl = useIntl();
   const { isNavExpanded } = useNavigationContext();
   const location = useLocation();
   const { extensionsList } = useConfig();
 
-  const appsExtensionEnabled = !!extensionsList?.find((ext) => ext.name === 'apps')?.enabled;
+  const appsExtensionEnabled = !!extensionsList.find((ext) => ext.name === 'apps')?.enabled;
 
   const visibleItems = useMemo<NavItem[]>(() => {
     return NAV_ITEMS.filter((item) => {
@@ -338,7 +334,7 @@ export const Navigation: React.FC<{
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className={cn('bg-background-primary outline-none flex flex-col h-full', className)}
+      className="bg-background-primary outline-none flex flex-col h-full"
     >
       <div className="h-[48px] no-drag" />
 

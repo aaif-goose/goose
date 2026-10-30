@@ -162,7 +162,8 @@ fn muse_cli_auth_path() -> PathBuf {
 fn muse_cli_keychain_token() -> Option<MuseToken> {
     #[cfg(feature = "system-keyring")]
     {
-        if std::env::var("MUSE_AUTH_PATH").is_ok() {
+        if std::env::var("MUSE_AUTH_PATH").is_ok() || std::env::var("GOOSE_DISABLE_KEYRING").is_ok()
+        {
             return None;
         }
 
@@ -650,6 +651,7 @@ impl Provider for MuseCodeProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::oauth_device_flow::with_device_code_announce;
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -840,7 +842,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn configure_oauth_stores_device_flow_token() {
+    async fn configure_oauth_replaces_cached_token() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/oidc/device/authorization/"))
@@ -891,12 +893,14 @@ mod tests {
                 .to_string_lossy()
                 .as_ref(),
         );
+        TokenCache::new()
+            .save(&fresh_token("old-access"))
+            .expect("existing token should save");
 
         let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
             .await
             .expect("provider should build");
-        provider
-            .configure_oauth()
+        with_device_code_announce(Box::new(|_, _, _| {}), provider.configure_oauth())
             .await
             .expect("device flow should complete");
 
@@ -911,76 +915,6 @@ mod tests {
             stored.expires_at - Utc::now() > Duration::hours(23),
             "minted key should be valid for about a day"
         );
-    }
-
-    #[tokio::test]
-    async fn configure_oauth_reauths_even_when_a_cached_token_exists() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/oidc/device/authorization/"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "device_code": "dc-2",
-                "user_code": "ABCD-EFGH",
-                "verification_uri": format!("{}/oauth/device/", server.uri()),
-                "verification_uri_complete": format!("{}/oauth/device/?code=ABCD-EFGH", server.uri()),
-                "expires_in": 600,
-                "interval": 1
-            })))
-            .mount(&server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/oidc/device/token/"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "new-access",
-                "refresh_token": "new-refresh",
-                "expires_in": 3600
-            })))
-            .mount(&server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/muse-code/key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "api_key": "LLM-new-key"
-            })))
-            .mount(&server)
-            .await;
-
-        let _guard = env_lock::lock_env([
-            ("GOOSE_PATH_ROOT", None::<&str>),
-            ("MUSE_CODE_HOST", None::<&str>),
-            ("MUSE_CODE_AUTH_HOST", None::<&str>),
-            ("MUSE_CODE_CLIENT_ID", None::<&str>),
-            ("MUSE_AUTH_PATH", None::<&str>),
-            ("XDG_CONFIG_HOME", None::<&str>),
-        ]);
-        let temp_dir = tempfile::tempdir().expect("tempdir should be created");
-        std::env::set_var("GOOSE_PATH_ROOT", temp_dir.path());
-        std::env::set_var("MUSE_CODE_HOST", server.uri());
-        std::env::set_var("MUSE_CODE_AUTH_HOST", server.uri());
-        std::env::set_var(
-            "MUSE_AUTH_PATH",
-            temp_dir
-                .path()
-                .join("missing-auth.json")
-                .to_string_lossy()
-                .as_ref(),
-        );
-        TokenCache::new()
-            .save(&fresh_token("old-access"))
-            .expect("existing token should save");
-
-        let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
-            .await
-            .expect("provider should build");
-        provider
-            .configure_oauth()
-            .await
-            .expect("device flow should re-run");
-
-        let stored = TokenCache::new().load().expect("token should be cached");
-        assert_eq!(stored.access_token, "new-access");
-        assert!(stored.refresh_token.is_empty());
-        assert_eq!(stored.api_key, "LLM-new-key");
     }
 
     #[tokio::test]
@@ -1206,7 +1140,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "device_code": "device",
                 "user_code": "ABCD-EFGH",
-                "verification_uri": "https://auth.meta.com/activate",
+                "verification_uri": format!("{}/oauth/device/", server.uri()),
                 "expires_in": 600,
                 "interval": 1
             })))
@@ -1260,7 +1194,9 @@ mod tests {
         let provider = MuseCodeProviderDef::from_env(Vec::new(), None)
             .await
             .expect("provider should build");
-        let sign_in = tokio::spawn(async move { provider.configure_oauth().await });
+        let sign_in = tokio::spawn(async move {
+            with_device_code_announce(Box::new(|_, _, _| {}), provider.configure_oauth()).await
+        });
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
         MuseCodeProvider::cleanup()
             .await

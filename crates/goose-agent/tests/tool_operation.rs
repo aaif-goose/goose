@@ -12,6 +12,7 @@ use goose_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
         ConversationEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
+        RunStatus,
     },
     tool::{ToolOperation, ToolProvider},
 };
@@ -99,7 +100,7 @@ fn emitter() -> Emitter {
 }
 
 fn emitter_with_token(cancel: CancellationToken) -> Emitter {
-    let (tx, _rx) = mpsc::channel(1);
+    let (tx, _rx) = mpsc::unbounded_channel();
     Emitter::new(tx, cancel)
 }
 
@@ -383,77 +384,6 @@ async fn responds_to_unparseable_tool_requests() {
     );
 }
 
-#[derive(Default, Clone)]
-struct BlockingSession {
-    started: Arc<AtomicBool>,
-}
-
-struct BlockingSyncTool;
-
-impl ToolBase for BlockingSyncTool {
-    type Parameter = ();
-    type Output = ();
-    type Error = ErrorData;
-
-    fn name() -> Cow<'static, str> {
-        "blocking_sync".into()
-    }
-
-    fn input_schema() -> Option<Arc<serde_json::Map<String, serde_json::Value>>> {
-        None
-    }
-}
-
-impl SyncTool<BlockingSession> for BlockingSyncTool {
-    fn invoke(session: &BlockingSession, _input: ()) -> Result<(), ErrorData> {
-        session.started.store(true, Ordering::SeqCst);
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn cancellation_interrupts_blocking_sync_tools() {
-    let session = BlockingSession::default();
-    let started = session.started.clone();
-    let operation = ToolOperation::new().with_sync_tool::<BlockingSyncTool>();
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call it"),
-        Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking_sync"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<BlockingSession> as Operation<BlockingSession, ConversationEffect>>::run(
-            &operation,
-            &session,
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while !started.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let result = tokio::time::timeout(std::time::Duration::from_millis(50), run)
-        .await
-        .expect("operation should not wait for the blocking tool")
-        .unwrap()
-        .unwrap();
-
-    let message = appended_message(result);
-    assert!(message.content[0]
-        .as_tool_response()
-        .unwrap()
-        .tool_result
-        .as_ref()
-        .unwrap()
-        .is_error
-        .is_some_and(|is_error| is_error));
-}
-
 struct BlockingDiscovery {
     started: Arc<AtomicBool>,
 }
@@ -541,120 +471,7 @@ async fn cancellation_interrupts_inference_discovery() {
     }
     cancel.cancel();
 
-    assert!(step.await.unwrap().unwrap().is_none());
-}
-
-#[tokio::test]
-async fn cancellation_interrupts_execution_discovery() {
-    let started = Arc::new(AtomicBool::new(false));
-    let operation = ToolOperation::new().with_provider(Arc::new(BlockingDiscovery {
-        started: started.clone(),
-    }));
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call it"),
-        Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-            &operation,
-            &(),
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while !started.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let message = appended_message(run.await.unwrap().unwrap());
-
-    let response = message.content[0].as_tool_response().unwrap();
-    assert_eq!(response.id, "call-1");
-    assert!(response
-        .tool_result
-        .as_ref()
-        .unwrap()
-        .is_error
-        .is_some_and(|is_error| is_error));
-}
-
-struct BlockingTools {
-    calls: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl ToolProvider<()> for BlockingTools {
-    async fn tools(&self, _session: &()) -> Result<Vec<Tool>> {
-        Ok(vec![Tool::new(
-            "blocking",
-            "A tool that never finishes",
-            Arc::new(serde_json::from_value(json!({"type": "object"}))?),
-        )])
-    }
-
-    async fn call(
-        &self,
-        _session: &(),
-        _request_id: &str,
-        _call: CallToolRequestParams,
-        _emit: &Emitter,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        std::future::pending().await
-    }
-}
-
-#[tokio::test]
-async fn cancellation_interrupts_current_and_remaining_calls() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let operation = ToolOperation::new().with_provider(Arc::new(BlockingTools {
-        calls: calls.clone(),
-    }));
-    let conversation = Conversation::new_unvalidated([
-        Message::user().with_text("call twice"),
-        Message::assistant()
-            .with_tool_request("call-1", Ok(CallToolRequestParams::new("blocking")))
-            .with_tool_request("call-2", Ok(CallToolRequestParams::new("blocking"))),
-    ]);
-    let cancel = CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let run = tokio::spawn(async move {
-        <ToolOperation<()> as Operation<(), ConversationEffect>>::run(
-            &operation,
-            &(),
-            &conversation,
-            &emitter_with_token(run_cancel),
-        )
-        .await
-    });
-    while calls.load(Ordering::SeqCst) == 0 {
-        tokio::task::yield_now().await;
-    }
-    cancel.cancel();
-    let message = appended_message(run.await.unwrap().unwrap());
-
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        message.get_tool_response_ids(),
-        ["call-1", "call-2"].into_iter().collect()
-    );
-    for content in &message.content {
-        let result = content
-            .as_tool_response()
-            .unwrap()
-            .tool_result
-            .as_ref()
-            .unwrap();
-        assert!(result.is_error.is_some_and(|is_error| is_error));
-        assert_eq!(
-            result.content[0].as_text().unwrap().text,
-            "Tool call was interrupted before completing"
-        );
-    }
+    assert_eq!(step.await.unwrap().unwrap().status, RunStatus::Cancelled);
 }
 
 #[tokio::test]

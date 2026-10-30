@@ -262,24 +262,6 @@ impl AppsManagerClient {
             .result_with_platform_notification(result, EXTENSION_NAME, event_type, params)
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
-            .as_ref()
-            .ok_or("Provider not available")?
-            .clone();
-
-        Ok(provider)
-    }
-
     async fn effective_model_config(
         &self,
         session_id: &str,
@@ -325,7 +307,7 @@ impl AppsManagerClient {
         session_id: &str,
         prd: &str,
     ) -> Result<CreateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let existing_apps = self.list_stored_apps().unwrap_or_default();
         let existing_names = existing_apps.join(", ");
@@ -376,7 +358,7 @@ impl AppsManagerClient {
         existing_prd: &str,
         feedback: &str,
     ) -> Result<UpdateAppContentResponse, String> {
-        let provider = self.get_provider().await?;
+        let provider = self.context.provider_for_session(session_id).await?;
 
         let context: HashMap<&str, &str> = HashMap::new();
         let system_prompt = render_template("apps_iterate.md", &context)
@@ -833,10 +815,9 @@ mod tests {
             info: AppsManagerClient::create_info(),
             context: PlatformExtensionContext {
                 extension_manager: None,
+                providers: Default::default(),
                 session_manager: Arc::new(SessionManager::new(apps_dir.join("sessions"))),
                 scheduler: None,
-                session: None,
-                use_login_shell_path: false,
             },
             apps_dir,
         }

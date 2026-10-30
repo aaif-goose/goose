@@ -13,6 +13,7 @@ pub(crate) mod declarative_providers {
     use super::*;
 
     expose_declarative_providers!(
+        aigateway,
         aimlapi,
         alibaba,
         atomic_chat,
@@ -28,6 +29,8 @@ pub(crate) mod declarative_providers {
         iflytek,
         iflytek_astron,
         inception,
+        ionet,
+        lemonade,
         llama_swap,
         lmstudio,
         lynkr,

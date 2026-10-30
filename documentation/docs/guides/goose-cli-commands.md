@@ -713,7 +713,7 @@ goose acp
 ```
 
 :::info
-This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Using goose in ACP Clients](/docs/gdk/acp) for details.
+This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `goose acp` process. See [Set up goose in Zed](/docs/guides/zed) for an editor setup example, or [Build an app with goose](/docs/gdk/acp) to create your own client.
 :::
 
 :::warning Unattended environments

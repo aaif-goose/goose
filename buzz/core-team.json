@@ -22,22 +22,6 @@
   ],
   "members": [
     {
-      "name": "Alex Hancock",
-      "github": "alexhancock",
-      "pubkey": "c060e29a1b39d717624149020b3ffe45c5c2355d70214f038f4c8a9f28651aee",
-      "capacity": 1,
-      "interest": [
-        "ACP and MCP protocol support and transport",
-        "Extensions and skills tooling",
-        "Agent-facing SDK and GDK APIs",
-        "Electron Desktop and TUI experiences",
-        "Sessions and tool-call rendering",
-        "Provider setup and authentication",
-        "Cross-language bindings",
-        "Build and release infrastructure"
-      ]
-    },
-    {
       "name": "filip",
       "github": "filipkujawa",
       "pubkey": "437558e2399076861d5b8d935dc5e25363f3ab5599fdc67db7819617f334b4f3",

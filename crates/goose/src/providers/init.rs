@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 #[cfg(feature = "aws-providers")]
@@ -277,15 +276,6 @@ pub async fn create(name: &str, extensions: Vec<ExtensionConfig>) -> Result<Arc<
     entry.create(extensions).await
 }
 
-pub async fn create_with_working_dir(
-    name: &str,
-    extensions: Vec<ExtensionConfig>,
-    working_dir: PathBuf,
-) -> Result<Arc<dyn Provider>> {
-    let entry = get_from_registry(name).await?;
-    entry.create_with_working_dir(extensions, working_dir).await
-}
-
 pub async fn create_with_default_model(
     name: impl AsRef<str>,
     extensions: Vec<ExtensionConfig>,
@@ -308,13 +298,6 @@ pub async fn cleanup_provider(name: &str) -> Result<()> {
         return cleanup().await;
     }
     Ok(())
-}
-
-pub async fn create_with_named_model(
-    provider_name: &str,
-    extensions: Vec<ExtensionConfig>,
-) -> Result<Arc<dyn Provider>> {
-    create(provider_name, extensions).await
 }
 
 #[cfg(test)]
@@ -368,6 +351,27 @@ mod tests {
             .config_keys
             .iter()
             .any(|key| key.name == "GONDOLA_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
+    async fn test_lemonade_provider_registry_wiring() {
+        let lemonade = get_from_registry("lemonade")
+            .await
+            .expect("lemonade provider should be registered");
+        let meta = lemonade.metadata();
+
+        assert_eq!(meta.name, "lemonade");
+        assert_eq!(meta.display_name, "Lemonade");
+        assert!(meta.default_model.is_empty());
+        assert!(meta
+            .config_keys
+            .iter()
+            .any(|key| key.name == "LEMONADE_API_KEY" && key.secret));
+        assert!(meta.config_keys.iter().any(|key| {
+            key.name == "LEMONADE_HOST"
+                && !key.required
+                && key.default.as_deref() == Some("http://localhost:13305")
+        }));
     }
 
     #[tokio::test]

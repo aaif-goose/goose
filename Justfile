@@ -489,7 +489,8 @@ mcp-conformance version="2025-11-25" suite="all" conformance_version="0.2.0-alph
   if [ -n "{{baseline}}" ]; then
     baseline_args=(--expected-failures "{{baseline}}")
   fi
-  GOOSE_DISABLE_KEYRING=1 npx -y @modelcontextprotocol/conformance@{{conformance_version}} client --command "target/debug/mcp_conformance_driver" --spec-version "{{version}}" --suite "{{suite}}" ${baseline_args[@]+"${baseline_args[@]}"}
+  export GOOSE_BIN="$PWD/target/debug/goose"
+  GOOSE_DISABLE_KEYRING=1 npx -y @modelcontextprotocol/conformance@{{conformance_version}} client --command "$PWD/target/debug/mcp_conformance_driver" --spec-version "{{version}}" --suite "{{suite}}" ${baseline_args[@]+"${baseline_args[@]}"}
 
 build-test-tools:
   cargo build -p goose-test

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dotenvy::dotenv;
 use goose::conversation::message::Message;
-use goose::providers::create_with_named_model;
+use goose::providers::create;
 use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
 
 #[tokio::main]
@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
 
     std::env::remove_var("DATABRICKS_TOKEN");
 
-    let provider = create_with_named_model("databricks", Vec::new()).await?;
+    let provider = create("databricks", Vec::new()).await?;
 
     let message = Message::user().with_text("Tell me a short joke about programming.");
 

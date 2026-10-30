@@ -2,10 +2,12 @@ use crate::acp::custom_requests::GooseExtension;
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GooseMode};
-use crate::recipe::{Recipe, Settings};
+use crate::model_config::resolve_provider_and_model_config;
+use crate::providers::get_from_registry;
+use crate::recipe::Recipe;
 use crate::session::{ExtensionData, Session, SessionType};
 
-use super::GooseAcpAgent;
+use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
 use agent_client_protocol::{Client, ConnectionTo};
 use goose_providers::model::ModelConfig;
@@ -32,7 +34,7 @@ struct NewSessionMetaFields {
     client_title: Option<String>,
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn handle_new_session(
         &self,
         cx: &ConnectionTo<Client>,
@@ -56,6 +58,7 @@ impl GooseAcpAgent {
             .unwrap_or_else(|| "New Chat".to_string());
 
         let session = self
+            .services
             .session_manager
             .create_session(args.cwd.clone(), session_name, session_type, current_mode)
             .await
@@ -81,47 +84,37 @@ impl GooseAcpAgent {
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
     ) -> Result<NewSessionResponse, agent_client_protocol::Error> {
-        let rendered_recipe = self
-            .configure_new_session(cx, config, session, args, recipe, meta)
+        self.configure_new_session(cx, config, session, args, recipe, meta)
             .await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (agent, extension_results) = self.activate_acp_session(cx, &reloaded_session).await?;
-        if let Some(recipe) = &rendered_recipe {
-            self.apply_recipe(&agent, recipe).await?;
-        }
+        let extension_results = self.activate_acp_session(cx, &reloaded_session).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
         let response = self
             .build_new_session_response(
                 &reloaded_session,
                 &extension_results,
-                &super::agent_thinking_effort_support(&agent).await,
+                &super::agent_thinking_effort_support(&self.services, &reloaded_session.id).await,
             )
             .await?;
         Ok(response)
     }
 
     async fn cleanup_failed_new_session(&self, session_id: &str) {
-        if let Err(error) = self.session_manager.delete_session(session_id).await {
+        if let Err(error) = self
+            .services
+            .session_manager
+            .delete_session(session_id)
+            .await
+        {
             warn!(
                 session_id,
                 %error,
                 "Failed to delete session during new-session cleanup"
             );
         }
-        self.sessions.lock().await.remove(session_id);
-        if let Err(error) = self
-            .agent_manager
-            .remove_session_if_loaded(session_id)
-            .await
-        {
-            warn!(
-                session_id,
-                %error,
-                "Failed to remove in-memory agent during new-session cleanup"
-            );
-        }
+        self.services.release_session(session_id).await;
     }
 
     async fn configure_new_session(
@@ -132,7 +125,7 @@ impl GooseAcpAgent {
         args: NewSessionRequest,
         recipe: Option<(Recipe, PathBuf)>,
         meta: NewSessionMetaFields,
-    ) -> Result<Option<Recipe>, agent_client_protocol::Error> {
+    ) -> Result<(), agent_client_protocol::Error> {
         let recipe_parameter_scope_id = meta_string(args.meta.as_ref(), "recipeParameterScopeId")?;
         let (rendered, user_recipe_values) = self
             .render_recipe_for_session(
@@ -144,9 +137,17 @@ impl GooseAcpAgent {
             .await?;
 
         let recipe_settings = rendered.as_ref().and_then(|r| r.settings.as_ref());
-        let (provider, model_config) = self
-            .resolve_provider_and_model(config, args.meta.as_ref(), recipe_settings)
-            .await?;
+        let requested_provider = meta_string(args.meta.as_ref(), "provider")?;
+        if let Some(provider) = recipe_settings
+            .and_then(|s| s.goose_provider.as_deref())
+            .or(requested_provider.as_deref())
+        {
+            get_from_registry(provider).await.invalid_params_err()?;
+        }
+        let (provider, model_config) =
+            resolve_provider_and_model_config(config, requested_provider, recipe_settings)
+                .await
+                .internal_err_ctx("Failed to resolve provider and model")?;
 
         let goose_extensions = meta_goose_extensions(args.meta.as_ref())?;
         let recipe_extensions = rendered.as_ref().and_then(|r| r.extensions.as_deref());
@@ -164,60 +165,23 @@ impl GooseAcpAgent {
                 provider,
                 model_config,
                 extension_data,
-                recipe: recipe.map(|(recipe, _)| recipe),
+                recipe: rendered,
                 user_recipe_values,
                 meta,
             },
         )
-        .await?;
-
-        Ok(rendered)
+        .await
     }
 
     async fn reload_session(
         &self,
         session_id: &str,
     ) -> Result<Session, agent_client_protocol::Error> {
-        self.session_manager
+        self.services
+            .session_manager
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to reload session")
-    }
-
-    async fn resolve_provider_and_model(
-        &self,
-        config: &Config,
-        meta: Option<&Meta>,
-        recipe_settings: Option<&Settings>,
-    ) -> Result<(String, ModelConfig), agent_client_protocol::Error> {
-        let recipe_provider = recipe_settings.and_then(|s| s.goose_provider.clone());
-        let recipe_model = recipe_settings.and_then(|s| s.goose_model.clone());
-
-        let provider = match recipe_provider {
-            Some(provider) => provider,
-            None => match meta_string(meta, "provider")? {
-                Some(provider) => provider,
-                None => {
-                    if let Some(model) = recipe_model.as_deref() {
-                        let provider = config.get_goose_provider().map_err(|error| {
-                            agent_client_protocol::Error::internal_error()
-                                .data(format!("Failed to resolve provider: {}", error))
-                        })?;
-                        let model_config = model_config_from_recipe_settings(&provider, model)?;
-                        return Ok((provider, model_config));
-                    }
-
-                    return super::resolve_default_provider_model_config(config);
-                }
-            },
-        };
-
-        let model_config = match recipe_model {
-            Some(model) => model_config_from_recipe_settings(&provider, &model)?,
-            None => super::resolve_provider_default_model_config(&provider).await?,
-        };
-
-        Ok((provider, model_config))
     }
 
     async fn apply_initial_session_config(
@@ -226,6 +190,7 @@ impl GooseAcpAgent {
         config: InitialSessionConfig,
     ) -> Result<(), agent_client_protocol::Error> {
         let mut builder = self
+            .services
             .session_manager
             .update(session_id)
             .provider_name(config.provider)
@@ -268,14 +233,6 @@ impl GooseAcpAgent {
         response = response.meta(super::session_response_meta(session, extension_results));
         Ok(response)
     }
-}
-
-fn model_config_from_recipe_settings(
-    provider: &str,
-    model: &str,
-) -> Result<ModelConfig, agent_client_protocol::Error> {
-    crate::model_config::model_config_from_user_config(provider, model)
-        .internal_err_ctx("Failed to build model config from recipe settings")
 }
 
 fn session_type_from_meta(

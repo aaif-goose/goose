@@ -1,17 +1,17 @@
-use crate::conversation::message::{Message, MessageContentBlock};
+use crate::conversation::message::{Message, MessageContentBlock, ThinkingContentBlock};
 use crate::conversation::token_usage::{ProviderUsage, Usage};
 use crate::documents::{
     convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
     ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
 };
 use crate::errors::ProviderError;
+use crate::formats::anthropic::thinking_block_is_stale;
 use crate::formats::openai::{
-    extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
-    sanitize_function_name,
+    extract_reasoning_effort, openai_reasoning_effort_for_thinking, sanitize_function_name,
 };
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
-use crate::model::ModelConfig;
+use crate::model::{is_goose_internal_request_param, ModelConfig};
 use crate::utils::{sanitize_unicode_tags, strip_unicode_tags};
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -26,6 +26,9 @@ use std::collections::HashSet;
 pub struct ResponsesApiResponse {
     pub id: String,
     pub object: String,
+    // Not every OpenAI-compatible provider echoes created_at back; the value
+    // is carried but never used, so tolerate its absence.
+    #[serde(default)]
     pub created_at: i64,
     pub status: String,
     pub model: String,
@@ -42,16 +45,59 @@ pub struct SummaryText {
     pub text: String,
 }
 
-fn reasoning_from_summary(summary: &[SummaryText]) -> Option<MessageContentBlock> {
+fn reasoning_from_output(
+    summary: &[SummaryText],
+    encrypted_content: Option<&str>,
+) -> Option<MessageContentBlock> {
     let text: String = summary
         .iter()
         .map(|s| sanitize_unicode_tags(&s.text))
         .collect::<Vec<_>>()
         .join("\n");
-    if text.is_empty() {
+    let encrypted_content = encrypted_content.unwrap_or_default();
+    if text.is_empty() && encrypted_content.is_empty() {
         None
     } else {
-        Some(MessageContentBlock::thinking(text, ""))
+        Some(MessageContentBlock::thinking(text, encrypted_content))
+    }
+}
+
+/// The thinking signature slot also carries Anthropic signatures and reasoning
+/// imported from other accounts, which the API rejects, so only reasoning that
+/// `current_model` produced in this session is replayed.
+pub fn reasoning_input_item(
+    message: &Message,
+    thinking: &ThinkingContentBlock,
+    current_model: &str,
+) -> Option<Value> {
+    if thinking.signature.is_empty()
+        || message.metadata.inference.is_none()
+        || thinking_block_is_stale(message, Some(current_model))
+    {
+        return None;
+    }
+    let summary: Vec<Value> = if thinking.thinking.is_empty() {
+        Vec::new()
+    } else {
+        vec![json!({ "type": "summary_text", "text": thinking.thinking })]
+    };
+    Some(json!({
+        "type": "reasoning",
+        "summary": summary,
+        "encrypted_content": thinking.signature
+    }))
+}
+
+pub fn is_encrypted_reasoning_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("encrypted content") && lower.contains("could not be verified")
+}
+
+/// Rejected reasoning stays in the session, so callers retry once without any
+/// reasoning items rather than failing every later request.
+pub fn strip_reasoning_items(payload: &mut Value) {
+    if let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) {
+        input.retain(|item| item["type"] != "reasoning");
     }
 }
 
@@ -64,6 +110,8 @@ pub enum ResponseOutputItem {
         id: Option<String>,
         #[serde(default)]
         summary: Vec<SummaryText>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
     },
     Message {
         // `id` and `status` are required when the OpenAI API emits these
@@ -338,6 +386,7 @@ fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<Respon
 pub struct ResponseMetadata {
     pub id: String,
     pub object: String,
+    #[serde(default)]
     pub created_at: i64,
     pub status: String,
     pub model: String,
@@ -360,6 +409,8 @@ pub enum ResponseOutputItemInfo {
         id: Option<String>,
         #[serde(default)]
         summary: Vec<SummaryText>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encrypted_content: Option<String>,
     },
     Message {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -405,7 +456,12 @@ pub enum ContentBlockPart {
     },
 }
 
-fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message], supports_vision: bool) {
+fn add_message_items(
+    input_items: &mut Vec<Value>,
+    messages: &[Message],
+    supports_vision: bool,
+    current_model: &str,
+) {
     for message in messages.iter().filter(|m| m.is_agent_visible()) {
         let role = match message.role {
             Role::User => "user",
@@ -430,6 +486,11 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message], support
                             "text": text.text
                         }));
                     }
+                }
+                // Streamed text is stored ahead of the reasoning that produced it,
+                // so pending text is left to flush after the reasoning item.
+                MessageContentBlock::Thinking(thinking) if message.role == Role::Assistant => {
+                    input_items.extend(reasoning_input_item(message, thinking, current_model));
                 }
                 MessageContentBlock::ToolRequest(request) if message.role == Role::Assistant => {
                     if !text_items.is_empty() {
@@ -607,21 +668,6 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message], support
     }
 }
 
-fn is_gpt_5_6_model(model_name: &str) -> bool {
-    let normalized = model_name.to_ascii_lowercase();
-    ["gpt-5.6", "gpt-5-6"].iter().any(|needle| {
-        normalized.match_indices(needle).any(|(start, matched)| {
-            let before = start
-                .checked_sub(1)
-                .and_then(|index| normalized.as_bytes().get(index));
-            let after = normalized.as_bytes().get(start + matched.len());
-
-            before.is_none_or(|byte| matches!(byte, b'-' | b'/'))
-                && after.is_none_or(|byte| matches!(byte, b'-' | b'/'))
-        })
-    })
-}
-
 pub fn create_responses_request(
     model_config: &ModelConfig,
     system: &str,
@@ -664,13 +710,14 @@ pub fn create_responses_request_for_model(
         &mut input_items,
         messages,
         model_config.supports_vision.unwrap_or_default(),
+        &model_config.model_name,
     );
 
     let (model_name, legacy_reasoning_effort) = extract_reasoning_effort(capability_model_name);
     // All models routed here are responses-capable; temperature is rejected
     // by the API for reasoning models regardless of whether an explicit
     // effort suffix was provided.
-    let is_reasoning_model = is_openai_responses_model(&model_name);
+    let is_reasoning_model = model_config.openai_reasoning_for_model(&model_name);
     let reasoning_effort = if is_reasoning_model {
         if let Some(effort) = legacy_reasoning_effort.as_deref() {
             if effort.eq_ignore_ascii_case("none") {
@@ -690,6 +737,9 @@ pub fn create_responses_request_for_model(
     } else {
         None
     };
+    let reasoning_effort = model_config
+        .request_param::<String>("reasoning_effort")
+        .or(reasoning_effort);
 
     let store = model_config.request_param::<bool>("store").unwrap_or(false);
     let reasoning_mode = model_config
@@ -705,30 +755,35 @@ pub fn create_responses_request_for_model(
             }
         })
         .transpose()?;
-    if reasoning_mode.is_some() && !is_gpt_5_6_model(&model_name) {
-        return Err(anyhow!(
-            "reasoning_mode is only supported for GPT-5.6 models"
-        ));
-    }
     let mut payload = json!({
         "model": wire_model_name,
         "input": input_items,
         "store": store,
     });
 
-    if reasoning_effort.is_some() || reasoning_mode.is_some() {
-        let mut reasoning = serde_json::Map::new();
+    let mut reasoning = native_request_object(model_config, "reasoning")?;
+    if model_config
+        .request_params
+        .as_ref()
+        .is_some_and(|params| params.contains_key("reasoning"))
+        || reasoning_effort.is_some()
+        || reasoning_mode.is_some()
+    {
         if let Some(effort) = reasoning_effort {
-            reasoning.insert("effort".to_string(), json!(effort));
-            reasoning.insert("summary".to_string(), json!("auto"));
+            reasoning.entry("effort").or_insert_with(|| json!(effort));
+            reasoning.entry("summary").or_insert_with(|| json!("auto"));
         }
         if let Some(mode) = reasoning_mode {
-            reasoning.insert("mode".to_string(), json!(mode));
+            reasoning.entry("mode").or_insert_with(|| json!(mode));
         }
         payload
             .as_object_mut()
             .unwrap()
             .insert("reasoning".to_string(), Value::Object(reasoning));
+    }
+
+    if is_reasoning_model {
+        payload["include"] = json!(["reasoning.encrypted_content"]);
     }
 
     if !tools.is_empty() {
@@ -760,14 +815,105 @@ pub fn create_responses_request_for_model(
         }
     }
 
-    if let Some(max_tokens) = model_config.max_tokens {
-        payload
-            .as_object_mut()
-            .unwrap()
-            .insert("max_output_tokens".to_string(), json!(max_tokens));
+    let params = model_config.request_params.as_ref();
+    let chat_token_limit = ["max_completion_tokens", "max_tokens"]
+        .into_iter()
+        .filter_map(|key| {
+            params
+                .and_then(|params| params.get(key))
+                .map(|value| (key, value))
+        })
+        .map(|(key, value)| {
+            let limit = value
+                .as_i64()
+                .filter(|limit| *limit > 0 && *limit <= i32::MAX as i64)
+                .ok_or_else(|| anyhow!("{key} must be a positive integer"))?;
+            Ok(limit as i32)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    if chat_token_limit.len() == 2 && chat_token_limit[0] != chat_token_limit[1] {
+        return Err(anyhow!(
+            "max_completion_tokens and max_tokens must agree for Responses API"
+        ));
+    }
+    if let Some(max_tokens) = model_config
+        .max_tokens
+        .or_else(|| chat_token_limit.first().copied())
+    {
+        payload["max_output_tokens"] = json!(max_tokens);
+    }
+
+    if let Some(params) = params {
+        let mut text = native_request_object(model_config, "text")?;
+        if let Some(response_format) = params.get("response_format") {
+            let format = match response_format.get("type").and_then(Value::as_str) {
+                Some("json_object" | "text") => response_format.clone(),
+                Some("json_schema") => {
+                    let schema = response_format
+                        .get("json_schema")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| anyhow!("response_format.json_schema must be an object"))?;
+                    let mut format = schema.clone();
+                    format.insert("type".to_string(), json!("json_schema"));
+                    Value::Object(format)
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "Unsupported response_format for Responses API: {response_format}"
+                    ))
+                }
+            };
+            text.entry("format").or_insert(format);
+        }
+        if params.contains_key("text") || !text.is_empty() {
+            payload["text"] = Value::Object(text);
+        }
+        let object = payload.as_object_mut().unwrap();
+        for (key, value) in params {
+            if is_goose_internal_request_param(key) {
+                continue;
+            }
+            if matches!(
+                key.as_str(),
+                "model"
+                    | "input"
+                    | "messages"
+                    | "tools"
+                    | "stream"
+                    | "stream_options"
+                    | "reasoning"
+                    | "reasoning_mode"
+                    | "reasoning_effort"
+                    | "max_tokens"
+                    | "max_completion_tokens"
+                    | "response_format"
+                    | "text"
+            ) {
+                continue;
+            }
+            object.insert(key.clone(), value.clone());
+        }
     }
 
     Ok(payload)
+}
+
+fn native_request_object(
+    model_config: &ModelConfig,
+    key: &str,
+) -> anyhow::Result<serde_json::Map<String, Value>> {
+    model_config
+        .request_params
+        .as_ref()
+        .and_then(|params| params.get(key))
+        .map(|value| {
+            value
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow!("{key} must be an object"))
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 fn sanitize_tool_arguments(value: Value) -> anyhow::Result<Value> {
@@ -823,8 +969,12 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
 
     for item in &response.output {
         match item {
-            ResponseOutputItem::Reasoning { summary, .. } => {
-                content.extend(reasoning_from_summary(summary));
+            ResponseOutputItem::Reasoning {
+                summary,
+                encrypted_content,
+                ..
+            } => {
+                content.extend(reasoning_from_output(summary, encrypted_content.as_deref()));
             }
             ResponseOutputItem::Message {
                 content: msg_content,
@@ -908,8 +1058,15 @@ fn process_streaming_output_items(
 
     for item in output_items {
         match item {
-            ResponseOutputItemInfo::Reasoning { summary, .. } => {
-                content.extend(reasoning_from_summary(&summary));
+            ResponseOutputItemInfo::Reasoning {
+                summary,
+                encrypted_content,
+                ..
+            } => {
+                content.extend(reasoning_from_output(
+                    &summary,
+                    encrypted_content.as_deref(),
+                ));
             }
             ResponseOutputItemInfo::Message { content: parts, .. } => {
                 for part in parts {
@@ -1225,7 +1382,7 @@ mod document_tests {
 
     fn format(messages: &[Message]) -> Vec<Value> {
         let mut items = Vec::new();
-        add_message_items(&mut items, messages, true);
+        add_message_items(&mut items, messages, true, "gpt-5.6");
         items
     }
 
@@ -1394,6 +1551,41 @@ mod tests {
         assert_eq!(usage.usage.input_tokens, Some(10));
         assert_eq!(usage.usage.output_tokens, Some(4));
         assert_eq!(usage.usage.total_tokens, Some(14));
+
+        Ok(())
+    }
+
+    // OpenAI-compatible providers do not all echo `created_at` back on
+    // `response.*` events; a strict i64 there terminates the whole session on
+    // the first event. The timestamp is carried but never used, so a missing
+    // field must degrade to the default instead of killing the stream.
+    #[tokio::test]
+    async fn test_responses_stream_tolerates_missing_created_at() -> anyhow::Result<()> {
+        let lines = vec![
+            r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-5.2-pro","output":[]}}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#.to_string(),
+            r#"data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_1","object":"response","status":"completed","model":"gpt-5.2-pro","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#.to_string(),
+            "data: [DONE]".to_string(),
+        ];
+
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let messages = responses_api_to_streaming_message(response_stream);
+        futures::pin_mut!(messages);
+
+        let mut text_parts = Vec::new();
+        while let Some(item) = messages.next().await {
+            let (message, _) = item?;
+            if let Some(msg) = message {
+                for content in msg.content {
+                    if let MessageContentBlock::Text(text) = content {
+                        text_parts.push(text.text.clone());
+                    }
+                }
+            }
+        }
+
+        assert_eq!(text_parts.concat(), "Hello world");
 
         Ok(())
     }
@@ -1632,12 +1824,8 @@ mod tests {
         });
 
         let lines = vec![
-            format!(
-                r#"data: {{"type":"response.created","sequence_number":1,"response":{{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"gpt-5","output":[]}}}}"#
-            ),
-            format!(
-                r#"data: {{"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":1,"content_index":0,"delta":"Paris."}}"#
-            ),
+            r#"data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"in_progress","model":"gpt-5","output":[]}}"#.to_string(),
+            r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":1,"content_index":0,"delta":"Paris."}"#.to_string(),
             format!(
                 r#"data: {{"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{}}}"#,
                 serde_json::to_string(&reasoning_item)?
@@ -2038,13 +2226,21 @@ mod tests {
         let result = create_responses_request(&model_config, "You are helpful.", &[], &[]).unwrap();
 
         assert_eq!(result["model"], "gpt-5.6-sol");
-        assert_eq!(result["reasoning"]["effort"], "xhigh");
+        assert_eq!(result["reasoning"]["effort"], "max");
         assert_eq!(result["reasoning"]["summary"], "auto");
     }
 
     #[test]
-    fn test_responses_request_gpt6_astra_off_uses_low_not_none() {
-        for model_name in ["gpt-6-astra", "data_workflow_tools.goose.goose-gpt-6-astra"] {
+    fn test_responses_request_always_on_gpt6_off_uses_low_not_none() {
+        for model_name in [
+            "gpt-6-astra",
+            "data_workflow_tools.goose.goose-gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-1-sol",
+            "goose-gpt-6-1-sol",
+            "catalog.schema.goose-gpt-6-1-sol",
+            "openrouter/openai/gpt-6-1-sol",
+        ] {
             let model_config = ModelConfig::new(model_name)
                 .with_thinking_effort(crate::thinking::ThinkingEffort::Off);
 
@@ -2085,18 +2281,28 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_request_rejects_reasoning_mode_for_non_gpt_5_6_model() {
-        for model_name in ["gpt-5.5", "gpt-5.60", "notgpt-5.6", "gpt-5.6ish"] {
+    fn test_responses_request_forwards_reasoning_mode_without_model_name_gate() {
+        for model_name in ["gpt-5.5", "gpt-6-astra", "future-reasoner"] {
             let model_config = ModelConfig::new(model_name).with_merged_request_params(
                 std::collections::HashMap::from([("reasoning_mode".to_string(), json!("pro"))]),
             );
 
-            let error = create_responses_request(&model_config, "You are helpful.", &[], &[])
-                .expect_err("reasoning mode should be gated to GPT-5.6 models");
+            let request = create_responses_request(&model_config, "You are helpful.", &[], &[])
+                .expect("the API decides which models support reasoning.mode");
+            assert_eq!(request["reasoning"]["mode"], "pro", "{model_name}");
+            assert!(request["reasoning"].get("effort").is_none());
+        }
+    }
 
-            assert!(error
-                .to_string()
-                .contains("reasoning_mode is only supported for GPT-5.6 models"));
+    #[test]
+    fn test_responses_request_rejects_invalid_reasoning_mode_value() {
+        for value in ["fast", "", "pro "] {
+            let model_config = ModelConfig::new("gpt-6-astra").with_merged_request_params(
+                std::collections::HashMap::from([("reasoning_mode".to_string(), json!(value))]),
+            );
+            let error = create_responses_request(&model_config, "You are helpful.", &[], &[])
+                .expect_err("only standard or pro are valid reasoning modes");
+            assert!(error.to_string().contains("Invalid reasoning_mode"));
         }
     }
 
@@ -2150,6 +2356,138 @@ mod tests {
             result["max_output_tokens"],
             model_config.max_tokens.unwrap()
         );
+    }
+
+    #[test]
+    fn unknown_compatible_alias_preserves_temperature() {
+        let mut config = ModelConfig::new("private-model")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High);
+        config.temperature = Some(0.5);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert!(payload.get("reasoning").is_none());
+        assert_eq!(payload["temperature"], 0.5);
+    }
+
+    #[test]
+    fn responses_request_composes_native_options_and_aliases() {
+        let cases = [
+            (
+                json!({"text": {"verbosity": "low"}}),
+                json!({"text": {"verbosity": "low"}}),
+            ),
+            (
+                json!({"text": {"verbosity": "low"}, "response_format": {"type": "json_object"}}),
+                json!({"text": {"verbosity": "low", "format": {"type": "json_object"}}}),
+            ),
+            (
+                json!({"text": {"format": {"type": "text"}}, "response_format": {"type": "json_object"}}),
+                json!({"text": {"format": {"type": "text"}}}),
+            ),
+            (
+                json!({"reasoning": {"effort": "high", "summary": "detailed"}, "reasoning_effort": "low"}),
+                json!({"reasoning": {"effort": "high", "summary": "detailed"}}),
+            ),
+            (
+                json!({"reasoning": {}, "text": {}}),
+                json!({"reasoning": {}, "text": {}}),
+            ),
+            (
+                json!({"top_p": 0.8, "metadata": {"experiment": "test"}, "stop": ["end"]}),
+                json!({"top_p": 0.8, "metadata": {"experiment": "test"}, "stop": ["end"]}),
+            ),
+        ];
+        for (params, expected) in cases {
+            let config = ModelConfig::new("gpt-4o")
+                .with_merged_request_params(serde_json::from_value(params).unwrap());
+            let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(&payload[key], value, "{key}");
+            }
+            for alias in ["reasoning_effort", "reasoning_mode", "response_format"] {
+                assert!(payload.get(alias).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn native_text_parameter_must_be_an_object() {
+        let config = ModelConfig::new("gpt-4o").with_merged_request_params(
+            std::collections::HashMap::from([("text".to_string(), json!("low"))]),
+        );
+        let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
+        assert!(error.to_string().contains("text must be an object"));
+    }
+
+    #[test]
+    fn native_reasoning_object_takes_precedence_over_aliases_and_thinking_effort() {
+        let config = ModelConfig::new("gpt-5.4")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::Low)
+            .with_merged_request_params(std::collections::HashMap::from([
+                ("reasoning_effort".to_string(), json!("medium")),
+                ("reasoning_mode".to_string(), json!("standard")),
+                (
+                    "reasoning".to_string(),
+                    json!({
+                        "effort": "high", "summary": "detailed", "mode": "pro"
+                    }),
+                ),
+            ]));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(
+            payload["reasoning"],
+            json!({
+                "effort": "high", "summary": "detailed", "mode": "pro"
+            })
+        );
+    }
+
+    #[test]
+    fn native_reasoning_object_merges_inferred_effort_without_losing_summary() {
+        let config = ModelConfig::new("gpt-5.4")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High)
+            .with_merged_request_params(std::collections::HashMap::from([(
+                "reasoning".to_string(),
+                json!({"summary": "detailed"}),
+            )]));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"]["effort"], "high");
+        assert_eq!(payload["reasoning"]["summary"], "detailed");
+    }
+
+    #[test]
+    fn native_reasoning_object_is_forwarded_without_inferred_effort() {
+        let config =
+            ModelConfig::new("gpt-4o").with_merged_request_params(std::collections::HashMap::from(
+                [("reasoning".to_string(), json!({"summary": "detailed"}))],
+            ));
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"], json!({"summary": "detailed"}));
+    }
+
+    #[test]
+    fn native_reasoning_parameter_must_be_an_object() {
+        let config = ModelConfig::new("gpt-5.4").with_merged_request_params(
+            std::collections::HashMap::from([("reasoning".to_string(), json!("high"))]),
+        );
+        let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
+        assert!(error.to_string().contains("reasoning must be an object"));
+    }
+
+    #[test]
+    fn explicit_reasoning_metadata_overrides_model_name_in_responses() {
+        let mut config = ModelConfig::new("future-reasoner")
+            .with_thinking_effort(crate::thinking::ThinkingEffort::High);
+        config.reasoning = Some(true);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert_eq!(payload["reasoning"]["effort"], "high");
+        assert!(payload.get("temperature").is_none());
+
+        config.model_name = "gpt-5.4".to_string();
+        config.reasoning = Some(false);
+        config.temperature = Some(0.5);
+        let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
+        assert!(payload.get("reasoning").is_none());
+        assert_eq!(payload["temperature"], 0.5);
     }
 
     #[test]
@@ -3121,5 +3459,58 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("invalid arguments"));
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_reasoning_replays_only_for_its_model() -> anyhow::Result<()> {
+        use crate::conversation::message::InferenceMetadata;
+        use rmcp::model::CallToolResult;
+
+        let reasoning_item = json!({
+            "type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "enc-1"
+        });
+        let call_item = json!({
+            "type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "shell", "arguments": "{}"
+        });
+        let lines = vec![format!(
+            r#"data: {{"type":"response.completed","sequence_number":1,"response":{{"id":"resp_1","object":"response","status":"completed","model":"gpt-5.6","output":[{reasoning_item},{call_item}]}}}}"#
+        )];
+        let stream =
+            responses_api_to_streaming_message(tokio_stream::iter(lines.into_iter().map(Ok)));
+        futures::pin_mut!(stream);
+        let (Some(assistant), _) = stream.next().await.unwrap()? else {
+            panic!("expected a message");
+        };
+        let assistant = assistant.with_inference(InferenceMetadata {
+            provider: "openai".to_string(),
+            requested_model: "gpt-5.6".to_string(),
+            resolved_model: None,
+            provider_session_id: None,
+        });
+        let messages = vec![
+            Message::user().with_text("list files"),
+            assistant,
+            Message::user().with_content(MessageContentBlock::tool_response(
+                "call_1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("a.txt")])),
+            )),
+        ];
+
+        let same = create_responses_request(&ModelConfig::new("gpt-5.6"), "", &messages, &[])?;
+        assert_eq!(same["include"], json!(["reasoning.encrypted_content"]));
+        let input = same["input"].as_array().unwrap();
+        assert_eq!(
+            input[1],
+            json!({ "type": "reasoning", "summary": [], "encrypted_content": "enc-1" })
+        );
+        assert_eq!(input[2]["type"], "function_call");
+
+        let other = create_responses_request(&ModelConfig::new("gpt-5.5"), "", &messages, &[])?;
+        assert!(!other["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["type"] == "reasoning"));
+        Ok(())
     }
 }

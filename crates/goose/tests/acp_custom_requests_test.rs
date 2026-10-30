@@ -8,8 +8,7 @@ use agent_client_protocol::schema::v1::{
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
-    run_test, send_custom, Connection, PermissionDecision, Session, SessionData,
-    TestConnectionConfig,
+    run_test, send_custom, Connection, Session, SessionData, TestConnectionConfig,
 };
 use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
@@ -18,7 +17,7 @@ use goose_providers::model::ModelConfig;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use serial_test::serial;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use common_tests::fixtures::OpenAiFixture;
@@ -205,8 +204,7 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": session.session_id().0
             }),
         )
         .await
@@ -237,28 +235,11 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
         .await
         .unwrap();
 
-        let legacy_loop = send_custom(
-            conn.cx(),
-            "_goose/unstable/session/live-voice/availability",
-            serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": false } }
-            }),
-        )
-        .await
-        .unwrap();
-        assert_eq!(legacy_loop["status"], "unavailable");
-        assert_eq!(
-            legacy_loop["message"],
-            "Live voice is unavailable while Use Legacy Agent Loop is enabled"
-        );
-
         let response = send_custom(
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": session.session_id().0,
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": session.session_id().0
             }),
         )
         .await
@@ -270,8 +251,7 @@ fn test_live_voice_availability_is_bound_to_an_accessible_main_session() {
             conn.cx(),
             "_goose/unstable/session/live-voice/availability",
             serde_json::json!({
-                "sessionId": "not-loaded-on-this-connection",
-                "_meta": { "goose": { "unrolledAgentLoop": true } }
+                "sessionId": "not-loaded-on-this-connection"
             }),
         )
         .await;
@@ -613,7 +593,7 @@ fn test_steer_session_adds_input_to_active_prompt() {
         // steer queued before the turn ends keeps the loop alive (it flips
         // `exit_chat` back to false), so a second provider request fires whose
         // body must now contain the steered text.
-        let openai = OpenAiFixture::new(
+        let openai = OpenAiFixture::with_response_delay(
             vec![
                 (
                     "start work".to_string(),
@@ -625,6 +605,7 @@ fn test_steer_session_adds_input_to_active_prompt() {
                 ),
             ],
             Arc::new(IgnoreSessionId),
+            Duration::from_millis(500),
         )
         .await;
         let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
@@ -1069,87 +1050,22 @@ fn test_custom_unknown_method() {
 
 #[test]
 #[serial]
-fn test_developer_fs_requests_use_acp_session_id() {
-    run_test(async {
-        let seen_session_id = Arc::new(Mutex::new(None::<String>));
-        let seen_session_id_clone = Arc::clone(&seen_session_id);
-        let openai = OpenAiFixture::new(
-            vec![
-                (
-                    "Use the read tool to read /tmp/test_acp_read.txt and output only its contents."
-                        .to_string(),
-                    include_str!("acp_test_data/openai_fs_read_tool_call.txt"),
-                ),
-                (
-                    r#""content":"test-read-content-12345""#.into(),
-                    include_str!("acp_test_data/openai_fs_read_tool_result.txt"),
-                ),
-            ],
-            Arc::new(IgnoreSessionId),
-        )
-        .await;
-        let config_dir = write_acp_global_config(&format!(
-            "GOOSE_MODEL: gpt-4.1\nGOOSE_PROVIDER: openai\nOPENAI_HOST: {}\n",
-            openai.uri()
-        ));
-        let config = TestConnectionConfig {
-            // gpt-5-nano routes to the Responses API; use a Chat Completions
-            // model so the canned SSE fixtures are parsed correctly.
-            data_root: config_dir,
-            current_model: "gpt-4.1".to_string(),
-            read_text_file: Some(Arc::new(move |req| {
-                *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
-                Ok(
-                    agent_client_protocol::schema::v1::ReadTextFileResponse::new(
-                        "test-read-content-12345",
-                    ),
-                )
-            })),
-            ..Default::default()
-        };
-        let mut conn = AcpServerConnection::new(config, openai).await;
-
-        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-        let acp_session_id = session.session_id().0.to_string();
-
-        let output = session
-            .prompt(
-                "Use the read tool to read /tmp/test_acp_read.txt and output only its contents.",
-                PermissionDecision::Cancel,
-            )
-            .await
-            .expect("prompt should succeed");
-
-        assert_eq!(output.text, "test-read-content-12345");
-        assert_eq!(
-            seen_session_id.lock().unwrap().as_deref(),
-            Some(acp_session_id.as_str()),
-            "ACP read request should use the ACP session/thread ID",
-        );
-    });
-}
-
-#[test]
-#[serial]
 fn test_custom_provider_supported_models_lists_raw_provider_models() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(
-            |provider_name, _extensions, _working_dir, use_default_model| {
-                assert!(use_default_model);
-                Box::pin(async move {
-                    Ok(Arc::new(MockProvider {
-                        name: provider_name,
-                        recommended_models: vec!["canonical-filtered-model".to_string()],
-                        supported_models: Ok(vec![
-                            "goose-claude-opus-4-8".to_string(),
-                            "raw-databricks-endpoint".to_string(),
-                        ]),
-                    }) as Arc<dyn Provider>)
-                })
-            },
-        );
+        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
+            Box::pin(async move {
+                Ok(Arc::new(MockProvider {
+                    name: provider_name,
+                    recommended_models: vec!["canonical-filtered-model".to_string()],
+                    supported_models: Ok(vec![
+                        "goose-claude-opus-4-8".to_string(),
+                        "raw-databricks-endpoint".to_string(),
+                    ]),
+                }) as Arc<dyn Provider>)
+            })
+        });
         let conn = AcpServerConnection::new(
             TestConnectionConfig {
                 provider_factory: Some(provider_factory),
@@ -1187,7 +1103,7 @@ fn test_custom_provider_supported_models_maps_not_configured_error() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(|provider_name, _, _, _| {
+        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
                 Ok(Arc::new(MockProvider {
                     name: provider_name,
@@ -1224,7 +1140,7 @@ fn test_custom_provider_supported_models_maps_authentication_error() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
         let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
-        let provider_factory: AcpProviderFactory = Arc::new(|provider_name, _, _, _| {
+        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
             Box::pin(async move {
                 Ok(Arc::new(MockProvider {
                     name: provider_name,
@@ -1327,5 +1243,59 @@ fn test_app_tool_call_dispatched_in_auto_mode() {
             .filter_map(|block| block.get("text").and_then(|text| text.as_str()))
             .collect::<String>();
         assert!(text.contains(FAKE_CODE));
+    });
+}
+
+#[test]
+#[serial]
+fn test_app_tool_call_applies_extension_mutation() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        conn.set_mode(&session_id, "auto").await.unwrap();
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/list",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "analyze"
+            }),
+        )
+        .await
+        .expect("tools should be listed");
+        assert!(!response["tools"].as_array().unwrap().is_empty());
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/call",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "Extension Manager",
+                "name": "extensionmanager__manage_extensions",
+                "arguments": {
+                    "action": "disable",
+                    "extension_name": "analyze"
+                }
+            }),
+        )
+        .await
+        .expect("extension mutation should succeed");
+        assert_eq!(response["isError"], false);
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/list",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "analyze"
+            }),
+        )
+        .await
+        .expect("tools should be listed");
+        assert_eq!(response["tools"], serde_json::json!([]));
     });
 }

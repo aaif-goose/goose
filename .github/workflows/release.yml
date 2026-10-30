@@ -23,6 +23,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-acp:
+    uses: ./.github/workflows/build-acp.yml
+
   # ------------------------------------
   # 1) Bundle CLI and Desktop (Linux)
   # ------------------------------------
@@ -109,7 +112,7 @@ jobs:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    needs: [build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
+    needs: [build-acp, build-cli-linux, install-script, bundle-macos-arm64, bundle-macos-x64, bundle-windows, bundle-windows-cuda]
     permissions:
       contents: write
       id-token: write      # Required for Sigstore OIDC signing
@@ -132,6 +135,26 @@ jobs:
 
       - name: Generate macOS update manifest
         run: node ui/desktop/scripts/generate-mac-update-manifest.js --version "${GITHUB_REF_NAME}" --directory .
+
+      # Only copies set up by the Windows installer request installer.yml, so it needs no
+      # rollout flag: ZIP copies request latest.yml, which is never published for Windows.
+      # Non-blocking until the first installer release is verified: the setup EXE and
+      # installer.yml are attested and uploaded by their own steps, each only after the
+      # previous one succeeded.
+      - name: Generate Windows update manifest
+        id: windows-manifest
+        continue-on-error: true
+        run: node ui/desktop/scripts/generate-windows-update-manifest.js --version "${GITHUB_REF_NAME}" --directory .
+
+      - name: Attest Windows installer
+        id: attest-windows-installer
+        if: ${{ steps.windows-manifest.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            Goose-win32-x64-setup.exe
+            installer.yml
 
       - name: Attest macOS update manifest
         if: ${{ env.ENABLE_MAC_NATIVE_AUTO_UPDATE == 'true' }}
@@ -200,3 +223,12 @@ jobs:
         run: |
           gh release upload "${GITHUB_REF_NAME}" latest-mac.yml --clobber
           gh release upload stable latest-mac.yml --clobber
+
+      - name: Upload Windows installer
+        if: ${{ steps.attest-windows-installer.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" Goose-win32-x64-setup.exe installer.yml --clobber
+          gh release upload stable Goose-win32-x64-setup.exe installer.yml --clobber

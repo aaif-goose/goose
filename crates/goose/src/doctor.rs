@@ -6,8 +6,10 @@ use crate::config::Config;
 use crate::conversation::message::Message;
 use crate::providers;
 use crate::providers::base::Provider;
+use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{
-    config_path, latest_llm_log_path, read_capped, read_tail, recent_cli_log_paths, SystemInfo,
+    config_path, latest_llm_log_path, read_capped, read_tail, recent_cli_log_paths, Session,
+    SessionManager, SystemInfo,
 };
 use goose_providers::errors::ProviderError;
 
@@ -17,17 +19,20 @@ Enable it for this session and run `/doctor` again:\n\
 - CLI: `/builtin developer`\n\
 - Desktop: select **Developer** in the session extension selector.";
 
-pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Result<Message> {
-    if let Some(message) = require_developer_extension(agent).await {
+pub async fn run(session_manager: &SessionManager, session: &Session) -> anyhow::Result<Message> {
+    if let Some(message) = require_developer_extension(session) {
         return Ok(message);
     }
 
-    if let Some(msg) = ensure_working_provider(agent, session_id).await? {
+    if let Some(msg) = ensure_working_provider(session_manager, &session.id).await? {
         return Ok(msg);
     }
 
     let info = SystemInfo::collect();
-    let extensions = agent.list_extensions().await;
+    let extensions: Vec<String> = session_extensions(session)
+        .iter()
+        .map(ExtensionConfig::name)
+        .collect();
 
     let mut prompt = format!(
         "I ran /doctor because something seems off. Here's my system info:\n\n\
@@ -64,11 +69,12 @@ pub async fn run(agent: &crate::agents::Agent, session_id: &str) -> anyhow::Resu
     Ok(Message::user().with_text(prompt))
 }
 
-async fn require_developer_extension(agent: &crate::agents::Agent) -> Option<Message> {
-    let has_developer = agent
-        .extension_manager
-        .get_extension_configs()
-        .await
+fn session_extensions(session: &Session) -> Vec<ExtensionConfig> {
+    EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), Config::global())
+}
+
+fn require_developer_extension(session: &Session) -> Option<Message> {
+    let has_developer = session_extensions(session)
         .iter()
         .any(is_developer_platform_config);
 
@@ -83,7 +89,7 @@ fn is_developer_platform_config(config: &ExtensionConfig) -> bool {
 }
 
 async fn ensure_working_provider(
-    agent: &crate::agents::Agent,
+    session_manager: &SessionManager,
     session_id: &str,
 ) -> anyhow::Result<Option<Message>> {
     let config = Config::global();
@@ -106,12 +112,12 @@ async fn ensure_working_provider(
         log.push(format!("Looking for alternative models on {} ...", pname));
         if let Some((working, model_config)) = try_other_models(pname, mname, &mut log).await {
             let new_model = model_config.model_name.clone();
-            save_and_set(agent, session_id, working, model_config).await?;
+            save_and_set(session_manager, session_id, working, model_config).await?;
             let preamble = log.join("\n");
             return Ok(Some(Message::assistant().with_text(format!(
                 "**Goose Doctor**\n\n{}\n\n\
                  Your configured model wasn't working, so I switched to \
-                 **{} / {}**. You can continue chatting now.",
+                 **{} / {}**. Your next message will use it.",
                 preamble, pname, new_model,
             ))));
         }
@@ -124,11 +130,11 @@ async fn ensure_working_provider(
     if let Some((working, model_config)) = try_other_providers(skip, &mut log).await {
         let name = working.get_name().to_string();
         let model = model_config.model_name.clone();
-        save_and_set(agent, session_id, working, model_config).await?;
+        save_and_set(session_manager, session_id, working, model_config).await?;
         let preamble = log.join("\n");
         return Ok(Some(Message::assistant().with_text(format!(
             "**Goose Doctor**\n\n{}\n\n\
-             Switched to **{} / {}**. You can continue chatting now.",
+             Switched to **{} / {}**. Your next message will use it.",
             preamble, name, model,
         ))));
     }
@@ -142,15 +148,18 @@ async fn ensure_working_provider(
 }
 
 async fn save_and_set(
-    agent: &crate::agents::Agent,
+    session_manager: &SessionManager,
     session_id: &str,
     provider: Arc<dyn Provider>,
     model_config: goose_providers::model::ModelConfig,
 ) -> anyhow::Result<()> {
     let config = Config::global();
     crate::config::set_active_provider(config, provider.get_name(), &model_config.model_name)?;
-    agent
-        .update_provider(provider, model_config, session_id)
+    session_manager
+        .update(session_id)
+        .provider_name(provider.get_name())
+        .model_config(model_config)
+        .apply()
         .await
 }
 
@@ -282,28 +291,26 @@ fn describe_error(e: &ProviderError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::extension_data::ExtensionState;
 
-    #[tokio::test]
-    async fn developer_requirement_accepts_enabled_extension() {
-        let agent = crate::agents::Agent::new();
-        agent
-            .extension_manager
-            .add_extension(
-                ExtensionConfig::Platform {
-                    name: developer::EXTENSION_NAME.to_string(),
-                    description: "Developer tools".to_string(),
-                    display_name: Some("Developer".to_string()),
-                    bundled: None,
-                    available_tools: vec![],
-                },
-                None,
-                None,
-                Some("doctor-enabled-test"),
-            )
-            .await
-            .expect("developer extension should load");
+    #[test]
+    fn developer_requirement_reads_session_extensions() {
+        let mut session = Session::default();
+        EnabledExtensionsState::new(Vec::new())
+            .to_extension_data(&mut session.extension_data)
+            .unwrap();
+        assert!(require_developer_extension(&session).is_some());
 
-        assert!(require_developer_extension(&agent).await.is_none());
+        EnabledExtensionsState::new(vec![ExtensionConfig::Platform {
+            name: developer::EXTENSION_NAME.to_string(),
+            description: "Developer tools".to_string(),
+            display_name: Some("Developer".to_string()),
+            bundled: None,
+            available_tools: vec![],
+        }])
+        .to_extension_data(&mut session.extension_data)
+        .unwrap();
+        assert!(require_developer_extension(&session).is_none());
     }
 
     #[test]

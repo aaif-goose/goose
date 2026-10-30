@@ -18,6 +18,7 @@ import {
   Tray,
 } from 'electron';
 import { pathToFileURL, format as formatUrl, URLSearchParams } from 'node:url';
+import { fetchAllowlistContent, parseAllowlistCommands } from './allowlistFetcher';
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
@@ -42,7 +43,6 @@ import { isRetiredGooseChatApp } from './utils/retiredApps';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings, getKeyboardShortcuts } from './utils/settings';
 import * as crypto from 'crypto';
-import * as yaml from 'yaml';
 import windowStateKeeper from 'electron-window-state';
 import {
   getUpdateAvailable,
@@ -57,7 +57,6 @@ import './utils/gitBranchIpc';
 import './utils/recipeHash';
 import type { GooseApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
-import { WEB_PROTOCOLS } from './utils/urlSecurity';
 import { openExternalUrl } from './utils/openExternalUrl';
 import { buildCSP, leaseBackendOrigin, shouldApplyRendererCsp } from './utils/csp';
 import { resolveWorkingDir } from './utils/workingDir';
@@ -66,6 +65,9 @@ import {
   isAuthorizedFileAccessRequest,
   readSelectedRecipe,
 } from './desktopFileAccess';
+import { getWindowIconFilename } from './utils/windowIcon';
+
+const windowIconPath = path.join(__dirname, '../images', getWindowIconFilename(process.platform));
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -295,6 +297,12 @@ function listGitWorktreeDirs(dir: string): Promise<string[]> {
 }
 
 if (started) app.quit();
+
+// The installer's shortcuts carry this AppUserModelID (electron-builder appId). The running app
+// must use the same one so Windows groups it with them on the taskbar and shows its notifications.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.electron.goose');
+}
 
 // Certificate trust for active backend leases. Renderer requests and
 // main-process net.fetch both pin to the exact cert fingerprint. Each backend
@@ -1248,7 +1256,7 @@ const createChat = async (
       minWidth: 480,
       minHeight: 400,
       resizable: true,
-      icon: path.join(__dirname, '../images/icon.icns'),
+      icon: windowIconPath,
       webPreferences: {
         spellcheck: settings.spellcheckEnabled ?? true,
         preload: path.join(__dirname, 'preload.js'),
@@ -1930,7 +1938,6 @@ const validSettingKeys: Set<string> = new Set([
   'seenAnnouncementIds',
   'disableAutoDownload',
   'recentModels',
-  'useLegacyAgentLoop',
 ]);
 
 ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
@@ -2599,7 +2606,7 @@ async function appMain() {
           accelerator: shortcuts.newChat,
           click() {
             const focusedWindow = BrowserWindow.getFocusedWindow();
-            if (focusedWindow) focusedWindow.webContents.send('set-view', '');
+            if (focusedWindow) focusedWindow.webContents.send('new-chat');
           },
         })
       );
@@ -2923,32 +2930,6 @@ async function appMain() {
     }
   });
 
-  ipcMain.on('open-in-chrome', (_event, url) => {
-    try {
-      // Validate URL
-      const parsedUrl = new URL(url);
-
-      // Only allow http and https protocols for browser URLs
-      if (!WEB_PROTOCOLS.includes(parsedUrl.protocol)) {
-        console.error('Invalid URL protocol. Only HTTP and HTTPS are allowed.');
-        return;
-      }
-
-      // On macOS, use the 'open' command with Chrome
-      if (process.platform === 'darwin') {
-        spawn('open', ['-a', 'Google Chrome', url]);
-      } else if (process.platform === 'win32') {
-        // On Windows, start is built-in command of cmd.exe
-        spawn('cmd.exe', ['/c', 'start', '', 'chrome', url]);
-      } else {
-        // On Linux, use xdg-open with chrome
-        spawn('xdg-open', [url]);
-      }
-    } catch (error) {
-      console.error('Error opening URL in browser:', error);
-    }
-  });
-
   // Handle app restart
   ipcMain.on('restart-app', () => {
     app.relaunch();
@@ -3007,6 +2988,7 @@ async function appMain() {
         height: gooseApp.height ?? 600,
         resizable: gooseApp.resizable ?? true,
         useContentSize: true,
+        icon: windowIconPath,
         webPreferences: {
           preload: path.join(__dirname, 'preload.js'),
           nodeIntegration: false,
@@ -3100,34 +3082,13 @@ app.whenReady().then(async () => {
   }
 });
 
-async function getAllowList(): Promise<string[]> {
+async function getAllowList(): Promise<string[] | null> {
   if (!process.env.GOOSE_ALLOWLIST) {
-    return [];
+    return null;
   }
 
-  const response = await fetch(process.env.GOOSE_ALLOWLIST);
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch allowed extensions: ${response.status} ${response.statusText}`
-    );
-  }
-
-  // Parse the YAML content
-  const yamlContent = await response.text();
-  const parsedYaml = yaml.parse(yamlContent);
-
-  // Extract the commands from the extensions array
-  if (parsedYaml && parsedYaml.extensions && Array.isArray(parsedYaml.extensions)) {
-    const commands = parsedYaml.extensions.map(
-      (ext: { id: string; command: string }) => ext.command
-    );
-    console.log(`Fetched ${commands.length} allowed extension commands`);
-    return commands;
-  } else {
-    console.error('Invalid YAML structure:', parsedYaml);
-    return [];
-  }
+  const yamlContent = await fetchAllowlistContent(process.env.GOOSE_ALLOWLIST);
+  return parseAllowlistCommands(yamlContent);
 }
 
 app.on('will-quit', async () => {

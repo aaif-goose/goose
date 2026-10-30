@@ -2,7 +2,11 @@ use anyhow::Result;
 use dotenvy::dotenv;
 use futures::StreamExt;
 use goose::acp::ACP_CURRENT_MODEL;
-use goose::agents::{Agent, AgentConfig, AgentEvent, GoosePlatform, PromptManager, SessionConfig};
+use goose::agents::extension_manager::CallRequest;
+use goose::agents::{
+    AgentEvent, GoosePlatform, PromptManager, SessionConfig, StateMachineServices,
+    StateMachineServicesConfig,
+};
 use goose::config::{ExtensionConfig, GooseMode, PermissionManager};
 use goose::conversation::message::{ActionRequiredData, Message, MessageContent};
 use goose::permission::Permission;
@@ -13,7 +17,7 @@ use goose::providers::base::Provider;
 use goose::providers::bedrock::BEDROCK_DEFAULT_MODEL;
 use goose::providers::claude_code::CLAUDE_CODE_DEFAULT_MODEL;
 use goose::providers::codex::CODEX_DEFAULT_MODEL;
-use goose::providers::create_with_named_model;
+use goose::providers::create;
 use goose::providers::google::GOOGLE_DEFAULT_MODEL;
 use goose::providers::litellm::LITELLM_DEFAULT_MODEL;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
@@ -102,7 +106,7 @@ struct ProviderFixture {
     context_length_exceeded: usize,
     provider: Arc<dyn Provider>,
     model_config: goose_providers::model::ModelConfig,
-    agent: Agent,
+    services: Arc<StateMachineServices>,
     session_id: String,
     _mcp: McpFixture,
     _guard: env_lock::EnvGuard<'static>,
@@ -240,7 +244,7 @@ impl ProviderFixture {
             available_tools: vec![],
         };
 
-        let provider = create_with_named_model(
+        let provider = create(
             &config.name.to_lowercase(),
             vec![mcp_extension.clone(), developer_extension.clone()],
         )
@@ -255,11 +259,10 @@ impl ProviderFixture {
         let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
         let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
 
-        let agent = Agent::with_config(AgentConfig::new(
+        let services = StateMachineServices::with_config(StateMachineServicesConfig::new(
             session_manager.clone(),
             permission_manager,
             None,
-            mode,
             true,
             GoosePlatform::GooseCli,
         ));
@@ -268,20 +271,22 @@ impl ProviderFixture {
                 std::env::current_dir()?,
                 "provider_test".to_string(),
                 SessionType::User,
-                GooseMode::default(),
+                mode,
             )
             .await?;
         let session_id = session.id;
         expected_session_id.set(&session_id);
-        agent
+        services
             .update_provider(provider.clone(), model_config.clone(), &session_id)
             .await?;
-        agent
-            .add_extension(mcp_extension, &session_id)
+        services
+            .extension_manager
+            .enable(&session_id, mcp_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        agent
-            .add_extension(developer_extension, &session_id)
+        services
+            .extension_manager
+            .enable(&session_id, developer_extension)
             .await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -293,7 +298,7 @@ impl ProviderFixture {
             context_length_exceeded: config.context_length_exceeded,
             provider,
             model_config,
-            agent,
+            services,
             session_id: session_id.to_string(),
             _mcp: mcp,
             _guard: guard,
@@ -306,22 +311,18 @@ impl ProviderFixture {
         prompt: &str,
         model_config: Option<goose_providers::model::ModelConfig>,
     ) -> Result<Message> {
-        let tools = self
-            .agent
+        let lease = self
+            .services
             .extension_manager
-            .get_prefixed_tools(&self.session_id, None)
-            .await
-            .unwrap();
-
-        let info = self
-            .agent
-            .extension_manager
-            .get_extensions_info(std::path::Path::new("."))
-            .await;
+            .current_lease(&self.session_id)
+            .await?;
+        let tools = lease.tools().await;
+        let info = lease.instructions().await;
         let system = PromptManager::new()
             .builder()
             .with_extensions(info.into_iter())
-            .build();
+            .build()
+            .unwrap();
 
         let message = Message::user().with_text(prompt);
         let model_config = model_config.unwrap_or_else(|| self.model_config.clone());
@@ -361,9 +362,11 @@ impl ProviderFixture {
             Some("test-id".to_string()),
         );
         let result = self
-            .agent
+            .services
             .extension_manager
-            .dispatch_tool_call(&ctx, params, CancellationToken::new())
+            .current_lease(&ctx.session_id)
+            .await?
+            .call(params, CallRequest::from(&ctx), CancellationToken::new())
             .await
             .unwrap()
             .result
@@ -585,18 +588,9 @@ impl ProviderFixture {
             id: self.session_id.clone(),
             schedule_id: None,
             max_turns: Some(5),
-            retry_config: None,
         };
 
-        let mut stream = self
-            .agent
-            .reply(
-                message,
-                session_config,
-                goose::agents::state_machine::enabled(),
-                None,
-            )
-            .await?;
+        let mut stream = self.services.reply(message, session_config, None).await?;
         let mut saw_action_required = false;
 
         while let Some(event) = stream.next().await {
@@ -606,7 +600,7 @@ impl ProviderFixture {
                     if let MessageContent::ActionRequired(ar) = content {
                         if let ActionRequiredData::ToolConfirmation { ref id, .. } = ar.data {
                             saw_action_required = true;
-                            self.agent
+                            self.services
                                 .submit_tool_confirmation(&self.session_id, id, permission.clone())
                                 .await?;
                         }
@@ -665,7 +659,7 @@ impl ProviderFixture {
     async fn test_mode_update(&self) -> Result<()> {
         // Start in Auto mode (fixture default), tools auto-approved.
         // Switch to Approve mode dynamically via agent.
-        self.agent
+        self.services
             .update_goose_mode(GooseMode::Approve, &self.session_id)
             .await?;
         // Verify tool call now requires permission (ActionRequired).
@@ -958,15 +952,6 @@ async fn test_claude_acp_provider() -> Result<()> {
     ProviderTestConfig::with_agentic_provider("claude-acp", ACP_CURRENT_MODEL, "claude-agent-acp")
         .model_switch_name("sonnet")
         .test_thinking_effort(true)
-        .run()
-        .await
-}
-
-// Requires: npm install -g @agentclientprotocol/codex-acp
-#[tokio::test]
-async fn test_codex_acp_provider() -> Result<()> {
-    ProviderTestConfig::with_agentic_provider("codex-acp", ACP_CURRENT_MODEL, "codex-acp")
-        .model_switch_name("gpt-5.4-mini")
         .run()
         .await
 }

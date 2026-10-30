@@ -6,6 +6,7 @@ import type { ContentBlock, Message } from '../../types/message';
 import {
   type AcpChatStateChange,
   type AdapterState,
+  applyInferenceMeta,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
   getGooseMessageMeta,
   messagesChange,
@@ -40,6 +41,10 @@ export function applyContentChunk(
     existing.metadata.fallbackContent = shouldSkipFallbackChunk
       ? undefined
       : gooseMeta.fallbackContent;
+    if (gooseMeta.operationLogs) {
+      existing.metadata.operationLogs = gooseMeta.operationLogs;
+    }
+    applyInferenceMeta(existing, gooseMeta);
 
     if (shouldSkipFallbackChunk) {
       return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
@@ -60,7 +65,7 @@ export function applyContentChunk(
 
     return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
   } else {
-    state.messages.push({
+    const message: Message = {
       ...(messageId ? { id: messageId } : {}),
       role,
       created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
@@ -70,8 +75,11 @@ export function applyContentChunk(
         ...(gooseMeta.steer ? { steer: true } : {}),
         outputTokenLimitReached: gooseMeta.outputTokenLimitReached,
         fallbackContent: gooseMeta.fallbackContent,
+        ...(gooseMeta.operationLogs ? { operationLogs: gooseMeta.operationLogs } : {}),
       },
-    });
+    };
+    applyInferenceMeta(message, gooseMeta);
+    state.messages.push(message);
   }
 
   return messagesChange(state);
@@ -101,6 +109,10 @@ export function applyThoughtChunk(
   }
 
   message.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+  if (gooseMeta.operationLogs) {
+    message.metadata.operationLogs = gooseMeta.operationLogs;
+  }
+  applyInferenceMeta(message, gooseMeta);
 
   const lastContent = message.content[message.content.length - 1];
   if (lastContent?.type === 'thinking') {

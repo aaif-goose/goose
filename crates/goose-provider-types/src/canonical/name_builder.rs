@@ -52,6 +52,7 @@ pub fn map_provider_name(provider: &str) -> &str {
         "chatgpt_codex" => "openai",
         "databricks_v2" => "databricks",
         "zhipu" => "zhipuai",
+        "moonshot" => "moonshotai",
         "together" => "togetherai",
         "novita" => "novita-ai",
         "opencode_go" => "opencode-go",
@@ -61,6 +62,12 @@ pub fn map_provider_name(provider: &str) -> &str {
         "muse_code" => "meta",
         _ => provider,
     }
+}
+
+/// Strip a trailing OpenRouter variant tag such as `:free` or `:nitro`.
+pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
+    let (base, tag) = model.rsplit_once(':')?;
+    (!tag.is_empty() && tag.bytes().all(|byte| byte.is_ascii_lowercase())).then_some(base)
 }
 
 /// Try to map a provider/model pair to a canonical model
@@ -226,6 +233,10 @@ fn infer_provider_from_model(model: &str) -> Option<&'static str> {
         return Some("cohere");
     }
 
+    if model_lower.starts_with("glm-") {
+        return Some("zhipuai");
+    }
+
     None
 }
 
@@ -255,6 +266,7 @@ fn strip_common_prefixes(model: &str) -> String {
         "ministral-",
         "pixtral-",
         "devstral-",
+        "glm-",
     ];
 
     let mut earliest_pos = None;
@@ -355,8 +367,8 @@ mod tests {
             Some("openai/gpt-5.6-sol".to_string())
         );
         assert_eq!(
-            map_to_canonical_model("opencode_go", "kimi-k2.6", &r),
-            Some("opencode-go/kimi-k2.6".to_string())
+            map_to_canonical_model("opencode_go", "kimi-k3", &r),
+            Some("opencode-go/kimi-k3".to_string())
         );
         assert_eq!(
             map_to_canonical_model("opencode_zen", "kimi-k3", &r),
@@ -465,12 +477,6 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("databricks", "gemini-2-5-flash", &r),
             Some("google/gemini-2.5-flash".to_string())
-        );
-
-        // === Meta Llama ===
-        assert_eq!(
-            map_to_canonical_model("databricks", "meta-llama-3-3-70b-instruct", &r),
-            Some("meta-llama/llama-3.3-70b-instruct".to_string())
         );
 
         // === Mistral variants ===

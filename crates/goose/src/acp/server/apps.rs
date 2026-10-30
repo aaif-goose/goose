@@ -4,7 +4,7 @@ use crate::goose_apps::{fetch_mcp_apps, mark_deletable_apps, GooseApp, McpAppCac
 
 const APPS_EXTENSION_NAME: &str = "apps";
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_apps(
         &self,
         req: AppsListRequest,
@@ -22,13 +22,14 @@ impl GooseAcpAgent {
             });
         };
 
-        let agent = self.get_session_agent(&session_id).await?;
-        let mut apps = fetch_mcp_apps(&agent.extension_manager, &session_id)
+        self.open_session(&session_id).await?;
+        let lease = self
+            .services
+            .extension_manager
+            .current_lease(&session_id)
             .await
-            .map_err(|error| {
-                agent_client_protocol::Error::internal_error()
-                    .data(format!("Failed to list apps: {}", error.message))
-            })?;
+            .internal_err()?;
+        let mut apps = fetch_mcp_apps(&lease).await;
 
         McpAppCache::restore_bundled_default_apps(&mut apps);
 

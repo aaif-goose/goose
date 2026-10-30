@@ -18,7 +18,6 @@
 import {
   AppBridge,
   PostMessageTransport,
-  type AppInfo,
   type RequestHandlerExtra,
   type SandboxConfig,
 } from '@mcp-ui/client';
@@ -177,7 +176,7 @@ interface GooseAppFrameProps {
   toolInput?: Record<string, unknown>;
   toolInputPartial?: Record<string, unknown>;
   toolResult?: CallToolResult;
-  toolCancelled?: boolean;
+  toolCancelled: boolean;
   onMessage: (params: {
     content: Array<{ type: string; text?: string }>;
   }) => Promise<Record<string, unknown>>;
@@ -196,9 +195,8 @@ interface GooseAppFrameProps {
     request: JSONRPCRequest,
     extra: RequestHandlerExtra
   ) => Promise<Record<string, unknown>>;
-  onSizeChanged?: (params: McpUiSizeChangedNotification['params']) => void;
-  onInitialized?: (appInfo: AppInfo) => void;
-  onError?: (error: Error) => void;
+  onSizeChanged: (params: McpUiSizeChangedNotification['params']) => void;
+  onError: (error: Error) => void;
 }
 
 const SANDBOX_PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready';
@@ -228,7 +226,6 @@ function GooseAppFrame({
   onLoggingMessage,
   onFallbackRequest,
   onSizeChanged,
-  onInitialized,
   onError,
 }: GooseAppFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -245,7 +242,6 @@ function GooseAppFrame({
   const onLoggingMessageRef = useRef(onLoggingMessage);
   const onFallbackRequestRef = useRef(onFallbackRequest);
   const onSizeChangedRef = useRef(onSizeChanged);
-  const onInitializedRef = useRef(onInitialized);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
@@ -257,7 +253,6 @@ function GooseAppFrame({
     onLoggingMessageRef.current = onLoggingMessage;
     onFallbackRequestRef.current = onFallbackRequest;
     onSizeChangedRef.current = onSizeChanged;
-    onInitializedRef.current = onInitialized;
     onErrorRef.current = onError;
   });
 
@@ -305,7 +300,7 @@ function GooseAppFrame({
       settled = true;
       cleanupReadyListener();
       if (active) {
-        onErrorRef.current?.(error);
+        onErrorRef.current(error);
       }
     };
     const ready = () => {
@@ -330,7 +325,7 @@ function GooseAppFrame({
       if (!active || !iframe.contentWindow) return;
       try {
         bridge.onsizechange = (params) => {
-          onSizeChangedRef.current?.(params);
+          onSizeChangedRef.current(params);
           if (params.width !== undefined) {
             iframe.style.width = `${params.width}px`;
           }
@@ -342,10 +337,6 @@ function GooseAppFrame({
         bridge.oninitialized = () => {
           if (!active) return;
           setInitialized(true);
-          onInitializedRef.current?.({
-            appVersion: bridge.getAppVersion(),
-            appCapabilities: bridge.getAppCapabilities(),
-          });
         };
         await bridge.connect(new PostMessageTransport(iframe.contentWindow, iframe.contentWindow));
         if (!active) return;
@@ -353,7 +344,7 @@ function GooseAppFrame({
         setConnected(true);
       } catch (error) {
         if (!active) return;
-        onErrorRef.current?.(error instanceof Error ? error : new Error(String(error)));
+        onErrorRef.current(error instanceof Error ? error : new Error(String(error)));
       }
     };
 
@@ -382,7 +373,7 @@ function GooseAppFrame({
     if (!connected || !bridge) return;
     void Promise.resolve(bridge.sendSandboxResourceReady({ html, csp: sandbox.csp })).catch(
       (error: unknown) => {
-        onErrorRef.current?.(error instanceof Error ? error : new Error(String(error)));
+        onErrorRef.current(error instanceof Error ? error : new Error(String(error)));
       }
     );
   }, [connected, html, sandbox.csp]);

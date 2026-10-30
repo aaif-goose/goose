@@ -52,6 +52,28 @@ pub struct Pricing {
     /// Cost per million cached write tokens
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<f64>,
+
+    /// Long-context rates that replace the base rates for the whole request
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tiers: Vec<PricingTier>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PricingTier {
+    /// The tier applies once the prompt exceeds this many input tokens
+    pub above_input_tokens: u64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
 }
 
 impl Pricing {
@@ -67,12 +89,24 @@ impl Pricing {
     }
 
     pub fn estimate_cost(&self, usage: &Usage) -> Option<f64> {
-        let input_price = self.input?;
-        let output_price = self.output?;
-        let cache_read_price = self.cache_read.unwrap_or(input_price);
-        let cache_write_price = self.cache_write.unwrap_or(input_price);
+        let prompt_tokens = usage.input_tokens.unwrap_or(0).max(0) as u64;
+        let tier = self
+            .tiers
+            .iter()
+            .filter(|tier| prompt_tokens > tier.above_input_tokens)
+            .max_by_key(|tier| tier.above_input_tokens);
+        let input_price = tier.and_then(|t| t.input).or(self.input)?;
+        let output_price = tier.and_then(|t| t.output).or(self.output)?;
+        let cache_read_price = tier
+            .and_then(|t| t.cache_read)
+            .or(self.cache_read)
+            .unwrap_or(input_price);
+        let cache_write_price = tier
+            .and_then(|t| t.cache_write)
+            .or(self.cache_write)
+            .unwrap_or(input_price);
 
-        let input_tokens = usage.input_tokens.unwrap_or(0).max(0) as f64;
+        let input_tokens = prompt_tokens as f64;
         let output_tokens = usage.output_tokens.unwrap_or(0).max(0) as f64;
         let cache_read_tokens = usage.cache_read_input_tokens.unwrap_or(0).max(0) as f64;
         let cache_write_tokens = usage.cache_write_input_tokens.unwrap_or(0).max(0) as f64;
@@ -126,6 +160,10 @@ pub struct CanonicalModel {
     /// Whether the model supports reasoning/thinking
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+
+    /// Allowed values of the OpenAI-style reasoning effort parameter, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_efforts: Option<Vec<String>>,
 
     /// Request shape to use when enabling thinking/reasoning.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -183,6 +221,7 @@ mod tests {
             output,
             cache_read,
             cache_write,
+            tiers: Vec::new(),
         }
     }
 

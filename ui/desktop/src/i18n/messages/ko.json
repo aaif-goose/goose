@@ -1091,6 +1091,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "확인"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "{name} 익스텐션을 설치하시겠습니까? 명령: {command}"
   },
@@ -2633,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "수집하는 항목:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "메시지 로드 중... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {#개의 메시지를 숨겼습니다}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "모델 변경: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "검색을 위해 모든 메시지를 즉시 로드하려면 Cmd/Ctrl+F를 누르세요."
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (요청됨)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "모두 표시"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "모든 프롬프트가 기본값으로 재설정되었습니다."
@@ -2720,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "저장되지 않은 변경 사항이 있습니다."
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "ProviderCard 오류: 메타데이터가 제공되지 않았습니다."
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "알 수 없는 제공업체"
   },
@@ -2731,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "API 형식"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "취소"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "제공업체 선택"
@@ -4283,6 +4286,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "레시피 실행 시 도구로 호출할 수 있는 서브레시피를 구성합니다."
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "최신 진행 상황 불러오기"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "하위 에이전트 진행 상황은 여기에 실시간으로 표시되지 않습니다."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "모델 목록으로 돌아가기"
   },
@@ -4676,11 +4685,29 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "방문하여"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "작업 기반 에이전트 루프를 사용합니다. 기존 루프를 사용하려면 끄세요."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "자동"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "구성됨"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API 키"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API 키 입력"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "키 제거"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "키 저장"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Jev를 사용해 각 요청의 사고 수준을 선택합니다. 요청 텍스트는 TypeSafe AI로 전송되며, 스킬 및 레시피 슬래시 명령에는 확장된 로컬 지침이 포함됩니다."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "자동 사고 수준"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "차단 한도"
@@ -4732,6 +4759,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "임계값 %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "토큰 한도"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "이전 도구 요청과 응답을 요약하여 컨텍스트를 절약합니다. 비워 두면 컷오프가 자동으로 설정됩니다."

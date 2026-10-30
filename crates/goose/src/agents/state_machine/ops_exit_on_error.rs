@@ -4,13 +4,18 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::agents::state_machine::effects::GooseEffect;
-use crate::agents::state_machine::{
-    not_applicable, trailing_error, yielded, Emitter, Operation, OperationResult,
-};
+use crate::agents::state_machine::{not_applicable, yielded, Emitter, Operation, OperationResult};
+use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::session::Session;
 
 pub struct ExitOnErrorOperation;
+
+pub(crate) fn turn_failure(conversation: &Conversation) -> Option<&Message> {
+    conversation
+        .last()
+        .filter(|message| message.error_kind().is_some())
+}
 
 #[async_trait]
 impl Operation<Session, GooseEffect> for ExitOnErrorOperation {
@@ -24,7 +29,7 @@ impl Operation<Session, GooseEffect> for ExitOnErrorOperation {
         conversation: &Conversation,
         _emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        if trailing_error(conversation).is_none() {
+        if turn_failure(conversation).is_none() {
             return not_applicable();
         }
 

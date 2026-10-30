@@ -113,7 +113,6 @@ interface CreateEditRecipeModalProps {
   recipe?: Recipe;
   isCreateMode?: boolean;
   recipeId?: string | null;
-  onRecipeSaved?: (savedRecipeId: string) => void;
 }
 
 export default function CreateEditRecipeModal({
@@ -122,7 +121,6 @@ export default function CreateEditRecipeModal({
   recipe,
   isCreateMode = false,
   recipeId,
-  onRecipeSaved,
 }: CreateEditRecipeModalProps) {
   const intl = useIntl();
   const getInitialValues = React.useCallback((): RecipeFormData => {
@@ -423,11 +421,7 @@ export default function CreateEditRecipeModal({
     try {
       const recipe = getCurrentRecipe();
 
-      const { id: savedRecipeId } = await saveRecipe(recipe, recipeId);
-
-      if (onRecipeSaved) {
-        onRecipeSaved(savedRecipeId);
-      }
+      await saveRecipe(recipe, recipeId);
 
       onClose(true);
 

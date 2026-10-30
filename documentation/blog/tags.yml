@@ -1,3 +1,8 @@
+gdk:
+  label: GDK
+  permalink: /gdk
+  description: Building agents with the goose Development Kit.
+
 facebook:
   label: Facebook
   permalink: /facebook

@@ -4,15 +4,13 @@ use serde_json::Value;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
+use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
+use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 use crate::agents::state_machine::ops_stop_hook::DENIED;
-use crate::agents::state_machine::ops_unknown_tool::UNCLAIMED_TOOL_ERROR;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
-use crate::permission::Permission;
 
 struct HookTestEnv {
     _temp_dir: tempfile::TempDir,
@@ -151,7 +149,7 @@ async fn stop_hooks_allow_block_and_skip_non_stop_exits() -> Result<()> {
 
     pipeline.run(["keep going"]).await?;
     assert_eq!(api.call_count(), MAX_TURNS as usize);
-    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64 - 1);
+    assert_eq!(pipeline.calculator_total(), MAX_TURNS as i64);
     assert_eq!(maxed.invocations(), 0);
 
     Ok(())
@@ -297,6 +295,16 @@ async fn session_prompt_and_tool_hooks_fire_at_their_boundaries() -> Result<()> 
     pipeline.run(["first", "second"]).await?;
     assert_eq!(session_start.invocations(), 1);
     assert_eq!(api.call_count(), 2);
+
+    let opened_by_client = HookTestEnv::new("SessionStart", LOG_AND_ALLOW_SCRIPT);
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(opened_by_client.hook_manager());
+    pipeline
+        .seed([crate::agents::state_machine::session_start_message(&[])])
+        .await?;
+    api.on("first").reply("ok");
+    pipeline.run(["first"]).await?;
+    assert_eq!(opened_by_client.invocations(), 0);
 
     let prompt_submit = HookTestEnv::new("UserPromptSubmit", LOG_AND_ALLOW_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
@@ -608,14 +616,9 @@ fn final_output_recipe() -> crate::recipe::Recipe {
         .expect("valid recipe")
 }
 
-/// recipe final-output parity: the call `RecipeOperation` executes directly still
-/// emits `PreToolUse` and `PreToolUseResult`, correlated by one `tool_call_id`.
 #[tokio::test]
-async fn recipe_final_output_emits_pre_tool_use_and_result_with_matching_id() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
+async fn recipe_final_output_emits_tool_hooks_with_one_tool_call_id() -> Result<()> {
+    let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
@@ -628,6 +631,7 @@ async fn recipe_final_output_emits_pre_tool_use_and_result_with_matching_id() ->
 
     let pres = env.payloads("pre.log");
     let results = env.payloads("result.log");
+    let posts = env.payloads("post.log");
     assert_eq!(
         pres.len(),
         1,
@@ -638,54 +642,25 @@ async fn recipe_final_output_emits_pre_tool_use_and_result_with_matching_id() ->
         1,
         "PreToolUseResult must fire for recipe final output"
     );
-    assert_eq!(pres[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["event"], "PreToolUseResult");
-    assert_eq!(results[0]["decision"], "allow");
-    assert_eq!(
-        pres[0]["tool_call_id"], results[0]["tool_call_id"],
-        "PreToolUse and PreToolUseResult must carry the same tool_call_id"
-    );
-    assert!(pres[0]["tool_call_id"]
-        .as_str()
-        .is_some_and(|id| !id.is_empty()));
-    Ok(())
-}
-
-/// recipe final-output parity: the post-tool event fires once the call completes,
-/// carrying the id the pre events carried.
-#[tokio::test]
-async fn recipe_final_output_emits_post_tool_event() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    pipeline.run(["produce the answer"]).await?;
-
-    let pres = env.payloads("pre.log");
-    let posts = env.payloads("post.log");
-    assert_eq!(pres.len(), 1);
     assert_eq!(
         posts.len(),
         1,
         "PostToolUse must fire for a successful recipe final output"
     );
+    assert!(env.payloads("postfail.log").is_empty());
+    assert_eq!(pres[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
+    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
+    assert_eq!(results[0]["event"], "PreToolUseResult");
+    assert_eq!(results[0]["decision"], "allow");
     assert_eq!(posts[0]["event"], "PostToolUse");
     assert_eq!(posts[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
+    assert!(pres[0]["tool_call_id"]
+        .as_str()
+        .is_some_and(|id| !id.is_empty()));
+    assert_eq!(
+        pres[0]["tool_call_id"], results[0]["tool_call_id"],
+        "PreToolUse and PreToolUseResult must carry the same tool_call_id"
+    );
     assert_eq!(
         posts[0]["tool_call_id"], pres[0]["tool_call_id"],
         "the post event must carry the same tool_call_id as the pre events"
@@ -694,111 +669,79 @@ async fn recipe_final_output_emits_post_tool_event() -> Result<()> {
 }
 
 #[tokio::test]
-async fn recipe_final_output_waits_for_sibling_tools_and_is_emitted_once() -> Result<()> {
+async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("finish and add").calls([
         (
-            "final-output",
+            "early-output",
             FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "done" }),
+            serde_json::json!({ "answer": "guess" }),
         ),
         ("side-effect", ADD, value(1)),
     ]);
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "done" }),
+    );
 
     let result = pipeline.run(["finish and add"]).await?;
 
     assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(api.call_count(), 2);
+    assert!(api.calls()[1].input_contains("result: 1"));
     let messages = result.conversation().messages();
-    let side_effect_response = messages
+    assert_tool_transcript_bijection(messages);
+    assert!(messages
         .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
-        })
-        .expect("sibling tool response");
-    let final_answers: Vec<_> = messages
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| message.as_concat_text() == r#"{"answer":"done"}"#)
-        .collect();
-    assert_eq!(final_answers.len(), 1, "final output must be emitted once");
-    assert!(
-        side_effect_response < final_answers[0].0,
-        "final output must wait until sibling tools finish"
-    );
+        .all(|message| message.as_concat_text() != r#"{"answer":"guess"}"#));
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
     Ok(())
 }
 
 #[tokio::test]
-async fn recipe_final_output_waits_for_approval_pending_sibling() -> Result<()> {
+async fn rejected_final_output_after_a_stop_hook_block_does_not_reshow_the_blocked_output(
+) -> Result<()> {
+    let blocked = HookTestEnv::new("Stop", RECORD_AND_BLOCK_MARKER_SCRIPT);
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
-    pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::AlwaysAllow);
+    let pipeline = pipeline.with_hook_manager(blocked.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish after approval").calls([
+    api.on("finish").call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "policy marker" }),
+    );
+    api.on("blocked ending this turn").calls([
+        ("side-effect", ADD, value(1)),
         (
-            "final-output",
+            "early-output",
             FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "approved" }),
-        ),
-        (
-            "side-effect",
-            MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-            serde_json::json!({
-                "action": "enable",
-                "extension_name": "analyze"
-            }),
+            serde_json::json!({ "answer": "guess" }),
         ),
     ]);
-
-    let awaiting_approval = pipeline.run(["finish after approval"]).await?;
-    assert!(
-        awaiting_approval
-            .conversation()
-            .messages()
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"approved"}"#),
-        "final output must wait while a sibling needs approval"
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "fixed" }),
     );
 
-    pipeline
-        .confirm("side-effect", Permission::AllowOnce)
-        .await?;
-    let result = pipeline.resume().await?;
+    let result = pipeline.run(["finish"]).await?;
 
-    let messages = result.conversation().messages();
-    let sibling_response = messages
-        .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
-        })
-        .expect("approved sibling response");
-    let final_answers = result
+    assert_eq!(api.call_count(), 3);
+    let shown: Vec<String> = result
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.as_concat_text() == r#"{"answer":"approved"}"#)
-        .count();
-    assert_eq!(final_answers, 1, "approved final output must emit once");
-    let final_answer = messages
-        .iter()
-        .position(|message| message.as_concat_text() == r#"{"answer":"approved"}"#)
-        .expect("approved final output");
-    assert!(
-        sibling_response < final_answer,
-        "the approved sibling must execute before finalization"
+        .filter(|message| message.role == Role::Assistant)
+        .map(Message::as_concat_text)
+        .filter(|text| text.contains("answer"))
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            r#"{"answer":"policy marker"}"#.to_string(),
+            r#"{"answer":"fixed"}"#.to_string()
+        ]
     );
-    result.assert_message(-1, Agent, r#"{"answer":"approved"}"#);
+    result.assert_message(-1, Agent, r#"{"answer":"fixed"}"#);
     Ok(())
 }
 
@@ -1314,13 +1257,6 @@ fn assert_tool_transcript_bijection(messages: &[Message]) {
     }
 }
 
-fn lifecycle_ids(env: &RecordingHookEnv, log: &str) -> Vec<String> {
-    env.payloads(log)
-        .iter()
-        .filter_map(|payload| payload["tool_call_id"].as_str().map(str::to_string))
-        .collect()
-}
-
 fn recording_lifecycle_env() -> RecordingHookEnv {
     RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
@@ -1398,64 +1334,6 @@ async fn recipe_final_output_denied_by_permission_receives_declined_response() -
     Ok(())
 }
 
-/// Two final-output calls in one assistant block both get answered, each with its
-/// own lifecycle, and the last valid one is published. Before the fix the pair
-/// deadlocked: each waited for the other and neither was answered.
-#[tokio::test]
-async fn duplicate_final_output_calls_are_each_answered_and_last_valid_wins() -> Result<()> {
-    let env = recording_lifecycle_env();
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish twice").calls([
-        (
-            "final-a",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "first" }),
-        ),
-        (
-            "final-b",
-            FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "second" }),
-        ),
-    ]);
-
-    let result = pipeline.run(["finish twice"]).await?;
-    let messages = result.conversation().messages();
-    assert_tool_transcript_bijection(messages);
-
-    // Assert the recorded order, not just membership: execution order is what
-    // decides which call wins, so sorting here would erase the property.
-    let pre = lifecycle_ids(&env, "pre.log");
-    let results = lifecycle_ids(&env, "result.log");
-    let posts = lifecycle_ids(&env, "post.log");
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "both calls succeed, so no post-failure event may be recorded"
-    );
-    let expected = vec!["final-a".to_string(), "final-b".to_string()];
-    assert_eq!(pre, expected, "both calls need a PreToolUse");
-    assert_eq!(results, expected, "both calls need a PreToolUseResult");
-    assert_eq!(posts, expected, "both calls need a post event");
-
-    let published: Vec<_> = messages
-        .iter()
-        .filter(|message| message.as_concat_text() == r#"{"answer":"second"}"#)
-        .collect();
-    assert_eq!(
-        published.len(),
-        1,
-        "the last valid final output is published exactly once"
-    );
-    assert!(
-        messages
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"first"}"#),
-        "the superseded final output must not be published"
-    );
-    Ok(())
-}
-
 /// A malformed final-output call gets one parse-error response and runs no
 /// lifecycle, because nothing executes.
 #[tokio::test]
@@ -1501,45 +1379,47 @@ async fn malformed_final_output_call_receives_parse_error_and_no_lifecycle() -> 
     Ok(())
 }
 
-/// An unfinished ordinary sibling still delays publication, and every request in
-/// the block is answered exactly once.
 #[tokio::test]
-async fn final_output_waits_for_ordinary_sibling_and_answers_every_request() -> Result<()> {
+async fn two_final_outputs_in_one_reply_are_both_rejected() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish and add").calls([
+    api.on("finish twice").calls([
         (
-            "final-output",
+            "first-output",
             FINAL_OUTPUT_TOOL_NAME,
-            serde_json::json!({ "answer": "after sibling" }),
+            serde_json::json!({ "answer": "first" }),
         ),
-        ("side-effect", ADD, value(1)),
+        (
+            "second-output",
+            FINAL_OUTPUT_TOOL_NAME,
+            serde_json::json!({ "answer": "second" }),
+        ),
     ]);
+    api.on(FINAL_OUTPUT_NOT_ALONE_MESSAGE).call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "alone" }),
+    );
 
-    let result = pipeline.run(["finish and add"]).await?;
+    let result = pipeline.run(["finish twice"]).await?;
+
+    assert_eq!(api.call_count(), 2);
     let messages = result.conversation().messages();
     assert_tool_transcript_bijection(messages);
-    assert_eq!(pipeline.calculator_total(), 1);
-
-    let sibling_answer = messages
+    let rejected = messages
         .iter()
-        .position(|message| {
-            message.content.iter().any(|content| {
-                matches!(
-                    content,
-                    MessageContent::ToolResponse(response) if response.id == "side-effect"
-                )
-            })
+        .flat_map(|message| &message.content)
+        .filter(|content| {
+            matches!(
+                content,
+                MessageContent::ToolResponse(response)
+                    if response.tool_result.as_ref().is_err_and(|error| {
+                        error.message.ends_with(FINAL_OUTPUT_NOT_ALONE_MESSAGE)
+                    })
+            )
         })
-        .expect("sibling tool response");
-    let published = messages
-        .iter()
-        .position(|message| message.as_concat_text() == r#"{"answer":"after sibling"}"#)
-        .expect("published final output");
-    assert!(
-        sibling_answer < published,
-        "final output must wait until the ordinary sibling finishes"
-    );
+        .count();
+    assert_eq!(rejected, 2);
+    result.assert_message(-1, Agent, r#"{"answer":"alone"}"#);
     Ok(())
 }
 

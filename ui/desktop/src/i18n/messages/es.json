@@ -1091,6 +1091,12 @@
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
   },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
+  },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "¿Seguro que quieres instalar la extensión {name}? Comando: {command}"
   },
@@ -2633,14 +2639,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Lo que recopilamos:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Cargando mensajes... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# mensaje oculto} other {# mensajes ocultos}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Modelo cambiado: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Pulsa Cmd/Ctrl+F para cargar todos los mensajes de inmediato y buscar"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (solicitado)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Mostrar todo"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Todos los prompts se restablecieron a sus valores por defecto"
@@ -2720,9 +2729,6 @@
   "promptsSettings.unsavedChanges": {
     "defaultMessage": "Tienes cambios sin guardar"
   },
-  "providerCard.noMetadata": {
-    "defaultMessage": "Error de ProviderCard: no se proporcionaron metadatos"
-  },
   "providerCard.unknownProvider": {
     "defaultMessage": "Proveedor desconocido"
   },
@@ -2731,9 +2737,6 @@
   },
   "providerCatalogPicker.apiFormat": {
     "defaultMessage": "Formato de API"
-  },
-  "providerCatalogPicker.cancel": {
-    "defaultMessage": "Cancelar"
   },
   "providerCatalogPicker.chooseProvider": {
     "defaultMessage": "Elegir proveedor"
@@ -4283,6 +4286,12 @@
   "subRecipeModal.subtitle": {
     "defaultMessage": "Configura una subreceta que se pueda invocar como herramienta durante la ejecución de la receta"
   },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Cargar el progreso más reciente"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "El progreso del subagente no se muestra en directo aquí."
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Volver a la lista de modelos"
   },
@@ -4676,11 +4685,29 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visita"
   },
-  "settings.agentLoop.description": {
-    "defaultMessage": "Usa el bucle del agente basado en operaciones. Desactívalo para usar el bucle heredado."
-  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automático"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Configurada"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Clave de API de TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Introduce la clave de API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Eliminar clave"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Guardar clave"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Usa Jev para elegir el esfuerzo de razonamiento de cada solicitud. El texto se envía a TypeSafe AI; los comandos de habilidades y recetas incluyen sus instrucciones locales ampliadas."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Esfuerzo de razonamiento automático"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Límite de bloqueos"
@@ -4732,6 +4759,9 @@
   },
   "settings.agentLoop.operations.threshold.label": {
     "defaultMessage": "Umbral %"
+  },
+  "settings.agentLoop.operations.tokenLimit.label": {
+    "defaultMessage": "Límite de tokens"
   },
   "settings.agentLoop.operations.toolPairCompaction.description": {
     "defaultMessage": "Resume solicitudes y respuestas de herramientas antiguas para ahorrar contexto. El límite es automático si se deja vacío."

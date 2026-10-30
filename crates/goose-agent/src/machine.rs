@@ -1,19 +1,27 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
-    ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect, Operation,
-    OperationFuture, OperationResult, StepResult,
+    messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
+    Operation, OperationResult, RunStatus, StepResult,
 };
+use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+use goose_provider_types::thinking::ThinkingEffort;
 
 pub trait MachineSession: MaybeSend + MaybeSync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
+    fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        None
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -51,6 +59,40 @@ impl<S, E: MaybeSend> Step<'_, S, E> {
 pub struct StateMachine<'a, S, E = ConversationEffect> {
     steps: Vec<Step<'a, S, E>>,
     cancel: CancellationToken,
+    interrupted_step: Mutex<Option<usize>>,
+}
+
+fn empty_result<E>(status: RunStatus) -> StepResult<E> {
+    StepResult {
+        effects: Vec::new(),
+        applied_step: None,
+        status,
+    }
+}
+
+fn interrupted_response(messages: &[Message]) -> Option<Message> {
+    let answered = messages
+        .iter()
+        .flat_map(Message::get_tool_response_ids)
+        .collect::<HashSet<_>>();
+    let mut request_ids = HashSet::new();
+    let mut response = Message::user();
+    for request in messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter_map(MessageContent::as_tool_request)
+    {
+        if request_ids.insert(request.id.as_str()) && !answered.contains(request.id.as_str()) {
+            response.add_tool_response_with_metadata(
+                request.id.clone(),
+                Ok(rmcp::model::CallToolResult::error(vec![
+                    rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
+                ])),
+                request.metadata.as_ref(),
+            );
+        }
+    }
+    (!response.get_tool_response_ids().is_empty()).then_some(response)
 }
 
 fn add_tools_to_inference_input(
@@ -70,36 +112,42 @@ fn add_tools_to_inference_input(
 impl<'a, S, E> StateMachine<'a, S, E>
 where
     S: MachineSession,
-    E: MachineEffect + MaybeSend + 'static,
+    E: MachineEffect + From<Message> + MaybeSend + 'static,
 {
     pub fn new(steps: Vec<Step<'a, S, E>>, cancel: CancellationToken) -> Self {
-        Self { steps, cancel }
+        Self {
+            steps,
+            cancel,
+            interrupted_step: Mutex::new(None),
+        }
     }
 
-    pub async fn step(&self, session: &S, emit: &Emitter) -> Result<Option<StepResult<E>>> {
+    pub async fn step(&self, session: &S, emit: &Emitter) -> Result<StepResult<E>> {
         let conversation = session
             .conversation()
             .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
 
-        for step in &self.steps {
+        for (index, step) in self.steps.iter().enumerate() {
             let name = step.operation().name();
-            let result = if self.cancel.is_cancelled() {
-                OperationResult::NotApplicable
-            } else {
-                let step_fut: OperationFuture<'_, Result<OperationResult<E>>> = match step {
-                    Step::Operation(operation) => operation.run(session, conversation, emit),
+            if self.cancel.is_cancelled() {
+                return Ok(empty_result(RunStatus::Cancelled));
+            }
+            let execution = async {
+                match step {
+                    Step::Operation(operation) => operation.run(session, conversation, emit).await,
                     Step::Inference(inference) => {
+                        let prepared_session = inference.prepare_session(session).await?;
+                        let session = prepared_session.as_ref().unwrap_or(session);
+                        let conversation = session.conversation().ok_or_else(|| {
+                            anyhow!("state-machine session loaded without conversation")
+                        })?;
                         if !inference.applies(conversation) {
-                            continue;
+                            return Ok(OperationResult::NotApplicable);
                         }
                         let mut input = InferenceInput::default();
                         let mut tool_names = HashSet::new();
                         for operation in self.steps.iter().map(|step| step.operation()) {
-                            let tools = tokio::select! {
-                                biased;
-                                _ = self.cancel.cancelled() => return Ok(None),
-                                tools = operation.inference_tools(session) => tools?,
-                            };
+                            let tools = operation.inference_tools(session).await?;
                             add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
                             input
                                 .prompt_parts
@@ -108,54 +156,60 @@ where
                                 .moim_parts
                                 .extend(operation.moim_parts(session, conversation).await?);
                         }
-                        inference.infer(session, conversation, input, emit)
+                        inference.infer(session, conversation, input, emit).await
                     }
-                };
-                step_fut.await?
+                }
             };
-            let cancelled = self.cancel.is_cancelled();
-            let result = if cancelled {
-                step.operation()
-                    .cancel(session, conversation, result, emit)
-                    .await?
-            } else {
-                result
+            let result = tokio::select! {
+                biased;
+                result = execution => Some(result),
+                _ = self.cancel.cancelled() => None,
+            };
+            let result = match result {
+                Some(Ok(result)) => result,
+                Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
+                _ => {
+                    *self.interrupted_step.lock().unwrap() = Some(index);
+                    return Ok(empty_result(RunStatus::Cancelled));
+                }
             };
 
             match result {
                 OperationResult::NotApplicable => {}
                 OperationResult::Applied(mut result) => {
+                    tracing::debug!(step = name, "applied step");
                     result.applied_step = Some(name);
                     for effect in &mut result.effects {
                         effect.ensure_message_ids();
                     }
-                    if cancelled {
-                        result.yield_to_client = true;
+                    if self.cancel.is_cancelled() {
+                        result.status = RunStatus::Cancelled;
                     }
-                    return Ok(Some(result));
+                    return Ok(result);
                 }
             }
         }
 
-        Ok(None)
+        Ok(empty_result(RunStatus::Yielded))
     }
 
     pub async fn apply<R>(
         &self,
         runtime: &R,
         session: &S,
-        result: &mut StepResult<E>,
+        effects: &mut [E],
         emit: &Emitter,
     ) -> Result<()>
     where
         R: EffectHandler<S, E>,
     {
-        for effect in &mut result.effects {
+        if effects.is_empty() {
+            return Ok(());
+        }
+        for effect in effects.iter_mut() {
             effect.ensure_message_ids();
         }
-        runtime
-            .apply_effects(session, &mut result.effects, emit)
-            .await
+        runtime.apply_effects(session, effects, emit).await
     }
 
     pub async fn run<R>(&self, runtime: &R, session_id: &str, emit: &Emitter) -> Result<S>
@@ -164,14 +218,90 @@ where
     {
         loop {
             let session = runtime.load(session_id).await?;
-            let Some(mut result) = self.step(&session, emit).await? else {
-                break;
-            };
-            self.apply(runtime, &session, &mut result, emit).await?;
-            if result.yield_to_client {
-                break;
+            let mut result = self.step(&session, emit).await?;
+            self.apply(runtime, &session, &mut result.effects, emit)
+                .await?;
+            match result.status {
+                RunStatus::Continuing => {}
+                RunStatus::Yielded | RunStatus::Cancelled => break,
             }
         }
+        self.finalize(runtime, session_id, emit).await
+    }
+
+    pub async fn finalize<R>(&self, runtime: &R, session_id: &str, emit: &Emitter) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        let mut session = runtime.load(session_id).await?;
+        if !self.cancel.is_cancelled() {
+            return Ok(session);
+        }
+
+        let interrupted_step = self.interrupted_step.lock().unwrap().take();
+        if let Some(index) = interrupted_step {
+            session = self
+                .finalize_step_cancellation(runtime, session_id, session, &self.steps[index], emit)
+                .await?;
+        }
+
+        let unanswered = session
+            .conversation()
+            .and_then(|conversation| messages_since_kickoff(conversation).ok())
+            .and_then(interrupted_response);
+        if let Some(response) = unanswered {
+            let effects = vec![E::from(emit.message(response))];
+            session = self
+                .save(runtime, session_id, session, effects, emit)
+                .await?;
+        }
+
+        for (index, step) in self.steps.iter().enumerate() {
+            if Some(index) != interrupted_step {
+                session = self
+                    .finalize_step_cancellation(runtime, session_id, session, step, emit)
+                    .await?;
+            }
+        }
+        Ok(session)
+    }
+
+    async fn finalize_step_cancellation<R>(
+        &self,
+        runtime: &R,
+        session_id: &str,
+        session: S,
+        step: &Step<'a, S, E>,
+        emit: &Emitter,
+    ) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        let conversation = session
+            .conversation()
+            .ok_or_else(|| anyhow!("state-machine session loaded without conversation"))?;
+        let effects = step
+            .operation()
+            .finalize_cancellation(&session, conversation, emit)
+            .await;
+        self.save(runtime, session_id, session, effects, emit).await
+    }
+
+    async fn save<R>(
+        &self,
+        runtime: &R,
+        session_id: &str,
+        session: S,
+        mut effects: Vec<E>,
+        emit: &Emitter,
+    ) -> Result<S>
+    where
+        R: SessionLoader<S> + EffectHandler<S, E>,
+    {
+        if effects.is_empty() {
+            return Ok(session);
+        }
+        self.apply(runtime, &session, &mut effects, emit).await?;
         runtime.load(session_id).await
     }
 }

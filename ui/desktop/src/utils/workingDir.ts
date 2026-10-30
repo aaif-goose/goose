@@ -18,8 +18,8 @@ export const getInitialWorkingDir = (): string => {
  * use the configured directory (matching getActiveExternalBackend), while
  * settings-mode backends require the window-bound backend to still match.
  */
-export const getEffectiveWorkingDir = async (): Promise<string> => {
-  const initial = getInitialWorkingDir();
+export const getEffectiveWorkingDir = async (inheritedWorkingDir?: string): Promise<string> => {
+  const initial = inheritedWorkingDir ?? getInitialWorkingDir();
   const boundUrl = window.appConfig?.get('GOOSE_EXTERNAL_BACKEND_URL') as string | undefined;
   const source = window.appConfig?.get('GOOSE_EXTERNAL_BACKEND_SOURCE') as string | undefined;
   if (window.appConfig?.get('GOOSE_EXTERNAL_BACKEND') !== true || !boundUrl) {

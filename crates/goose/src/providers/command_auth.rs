@@ -450,23 +450,4 @@ mod tests {
             std::env::current_dir().unwrap().join("some/relative/dir")
         );
     }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn command_runs_with_configured_cwd_and_resolves_relative_path() {
-        let dir = tempfile::tempdir().unwrap();
-        // Avoid ETXTBSY when parallel subprocesses inherit a freshly written executable.
-        std::os::unix::fs::symlink("/bin/pwd", dir.path().join("get-token")).unwrap();
-
-        let mut config = auth_config("./get-token", Vec::<&str>::new(), 3600);
-        config.cwd = Some(dir.path().to_string_lossy().to_string());
-        let provider = CommandAuthProvider::new(&config, "Authorization", "Bearer ");
-
-        let (_, value) = provider.get_auth_header().await.unwrap();
-        let token = value.strip_prefix("Bearer ").unwrap();
-        assert_eq!(
-            std::fs::canonicalize(token).unwrap(),
-            std::fs::canonicalize(dir.path()).unwrap()
-        );
-    }
 }

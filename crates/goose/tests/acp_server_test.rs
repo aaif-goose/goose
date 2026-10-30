@@ -20,16 +20,14 @@ use common_tests::fixtures::{
 use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
-    run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
-    run_fs_write_text_file_true, run_initialize_doesnt_hit_provider, run_list_sessions,
-    run_load_mode, run_load_model, run_load_session_error, run_load_session_mcp,
+    run_delete_session, run_initialize_doesnt_hit_provider, run_list_sessions, run_load_mode,
+    run_load_model, run_load_session_error, run_load_session_mcp,
     run_load_session_replays_image_attachment, run_mode_set, run_model_list, run_model_set,
     run_model_set_error_session_not_found, run_new_session_returns_initial_config,
     run_new_session_uses_current_config_mode, run_permission_persistence, run_prompt_basic,
     run_prompt_error, run_prompt_image, run_prompt_image_attachment, run_prompt_mcp,
-    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification,
-    run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
-    OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
+    run_prompt_model_mismatch, run_prompt_skill, run_session_name_update_notification, run_shell,
+    run_write_file, GENERATED_SESSION_TITLE, OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageMetadata};
@@ -792,18 +790,8 @@ fn test_delete_session() {
 }
 
 #[test]
-fn test_fs_read_text_file_true() {
-    run_test(async { run_fs_read_text_file_true::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_false() {
-    run_test(async { run_fs_write_text_file_false::<AcpServerConnection>().await });
-}
-
-#[test]
-fn test_fs_write_text_file_true() {
-    run_test(async { run_fs_write_text_file_true::<AcpServerConnection>().await });
+fn test_write_file() {
+    run_test(async { run_write_file::<AcpServerConnection>().await });
 }
 
 #[test]
@@ -834,6 +822,65 @@ fn test_load_session_mcp() {
 #[test]
 fn test_load_session_replays_image_attachment() {
     run_test(async { run_load_session_replays_image_attachment::<AcpServerConnection>().await });
+}
+
+async fn seed_session_awaiting_approval(data_root: &Path, session_type: SessionType) -> String {
+    let session_manager = SessionManager::new(data_root.to_path_buf());
+    let session = session_manager
+        .create_session(
+            data_root.to_path_buf(),
+            "Awaiting approval".to_string(),
+            session_type,
+            GooseMode::default(),
+        )
+        .await
+        .unwrap();
+    for message in [
+        Message::user().with_text("run the tool"),
+        Message::assistant().with_action_required(
+            "approval",
+            "tool".to_string(),
+            Default::default(),
+            None,
+        ),
+    ] {
+        session_manager
+            .add_message(&session.id, &message)
+            .await
+            .unwrap();
+    }
+    session.id
+}
+
+fn starts_a_run(updates: &[SessionUpdate]) -> bool {
+    updates.iter().any(|update| match update {
+        SessionUpdate::SessionInfoUpdate(info) => info
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("goose"))
+            .and_then(|goose| goose.get("activeRunId"))
+            .is_some_and(serde_json::Value::is_string),
+        _ => false,
+    })
+}
+
+#[test]
+fn test_load_session_resumes_pending_approval_except_for_subagents() {
+    run_test(async {
+        for (session_type, resumes) in [(SessionType::Acp, true), (SessionType::SubAgent, false)] {
+            let data_root = tempfile::tempdir().unwrap();
+            let session_id = seed_session_awaiting_approval(data_root.path(), session_type).await;
+            let mut conn = new_connection(data_root.path()).await;
+
+            let SessionData { session, .. } = conn.load_session(&session_id, vec![]).await.unwrap();
+
+            assert_eq!(
+                starts_a_run(&session.session_updates()),
+                resumes,
+                "{session_type:?}"
+            );
+        }
+    });
 }
 
 #[test]
@@ -940,6 +987,30 @@ fn test_new_session_honors_recipe_model_without_recipe_provider() {
             meta.get("providerId").and_then(|v| v.as_str()),
             Some("openai")
         );
+    });
+}
+
+#[test]
+fn test_new_session_rejects_unknown_provider_as_invalid_params() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let mut meta = serde_json::Map::new();
+        meta.insert(
+            "provider".to_string(),
+            serde_json::Value::String("not-a-provider".to_string()),
+        );
+
+        let error: anyhow::Error = conn
+            .cx()
+            .send_request(NewSessionRequest::new(work_dir.path()).meta(meta))
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+
+        assert_invalid_params(error);
     });
 }
 
@@ -1212,32 +1283,10 @@ fn test_prompt_mcp() {
     run_test(async { run_prompt_mcp::<AcpServerConnection>().await });
 }
 
-/// Selects the agent loop until dropped. Only use inside `run_test`: it holds the
-/// ACP test lock, so no other test in this binary observes the override.
-struct AgentLoopOverride(Option<std::ffi::OsString>);
-
-impl AgentLoopOverride {
-    fn new(state_machine: bool) -> Self {
-        let previous = std::env::var_os("GOOSE_STATE_MACHINE");
-        std::env::set_var("GOOSE_STATE_MACHINE", if state_machine { "1" } else { "0" });
-        Self(previous)
-    }
-}
-
-impl Drop for AgentLoopOverride {
-    fn drop(&mut self) {
-        match self.0.take() {
-            Some(previous) => std::env::set_var("GOOSE_STATE_MACHINE", previous),
-            None => std::env::remove_var("GOOSE_STATE_MACHINE"),
-        }
-    }
-}
-
 /// Two provider calls separated by a tool call. The canned responses report 2469
 /// and then 2631 total tokens, so 2469 can only arrive in an update sent while
 /// the prompt is still running.
-async fn assert_usage_updates_during_prompt(state_machine: bool) {
-    let _agent_loop = AgentLoopOverride::new(state_machine);
+async fn assert_usage_updates_during_prompt() {
     let prompt = "Use the get_code tool and output only its result.";
     let mcp = McpFixture::new().await;
     let openai = OpenAiFixture::new(
@@ -1280,22 +1329,12 @@ async fn assert_usage_updates_during_prompt(state_machine: bool) {
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert_eq!(
-        used,
-        [2469, 2631, 2631],
-        "state_machine={state_machine}, agent text: {}",
-        output.text
-    );
+    assert_eq!(used, [2469, 2631, 2631], "agent text: {}", output.text);
 }
 
 #[test]
-fn test_prompt_usage_updates_during_turn_legacy_loop() {
-    run_test(async { assert_usage_updates_during_prompt(false).await });
-}
-
-#[test]
-fn test_prompt_usage_updates_during_turn_state_machine() {
-    run_test(async { assert_usage_updates_during_prompt(true).await });
+fn test_prompt_usage_updates_during_turn() {
+    run_test(async { assert_usage_updates_during_prompt().await });
 }
 
 #[test]
@@ -1309,11 +1348,177 @@ fn test_prompt_skill() {
 }
 
 #[test]
-fn test_shell_terminal_false() {
-    run_test(async { run_shell_terminal_false::<AcpServerConnection>().await });
+fn test_shell() {
+    run_test(async { run_shell::<AcpServerConnection>().await });
+}
+
+const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
+const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
+const CONTEXT_ERROR_TEXT: &str =
+    "Context length exceeded: too long\n\nThe conversation is too long for the model's context window.";
+
+async fn prompt_after_context_overflow(
+    exchanges: Vec<(&str, &'static str)>,
+) -> anyhow::Result<String> {
+    let mut all = vec![("overflow", CONTEXT_OVERFLOW)];
+    all.extend(exchanges);
+    prompt_and_stream("overflow", all).await.0
+}
+
+async fn prompt_and_stream(
+    prompt: &str,
+    exchanges: Vec<(&str, &'static str)>,
+) -> (anyhow::Result<String>, String) {
+    let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+    let exchanges = exchanges
+        .into_iter()
+        .map(|(p, r)| (p.to_string(), r))
+        .collect();
+    let openai = OpenAiFixture::new(exchanges, expected_session_id.clone()).await;
+    let mut conn =
+        <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+    expected_session_id.set(&session.session_id().0);
+    let result = session
+        .prompt(prompt, PermissionDecision::Cancel)
+        .await
+        .map(|output| output.text);
+    let streamed = session
+        .session_updates()
+        .into_iter()
+        .filter_map(|update| match update {
+            SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                ContentBlock::Text(text) => Some(text.text),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    (result, streamed)
+}
+
+fn prompt_acp_error(error: anyhow::Error) -> agent_client_protocol::Error {
+    error.downcast::<agent_client_protocol::Error>().unwrap()
 }
 
 #[test]
-fn test_shell_terminal_true() {
-    run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+fn test_prompt_succeeds_when_compaction_recovers_from_context_overflow() {
+    run_test(async {
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let text = prompt_after_context_overflow(vec![
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", basic),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(text, format!("{CONTEXT_ERROR_TEXT}2"));
+    });
+}
+
+#[test]
+fn test_prompt_reports_context_error_when_compaction_limit_is_exhausted() {
+    run_test(async {
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let error = prompt_after_context_overflow(vec![
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", CONTEXT_OVERFLOW),
+            (SUMMARIZE_HISTORY, basic),
+            ("Your context was compacted", CONTEXT_OVERFLOW),
+        ])
+        .await
+        .unwrap_err();
+        let error = prompt_acp_error(error);
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert_eq!(error.data.unwrap()["reason"], "turn_failed");
+    });
+}
+
+const PARTIAL_THEN_STREAM_ERROR: &str = "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1766229303,\"model\":\"gpt-5-nano\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"partial answer\"},\"finish_reason\":null}]}\n\ndata: {\"error\":{\"message\":\"upstream exploded\"}}\n\n";
+
+#[test]
+fn test_prompt_fails_and_streams_the_error() {
+    run_test(async {
+        let (result, streamed) =
+            prompt_and_stream("partial", vec![("partial", PARTIAL_THEN_STREAM_ERROR)]).await;
+        let error = prompt_acp_error(result.unwrap_err());
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert!(
+            streamed.contains("partial answer") && streamed.contains("upstream exploded"),
+            "streamed text: {streamed:?}"
+        );
+    });
+}
+
+#[test]
+fn test_manual_compaction_refusal_fails_without_replacing_context() {
+    run_test(async {
+        let expected_session_id = <AcpServerConnection as Connection>::expected_session_id();
+        let basic = include_str!("acp_test_data/openai_basic.txt");
+        let refusal =
+            r#"status:400 {"error":{"message":"summary refused","type":"invalid_request_error"}}"#;
+        let openai = OpenAiFixture::new(
+            vec![
+                (format!("what is 1+1{TURN_CONTEXT_OPEN}"), basic),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (SUMMARIZE_HISTORY.to_string(), refusal),
+                (format!("still there?{TURN_CONTEXT_OPEN}"), basic),
+            ],
+            expected_session_id.clone(),
+        )
+        .await;
+        let mut conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+        session
+            .prompt("what is 1+1", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+        let manager = SessionManager::new(conn.data_root());
+        let before = manager
+            .get_session(&session.session_id().0, true)
+            .await
+            .unwrap();
+
+        let result = session.prompt("/compact", PermissionDecision::Cancel).await;
+        let streamed: String = session
+            .session_updates()
+            .into_iter()
+            .filter_map(|update| match update {
+                SessionUpdate::AgentMessageChunk(chunk) => match chunk.content {
+                    ContentBlock::Text(text) => Some(text.text),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert!(streamed.contains("summary refused"), "{streamed:?}");
+        assert!(!streamed.contains("Compaction complete"), "{streamed:?}");
+        let error = prompt_acp_error(result.unwrap_err());
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert_eq!(error.data.unwrap()["reason"], "turn_failed");
+        let after = manager
+            .get_session(&session.session_id().0, true)
+            .await
+            .unwrap();
+        assert_eq!(after.usage, before.usage);
+        for original in before.conversation.unwrap().messages() {
+            assert!(after
+                .conversation
+                .as_ref()
+                .unwrap()
+                .messages()
+                .contains(original));
+        }
+        assert_eq!(
+            session
+                .prompt("still there?", PermissionDecision::Cancel)
+                .await
+                .unwrap()
+                .text,
+            "2"
+        );
+    });
 }

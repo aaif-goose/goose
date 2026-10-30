@@ -30,5 +30,8 @@ async fn main() -> Result<()> {
         }
     }
 
+    #[cfg(feature = "online-model-meta")]
+    goose::model_catalog::initialize();
+
     goose::acp::server::run(builtins, false).await
 }

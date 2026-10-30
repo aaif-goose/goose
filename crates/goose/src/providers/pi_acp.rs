@@ -8,7 +8,7 @@ use crate::acp::{
     AcpProviderConfig, ACP_CURRENT_MODEL,
 };
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, GooseMode};
+use crate::config::Config;
 use crate::providers::base::{
     current_working_dir, ProviderDef, ProviderDescriptor, ProviderMetadata,
 };
@@ -53,7 +53,7 @@ impl PiAcpProvider {
         Box::pin(async move {
             let config = Config::global();
             let resolved_command = SearchPaths::builder().with_npm().resolve(PI_ACP_BINARY)?;
-            let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
+            let goose_mode = config.resolve_goose_mode()?;
             let model = if use_default_model {
                 ACP_CURRENT_MODEL.to_string()
             } else {
@@ -88,6 +88,8 @@ impl PiAcpProvider {
 
 impl ProviderDef for PiAcpProvider {
     type Provider = AcpProvider;
+    const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<crate::config::ExtensionConfig>,

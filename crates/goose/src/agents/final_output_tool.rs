@@ -1,4 +1,5 @@
 use crate::agents::tool_execution::ToolCallResult;
+use crate::conversation::message::{Message, MessageContent};
 use crate::recipe::Response;
 use indoc::formatdoc;
 use rmcp::model::{
@@ -6,11 +7,15 @@ use rmcp::model::{
 };
 use serde_json::Value;
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 pub const FINAL_OUTPUT_TOOL_NAME: &str = "recipe__final_output";
 pub const FINAL_OUTPUT_SUCCESS_MESSAGE: &str = "Final output successfully collected.";
 pub const FINAL_OUTPUT_CONTINUATION_MESSAGE: &str =
     "You MUST call the `final_output` tool NOW with the final output for the user.";
+pub const FINAL_OUTPUT_NOT_ALONE_MESSAGE: &str =
+    "final_output was not accepted because it was called together with other tools. \
+     Read the results of those tools, then call final_output on its own.";
 
 pub(crate) fn structured_output_unsupported_message(provider_name: &str) -> String {
     format!(
@@ -47,6 +52,48 @@ impl FinalOutputTool {
         })
     }
 
+    pub(crate) fn successful_output(messages: &[Message]) -> Option<String> {
+        let successful_responses: HashSet<&str> = messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(|content| match content {
+                MessageContent::ToolResponse(response)
+                    if response.tool_result.as_ref().is_ok_and(|result| {
+                        result.is_error != Some(true)
+                            && result.content.iter().any(|content| {
+                                content
+                                    .as_text()
+                                    .is_some_and(|text| text.text == FINAL_OUTPUT_SUCCESS_MESSAGE)
+                            })
+                    }) =>
+                {
+                    Some(response.id.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+
+        messages
+            .iter()
+            .rev()
+            .flat_map(|message| message.content.iter().rev())
+            .find_map(|content| match content {
+                MessageContent::ToolRequest(request)
+                    if successful_responses.contains(request.id.as_str()) =>
+                {
+                    request.tool_call.as_ref().ok().and_then(|tool_call| {
+                        (tool_call.name == FINAL_OUTPUT_TOOL_NAME).then(|| {
+                            serde_json::Value::Object(
+                                tool_call.arguments.clone().unwrap_or_default(),
+                            )
+                            .to_string()
+                        })
+                    })
+                }
+                _ => None,
+            })
+    }
+
     pub fn tool(&self) -> Tool {
         let instructions = formatdoc! {r#"
             The final_output tool collects the final output for the user and provides validation for structured JSON final output against a predefined schema.
@@ -60,6 +107,7 @@ impl FinalOutputTool {
             
             Usage:
             - Call the `final_output` tool with your JSON final output passed as the argument.
+            - Call it on its own, in a reply with no other tool calls, after you have read the results of your other tool calls.
             
             The expected JSON schema format is:
 

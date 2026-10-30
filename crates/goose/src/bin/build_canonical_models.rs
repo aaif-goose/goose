@@ -9,7 +9,7 @@
 ///
 use anyhow::{Context, Result};
 use clap::Parser;
-use goose::providers::create_with_named_model;
+use goose::providers::create;
 use goose_providers::canonical::ModelMapping;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -433,7 +433,7 @@ async fn check_provider(
 ) -> Result<(Vec<String>, Vec<ModelMapping>, Vec<String>)> {
     println!("Checking provider: {}", provider_name);
 
-    let provider = match create_with_named_model(provider_name, Vec::new()).await {
+    let provider = match create(provider_name, Vec::new()).await {
         Ok(p) => p,
         Err(e) => {
             println!("  ⚠ Failed to create provider: {}", e);

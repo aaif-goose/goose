@@ -846,6 +846,8 @@ pub struct MessageMetadata {
     pub turn_context: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operation_logs: Vec<String>,
     /// What an operation did to this message, keyed by operation name. Read back
     /// from the persisted conversation so a rebuilt pipeline knows what already
     /// happened. Never sent to providers.
@@ -863,6 +865,7 @@ impl Default for MessageMetadata {
             steer: false,
             turn_context: false,
             usage: None,
+            operation_logs: Vec::new(),
             operations: None,
         }
     }
@@ -1268,12 +1271,36 @@ impl Message {
 
     pub fn from_provider_error(err: &crate::errors::ProviderError) -> Self {
         use crate::errors::ProviderError;
+        if let ProviderError::CreditsExhausted { top_up_url, .. } = err {
+            let message = if top_up_url.is_some() {
+                "Please add credits to your account, then resend your message to continue."
+            } else {
+                "Please check your account with your provider to add more credits, then resend your message to continue."
+            };
+            return Message::assistant().with_system_notification_with_data(
+                SystemNotificationType::CreditsExhausted,
+                message,
+                serde_json::json!({ "top_up_url": top_up_url }),
+            );
+        }
+
         let text = match err {
             ProviderError::NetworkError(_) => {
                 format!("{err}\n\nPlease resend your message to try again.")
             }
             ProviderError::ContextLengthExceeded(_) => {
                 format!("{err}\n\nThe conversation is too long for the model's context window.")
+            }
+            ProviderError::Refusal { details, category } => {
+                let category = category
+                    .as_deref()
+                    .map(|category| format!("\n\nCategory: {category}"))
+                    .unwrap_or_default();
+                format!(
+                    "The provider refused this request.\n\n{details}{category}\n\n\
+                     Please start a new session to continue — resending this conversation \
+                     is likely to be refused again."
+                )
             }
             _ => format!(
                 "Ran into this error: {err}.\n\n\
@@ -1284,9 +1311,15 @@ impl Message {
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {
-        self.content
-            .iter()
-            .find_map(|content| content.as_error().map(|error| error.kind))
+        self.content.iter().find_map(|content| match content {
+            MessageContentBlock::Error(error) => Some(error.kind),
+            MessageContentBlock::SystemNotification(notification)
+                if notification.notification_type == SystemNotificationType::CreditsExhausted =>
+            {
+                Some(MessageErrorKind::CreditsExhausted)
+            }
+            _ => None,
+        })
     }
 
     pub fn with_visibility(mut self, user_visible: bool, agent_visible: bool) -> Self {
@@ -1417,7 +1450,7 @@ mod document_tests {
 mod tests {
     use crate::conversation::message::{
         ActionRequiredData, Message, MessageContentBlock, MessageErrorKind, MessageMetadata,
-        ProviderMetadata, ToolResponse,
+        ProviderMetadata, SystemNotificationType, ToolResponse,
     };
     use crate::errors::ProviderError;
     use base64::Engine;
@@ -1438,6 +1471,28 @@ mod tests {
         assert_eq!(message.error_kind(), Some(MessageErrorKind::Authentication));
         assert!(message.is_user_visible());
         assert!(!message.is_agent_visible());
+    }
+
+    #[test]
+    fn provider_credits_error_preserves_top_up_url_and_is_terminal() {
+        let message = Message::from_provider_error(&ProviderError::CreditsExhausted {
+            details: "credits exhausted".to_string(),
+            top_up_url: Some("https://example.com/top-up".to_string()),
+        });
+
+        assert_eq!(
+            message.error_kind(),
+            Some(MessageErrorKind::CreditsExhausted)
+        );
+        let notification = message.content[0].as_system_notification().unwrap();
+        assert_eq!(
+            notification.notification_type,
+            SystemNotificationType::CreditsExhausted
+        );
+        assert_eq!(
+            notification.data.as_ref().unwrap()["top_up_url"],
+            "https://example.com/top-up"
+        );
     }
 
     #[test]

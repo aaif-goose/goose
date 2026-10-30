@@ -3,6 +3,7 @@
  */
 import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router';
 import Hub from './Hub';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { createSession } from '../sessions';
@@ -14,6 +15,8 @@ import type { LiveVoiceController } from '../liveVoice/useLiveVoice';
 type ChatInputCapture = {
   draftRef?: { current: string };
   handleSubmit: (input: UserInput) => void;
+  workingDir: string;
+  onWorkingDirChange: (dir: string) => void;
   liveVoice?: {
     availability: { status: string; message: string } | null;
     start: () => Promise<void>;
@@ -52,7 +55,8 @@ vi.mock('../sessions', () => ({ createSession: vi.fn() }));
 
 vi.mock('../utils/workingDir', () => ({
   getInitialWorkingDir: () => '/tmp/goose',
-  getEffectiveWorkingDir: () => Promise.resolve('/tmp/goose'),
+  getEffectiveWorkingDir: (inheritedWorkingDir?: string) =>
+    Promise.resolve(inheritedWorkingDir ?? '/tmp/goose'),
 }));
 
 vi.mock('../utils/nextChatExtensions', () => ({
@@ -84,10 +88,12 @@ function pendingSession() {
   return settle;
 }
 
-function renderHub(draftRef: { current: string }, setView = vi.fn()) {
+function renderHub(draftRef: { current: string }, setView = vi.fn(), initialWorkingDir?: string) {
   return render(
     <IntlTestWrapper>
-      <Hub setView={setView} draftRef={draftRef} liveVoice={liveVoice} />
+      <MemoryRouter initialEntries={[{ pathname: '/', state: { workingDir: initialWorkingDir } }]}>
+        <Hub setView={setView} draftRef={draftRef} liveVoice={liveVoice} />
+      </MemoryRouter>
     </IntlTestWrapper>
   );
 }
@@ -108,6 +114,23 @@ describe('Hub', () => {
     vi.mocked(acpGetLiveVoiceAvailability).mockRejectedValue(new Error('ACP unavailable'));
     vi.mocked(subscribeToAcpRecovery).mockReturnValue(() => undefined);
   });
+
+  it.each([undefined, '/projects/payments'])(
+    'starts in the inherited folder unless another folder is selected (%s)',
+    async (selectedDir) => {
+      vi.mocked(createSession).mockResolvedValue({ id: 'session-1' } as Session);
+      renderHub({ current: '' }, vi.fn(), '/projects/website');
+
+      await waitFor(() => expect(captured.chatInput?.workingDir).toBe('/projects/website'));
+      if (selectedDir) {
+        await act(async () => captured.chatInput?.onWorkingDirChange(selectedDir));
+      }
+      await submit();
+      expect(createSession).toHaveBeenCalledWith(selectedDir ?? '/projects/website', {
+        allExtensions: [],
+      });
+    }
+  );
 
   it('requests Live voice availability again after ACP recovers', async () => {
     let recoveryChanged: ((recovering: boolean) => void) | undefined;

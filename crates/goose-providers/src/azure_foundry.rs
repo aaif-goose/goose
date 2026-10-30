@@ -34,7 +34,6 @@ pub const AZURE_FOUNDRY_KNOWN_MODELS: &[&str] = &[
     "Mistral-large-2411",
     "Cohere-command-r-plus-08-2024",
     "AI21-Jamba-1.5-Large",
-    "DeepSeek-R1",
     "DeepSeek-V3",
     "glm-4.7",
     "Kimi-K2-Instruct",
@@ -412,11 +411,14 @@ fn model_info_for_deployment(deployment_name: &str, model_name: &str) -> ModelIn
         context_limit: canonical.as_ref().map(|model| model.limit.context),
         input_token_cost: None,
         output_token_cost: None,
+        cache_read_token_cost: None,
+        cache_write_token_cost: None,
         currency: None,
         supports_cache_control: None,
         reasoning: canonical
             .and_then(|model| model.reasoning)
             .unwrap_or_else(|| ModelConfig::new(model_name).is_reasoning_model()),
+        supports_vision: None,
         thinking_preservation_format: None,
         request_params: None,
     }

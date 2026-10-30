@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, type RenderOptions, screen, fireEvent } from '@testing-library/react';
+import { render, type RenderOptions, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AlertBox } from '../AlertBox';
 import { Alert, AlertType } from '../types';
@@ -8,11 +8,13 @@ import { IntlTestWrapper } from '../../../i18n/test-utils';
 const renderWithIntl = (ui: React.ReactElement, options?: RenderOptions) =>
   render(ui, { wrapper: IntlTestWrapper, ...options });
 
-// Mock the ConfigContext
+const { mockRead, mockUpsert } = vi.hoisted(() => ({
+  mockRead: vi.fn(),
+  mockUpsert: vi.fn(),
+}));
+
 vi.mock('../../ConfigContext', () => ({
-  useConfig: () => ({
-    read: vi.fn().mockResolvedValue(0.8),
-  }),
+  useConfig: () => ({ read: mockRead, upsert: mockUpsert }),
 }));
 
 describe('AlertBox', () => {
@@ -20,6 +22,10 @@ describe('AlertBox', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRead.mockImplementation(async (key: string) =>
+      key === 'GOOSE_AUTO_COMPACT_THRESHOLD' ? 0.8 : 225000
+    );
+    mockUpsert.mockResolvedValue(undefined);
   });
 
   describe('Basic Rendering', () => {
@@ -108,6 +114,114 @@ describe('AlertBox', () => {
       expect(screen.queryByText('15%')).not.toBeInTheDocument();
       const progressDots = container.querySelectorAll('.h-\\[2px\\]');
       expect(progressDots.length).toBe(0);
+    });
+  });
+
+  describe('Effective compaction threshold', () => {
+    const progressAlert = (total: number): Alert => ({
+      type: AlertType.Info,
+      message: 'Context window',
+      progress: { current: 100000, total },
+    });
+
+    it('edits the displayed token cap on a 1M-token model', async () => {
+      renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      expect(await screen.findByText('Auto compact at 225k')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      expect(input).toHaveValue(225000);
+      fireEvent.change(input, { target: { value: '250000' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(await screen.findByText('Auto compact at 250k')).toBeInTheDocument();
+      expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
+        'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+        250000,
+        false
+      );
+    });
+
+    it('edits the percentage in an uncapped context', async () => {
+      const onThresholdChange = vi.fn();
+      renderWithIntl(<AlertBox alert={{ ...progressAlert(200000), onThresholdChange }} />);
+      expect(await screen.findByText('Auto compact at 80%')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      expect(input).toHaveValue(80);
+      fireEvent.change(input, { target: { value: '70' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(await screen.findByText('Auto compact at 70%')).toBeInTheDocument();
+      expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
+        'GOOSE_AUTO_COMPACT_THRESHOLD',
+        0.7,
+        false
+      );
+      expect(onThresholdChange).toHaveBeenCalledWith(0.7);
+    });
+
+    it('shows the percentage when an edited cap exceeds the percentage budget', async () => {
+      renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      await screen.findByText('Auto compact at 225k');
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      fireEvent.change(input, { target: { value: '900000' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await waitFor(() =>
+        expect(mockUpsert).toHaveBeenCalledWith('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', 900000, false)
+      );
+      expect(screen.getByText('Auto compact at 80%')).toBeInTheDocument();
+    });
+
+    it('recalculates the displayed setting when the model context changes', async () => {
+      const { rerender } = renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      await screen.findByText('Auto compact at 225k');
+      rerender(<AlertBox alert={progressAlert(200000)} />);
+      expect(screen.getByText('Auto compact at 80%')).toBeInTheDocument();
+      rerender(<AlertBox alert={progressAlert(1000000)} />);
+      expect(screen.getByText('Auto compact at 225k')).toBeInTheDocument();
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it('keeps the edited setting stable if the model changes during editing', async () => {
+      const { rerender } = renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      await screen.findByText('Auto compact at 225k');
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      fireEvent.change(input, { target: { value: '250000' } });
+      rerender(<AlertBox alert={progressAlert(200000)} />);
+      expect(input).toHaveValue(250000);
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await waitFor(() =>
+        expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
+          'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+          250000,
+          false
+        )
+      );
+      expect(screen.getByText('Auto compact at 80%')).toBeInTheDocument();
+    });
+
+    it('discards a cancelled cap edit', async () => {
+      renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      await screen.findByText('Auto compact at 225k');
+      fireEvent.click(screen.getByRole('button'));
+      const input = screen.getByRole('spinbutton');
+      fireEvent.change(input, { target: { value: '250000' } });
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(screen.getByText('Auto compact at 225k')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.getByRole('spinbutton')).toHaveValue(225000);
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it('keeps disabled compaction disabled across context changes', async () => {
+      mockRead.mockImplementation(async (key: string) =>
+        key === 'GOOSE_AUTO_COMPACT_THRESHOLD' ? 0 : 225000
+      );
+      const { rerender } = renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
+      await screen.findByText('Auto compact at 0%');
+      rerender(<AlertBox alert={progressAlert(200000)} />);
+      expect(screen.getByText('Auto compact at 0%')).toBeInTheDocument();
+      expect(mockUpsert).not.toHaveBeenCalled();
     });
   });
 

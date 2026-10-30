@@ -84,6 +84,26 @@ impl ProviderError {
         }
     }
 
+    /// Mutable access to the detail text, for annotating an error after it was built.
+    pub fn details_mut(&mut self) -> Option<&mut String> {
+        match self {
+            ProviderError::NotConfigured => None,
+            ProviderError::Authentication(details)
+            | ProviderError::ContextLengthExceeded(details)
+            | ProviderError::ServerError(details)
+            | ProviderError::NetworkError(details)
+            | ProviderError::RequestFailed(details)
+            | ProviderError::InvalidValue(details)
+            | ProviderError::ExecutionError(details)
+            | ProviderError::UsageError(details)
+            | ProviderError::NotImplemented(details)
+            | ProviderError::EndpointNotFound(details) => Some(details),
+            ProviderError::RateLimitExceeded { details, .. }
+            | ProviderError::CreditsExhausted { details, .. }
+            | ProviderError::Refusal { details, .. } => Some(details),
+        }
+    }
+
     pub fn is_endpoint_not_found(&self) -> bool {
         matches!(self, ProviderError::EndpointNotFound(_))
     }

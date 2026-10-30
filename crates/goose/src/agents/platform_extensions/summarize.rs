@@ -48,24 +48,6 @@ impl SummarizeClient {
         Ok(Self { info, context })
     }
 
-    async fn get_provider(&self) -> Result<Arc<dyn Provider>, String> {
-        let extension_manager = self
-            .context
-            .extension_manager
-            .as_ref()
-            .and_then(|weak| weak.upgrade())
-            .ok_or("Extension manager not available")?;
-
-        let provider_guard = extension_manager.get_provider().lock().await;
-
-        let provider = provider_guard
-            .as_ref()
-            .ok_or("Provider not available")?
-            .clone();
-
-        Ok(provider)
-    }
-
     fn get_tools() -> Vec<Tool> {
         let schema = schema_for!(SummarizeParams);
         let schema_value =
@@ -139,7 +121,7 @@ impl McpClientTrait for SummarizeClient {
             )]));
         }
 
-        let provider = match self.get_provider().await {
+        let provider = match self.context.provider_for_session(&ctx.session_id).await {
             Ok(p) => p,
             Err(e) => {
                 return Ok(CallToolResult::error(vec![ContentBlock::text(format!(

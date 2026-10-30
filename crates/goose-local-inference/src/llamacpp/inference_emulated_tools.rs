@@ -1,7 +1,7 @@
 //! Tool call emulation for models without native tool-calling support.
 //!
 //! The model is prompted to emit shell commands as `$ command` on a new line and
-//! code blocks as `` ```execute_typescript `` fenced blocks. A streaming parser detects these
+//! code blocks as `` ```execute_javascript `` fenced blocks. A streaming parser detects these
 //! patterns and converts them into tool-call messages.
 //!
 //! # Known false-positive scenarios
@@ -13,178 +13,31 @@
 //!   a shell command. Mid-sentence `$` (e.g. "costs $50") is safe — only `\n$` or
 //!   `$` at the very start of output triggers command detection.
 //!
-//! - **`` ```execute_typescript `` as a top-level explanatory fence.** If the model
+//! - **`` ```execute_javascript `` as a top-level explanatory fence.** If the model
 //!   uses this exact fence tag in prose, the content will be executed. Nested Markdown
 //!   examples and fences with other info strings remain text.
 //!
 //! These are inherent to text-based tool emulation. Models with native tool-calling
 //! support should use the `inference_native_tools` path instead.
 
-use goose_provider_types::conversation::message::{Message, MessageContent};
+use goose_provider_types::conversation::message::Message;
 use goose_provider_types::errors::ProviderError;
-use rmcp::model::{CallToolRequestParams, Tool};
-use serde_json::json;
-use std::borrow::Cow;
-use uuid::Uuid;
 
 use super::super::{finalize_usage, thinking_output::ThinkingOutputFilter, StreamSender};
 use super::inference_engine::{
     generation_loop, prepare_generation, GenerationContext, StopSuffixTrimmer, TokenAction,
 };
-use crate::tool_emulation::{EmulatorAction, StreamingEmulatorParser};
-
-const SHELL_TOOL: &str = "developer__shell";
-const CODE_EXECUTION_TOOL: &str = "code_execution__execute_typescript";
-
-pub(super) fn load_tiny_model_prompt() -> String {
-    use std::env;
-
-    let os = if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        "unknown"
-    };
-
-    let working_directory = env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-    let context = json!({
-        "os": os,
-        "working_directory": working_directory,
-        "shell": shell,
-    });
-
-    crate::prompt_template::render_template("tiny_model_system.md", &context).unwrap_or_else(|e| {
-        tracing::warn!("Failed to load tiny_model_system.md: {:?}", e);
-        "You are Goose, an AI assistant. You can execute shell commands by starting lines with $."
-            .to_string()
-    })
-}
-
-pub(super) fn build_emulator_tool_description(tools: &[Tool], code_mode_enabled: bool) -> String {
-    let mut tool_desc = String::new();
-
-    if code_mode_enabled {
-        tool_desc.push_str("\n\n# Running Code\n\n");
-        tool_desc.push_str(
-            "You can call tools by writing code in a ```execute block. \
-             The code runs immediately — do not explain it, just run it.\n\n",
-        );
-        tool_desc.push_str("Example — counting files in /tmp:\n\n");
-        tool_desc.push_str("```execute_typescript\nasync function run() {\n");
-        tool_desc.push_str(
-            "  const result = await Developer.shell({ command: \"ls -1 /tmp | wc -l\" });\n",
-        );
-        tool_desc.push_str("  return result;\n}\n```\n\n");
-        tool_desc.push_str("Rules:\n");
-        tool_desc.push_str("- Code MUST define async function run() and return a result\n");
-        tool_desc.push_str("- All function calls are async — use await\n");
-        tool_desc.push_str("- Use ```execute for tool calls, $ for simple shell one-liners\n\n");
-        tool_desc.push_str("Available functions:\n\n");
-
-        for tool in tools {
-            if tool.name.starts_with("code_execution__") {
-                continue;
-            }
-            let parts: Vec<&str> = tool.name.splitn(2, "__").collect();
-            if parts.len() == 2 {
-                let namespace = {
-                    let mut c = parts[0].chars();
-                    match c.next() {
-                        None => String::new(),
-                        Some(first) => first.to_uppercase().chain(c).collect::<String>(),
-                    }
-                };
-                let camel_name: String = parts[1]
-                    .split('_')
-                    .enumerate()
-                    .map(|(i, part)| {
-                        if i == 0 {
-                            part.to_string()
-                        } else {
-                            let mut c = part.chars();
-                            match c.next() {
-                                None => String::new(),
-                                Some(first) => first.to_uppercase().chain(c).collect(),
-                            }
-                        }
-                    })
-                    .collect();
-                let desc = tool.description.as_ref().map(|d| d.as_ref()).unwrap_or("");
-                tool_desc.push_str(&format!("- {namespace}.{camel_name}(): {desc}\n"));
-            }
-        }
-    } else {
-        tool_desc.push_str("\n\n# Tools\n\nYou have access to the following tools:\n\n");
-        for tool in tools {
-            let desc = tool
-                .description
-                .as_ref()
-                .map(|d| d.as_ref())
-                .unwrap_or("No description");
-            tool_desc.push_str(&format!("- {}: {}\n", tool.name, desc));
-        }
-    }
-
-    tool_desc
-}
+use crate::tool_emulation::{message_for_emulator_action, EmulatorAction, StreamingEmulatorParser};
 
 fn send_emulator_action(
     action: &EmulatorAction,
     message_id: &str,
     tx: &StreamSender,
 ) -> Result<bool, ()> {
-    match action {
-        EmulatorAction::Text(text) => {
-            let mut message = Message::assistant().with_text(text);
-            message.id = Some(message_id.to_string());
-            tx.blocking_send(Ok((Some(message), None)))
-                .map_err(|_| ())?;
-            Ok(false)
-        }
-        EmulatorAction::ShellCommand(command) => {
-            let tool_id = Uuid::new_v4().to_string();
-            let mut args = serde_json::Map::new();
-            args.insert("command".to_string(), json!(command));
-            let tool_call =
-                CallToolRequestParams::new(Cow::Borrowed(SHELL_TOOL)).with_arguments(args);
-            let mut message = Message::assistant();
-            message
-                .content
-                .push(MessageContent::tool_request(tool_id, Ok(tool_call)));
-            message.id = Some(message_id.to_string());
-            tx.blocking_send(Ok((Some(message), None)))
-                .map_err(|_| ())?;
-            Ok(true)
-        }
-        EmulatorAction::ExecuteCode(code) => {
-            let tool_id = Uuid::new_v4().to_string();
-            let wrapped = if code.contains("async function run()") {
-                code.clone()
-            } else {
-                format!("async function run() {{\n{}\n}}", code)
-            };
-            let mut args = serde_json::Map::new();
-            args.insert("code".to_string(), json!(wrapped));
-            let tool_call =
-                CallToolRequestParams::new(Cow::Borrowed(CODE_EXECUTION_TOOL)).with_arguments(args);
-            let mut message = Message::assistant();
-            message
-                .content
-                .push(MessageContent::tool_request(tool_id, Ok(tool_call)));
-            message.id = Some(message_id.to_string());
-            tx.blocking_send(Ok((Some(message), None)))
-                .map_err(|_| ())?;
-            Ok(true)
-        }
-    }
+    let (message, is_tool) = message_for_emulator_action(action, message_id);
+    tx.blocking_send(Ok((Some(message), None)))
+        .map_err(|_| ())?;
+    Ok(is_tool)
 }
 
 pub(super) fn generate_with_emulated_tools(

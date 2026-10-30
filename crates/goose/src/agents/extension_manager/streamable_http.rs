@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -71,8 +70,10 @@ fn is_oauth_auth_failure(err: &ClientInitializeError) -> bool {
         || message.contains("Authorization required")
 }
 
-fn should_attempt_oauth_fallback(res: &Result<McpClient, ClientInitializeError>) -> bool {
-    res.as_ref().err().is_some_and(is_oauth_auth_failure)
+fn should_attempt_oauth_fallback(res: &Result<McpClient, Box<ClientInitializeError>>) -> bool {
+    res.as_ref()
+        .err()
+        .is_some_and(|error| is_oauth_auth_failure(error))
 }
 
 /// Extract the `WWW-Authenticate` challenge from a failed initialization, so
@@ -102,8 +103,12 @@ fn auth_challenge_from_error(err: &ClientInitializeError) -> Option<String> {
     None
 }
 
-fn auth_challenge_from_result(res: &Result<McpClient, ClientInitializeError>) -> Option<String> {
-    res.as_ref().err().and_then(auth_challenge_from_error)
+fn auth_challenge_from_result(
+    res: &Result<McpClient, Box<ClientInitializeError>>,
+) -> Option<String> {
+    res.as_ref()
+        .err()
+        .and_then(|error| auth_challenge_from_error(error))
 }
 
 /// Extract the `WWW-Authenticate` challenge from a post-initialization request
@@ -229,14 +234,14 @@ fn http_client(
 }
 
 fn should_retry_legacy_after_empty_discover(
-    result: &Result<McpClient, ClientInitializeError>,
+    result: &Result<McpClient, Box<ClientInitializeError>>,
     capabilities: &super::super::mcp_client::GooseMcpClientCapabilities,
 ) -> bool {
     capabilities.protocol_version.is_none()
         && result.as_ref().is_err_and(|error| {
             error.to_string().contains("empty sse stream")
                 || matches!(
-                    error,
+                    error.as_ref(),
                     ClientInitializeError::ConnectionClosed(context)
                         if context == "discover response"
                 )
@@ -248,7 +253,7 @@ fn should_retry_legacy_after_empty_discover(
 async fn connect_with_legacy_retry<T, E, A>(
     make_transport: impl Fn() -> T,
     ctx: ConnectContext,
-) -> Result<McpClient, ClientInitializeError>
+) -> Result<McpClient, Box<ClientInitializeError>>
 where
     T: IntoTransport<RoleClient, E, A>,
     E: std::error::Error + From<std::io::Error> + Send + Sync + 'static,
@@ -546,16 +551,8 @@ impl McpClientTrait for OAuthStepUpClient {
         receiver
     }
 
-    async fn get_moim(&self, session_id: &str) -> Option<String> {
-        self.inner.read().await.get_moim(session_id).await
-    }
-
-    async fn update_working_dir(
-        &self,
-        new_dir: PathBuf,
-    ) -> Result<(), crate::agents::mcp_client::Error> {
-        self.params.write().await.ctx.working_dir = new_dir.clone();
-        self.inner.read().await.update_working_dir(new_dir).await
+    async fn get_moim(&self, session_id: &str, tools: &[rmcp::model::Tool]) -> Option<String> {
+        self.inner.read().await.get_moim(session_id, tools).await
     }
 }
 
@@ -691,7 +688,6 @@ mod tests {
     use crate::action_required_manager::ActionRequiredManager;
     use crate::agents::mcp_client::GooseMcpClientCapabilities;
     use rmcp::transport::auth::InMemoryCredentialStore;
-    use std::sync::Weak;
     use tempfile::tempdir;
 
     fn test_ctx(working_dir: &std::path::Path) -> ConnectContext {
@@ -707,7 +703,7 @@ mod tests {
             working_dir: working_dir.to_path_buf(),
             docker_container: None,
             action_required: Arc::new(ActionRequiredManager::new()),
-            extension_manager: Weak::new(),
+            tools_version: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -751,7 +747,7 @@ mod tests {
                 ),
             ),
         );
-        assert!(should_attempt_oauth_fallback(&Err(err)));
+        assert!(should_attempt_oauth_fallback(&Err(Box::new(err))));
     }
 
     #[test]
@@ -761,7 +757,7 @@ mod tests {
                 std::borrow::Cow::Borrowed("HTTP 401 Unauthorized"),
             ),
         );
-        assert!(should_attempt_oauth_fallback(&Err(err)));
+        assert!(should_attempt_oauth_fallback(&Err(Box::new(err))));
     }
 
     #[tokio::test]

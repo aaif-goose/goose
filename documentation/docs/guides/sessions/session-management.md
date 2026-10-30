@@ -48,7 +48,7 @@ In your first session, goose prompts you to [set up an LLM (Large Language Model
         | New Session in Current Directory | `Cmd+N` | `Ctrl+N` |
         | New Session in Current Directory (Same Window) | `Cmd+T` | `Ctrl+T` |
         | New Session in Different Directory | `Cmd+O` | `Ctrl+O` |
-        | Toggle Sidebar | `Cmd+B` | `Ctrl+B` |
+        | Toggle Sidebar | `Cmd+/` | `Ctrl+/` |
         | Open Settings | `Cmd+,` | `Ctrl+,` |
         | Focus goose Window | `Cmd+Option+G` | `Ctrl+Alt+G` |
         | Keep goose Window Always on Top | `Cmd+Shift+T` | `Ctrl+Shift+T` |

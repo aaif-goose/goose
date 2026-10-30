@@ -20,7 +20,7 @@ otel = [
     "dep:opentelemetry-otlp",
     "dep:opentelemetry-stdout",
 ]
-code-mode = ["dep:pctx_code_mode"]
+code-mode = ["dep:boa_engine"]
 tree-sitter = [
     "dep:tree-sitter",
     "dep:tree-sitter-go",
@@ -58,7 +58,6 @@ mlx = ["local-inference", "goose-providers/mlx"]
 rustls-tls = [
     "dep:rustls",
     "dep:rcgen",
-    "dep:pem",
     "dep:axum-server",
     "dep:aws-lc-rs",
     "axum-server/tls-rustls",
@@ -67,15 +66,11 @@ rustls-tls = [
     "rmcp/reqwest",
     "smithy-transport-reqwest?/rustls",
     "sqlx/tls-rustls",
-    "jsonwebtoken/aws_lc_rs",
-    "oauth2/reqwest",
-    "oauth2/rustls-tls",
     "goose-providers/rustls-tls",
     "goose-context-management/rustls-tls",
 ]
 native-tls = [
     "dep:rcgen",
-    "dep:pem",
     "dep:axum-server",
     "dep:openssl",
     "axum-server/tls-openssl",
@@ -86,9 +81,6 @@ native-tls = [
     "rmcp/reqwest-native-tls",
     "smithy-transport-reqwest?/native-tls",
     "sqlx/tls-native-tls",
-    "jsonwebtoken/rust_crypto",
-    "oauth2/reqwest",
-    "oauth2/native-tls",
     "goose-providers/native-tls",
     "goose-context-management/native-tls",
 ]
@@ -195,14 +187,11 @@ smithy-transport-reqwest = { version = "0.1", default-features = false, features
 # For SageMaker TGI provider (optional, behind "aws-providers" feature)
 aws-sdk-sagemakerruntime = { version = "=1.113.0", default-features = false, features = ["rt-tokio"], optional = true }
 
-# For GCP Vertex AI provider auth
-jsonwebtoken = { version = "11.0", default-features = false, features = ["use_pem"] }
-
 blake3 = { version = "1", default-features = false, features = ["std"] }
 fs2 = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
 tempfile = { workspace = true }
-tokio-util = { workspace = true, features = ["compat"] }
+tokio-util = { workspace = true, features = ["compat", "rt"] }
 agent-client-protocol-schema = { workspace = true }
 agent-client-protocol = { workspace = true, features = [
     "unstable_end_turn_token_usage",
@@ -244,29 +233,23 @@ shell-words = { workspace = true }
 goose-acp-macros = { path = "../goose-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
-process-wrap = { version = "9", default-features = false, features = ["std", "process-session"] }
 rustls = { workspace = true, optional = true }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem"], optional = true }
 axum-server = { workspace = true, optional = true }
 aws-lc-rs = { version = "1.17", default-features = false, optional = true }
 openssl = { version = "0.10.66", default-features = false, optional = true }
-pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
+pem = { version = "4.0.0", default-features = false, features = ["std"] }
+ring = { version = "0.17", default-features = false, features = ["alloc"] }
 
-pctx_code_mode = { version = "0.5.0", default-features = false, optional = true }
-
-# These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
-# A fix is available in temporal_rs 0.2 but PCTX has not updated
-# They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
-icu_locale = { version = "=2.1.1", default-features = false }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
+boa_engine = { version = "0.22", default-features = false, optional = true, features = ["fuzz"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "minwinbase", "sddl", "securitybaseapi", "winbase", "winerror"] }
+winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "jobapi2", "minwinbase", "processthreadsapi", "sddl", "securitybaseapi", "synchapi", "winbase", "winerror"] }
 keyring = { workspace = true, features = ["windows-native"], optional = true }
-ntapi = { version = "0.4.3", default-features = false }
+ntapi = { version = "0.4.3", default-features = false, features = ["user"] }
 
 # Platform-specific GPU acceleration for Whisper and local inference
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -299,6 +282,7 @@ goose-mcp = { path = "../goose-mcp", default-features = false }
 insta = { version = "1", default-features = false }
 dtor = { version = "1.0.5", default-features = false, features = ["proc_macro"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
+pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"] }
 
 [[example]]
 name = "agent"
@@ -334,8 +318,4 @@ path = "src/bin/generate_acp_schema.rs"
 ignored = [
     # Used only on windows
     "winapi",
-
-    # Included only to pin version
-    "icu_calendar",
-    "icu_locale",
 ]

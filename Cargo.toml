@@ -1,14 +1,12 @@
 [workspace]
 members = [
     "crates/*",
-    # Mainly for cargo-machete to not error out during inspection.
-    "vendor/v8",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "1.53.0"
+version = "1.57.0"
 rust-version = "1.94.1"
 authors = ["AAIF <ai-oss-tools@block.xyz>"]
 license = "Apache-2.0"
@@ -77,7 +75,7 @@ webbrowser = { version = "1", default-features = false }
 which = { version = "8", default-features = false, features = ["real-sys"] }
 winapi = { version = "0.3.9", default-features = false, features = ["wincred", "std"] }
 wiremock = { version = "0.6", default-features = false }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 serial_test = { version = "4", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 shell-words = { version = "1", default-features = false, features = ["std"] }
@@ -108,14 +106,7 @@ tree-sitter-typescript = { version = "0.23", default-features = false }
 llama-cpp-2 = { version = "=0.1.146", default-features = false, features = ["sampler", "mtmd"] }
 llama-cpp-sys-2 = { version = "=0.1.146", default-features = false }
 
-# These are needed because temporal_rs 0.1 (a transitive dep via PCTX) enables unstable features on icu_calendar without pinning the dependency version
-# A fix is available in temporal_rs 0.2 but PCTX has not updated
-# They are just here to pin the version, and can be removed if PCTX updates temporal_rs
-icu_calendar = { version = "=2.1.1", default-features = false }
-icu_locale = { version = "=2.1.1", default-features = false }
-
 [patch.crates-io]
-v8 = { path = "vendor/v8" }
 cudaforge = { git = "https://github.com/jbg/cudaforge", rev = "e7c1967340e40673db98dc9e17da0f04834a456f" }
 
 # Dependencies don't need debug info. You rarely step-debug into third-party

@@ -85,7 +85,9 @@ pub async fn run_interactive(stream: RoamingClientStream, agent_label: String) -
                         session.send_prompt(line)?;
                         // Drain updates until the turn completes; chunks are
                         // rendered live via the notification handler above.
-                        let _ = session.read_to_string().await?;
+                        if let Err(error) = session.read_to_string().await {
+                            eprintln!("\nturn failed: {}", error.message);
+                        }
                         println!();
                     }
                     Ok(())

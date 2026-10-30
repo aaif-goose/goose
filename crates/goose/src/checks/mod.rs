@@ -14,9 +14,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Default maximum number of turns a check subagent may take.
-///
-/// Mirrors `goose::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS`,
-/// duplicated here to keep the checks module self-contained for parsing.
 pub const DEFAULT_CHECK_TURN_LIMIT: usize = 25;
 
 /// Virtual check name prefix for `REVIEW.md`-derived checks. Findings emitted

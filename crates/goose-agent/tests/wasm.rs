@@ -233,7 +233,7 @@ async fn run_turn(call: CallToolRequestParams) -> Conversation {
             Message::user().with_text("use the tool"),
         ]))),
     };
-    let (tx, _rx) = mpsc::channel(16);
+    let (tx, _rx) = mpsc::unbounded_channel();
     let emit = Emitter::new(tx, cancel);
 
     machine
