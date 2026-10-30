@@ -1050,10 +1050,12 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
+        let mut completed_tool_messages = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
         let mut stop_reason: Option<String> = None;
+        let mut message_stopped = false;
         let mut additional_data: Option<Map<String, Value>> = None;
 
         while let Some(line_result) = stream.next().await {
@@ -1067,21 +1069,35 @@ where
 
             let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
 
+            // An empty data field is a valid SSE keepalive
+            if data_part.trim().is_empty() {
+                continue;
+            }
+
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
                 break;
             }
 
-            // Parse the JSON event
-            let event: StreamingEvent = match serde_json::from_str(data_part) {
-                Ok(event) => event,
-                Err(e) => {
-                    tracing::debug!("Failed to parse streaming event: {} - Line: {}", e, data_part);
-                    continue;
-                }
-            };
+            let event: StreamingEvent = serde_json::from_str(data_part)
+                .map_err(ProviderError::stream_decode_error)?;
 
             match event.event_type.as_str() {
+                "error" => {
+                    let error = event.data.get("error").unwrap_or(&event.data);
+                    let error_type = error.get("type").and_then(Value::as_str).unwrap_or("unknown_error");
+                    let message = error.get("message").and_then(Value::as_str).unwrap_or("Anthropic stream error");
+                    let details = format!("{error_type}: {message}");
+                    let error = match error_type {
+                        "overloaded_error" | "api_error" => ProviderError::ServerError(details),
+                        "rate_limit_error" => ProviderError::RateLimitExceeded { details, retry_delay: None },
+                        "authentication_error" | "permission_error" => ProviderError::Authentication(details),
+                        "billing_error" => ProviderError::CreditsExhausted { details, top_up_url: None },
+                        "request_too_large" => ProviderError::ContextLengthExceeded(details),
+                        _ => ProviderError::RequestFailed(details),
+                    };
+                    Err(error)?;
+                }
                 EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
                         additional_data = get_additional_data(message_data);
@@ -1230,7 +1246,8 @@ where
                                 vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
                             );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            // A closed tool block is not executable until the response succeeds.
+                            completed_tool_messages.push(message);
                         }
                     }
                     continue;
@@ -1293,6 +1310,7 @@ where
                     continue;
                 }
                 EVENT_MESSAGE_STOP => {
+                    message_stopped = true;
                     if let Some(usage_data) = event.data.get("usage") {
                         let usage = get_usage(usage_data).unwrap_or_default();
                         let model = event.data.get("model")
@@ -1310,6 +1328,14 @@ where
                     continue;
                 }
             }
+        }
+
+        if !message_stopped {
+            Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
+        }
+
+        for message in completed_tool_messages {
+            yield (Some(message), None);
         }
 
         // A tool_use block left open at stream end never received its
@@ -2932,6 +2958,54 @@ mod tests {
         assert_eq!(merged.output_tokens, Some(510));
         assert_eq!(merged.cache_read_input_tokens, Some(5000));
         assert_eq!(merged.cache_write_input_tokens, Some(10000));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_permission_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"permission_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::Authentication(details))
+                    if details == "permission_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_billing_error_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"billing_error","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::CreditsExhausted { details, top_up_url: None })
+                    if details == "billing_error: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_streaming_request_too_large_classification() {
+        let events = r#"data: {"type":"error","error":{"type":"request_too_large","message":"provider failure"}}"#;
+        let results = collect_stream_results(events).await;
+        assert_eq!(results.len(), 1);
+        let error = results.into_iter().next().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                error.downcast_ref::<ProviderError>(),
+                Some(ProviderError::ContextLengthExceeded(details))
+                    if details == "request_too_large: provider failure"
+            ),
+            "unexpected error: {error:?}"
+        );
     }
 
     fn expect_refusal(

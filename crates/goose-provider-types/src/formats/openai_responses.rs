@@ -357,6 +357,25 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
     )
 }
 
+fn responses_stream_error(error: &Value) -> ProviderError {
+    let details = format!("Responses API error: {error}");
+    match (
+        error.get("type").and_then(Value::as_str),
+        error.get("code").and_then(Value::as_str),
+    ) {
+        (Some("service_unavailable_error" | "server_error"), _)
+        | (_, Some("server_is_overloaded" | "server_error")) => ProviderError::ServerError(details),
+        (Some("rate_limit_error"), _) | (_, Some("rate_limit_exceeded")) => {
+            ProviderError::RateLimitExceeded {
+                details,
+                retry_delay: None,
+            }
+        }
+        (_, Some("context_length_exceeded")) => ProviderError::ContextLengthExceeded(details),
+        _ => ProviderError::RequestFailed(details),
+    }
+}
+
 fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<ResponsesStreamEvent>> {
     let raw_event: Value = serde_json::from_str(data_line).map_err(|e| {
         ProviderError::stream_decode_error(format!(
@@ -365,7 +384,23 @@ fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<Respon
         ))
     })?;
 
-    let Some(event_type) = raw_event.get("type").and_then(Value::as_str) else {
+    let event_type = raw_event.get("type").and_then(Value::as_str);
+    let error = raw_event
+        .get("error")
+        .filter(|error| !error.is_null())
+        .or_else(|| {
+            (event_type == Some("response.failed"))
+                .then(|| raw_event.pointer("/response/error"))
+                .flatten()
+                .filter(|error| !error.is_null())
+        });
+    if let Some(error) = error
+        .or_else(|| matches!(event_type, Some("error" | "response.failed")).then_some(&raw_event))
+    {
+        return Err(responses_stream_error(error).into());
+    }
+
+    let Some(event_type) = event_type else {
         return Ok(None);
     };
 
@@ -1356,6 +1391,12 @@ where
                     // Ignore other event types (OutputItemAdded, ContentBlockPartAdded, ContentBlockPartDone)
                 }
             }
+        }
+
+        if final_usage.is_none() {
+            Err(ProviderError::stream_decode_error(
+                "Responses stream ended without a completion event",
+            ))?;
         }
 
         // Process final output items and yield usage data
@@ -3067,6 +3108,7 @@ mod tests {
                     "delta": "cannot\u{E0042}help"
                 })
             ),
+            r#"data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"gpt-5.5","output":[]}}"#.to_string(),
             "data: [DONE]".to_string(),
         ];
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));

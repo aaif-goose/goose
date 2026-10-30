@@ -1507,6 +1507,7 @@ mod tests {
         let sse_body = [
             r#"data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#,
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#,
+            r#"data: {"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"openai.gpt-5.5","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#,
             "data: [DONE]",
         ]
         .join("\n");
@@ -1572,6 +1573,7 @@ mod tests {
         let sse_body = [
             r#"data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#,
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#,
+            r#"data: {"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"openai.gpt-5.6-terra","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#,
             "data: [DONE]",
         ]
         .join("\n");
@@ -2105,6 +2107,7 @@ mod tests {
         let sse_body = [
             r#"data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}"#,
             r#"data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}"#,
+            r#"data: {"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","object":"response","created_at":1737368310,"status":"completed","model":"google.gemma-4-31b","output":[],"usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14}}}"#,
             "data: [DONE]",
         ]
         .join("\n");
