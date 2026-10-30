@@ -24,7 +24,7 @@ use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::Session;
 
-pub(super) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
+pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 const NOT_HANDLED_RESPONSE: &str = "This tool call was not handled.";
 
 fn unanswered_tool_requests<'a>(
