@@ -123,6 +123,39 @@ pub async fn compact_messages(
 ) -> Result<CompactionResult> {
     info!("Performing message compaction");
 
+    let (summary_message, summarization_usage) =
+        do_compact(provider, model_config, session_id, conversation.messages()).await?;
+    let conversation = replace_with_summary(conversation, manual_compact, summary_message);
+    let retained_context_tokens = match count_context_tokens(conversation.messages()).await {
+        Ok(tokens) => tokens,
+        Err(error) => {
+            warn!("Failed to count retained context tokens, using billable output tokens: {error}");
+            summarization_usage.usage.output_tokens.unwrap_or(0)
+        }
+    };
+
+    Ok(CompactionResult {
+        conversation,
+        usage: summarization_usage,
+        retained_context_tokens,
+    })
+}
+
+pub(crate) fn compact_messages_from_summary(
+    conversation: &Conversation,
+    mut summary: Message,
+) -> Result<Conversation> {
+    summary.role = Role::User;
+    let templates = compaction_templates()?;
+    goose_context_management::summarize::apply_structured_summary(&mut summary, &templates.summary);
+    Ok(replace_with_summary(conversation, false, summary))
+}
+
+fn replace_with_summary(
+    conversation: &Conversation,
+    manual_compact: bool,
+    summary_message: Message,
+) -> Conversation {
     let messages = conversation.messages();
 
     let has_text_only = |msg: &Message| {
@@ -166,7 +199,9 @@ pub async fn compact_messages(
         });
 
         if let Some((idx, msg)) = found_msg {
-            let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
+            let is_last = messages[idx + 1..]
+                .iter()
+                .all(|message| !message.is_agent_visible() || message.is_turn_context());
             (Some(msg), Some(idx), is_last)
         } else {
             (None, None, false)
@@ -176,9 +211,6 @@ pub async fn compact_messages(
     };
 
     let messages_to_compact = messages.as_slice();
-
-    let (summary_message, summarization_usage) =
-        do_compact(provider, model_config, session_id, messages_to_compact).await?;
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -238,20 +270,7 @@ pub async fn compact_messages(
         }
     }
 
-    let conversation = Conversation::new_unvalidated(final_messages);
-    let retained_context_tokens = match count_context_tokens(conversation.messages()).await {
-        Ok(tokens) => tokens,
-        Err(error) => {
-            warn!("Failed to count retained context tokens, using billable output tokens: {error}");
-            summarization_usage.usage.output_tokens.unwrap_or(0)
-        }
-    };
-
-    Ok(CompactionResult {
-        conversation,
-        usage: summarization_usage,
-        retained_context_tokens,
-    })
+    Conversation::new_unvalidated(final_messages)
 }
 
 /// Estimate the tokens of the agent-visible messages, counted the same way
@@ -376,6 +395,16 @@ fn compaction_templates() -> Result<goose_context_management::Templates> {
         compaction: crate::prompt_template::template_source("compaction.md")?,
         summary: crate::prompt_template::template_source("compaction_summary.md")?,
     })
+}
+
+pub(crate) fn compaction_instruction() -> Result<String> {
+    let template = &compaction_templates()?.compaction;
+    goose_context_management::templates::render(
+        template,
+        &serde_json::json!({
+            "messages": "Use the conversation history before this message. Do not call tools."
+        }),
+    )
 }
 
 async fn do_compact(

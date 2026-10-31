@@ -18,6 +18,81 @@ const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
 
 #[tokio::test]
+async fn cache_friendly_compaction_reuses_the_previous_request_prefix() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on("first turn").reply("first response");
+    api.on("check budget").reply("budget checked");
+    api.on("## Task Context").reply("summary");
+    api.on("Your context was compacted").reply("continued");
+
+    pipeline.run(["first turn"]).await?;
+    pipeline.run(["check budget"]).await?;
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued");
+    assert_eq!(compacted.history_replacements(), 1);
+    let calls = api.calls();
+    let previous = &calls[1];
+    let compaction = &calls[2];
+    assert_eq!(
+        &compaction.messages()[..previous.messages().len()],
+        previous.messages()
+    );
+    assert!(compaction.input_contains("## Task Context"));
+    assert!(!compaction.system_contains("## Task Context"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cache_friendly_compaction_falls_back_below_five_thousand_tokens() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("Your context was compacted").reply("continued");
+    pipeline
+        .set_total_tokens(pipeline.context_limit() as i32 - 4_999)
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued");
+    let calls = api.calls();
+    let compaction = &calls[0];
+    assert!(compaction.system_contains("## Task Context"));
+    assert!(!compaction.input_contains("## Task Context"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cache_friendly_compaction_falls_back_when_the_request_overflows() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on("## Task Context")
+        .context_limit_error("append does not fit");
+    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on("Your context was compacted").reply("continued");
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued");
+    assert_eq!(compacted.history_replacements(), 1);
+    let calls = api.calls();
+    assert!(calls[0].input_contains("## Task Context"));
+    assert!(calls[1].system_contains("## Task Context"));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("fill the context").reply("filled");

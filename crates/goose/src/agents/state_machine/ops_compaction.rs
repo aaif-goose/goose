@@ -12,7 +12,9 @@ use crate::agents::state_machine::{
     yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
     SlashCommand,
 };
-use crate::context_mgmt::{compact_messages, count_context_tokens};
+use crate::context_mgmt::{
+    compact_messages, compact_messages_from_summary, compaction_instruction, count_context_tokens,
+};
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
@@ -23,6 +25,9 @@ use goose_providers::model::ModelConfig;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
+pub(super) const CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM: usize = 5_000;
+const COMPACTION_REQUEST: &str = "request";
+const COMPACTION_FALLBACK: &str = "fallback";
 
 /// Reported usage stops at the inference that requested the tools, so the
 /// results that answered it are not counted until the next request.
@@ -44,6 +49,7 @@ pub struct CompactionOperation {
     context_limit: usize,
     threshold: f64,
     manages_own_context: bool,
+    cache_friendly: bool,
 }
 
 impl CompactionOperation {
@@ -52,6 +58,7 @@ impl CompactionOperation {
         model_config: ModelConfig,
         context_limit: usize,
         threshold: f64,
+        cache_friendly: bool,
     ) -> Self {
         let manages_own_context = provider.manages_own_context();
         Self {
@@ -60,7 +67,57 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
+            cache_friendly,
         }
+    }
+
+    fn pending_request(conversation: &Conversation) -> Option<usize> {
+        let index = conversation.messages().iter().rposition(|message| {
+            message.is_agent_visible()
+                && message
+                    .metadata
+                    .operation_note("compaction", COMPACTION_REQUEST)
+                    .is_some()
+        })?;
+        (!conversation.messages()[index + 1..]
+            .iter()
+            .any(Message::is_user_visible))
+        .then_some(index)
+    }
+
+    async fn should_append(&self, session: &Session, conversation: &Conversation) -> Result<bool> {
+        let messages = messages_since_kickoff(conversation)?;
+        let used = self.context_tokens(session, conversation).await?.max(0) as usize;
+        Ok(self.cache_friendly
+            && self.context_limit.saturating_sub(used) >= CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM
+            && last_effective_role(messages)? == EffectiveRole::User)
+    }
+
+    fn append_request(&self, conversation: &Conversation) -> Result<OperationResult<GooseEffect>> {
+        let trigger = messages_since_kickoff(conversation)?
+            .first()
+            .ok_or_else(|| anyhow!("compaction conversation has no kickoff message"))?;
+        let trigger_id = trigger
+            .id
+            .clone()
+            .ok_or_else(|| anyhow!("Persisted compaction message has no id"))?;
+        let mut request = Message::user()
+            .with_text(compaction_instruction()?)
+            .with_visibility(false, true);
+        request.metadata.set_operation_note(
+            self.name(),
+            COMPACTION_REQUEST,
+            serde_json::Value::Bool(true),
+        );
+        applied([
+            ConversationEffect::SetMessageVisibility {
+                message_id: trigger_id,
+                user_visible: true,
+                agent_visible: false,
+            }
+            .into(),
+            request.into(),
+        ])
     }
 
     fn over_threshold(&self, tokens: usize) -> bool {
@@ -75,6 +132,80 @@ impl CompactionOperation {
             Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
             None => count_context_tokens(conversation.messages()).await,
         }
+    }
+
+    async fn finish_append(
+        &self,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        let Some(request) = Self::pending_request(conversation) else {
+            return not_applicable();
+        };
+        let responses = &conversation.messages()[request + 1..];
+        if responses.is_empty() {
+            return not_applicable();
+        }
+
+        let mut summary = Message::assistant();
+        summary.content = responses
+            .iter()
+            .flat_map(|message| message.content.iter().cloned())
+            .collect();
+        let complete = responses.iter().all(|message| {
+            message.error_kind().is_none()
+                && !message.metadata.output_token_limit_reached
+                && !message.is_tool_call()
+        }) && !summary.as_concat_text().trim().is_empty();
+
+        let mut messages = conversation.messages().to_vec();
+        let trigger = messages_since_kickoff(conversation)?
+            .first()
+            .and_then(|message| message.id.as_deref())
+            .ok_or_else(|| anyhow!("compaction trigger message is missing"))?;
+        let trigger = messages
+            .iter_mut()
+            .position(|message| message.id.as_deref() == Some(trigger))
+            .ok_or_else(|| anyhow!("compaction trigger message is missing"))?;
+        if !complete {
+            let trigger_id = messages[trigger].id.clone().unwrap();
+            let mut effects = vec![ConversationEffect::SetMessageOperationNote {
+                message_id: trigger_id.clone(),
+                operation: self.name().to_string(),
+                key: COMPACTION_FALLBACK.to_string(),
+                value: serde_json::Value::Bool(true),
+            }
+            .into()];
+            effects.push(
+                ConversationEffect::SetMessageVisibility {
+                    message_id: trigger_id,
+                    user_visible: true,
+                    agent_visible: true,
+                }
+                .into(),
+            );
+            effects.extend(conversation.messages()[request..].iter().map(|message| {
+                ConversationEffect::SetMessageVisibility {
+                    message_id: message.id.clone().unwrap(),
+                    user_visible: false,
+                    agent_visible: false,
+                }
+                .into()
+            }));
+            return applied(effects);
+        }
+
+        messages[trigger].metadata.agent_visible = true;
+        messages.truncate(request);
+        let original = Conversation::new_unvalidated(messages);
+        emit.message(Message::assistant().with_system_notification(
+            SystemNotificationType::InlineMessage,
+            "Compaction complete",
+        ));
+        applied([GooseEffect::CompactConversation {
+            conversation: compact_messages_from_summary(&original, summary)?,
+            usage: None,
+        }])
     }
 
     fn command_error(
@@ -121,6 +252,24 @@ impl CompactionOperation {
             command.into(),
             response.into(),
         ])
+    }
+}
+
+pub struct CompactionResponseOperation(pub Arc<CompactionOperation>);
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for CompactionResponseOperation {
+    fn name(&self) -> &'static str {
+        "compaction_response"
+    }
+
+    async fn run(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        self.0.finish_append(conversation, emit).await
     }
 }
 
@@ -197,8 +346,15 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
         if self.manages_own_context {
             return not_applicable();
         }
+        if Self::pending_request(conversation).is_some() {
+            return not_applicable();
+        }
 
         let messages = messages_since_kickoff(conversation)?;
+        let fallback = messages[0]
+            .metadata
+            .operation_note(self.name(), COMPACTION_FALLBACK)
+            .is_some();
         let reactive_context_error = matches!(
             trailing_error(conversation),
             Some(MessageErrorKind::ContextLengthExceeded)
@@ -217,7 +373,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             }
         } else {
             // Compact only ahead of an inference; an assistant tail ends the turn.
-            if last_effective_role(messages)? == EffectiveRole::Assistant {
+            if !fallback && last_effective_role(messages)? == EffectiveRole::Assistant {
                 return not_applicable();
             }
             let tokens = self.context_tokens(session, conversation).await?;
@@ -251,6 +407,11 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             SystemNotificationType::ThinkingMessage,
             COMPACTION_THINKING_TEXT,
         ));
+
+        if !reactive_context_error && !fallback && self.should_append(session, conversation).await?
+        {
+            return self.append_request(conversation);
+        }
 
         let span = chat_span(
             self.provider.as_ref(),

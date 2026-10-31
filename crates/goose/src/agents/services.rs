@@ -118,6 +118,7 @@ pub struct TurnSettings {
     pub on_failure_timeout: std::time::Duration,
     pub stop_hook_block_cap: u32,
     pub tool_pair_summarization: bool,
+    pub cache_friendly_compaction: bool,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
     /// `None` derives it from the context limit.
@@ -147,6 +148,9 @@ impl TurnSettings {
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
                 .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
+            cache_friendly_compaction: config
+                .get_param::<bool>("GOOSE_CACHE_FRIENDLY_COMPACTION")
+                .unwrap_or(true),
             compaction_threshold: config
                 .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
                 .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
@@ -774,6 +778,7 @@ impl StateMachineServices {
             compaction_threshold,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
+            cache_friendly_compaction: settings.cache_friendly_compaction,
             session_manager: self.session_manager.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,

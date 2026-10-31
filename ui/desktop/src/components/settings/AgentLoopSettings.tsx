@@ -72,6 +72,14 @@ const i18n = defineMessages({
     id: 'settings.agentLoop.operations.contextCompaction.description',
     defaultMessage: 'Summarizes conversation history before the context window fills.',
   },
+  cacheFriendlyCompactionLabel: {
+    id: 'settings.agentLoop.operations.contextCompaction.cacheFriendly.label',
+    defaultMessage: 'Cache-friendly compaction',
+  },
+  cacheFriendlyCompactionDescription: {
+    id: 'settings.agentLoop.operations.contextCompaction.cacheFriendly.description',
+    defaultMessage: 'Reuses the current conversation when there is enough context headroom.',
+  },
   toolPairCompactionTitle: {
     id: 'settings.agentLoop.operations.toolPairCompaction.title',
     defaultMessage: 'Tool pair compaction',
@@ -241,6 +249,7 @@ export default function AgentLoopSettings() {
   const [typesafeApiKey, setTypesafeApiKey] = useState('');
   const [typesafeApiKeyConfigured, setTypesafeApiKeyConfigured] = useState(false);
   const [toolPairCompactionEnabled, setToolPairCompactionEnabled] = useState(false);
+  const [cacheFriendlyCompactionEnabled, setCacheFriendlyCompactionEnabled] = useState(true);
   const [numbers, setNumbers] = useState(defaultNumberSettings);
 
   useEffect(() => {
@@ -250,6 +259,7 @@ export default function AgentLoopSettings() {
       read('GOOSE_MAX_TURNS', false),
       read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
       read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
+      read('GOOSE_CACHE_FRIENDLY_COMPACTION', false),
       read('GOOSE_SLASH_COMMANDS_ENABLED', false),
       read('GOOSE_TOOL_PAIR_SUMMARIZATION', false),
       read('GOOSE_TOOL_CALL_CUTOFF', false),
@@ -263,6 +273,7 @@ export default function AgentLoopSettings() {
         maxTurns,
         compactionThreshold,
         compactionTokenLimit,
+        cacheFriendlyCompaction,
         slashCommands,
         toolPairCompaction,
         toolCallCutoff,
@@ -279,6 +290,9 @@ export default function AgentLoopSettings() {
         setTypesafeApiKeyConfigured(hasConfiguredSecret(typesafeApiKey));
         setToolPairCompactionEnabled(
           typeof toolPairCompaction === 'boolean' ? toolPairCompaction : false
+        );
+        setCacheFriendlyCompactionEnabled(
+          typeof cacheFriendlyCompaction === 'boolean' ? cacheFriendlyCompaction : true
         );
         setNumbers({
           maxTurns: String(readNumber(maxTurns, 1000)),
@@ -324,6 +338,11 @@ export default function AgentLoopSettings() {
   const handleToolPairCompactionToggle = async (checked: boolean) => {
     setToolPairCompactionEnabled(checked);
     await upsert('GOOSE_TOOL_PAIR_SUMMARIZATION', checked, false);
+  };
+
+  const handleCacheFriendlyCompactionToggle = async (checked: boolean) => {
+    setCacheFriendlyCompactionEnabled(checked);
+    await upsert('GOOSE_CACHE_FRIENDLY_COMPACTION', checked, false);
   };
 
   const handleSlashCommandsToggle = async (checked: boolean) => {
@@ -458,6 +477,20 @@ export default function AgentLoopSettings() {
                   )
                 }
               />
+              <label className="flex items-start gap-2 text-xs text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={cacheFriendlyCompactionEnabled}
+                  onChange={(event) => handleCacheFriendlyCompactionToggle(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer rounded border-border-primary accent-bgApp"
+                />
+                <span>
+                  <span className="block text-text-primary">
+                    {intl.formatMessage(i18n.cacheFriendlyCompactionLabel)}
+                  </span>
+                  <span>{intl.formatMessage(i18n.cacheFriendlyCompactionDescription)}</span>
+                </span>
+              </label>
               <NumberInput
                 label={intl.formatMessage(i18n.tokenLimitLabel)}
                 value={numbers.compactionTokenLimit}
