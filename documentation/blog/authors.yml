@@ -255,3 +255,12 @@ codefromthecrypt:
     github: codefromthecrypt
     x: adrianfcole
     linkedin: adrianfcole
+
+filip:
+  name: Filip Kujawa
+  title: Software Engineer
+  image_url: https://avatars.githubusercontent.com/u/44206832?v=4
+  page: true
+  socials:
+    linkedin: filip-kujawa
+    github: filipkujawa
