@@ -483,13 +483,32 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
     }
 }
 
-const GOOSE_TOOL_CALL_META_KEYS: [&str; 5] = [
+const RESERVED_TOOL_CALL_META_KEYS: [&str; 7] = [
     SESSION_ID_HEADER,
     WORKING_DIR_HEADER,
     TOOL_CALL_REQUEST_ID_HEADER,
     "traceparent",
     "tracestate",
+    "baggage",
+    "progressToken",
 ];
+
+fn is_reserved_tool_call_meta_key(key: &str) -> bool {
+    RESERVED_TOOL_CALL_META_KEYS
+        .iter()
+        .any(|reserved| key.eq_ignore_ascii_case(reserved))
+        || has_mcp_reserved_prefix(key)
+}
+
+/// The MCP specification reserves any `_meta` prefix whose second label is
+/// `mcp` or `modelcontextprotocol`, such as `io.modelcontextprotocol/`.
+fn has_mcp_reserved_prefix(key: &str) -> bool {
+    key.split_once('/')
+        .and_then(|(prefix, _)| prefix.split('.').nth(1))
+        .is_some_and(|label| {
+            label.eq_ignore_ascii_case("mcp") || label.eq_ignore_ascii_case("modelcontextprotocol")
+        })
+}
 
 #[derive(Clone)]
 pub(crate) struct ConnectContext {
@@ -593,18 +612,15 @@ impl McpClient {
     }
 
     /// Seeds a tool call's `_meta` with the configured entries, minus any key
-    /// goose sets itself. Trace keys are dropped even when goose has no trace
-    /// to send, so configuration can never pose as goose's trace context.
+    /// goose sets itself or MCP reserves. They are dropped even when nothing
+    /// else would set them, so configuration can never pose as protocol or
+    /// trace context.
     fn tool_call_extensions(&self) -> Extensions {
         let mut extensions = Extensions::new();
         let meta: JsonObject = self
             .tool_call_meta
             .iter()
-            .filter(|(key, _)| {
-                !GOOSE_TOOL_CALL_META_KEYS
-                    .iter()
-                    .any(|owned| key.eq_ignore_ascii_case(owned))
-            })
+            .filter(|(key, _)| !is_reserved_tool_call_meta_key(key))
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
         if !meta.is_empty() {

@@ -686,6 +686,64 @@ async fn configured_tool_call_meta_cannot_replace_goose_keys(
     assert_eq!(report.request_meta.get("kept"), Some(&"configured".into()));
 }
 
+/// Configured `tool_call_meta` cannot set keys the MCP specification reserves,
+/// whatever the letter case or value type. Keys that only look reserved pass:
+/// the reserved label must be the second label of a prefix ending in a slash.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_cannot_set_mcp_reserved_keys(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let spoofed = "spoofed";
+    let configured = http_fixture("configured", &http_server.url).with_tool_call_meta(object!({
+        "progressToken": spoofed,
+        "PROGRESSTOKEN": spoofed,
+        "baggage": spoofed,
+        "Baggage": spoofed,
+        "io.modelcontextprotocol/logLevel": 42,
+        "IO.ModelContextProtocol/protocolVersion": spoofed,
+        "dev.mcp/custom": spoofed,
+        "Org.MCP.api/custom": spoofed,
+        "a2ui": "kept",
+        "com.example.mcp/custom": "kept",
+        "mcp/custom": "kept",
+        "io.mcp": "kept",
+    }));
+    fx.add(&session, &configured).await;
+    let lease = fx.resolve(&session, &[configured]).await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    for key in [
+        "PROGRESSTOKEN",
+        "baggage",
+        "Baggage",
+        "io.modelcontextprotocol/logLevel",
+        "IO.ModelContextProtocol/protocolVersion",
+        "dev.mcp/custom",
+        "Org.MCP.api/custom",
+    ] {
+        assert!(
+            !report.request_meta.contains_key(key),
+            "{key}: {:?}",
+            report.request_meta
+        );
+    }
+    assert_ne!(
+        report.request_meta.get("progressToken"),
+        Some(&spoofed.into())
+    );
+    for key in ["a2ui", "com.example.mcp/custom", "mcp/custom", "io.mcp"] {
+        assert_eq!(report.request_meta.get(key), Some(&"kept".into()), "{key}");
+    }
+}
+
 /// Everything that crosses the wire besides a plain call: per-session tool
 /// lists, progress notifications, MCP-app hydration, forged result meta, and
 /// elicitation routed back to the originating call with and without the
