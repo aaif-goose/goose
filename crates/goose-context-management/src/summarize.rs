@@ -2,7 +2,7 @@ use anyhow::Result;
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::errors::ProviderError;
-use rmcp::model::{Role, Tool};
+use rmcp::model::Role;
 use serde::Serialize;
 use tracing::warn;
 
@@ -15,8 +15,6 @@ const REMOVAL_PERCENTAGES: [u32; 5] = [0, 10, 20, 50, 100];
 
 const SUMMARIZE_REQUEST_TEXT: &str =
     "Please summarize the conversation history provided in the system prompt.";
-const APPENDED_HISTORY_TEXT: &str =
-    "The conversation history is provided in the messages before this request.";
 
 #[derive(Serialize)]
 struct SummarizeContext {
@@ -99,13 +97,10 @@ async fn ensure_usage_tokens(
     estimator: &dyn TokenEstimator,
     system_prompt: &str,
     request: &[Message],
-    tools: &[Tool],
     response: &Message,
 ) {
     if usage.usage.input_tokens.is_none() {
-        let count = estimator
-            .count_request_tokens(system_prompt, request, tools)
-            .await;
+        let count = estimator.count_chat_tokens(system_prompt, request).await;
         usage.usage.input_tokens = Some(count as i32);
     }
     if usage.usage.output_tokens.is_none() {
@@ -154,15 +149,8 @@ pub async fn summarize(
                 // so estimate before the response is rewritten to the smaller
                 // rendered summary.
                 if let Some(estimator) = estimator {
-                    ensure_usage_tokens(
-                        &mut usage,
-                        estimator,
-                        &system_prompt,
-                        &request,
-                        &[],
-                        &response,
-                    )
-                    .await;
+                    ensure_usage_tokens(&mut usage, estimator, &system_prompt, &request, &response)
+                        .await;
                 }
 
                 apply_structured_summary(&mut response, &templates.summary);
@@ -193,29 +181,7 @@ pub async fn summarize(
     ))
 }
 
-pub async fn summarize_with_prompt_cache(
-    model: &dyn CompactionModel,
-    estimator: Option<&dyn TokenEstimator>,
-    templates: &Templates,
-    system_prompt: &str,
-    tools: &[Tool],
-    messages: &[Message],
-) -> Result<Summary> {
-    let instruction = render(
-        &templates.compaction,
-        &SummarizeContext {
-            messages: APPENDED_HISTORY_TEXT.to_string(),
-        },
-    )?;
-    let mut request = messages.to_vec();
-    request.push(Message::user().with_text(format!(
-        "Do not call tools. Respond directly with the requested summary.\n\n{instruction}"
-    )));
-
-    let (mut response, mut usage) = model
-        .complete_with_tools(system_prompt, &request, tools)
-        .await?;
-
+pub fn finish_summary(mut response: Message, templates: &Templates) -> Result<Message> {
     if response.metadata.output_token_limit_reached {
         anyhow::bail!("Compaction summary was cut off at the output token limit");
     }
@@ -231,23 +197,8 @@ pub async fn summarize_with_prompt_cache(
     }
 
     response.role = Role::User;
-    if let Some(estimator) = estimator {
-        ensure_usage_tokens(
-            &mut usage,
-            estimator,
-            system_prompt,
-            &request,
-            tools,
-            &response,
-        )
-        .await;
-    }
     apply_structured_summary(&mut response, &templates.summary);
-
-    Ok(Summary {
-        message: response,
-        usage,
-    })
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -256,11 +207,8 @@ mod tests {
     use crate::model::CompactionModel;
     use crate::templates::Templates;
     use async_trait::async_trait;
-    use rmcp::{model::CallToolResult, object};
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    };
+    use rmcp::model::CallToolResult;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct OverflowingModel {
         request_count: AtomicUsize,
@@ -288,36 +236,6 @@ mod tests {
             self.request_count.fetch_add(1, Ordering::Relaxed);
             Err(ProviderError::ContextLengthExceeded(
                 "Prompt exceeds context limit".to_string(),
-            ))
-        }
-    }
-
-    struct CapturingModel {
-        response: Message,
-        request: Mutex<Option<(String, Vec<Message>, Vec<Tool>)>>,
-    }
-
-    #[async_trait]
-    impl CompactionModel for CapturingModel {
-        async fn complete(
-            &self,
-            _system: &str,
-            _messages: &[Message],
-        ) -> Result<(Message, ProviderUsage), ProviderError> {
-            unreachable!()
-        }
-
-        async fn complete_with_tools(
-            &self,
-            system: &str,
-            messages: &[Message],
-            tools: &[Tool],
-        ) -> Result<(Message, ProviderUsage), ProviderError> {
-            *self.request.lock().unwrap() =
-                Some((system.to_string(), messages.to_vec(), tools.to_vec()));
-            Ok((
-                self.response.clone(),
-                ProviderUsage::new("test".to_string(), Default::default()),
             ))
         }
     }
@@ -364,61 +282,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn prompt_cache_summary_appends_instructions_to_the_original_request() {
-        let model = CapturingModel {
-            response: Message::assistant().with_text("summary"),
-            request: Mutex::new(None),
-        };
-        let messages = vec![Message::user().with_text("UNIQUE_HISTORY_TEXT")];
-        let tools = vec![Tool::new(
-            "shell",
-            "Run a command",
-            object!({ "type": "object" }),
-        )];
-
-        let summary = summarize_with_prompt_cache(
-            &model,
-            None,
-            &Templates::default(),
-            "original system prompt",
-            &tools,
-            &messages,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(summary.message.role, Role::User);
-        assert_eq!(summary.message.as_concat_text(), "summary");
-        let (system, request, captured_tools) = model.request.lock().unwrap().take().unwrap();
-        assert_eq!(system, "original system prompt");
-        assert_eq!(request[0], messages[0]);
-        assert_eq!(captured_tools[0].name, "shell");
-        let instruction = request.last().unwrap().as_concat_text();
-        assert!(instruction.contains("Do not call tools"));
-        assert!(instruction.contains(APPENDED_HISTORY_TEXT));
-        assert!(!instruction.contains("UNIQUE_HISTORY_TEXT"));
-    }
-
-    #[tokio::test]
-    async fn prompt_cache_summary_rejects_truncated_output() {
+    #[test]
+    fn finish_summary_rejects_truncated_output() {
         let mut response = Message::assistant().with_text("partial summary");
         response.metadata.output_token_limit_reached = true;
-        let model = CapturingModel {
-            response,
-            request: Mutex::new(None),
-        };
-
-        let error = summarize_with_prompt_cache(
-            &model,
-            None,
-            &Templates::default(),
-            "system",
-            &[],
-            &[Message::user().with_text("history")],
-        )
-        .await
-        .unwrap_err();
+        let error = finish_summary(response, &Templates::default()).unwrap_err();
 
         assert_eq!(
             error.to_string(),

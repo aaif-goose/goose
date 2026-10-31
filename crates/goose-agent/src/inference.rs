@@ -78,6 +78,7 @@ pub const EMPTY_RESPONSE_MESSAGE: &str =
 const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
 const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
 const EMPTY_RESPONSE_NOTE: &str = "empty_response";
+const HIDE_RESPONSE_NOTE: &str = "hide_response";
 
 /// The model's response stayed empty after retries. The fallback message is stored
 /// hidden so that operations owning the end of a turn (recipe retries, final output)
@@ -402,12 +403,14 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     fn error_outcome(
         &self,
         err: &ProviderError,
+        hide_response: bool,
         operation_logs: &mut Vec<String>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
         let mut message = Message::from_provider_error(err);
+        message.metadata.user_visible = !hide_response;
         attach_operation_logs(&mut message, operation_logs);
         self.emit_message(message, emit);
         applied(self.take_output())
@@ -462,6 +465,22 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
         }
         let mut operation_logs = pending_operation_logs(messages);
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
+        let latest_user = messages_for_provider.iter().rposition(|message| {
+            message.role == rmcp::model::Role::User && message.is_user_visible()
+        });
+        let hide_response =
+            messages_for_provider
+                .iter()
+                .enumerate()
+                .rev()
+                .any(|(index, message)| {
+                    message.is_agent_visible()
+                        && message
+                            .metadata
+                            .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, HIDE_RESPONSE_NOTE)
+                            .is_some()
+                        && latest_user.map_or(true, |latest_user| index > latest_user)
+                });
 
         let model_config = session
             .thinking_effort()
@@ -519,7 +538,14 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                Err(err) => {
+                    return self.error_outcome(
+                        &err,
+                        hide_response,
+                        &mut operation_logs,
+                        emit,
+                    )
+                }
             };
 
             let requested_model = model_config.model_name.clone();
@@ -541,7 +567,14 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                    Err(err) => {
+                        return self.error_outcome(
+                            &err,
+                            hide_response,
+                            &mut operation_logs,
+                            emit,
+                        )
+                    }
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -550,6 +583,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     output.usage.push(usage);
                 }
                 if let Some(mut chunk) = msg_opt {
+                    chunk.metadata.user_visible = !hide_response;
                     if let Some(inference) = &inference {
                         chunk = chunk.with_inference_if_assistant(inference.clone());
                     }

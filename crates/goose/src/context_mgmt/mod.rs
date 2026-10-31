@@ -2,10 +2,7 @@ pub use goose_context_management::structured;
 
 use crate::conversation::message::MessageMetadata;
 use crate::conversation::message::{Message, MessageContent};
-use crate::conversation::{
-    fix_conversation, merge_consecutive_messages, merge_consecutive_messages_for_request,
-    Conversation,
-};
+use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
 #[cfg(test)]
 use crate::providers::base::{stream_from_single_message, MessageStream};
@@ -15,9 +12,9 @@ use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use indoc::indoc;
+use rmcp::model::Role;
 #[cfg(test)]
 use rmcp::model::{Annotations, ContentBlock, TextContent};
-use rmcp::model::{Role, Tool};
 use tracing::info;
 use tracing::log::warn;
 
@@ -106,12 +103,6 @@ pub struct CompactionResult {
     pub retained_context_tokens: i32,
 }
 
-pub struct CacheFriendlyCompactionRequest {
-    pub system_prompt: String,
-    pub tools: Vec<Tool>,
-    pub additional_messages: Vec<Message>,
-}
-
 /// Compact messages by summarizing them
 ///
 /// This function performs the actual compaction by summarizing messages and updating
@@ -130,46 +121,43 @@ pub async fn compact_messages(
     conversation: &Conversation,
     manual_compact: bool,
 ) -> Result<CompactionResult> {
-    compact_messages_inner(
-        provider,
-        model_config,
-        session_id,
-        conversation,
-        manual_compact,
-        None,
-    )
-    .await
-}
-
-pub async fn compact_messages_with_cache(
-    provider: &dyn Provider,
-    model_config: &ModelConfig,
-    session_id: &str,
-    conversation: &Conversation,
-    manual_compact: bool,
-    request: &CacheFriendlyCompactionRequest,
-) -> Result<CompactionResult> {
-    compact_messages_inner(
-        provider,
-        model_config,
-        session_id,
-        conversation,
-        manual_compact,
-        Some(request),
-    )
-    .await
-}
-
-async fn compact_messages_inner(
-    provider: &dyn Provider,
-    model_config: &ModelConfig,
-    session_id: &str,
-    conversation: &Conversation,
-    manual_compact: bool,
-    cache_request: Option<&CacheFriendlyCompactionRequest>,
-) -> Result<CompactionResult> {
     info!("Performing message compaction");
+    let (summary_message, usage) =
+        do_compact(provider, model_config, session_id, conversation.messages()).await?;
+    let fallback_tokens = usage.usage.output_tokens.unwrap_or(0);
+    let (conversation, retained_context_tokens) = finish_compaction(
+        conversation,
+        manual_compact,
+        summary_message,
+        fallback_tokens,
+    )
+    .await?;
 
+    Ok(CompactionResult {
+        conversation,
+        usage,
+        retained_context_tokens,
+    })
+}
+
+pub(crate) async fn compact_messages_from_summary(
+    conversation: &Conversation,
+    manual_compact: bool,
+    summary_message: Message,
+) -> Result<Conversation> {
+    Ok(
+        finish_compaction(conversation, manual_compact, summary_message, 0)
+            .await?
+            .0,
+    )
+}
+
+async fn finish_compaction(
+    conversation: &Conversation,
+    manual_compact: bool,
+    summary_message: Message,
+    fallback_tokens: i32,
+) -> Result<(Conversation, i32)> {
     let messages = conversation.messages();
 
     let has_text_only = |msg: &Message| {
@@ -213,7 +201,9 @@ async fn compact_messages_inner(
         });
 
         if let Some((idx, msg)) = found_msg {
-            let is_last = messages[idx + 1..].iter().all(Message::is_turn_context);
+            let is_last = messages[idx + 1..]
+                .iter()
+                .all(|message| !message.is_agent_visible() || message.is_turn_context());
             (Some(msg), Some(idx), is_last)
         } else {
             (None, None, false)
@@ -223,15 +213,6 @@ async fn compact_messages_inner(
     };
 
     let messages_to_compact = messages.as_slice();
-
-    let (summary_message, summarization_usage) = do_compact(
-        provider,
-        model_config,
-        session_id,
-        messages_to_compact,
-        cache_request,
-    )
-    .await?;
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -296,15 +277,11 @@ async fn compact_messages_inner(
         Ok(tokens) => tokens,
         Err(error) => {
             warn!("Failed to count retained context tokens, using billable output tokens: {error}");
-            summarization_usage.usage.output_tokens.unwrap_or(0)
+            fallback_tokens
         }
     };
 
-    Ok(CompactionResult {
-        conversation,
-        usage: summarization_usage,
-        retained_context_tokens,
-    })
+    Ok((conversation, retained_context_tokens))
 }
 
 /// Estimate the tokens of the agent-visible messages, counted the same way
@@ -397,35 +374,6 @@ impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
         )
         .await
     }
-
-    async fn complete_with_tools(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Tool],
-    ) -> Result<(Message, ProviderUsage), ProviderError> {
-        let messages = crate::agents::state_machine::enrich_unclaimed_tool_errors(messages, tools);
-        let (tools, _, system) = crate::agents::reply_parts::prepare_tools_for_provider(
-            tools.to_vec(),
-            system.to_string(),
-            self.model_config,
-        );
-        let projected = Conversation::new_unvalidated(messages).agent_visible_messages();
-        let (messages, _) = fix_conversation(Conversation::new_unvalidated(projected));
-        let messages = merge_consecutive_messages_for_request(messages.messages().clone());
-        let messages = if self.model_config.toolshim {
-            crate::providers::toolshim::convert_tool_messages_to_text(&messages)
-        } else {
-            Conversation::new_unvalidated(messages)
-        };
-
-        crate::session_context::with_session_id(
-            Some(self.session_id.to_string()),
-            self.provider
-                .complete(self.model_config, &system, messages.messages(), &tools),
-        )
-        .await
-    }
 }
 
 struct GooseTokenEstimator;
@@ -451,21 +399,6 @@ impl goose_context_management::TokenEstimator for GooseTokenEstimator {
             }
         }
     }
-
-    async fn count_request_tokens(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Tool],
-    ) -> usize {
-        match create_token_counter().await {
-            Ok(counter) => counter.count_chat_tokens(system, messages, tools),
-            Err(error) => {
-                warn!("Failed to create token counter: {error}");
-                0
-            }
-        }
-    }
 }
 
 fn compaction_templates() -> Result<goose_context_management::Templates> {
@@ -475,38 +408,34 @@ fn compaction_templates() -> Result<goose_context_management::Templates> {
     })
 }
 
+pub(crate) fn compaction_instruction() -> Result<String> {
+    let templates = compaction_templates()?;
+    let instruction = goose_context_management::templates::render(
+        &templates.compaction,
+        &serde_json::json!({
+            "messages": "The conversation history is provided in the messages before this request."
+        }),
+    )?;
+    Ok(format!(
+        "Do not call tools. Respond directly with the requested summary.\n\n{instruction}"
+    ))
+}
+
+pub(crate) fn prepare_compaction_summary(response: Message) -> Result<Message> {
+    goose_context_management::summarize::finish_summary(response, &compaction_templates()?)
+}
+
 async fn do_compact(
     provider: &dyn Provider,
     model_config: &ModelConfig,
     session_id: &str,
     messages: &[Message],
-    cache_request: Option<&CacheFriendlyCompactionRequest>,
 ) -> Result<(Message, ProviderUsage), anyhow::Error> {
     let model = GooseCompactionModel {
         provider,
         model_config,
         session_id,
     };
-
-    if let Some(request) = cache_request {
-        let mut cache_messages =
-            Conversation::new_unvalidated(messages.iter().cloned()).agent_visible_messages();
-        cache_messages.extend(request.additional_messages.iter().cloned());
-        match goose_context_management::summarize_with_prompt_cache(
-            &model,
-            Some(&GooseTokenEstimator),
-            &compaction_templates()?,
-            &request.system_prompt,
-            &request.tools,
-            &cache_messages,
-        )
-        .await
-        {
-            Ok(summary) => return Ok((summary.message, summary.usage)),
-            Err(error) if should_fallback_to_legacy_compaction(&error) => {}
-            Err(error) => return Err(error),
-        }
-    }
 
     let agent_visible_messages = Conversation::new_unvalidated(
         messages
@@ -524,20 +453,6 @@ async fn do_compact(
     .await?;
 
     Ok((summary.message, summary.usage))
-}
-
-fn should_fallback_to_legacy_compaction(error: &anyhow::Error) -> bool {
-    matches!(
-        error.downcast_ref::<ProviderError>(),
-        Some(
-            ProviderError::ContextLengthExceeded(_)
-                | ProviderError::RequestFailed(_)
-                | ProviderError::InvalidValue(_)
-                | ProviderError::ExecutionError(_)
-                | ProviderError::NotImplemented(_)
-                | ProviderError::EndpointNotFound(_)
-        )
-    )
 }
 
 pub use goose_context_management::format_message_for_compacting;

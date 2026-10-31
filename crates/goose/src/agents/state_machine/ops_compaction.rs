@@ -4,19 +4,17 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use goose_agent::inference::InferenceRequestPreparer;
-use goose_agent::machine::collect_operation_inference_input;
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error,
-    yielded_with, ConversationEffect, Emitter, GooseEffect, GooseInferenceRequestPreparer,
-    Operation, OperationResult, SlashCommand,
+    yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
+    SlashCommand,
 };
 use crate::context_mgmt::{
-    compact_messages, compact_messages_with_cache, count_context_tokens,
-    CacheFriendlyCompactionRequest, CompactionResult,
+    compact_messages, compact_messages_from_summary, compaction_instruction, count_context_tokens,
+    prepare_compaction_summary,
 };
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
@@ -29,6 +27,7 @@ const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation..."
 
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
 pub(super) const CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM: usize = 5_000;
+const COMPACTION_REQUEST: &str = "request";
 
 /// Reported usage stops at the inference that requested the tools, so the
 /// results that answered it are not counted until the next request.
@@ -44,26 +43,41 @@ async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
     count_context_tokens(&messages[after_request..]).await
 }
 
-pub struct CompactionOperation<'a> {
+pub(crate) fn has_pending_compaction(messages: &[Message]) -> bool {
+    let latest_user = messages
+        .iter()
+        .rposition(|message| message.role == rmcp::model::Role::User && message.is_user_visible());
+    messages.iter().enumerate().rev().any(|(index, message)| {
+        message.is_agent_visible()
+            && message
+                .metadata
+                .operation_note("compaction", COMPACTION_REQUEST)
+                .is_some()
+            && latest_user.map_or(true, |latest_user| index > latest_user)
+    })
+}
+
+struct PendingCompaction {
+    instruction_index: usize,
+    manual: bool,
+}
+
+pub struct CompactionOperation {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     context_limit: usize,
     threshold: f64,
     manages_own_context: bool,
     cache_friendly: bool,
-    contributors: Vec<Arc<dyn Operation<Session, GooseEffect> + 'a>>,
-    request_preparer: Arc<GooseInferenceRequestPreparer<'a>>,
 }
 
-impl<'a> CompactionOperation<'a> {
+impl CompactionOperation {
     pub fn new(
         provider: Arc<dyn Provider>,
         model_config: ModelConfig,
         context_limit: usize,
         threshold: f64,
         cache_friendly: bool,
-        contributors: Vec<Arc<dyn Operation<Session, GooseEffect> + 'a>>,
-        request_preparer: Arc<GooseInferenceRequestPreparer<'a>>,
     ) -> Self {
         let manages_own_context = provider.manages_own_context();
         Self {
@@ -73,74 +87,75 @@ impl<'a> CompactionOperation<'a> {
             threshold,
             manages_own_context,
             cache_friendly,
-            contributors,
-            request_preparer,
         }
     }
 
-    async fn cache_request(
-        &self,
-        session: &Session,
-        conversation: &Conversation,
-    ) -> Result<Option<CacheFriendlyCompactionRequest>> {
+    fn pending_compaction(&self, conversation: &Conversation) -> Option<PendingCompaction> {
+        if !has_pending_compaction(conversation.messages()) {
+            return None;
+        }
+        conversation
+            .messages()
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(instruction_index, message)| {
+                let request = self
+                    .message_meta(message, COMPACTION_REQUEST)?
+                    .as_object()?;
+                Some(PendingCompaction {
+                    instruction_index,
+                    manual: request.get("manual")?.as_bool()?,
+                })
+            })
+    }
+
+    async fn should_append(&self, session: &Session, conversation: &Conversation) -> Result<bool> {
         if !self.cache_friendly {
-            return Ok(None);
+            return Ok(false);
         }
 
         let used_tokens = self.context_tokens(session, conversation).await?.max(0) as usize;
         if self.context_limit.saturating_sub(used_tokens) < CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM {
-            return Ok(None);
+            return Ok(false);
         }
-
-        let prepared_session = self.request_preparer.prepare_session(session).await?;
-        let session = prepared_session.as_ref().unwrap_or(session);
-        let conversation = session.conversation.as_ref().unwrap_or(conversation);
-        let input = collect_operation_inference_input(
-            self.contributors.iter().map(AsRef::as_ref).collect(),
-            session,
-            conversation,
-        )
-        .await?;
-        let prepared = self
-            .request_preparer
-            .prepare(session, conversation, input)
-            .await?;
-        Ok(Some(CacheFriendlyCompactionRequest {
-            system_prompt: prepared.system_prompt,
-            tools: prepared.tools,
-            additional_messages: prepared.additional_messages,
-        }))
+        Ok(last_effective_role(messages_since_kickoff(conversation)?)? == EffectiveRole::User)
     }
 
-    async fn compact(
+    fn start_append_compaction(
         &self,
-        session: &Session,
         conversation: &Conversation,
         manual: bool,
-    ) -> Result<CompactionResult> {
-        match self.cache_request(session, conversation).await? {
-            Some(request) => {
-                compact_messages_with_cache(
-                    self.provider.as_ref(),
-                    &self.model_config,
-                    &session.id,
-                    conversation,
-                    manual,
-                    &request,
-                )
-                .await
+    ) -> Result<OperationResult<GooseEffect>> {
+        let trigger = messages_since_kickoff(conversation)?
+            .first()
+            .ok_or_else(|| anyhow!("compaction conversation has no kickoff message"))?;
+        let trigger_id = trigger
+            .id
+            .clone()
+            .ok_or_else(|| anyhow!("Persisted compaction message has no id"))?;
+        let mut instruction = Message::user()
+            .with_text(compaction_instruction()?)
+            .with_visibility(false, true);
+        self.set_message_meta(
+            &mut instruction,
+            COMPACTION_REQUEST,
+            serde_json::json!({ "manual": manual }),
+        );
+        instruction.metadata.set_operation_note(
+            "inference",
+            "hide_response",
+            serde_json::Value::Bool(true),
+        );
+        applied([
+            ConversationEffect::SetMessageVisibility {
+                message_id: trigger_id,
+                user_visible: true,
+                agent_visible: false,
             }
-            None => {
-                compact_messages(
-                    self.provider.as_ref(),
-                    &self.model_config,
-                    &session.id,
-                    conversation,
-                    manual,
-                )
-                .await
-            }
-        }
+            .into(),
+            instruction.into(),
+        ])
     }
 
     fn over_threshold(&self, tokens: usize) -> bool {
@@ -155,6 +170,168 @@ impl<'a> CompactionOperation<'a> {
             Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
             None => count_context_tokens(conversation.messages()).await,
         }
+    }
+
+    fn pending_conversation(
+        &self,
+        conversation: &Conversation,
+        pending: &PendingCompaction,
+    ) -> Result<Conversation> {
+        let mut messages = conversation.messages().to_vec();
+        let trigger_id = messages_since_kickoff(conversation)?
+            .first()
+            .and_then(|message| message.id.as_deref())
+            .ok_or_else(|| anyhow!("compaction trigger message is missing"))?;
+        let trigger = messages
+            .iter_mut()
+            .find(|message| message.id.as_deref() == Some(trigger_id))
+            .ok_or_else(|| anyhow!("compaction trigger message is missing"))?;
+        trigger.metadata.agent_visible = !pending.manual;
+        for message in &mut messages[pending.instruction_index..] {
+            message.metadata.user_visible = false;
+            message.metadata.agent_visible = false;
+        }
+        Ok(Conversation::new_unvalidated(messages))
+    }
+
+    fn pending_response(
+        &self,
+        conversation: &Conversation,
+        pending: &PendingCompaction,
+    ) -> Option<Message> {
+        let responses = conversation.messages()[pending.instruction_index + 1..]
+            .iter()
+            .filter(|message| {
+                message.is_agent_visible() && message.role == rmcp::model::Role::Assistant
+            })
+            .collect::<Vec<_>>();
+        let last = responses.last()?;
+        let mut response = Message::assistant();
+        response.metadata = last.metadata.clone();
+        response.id = None;
+        response.content = responses
+            .into_iter()
+            .flat_map(|message| message.content.iter().cloned())
+            .collect();
+        Some(response)
+    }
+
+    fn pending_error(
+        &self,
+        conversation: &Conversation,
+        pending: &PendingCompaction,
+        mut response: Message,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        let trigger_id = messages_since_kickoff(conversation)?
+            .first()
+            .and_then(|message| message.id.clone())
+            .ok_or_else(|| anyhow!("compaction trigger message is missing"))?;
+        let mut effects = vec![ConversationEffect::SetMessageVisibility {
+            message_id: trigger_id,
+            user_visible: true,
+            agent_visible: !pending.manual,
+        }
+        .into()];
+        effects.extend(
+            conversation.messages()[pending.instruction_index..]
+                .iter()
+                .filter_map(|message| message.id.clone())
+                .map(|message_id| {
+                    ConversationEffect::SetMessageVisibility {
+                        message_id,
+                        user_visible: false,
+                        agent_visible: false,
+                    }
+                    .into()
+                }),
+        );
+        response.id = None;
+        response.metadata.user_visible = true;
+        response.metadata.agent_visible = false;
+        effects.push(emit.message(response).into());
+        yielded_with(effects)
+    }
+
+    async fn finish_pending_compaction(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        let Some(pending) = self.pending_compaction(conversation) else {
+            return not_applicable();
+        };
+        let Some(response) = self.pending_response(conversation, &pending) else {
+            return not_applicable();
+        };
+
+        let context_error = response.error_kind() == Some(MessageErrorKind::ContextLengthExceeded);
+        if response.error_kind().is_some() && !context_error {
+            return self.pending_error(conversation, &pending, response, emit);
+        }
+
+        let pending_conversation = self.pending_conversation(conversation, &pending)?;
+        let summary = if context_error {
+            None
+        } else {
+            prepare_compaction_summary(response).ok()
+        };
+        let (compacted, usage) = if let Some(summary) = summary {
+            (
+                compact_messages_from_summary(&pending_conversation, pending.manual, summary)
+                    .await?,
+                None,
+            )
+        } else {
+            let span = chat_span(
+                self.provider.as_ref(),
+                &self.model_config,
+                &session.id,
+                "compaction",
+            );
+            let result = match compact_messages(
+                self.provider.as_ref(),
+                &self.model_config,
+                &session.id,
+                &pending_conversation,
+                pending.manual,
+            )
+            .instrument(span.clone())
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    span.record("error.type", "compaction_error");
+                    return self.pending_error(
+                        conversation,
+                        &pending,
+                        compaction_failure_message(&error),
+                        emit,
+                    );
+                }
+            };
+            record_chat_usage(&span, &result.usage);
+            (result.conversation, Some(result.usage))
+        };
+
+        emit.message(Message::assistant().with_system_notification(
+            SystemNotificationType::InlineMessage,
+            "Compaction complete",
+        ));
+        let effect = GooseEffect::CompactConversation {
+            conversation: compacted,
+            usage,
+        };
+        if !pending.manual {
+            return applied([effect]);
+        }
+        let response = emit.message(
+            Message::assistant()
+                .with_text("Compaction complete")
+                .with_visibility(true, false),
+        );
+        yielded_with([effect, response.into()])
     }
 
     fn command_error(
@@ -204,8 +381,36 @@ impl<'a> CompactionOperation<'a> {
     }
 }
 
+pub struct CompactionResponseOperation {
+    compaction: Arc<CompactionOperation>,
+}
+
+impl CompactionResponseOperation {
+    pub fn new(compaction: Arc<CompactionOperation>) -> Self {
+        Self { compaction }
+    }
+}
+
 #[async_trait]
-impl Operation<Session, GooseEffect> for CompactionOperation<'_> {
+impl Operation<Session, GooseEffect> for CompactionResponseOperation {
+    fn name(&self) -> &'static str {
+        "compaction_response"
+    }
+
+    async fn run(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        self.compaction
+            .finish_pending_compaction(session, conversation, emit)
+            .await
+    }
+}
+
+#[async_trait]
+impl Operation<Session, GooseEffect> for CompactionOperation {
     fn name(&self) -> &'static str {
         "compaction"
     }
@@ -223,16 +428,25 @@ impl Operation<Session, GooseEffect> for CompactionOperation<'_> {
             _ => return not_applicable(),
         }
 
+        if self.should_append(session, conversation).await? {
+            return self.start_append_compaction(conversation, true);
+        }
+
         let span = chat_span(
             self.provider.as_ref(),
             &self.model_config,
             &session.id,
             "compaction",
         );
-        let result = match self
-            .compact(session, conversation, true)
-            .instrument(span.clone())
-            .await
+        let result = match compact_messages(
+            self.provider.as_ref(),
+            &self.model_config,
+            &session.id,
+            conversation,
+            true,
+        )
+        .instrument(span.clone())
+        .await
         {
             Ok(result) => result,
             Err(error) => {
@@ -270,6 +484,9 @@ impl Operation<Session, GooseEffect> for CompactionOperation<'_> {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         if self.manages_own_context {
+            return not_applicable();
+        }
+        if self.pending_compaction(conversation).is_some() {
             return not_applicable();
         }
 
@@ -327,16 +544,25 @@ impl Operation<Session, GooseEffect> for CompactionOperation<'_> {
             COMPACTION_THINKING_TEXT,
         ));
 
+        if !reactive_context_error && self.should_append(session, conversation).await? {
+            return self.start_append_compaction(conversation, false);
+        }
+
         let span = chat_span(
             self.provider.as_ref(),
             &self.model_config,
             &session.id,
             "compaction",
         );
-        match self
-            .compact(session, conversation, false)
-            .instrument(span.clone())
-            .await
+        match compact_messages(
+            self.provider.as_ref(),
+            &self.model_config,
+            &session.id,
+            conversation,
+            false,
+        )
+        .instrument(span.clone())
+        .await
         {
             Ok(result) => {
                 let compacted = result.conversation;

@@ -7,12 +7,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, EmptyResponseOperation,
-    ExitOnErrorOperation, GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer,
-    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
-    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
-    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
-    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    BangShellOperation, CompactionOperation, CompactionResponseOperation, DoctorOperation,
+    EmptyResponseOperation, ExitOnErrorOperation, GooseEffect, GooseInferenceProvider,
+    GooseInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    RecipeOperation, RemainingToolCallsOperation, RetryOperation, SkillOperation,
+    SlashCommandOperation, StateMachine, StatusOperation, SteerOperation, SteerQueue, Step,
+    StopHookOperation, SubagentOperation, ToolApprovalOperation, ToolExecutionOperation,
+    ToolPairCompactionOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::config::Config;
@@ -71,7 +72,22 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let mut operations_before_compaction: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+    let compaction = (!manages_own_context).then(|| {
+        Arc::new(CompactionOperation::new(
+            provider.clone(),
+            model_config.clone(),
+            context_limit,
+            compaction_threshold,
+            cache_friendly_compaction,
+        ))
+    });
+    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = Vec::new();
+    if let Some(compaction) = &compaction {
+        operations.push(Arc::new(CompactionResponseOperation::new(Arc::clone(
+            compaction,
+        ))));
+    }
+    operations.extend([
         Arc::new(ToolApprovalOperation::new(tool_inspection_manager)),
         Arc::new(SkillOperation::new(
             hook_manager.clone(),
@@ -97,7 +113,10 @@ pub(crate) fn build_state_machine(
         ),
         Arc::new(SteerOperation::new(steer_queue, hook_manager.clone())),
         Arc::new(BangShellOperation::new()),
-    ];
+    ]);
+    if let Some(compaction) = compaction {
+        operations.push(compaction);
+    }
     let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(ToolPairCompactionOperation::new(
             provider.clone(),
@@ -113,38 +132,19 @@ pub(crate) fn build_state_machine(
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
     ];
-    let request_preparer = Arc::new(GooseInferenceRequestPreparer {
+    operations.extend(remaining_operations);
+    operations.extend(extra_operations);
+    let request_preparer = GooseInferenceRequestPreparer {
         extension_manager,
         extension_lease,
         tool_inspection_manager,
         context_limit,
-    });
-    let contributors = operations_before_compaction
-        .iter()
-        .chain(&remaining_operations)
-        .chain(&extra_operations)
-        .cloned()
-        .collect();
-    let mut operations = Vec::new();
-    operations.append(&mut operations_before_compaction);
-    if !manages_own_context {
-        operations.push(Arc::new(CompactionOperation::new(
-            provider.clone(),
-            model_config.clone(),
-            context_limit,
-            compaction_threshold,
-            cache_friendly_compaction,
-            contributors,
-            Arc::clone(&request_preparer),
-        )));
-    }
-    operations.extend(remaining_operations);
-    operations.extend(extra_operations);
+    };
     let status_operation = Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
-            .with_request_preparer(request_preparer),
+            .with_request_preparer(Arc::new(request_preparer)),
     );
     let mut command_handlers = operations.clone();
     command_handlers.push(status_operation);
