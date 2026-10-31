@@ -98,7 +98,7 @@ pub struct Identifier {
         long = "session-id",
         alias = "id",
         value_name = "SESSION_ID",
-        help = "Session ID (e.g., '20250921_143022')",
+        help = "Session ID (e.g., '019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a')",
         long_help = "Specify a session ID to resume. Requires --resume."
     )]
     pub session_id: Option<String>,
@@ -599,7 +599,7 @@ enum SessionCommand {
             long = "session-id",
             alias = "id",
             value_name = "SESSION_ID",
-            help = "Session ID to rename (e.g., '20250921_143022'). If omitted, prompts interactively."
+            help = "Session ID to rename (e.g., '019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a'). If omitted, prompts interactively."
         )]
         session_id: Option<String>,
 

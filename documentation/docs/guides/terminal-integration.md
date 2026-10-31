@@ -276,12 +276,12 @@ You can also check the id of the goose session in your current terminal:
 ```bash
 # Check if session ID exists
 echo $AGENT_SESSION_ID
-# Should show something like: 20251209_151730
+# Should show something like: 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 ```
 ```nu
 # Nushell
 $env.AGENT_SESSION_ID
-# Should show something like: 20251209_151730
+# Should show something like: 019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a
 ```
 To share context across terminal windows, use a [named session](#named-sessions) instead.
 
