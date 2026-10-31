@@ -520,6 +520,7 @@ extensions:
                 cwd: None,
                 bundled: None,
                 available_tools: vec!["run".to_string()],
+                tool_call_meta: Default::default(),
             },
         };
         let key = saved.config.key();

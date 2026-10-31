@@ -483,6 +483,33 @@ impl std::fmt::Debug for GooseMcpClientCapabilities {
     }
 }
 
+const RESERVED_TOOL_CALL_META_KEYS: [&str; 7] = [
+    SESSION_ID_HEADER,
+    WORKING_DIR_HEADER,
+    TOOL_CALL_REQUEST_ID_HEADER,
+    "traceparent",
+    "tracestate",
+    "baggage",
+    "progressToken",
+];
+
+fn is_reserved_tool_call_meta_key(key: &str) -> bool {
+    RESERVED_TOOL_CALL_META_KEYS
+        .iter()
+        .any(|reserved| key.eq_ignore_ascii_case(reserved))
+        || has_mcp_reserved_prefix(key)
+}
+
+/// The MCP specification reserves any `_meta` prefix whose second label is
+/// `mcp` or `modelcontextprotocol`, such as `io.modelcontextprotocol/`.
+fn has_mcp_reserved_prefix(key: &str) -> bool {
+    key.split_once('/')
+        .and_then(|(prefix, _)| prefix.split('.').nth(1))
+        .is_some_and(|label| {
+            label.eq_ignore_ascii_case("mcp") || label.eq_ignore_ascii_case("modelcontextprotocol")
+        })
+}
+
 #[derive(Clone)]
 pub(crate) struct ConnectContext {
     pub timeout: Duration,
@@ -492,6 +519,7 @@ pub(crate) struct ConnectContext {
     pub docker_container: Option<String>,
     pub action_required: Arc<ActionRequiredManager>,
     pub tools_version: Arc<AtomicU64>,
+    pub tool_call_meta: JsonObject,
 }
 
 /// The MCP client is the interface for MCP operations.
@@ -501,6 +529,7 @@ pub struct McpClient {
     server_info: Option<InitializeResult>,
     timeout: std::time::Duration,
     docker_container: Option<String>,
+    tool_call_meta: JsonObject,
 }
 
 impl McpClient {
@@ -520,6 +549,7 @@ impl McpClient {
             docker_container,
             action_required,
             tools_version,
+            tool_call_meta,
         } = ctx;
         let notification_subscribers =
             Arc::new(Mutex::new(Vec::<mpsc::Sender<ServerNotification>>::new()));
@@ -573,11 +603,30 @@ impl McpClient {
             server_info,
             timeout,
             docker_container,
+            tool_call_meta,
         })
     }
 
     pub fn docker_container(&self) -> Option<&str> {
         self.docker_container.as_deref()
+    }
+
+    /// Seeds a tool call's `_meta` with the configured entries, minus any key
+    /// goose sets itself or MCP reserves. They are dropped even when nothing
+    /// else would set them, so configuration can never pose as protocol or
+    /// trace context.
+    fn tool_call_extensions(&self) -> Extensions {
+        let mut extensions = Extensions::new();
+        let meta: JsonObject = self
+            .tool_call_meta
+            .iter()
+            .filter(|(key, _)| !is_reserved_tool_call_meta_key(key))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        if !meta.is_empty() {
+            extensions.insert(MetaObject(meta));
+        }
+        extensions
     }
 
     async fn send_request_with_context(
@@ -760,7 +809,7 @@ impl McpClientTrait for McpClient {
         if protocol_version.as_ref() == Some(&ProtocolVersion::V_2026_07_28) {
             let extensions =
                 inject_trace_context_into_extensions(inject_session_context_into_extensions(
-                    Extensions::new(),
+                    self.tool_call_extensions(),
                     Some(&ctx.session_id),
                     ctx.working_dir_str(),
                     ctx.tool_call_request_id.as_deref(),
@@ -794,7 +843,9 @@ impl McpClientTrait for McpClient {
             };
         }
 
-        let request = ClientRequest::CallToolRequest(Request::new(params));
+        let mut request = Request::new(params);
+        request.extensions = self.tool_call_extensions();
+        let request = ClientRequest::CallToolRequest(request);
 
         let result = self
             .send_request_with_context(

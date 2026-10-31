@@ -168,6 +168,7 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
+        tool_call_meta: Default::default(),
     }
 }
 
@@ -186,6 +187,7 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
+        tool_call_meta: Default::default(),
     }
 }
 
@@ -590,6 +592,161 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     assert!(ExtensionSet::new("s", None, vec![todo.clone(), platform("Todo")]).is_err());
 }
 
+/// A server's configured `tool_call_meta` arrives in the `_meta` of every call
+/// to that server, over HTTP and stdio, alongside goose's own keys, and is not
+/// sent to any other server. Covers the legacy handshake and stateless 2026
+/// HTTP, which build `_meta` in different places.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_reaches_only_its_server(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version.clone()).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let a2ui = serde_json::json!({
+        "clientCapabilities": { "v0.9": { "supportedCatalogIds": ["https://example.com/catalog.json"] } }
+    });
+    let configured = http_fixture("configured", &http_server.url)
+        .with_tool_call_meta(object!({ "a2ui": a2ui.clone() }));
+    let configured_stdio = stdio_fixture("configured_stdio", None, &["inspect_context"])
+        .with_tool_call_meta(object!({ "a2ui": a2ui.clone() }));
+    let plain = stdio_fixture("plain", None, &["inspect_context"]);
+    fx.add(&session, &configured).await;
+    fx.add(&session, &configured_stdio).await;
+    fx.add(&session, &plain).await;
+    let lease = fx
+        .resolve(&session, &[configured, configured_stdio, plain])
+        .await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    let expected_protocol = client_protocol_version.unwrap_or(ProtocolVersion::V_2026_07_28);
+    assert_eq!(report.protocol_version, expected_protocol.as_str());
+    assert_eq!(report.request_meta.get("a2ui"), Some(&a2ui));
+    assert_eq!(
+        report.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+
+    let stdio_report = inspect_context(&lease, "configured_stdio__inspect_context").await;
+    assert_eq!(stdio_report.request_meta.get("a2ui"), Some(&a2ui));
+
+    let plain_report = inspect_context(&lease, "plain__inspect_context").await;
+    assert!(
+        !plain_report.request_meta.contains_key("a2ui"),
+        "{:?}",
+        plain_report.request_meta
+    );
+}
+
+/// Configured `tool_call_meta` cannot replace goose's session context or trace
+/// context, whatever the key's letter case; other configured keys still pass.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_cannot_replace_goose_keys(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let spoofed = "spoofed";
+    let configured = http_fixture("configured", &http_server.url).with_tool_call_meta(object!({
+        "AGENT-SESSION-ID": spoofed,
+        "Agent-Working-Dir": spoofed,
+        "agent-tool-call-request-id": spoofed,
+        "TraceParent": spoofed,
+        "TRACESTATE": spoofed,
+        "kept": "configured",
+    }));
+    fx.add(&session, &configured).await;
+    let lease = fx.resolve(&session, &[configured]).await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    assert_eq!(
+        report.request_session_id.as_deref(),
+        Some(session.id.as_str())
+    );
+    assert_eq!(
+        report.request_working_dir.as_deref(),
+        Some(session.working_dir.to_string_lossy().as_ref())
+    );
+    assert!(
+        report
+            .request_meta
+            .values()
+            .all(|value| value.as_str() != Some(spoofed)),
+        "{:?}",
+        report.request_meta
+    );
+    assert_eq!(report.request_meta.get("kept"), Some(&"configured".into()));
+}
+
+/// Configured `tool_call_meta` cannot set keys the MCP specification reserves,
+/// whatever the letter case or value type. Keys that only look reserved pass:
+/// the reserved label must be the second label of a prefix ending in a slash.
+#[test_case(Some(ProtocolVersion::V_2025_11_25); "legacy")]
+#[test_case(None; "v2026_07_28")]
+#[tokio::test]
+async fn configured_tool_call_meta_cannot_set_mcp_reserved_keys(
+    client_protocol_version: Option<ProtocolVersion>,
+) {
+    let http_server = match &client_protocol_version {
+        Some(version) => McpFixture::with_max_protocol_version(version.clone()).await,
+        None => McpFixture::new().await,
+    };
+    let fx = fixture(false, client_protocol_version).await;
+    let session = fx.session(SessionType::Hidden).await;
+    let spoofed = "spoofed";
+    let configured = http_fixture("configured", &http_server.url).with_tool_call_meta(object!({
+        "progressToken": spoofed,
+        "PROGRESSTOKEN": spoofed,
+        "baggage": spoofed,
+        "Baggage": spoofed,
+        "io.modelcontextprotocol/logLevel": 42,
+        "IO.ModelContextProtocol/protocolVersion": spoofed,
+        "dev.mcp/custom": spoofed,
+        "Org.MCP.api/custom": spoofed,
+        "a2ui": "kept",
+        "com.example.mcp/custom": "kept",
+        "mcp/custom": "kept",
+        "io.mcp": "kept",
+    }));
+    fx.add(&session, &configured).await;
+    let lease = fx.resolve(&session, &[configured]).await;
+
+    let report = inspect_context(&lease, "configured__inspect_context").await;
+    for key in [
+        "PROGRESSTOKEN",
+        "baggage",
+        "Baggage",
+        "io.modelcontextprotocol/logLevel",
+        "IO.ModelContextProtocol/protocolVersion",
+        "dev.mcp/custom",
+        "Org.MCP.api/custom",
+    ] {
+        assert!(
+            !report.request_meta.contains_key(key),
+            "{key}: {:?}",
+            report.request_meta
+        );
+    }
+    assert_ne!(
+        report.request_meta.get("progressToken"),
+        Some(&spoofed.into())
+    );
+    for key in ["a2ui", "com.example.mcp/custom", "mcp/custom", "io.mcp"] {
+        assert_eq!(report.request_meta.get(key), Some(&"kept".into()), "{key}");
+    }
+}
+
 /// Everything that crosses the wire besides a plain call: per-session tool
 /// lists, progress notifications, MCP-app hydration, forged result meta, and
 /// elicitation routed back to the originating call with and without the
@@ -904,6 +1061,7 @@ async fn test_replayed_session(
         cwd: None,
         bundled: Some(false),
         available_tools: vec![],
+        tool_call_meta: Default::default(),
     };
 
     let temp_dir = tempfile::tempdir().unwrap();

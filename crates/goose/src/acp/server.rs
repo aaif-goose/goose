@@ -68,7 +68,7 @@ use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
 use goose_providers::errors::ProviderError;
 use rmcp::model::{
-    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
+    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, JsonObject, Role,
     TextContent as RmcpTextContent,
 };
 use serde::Deserialize;
@@ -413,6 +413,25 @@ fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
         .and_then(|v| v.as_u64())
 }
 
+const TOOL_CALL_META_KEY: &str = "toolCallMeta";
+
+fn extract_tool_call_meta_from_meta(meta: &Option<Meta>) -> JsonObject {
+    meta.as_ref()
+        .and_then(|m| m.get(TOOL_CALL_META_KEY))
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn tool_call_meta_to_meta(tool_call_meta: &JsonObject) -> Option<Meta> {
+    (!tool_call_meta.is_empty()).then(|| {
+        Meta::from_iter([(
+            TOOL_CALL_META_KEY.to_string(),
+            serde_json::Value::Object(tool_call_meta.clone()),
+        )])
+    })
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ClientCapabilitiesMeta {
     #[serde(default)]
@@ -470,6 +489,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     match mcp_server {
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
+            let tool_call_meta = extract_tool_call_meta_from_meta(&stdio.meta);
             Ok(ExtensionConfig::Stdio {
                 name: stdio.name,
                 description: String::new(),
@@ -481,10 +501,12 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 cwd: None,
                 bundled: Some(false),
                 available_tools: vec![],
+                tool_call_meta,
             })
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
+            let tool_call_meta = extract_tool_call_meta_from_meta(&http.meta);
             Ok(ExtensionConfig::StreamableHttp {
                 name: http.name,
                 description: String::new(),
@@ -503,6 +525,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 scopes: vec![],
                 bundled: Some(false),
                 available_tools: vec![],
+                tool_call_meta,
             })
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
@@ -3101,6 +3124,7 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         })
     )]
     #[test_case(
@@ -3125,6 +3149,7 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
+            tool_call_meta: Default::default(),
         })
     )]
     #[test_case(
