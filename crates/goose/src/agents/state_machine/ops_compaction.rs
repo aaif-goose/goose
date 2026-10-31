@@ -4,15 +4,20 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::inference::InferenceRequestPreparer;
+use goose_agent::machine::collect_operation_inference_input;
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::{
     applied, last_effective_role, messages_since_kickoff, not_applicable, trailing_error,
-    yielded_with, ConversationEffect, Emitter, GooseEffect, Operation, OperationResult,
-    SlashCommand,
+    yielded_with, ConversationEffect, Emitter, GooseEffect, GooseInferenceRequestPreparer,
+    Operation, OperationResult, SlashCommand,
 };
-use crate::context_mgmt::{compact_messages, count_context_tokens};
+use crate::context_mgmt::{
+    compact_messages, compact_messages_with_cache, count_context_tokens,
+    CacheFriendlyCompactionRequest, CompactionResult,
+};
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
@@ -23,6 +28,7 @@ use goose_providers::model::ModelConfig;
 const COMPACTION_THINKING_TEXT: &str = "goose is compacting the conversation...";
 
 pub(super) const MAX_CONTEXT_ERROR_COMPACTIONS: usize = 2;
+pub(super) const CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM: usize = 5_000;
 
 /// Reported usage stops at the inference that requested the tools, so the
 /// results that answered it are not counted until the next request.
@@ -38,20 +44,26 @@ async fn unreported_tool_tokens(conversation: &Conversation) -> Result<i32> {
     count_context_tokens(&messages[after_request..]).await
 }
 
-pub struct CompactionOperation {
+pub struct CompactionOperation<'a> {
     provider: Arc<dyn Provider>,
     model_config: ModelConfig,
     context_limit: usize,
     threshold: f64,
     manages_own_context: bool,
+    cache_friendly: bool,
+    contributors: Vec<Arc<dyn Operation<Session, GooseEffect> + 'a>>,
+    request_preparer: Arc<GooseInferenceRequestPreparer<'a>>,
 }
 
-impl CompactionOperation {
+impl<'a> CompactionOperation<'a> {
     pub fn new(
         provider: Arc<dyn Provider>,
         model_config: ModelConfig,
         context_limit: usize,
         threshold: f64,
+        cache_friendly: bool,
+        contributors: Vec<Arc<dyn Operation<Session, GooseEffect> + 'a>>,
+        request_preparer: Arc<GooseInferenceRequestPreparer<'a>>,
     ) -> Self {
         let manages_own_context = provider.manages_own_context();
         Self {
@@ -60,6 +72,74 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
+            cache_friendly,
+            contributors,
+            request_preparer,
+        }
+    }
+
+    async fn cache_request(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+    ) -> Result<Option<CacheFriendlyCompactionRequest>> {
+        if !self.cache_friendly {
+            return Ok(None);
+        }
+
+        let used_tokens = self.context_tokens(session, conversation).await?.max(0) as usize;
+        if self.context_limit.saturating_sub(used_tokens) < CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM {
+            return Ok(None);
+        }
+
+        let prepared_session = self.request_preparer.prepare_session(session).await?;
+        let session = prepared_session.as_ref().unwrap_or(session);
+        let conversation = session.conversation.as_ref().unwrap_or(conversation);
+        let input = collect_operation_inference_input(
+            self.contributors.iter().map(AsRef::as_ref).collect(),
+            session,
+            conversation,
+        )
+        .await?;
+        let prepared = self
+            .request_preparer
+            .prepare(session, conversation, input)
+            .await?;
+        Ok(Some(CacheFriendlyCompactionRequest {
+            system_prompt: prepared.system_prompt,
+            tools: prepared.tools,
+            additional_messages: prepared.additional_messages,
+        }))
+    }
+
+    async fn compact(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+        manual: bool,
+    ) -> Result<CompactionResult> {
+        match self.cache_request(session, conversation).await? {
+            Some(request) => {
+                compact_messages_with_cache(
+                    self.provider.as_ref(),
+                    &self.model_config,
+                    &session.id,
+                    conversation,
+                    manual,
+                    &request,
+                )
+                .await
+            }
+            None => {
+                compact_messages(
+                    self.provider.as_ref(),
+                    &self.model_config,
+                    &session.id,
+                    conversation,
+                    manual,
+                )
+                .await
+            }
         }
     }
 
@@ -125,7 +205,7 @@ impl CompactionOperation {
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for CompactionOperation {
+impl Operation<Session, GooseEffect> for CompactionOperation<'_> {
     fn name(&self) -> &'static str {
         "compaction"
     }
@@ -149,15 +229,10 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        let result = match compact_messages(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            conversation,
-            true,
-        )
-        .instrument(span.clone())
-        .await
+        let result = match self
+            .compact(session, conversation, true)
+            .instrument(span.clone())
+            .await
         {
             Ok(result) => result,
             Err(error) => {
@@ -258,15 +333,10 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             &session.id,
             "compaction",
         );
-        match compact_messages(
-            self.provider.as_ref(),
-            &self.model_config,
-            &session.id,
-            conversation,
-            false,
-        )
-        .instrument(span.clone())
-        .await
+        match self
+            .compact(session, conversation, false)
+            .instrument(span.clone())
+            .await
         {
             Ok(result) => {
                 let compacted = result.conversation;

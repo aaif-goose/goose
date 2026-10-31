@@ -271,6 +271,15 @@ impl TestPipeline {
         self
     }
 
+    pub(super) fn with_cache_friendly_compaction(mut self) -> Self {
+        assert!(
+            !self.services.initialized(),
+            "configure the pipeline before using it"
+        );
+        self.turn_settings.cache_friendly_compaction = true;
+        self
+    }
+
     pub(super) fn record_model_configs(mut self) -> Self {
         assert!(
             !self.services.initialized(),
@@ -895,6 +904,7 @@ async fn build_test_pipeline(
             on_failure_timeout: std::time::Duration::from_secs(1),
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
+            cache_friendly_compaction: false,
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,

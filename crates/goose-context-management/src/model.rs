@@ -6,6 +6,7 @@ use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
+use rmcp::model::Tool;
 
 /// The single completion call compaction needs. Implementations decide model
 /// selection, fallbacks and session plumbing.
@@ -16,12 +17,29 @@ pub trait CompactionModel: Send + Sync {
         system: &str,
         messages: &[Message],
     ) -> Result<(Message, ProviderUsage), ProviderError>;
+
+    async fn complete_with_tools(
+        &self,
+        system: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<(Message, ProviderUsage), ProviderError> {
+        self.complete(system, messages).await
+    }
 }
 
 /// Counts tokens for usage estimation and retained-context reporting.
 #[async_trait]
 pub trait TokenEstimator: Send + Sync {
     async fn count_chat_tokens(&self, system: &str, messages: &[Message]) -> usize;
+    async fn count_request_tokens(
+        &self,
+        system: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> usize {
+        self.count_chat_tokens(system, messages).await
+    }
     async fn count_text_tokens(&self, text: &str) -> usize;
 }
 
@@ -48,6 +66,17 @@ impl CompactionModel for ProviderModel {
     ) -> Result<(Message, ProviderUsage), ProviderError> {
         self.provider
             .complete(&self.model_config, system, messages, &[])
+            .await
+    }
+
+    async fn complete_with_tools(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+    ) -> Result<(Message, ProviderUsage), ProviderError> {
+        self.provider
+            .complete(&self.model_config, system, messages, tools)
             .await
     }
 }

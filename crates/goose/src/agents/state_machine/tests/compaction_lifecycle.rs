@@ -9,7 +9,9 @@ use super::pipeline::{
     MessageKind::{Agent, Error},
 };
 use crate::agents::state_machine;
-use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
+use crate::agents::state_machine::ops_compaction::{
+    CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM, MAX_CONTEXT_ERROR_COMPACTIONS,
+};
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
 use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
@@ -141,6 +143,96 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
             .and_then(|usage| usage.total_tokens),
         Some(15)
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cache_friendly_compaction_reuses_the_normal_request_prefix() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on("remember CACHE_PREFIX_MARKER").reply("remembered");
+    pipeline.run(["remember CACHE_PREFIX_MARKER"]).await?;
+    let normal_call = api.calls().last().unwrap().clone();
+
+    api.on("Do not call tools").reply("summary");
+    api.on("Your context was compacted")
+        .reply("continued after cached compaction");
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued after cached compaction");
+    let summary_call = api
+        .calls()
+        .into_iter()
+        .find(|call| call.input_contains("Do not call tools"))
+        .expect("cache-friendly summary request");
+    assert_eq!(summary_call.system(), normal_call.system());
+    assert!(summary_call.input_contains("CACHE_PREFIX_MARKER"));
+    assert!(summary_call.advertises_tool(ADD));
+    assert!(normal_call.advertises_tool(ADD));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cache_friendly_compaction_falls_back_when_the_request_is_too_large() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on(SUMMARIZE_HISTORY).reply("fallback summary");
+    api.on("Do not call tools")
+        .context_limit_error("cache-friendly request is too large")
+        .times(1);
+    api.on("Your context was compacted")
+        .reply("continued after fallback");
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued after fallback");
+    assert_eq!(compacted.history_replacements(), 1);
+    assert!(api
+        .calls()
+        .iter()
+        .any(|call| call.input_contains("Do not call tools")));
+    assert!(api
+        .calls()
+        .iter()
+        .any(|call| call.input_contains(SUMMARIZE_HISTORY)));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cache_friendly_compaction_uses_legacy_below_minimum_headroom() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    api.on(SUMMARIZE_HISTORY).reply("legacy summary");
+    api.on("Your context was compacted")
+        .reply("continued after headroom fallback");
+    pipeline
+        .set_total_tokens(
+            (pipeline.context_limit() - CACHE_FRIENDLY_COMPACTION_MIN_HEADROOM + 1) as i32,
+        )
+        .await;
+
+    let compacted = pipeline.run(["continue"]).await?;
+
+    compacted.assert_message(-1, Agent, "continued after headroom fallback");
+    assert_eq!(compacted.history_replacements(), 1);
+    assert!(!api
+        .calls()
+        .iter()
+        .any(|call| call.input_contains("Do not call tools")));
+    assert!(api
+        .calls()
+        .iter()
+        .any(|call| call.input_contains(SUMMARIZE_HISTORY)));
 
     Ok(())
 }

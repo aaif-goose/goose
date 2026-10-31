@@ -28,6 +28,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) compaction_threshold: f64,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
+    pub(crate) cache_friendly_compaction: bool,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -53,6 +54,7 @@ pub(crate) fn build_state_machine(
         compaction_threshold,
         tool_call_cutoff,
         tool_pair_summarization,
+        cache_friendly_compaction,
         session_manager,
         extension_manager,
         extension_lease,
@@ -69,7 +71,7 @@ pub(crate) fn build_state_machine(
     } = config;
     let manages_own_context = provider.manages_own_context();
 
-    let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+    let mut operations_before_compaction: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(ToolApprovalOperation::new(tool_inspection_manager)),
         Arc::new(SkillOperation::new(
             hook_manager.clone(),
@@ -96,14 +98,6 @@ pub(crate) fn build_state_machine(
         Arc::new(SteerOperation::new(steer_queue, hook_manager.clone())),
         Arc::new(BangShellOperation::new()),
     ];
-    if !manages_own_context {
-        operations.push(Arc::new(CompactionOperation::new(
-            provider.clone(),
-            model_config.clone(),
-            context_limit,
-            compaction_threshold,
-        )));
-    }
     let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(ToolPairCompactionOperation::new(
             provider.clone(),
@@ -119,19 +113,38 @@ pub(crate) fn build_state_machine(
         Arc::new(ExitOnErrorOperation),
         Arc::new(MaxTurnsOperation::new(max_turns)),
     ];
-    operations.extend(remaining_operations);
-    operations.extend(extra_operations);
-    let request_preparer = GooseInferenceRequestPreparer {
+    let request_preparer = Arc::new(GooseInferenceRequestPreparer {
         extension_manager,
         extension_lease,
         tool_inspection_manager,
         context_limit,
-    };
+    });
+    let contributors = operations_before_compaction
+        .iter()
+        .chain(&remaining_operations)
+        .chain(&extra_operations)
+        .cloned()
+        .collect();
+    let mut operations = Vec::new();
+    operations.append(&mut operations_before_compaction);
+    if !manages_own_context {
+        operations.push(Arc::new(CompactionOperation::new(
+            provider.clone(),
+            model_config.clone(),
+            context_limit,
+            compaction_threshold,
+            cache_friendly_compaction,
+            contributors,
+            Arc::clone(&request_preparer),
+        )));
+    }
+    operations.extend(remaining_operations);
+    operations.extend(extra_operations);
     let status_operation = Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
-            .with_request_preparer(Arc::new(request_preparer)),
+            .with_request_preparer(request_preparer),
     );
     let mut command_handlers = operations.clone();
     command_handlers.push(status_operation);

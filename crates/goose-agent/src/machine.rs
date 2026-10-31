@@ -109,6 +109,31 @@ fn add_tools_to_inference_input(
     Ok(())
 }
 
+pub async fn collect_operation_inference_input<S, E>(
+    operations: Vec<&dyn Operation<S, E>>,
+    session: &S,
+    conversation: &Conversation,
+) -> Result<InferenceInput>
+where
+    E: MaybeSend + 'static,
+{
+    let mut input = InferenceInput::default();
+    let mut tool_names = HashSet::new();
+    for operation in &operations {
+        let tools = operation.inference_tools(session).await?;
+        add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
+        input
+            .prompt_parts
+            .extend(operation.prompt_parts(session, conversation).await?);
+    }
+    for operation in operations {
+        input
+            .moim_parts
+            .extend(operation.moim_parts(session, conversation).await?);
+    }
+    Ok(input)
+}
+
 impl<'a, S, E> StateMachine<'a, S, E>
 where
     S: MachineSession,
@@ -148,15 +173,12 @@ where
         session: &S,
         conversation: &Conversation,
     ) -> Result<InferenceInput> {
-        let mut input = self
-            .collect_prompt_contributions(session, conversation)
-            .await?;
-        for operation in self.steps.iter().map(|step| step.operation()) {
-            input
-                .moim_parts
-                .extend(operation.moim_parts(session, conversation).await?);
-        }
-        Ok(input)
+        collect_operation_inference_input(
+            self.steps.iter().map(|step| step.operation()).collect(),
+            session,
+            conversation,
+        )
+        .await
     }
 
     pub async fn step(&self, session: &S, emit: &Emitter) -> Result<StepResult<E>> {
