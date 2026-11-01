@@ -10,6 +10,7 @@ use super::pipeline::{
 };
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
+use crate::agents::AgentEvent;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
 use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
@@ -23,7 +24,7 @@ async fn cache_friendly_compaction_reuses_the_previous_request_prefix() -> Resul
     let pipeline = pipeline.with_cache_friendly_compaction();
     api.on("first turn").reply("first response");
     api.on("check budget").reply("budget checked");
-    api.on("## Task Context").reply("summary");
+    api.on("## Task Context").reply("private summary");
     api.on("Your context was compacted").reply("continued");
 
     pipeline.run(["first turn"]).await?;
@@ -35,6 +36,9 @@ async fn cache_friendly_compaction_reuses_the_previous_request_prefix() -> Resul
 
     compacted.assert_message(-1, Agent, "continued");
     assert_eq!(compacted.history_replacements(), 1);
+    assert!(!compacted.events.iter().any(|event| {
+        matches!(event, AgentEvent::Message(message) if message.as_concat_text().contains("private summary"))
+    }));
     let calls = api.calls();
     let previous = &calls[1];
     let compaction = &calls[2];
@@ -85,6 +89,7 @@ async fn cache_friendly_compaction_falls_back_when_the_request_overflows() -> Re
 
     compacted.assert_message(-1, Agent, "continued");
     assert_eq!(compacted.history_replacements(), 1);
+    assert!(compacted.emitted_error_kinds().is_empty());
     let calls = api.calls();
     assert!(calls[0].input_contains("## Task Context"));
     assert!(calls[1].system_contains("## Task Context"));

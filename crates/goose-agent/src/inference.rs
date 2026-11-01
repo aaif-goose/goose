@@ -394,10 +394,12 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         effects
     }
 
-    fn emit_message(&self, message: Message, emit: &Emitter) {
+    fn record_message(&self, message: Message, emit: Option<&Emitter>) {
         let message = message.with_generated_id_if_missing();
         self.output().accumulator.push(message.clone());
-        emit.message(message);
+        if let Some(emit) = emit {
+            emit.message(message);
+        }
     }
 
     fn error_outcome(
@@ -412,7 +414,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         let mut message = Message::from_provider_error(err);
         message.metadata.user_visible = !hide_response;
         attach_operation_logs(&mut message, operation_logs);
-        self.emit_message(message, emit);
+        self.record_message(message, (!hide_response).then_some(emit));
         applied(self.take_output())
     }
 }
@@ -585,10 +587,10 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     });
                     drop_repeated_tool_call_thinking(&self.output().accumulator, &mut chunk);
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
-                        self.output().accumulator.push(chunk);
+                        self.record_message(chunk, None);
                     } else {
                         attach_operation_logs(&mut chunk, &mut operation_logs);
-                        self.emit_message(chunk, emit);
+                        self.record_message(chunk, (!hide_response).then_some(emit));
                     }
                 }
             }
@@ -640,7 +642,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     output.accumulator.clear();
                     message
                 };
-                self.emit_message(message, emit);
+                self.record_message(message, Some(emit));
             }
             applied(self.take_output())
         }
