@@ -804,6 +804,18 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "slicktrip",
+    "name": "SlickTrip",
+    "description": "Live flight, hotel and seat prices, cheapest-day calendars, and price-drop and seat alerts. Watch any fare, stay or seat and get an email or text when the price drops; booking happens on the seller's site.",
+    "type": "streamable-http",
+    "url": "https://mcp.slicktrip.com/mcp",
+    "link": "https://github.com/sliktrip/slicktrip-mcp",
+    "installation_notes": "No local setup required. This is a remote extension: connect, then sign in to a free SlickTrip account (Google, Apple or email) when goose opens the OAuth sign-in.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  }
 
 ]
