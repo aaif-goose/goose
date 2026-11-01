@@ -17,6 +17,18 @@
     ]
   },
   {
+    "id": "aggregate",
+    "name": "Aggregate",
+    "description": "Ask about your company's cash, runway, invoices and payroll from one read-only ledger",
+    "type": "streamable-http",
+    "url": "https://app.aggregate.finance/mcp",
+    "link": "https://github.com/Izzy-Gottz/aggregate-finance",
+    "installation_notes": "Hosted remote server. Sign in to Aggregate via OAuth on first connect and choose what goose can see. It can never move money.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "alby-mcp",
     "name": "Alby",
     "description": "Bitcoin Lightning Network integration",
