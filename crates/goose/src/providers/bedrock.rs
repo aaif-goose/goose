@@ -538,7 +538,14 @@ impl BedrockProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<(bedrock::Message, Option<bedrock::TokenUsage>), ProviderError> {
+    ) -> Result<
+        (
+            bedrock::Message,
+            Option<bedrock::TokenUsage>,
+            bedrock::StopReason,
+        ),
+        ProviderError,
+    > {
         let parts = self.build_request_parts(model, system, messages, tools)?;
 
         let mut request = self
@@ -603,7 +610,9 @@ impl BedrockProvider {
             })?;
 
         match response.output {
-            Some(bedrock::ConverseOutput::Message(message)) => Ok((message, response.usage)),
+            Some(bedrock::ConverseOutput::Message(message)) => {
+                Ok((message, response.usage, response.stop_reason))
+            }
             _ => Err(ProviderError::RequestFailed(
                 "No output from Bedrock".to_string(),
             )),
@@ -681,7 +690,7 @@ impl BedrockProvider {
         tools: &[Tool],
         model_name: &str,
     ) -> Result<MessageStream, ProviderError> {
-        let (bedrock_message, bedrock_usage) = self
+        let (bedrock_message, bedrock_usage, stop_reason) = self
             .with_retry(|| {
                 self.send_with_document_fallback(|| {
                     self.converse(model, session_id, system, messages, tools)
@@ -694,7 +703,8 @@ impl BedrockProvider {
             .map(from_bedrock_usage)
             .unwrap_or_default();
 
-        let message = from_bedrock_message(&bedrock_message)?;
+        let mut message = from_bedrock_message(&bedrock_message)?;
+        message.metadata.output_token_limit_reached = stop_reason == bedrock::StopReason::MaxTokens;
 
         // Add debug trace with input context
         let debug_payload = serde_json::json!({
@@ -708,7 +718,8 @@ impl BedrockProvider {
             Some(&usage),
         )?;
 
-        let provider_usage = ProviderUsage::new(model_name.to_string(), usage);
+        let provider_usage = ProviderUsage::new(model_name.to_string(), usage)
+            .with_finish_reasons(vec![stop_reason.as_str().to_string()]);
         Ok(super::base::stream_from_single_message(
             message,
             provider_usage,
@@ -1262,6 +1273,73 @@ mod tests {
                 request_headers: None,
             },
         )
+    }
+
+    async fn converse_via_mock(stop_reason: &str) -> Vec<(Option<Message>, Option<ProviderUsage>)> {
+        use futures::StreamExt;
+        use wiremock::matchers::{method, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let body = serde_json::json!({
+            "output": {"message": {"role": "assistant", "content": [{"text": "partial answer"}]}},
+            "stopReason": stop_reason,
+            "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+            "metrics": {"latencyMs": 12}
+        });
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/model/.+/converse$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let sdk_config = aws_config::SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new("us-east-1"))
+            .http_client(ReqwestHttpClient::new())
+            .endpoint_url(server.uri())
+            .build();
+        let bedrock_config = aws_sdk_bedrockruntime::Config::new(&sdk_config)
+            .to_builder()
+            .bearer_token(aws_sdk_bedrockruntime::config::Token::new(
+                "test-token",
+                None,
+            ))
+            .auth_scheme_preference([
+                aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+            ])
+            .build();
+        let (mut provider, model) =
+            create_mock_provider_and_model("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        provider.client = Client::from_conf(bedrock_config);
+
+        let messages = vec![Message::user().with_text("hi")];
+        let stream = provider
+            .stream_via_converse(&model, None, "", &messages, &[], &model.model_name)
+            .await
+            .unwrap();
+        stream.map(|item| item.unwrap()).collect().await
+    }
+
+    #[tokio::test]
+    async fn test_converse_max_tokens_marks_output_token_limit() {
+        let items = converse_via_mock("max_tokens").await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert_eq!(message.content[0].as_text(), Some("partial answer"));
+        assert!(message.metadata.output_token_limit_reached);
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["max_tokens".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_converse_end_turn_does_not_mark_output_token_limit() {
+        let items = converse_via_mock("end_turn").await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert_eq!(message.content[0].as_text(), Some("partial answer"));
+        assert!(!message.metadata.output_token_limit_reached);
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["end_turn".to_string()]));
     }
 
     #[test]
