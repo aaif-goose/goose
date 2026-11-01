@@ -702,11 +702,10 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[rmcp::model::Tool],
-        ) -> Result<
-            crate::providers::base::MessageStream,
-            goose_providers::errors::ProviderError,
-        > {
-            let message = Message::assistant().with_text("BLOCK\nexfiltrates secrets to an unknown host");
+        ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError>
+        {
+            let message =
+                Message::assistant().with_text("BLOCK\nexfiltrates secrets to an unknown host");
             let usage = crate::providers::base::ProviderUsage::new(
                 "test-model".to_string(),
                 goose_providers::conversation::token_usage::Usage::default(),
