@@ -13,7 +13,7 @@ Unlike [pattern-based detection](/docs/guides/security/prompt-injection-detectio
 
 1. Before each tool call, the adversary reviewer checks your **original task**, **recent messages**, and the **tool call details**
 2. It evaluates the tool call against your rules and returns **ALLOW** or **BLOCK**
-3. Blocked tool calls are denied — the agent sees the rejection and cannot retry
+3. Blocked tool calls become an approval request carrying the reviewer's reason — you decide whether the call goes through, in every approval mode
 4. If the reviewer fails for any reason, the tool call is allowed through (fail-open)
 
 The adversary uses the same model and provider goose is already configured with. No additional API keys or services needed.
