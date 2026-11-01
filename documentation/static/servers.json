@@ -804,6 +804,18 @@
       "required": false
     }
   ]
-}
+},
+  {
+    "id": "partsplan",
+    "name": "PartsPlan",
+    "description": "Electronic component datasheets with source pages: ratings, pinouts, tables and graphs read from the manufacturer's document, each value with its page.",
+    "url": "https://worker.partsplanai.com/mcp",
+    "link": "https://partsplanai.com/en",
+    "installation_notes": "Hosted remote server. Sign in with your PartsPlan account (Google or email) via OAuth on first connect. A free plan is available.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  }
 
 ]
