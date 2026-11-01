@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use goose_agent::inference::is_cancelled_response;
 use tracing_futures::Instrument;
 
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
@@ -71,18 +72,36 @@ impl CompactionOperation {
         }
     }
 
-    fn pending_request(conversation: &Conversation) -> Option<usize> {
-        let index = conversation.messages().iter().rposition(|message| {
+    fn latest_request(conversation: &Conversation) -> Option<usize> {
+        conversation.messages().iter().rposition(|message| {
             message.is_agent_visible()
                 && message
                     .metadata
                     .operation_note("compaction", COMPACTION_REQUEST)
                     .is_some()
-        })?;
+        })
+    }
+
+    fn pending_request(conversation: &Conversation) -> Option<usize> {
+        let index = Self::latest_request(conversation)?;
         (!conversation.messages()[index + 1..]
             .iter()
             .any(Message::is_user_visible))
         .then_some(index)
+    }
+
+    fn hide_request(conversation: &Conversation, request: usize, end: usize) -> Vec<GooseEffect> {
+        conversation.messages()[request..end]
+            .iter()
+            .map(|message| {
+                ConversationEffect::SetMessageVisibility {
+                    message_id: message.id.clone().unwrap(),
+                    user_visible: false,
+                    agent_visible: false,
+                }
+                .into()
+            })
+            .collect()
     }
 
     async fn should_append(&self, session: &Session, conversation: &Conversation) -> Result<bool> {
@@ -274,7 +293,40 @@ impl Operation<Session, GooseEffect> for CompactionResponseOperation {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
+        if let Some(request) = CompactionOperation::latest_request(conversation) {
+            if let Some(next_user) = conversation.messages()[request + 1..]
+                .iter()
+                .position(Message::is_user_visible)
+            {
+                let end = request + 1 + next_user;
+                return applied(CompactionOperation::hide_request(
+                    conversation,
+                    request,
+                    end,
+                ));
+            }
+        }
         self.0.finish_append(conversation, emit).await
+    }
+
+    async fn finalize_cancellation(
+        &self,
+        _session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
+        let Some(request) = CompactionOperation::latest_request(conversation) else {
+            return Vec::new();
+        };
+        let responses = &conversation.messages()[request + 1..];
+        if !responses.is_empty() && !responses.iter().any(is_cancelled_response) {
+            if let Ok(OperationResult::Applied(result)) =
+                self.0.finish_append(conversation, emit).await
+            {
+                return result.effects;
+            }
+        }
+        CompactionOperation::hide_request(conversation, request, conversation.len())
     }
 }
 

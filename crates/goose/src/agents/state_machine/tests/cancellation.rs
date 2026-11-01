@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::{inference::InferenceRunner, tool::ToolOperation};
+use goose_agent::{
+    inference::{is_cancelled_response, InferenceRunner},
+    tool::ToolOperation,
+};
 use goose_providers::{
     base::{MessageStream, Provider},
     conversation::token_usage::{ProviderUsage, Usage},
@@ -14,9 +17,11 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::test_pipeline;
+use super::{pipeline, test_pipeline};
 use crate::agents::gen_ai_telemetry::test_support::SpanFieldCapture;
-use crate::agents::state_machine::{Emitter, GooseEffect, StateMachine, Step};
+use crate::agents::state_machine::{
+    CompactionOperation, CompactionResponseOperation, Emitter, GooseEffect, StateMachine, Step,
+};
 use crate::agents::AgentEvent;
 use crate::conversation::message::Message;
 use crate::session::Session;
@@ -114,6 +119,7 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
     let messages = session.conversation.as_ref().unwrap().messages();
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[1].as_concat_text(), "partial \noutput");
+    assert!(is_cancelled_response(&messages[1]));
     assert!(messages[1].get_tool_request_ids().contains("pending"));
     assert!(messages[2].get_tool_response_ids().contains("pending"));
     assert_eq!(session.usage.total_tokens, Some(15));
@@ -125,6 +131,88 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
         emitted_ids,
         [&messages[1].id, &messages[1].id, &messages[2].id]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_compaction_is_discarded_before_the_next_message() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let cancel = CancellationToken::new();
+    let provider = Arc::new(InterruptedProvider {
+        cancel: cancel.clone(),
+    });
+    let mut request = Message::user()
+        .with_text("## Task Context")
+        .with_visibility(false, true);
+    request
+        .metadata
+        .set_operation_note("compaction", "request", serde_json::Value::Bool(true));
+    request.metadata.set_operation_note(
+        "inference",
+        "hide_response",
+        serde_json::Value::Bool(true),
+    );
+    pipeline
+        .seed([
+            Message::user()
+                .with_text("cancelled request")
+                .with_visibility(true, false),
+            request,
+        ])
+        .await?;
+
+    let compaction = Arc::new(CompactionOperation::new(
+        provider.clone(),
+        ModelConfig::new("model"),
+        pipeline.context_limit(),
+        pipeline::COMPACTION_THRESHOLD,
+        true,
+    ));
+    let machine: StateMachine<Session, GooseEffect> = StateMachine::new(
+        vec![
+            Step::Operation(Arc::new(CompactionResponseOperation(compaction))),
+            Step::Inference(Arc::new(InferenceRunner::new(
+                provider,
+                ModelConfig::new("model"),
+            ))),
+        ],
+        cancel.clone(),
+    );
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, cancel);
+    let session = tokio::time::timeout(
+        Duration::from_secs(5),
+        crate::agents::state_machine::session::run(
+            &machine,
+            pipeline.session_manager.as_ref(),
+            &pipeline.services().await.hook_manager,
+            &pipeline.session_id,
+            &emit,
+        ),
+    )
+    .await??;
+
+    let messages = session.conversation.as_ref().unwrap().messages();
+    assert!(messages[0].is_user_visible());
+    assert!(!messages[0].is_agent_visible());
+    assert!(messages[1..]
+        .iter()
+        .all(|message| !message.is_user_visible() && !message.is_agent_visible()));
+
+    api.on("## Task Context").reply("summary");
+    api.on("Your context was compacted").reply("continued");
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+    let resumed = pipeline.run(["replacement request"]).await?;
+
+    resumed.assert_message(-1, pipeline::MessageKind::Agent, "continued");
+    let calls = api.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(!calls[0].input_contains("cancelled request"));
+    assert!(calls[1].input_contains("replacement request"));
+    assert!(!calls[1].input_contains("cancelled request"));
+
     Ok(())
 }
 

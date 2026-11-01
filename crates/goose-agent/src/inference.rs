@@ -79,6 +79,7 @@ const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
 const INFERENCE_NOTE_SCOPE: &str = "inference";
 const EMPTY_RESPONSE_NOTE: &str = "empty_response";
 const HIDE_RESPONSE_NOTE: &str = "hide_response";
+const CANCELLED_RESPONSE_NOTE: &str = "cancelled";
 
 /// The model's response stayed empty after retries. The fallback message is stored
 /// hidden so that operations owning the end of a turn (recipe retries, final output)
@@ -87,6 +88,13 @@ pub fn is_empty_response_marker(message: &Message) -> bool {
     message
         .metadata
         .operation_note(INFERENCE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .is_some()
+}
+
+pub fn is_cancelled_response(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(INFERENCE_NOTE_SCOPE, CANCELLED_RESPONSE_NOTE)
         .is_some()
 }
 
@@ -432,6 +440,16 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
         _conversation: &Conversation,
         _emit: &Emitter,
     ) -> Vec<E> {
+        {
+            let mut output = self.output();
+            for message in output.accumulator.messages_mut() {
+                message.metadata.set_operation_note(
+                    INFERENCE_NOTE_SCOPE,
+                    CANCELLED_RESPONSE_NOTE,
+                    serde_json::Value::Bool(true),
+                );
+            }
+        }
         self.take_output()
     }
 }
