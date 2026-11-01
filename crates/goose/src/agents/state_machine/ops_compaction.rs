@@ -109,6 +109,11 @@ impl CompactionOperation {
             COMPACTION_REQUEST,
             serde_json::Value::Bool(true),
         );
+        request.metadata.set_operation_note(
+            "inference",
+            "hide_response",
+            serde_json::Value::Bool(true),
+        );
         applied([
             ConversationEffect::SetMessageVisibility {
                 message_id: trigger_id,

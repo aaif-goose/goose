@@ -76,9 +76,9 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
 pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
 const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
-const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
+const INFERENCE_NOTE_SCOPE: &str = "inference";
 const EMPTY_RESPONSE_NOTE: &str = "empty_response";
-const COMPACTION_REQUEST: &str = "request";
+const HIDE_RESPONSE_NOTE: &str = "hide_response";
 
 /// The model's response stayed empty after retries. The fallback message is stored
 /// hidden so that operations owning the end of a turn (recipe retries, final output)
@@ -86,7 +86,7 @@ const COMPACTION_REQUEST: &str = "request";
 pub fn is_empty_response_marker(message: &Message) -> bool {
     message
         .metadata
-        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .operation_note(INFERENCE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
         .is_some()
 }
 
@@ -467,7 +467,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
         let hide_response = messages.last().is_some_and(|message| {
             message
                 .metadata
-                .operation_note("compaction", COMPACTION_REQUEST)
+                .operation_note(INFERENCE_NOTE_SCOPE, HIDE_RESPONSE_NOTE)
                 .is_some()
         });
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
@@ -617,7 +617,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 .with_visibility(false, false);
             attach_operation_logs(&mut marker, &mut operation_logs);
             marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
+                INFERENCE_NOTE_SCOPE,
                 EMPTY_RESPONSE_NOTE,
                 serde_json::Value::Bool(true),
             );
