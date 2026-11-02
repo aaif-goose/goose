@@ -355,7 +355,7 @@ impl ComputerControllerServer {
             Try to do your best to find ways to complete a task without too many questions or offering options unless it is really unclear, find a way if you can.
             You can also guide them steps if they can help out as you go along.
 
-            There is already a screenshot tool available you can use if needed to see what is on screen.
+            There is no separate screenshot tool. To see what is on screen, save a screen capture to an image file from a script, then read that file with the read_image tool.
 
             {os_instructions}
             "#,
