@@ -89,9 +89,15 @@ fn extract_functions(
     while let Some(m) = matches.next() {
         for cap in m.captures {
             if query.capture_names()[cap.index as usize] == "name" {
-                let name = node_text(source, &cap.node).to_string();
-                let line = cap.node.start_position().row + 1;
-                let parent = find_enclosing_class(cap.node, source, info);
+                // `Foo x(a, b);` inside a body parses as a function declarator
+                if is_c_family(info.name) && has_ancestor_of_kind(cap.node, "compound_statement") {
+                    continue;
+                }
+                let name_node = leaf_name_node(cap.node);
+                let name = node_text(source, &name_node).to_string();
+                let line = name_node.start_position().row + 1;
+                let parent = find_enclosing_class(cap.node, source, info)
+                    .or_else(|| qualified_scope(cap.node, source));
                 let detail = extract_fn_signature(cap.node, source);
                 symbols.push(Symbol {
                     name,
@@ -329,6 +335,19 @@ fn extract_inheritance(lang_name: &str, class_node: &tree_sitter::Node, source: 
             String::new()
         }
 
+        // C++: class Foo : public Bar, private Baz<T> { ... }
+        // class_specifier → base_class_clause → type_identifier | template_type | qualified_identifier
+        "cpp" => find_child_by_kind(class_node, "base_class_clause")
+            .map(|clause| {
+                (0..clause.named_child_count() as u32)
+                    .filter_map(|i| clause.named_child(i))
+                    .filter(|base| base.kind() != "access_specifier")
+                    .map(|base| node_text(source, &base))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+
         // Rust: impl Display for MyType → "MyType(impl Display)"
         // impl_item with "for" keyword: trait is the first type_identifier, type is after "for"
         "rust" => {
@@ -440,7 +459,41 @@ fn find_enclosing_class(node: tree_sitter::Node, source: &str, info: &LangInfo) 
 /// Extract a compact function signature: "(params) -> ReturnType"
 fn extract_fn_signature(name_node: tree_sitter::Node, source: &str) -> Option<String> {
     let fn_node = name_node.parent()?;
+    if fn_node.kind() == "function_declarator" {
+        return extract_c_family_signature(fn_node, source);
+    }
     extract_fn_signature_from_node(fn_node, source)
+}
+
+/// The return type lives on the enclosing definition/declaration, not on the declarator.
+fn extract_c_family_signature(declarator: tree_sitter::Node, source: &str) -> Option<String> {
+    let params =
+        extract_fn_signature_from_node(declarator, source).unwrap_or_else(|| "()".to_string());
+
+    let mut indirection = String::new();
+    let mut owner = None;
+    for ancestor in std::iter::successors(declarator.parent(), |n| n.parent()) {
+        match ancestor.kind() {
+            "pointer_declarator" => indirection.push('*'),
+            "reference_declarator" => indirection.push('&'),
+            "function_definition" | "declaration" | "field_declaration" => {
+                owner = Some(ancestor);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    let return_type = owner
+        .and_then(|n| n.child_by_field_name("type"))
+        .map(|t| format!("{}{}", node_text(source, &t).trim(), indirection))
+        .filter(|t| t != "void");
+
+    match return_type {
+        Some(ret) => Some(format!("{}->{}", params, truncate(&ret, 30))),
+        None if params == "()" => None,
+        None => Some(params),
+    }
 }
 
 /// Extract a compact function signature directly from the function node.
@@ -527,6 +580,7 @@ fn extract_class_detail(
             &["field_declaration"],
         ),
         "java" | "kotlin" => (&["class_body"], &["field_declaration"]),
+        "c" | "cpp" => (&["field_declaration_list"], &["field_declaration"]),
         _ => return None, // Skip Python (hard), JS/TS/Ruby/Swift for now
     };
 
@@ -562,6 +616,19 @@ fn collect_field_names(
                 if let Some(vd) = find_child_by_kind(&child, "variable_declarator") {
                     if let Some(n) = find_child_by_kind(&vd, "identifier") {
                         out.push(node_text(source, &n).to_string());
+                        continue;
+                    }
+                }
+                // C/C++: the name sits under pointer/array declarators. Method
+                // declarations are skipped; function pointers `(*cb)(int)` are fields.
+                if let Some(declarator) = child.child_by_field_name("declarator") {
+                    if let Some(n) = find_descendant_by_kind(&declarator, "field_identifier") {
+                        let is_method = find_descendant_by_kind(&declarator, "function_declarator")
+                            .and_then(|f| f.child_by_field_name("declarator"))
+                            .is_some_and(|d| d.kind() != "parenthesized_declarator");
+                        if !is_method {
+                            out.push(node_text(source, &n).to_string());
+                        }
                         continue;
                     }
                 }
@@ -686,8 +753,9 @@ fn extract_calls(
             if query.capture_names()[cap.index as usize] != "name" {
                 continue;
             }
-            let callee = node_text(source, &cap.node).to_string();
-            let line = cap.node.start_position().row + 1;
+            let callee_node = leaf_name_node(cap.node);
+            let callee = node_text(source, &callee_node).to_string();
+            let line = callee_node.start_position().row + 1;
             let caller =
                 find_enclosing_fn(cap.node, source, info).unwrap_or_else(|| "<module>".to_string());
             calls.push(Call {
@@ -704,6 +772,11 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
     let mut cur = node;
     while let Some(parent) = cur.parent() {
         if info.fn_kinds.contains(&parent.kind()) {
+            if is_c_family(info.name) {
+                if let Some(name) = c_family_fn_name(parent, source) {
+                    return Some(name);
+                }
+            }
             // Special case: Swift init/deinit
             if parent.kind() == "init_declaration" {
                 return Some("init".into());
@@ -729,6 +802,52 @@ fn find_enclosing_fn(node: tree_sitter::Node, source: &str, info: &LangInfo) -> 
         cur = parent;
     }
     None
+}
+
+fn is_c_family(lang_name: &str) -> bool {
+    matches!(lang_name, "c" | "cpp")
+}
+
+fn has_ancestor_of_kind(node: tree_sitter::Node, kind: &str) -> bool {
+    std::iter::successors(node.parent(), |n| n.parent()).any(|n| n.kind() == kind)
+}
+
+/// For `a::b::Foo::out`, the innermost `qualified_identifier` is the one holding `Foo` and `out`.
+fn innermost_qualified(node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+    if node.kind() != "qualified_identifier" {
+        return None;
+    }
+    let name = node.child_by_field_name("name")?;
+    innermost_qualified(name).or(Some(node))
+}
+
+/// Calls and definitions are matched by bare name, so `Foo::out` resolves to `out`.
+fn leaf_name_node(node: tree_sitter::Node) -> tree_sitter::Node {
+    innermost_qualified(node)
+        .and_then(|q| q.child_by_field_name("name"))
+        .unwrap_or(node)
+}
+
+fn qualified_scope(node: tree_sitter::Node, source: &str) -> Option<String> {
+    let scope = innermost_qualified(node)?.child_by_field_name("scope")?;
+    Some(node_text(source, &scope).to_string())
+}
+
+fn c_family_fn_name(fn_node: tree_sitter::Node, source: &str) -> Option<String> {
+    let mut node = fn_node.child_by_field_name("declarator")?;
+    while matches!(
+        node.kind(),
+        "pointer_declarator"
+            | "reference_declarator"
+            | "function_declarator"
+            | "parenthesized_declarator"
+            | "attributed_declarator"
+    ) {
+        node = node
+            .child_by_field_name("declarator")
+            .or_else(|| node.named_child(0))?;
+    }
+    Some(node_text(source, &leaf_name_node(node)).to_string())
 }
 
 fn find_child_text(node: &tree_sitter::Node, kinds: &[&str], source: &str) -> Option<String> {
