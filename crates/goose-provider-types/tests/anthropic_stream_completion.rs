@@ -226,8 +226,9 @@ async fn closed_tool_followed_by_error_is_not_executable() {
 
 #[tokio::test]
 async fn completed_tool_waits_for_message_stop_and_is_emitted_once() {
+    let text_after = r#"data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"Done"}}"#;
     let stream = response_to_streaming_message(futures::stream::iter(
-        [START, TOOL_START, TOOL_ARGS, TOOL_STOP, TEXT, DELTA, STOP]
+        [START, TEXT, TOOL_START, TOOL_ARGS, TOOL_STOP, text_after, DELTA, STOP]
             .into_iter()
             .map(|line| Ok(line.to_string())),
     ));
@@ -235,23 +236,24 @@ async fn completed_tool_waits_for_message_stop_and_is_emitted_once() {
     let (message, usage) = stream.next().await.unwrap().unwrap();
     assert!(usage.is_none());
     assert!(
-        matches!(&message.unwrap().content[0], MessageContentBlock::Text(text) if text.text == "Working on it")
+        matches!(&message.unwrap().content[0], MessageContentBlock::Text(text) if text.text == "Working on it"),
+        "text before a tool block still streams immediately"
     );
     let results = stream.collect::<Vec<_>>().await;
     assert!(results.iter().all(Result::is_ok));
-    let requests: Vec<_> = results
+    let blocks: Vec<_> = results
         .iter()
         .filter_map(|result| result.as_ref().unwrap().0.as_ref())
         .flat_map(|message| &message.content)
-        .filter_map(|block| match block {
-            MessageContentBlock::ToolRequest(request) => Some(request),
-            _ => None,
-        })
         .collect();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].provider_index(), Some(2));
-    assert_eq!(requests[0].id, "tool_1");
-    let call = requests[0].tool_call.as_ref().unwrap();
+    assert_eq!(blocks.len(), 2, "{blocks:?}");
+    let MessageContentBlock::ToolRequest(request) = blocks[0] else {
+        panic!("the tool must keep its place before later blocks: {blocks:?}");
+    };
+    assert!(matches!(blocks[1], MessageContentBlock::Text(text) if text.text == "Done"));
+    assert_eq!(request.provider_index(), Some(2));
+    assert_eq!(request.id, "tool_1");
+    let call = request.tool_call.as_ref().unwrap();
     assert_eq!(call.name, "dangerous_action");
     assert_eq!(call.arguments, Some(Default::default()));
 }

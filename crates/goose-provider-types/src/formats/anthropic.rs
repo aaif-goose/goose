@@ -1050,7 +1050,8 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
-        let mut completed_tool_messages = Vec::new();
+        // Content after a closed tool block waits with it, preserving block order.
+        let mut held = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
@@ -1156,7 +1157,7 @@ where
                                     let mut message = Message::assistant()
                                         .with_redacted_thinking(data);
                                     message.id = message_id.clone();
-                                    yield (Some(message), None);
+                                    if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                 } else {
                                     tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
                                 }
@@ -1172,7 +1173,7 @@ where
                             Ok(ContentBlockDelta::TextDelta { text }) => {
                                 let mut message = Message::assistant().with_text(&text);
                                 message.id = message_id.clone();
-                                yield (Some(message), None);
+                                if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                             }
                             Ok(ContentBlockDelta::InputJsonDelta { partial_json }) => {
                                 if let Some(call) = block_index(&event.data)
@@ -1205,7 +1206,7 @@ where
                             let mut message = Message::assistant()
                                 .with_thinking(state.text, state.signature);
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     if let Some(index) = block_index(&event.data) {
@@ -1232,7 +1233,7 @@ where
                                             vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
                                         );
                                         message.id = message_id.clone();
-                                        yield (Some(message), None);
+                                        if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                                         continue;
                                     }
                                 }
@@ -1247,7 +1248,7 @@ where
                             );
                             message.id = message_id.clone();
                             // A closed tool block is not executable until the response succeeds.
-                            completed_tool_messages.push(message);
+                            held.push(message);
                         }
                     }
                     continue;
@@ -1304,7 +1305,7 @@ where
                                 "The provider ended the response with: {details}"
                             ));
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            if held.is_empty() { yield (Some(message), None); } else { held.push(message); }
                         }
                     }
                     continue;
@@ -1334,7 +1335,7 @@ where
             Err(ProviderError::NetworkError("Anthropic stream ended without message_stop".to_string()))?;
         }
 
-        for message in completed_tool_messages {
+        for message in held {
             yield (Some(message), None);
         }
 
