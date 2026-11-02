@@ -125,6 +125,12 @@ async fn server_with_session(
             )
             .await;
     }
+    let session = server
+        .services
+        .session_manager
+        .get_session(&session.id, false)
+        .await
+        .unwrap();
     (root, server, session, provider)
 }
 
@@ -285,6 +291,90 @@ async fn dispatch_prompt_error_and_idle_cancel_allow_later_prompt() {
     .await
     .expect("prompt timed out")
     .unwrap();
+}
+
+#[tokio::test]
+async fn closing_last_attachment_preserves_other_connections_pending_prompt() {
+    let (root, attached, session, provider) = server_with_session(false).await;
+    let pending = connection_with_services(root.path(), attached.services.clone()).await;
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        Client.builder().connect_with(
+            SacpAgent.builder().with_handler(AcpConnectionHandler {
+                connection: pending.clone(),
+            }),
+            async |cx| {
+                cx.send_request(AuthenticateRequest::new("test"))
+                    .block_task()
+                    .await?;
+                let run = pending.reserve_prompt_run(&session.id).await.unwrap();
+                assert!(!pending.has_session(&session.id));
+                attached.on_close_session(&session.id).await?;
+                assert!(!attached.has_session(&session.id));
+                assert!(!run.cancel_token.is_cancelled());
+                let pinned = pending.services.providers.pinned(&session).await.unwrap();
+                let expected: Arc<dyn Provider> = provider.clone();
+                assert!(Arc::ptr_eq(&pinned, &expected));
+                let response = pending
+                    .on_prompt(pending.client_cx.get().unwrap(), prompt(&session.id), run)
+                    .await?;
+                assert_eq!(response.stop_reason, StopReason::EndTurn);
+                assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+                assert!(pending.has_session(&session.id));
+                assert!(!pending.runs().is_active(&session.id));
+                Ok(())
+            },
+        ),
+    )
+    .await
+    .expect("prompt timed out")
+    .unwrap();
+}
+
+#[tokio::test]
+async fn dropping_pending_prompt_after_other_connection_closes_releases_session() {
+    let (root, attached, session, provider) = server_with_session(false).await;
+    let pending = connection_with_services(root.path(), attached.services.clone()).await;
+    let run = pending.reserve_prompt_run(&session.id).await.unwrap();
+    attached.on_close_session(&session.id).await.unwrap();
+    assert!(!run.cancel_token.is_cancelled());
+    assert!(pending.services.providers.pinned(&session).await.is_some());
+    drop(run);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while pending.services.providers.pinned(&session).await.is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("abandoned pending prompt retained the closed session");
+    assert!(!pending.runs().is_active(&session.id));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn closing_pending_prompts_own_connection_still_cancels() {
+    let (_root, server, session, provider) = server_with_session(true).await;
+    let run = server.reserve_prompt_run(&session.id).await.unwrap();
+    server.on_close_session(&session.id).await.unwrap();
+    assert!(run.cancel_token.is_cancelled());
+    assert!(server.services.providers.pinned(&session).await.is_none());
+    drop(run);
+    assert!(!server.runs().is_active(&session.id));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn explicit_release_still_cancels_another_connections_pending_prompt() {
+    let (root, attached, session, provider) = server_with_session(false).await;
+    let pending = connection_with_services(root.path(), attached.services.clone()).await;
+    let run = pending.reserve_prompt_run(&session.id).await.unwrap();
+    attached.services.release_session(&session.id).await;
+    assert!(run.cancel_token.is_cancelled());
+    assert!(!attached.has_session(&session.id));
+    assert!(pending.services.providers.pinned(&session).await.is_none());
+    drop(run);
+    assert!(!pending.runs().is_active(&session.id));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
