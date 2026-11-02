@@ -8,7 +8,7 @@ use super::base::{
 };
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::Result;
 use async_stream::try_stream;
@@ -705,6 +705,23 @@ impl BedrockProvider {
 
         let mut message = from_bedrock_message(&bedrock_message)?;
         message.metadata.output_token_limit_reached = stop_reason == bedrock::StopReason::MaxTokens;
+        if message.metadata.output_token_limit_reached {
+            // Converse can return truncated tool arguments as valid JSON.
+            for content in &mut message.content {
+                if let MessageContent::ToolRequest(request) = content {
+                    if let Ok(call) = &request.tool_call {
+                        request.tool_call = Err(ErrorData::new(
+                            ErrorCode::INVALID_PARAMS,
+                            format!(
+                                "Tool arguments for {} (id {}) were truncated because the model reached its output token limit",
+                                call.name, request.id
+                            ),
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
 
         // Add debug trace with input context
         let debug_payload = serde_json::json!({
@@ -1275,14 +1292,17 @@ mod tests {
         )
     }
 
-    async fn converse_via_mock(stop_reason: &str) -> Vec<(Option<Message>, Option<ProviderUsage>)> {
+    async fn converse_via_mock(
+        stop_reason: &str,
+        content: Value,
+    ) -> Vec<(Option<Message>, Option<ProviderUsage>)> {
         use futures::StreamExt;
         use wiremock::matchers::{method, path_regex};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         let body = serde_json::json!({
-            "output": {"message": {"role": "assistant", "content": [{"text": "partial answer"}]}},
+            "output": {"message": {"role": "assistant", "content": content}},
             "stopReason": stop_reason,
             "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
             "metrics": {"latencyMs": 12}
@@ -1324,7 +1344,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_converse_max_tokens_marks_output_token_limit() {
-        let items = converse_via_mock("max_tokens").await;
+        let items = converse_via_mock(
+            "max_tokens",
+            serde_json::json!([{"text": "partial answer"}]),
+        )
+        .await;
         let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
         assert_eq!(message.content[0].as_text(), Some("partial answer"));
         assert!(message.metadata.output_token_limit_reached);
@@ -1334,12 +1358,61 @@ mod tests {
 
     #[tokio::test]
     async fn test_converse_end_turn_does_not_mark_output_token_limit() {
-        let items = converse_via_mock("end_turn").await;
+        let items =
+            converse_via_mock("end_turn", serde_json::json!([{"text": "partial answer"}])).await;
         let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
         assert_eq!(message.content[0].as_text(), Some("partial answer"));
         assert!(!message.metadata.output_token_limit_reached);
         let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
         assert_eq!(usage.finish_reasons, Some(vec!["end_turn".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_converse_max_tokens_rejects_truncated_tool_calls() {
+        for input in [
+            serde_json::json!({}),
+            serde_json::json!({"path": "nums.txt"}),
+        ] {
+            let items = converse_via_mock(
+                "max_tokens",
+                serde_json::json!([
+                    {"text": "Writing the file"},
+                    {"toolUse": {"toolUseId": "tooluse_1", "name": "write_file", "input": input}}
+                ]),
+            )
+            .await;
+            let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+            assert!(message.metadata.output_token_limit_reached);
+            assert_eq!(message.content[0].as_text(), Some("Writing the file"));
+            let request = message.content[1].as_tool_request().expect("tool request");
+            assert_eq!(request.id, "tooluse_1");
+            let error = request.tool_call.as_ref().expect_err("truncated tool call");
+            assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+            assert_eq!(error.message, "Tool arguments for write_file (id tooluse_1) were truncated because the model reached its output token limit");
+            let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+            assert_eq!(usage.finish_reasons, Some(vec!["max_tokens".to_string()]));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_converse_tool_use_preserves_complete_tool_call() {
+        let input = serde_json::json!({"path": "nums.txt", "content": "1, 2, 3"});
+        let items = converse_via_mock(
+            "tool_use",
+            serde_json::json!([
+                {"toolUse": {"toolUseId": "tooluse_1", "name": "write_file", "input": input}}
+            ]),
+        )
+        .await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert!(!message.metadata.output_token_limit_reached);
+        let request = message.content[0].as_tool_request().expect("tool request");
+        assert_eq!(request.id, "tooluse_1");
+        let call = request.tool_call.as_ref().expect("complete tool call");
+        assert_eq!(call.name, "write_file");
+        assert_eq!(call.arguments, input.as_object().cloned());
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["tool_use".to_string()]));
     }
 
     #[test]
