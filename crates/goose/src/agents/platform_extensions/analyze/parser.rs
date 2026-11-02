@@ -484,9 +484,16 @@ fn extract_c_family_signature(declarator: tree_sitter::Node, source: &str) -> Op
         }
     }
 
-    let return_type = owner
-        .and_then(|n| n.child_by_field_name("type"))
-        .map(|t| format!("{}{}", node_text(source, &t).trim(), indirection))
+    // `auto f() -> T`: the owner's type is only the `auto` placeholder.
+    let trailing_return = find_child_by_kind(&declarator, "trailing_return_type")
+        .and_then(|t| t.named_child(0))
+        .map(|t| node_text(source, &t).trim().to_string());
+    let return_type = trailing_return
+        .or_else(|| {
+            owner
+                .and_then(|n| n.child_by_field_name("type"))
+                .map(|t| format!("{}{}", node_text(source, &t).trim(), indirection))
+        })
         .filter(|t| t != "void");
 
     match return_type {
@@ -619,18 +626,24 @@ fn collect_field_names(
                         continue;
                     }
                 }
-                // C/C++: the name sits under pointer/array declarators. Method
-                // declarations are skipped; function pointers `(*cb)(int)` are fields.
-                if let Some(declarator) = child.child_by_field_name("declarator") {
-                    if let Some(n) = find_descendant_by_kind(&declarator, "field_identifier") {
-                        let is_method = find_descendant_by_kind(&declarator, "function_declarator")
-                            .and_then(|f| f.child_by_field_name("declarator"))
-                            .is_some_and(|d| d.kind() != "parenthesized_declarator");
-                        if !is_method {
-                            out.push(node_text(source, &n).to_string());
-                        }
-                        continue;
-                    }
+                // C/C++: one declaration can name several fields (`int x, y;`), each under
+                // pointer/array declarators. Method declarations are skipped; function
+                // pointers `(*cb)(int)` are fields.
+                let mut cursor = child.walk();
+                let c_fields: Vec<_> = child
+                    .children_by_field_name("declarator", &mut cursor)
+                    .filter_map(|d| {
+                        find_descendant_by_kind(&d, "field_identifier").map(|name| (d, name))
+                    })
+                    .collect();
+                if !c_fields.is_empty() {
+                    out.extend(
+                        c_fields
+                            .into_iter()
+                            .filter(|(declarator, _)| !is_method_declarator(declarator))
+                            .map(|(_, name)| node_text(source, &name).to_string()),
+                    );
+                    continue;
                 }
                 // Default: direct child lookup (Rust, Go, etc.)
                 let name_kinds = &["field_identifier", "identifier", "type_identifier"];
@@ -643,6 +656,12 @@ fn collect_field_names(
             }
         }
     }
+}
+
+fn is_method_declarator(declarator: &tree_sitter::Node) -> bool {
+    find_descendant_by_kind(declarator, "function_declarator")
+        .and_then(|f| f.child_by_field_name("declarator"))
+        .is_some_and(|d| d.kind() != "parenthesized_declarator")
 }
 
 fn find_child_by_kind<'a>(
@@ -821,11 +840,16 @@ fn innermost_qualified(node: tree_sitter::Node) -> Option<tree_sitter::Node> {
     innermost_qualified(name).or(Some(node))
 }
 
-/// Calls and definitions are matched by bare name, so `Foo::out` resolves to `out`.
+/// Calls and definitions are matched by bare name, so `Foo::out` resolves to `out`
+/// and `ns::foo<int>` to `foo`.
 fn leaf_name_node(node: tree_sitter::Node) -> tree_sitter::Node {
-    innermost_qualified(node)
+    let leaf = innermost_qualified(node)
         .and_then(|q| q.child_by_field_name("name"))
-        .unwrap_or(node)
+        .unwrap_or(node);
+    match leaf.kind() {
+        "template_function" => leaf.child_by_field_name("name").unwrap_or(leaf),
+        _ => leaf,
+    }
 }
 
 fn qualified_scope(node: tree_sitter::Node, source: &str) -> Option<String> {

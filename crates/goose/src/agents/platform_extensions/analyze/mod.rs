@@ -463,6 +463,58 @@ void run() { Foo f(a, b); f.get(1); helper(2); }
     }
 
     #[tokio::test]
+    async fn c_callers_link_to_header_definitions() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("util.h"),
+            "static inline int helper(int a) { return a; }\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("main.c"),
+            "#include \"util.h\"\nint main(void) { return helper(1); }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("helper"));
+        let out = text(&result);
+
+        assert!(out.contains("util.h:helper:1 → main.c:main:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_qualified_template_call_links_to_definition() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("t.cpp"),
+            "namespace ns { template <typename T> T foo(T v) { return v; } }\nvoid run() { ns::foo<int>(1); }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("foo"));
+        let out = text(&result);
+
+        assert!(out.contains("t.cpp:foo:1 → t.cpp:run:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_multi_field_declarations_and_trailing_return() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("t.cpp");
+        fs::write(
+            &file,
+            "struct S { int x, y; int *p, **q; };\nauto load() -> Result { return {}; }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(&file, None);
+        let out = text(&result);
+
+        assert!(out.contains("S:1{x,y,p,q}"), "{out}");
+        assert!(out.contains("load()->Result:2"), "{out}");
+    }
+
+    #[tokio::test]
     async fn c_semantic_mode() {
         let tmp = tempdir().unwrap();
         let file = tmp.path().join("demo.c");
