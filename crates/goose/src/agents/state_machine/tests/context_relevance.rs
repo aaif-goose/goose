@@ -8,7 +8,7 @@ use goose_providers::decision::{
 };
 use goose_providers::errors::ProviderError;
 use rmcp::model::{
-    Annotations, CallToolRequestParams, CallToolResult, ContentBlock, Role, TextContent,
+    Annotations, CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, TextContent,
 };
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
@@ -747,6 +747,79 @@ fn request_preserves_tool_error_status_in_candidates_and_recent_evidence() {
 }
 
 #[test]
+fn recent_protocol_errors_and_media_only_results_stay_visible() {
+    let mut messages = vec![Message::user().with_text("old goal")];
+    messages.extend(tool_pair("old", &old_output()));
+    let cutoff = messages.len();
+    let [denied_request, _] = tool_pair("denied", "");
+    messages.extend([
+        denied_request,
+        Message::user().with_tool_response(
+            "denied",
+            Err(ErrorData::internal_error("hook denied the write", None)),
+        ),
+    ]);
+    let [image_request, _] = tool_pair("screenshot", "");
+    messages.extend([
+        image_request,
+        Message::user().with_tool_response(
+            "screenshot",
+            Ok(CallToolResult::success(vec![ContentBlock::image(
+                "IMAGE_SENTINEL",
+                "image/png",
+            )])),
+        ),
+    ]);
+    messages.push(Message::user().with_text("current goal"));
+
+    let request = ContextRelevanceOperation::request(
+        &Conversation::new_unvalidated(messages),
+        cutoff,
+        "current goal".into(),
+        false,
+    );
+
+    let recent = request.state["recent_evidence_not_eligible_for_omission"]
+        .as_array()
+        .unwrap();
+    assert_eq!(recent.len(), 2);
+    assert_eq!(recent[0]["excerpt"], "hook denied the write");
+    assert_eq!(recent[0]["is_error"], true);
+    assert_eq!(recent[0]["truncated"], false);
+    assert_eq!(recent[1]["excerpt"], "");
+    assert_eq!(recent[1]["is_error"], false);
+    assert_eq!(recent[1]["truncated"], true);
+    assert_eq!(request.state["recent_evidence_omitted"], 0);
+    assert!(!serde_json::to_string(&request)
+        .unwrap()
+        .contains("IMAGE_SENTINEL"));
+}
+
+#[test]
+fn old_protocol_errors_are_judged_as_errors() {
+    let mut messages = vec![Message::user().with_text("old goal")];
+    let [request, _] = tool_pair("failed", "");
+    messages.extend([
+        request,
+        Message::user()
+            .with_tool_response("failed", Err(ErrorData::internal_error(old_output(), None))),
+    ]);
+    let cutoff = messages.len();
+    messages.push(Message::user().with_text("current goal"));
+
+    let request = ContextRelevanceOperation::request(
+        &Conversation::new_unvalidated(messages),
+        cutoff,
+        "current goal".into(),
+        false,
+    );
+
+    let candidate = &request.state["candidates"][0];
+    assert_eq!(candidate["tool_call_ids"], json!(["failed"]));
+    assert_eq!(candidate["is_error"], true);
+}
+
+#[test]
 fn request_keeps_the_newest_candidates_within_excerpt_limits() {
     let mut messages = vec![Message::user().with_text("old goal")];
     for index in 0..15 {
@@ -776,6 +849,7 @@ fn request_keeps_the_newest_candidates_within_excerpt_limits() {
         .as_array()
         .unwrap();
     assert_eq!(recent.len(), 8);
+    assert_eq!(request.state["recent_evidence_omitted"], 2);
     let excerpt_chars = |entry: &Value| entry["excerpt"].as_str().unwrap().chars().count();
     assert!(candidates.iter().all(|entry| excerpt_chars(entry) == 800));
     assert!(recent.iter().all(|entry| excerpt_chars(entry) == 300));
