@@ -770,6 +770,11 @@ fn recent_protocol_errors_and_media_only_results_stay_visible() {
             )])),
         ),
     ]);
+    let [empty_request, _] = tool_pair("no-matches", "");
+    messages.extend([
+        empty_request,
+        Message::user().with_tool_response("no-matches", Ok(CallToolResult::success(vec![]))),
+    ]);
     messages.push(Message::user().with_text("current goal"));
 
     let request = ContextRelevanceOperation::request(
@@ -782,7 +787,10 @@ fn recent_protocol_errors_and_media_only_results_stay_visible() {
     let recent = request.state["recent_evidence_not_eligible_for_omission"]
         .as_array()
         .unwrap();
-    assert_eq!(recent.len(), 2);
+    assert_eq!(recent.len(), 3);
+    assert_eq!(recent[2]["excerpt"], "(empty result)");
+    assert_eq!(recent[2]["is_error"], false);
+    assert_eq!(recent[2]["truncated"], false);
     assert_eq!(recent[0]["excerpt"], "hook denied the write");
     assert_eq!(recent[0]["is_error"], true);
     assert_eq!(recent[0]["truncated"], false);

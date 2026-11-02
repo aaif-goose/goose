@@ -355,21 +355,25 @@ impl ContextRelevanceOperation {
             .iter()
             .enumerate()
             .filter_map(|(offset, message)| {
-                if !message.is_agent_visible() {
+                if !message.is_agent_visible() || !message.is_tool_response() {
                     return None;
                 }
+                // Every protected result stays visible, including empty,
+                // media-only and error results. An empty success reads as
+                // it does in the main inference request.
                 let excerpt = Self::tool_excerpt(message, RECENT_EVIDENCE_CHARS);
-                // Media-only results and empty errors stay visible as
-                // incomplete evidence rather than disappearing.
-                (excerpt.chars > 0 || excerpt.has_non_text || excerpt.is_error).then(|| {
-                    let index = cutoff + offset;
-                    json!({
-                        "age_messages": conversation.len() - 1 - index,
-                        "is_error": excerpt.is_error,
-                        "excerpt": excerpt.text,
-                        "truncated": excerpt.truncated || excerpt.has_non_text,
-                    })
-                })
+                let text = if excerpt.chars == 0 && !excerpt.has_non_text && !excerpt.is_error {
+                    "(empty result)".to_string()
+                } else {
+                    excerpt.text
+                };
+                let index = cutoff + offset;
+                Some(json!({
+                    "age_messages": conversation.len() - 1 - index,
+                    "is_error": excerpt.is_error,
+                    "excerpt": text,
+                    "truncated": excerpt.truncated || excerpt.has_non_text,
+                }))
             })
             .collect();
         let recent_evidence_omitted = recent_evidence.len().saturating_sub(MAX_RECENT_EVIDENCE);
