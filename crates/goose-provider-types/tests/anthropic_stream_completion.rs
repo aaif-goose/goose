@@ -228,9 +228,11 @@ async fn closed_tool_followed_by_error_is_not_executable() {
 async fn completed_tool_waits_for_message_stop_and_is_emitted_once() {
     let text_after = r#"data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"Done"}}"#;
     let stream = response_to_streaming_message(futures::stream::iter(
-        [START, TEXT, TOOL_START, TOOL_ARGS, TOOL_STOP, text_after, DELTA, STOP]
-            .into_iter()
-            .map(|line| Ok(line.to_string())),
+        [
+            START, TEXT, TOOL_START, TOOL_ARGS, TOOL_STOP, text_after, DELTA, STOP,
+        ]
+        .into_iter()
+        .map(|line| Ok(line.to_string())),
     ));
     futures::pin_mut!(stream);
     let (message, usage) = stream.next().await.unwrap().unwrap();
