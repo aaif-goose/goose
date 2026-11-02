@@ -443,7 +443,7 @@ impl StateMachineServices {
     }
 
     /// Closes the session for one connection; the session is released when that was the
-    /// last one. Returns whether it was.
+    /// last one and no other connection has a pending prompt. Returns whether it was released.
     pub async fn detach_session(&self, session_id: &str, connection: u64) -> bool {
         let _lifetime = self.runtime.lock_lifetime(session_id).await;
         match self.runtime.detach(session_id, connection) {
@@ -453,8 +453,16 @@ impl StateMachineServices {
                 false
             }
             None => {
-                self.release(session_id).await;
-                true
+                if self
+                    .runtime
+                    .runs
+                    .cancel_for_release(session_id, Some(connection))
+                {
+                    self.release_resources(session_id).await;
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -495,12 +503,13 @@ impl StateMachineServices {
     pub(crate) fn reserve_prompt_run(
         &self,
         session_id: &str,
+        connection: u64,
         run_id: String,
         cancel_token: CancellationToken,
     ) -> std::result::Result<(), super::active_run::StartRunError> {
         self.runtime
             .runs
-            .start_prompt_run(session_id, run_id, cancel_token)
+            .reserve_prompt_run(session_id, connection, run_id, cancel_token)
     }
 
     pub async fn touch_session(&self, session_id: &str) {
@@ -538,7 +547,8 @@ impl StateMachineServices {
     /// their next request.
     pub async fn release_session(&self, session_id: &str) {
         let _lifetime = self.runtime.lock_lifetime(session_id).await;
-        self.release(session_id).await;
+        self.runtime.runs.cancel_agent_run(session_id);
+        self.release_resources(session_id).await;
     }
 
     /// Releases the session unless a connection has it open.
@@ -550,6 +560,12 @@ impl StateMachineServices {
     }
 
     async fn release(&self, session_id: &str) {
+        if self.runtime.runs.cancel_for_release(session_id, None) {
+            self.release_resources(session_id).await;
+        }
+    }
+
+    async fn release_resources(&self, session_id: &str) {
         self.runtime.forget(session_id);
         self.session_manager
             .action_required()
@@ -1415,6 +1431,7 @@ mod tests {
         use goose_test_support::mcp::McpFixtureServer;
         use rmcp::ServiceExt;
         use tokio::sync::Barrier;
+        use tokio_util::sync::CancellationToken;
 
         use crate::agents::extension::ExtensionConfig;
         use crate::agents::{GoosePlatform, StateMachineServices, StateMachineServicesConfig};
@@ -1544,6 +1561,21 @@ mod tests {
                 client,
                 session_names: None,
             }
+        }
+
+        #[tokio::test]
+        async fn release_cleanup_does_not_cancel_a_later_pending_prompt() {
+            let temp_dir = TempDir::new().unwrap();
+            let services = test_services(&temp_dir, 100);
+            let _lifetime = services.runtime.lock_lifetime("s").await;
+            assert!(services.runtime.runs.cancel_for_release("s", Some(1)));
+            let token = CancellationToken::new();
+            assert!(services
+                .reserve_prompt_run("s", 2, "pending".into(), token.clone())
+                .is_ok());
+            services.runtime.forget("s");
+            assert!(!token.is_cancelled());
+            assert!(services.runtime.runs.remove_agent_run("s", "pending"));
         }
 
         #[tokio::test]

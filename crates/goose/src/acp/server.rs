@@ -1850,7 +1850,12 @@ impl AcpConnection {
             cancel_token: CancellationToken::new(),
         };
         self.services
-            .reserve_prompt_run(session_id, run.run_id.clone(), run.cancel_token.clone())
+            .reserve_prompt_run(
+                session_id,
+                self.connection_id,
+                run.run_id.clone(),
+                run.cancel_token.clone(),
+            )
             .map_err(|error| match error {
                 StartRunError::AgentRunExists { run_id } => {
                     let message = format!(

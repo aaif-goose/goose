@@ -100,6 +100,7 @@ impl SessionRuntime {
         let connections = attachments.entry(session_id.to_string()).or_default();
         connections.shift_remove(&connection);
         connections.insert(connection, attachment);
+        self.runs.attach_prompt_run(session_id, connection);
     }
 
     pub fn is_attached(&self, session_id: &str, connection: u64) -> bool {
@@ -193,7 +194,7 @@ impl SessionRuntime {
         self.confirmations.has_active_turn(session_id) || self.runs.is_active(session_id)
     }
 
-    /// Drops everything kept for the session and cancels its run.
+    /// Drops everything kept for the session after its release was admitted.
     pub(super) fn forget(&self, session_id: &str) {
         self.resident
             .lock()
@@ -205,7 +206,6 @@ impl SessionRuntime {
             .remove(session_id);
         self.discard_pending_steers(session_id);
         self.confirmations.release(session_id);
-        self.runs.cancel_agent_run(session_id);
     }
 }
 
