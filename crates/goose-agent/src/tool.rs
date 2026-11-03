@@ -20,7 +20,7 @@ use crate::operation::{
     OperationResult,
 };
 use crate::post_tool_call_hook::PostToolCallHook;
-use crate::tool_call_state::{tool_calls, ToolCallState};
+use crate::tool_call_state::tool_calls;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 fn empty_input_schema() -> Arc<JsonObject> {
@@ -343,10 +343,7 @@ where
         let turn = messages_since_kickoff(conversation)?;
         let pending = tool_calls(turn)
             .into_iter()
-            .filter(|(request, state)| {
-                !request.was_executed_externally()
-                    && matches!(state, ToolCallState::Unchecked | ToolCallState::Executable)
-            })
+            .filter(|(request, state)| !request.was_executed_externally() && state.is_runnable())
             .map(|(request, _)| request.clone())
             .collect::<Vec<_>>();
         if pending.is_empty() {

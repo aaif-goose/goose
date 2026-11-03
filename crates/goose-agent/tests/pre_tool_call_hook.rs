@@ -4,14 +4,16 @@ use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::{
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
-    pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook, PreToolCallHookOperation},
-    tool_call_state::{APPROVED_KEY, EXECUTABLE_KEY},
+    pre_tool_call_hook::{
+        PreToolCallDecision, PreToolCallHook, PreToolCallHookOperation, PRE_HOOK_ALLOWED_KEY,
+    },
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
-    message::{Message, MessageContent, ToolRequest},
+    message::{Message, MessageContent, ToolRequest, TOOL_META_EXTERNAL_DISPATCH_KEY},
     Conversation,
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
+use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -68,7 +70,7 @@ impl PreToolCallHook<()> for FakeHook {
 
 struct Outcome {
     status: Option<RunStatus>,
-    marks: Vec<(String, bool)>,
+    marks: Vec<(String, serde_json::Value)>,
     appended: Vec<Message>,
 }
 
@@ -100,9 +102,7 @@ async fn run(
                 ConversationEffect::PatchToolRequestMeta {
                     tool_call_id,
                     patch,
-                } => outcome
-                    .marks
-                    .push((tool_call_id, patch[EXECUTABLE_KEY].as_bool().unwrap())),
+                } => outcome.marks.push((tool_call_id, patch)),
                 _ => panic!("unexpected effect"),
             }
         }
@@ -136,23 +136,23 @@ fn calls(ids: &[&str]) -> Message {
     })
 }
 
-fn approved_calls(ids: &[&str]) -> Message {
+fn ready_calls(ids: &[&str]) -> Message {
     ids.iter().fold(Message::assistant(), |message, id| {
         message.with_tool_request_with_metadata(
             *id,
             Ok(CallToolRequestParams::new(id.to_string())),
             None,
-            Some(json!({ APPROVED_KEY: true, EXECUTABLE_KEY: false })),
+            Some(json!({ EXECUTABLE_KEY: true })),
         )
     })
 }
 
-fn marked_call(id: &str, executable: bool) -> Message {
+fn marked_call(id: &str, meta: serde_json::Value) -> Message {
     Message::assistant().with_tool_request_with_metadata(
         id,
         Ok(CallToolRequestParams::new(id.to_string())),
         None,
-        Some(json!({ EXECUTABLE_KEY: executable })),
+        Some(meta),
     )
 }
 
@@ -163,34 +163,59 @@ fn tool_response(id: &str) -> Message {
     )
 }
 
-#[tokio::test]
-async fn allow_marks_one_approved_call_ready_per_pass() -> Result<()> {
-    let hook = FakeHook::new(&[]);
-    let operation = PreToolCallHookOperation::new().with_hook(hook.clone());
+fn allowed(id: &str) -> (String, serde_json::Value) {
+    (id.to_string(), json!({ PRE_HOOK_ALLOWED_KEY: true }))
+}
 
-    let outcome = run(&operation, vec![kickoff(), approved_calls(&["a", "b"])]).await?;
+#[tokio::test]
+async fn allow_marks_one_ready_call_allowed_per_pass() -> Result<()> {
+    let hook = FakeHook::new(&[]);
+    let operation = PreToolCallHookOperation::new(hook.clone());
+
+    let outcome = run(&operation, vec![kickoff(), ready_calls(&["a", "b"])]).await?;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(outcome.marks, vec![("a".to_string(), true)]);
+    assert_eq!(outcome.marks, vec![allowed("a")]);
     assert_eq!(hook.called(), vec!["a"]);
 
     let outcome = run(
         &operation,
-        vec![kickoff(), marked_call("a", true), approved_calls(&["b"])],
+        vec![
+            kickoff(),
+            marked_call(
+                "a",
+                json!({ EXECUTABLE_KEY: true, PRE_HOOK_ALLOWED_KEY: true }),
+            ),
+            ready_calls(&["b"]),
+        ],
     )
     .await?;
 
-    assert_eq!(outcome.marks, vec![("b".to_string(), true)]);
+    assert_eq!(outcome.marks, vec![allowed("b")]);
     assert_eq!(hook.called(), vec!["a", "b"]);
     Ok(())
 }
 
 #[tokio::test]
-async fn deny_responds_with_the_reason_and_leaves_no_mark() -> Result<()> {
-    let operation =
-        PreToolCallHookOperation::new().with_hook(FakeHook::new(&[("a", Reply::Deny("no"))]));
+async fn checks_calls_without_approval() -> Result<()> {
+    let hook = FakeHook::new(&[]);
 
-    let outcome = run(&operation, vec![kickoff(), approved_calls(&["a"])]).await?;
+    let outcome = run(
+        &PreToolCallHookOperation::new(hook.clone()),
+        vec![kickoff(), calls(&["a"])],
+    )
+    .await?;
+
+    assert_eq!(outcome.marks, vec![allowed("a")]);
+    assert_eq!(hook.called(), vec!["a"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn deny_responds_with_the_reason_and_leaves_no_mark() -> Result<()> {
+    let operation = PreToolCallHookOperation::new(FakeHook::new(&[("a", Reply::Deny("no"))]));
+
+    let outcome = run(&operation, vec![kickoff(), ready_calls(&["a"])]).await?;
 
     assert!(outcome.marks.is_empty());
     assert_eq!(
@@ -201,32 +226,21 @@ async fn deny_responds_with_the_reason_and_leaves_no_mark() -> Result<()> {
 }
 
 #[tokio::test]
-async fn without_a_hook_every_approved_call_is_marked_ready() -> Result<()> {
-    let outcome = run(
-        &PreToolCallHookOperation::new(),
-        vec![kickoff(), approved_calls(&["a", "b"])],
-    )
-    .await?;
-
-    assert_eq!(
-        outcome.marks,
-        vec![("a".to_string(), true), ("b".to_string(), true)]
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn ignores_calls_that_are_not_approved() -> Result<()> {
+async fn skips_calls_that_cannot_run_or_were_already_allowed() -> Result<()> {
     let hook = FakeHook::new(&[]);
 
     let outcome = run(
-        &PreToolCallHookOperation::new().with_hook(hook.clone()),
+        &PreToolCallHookOperation::new(hook.clone()),
         vec![
             kickoff(),
-            calls(&["unchecked"]),
-            marked_call("waiting", false),
-            marked_call("ready", true),
-            approved_calls(&["done"]),
+            marked_call("waiting", json!({ EXECUTABLE_KEY: false })),
+            marked_call("allowed", json!({ PRE_HOOK_ALLOWED_KEY: true })),
+            marked_call("external", json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
+            Message::assistant().with_tool_request(
+                "bad",
+                Err(ErrorData::invalid_params("unreadable arguments", None)),
+            ),
+            ready_calls(&["done"]),
             tool_response("done"),
         ],
     )
@@ -239,9 +253,9 @@ async fn ignores_calls_that_are_not_approved() -> Result<()> {
 
 #[tokio::test]
 async fn a_hook_error_ends_the_run() {
-    let operation = PreToolCallHookOperation::new().with_hook(FakeHook::new(&[("a", Reply::Fail)]));
+    let operation = PreToolCallHookOperation::new(FakeHook::new(&[("a", Reply::Fail)]));
 
-    let error = run(&operation, vec![kickoff(), approved_calls(&["a"])])
+    let error = run(&operation, vec![kickoff(), ready_calls(&["a"])])
         .await
         .err()
         .unwrap();

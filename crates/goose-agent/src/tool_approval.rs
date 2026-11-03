@@ -12,9 +12,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
     OperationResult,
 };
-use crate::tool_call_state::{
-    add_error_response, mark_approved, mark_executable, tool_calls, ToolCallState,
-};
+use crate::tool_call_state::{add_error_response, mark_executable, tool_calls, ToolCallState};
 
 pub const DEFAULT_DECLINED_MESSAGE: &str = "The user declined to run this tool.";
 
@@ -84,7 +82,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
             .on_confirmation(session, request, permission)
             .await?;
         if matches!(permission, Permission::AllowOnce | Permission::AlwaysAllow) {
-            return applied([E::from(mark_approved(&request.id))]);
+            return applied([E::from(mark_executable(&request.id, true))]);
         }
         let mut tool_responses = Message::user();
         add_error_response(&mut tool_responses, request, &self.declined_message);
@@ -116,7 +114,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
         let mut tool_responses = Message::user();
         for ((request, call), decision) in unchecked.into_iter().zip(decisions) {
             match decision {
-                ApprovalDecision::Allow => effects.push(mark_approved(&request.id)),
+                ApprovalDecision::Allow => effects.push(mark_executable(&request.id, true)),
                 ApprovalDecision::Deny { reason } => {
                     add_error_response(&mut tool_responses, request, &reason)
                 }

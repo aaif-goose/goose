@@ -10,7 +10,9 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
     OperationResult,
 };
-use crate::tool_call_state::{add_error_response, mark_executable, tool_calls, ToolCallState};
+use crate::tool_call_state::{add_error_response, tool_calls, tool_meta_flag};
+
+pub const PRE_HOOK_ALLOWED_KEY: &str = "goose.pre_hook_allowed";
 
 #[derive(Debug)]
 pub enum PreToolCallDecision {
@@ -30,23 +32,12 @@ pub trait PreToolCallHook<S>: MaybeSend + MaybeSync {
 }
 
 pub struct PreToolCallHookOperation<'a, S> {
-    hook: Option<Arc<dyn PreToolCallHook<S> + 'a>>,
+    hook: Arc<dyn PreToolCallHook<S> + 'a>,
 }
 
 impl<'a, S> PreToolCallHookOperation<'a, S> {
-    pub fn new() -> Self {
-        Self { hook: None }
-    }
-
-    pub fn with_hook(mut self, hook: Arc<dyn PreToolCallHook<S> + 'a>) -> Self {
-        self.hook = Some(hook);
-        self
-    }
-}
-
-impl<S> Default for PreToolCallHookOperation<'_, S> {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(hook: Arc<dyn PreToolCallHook<S> + 'a>) -> Self {
+        Self { hook }
     }
 }
 
@@ -67,26 +58,29 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let mut approved = tool_calls(messages_since_kickoff(conversation)?)
+        let Some(request) = tool_calls(messages_since_kickoff(conversation)?)
             .into_iter()
-            .filter(|(_, state)| *state == ToolCallState::Approved)
-            .map(|(request, _)| request);
-
-        let Some(hook) = &self.hook else {
-            let effects: Vec<_> = approved
-                .map(|request| E::from(mark_executable(&request.id, true)))
-                .collect();
-            if effects.is_empty() {
-                return not_applicable();
-            }
-            return applied(effects);
-        };
-
-        let Some(request) = approved.next() else {
+            .find(|(request, state)| {
+                state.is_runnable()
+                    && request.tool_call.is_ok()
+                    && !request.was_executed_externally()
+                    && tool_meta_flag(request, PRE_HOOK_ALLOWED_KEY) != Some(true)
+            })
+            .map(|(request, _)| request)
+        else {
             return not_applicable();
         };
-        match hook.before_call(session, conversation, request).await? {
-            PreToolCallDecision::Allow => applied([E::from(mark_executable(&request.id, true))]),
+        match self
+            .hook
+            .before_call(session, conversation, request)
+            .await?
+        {
+            PreToolCallDecision::Allow => {
+                applied([E::from(ConversationEffect::PatchToolRequestMeta {
+                    tool_call_id: request.id.clone(),
+                    patch: serde_json::json!({ PRE_HOOK_ALLOWED_KEY: true }),
+                })])
+            }
             PreToolCallDecision::Deny { reason } => {
                 let mut tool_responses = Message::user();
                 add_error_response(&mut tool_responses, request, &reason);

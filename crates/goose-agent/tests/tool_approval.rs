@@ -9,7 +9,7 @@ use goose_agent::{
         confirmation_response_message, ApprovalDecision, ToolApproval, ToolApprovalOperation,
         DEFAULT_DECLINED_MESSAGE,
     },
-    tool_call_state::{APPROVED_KEY, EXECUTABLE_KEY},
+    tool_call_state::EXECUTABLE_KEY,
 };
 use goose_provider_types::conversation::{
     message::{
@@ -228,28 +228,16 @@ fn tool_response(id: &str) -> Message {
     )
 }
 
-fn approved(id: &str) -> (String, serde_json::Value) {
-    (
-        id.to_string(),
-        json!({ APPROVED_KEY: true, EXECUTABLE_KEY: false }),
-    )
+fn ready(id: &str) -> (String, serde_json::Value) {
+    (id.to_string(), json!({ EXECUTABLE_KEY: true }))
 }
 
 fn waiting(id: &str) -> (String, serde_json::Value) {
     (id.to_string(), json!({ EXECUTABLE_KEY: false }))
 }
 
-fn approved_call(id: &str) -> Message {
-    Message::assistant().with_tool_request_with_metadata(
-        id,
-        Ok(CallToolRequestParams::new(id.to_string())),
-        None,
-        Some(json!({ APPROVED_KEY: true, EXECUTABLE_KEY: false })),
-    )
-}
-
 #[tokio::test]
-async fn allow_marks_the_call_approved_but_not_ready_to_run() -> Result<()> {
+async fn allow_marks_the_call_ready_to_run() -> Result<()> {
     let approval = FakeApproval::new(&[]);
 
     let outcome = run(
@@ -259,7 +247,7 @@ async fn allow_marks_the_call_approved_but_not_ready_to_run() -> Result<()> {
     .await?;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(outcome.marks, vec![approved("a")]);
+    assert_eq!(outcome.marks, vec![ready("a")]);
     assert!(outcome.appended.is_empty());
     assert_eq!(approval.checked(), vec![vec!["a"]]);
     Ok(())
@@ -319,7 +307,7 @@ async fn checks_a_mixed_batch_in_one_call() -> Result<()> {
     .await?;
 
     assert_eq!(outcome.status, Some(RunStatus::Continuing));
-    assert_eq!(outcome.marks, vec![approved("a"), waiting("c")]);
+    assert_eq!(outcome.marks, vec![ready("a"), waiting("c")]);
     assert_eq!(
         outcome.responses(),
         vec![("b".to_string(), "no".to_string())]
@@ -330,7 +318,7 @@ async fn checks_a_mixed_batch_in_one_call() -> Result<()> {
 }
 
 #[tokio::test]
-async fn leaves_waiting_approved_and_ready_calls_alone() -> Result<()> {
+async fn leaves_waiting_and_ready_calls_alone() -> Result<()> {
     let approval = FakeApproval::new(&[]);
 
     let outcome = run(
@@ -339,7 +327,6 @@ async fn leaves_waiting_approved_and_ready_calls_alone() -> Result<()> {
             kickoff(),
             marked_call("waiting", false),
             confirmation_request("waiting"),
-            approved_call("approved"),
             marked_call("ready", true),
         ],
     )
@@ -351,7 +338,7 @@ async fn leaves_waiting_approved_and_ready_calls_alone() -> Result<()> {
 }
 
 #[tokio::test]
-async fn a_user_allow_tells_the_approval_once_and_marks_the_call_approved() -> Result<()> {
+async fn a_user_allow_tells_the_approval_once_and_marks_the_call_ready() -> Result<()> {
     let approval = FakeApproval::new(&[]);
     let operation = ToolApprovalOperation::new(approval.clone());
     let choice = click("c", Permission::AlwaysAllow);
@@ -370,7 +357,7 @@ async fn a_user_allow_tells_the_approval_once_and_marks_the_call_approved() -> R
     )
     .await?;
 
-    assert_eq!(outcome.marks, vec![approved("c")]);
+    assert_eq!(outcome.marks, vec![ready("c")]);
     assert_eq!(
         approval.told(),
         vec![("c".to_string(), Permission::AlwaysAllow)]
@@ -381,7 +368,7 @@ async fn a_user_allow_tells_the_approval_once_and_marks_the_call_approved() -> R
         &operation,
         vec![
             kickoff(),
-            approved_call("c"),
+            marked_call("c", true),
             confirmation_request("c"),
             click("c", Permission::AlwaysAllow),
         ],
@@ -412,7 +399,7 @@ async fn handles_one_user_answer_per_pass() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(outcome.marks, vec![approved("a")]);
+    assert_eq!(outcome.marks, vec![ready("a")]);
     assert!(outcome.responses().is_empty());
     assert_eq!(
         approval.told(),
@@ -423,7 +410,7 @@ async fn handles_one_user_answer_per_pass() -> Result<()> {
         &operation,
         vec![
             kickoff(),
-            approved_call("a"),
+            marked_call("a", true),
             marked_call("b", false),
             confirmation_request("a"),
             confirmation_request("b"),
@@ -464,7 +451,7 @@ async fn applies_a_user_answer_before_checking_new_calls() -> Result<()> {
     )
     .await?;
 
-    assert_eq!(outcome.marks, vec![approved("answered")]);
+    assert_eq!(outcome.marks, vec![ready("answered")]);
     assert!(approval.checked().is_empty());
     Ok(())
 }

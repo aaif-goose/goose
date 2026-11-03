@@ -73,12 +73,13 @@ Good to know:
   `with_deny_limit_per_turn`. To tell the user why the model stopped at the
   limit, set a message with `with_deny_limit_message`; it is shown and saved.
 
-Two operations decide whether each tool call may run. Register both, in this
-order, before every step that runs tools:
+Two operations decide whether each tool call may run. Each works alone, so
+register either or both. Put them before every step that runs tools, with
+approval first:
 
 ```rust
 ToolApprovalOperation::new(approval)
-PreToolCallHookOperation::new().with_hook(hook)
+PreToolCallHookOperation::new(hook)
 ```
 
 `ToolApprovalOperation` decides whether a call may run and can ask the user
@@ -86,7 +87,8 @@ first. Implement `ToolApproval<S>`. Its `check` gets every new call from the
 model's reply at once, so it can check them together, and returns one decision
 per call, in the same order. Each decision is one of:
 
-- `Allow` — the call is approved and goes on to the pre-tool hook.
+- `Allow` — the call may run. If there is a pre-tool hook, it checks the call
+  first.
 - `Deny` — the call doesn't run. The model gets `reason` as the call's error
   result.
 - `Ask` — the user is asked to confirm first. The confirmation request shows
@@ -97,26 +99,25 @@ per call, in the same order. Each decision is one of:
 When the user chooses, `on_confirmation` gets the choice once, so approval can
 remember "always allow" or "always deny". If the user declines, the call gets
 the declined message as its error result; change that text with
-`with_declined_message`. If the user allows, the call is approved. To approve
-every call, give it an approval whose `check` always returns `Allow`.
+`with_declined_message`. If the user allows, the call may run. To let every
+call run without asking, leave `ToolApprovalOperation` out.
 
-`PreToolCallHookOperation` runs the pre-tool hook on approved calls. It never
-runs for a call that is denied or declined, so it is the place for checks with
-side effects, such as running user scripts. Implement `PreToolCallHook<S>`. Its
-`before_call` returns one of:
+`PreToolCallHookOperation` runs the pre-tool hook on every call that is about to
+run. It never runs for a call that is denied, declined, or waiting for the
+user, so it is the place for checks with side effects, such as running user
+scripts. Implement `PreToolCallHook<S>`. Its `before_call` returns one of:
 
 - `Allow` — the call runs.
 - `Deny` — the call doesn't run. The model gets `reason` as its error result.
 - An error — the run ends with that error.
 
 It handles one call per pass, so each result is saved before the next hook
-runs. Without a hook, it lets every approved call run.
+runs.
 
 Good to know:
 
-- Register both operations. Without `PreToolCallHookOperation`, approved calls
-  never run; without `ToolApprovalOperation`, calls run without approval or the
-  hook.
+- Put `PreToolCallHookOperation` after `ToolApprovalOperation`. Otherwise the
+  hook can check a call before approval decides on it.
 - Put `UnhandledToolCallsOperation` after every step that runs tools. Allowed
   calls run while others wait for the user.
 - Show the confirmation request to the user only after it is saved, so the

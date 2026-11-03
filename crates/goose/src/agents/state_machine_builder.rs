@@ -82,12 +82,9 @@ pub(crate) fn build_state_machine(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(
-            PreToolCallHookOperation::new().with_hook(Arc::new(GoosePreToolHook::new(
-                hook_manager.clone(),
-                Arc::clone(&extension_lease),
-            ))),
-        ),
+        Arc::new(PreToolCallHookOperation::new(Arc::new(
+            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
+        ))),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),

@@ -9,13 +9,11 @@ use rmcp::model::{CallToolResult, ContentBlock};
 use crate::operation::ConversationEffect;
 
 pub const EXECUTABLE_KEY: &str = "goose.executable";
-pub const APPROVED_KEY: &str = "goose.approved";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ToolCallState<'a> {
     Responded(&'a ToolResponse),
     Unchecked,
-    Approved,
     Executable,
     Blocked,
     AwaitingUser,
@@ -25,6 +23,10 @@ pub(crate) enum ToolCallState<'a> {
 impl ToolCallState<'_> {
     pub(crate) fn is_open(&self) -> bool {
         !matches!(self, ToolCallState::Responded(_))
+    }
+
+    pub(crate) fn is_runnable(&self) -> bool {
+        matches!(self, ToolCallState::Unchecked | ToolCallState::Executable)
     }
 }
 
@@ -64,9 +66,6 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
             let state = match (tool_responses_by_id.get(id), request_executable(request)) {
                 (Some(response), _) => ToolCallState::Responded(response),
                 (None, Some(true)) => ToolCallState::Executable,
-                (None, _) if tool_meta_flag(request, APPROVED_KEY) == Some(true) => {
-                    ToolCallState::Approved
-                }
                 (None, None) => ToolCallState::Unchecked,
                 (None, Some(false)) if !confirmation_requests.contains(id) => {
                     ToolCallState::Blocked
@@ -81,7 +80,7 @@ pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallSta
         .collect()
 }
 
-fn tool_meta_flag(request: &ToolRequest, key: &str) -> Option<bool> {
+pub(crate) fn tool_meta_flag(request: &ToolRequest, key: &str) -> Option<bool> {
     request
         .tool_meta
         .as_ref()
@@ -97,13 +96,6 @@ pub(crate) fn mark_executable(tool_call_id: &str, executable: bool) -> Conversat
     ConversationEffect::PatchToolRequestMeta {
         tool_call_id: tool_call_id.to_string(),
         patch: serde_json::json!({ EXECUTABLE_KEY: executable }),
-    }
-}
-
-pub(crate) fn mark_approved(tool_call_id: &str) -> ConversationEffect {
-    ConversationEffect::PatchToolRequestMeta {
-        tool_call_id: tool_call_id.to_string(),
-        patch: serde_json::json!({ APPROVED_KEY: true, EXECUTABLE_KEY: false }),
     }
 }
 
