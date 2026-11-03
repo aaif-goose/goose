@@ -25,3 +25,7 @@ reason = "The reviewed dependents do not call the extraction helpers that create
 [[advisories.ignore]]
 id = "RUSTSEC-2026-0369"
 reason = "The reviewed dependents do not call the extraction helpers that apply permissions through symlinks."
+
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0429"
+reason = "The reviewed dependents do not call the extraction helper that sizes symlink targets from the declared entry size."
