@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 125
+    "model_count": 126
   },
   {
     "id": "abacus",
@@ -96,7 +96,7 @@
     "env": [
       "AIAND_API_KEY"
     ],
-    "model_count": 10
+    "model_count": 12
   },
   {
     "id": "aimlapi",
@@ -449,7 +449,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 107
+    "model_count": 108
   },
   {
     "id": "crossmodel",
@@ -516,7 +516,7 @@
     "env": [
       "DIGITALOCEAN_ACCESS_TOKEN"
     ],
-    "model_count": 83
+    "model_count": 84
   },
   {
     "id": "dinference",
@@ -571,7 +571,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 370
+    "model_count": 388
   },
   {
     "id": "empiriolabs",
@@ -713,6 +713,17 @@
     "doc": "https://experiments.hetzner.com/docs/inference",
     "env": [
       "HETZNER_API_KEY"
+    ],
+    "model_count": 2
+  },
+  {
+    "id": "hopper",
+    "display_name": "Hopper",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.withhopper.com/v1",
+    "doc": "https://withhopper.com/agents/deepseek-v4.1-flash-1017",
+    "env": [
+      "HOPPER_API_KEY"
     ],
     "model_count": 2
   },
@@ -902,7 +913,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 396
+    "model_count": 382
   },
   {
     "id": "kimi-code-plan-cn",
@@ -990,7 +1001,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 208
+    "model_count": 199
   },
   {
     "id": "llmgateway-providers",
@@ -1001,7 +1012,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 432
+    "model_count": 423
   },
   {
     "id": "llmtech",
@@ -1100,7 +1111,7 @@
     "env": [
       "MELIOUS_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 8
   },
   {
     "id": "meta",
@@ -1224,6 +1235,17 @@
     "model_count": 7
   },
   {
+    "id": "modular",
+    "display_name": "Modular",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.modular.com/v1",
+    "doc": "https://docs.modular.com/models",
+    "env": [
+      "MODULAR_API_KEY"
+    ],
+    "model_count": 4
+  },
+  {
     "id": "moonshotai",
     "display_name": "Moonshot AI",
     "npm": "@ai-sdk/openai-compatible",
@@ -1298,7 +1320,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 650
+    "model_count": 638
   },
   {
     "id": "nearai",
@@ -1309,7 +1331,7 @@
     "env": [
       "NEARAI_API_KEY"
     ],
-    "model_count": 57
+    "model_count": 60
   },
   {
     "id": "nebius",
@@ -1332,7 +1354,7 @@
       "NEON_AI_GATEWAY_BASE_URL",
       "NEON_AI_GATEWAY_TOKEN"
     ],
-    "model_count": 57
+    "model_count": 58
   },
   {
     "id": "neosmith",
@@ -1409,7 +1431,7 @@
     "env": [
       "OFOX_API_KEY"
     ],
-    "model_count": 148
+    "model_count": 150
   },
   {
     "id": "ollama-cloud",
@@ -1420,7 +1442,7 @@
     "env": [
       "OLLAMA_API_KEY"
     ],
-    "model_count": 23
+    "model_count": 25
   },
   {
     "id": "opencode",
@@ -1431,7 +1453,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 130
+    "model_count": 131
   },
   {
     "id": "opencode-go",
@@ -1750,7 +1772,7 @@
     "env": [
       "SILICONFLOW_CN_API_KEY"
     ],
-    "model_count": 40
+    "model_count": 45
   },
   {
     "id": "snowflake-cortex",
@@ -2059,7 +2081,7 @@
     "env": [
       "VIVGRID_API_KEY"
     ],
-    "model_count": 37
+    "model_count": 38
   },
   {
     "id": "volcengine",
@@ -2115,6 +2137,17 @@
       "WALLABY_API_KEY"
     ],
     "model_count": 1
+  },
+  {
+    "id": "wally",
+    "display_name": "Wally",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://inference.runanywhere.ai/v1",
+    "doc": "https://docs.runanywhere.ai/wally-cloud/api",
+    "env": [
+      "WALLY_API_KEY"
+    ],
+    "model_count": 8
   },
   {
     "id": "wandb",
