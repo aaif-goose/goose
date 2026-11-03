@@ -62,7 +62,8 @@ function sessionTurnBusy(sessionId: string): boolean {
     snapshot.chatState === ChatState.Thinking ||
     snapshot.chatState === ChatState.Compacting ||
     snapshot.pendingCancelPromptAttemptId !== null ||
-    Boolean(snapshot.activePromptAttemptId)
+    Boolean(snapshot.activePromptAttemptId) ||
+    Boolean(snapshot.activeRunId)
   );
 }
 
@@ -281,6 +282,7 @@ export function useChatSession({
     drainQueuedSubmits,
     acpSnapshot?.chatState,
     acpSnapshot?.activePromptAttemptId,
+    acpSnapshot?.activeRunId,
     acpSnapshot?.pendingCancelPromptAttemptId,
   ]);
 
