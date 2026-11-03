@@ -1,9 +1,24 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type TestSnapshot = {
+  session: { id: string };
+  messages: unknown[];
+  chatState: string;
+  pendingCancelPromptAttemptId: string | null;
+  activeRunId: string | null;
+  activePromptAttemptId: string | null;
+};
+
 const mocks = vi.hoisted(() => ({
-  snapshot: undefined as unknown,
-  submitMessage: vi.fn(),
+  snapshot: undefined as TestSnapshot | undefined,
+  submitMessage: vi.fn(() => {
+    if (mocks.snapshot) {
+      mocks.snapshot.activePromptAttemptId = 'attempt-1';
+      mocks.snapshot.chatState = 'streaming';
+    }
+    return Promise.resolve();
+  }),
   modelChangePending: false,
   listeners: new Set<() => void>(),
 }));
@@ -36,6 +51,7 @@ vi.mock('../components/ModelAndProviderContext', () => ({
   },
 }));
 
+import { clearDeferredSubmits } from './deferredSessionSubmits';
 import { useChatSession } from './useChatSession';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { ChatState } from '../types/chatState';
@@ -51,14 +67,29 @@ function assistantMessage(text: string): Message {
   };
 }
 
-function renderChatSession(messages: Message[]) {
-  mocks.snapshot = {
+function idleSnapshot(messages: Message[]) {
+  return {
     session: { id: 'sess-1' },
     messages,
     chatState: ChatState.Idle,
     pendingCancelPromptAttemptId: null,
     activeRunId: null,
+    activePromptAttemptId: null,
   };
+}
+
+function releaseTurn() {
+  if (!mocks.snapshot) {
+    throw new Error('snapshot missing');
+  }
+  mocks.snapshot.activePromptAttemptId = null;
+  mocks.snapshot.chatState = ChatState.Idle;
+}
+
+function renderChatSession(messages: Message[], resetSnapshot = true) {
+  if (resetSnapshot) {
+    mocks.snapshot = idleSnapshot(messages);
+  }
   return renderHook(() => useChatSession({ sessionId: 'sess-1', onStreamFinish: vi.fn() }), {
     wrapper: IntlTestWrapper,
   });
@@ -67,8 +98,16 @@ function renderChatSession(messages: Message[]) {
 describe('useChatSession handleSubmit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearDeferredSubmits();
     mocks.modelChangePending = false;
     mocks.listeners.clear();
+    mocks.submitMessage.mockImplementation(() => {
+      if (mocks.snapshot) {
+        mocks.snapshot.activePromptAttemptId = 'attempt-1';
+        mocks.snapshot.chatState = ChatState.Streaming;
+      }
+      return Promise.resolve();
+    });
   });
 
   it('does not send the last assistant message as a new prompt on an empty submit', async () => {
@@ -110,6 +149,82 @@ describe('useChatSession handleSubmit', () => {
       'sess-1',
       expect.objectContaining({
         content: [expect.objectContaining({ type: 'text', text: 'from recipe' })],
+      }),
+      expect.anything()
+    );
+  });
+
+  it('sends deferred submits one turn at a time', async () => {
+    mocks.modelChangePending = true;
+    const question = createUserMessage('Question');
+    const { result, rerender } = renderChatSession([question]);
+
+    await act(() => result.current.handleSubmit({ msg: 'first', images: [] }));
+    await act(() => result.current.handleSubmit({ msg: 'second', images: [] }));
+
+    mocks.modelChangePending = false;
+    await act(() => {
+      for (const listener of mocks.listeners) listener();
+    });
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'first' })],
+      }),
+      expect.anything()
+    );
+
+    rerender();
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+
+    releaseTurn();
+    rerender();
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(2);
+    expect(mocks.submitMessage).toHaveBeenLastCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'second' })],
+      }),
+      expect.anything()
+    );
+  });
+
+  it('keeps deferred submits when the chat hook remounts', async () => {
+    mocks.modelChangePending = true;
+    const question = createUserMessage('Question');
+    const first = renderChatSession([question]);
+
+    await act(() => first.result.current.handleSubmit({ msg: 'from recipe', images: [] }));
+    await act(() => first.result.current.handleSubmit({ msg: 'after remount', images: [] }));
+    first.unmount();
+
+    mocks.modelChangePending = false;
+    const second = renderChatSession([question]);
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'from recipe' })],
+      }),
+      expect.anything()
+    );
+
+    second.unmount();
+    const remountedDuringTurn = renderChatSession([question], false);
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+
+    releaseTurn();
+    remountedDuringTurn.rerender();
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(2);
+    expect(mocks.submitMessage).toHaveBeenLastCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'after remount' })],
       }),
       expect.anything()
     );
