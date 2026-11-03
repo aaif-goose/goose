@@ -578,6 +578,18 @@
     "environmentVariables": []
   },
   {
+    "id": "postel",
+    "name": "Postel",
+    "description": "Find viral posts in your niche, write your version in your own voice, and schedule it to X, LinkedIn, Bluesky and Mastodon",
+    "url": "https://www.postel.app/api/mcp",
+    "link": "https://github.com/robinfaraj/postel-mcp",
+    "installation_notes": "Hosted server; goose runs the OAuth sign-in on first use. Viral post research works without an account.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "prompts-chat-mcp",
     "name": "prompts.chat",
     "description": "Access thousands of AI prompts directly in your AI assistant",
