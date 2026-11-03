@@ -421,16 +421,27 @@ impl DatabricksV2Provider {
             let use_thinking_level = !Self::is_budget_thinking_gemini(&model_config.model_name);
             if let Some(object) = payload.as_object_mut() {
                 object.remove("stream_options");
-                if let Some(effort) = use_thinking_level
+                if let Some(mut effort) = use_thinking_level
                     .then(|| object.remove("reasoning_effort"))
                     .flatten()
                 {
+                    // Gemini 3 Pro has no medium level; match the native Gemini formatter.
+                    if effort == "medium"
+                        && Self::service_or_endpoint_name(&model_config.model_name)
+                            .contains("gemini-3-pro")
+                    {
+                        effort = Value::String("low".to_string());
+                    }
                     // Keep any `thinking_config` the user set in request params.
                     let thinking = object
                         .entry("thinking_config")
                         .or_insert_with(|| serde_json::json!({}));
                     if let Some(thinking) = thinking.as_object_mut() {
                         thinking.entry("thinking_level").or_insert(effort);
+                        // Without this the gateway stops streaming reasoning text.
+                        thinking
+                            .entry("include_thoughts")
+                            .or_insert(Value::Bool(true));
                     }
                 }
             }
@@ -1113,7 +1124,7 @@ mod tests {
                 .and(path("/ai-gateway/mlflow/v1/chat/completions"))
                 .and(body_partial_json(json!({
                     "model": model,
-                    "thinking_config": {"thinking_level": "high"}
+                    "thinking_config": {"thinking_level": "high", "include_thoughts": true}
                 })))
                 .respond_with(
                     ResponseTemplate::new(200)
@@ -1134,6 +1145,36 @@ mod tests {
             let requests = server.received_requests().await.unwrap();
             let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
             assert!(request.get("reasoning_effort").is_none());
+        }
+
+        #[test_case::test_case("system.ai.gemini-3-pro", "low" ; "gemini 3 pro")]
+        #[test_case::test_case("system.ai.gemini-3-1-pro", "medium" ; "gemini 3.1 pro")]
+        #[tokio::test]
+        async fn gemini_medium_effort_thinking_level(model: &str, level: &str) {
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model).with_thinking_effort(ThinkingEffort::Medium);
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should receive a thinking level");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(request["thinking_config"]["thinking_level"], json!(level));
         }
 
         #[tokio::test]
@@ -1191,7 +1232,7 @@ mod tests {
                 .with_thinking_effort(ThinkingEffort::High)
                 .with_merged_request_params(std::collections::HashMap::from([(
                     "thinking_config".to_string(),
-                    json!({"include_thoughts": true}),
+                    json!({"include_thoughts": false}),
                 )]));
             config.reasoning = Some(true);
             provider(server.uri())
@@ -1203,7 +1244,7 @@ mod tests {
             let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
             assert_eq!(
                 request["thinking_config"],
-                json!({"include_thoughts": true, "thinking_level": "high"})
+                json!({"include_thoughts": false, "thinking_level": "high"})
             );
             assert!(request.get("reasoning_effort").is_none());
         }
