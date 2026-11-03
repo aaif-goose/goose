@@ -21,6 +21,7 @@ activities:
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Validate capped and uncapped auto-compaction thresholds and Desktop editing
+  - Validate the opt-in context relevance shadow operation without TypeSafe calls
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -29,7 +30,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, context-relevance, advanced"
 
   - key: test_depth
     input_type: string
@@ -236,6 +237,31 @@ prompt: |
      requests can exceed the trigger between checks.
 
   Log command results and failures to: {{ workspace_dir }}/compaction.md
+  Do not modify source files or configuration to make these checks pass.
+  {% endif %}
+
+  {% if test_phases == "all" or "context-relevance" in test_phases %}
+  ## Context Relevance Shadow Validation
+
+  When running from a goose source checkout with the Rust toolchain:
+  1. Run `cargo test -p goose --lib context_relevance`. The tests use a scripted decision
+     provider and make no TypeSafe calls.
+  2. Verify the operation stays off unless `GOOSE_CONTEXT_RELEVANCE_SHADOW=true`, is skipped
+     for providers that manage their own context, and reports a setup error when the flag is
+     on but `TYPESAFE_API_KEY` is missing.
+  3. Verify it makes at most one decision call per turn, only above the compaction threshold,
+     and that compaction still runs afterward.
+  4. Verify the goal, tool arguments, and tool output it sends are capped and flagged when
+     incomplete, including goals with visible images or documents. Hidden content must not
+     be sent or mark an otherwise complete goal as incomplete.
+  5. Verify FIFO steers extend the original goal within one shared budget, the whole current
+     turn stays protected, and another steer or compaction replay cannot repeat an observation.
+  6. Verify persisted errors and response model names are capped, tool error status remains
+     explicit in decision evidence, and failures, timeouts, and invalid answers never propose
+     omission.
+  If the source checkout or Rust toolchain is unavailable, mark this phase as SKIPPED.
+
+  Log command results and failures to: {{ workspace_dir }}/context_relevance.md
   Do not modify source files or configuration to make these checks pass.
   {% endif %}
 
