@@ -71,6 +71,7 @@ interface ModelsBottomBarProps {
   onModelChanged: (override: { model: string; provider: string }) => void;
   sessionLoaded?: boolean;
   modelChangeLocked: boolean;
+  modelChangeLockedTitle?: string;
 }
 
 type ModelMenuModal = 'switch-model' | 'local-model-settings';
@@ -85,6 +86,7 @@ export default function ModelsBottomBar({
   onModelChanged,
   sessionLoaded,
   modelChangeLocked,
+  modelChangeLockedTitle,
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
@@ -107,6 +109,9 @@ export default function ModelsBottomBar({
   // click handler closes over goes stale while lookups are pending, so
   // re-check the ref (not the render-time prop) before mutating.
   const modelChangeLockedRef = useRef(modelChangeLocked);
+  const modelChangeInFlightRef = useRef(false);
+  const [modelChangeInFlight, setModelChangeInFlight] = useState(false);
+  const pickerLocked = modelChangeLocked || modelChangeInFlight;
   useEffect(() => {
     modelChangeLockedRef.current = modelChangeLocked;
   }, [modelChangeLocked]);
@@ -184,7 +189,7 @@ export default function ModelsBottomBar({
   };
 
   const openModalAfterMenuCloses = (modal: ModelMenuModal) => {
-    if (modelChangeLocked) return;
+    if (pickerLocked) return;
     pendingModalRef.current = modal;
     setIsModelMenuOpen(false);
   };
@@ -203,7 +208,7 @@ export default function ModelsBottomBar({
   };
 
   const handleRecentModelClick = async (recent: RecentModel) => {
-    if (modelChangeLockedRef.current) return;
+    if (modelChangeLockedRef.current || modelChangeInFlightRef.current) return;
 
     const previousModel = currentModel;
     const previousProvider = currentProvider;
@@ -221,16 +226,23 @@ export default function ModelsBottomBar({
       : { name: recent.model, provider: recent.provider };
     // A turn may have started while the lookups above were pending; the
     // in-flight turn keeps its original provider and model.
-    if (modelChangeLockedRef.current) return;
-    const success = await changeModel(sessionId, modelArg);
-    if (success) {
-      trackModelChanged(recent.provider, recent.model);
-      if (previousModel && previousProvider) {
-        const updated = addToRecentModels(recentModels, previousProvider, previousModel);
-        await window.electron.setSetting('recentModels', updated);
-        setRecentModels(updated);
+    if (modelChangeLockedRef.current || modelChangeInFlightRef.current) return;
+    modelChangeInFlightRef.current = true;
+    setModelChangeInFlight(true);
+    try {
+      const success = await changeModel(sessionId, modelArg);
+      if (success) {
+        trackModelChanged(recent.provider, recent.model);
+        if (previousModel && previousProvider) {
+          const updated = addToRecentModels(recentModels, previousProvider, previousModel);
+          await window.electron.setSetting('recentModels', updated);
+          setRecentModels(updated);
+        }
+        onModelChanged({ model: recent.model, provider: recent.provider });
       }
-      onModelChanged({ model: recent.model, provider: recent.provider });
+    } finally {
+      modelChangeInFlightRef.current = false;
+      setModelChangeInFlight(false);
     }
   };
 
@@ -241,18 +253,23 @@ export default function ModelsBottomBar({
   return (
     <div className="relative flex items-center" ref={dropdownRef}>
       <DropdownMenu
-        open={modelChangeLocked ? false : isModelMenuOpen}
+        open={pickerLocked ? false : isModelMenuOpen}
         onOpenChange={(open) => {
-          if (modelChangeLocked) return;
+          if (pickerLocked) return;
           setIsModelMenuOpen(open);
         }}
       >
         <DropdownMenuTrigger
-          disabled={modelChangeLocked}
-          aria-disabled={modelChangeLocked}
-          title={modelChangeLocked ? intl.formatMessage(i18n.modelChangeLocked) : undefined}
+          disabled={pickerLocked}
+          aria-disabled={pickerLocked}
+          title={
+            pickerLocked
+              ? (modelChangeLockedTitle ??
+                (modelChangeLocked ? intl.formatMessage(i18n.modelChangeLocked) : undefined))
+              : undefined
+          }
           className={`flex items-center max-w-[180px] md:max-w-[200px] lg:max-w-[380px] min-w-0 text-text-primary/70 transition-colors ${
-            modelChangeLocked
+            pickerLocked
               ? 'cursor-not-allowed opacity-60'
               : 'hover:cursor-pointer hover:text-text-primary'
           }`}
