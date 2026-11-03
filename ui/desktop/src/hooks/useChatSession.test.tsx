@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   snapshot: undefined as unknown,
   submitMessage: vi.fn(),
   modelChangePending: false,
+  listeners: new Set<() => void>(),
 }));
 
 vi.mock('../acp/chatSessionController', () => ({
@@ -27,6 +28,12 @@ vi.mock('../acp/acpConnection', () => ({
 
 vi.mock('../components/ModelAndProviderContext', () => ({
   isModelChangePendingNow: () => mocks.modelChangePending,
+  subscribeModelChangePending: (listener: () => void) => {
+    mocks.listeners.add(listener);
+    return () => {
+      mocks.listeners.delete(listener);
+    };
+  },
 }));
 
 import { useChatSession } from './useChatSession';
@@ -61,6 +68,7 @@ describe('useChatSession handleSubmit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.modelChangePending = false;
+    mocks.listeners.clear();
   });
 
   it('does not send the last assistant message as a new prompt on an empty submit', async () => {
@@ -82,6 +90,29 @@ describe('useChatSession handleSubmit', () => {
     await act(() => result.current.handleSubmit({ msg: 'next', images: [] }));
 
     expect(mocks.submitMessage).not.toHaveBeenCalled();
+  });
+
+  it('sends a submit that arrived during a model change once that change settles', async () => {
+    mocks.modelChangePending = true;
+    const question = createUserMessage('Question');
+    const { result } = renderChatSession([question]);
+
+    await act(() => result.current.handleSubmit({ msg: 'from recipe', images: [] }));
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+
+    mocks.modelChangePending = false;
+    await act(() => {
+      for (const listener of mocks.listeners) listener();
+    });
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'from recipe' })],
+      }),
+      expect.anything()
+    );
   });
 
   it('sends the last user message again on an empty submit', async () => {

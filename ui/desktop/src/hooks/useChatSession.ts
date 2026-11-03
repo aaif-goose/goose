@@ -25,7 +25,10 @@ import {
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
 import { isAcpRecovering } from '../acp/acpConnection';
-import { isModelChangePendingNow } from '../components/ModelAndProviderContext';
+import {
+  isModelChangePendingNow,
+  subscribeModelChangePending,
+} from '../components/ModelAndProviderContext';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -165,9 +168,15 @@ export function useChatSession({
     void retrySessionLoad();
   }, [retrySessionLoad]);
 
+  const deferredSubmitsRef = useRef<UserInput[]>([]);
+
   const handleSubmit = useCallback(
     async (input: UserInput) => {
-      if (isAcpRecovering() || isModelChangePendingNow()) {
+      if (isModelChangePendingNow()) {
+        deferredSubmitsRef.current.push(input);
+        return;
+      }
+      if (isAcpRecovering()) {
         return;
       }
 
@@ -221,6 +230,16 @@ export function useChatSession({
     },
     [getCurrentSnapshot, sessionId, submitToAcpSession]
   );
+
+  useEffect(() => {
+    return subscribeModelChangePending(() => {
+      if (isModelChangePendingNow() || deferredSubmitsRef.current.length === 0) return;
+      const queued = deferredSubmitsRef.current.splice(0);
+      for (const input of queued) {
+        void handleSubmit(input);
+      }
+    });
+  }, [handleSubmit]);
 
   const onSteerQueuedMessage = useCallback(
     async (input: UserInput): Promise<boolean> => {

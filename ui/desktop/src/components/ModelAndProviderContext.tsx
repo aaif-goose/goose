@@ -66,10 +66,22 @@ interface ModelAndProviderProviderProps {
 const ModelAndProviderContext = createContext<ModelAndProviderContextType | undefined>(undefined);
 
 let modelChangePendingCount = 0;
+const modelChangeListeners = new Set<() => void>();
 
 /** Readable before the next render, including from submit paths outside ChatInput. */
 export function isModelChangePendingNow(): boolean {
   return modelChangePendingCount > 0;
+}
+
+export function subscribeModelChangePending(listener: () => void): () => void {
+  modelChangeListeners.add(listener);
+  return () => {
+    modelChangeListeners.delete(listener);
+  };
+}
+
+function notifyModelChangePending() {
+  for (const listener of modelChangeListeners) listener();
 }
 
 export { i18n as modelAndProviderMessages };
@@ -109,6 +121,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
       let phase = 'agent';
       modelChangePendingCount += 1;
       setModelChangePending(true);
+      notifyModelChangePending();
 
       try {
         if (sessionId) {
@@ -155,6 +168,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
       } finally {
         modelChangePendingCount = Math.max(0, modelChangePendingCount - 1);
         setModelChangePending(modelChangePendingCount > 0);
+        notifyModelChangePending();
       }
     },
     [intl]
