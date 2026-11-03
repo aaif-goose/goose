@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Automatisch verdichten bei"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Jetzt verdichten"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Schwellenwert konnte nicht gespeichert werden: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Verstanden!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose hat die Aufgabe abgeschlossen."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Kontextfenster"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Diktierfehler"
@@ -1090,6 +1078,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Möchten Sie die Erweiterung {name} wirklich installieren? Befehl: {command}"
@@ -4136,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Speichern"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Immer"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Eingeklappt"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Das Nachdenken des Modells im Chat anzeigen. Bei „Eingeklappt“ bleibt es geschlossen, bis Sie es öffnen."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Nie"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Nachdenken anzeigen"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Skill hinzufügen"
   },
@@ -4679,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Besuchen Sie"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} von {limit} Tokens belegt. Anzeigen, was im Kontextfenster ist"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Jetzt verdichten"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Frei"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Der Kontextbericht konnte nicht geladen werden."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · Kontextfenster mit {limit} Tokens"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Aktualisieren"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Erneut versuchen"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Kontextfenster"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Token-Zahlen werden mit dem o200k-Tokenizer geschätzt."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "von {limit} Tokens · {percent} des Kontextfensters"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Anweisungen & Hinweise"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Verdichtungszusammenfassung"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Erweiterungsanweisungen"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Unterhaltung"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "System-Prompt"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Tool-Definitionen"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Zugkontext"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatisch"
   },
@@ -4768,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Agentenschleife"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} führt einen eigenen Gesprächsverlauf und erhält von goose nur den neuesten Prompt, daher gibt es keine Anfrage aufzuschlüsseln."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Auto-Verdichtungsschwelle überschritten: Das Gespräch wird verdichtet, bevor die nächste Anfrage gesendet wird."
   }
 }

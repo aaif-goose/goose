@@ -11,6 +11,9 @@ static TOKENIZER: OnceCell<Arc<CoreBPE>> = OnceCell::const_new();
 
 const MAX_TOKEN_CACHE_SIZE: usize = 1_024;
 
+pub(crate) const TOKENS_PER_MESSAGE: usize = 4;
+const REPLY_PRIMER_TOKENS: usize = 3;
+
 // token use for various bits of a tool calls:
 const FUNC_INIT: usize = 7;
 const PROP_INIT: usize = 3;
@@ -126,46 +129,51 @@ impl TokenCounter {
         func_token_count
     }
 
+    /// Agent-invisible messages are never sent, so they count as zero.
+    pub fn count_message_tokens(&self, message: &Message) -> usize {
+        if !message.metadata.agent_visible {
+            return 0;
+        }
+        let mut num_tokens = TOKENS_PER_MESSAGE;
+        for content in &message.content {
+            if let Some(content_text) = content.as_text() {
+                num_tokens += self.count_tokens(content_text);
+            } else if let Some(tool_request) = content.as_tool_request() {
+                if let Ok(tool_call) = tool_request.tool_call.as_ref() {
+                    let text = format!(
+                        "{}:{}:{:?}",
+                        tool_request.id, tool_call.name, tool_call.arguments
+                    );
+                    num_tokens += self.count_tokens(&text);
+                }
+            } else if let Some(tool_response_text) = content.as_tool_response_text() {
+                num_tokens += self.count_tokens(&tool_response_text);
+            }
+        }
+        num_tokens
+    }
+
     pub fn count_chat_tokens(
         &self,
         system_prompt: &str,
         messages: &[Message],
         tools: &[Tool],
     ) -> usize {
-        let tokens_per_message = 4;
         let mut num_tokens = 0;
 
         if !system_prompt.is_empty() {
-            num_tokens += self.count_tokens(system_prompt) + tokens_per_message;
+            num_tokens += self.count_tokens(system_prompt) + TOKENS_PER_MESSAGE;
         }
 
         for message in messages {
-            if !message.metadata.agent_visible {
-                continue;
-            }
-            num_tokens += tokens_per_message;
-            for content in &message.content {
-                if let Some(content_text) = content.as_text() {
-                    num_tokens += self.count_tokens(content_text);
-                } else if let Some(tool_request) = content.as_tool_request() {
-                    if let Ok(tool_call) = tool_request.tool_call.as_ref() {
-                        let text = format!(
-                            "{}:{}:{:?}",
-                            tool_request.id, tool_call.name, tool_call.arguments
-                        );
-                        num_tokens += self.count_tokens(&text);
-                    }
-                } else if let Some(tool_response_text) = content.as_tool_response_text() {
-                    num_tokens += self.count_tokens(&tool_response_text);
-                }
-            }
+            num_tokens += self.count_message_tokens(message);
         }
 
         if !tools.is_empty() {
             num_tokens += self.count_tokens_for_tools(tools);
         }
 
-        num_tokens += 3; // Reply primer
+        num_tokens += REPLY_PRIMER_TOKENS;
 
         num_tokens
     }

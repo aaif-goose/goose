@@ -84,7 +84,7 @@ export CLAUDE_THINKING_TYPE=disabled
 ```
 
 :::tip Viewing Thinking Output
-To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown automatically in a collapsible "Show reasoning" toggle.
+To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_SHOW_THINKING=1`. In **goose Desktop**, thinking output is shown in a collapsible **Thinking** block; you can change this with `Show Thinking` in `Settings` > `Chat`.
 :::
 
 ### Provider Retries

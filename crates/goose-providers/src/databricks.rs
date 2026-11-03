@@ -23,10 +23,7 @@ use crate::formats::databricks::create_request_for_provider;
 pub use crate::formats::databricks::DATABRICKS_PROVIDER_NAME;
 use crate::formats::openai_responses::create_responses_request;
 use crate::model::ModelConfig;
-use crate::openai_compatible::{
-    handle_status, map_http_error_to_provider_error, sanitize_url, stream_openai_compat,
-    stream_responses_compat,
-};
+use crate::openai_compatible::{handle_status, stream_openai_compat, stream_responses_compat};
 use crate::request_log::{start_log, LoggerHandleExt};
 use crate::retry::ProviderRetry;
 use crate::retry::{
@@ -76,11 +73,6 @@ static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, CachedDatabricksEndpointInfo>>,
 > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
-pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
-    "databricks-claude-sonnet-4-5",
-    "databricks-meta-llama-3-3-70b-instruct",
-    "databricks-meta-llama-3-1-405b-instruct",
-];
 
 pub const DATABRICKS_DOC_URL: &str =
     "https://docs.databricks.com/en/generative-ai/external-models/index.html";
@@ -554,7 +546,7 @@ impl crate::base::ProviderDescriptor for DatabricksProvider {
             "Databricks",
             "Models on Databricks AI Gateway",
             DATABRICKS_DEFAULT_MODEL,
-            DATABRICKS_KNOWN_MODELS.to_vec(),
+            vec![],
             DATABRICKS_DOC_URL,
             vec![
                 ConfigKey::new("DATABRICKS_HOST", true, false, None, true),
@@ -739,17 +731,7 @@ impl Provider for DatabricksProvider {
                         .streaming(true)
                         .response_post(&payload)
                         .await?;
-                    if !resp.status().is_success() {
-                        let status = resp.status();
-                        let url = sanitize_url(resp.url().as_str());
-                        let error_text = crate::http_status::read_error_body(resp)
-                            .await
-                            .unwrap_or_default();
-
-                        let json_payload = serde_json::from_str::<Value>(&error_text).ok();
-                        return Err(map_http_error_to_provider_error(status, json_payload, &url));
-                    }
-                    Ok(resp)
+                    handle_status(resp).await
                 })
                 .await;
 
@@ -764,20 +746,7 @@ impl Provider for DatabricksProvider {
                             .streaming(true)
                             .response_post(&payload)
                             .await?;
-                        if !resp.status().is_success() {
-                            let status = resp.status();
-                            let url = sanitize_url(resp.url().as_str());
-                            let error_text = crate::http_status::read_error_body(resp)
-                                .await
-                                .unwrap_or_default();
-                            let json_payload = serde_json::from_str::<Value>(&error_text).ok();
-                            return Err(map_http_error_to_provider_error(
-                                status,
-                                json_payload,
-                                &url,
-                            ));
-                        }
-                        Ok(resp)
+                        handle_status(resp).await
                     })
                     .await
                     .inspect_err(|e| {

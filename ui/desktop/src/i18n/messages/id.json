@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Padatkan otomatis pada"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Padatkan sekarang"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Gagal menyimpan ambang batas: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Mengerti!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose telah menyelesaikan tugas."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Jendela konteks"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Kesalahan Dikte"
@@ -1090,6 +1078,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Apakah Anda yakin ingin memasang ekstensi {name}? Perintah: {command}"
@@ -4136,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Simpan"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Selalu"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Diciutkan"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Tampilkan pemikiran model di obrolan. Dengan opsi \"Diciutkan\", pemikiran tetap tertutup sampai Anda membukanya."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Tidak pernah"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Tampilkan Pemikiran"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Tambah Keterampilan"
   },
@@ -4679,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Kunjungi"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} dari {limit} token terpakai. Tampilkan isi jendela konteks"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Kompaksi sekarang"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Kosong"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Tidak dapat memuat laporan konteks."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · jendela konteks {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Muat ulang"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Coba lagi"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Jendela konteks"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jumlah token diperkirakan dengan tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "dari {limit} token · {percent} dari jendela konteks"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instruksi & petunjuk"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Ringkasan kompaksi"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instruksi ekstensi"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Percakapan"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt sistem"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definisi alat"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Konteks giliran"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatis"
   },
@@ -4768,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Loop agen"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} menyimpan riwayat percakapannya sendiri dan hanya menerima prompt terbaru dari goose, sehingga tidak ada permintaan yang bisa diuraikan."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Melewati ambang pemadatan otomatis: percakapan dipadatkan sebelum permintaan berikutnya dikirim."
   }
 }

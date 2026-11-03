@@ -6,11 +6,11 @@
 pub mod fixtures;
 use agent_client_protocol::schema::v1::{
     ContentBlock, ListSessionsResponse, McpServer, McpServerHttp, SessionInfo, SessionModeId,
-    SessionUpdate, ToolCallStatus, ToolKind,
+    SessionUpdate, ToolCallStatus,
 };
 use fixtures::{
-    assert_notifications, Connection, FsFixture, Notification, OpenAiFixture, PermissionDecision,
-    Session, SessionData, TerminalCall, TerminalFixture, TestConnectionConfig,
+    assert_notifications, Connection, Notification, OpenAiFixture, PermissionDecision, Session,
+    SessionData, TestConnectionConfig,
 };
 use fs_err as fs;
 use goose::acp::server::AcpProviderFactory;
@@ -279,60 +279,7 @@ pub async fn run_config_mcp<C: Connection>() {
     expected_session_id.assert_matches(&session.session_id().0);
 }
 
-// Also proves developer loaded from config.yaml (not CLI args) gets ACP fs delegation.
-pub async fn run_fs_read_text_file_true<C: Connection>() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let config_yaml = format!(
-        "GOOSE_MODEL: {TEST_MODEL}\nGOOSE_PROVIDER: openai\nextensions:\n  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n"
-    );
-    fs::write(temp_dir.path().join(CONFIG_YAML_NAME), config_yaml).unwrap();
-
-    let expected_session_id = C::expected_session_id();
-    let prompt = "Use the read tool to read /tmp/test_acp_read.txt and output only its contents.";
-    let openai = OpenAiFixture::new(
-        vec![
-            (
-                prompt.to_string(),
-                include_str!("../acp_test_data/openai_fs_read_tool_call.txt"),
-            ),
-            (
-                r#""content":"test-read-content-12345""#.into(),
-                include_str!("../acp_test_data/openai_fs_read_tool_result.txt"),
-            ),
-        ],
-        expected_session_id.clone(),
-    )
-    .await;
-
-    let fs = FsFixture::new();
-    let config = TestConnectionConfig {
-        read_text_file: Some(fs.read_handler("/tmp/test_acp_read.txt", "test-read-content-12345")),
-        data_root: temp_dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let mut conn = C::new(config, openai).await;
-    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-    expected_session_id.set(&session.session_id().0);
-
-    let output = session
-        .prompt(prompt, PermissionDecision::Cancel)
-        .await
-        .unwrap();
-    assert_eq!(output.text, "test-read-content-12345");
-    assert_notifications(
-        &session.notifications(),
-        &[
-            Notification::ToolCall,
-            Notification::ToolCallKind(ToolKind::Read),
-            Notification::ToolCallStatus(ToolCallStatus::Completed),
-            Notification::AgentMessage,
-        ],
-    );
-    fs.assert_called();
-    expected_session_id.assert_matches(&session.session_id().0);
-}
-
-pub async fn run_fs_write_text_file_false<C: Connection>() {
+pub async fn run_write_file<C: Connection>() {
     let _ = fs::remove_file("/tmp/test_acp_write.txt");
 
     let expected_session_id = C::expected_session_id();
@@ -379,70 +326,6 @@ pub async fn run_fs_write_text_file_false<C: Connection>() {
             Notification::AgentMessage,
         ],
     );
-    expected_session_id.assert_matches(&session.session_id().0);
-}
-
-pub async fn run_fs_write_text_file_true<C: Connection>() {
-    let expected_session_id = C::expected_session_id();
-    let prompt =
-        "Use the write tool to write 'test-write-content-67890' to /tmp/test_acp_write.txt";
-    let openai = OpenAiFixture::new(
-        vec![
-            (
-                prompt.to_string(),
-                include_str!("../acp_test_data/openai_fs_write_tool_call.txt"),
-            ),
-            (
-                r#" /tmp/test_acp_write.txt (1 lines)"#.into(),
-                include_str!("../acp_test_data/openai_fs_write_tool_result.txt"),
-            ),
-        ],
-        expected_session_id.clone(),
-    )
-    .await;
-
-    let fs = FsFixture::new();
-    let config = TestConnectionConfig {
-        builtins: vec!["developer".to_string()],
-        write_text_file: Some(
-            fs.write_handler("/tmp/test_acp_write.txt", "test-write-content-67890"),
-        ),
-        ..Default::default()
-    };
-    let mut conn = C::new(config, openai).await;
-    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-    expected_session_id.set(&session.session_id().0);
-
-    let output = session
-        .prompt(prompt, PermissionDecision::AllowOnce)
-        .await
-        .unwrap();
-    assert!(!output.text.is_empty());
-
-    let updates = session.session_updates();
-    let initial_tool_call_id = updates
-        .iter()
-        .find_map(|update| match update {
-            SessionUpdate::ToolCall(tool_call) => Some(&tool_call.tool_call_id),
-            _ => None,
-        })
-        .expect("expected an initial tool call");
-    for update in &updates {
-        if let SessionUpdate::ToolCallUpdate(update) = update {
-            assert_eq!(&update.tool_call_id, initial_tool_call_id);
-        }
-    }
-    assert_notifications(
-        &fixtures::to_notifications(&updates),
-        &[
-            Notification::ToolCall,
-            Notification::ToolCallKind(ToolKind::Edit),
-            Notification::ToolCallContent("diff".into()),
-            Notification::ToolCallStatus(ToolCallStatus::Completed),
-            Notification::AgentMessage,
-        ],
-    );
-    fs.assert_called();
     expected_session_id.assert_matches(&session.session_id().0);
 }
 
@@ -1495,7 +1378,7 @@ pub async fn run_prompt_skill<C: Connection>() {
     expected_session_id.assert_matches(&session.session_id().0);
 }
 
-pub async fn run_shell_terminal_false<C: Connection>() {
+pub async fn run_shell<C: Connection>() {
     let expected_session_id = C::expected_session_id();
     let prompt = format!("Run the command echo {SHELL_TEST_CONTENT} and output only its result.");
     let openai = OpenAiFixture::new(
@@ -1542,60 +1425,5 @@ pub async fn run_shell_terminal_false<C: Connection>() {
             Notification::AgentMessage,
         ],
     );
-    expected_session_id.assert_matches(&session.session_id().0);
-}
-
-pub async fn run_shell_terminal_true<C: Connection>() {
-    let expected_session_id = C::expected_session_id();
-    let prompt = format!("Run the command echo {SHELL_TEST_CONTENT} and output only its result.");
-    let openai = OpenAiFixture::new(
-        vec![
-            (
-                prompt.clone(),
-                include_str!("../acp_test_data/openai_shell_tool_call.txt"),
-            ),
-            (
-                SHELL_TEST_CONTENT.into(),
-                include_str!("../acp_test_data/openai_shell_tool_result.txt"),
-            ),
-        ],
-        expected_session_id.clone(),
-    )
-    .await;
-
-    let command = format!("echo {SHELL_TEST_CONTENT}");
-    let output_text = format!("{SHELL_TEST_CONTENT}\n");
-    let tid = String::from("term-1");
-    let terminal = TerminalFixture::new(vec![
-        TerminalCall::Create(command.clone(), tid.clone()),
-        TerminalCall::WaitForExit(tid.clone(), 0),
-        TerminalCall::Output(tid.clone(), output_text.clone(), 0),
-        TerminalCall::Release(tid),
-    ]);
-    let config = TestConnectionConfig {
-        builtins: vec!["developer".to_string()],
-        terminal: Some(terminal.clone()),
-        ..Default::default()
-    };
-    let mut conn = C::new(config, openai).await;
-    let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-    expected_session_id.set(&session.session_id().0);
-
-    let output = session
-        .prompt(&prompt, PermissionDecision::AllowOnce)
-        .await
-        .unwrap();
-    assert_eq!(output.tool_status, Some(ToolCallStatus::Completed));
-    assert_notifications(
-        &session.notifications(),
-        &[
-            Notification::ToolCall,
-            Notification::ToolCallKind(ToolKind::Execute),
-            Notification::ToolCallContent("terminal".into()),
-            Notification::ToolCallStatus(ToolCallStatus::Completed),
-            Notification::AgentMessage,
-        ],
-    );
-    terminal.assert_called();
     expected_session_id.assert_matches(&session.session_id().0);
 }

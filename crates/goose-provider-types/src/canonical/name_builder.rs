@@ -64,6 +64,12 @@ pub fn map_provider_name(provider: &str) -> &str {
     }
 }
 
+/// Strip a trailing OpenRouter variant tag such as `:free` or `:nitro`.
+pub fn strip_openrouter_variant(model: &str) -> Option<&str> {
+    let (base, tag) = model.rsplit_once(':')?;
+    (!tag.is_empty() && tag.bytes().all(|byte| byte.is_ascii_lowercase())).then_some(base)
+}
+
 /// Try to map a provider/model pair to a canonical model
 pub fn map_to_canonical_model(
     provider: &str,
@@ -471,12 +477,6 @@ mod tests {
         assert_eq!(
             map_to_canonical_model("databricks", "gemini-2-5-flash", &r),
             Some("google/gemini-2.5-flash".to_string())
-        );
-
-        // === Meta Llama ===
-        assert_eq!(
-            map_to_canonical_model("databricks", "meta-llama-3-3-70b-instruct", &r),
-            Some("meta-llama/llama-3.3-70b-instruct".to_string())
         );
 
         // === Mistral variants ===

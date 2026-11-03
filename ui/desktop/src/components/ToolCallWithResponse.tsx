@@ -479,6 +479,8 @@ const liveOutputToString = (notifications: NotificationEvent[] | undefined): str
     })
     .join('') ?? '';
 
+const MAX_TITLE_VALUE_LENGTH = 80;
+
 // Helper function to extract toolcall name
 const getToolName = (toolCallName: string): string => {
   const lastIndex = toolCallName.lastIndexOf('__');
@@ -593,187 +595,25 @@ function ToolCallView({
     loadingStatus === 'loading' &&
     (progressEntries.length > 0 || (logs || []).length > 0 || liveOutput.length > 0);
 
-  // Function to create a descriptive representation of what the tool is doing
-  const getToolDescription = (): string | null => {
-    const args = (toolCall.arguments ?? {}) as Record<string, ToolCallArgumentValue>;
-    const toolName = getToolName(toolCall.name);
-
-    const getStringValue = (value: ToolCallArgumentValue): string => {
-      return typeof value === 'string' ? value : JSON.stringify(value);
-    };
-
-    // Generate descriptive text based on tool type
-    switch (toolName) {
-      case 'text_editor':
-        if (args.command === 'write' && args.path) {
-          return `writing ${getStringValue(args.path)}`;
-        }
-        if (args.command === 'view' && args.path) {
-          return `reading ${getStringValue(args.path)}`;
-        }
-        if (args.command === 'str_replace' && args.path) {
-          return `editing ${getStringValue(args.path)}`;
-        }
-        if (args.command && args.path) {
-          return `${getStringValue(args.command)} ${getStringValue(args.path)}`;
-        }
-        break;
-
-      case 'shell':
-        if (args.command) {
-          return `running ${getStringValue(args.command)}`;
-        }
-        break;
-
-      case 'search':
-        if (args.name) {
-          return `searching for "${getStringValue(args.name)}"`;
-        }
-        if (args.mimeType) {
-          return `searching for ${getStringValue(args.mimeType)} files`;
-        }
-        break;
-
-      case 'read': {
-        if (args.uri) {
-          const uri = getStringValue(args.uri);
-          const fileId = uri.replace('gdrive:///', '');
-          return `reading file ${fileId}`;
-        }
-        if (args.url) {
-          return `reading ${getStringValue(args.url)}`;
-        }
-        break;
-      }
-
-      case 'create_file':
-        if (args.name) {
-          return `creating ${getStringValue(args.name)}`;
-        }
-        break;
-
-      case 'update_file':
-        if (args.fileId) {
-          return `updating file ${getStringValue(args.fileId)}`;
-        }
-        break;
-
-      case 'sheets_tool': {
-        if (args.operation && args.spreadsheetId) {
-          const operation = getStringValue(args.operation);
-          const sheetId = getStringValue(args.spreadsheetId);
-          return `${operation} in sheet ${sheetId}`;
-        }
-        break;
-      }
-
-      case 'docs_tool': {
-        if (args.operation && args.documentId) {
-          const operation = getStringValue(args.operation);
-          const docId = getStringValue(args.documentId);
-          return `${operation} in document ${docId}`;
-        }
-        break;
-      }
-
-      case 'remember_memory':
-        if (args.category && args.data) {
-          return `storing ${getStringValue(args.category)}: ${getStringValue(args.data)}`;
-        }
-        break;
-
-      case 'retrieve_memories':
-        if (args.category) {
-          return `retrieving ${getStringValue(args.category)} memories`;
-        }
-        break;
-
-      case 'screen_capture':
-        if (args.window_title) {
-          return `capturing window "${getStringValue(args.window_title)}"`;
-        }
-        return `capturing screen`;
-
-      case 'delegate': {
-        if (args.resume) {
-          return `resuming subagent ${getStringValue(args.resume)}`;
-        }
-        if (args.instructions) {
-          const instr = getStringValue(args.instructions);
-          const truncated = instr.length > 80 ? instr.substring(0, 80) + '…' : instr;
-          return `delegating: ${truncated}`;
-        }
-        if (args.source) {
-          return `delegating to ${getStringValue(args.source)}`;
-        }
-        return 'delegating task';
-      }
-
-      case 'load': {
-        if (args.source) {
-          return `loading ${getStringValue(args.source)}`;
-        }
-        return 'loading source';
-      }
-
-      case 'final_output':
-        return 'final output';
-
-      case 'computer_control':
-        return `poking around...`;
-
-      case 'execute_javascript':
-      case 'execute_typescript': {
-        const toolGraph = args.tool_graph as unknown as ToolGraphNode[] | undefined;
-        if (toolGraph && Array.isArray(toolGraph) && toolGraph.length > 0) {
-          if (toolGraph.length === 1) {
-            return `${toolGraph[0].description}`;
-          }
-          if (toolGraph.length === 2) {
-            return `${toolGraph[0].tool}, ${toolGraph[1].tool}`;
-          }
-          return `${toolGraph.length} tools used`;
-        }
-        return 'executing code';
-      }
-
-      default: {
-        // Generic fallback for unknown tools: ToolName + CompactArguments
-        // This ensures any MCP tool works without explicit handling
-        const toolDisplayName = snakeToTitleCase(toolName);
-        const entries = Object.entries(args);
-
-        if (entries.length === 0) {
-          return `${toolDisplayName}`;
-        }
-
-        // For a single parameter, show key and truncated value
-        if (entries.length === 1) {
-          const [key, value] = entries[0];
-          const stringValue = getStringValue(value);
-          return `${toolDisplayName} ${key}: ${stringValue}`;
-        }
-
-        // For multiple parameters, show tool name and keys
-        const keys = entries.map(([key]) => key).join(', ');
-        return `${toolDisplayName} ${keys}`;
-      }
-    }
-
-    return null;
-  };
-
   // Get extension tooltip for the current tool
   const extensionTooltip = getExtensionTooltip(toolCall.name);
 
-  // Extract tool label content to avoid duplication
-  const getToolLabelContent = () => {
-    const description = getToolDescription();
-    if (description) {
-      return description;
+  const getToolLabelContent = (): string => {
+    const args = (toolCall.arguments ?? {}) as Record<string, ToolCallArgumentValue>;
+    const toolDisplayName = snakeToTitleCase(getToolName(toolCall.name));
+    const firstEntry = Object.entries(args)[0];
+
+    if (!firstEntry) {
+      return toolDisplayName;
     }
-    // Fallback tool name formatting
-    return snakeToTitleCase(getToolName(toolCall.name));
+
+    const [key, value] = firstEntry;
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    const shortValue =
+      stringValue.length > MAX_TITLE_VALUE_LENGTH
+        ? `${stringValue.substring(0, MAX_TITLE_VALUE_LENGTH)}…`
+        : stringValue;
+    return `${toolDisplayName} ${key}: ${shortValue}`;
   };
   // Map LoadingStatus to ToolCallStatus
   const getToolCallStatus = (loadingStatus: LoadingStatus): ToolCallStatus => {

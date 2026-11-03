@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.12...gdk-v0.1.0-alpha.13) - 2026-10-23
+
+### Fixed
+
+- *(providers)* request summarized thinking from Claude models ([#13029](https://github.com/aaif-goose/goose/pull/13029))
+- fix stale models ([#13054](https://github.com/aaif-goose/goose/pull/13054))
+- *(moonshot)* map provider name to moonshotai for canonical model lookup ([#12041](https://github.com/aaif-goose/goose/pull/12041))
+- *(providers)* tolerate missing created_at on OpenAI Responses stream events ([#12241](https://github.com/aaif-goose/goose/pull/12241))
+
+### Other
+
+- *(release)* bump version to 1.56.0 (minor) ([#13012](https://github.com/aaif-goose/goose/pull/13012))
+- Automatic Thinking Level Operation ([#12237](https://github.com/aaif-goose/goose/pull/12237))
+- Support provider-defined cache prices ([#12944](https://github.com/aaif-goose/goose/pull/12944))
+- *(release)* bump version to 1.55.0 (minor) ([#12863](https://github.com/aaif-goose/goose/pull/12863))
+
 ## [0.1.0-alpha.12](https://github.com/aaif-goose/goose/compare/gdk-v0.1.0-alpha.11...gdk-v0.1.0-alpha.12) - 2026-10-13
 
 ### Added
