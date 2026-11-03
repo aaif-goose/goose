@@ -192,6 +192,36 @@ describe('useChatSession handleSubmit', () => {
     );
   });
 
+  it('does not drain a deferred submit while a restored run is still active', async () => {
+    const question = createUserMessage('Question');
+    mocks.snapshot = { ...idleSnapshot([question]), activeRunId: 'run-1' };
+    mocks.modelChangePending = true;
+    const { result, rerender } = renderChatSession([question], false);
+
+    await act(() => result.current.handleSubmit({ msg: 'after restore', images: [] }));
+    mocks.modelChangePending = false;
+    await act(() => {
+      for (const listener of mocks.listeners) listener();
+    });
+
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+
+    if (!mocks.snapshot) {
+      throw new Error('snapshot missing');
+    }
+    mocks.snapshot.activeRunId = null;
+    rerender();
+
+    expect(mocks.submitMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        content: [expect.objectContaining({ type: 'text', text: 'after restore' })],
+      }),
+      expect.anything()
+    );
+  });
+
   it('keeps deferred submits when the chat hook remounts', async () => {
     mocks.modelChangePending = true;
     const question = createUserMessage('Question');
