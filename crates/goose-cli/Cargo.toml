@@ -112,6 +112,7 @@ default = [
 online-model-meta = ["goose/online-model-meta"]
 roaming = ["dep:goose-roaming", "dep:qrcode", "dep:fs2", "dep:agent-client-protocol"]
 code-mode = ["goose/code-mode"]
+js-operations = ["goose/js-operations"]
 tree-sitter = ["goose/tree-sitter"]
 live-voice = ["goose/live-voice"]
 local-inference = ["goose/local-inference"]

@@ -728,7 +728,7 @@ impl StateMachineServices {
         session_config: SessionConfig,
         cancel: CancellationToken,
         steer_queue: SteerQueue,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
         let extension_lease = self
             .runtime
             .confirmations
@@ -756,7 +756,7 @@ impl StateMachineServices {
         cancel: CancellationToken,
         steer_queue: SteerQueue,
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
-    ) -> StateMachine<'_, Session, GooseEffect> {
+    ) -> Result<StateMachine<'_, Session, GooseEffect>> {
         let settings = match &self.turn_settings {
             Some(settings) => settings.clone(),
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
@@ -770,6 +770,11 @@ impl StateMachineServices {
         let tool_call_cutoff = settings.tool_call_cutoff.unwrap_or_else(|| {
             crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
         });
+
+        let extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>> =
+            settings.auto_effort.into_iter().collect();
+        #[cfg(feature = "js-operations")]
+        let js_operations = super::js_operations::load_operations(Config::global()).await?;
 
         build_state_machine(StateMachineConfig {
             provider,
@@ -789,7 +794,9 @@ impl StateMachineServices {
             on_failure_timeout: settings.on_failure_timeout,
             stop_hook_block_cap: settings.stop_hook_block_cap,
             max_turns,
-            extra_operations: settings.auto_effort.into_iter().collect(),
+            extra_operations,
+            #[cfg(feature = "js-operations")]
+            js_operations,
             cancel,
             context_relevance: settings.context_relevance,
         })
@@ -1114,7 +1121,7 @@ impl StateMachineServices {
                 cancel.clone(),
                 steer_queue,
             )
-            .await;
+            .await?;
         let reply_span = tracing::Span::current();
 
         Ok(Box::pin(

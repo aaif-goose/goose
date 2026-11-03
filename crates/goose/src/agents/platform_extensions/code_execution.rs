@@ -1,8 +1,8 @@
-use super::javascript::{self, ToolCallback, ToolFuture};
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
     get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
 };
+use crate::agents::js_runtime::{self as javascript, ToolCallback, ToolFuture};
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;

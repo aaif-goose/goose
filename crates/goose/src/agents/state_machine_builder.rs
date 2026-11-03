@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use anyhow::Result;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
@@ -48,6 +49,8 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) stop_hook_block_cap: u32,
     pub(crate) max_turns: u32,
     pub(crate) extra_operations: Vec<Arc<dyn Operation<Session, GooseEffect>>>,
+    #[cfg(feature = "js-operations")]
+    pub(crate) js_operations: Vec<super::js_operations::ConfiguredOperation>,
     pub(crate) cancel: CancellationToken,
     pub(crate) context_relevance: Option<Arc<dyn DecisionProvider>>,
 }
@@ -91,7 +94,7 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
 
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
-) -> StateMachine<'_, Session, GooseEffect> {
+) -> Result<StateMachine<'_, Session, GooseEffect>> {
     let StateMachineConfig {
         provider,
         model_config,
@@ -111,6 +114,8 @@ pub(crate) fn build_state_machine(
         stop_hook_block_cap,
         max_turns,
         extra_operations,
+        #[cfg(feature = "js-operations")]
+        js_operations,
         cancel,
         context_relevance,
     } = config;
@@ -206,15 +211,36 @@ pub(crate) fn build_state_machine(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let mut command_handlers = operations.clone();
-    command_handlers.push(status_operation);
     let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(command_handlers));
-    let steps = std::iter::once(command_operation)
+        Arc::new(SlashCommandOperation::new(Vec::new()));
+    let steps: Vec<_> = std::iter::once(command_operation)
         .chain(operations)
         .map(Step::Operation)
         .chain(std::iter::once(Step::Inference(inference)))
         .collect();
 
-    StateMachine::new(steps, cancel)
+    #[cfg(feature = "js-operations")]
+    let steps = super::js_operations::place_operations(steps, js_operations)?;
+
+    let mut steps = steps;
+    // Construct handlers after placement so command precedence follows the resolved pipeline.
+    if let Some(dispatcher) = steps.iter().position(|step| {
+        matches!(step,
+            Step::Operation(operation) if operation.name() == "slash_command"
+        )
+    }) {
+        let mut command_handlers: Vec<_> = steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Operation(operation) if operation.name() != "slash_command" => {
+                    Some(operation.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        command_handlers.push(status_operation);
+        steps[dispatcher] = Step::Operation(Arc::new(SlashCommandOperation::new(command_handlers)));
+    }
+
+    Ok(StateMachine::new(steps, cancel))
 }
