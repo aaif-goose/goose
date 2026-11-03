@@ -276,6 +276,8 @@ export default function ChatInput({
   // Queue functionality - ephemeral, only exists in memory for this chat instance
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const queuePausedRef = useRef(false);
+  const resumeWhenModelChangeSettlesRef = useRef(false);
+  const wasModelChangePendingRef = useRef(false);
   const editingMessageIdRef = useRef<string | null>(null);
   const sendAfterStopMessageIdRef = useRef<string | null>(null);
   const sendNowInFlightMessageIdsRef = useRef<Set<string>>(new Set());
@@ -412,13 +414,23 @@ export default function ChatInput({
     const becameUnblocked = wasQueueProcessingBlockedRef.current && !queueProcessingBlocked;
     const hasSendNowInFlight = sendNowInFlightMessageIdsRef.current.size > 0;
 
+    const modelChangeSettled = wasModelChangePendingRef.current && !modelChangeInFlight();
+    wasModelChangePendingRef.current = modelChangeInFlight();
+
     if (modelChangeInFlight() && (becameAvailable || becameUnblocked)) {
       return;
     }
 
+    if (modelChangeSettled && resumeWhenModelChangeSettlesRef.current) {
+      resumeWhenModelChangeSettlesRef.current = false;
+      queuePausedRef.current = false;
+      setLastInterruption(null);
+    }
+
     if (
-      (becameAvailable || (becameUnblocked && !isSubmissionBusy)) &&
+      (becameAvailable || (becameUnblocked && !isSubmissionBusy) || modelChangeSettled) &&
       !queueProcessingBlocked &&
+      !modelChangeInFlight() &&
       !hasSendNowInFlight &&
       queuedMessages.length > 0
     ) {
@@ -1477,14 +1489,13 @@ export default function ChatInput({
   };
 
   const handleResumeQueue = () => {
+    if (modelChangeInFlight()) {
+      resumeWhenModelChangeSettlesRef.current = true;
+      return;
+    }
     queuePausedRef.current = false;
     setLastInterruption(null);
-    if (
-      !isSubmissionBusy &&
-      !queueProcessingBlocked &&
-      !modelChangeInFlight() &&
-      queuedMessages.length > 0
-    ) {
+    if (!isSubmissionBusy && !queueProcessingBlocked && queuedMessages.length > 0) {
       const nextMessage = queuedMessages[0];
       LocalMessageStorage.addMessage(nextMessage.content);
       handleSubmit({ msg: nextMessage.content, images: nextMessage.images });

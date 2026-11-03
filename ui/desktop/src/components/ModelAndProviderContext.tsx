@@ -1,12 +1,4 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toastError, toastSuccess } from '../toasts';
 import Model, { getProviderMetadata } from './settings/models/modelInterface';
 import type { ProviderMetadata } from '../types/providers';
@@ -73,6 +65,13 @@ interface ModelAndProviderProviderProps {
 
 const ModelAndProviderContext = createContext<ModelAndProviderContextType | undefined>(undefined);
 
+let modelChangePendingCount = 0;
+
+/** Readable before the next render, including from submit paths outside ChatInput. */
+export function isModelChangePendingNow(): boolean {
+  return modelChangePendingCount > 0;
+}
+
 export { i18n as modelAndProviderMessages };
 
 function patchAcpSessionProviderModel(
@@ -100,16 +99,15 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
   const [modelChangePending, setModelChangePending] = useState(false);
-  const modelChangePendingCountRef = useRef(0);
   const intl = useIntl();
-  const isModelChangePending = useCallback(() => modelChangePendingCountRef.current > 0, []);
+  const isModelChangePending = useCallback(() => isModelChangePendingNow(), []);
 
   const changeModel = useCallback(
     async (sessionId: string | null, model: Model) => {
       const modelName = model.name;
       const providerName = model.provider;
       let phase = 'agent';
-      modelChangePendingCountRef.current += 1;
+      modelChangePendingCount += 1;
       setModelChangePending(true);
 
       try {
@@ -155,8 +153,8 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
         });
         return false;
       } finally {
-        modelChangePendingCountRef.current -= 1;
-        setModelChangePending(modelChangePendingCountRef.current > 0);
+        modelChangePendingCount = Math.max(0, modelChangePendingCount - 1);
+        setModelChangePending(modelChangePendingCount > 0);
       }
     },
     [intl]

@@ -358,6 +358,7 @@ export default function ModelsBottomBar({
           onClose={() => setIsAddModelModalOpen(false)}
           sessionModel={currentModel}
           sessionProvider={currentProvider}
+          modelChangeLocked={pickerLocked}
           onModelSelected={(model, provider) => handleModelSelected(model, provider)}
         />
       ) : null}

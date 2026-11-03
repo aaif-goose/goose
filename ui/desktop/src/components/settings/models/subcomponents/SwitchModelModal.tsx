@@ -19,7 +19,7 @@ import {
   acpReadThinkingEffort,
   acpSaveThinkingEffort,
 } from '../../../../acp/providers';
-import { useModelAndProvider } from '../../../ModelAndProviderContext';
+import { isModelChangePendingNow, useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
 import Model, {
   fetchModelReasoning,
@@ -248,6 +248,7 @@ type SwitchModelModalProps = {
   titleOverride?: string;
   sessionModel?: string | null;
   sessionProvider?: string | null;
+  modelChangeLocked?: boolean;
 };
 export const SwitchModelModal = ({
   sessionId,
@@ -258,8 +259,17 @@ export const SwitchModelModal = ({
   titleOverride,
   sessionModel,
   sessionProvider,
+  modelChangeLocked = false,
 }: SwitchModelModalProps) => {
   const intl = useIntl();
+  const modelChangeLockedRef = useRef(modelChangeLocked);
+  modelChangeLockedRef.current = modelChangeLocked;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (modelChangeLocked) onCloseRef.current();
+  }, [modelChangeLocked]);
 
   const THINKING_EFFORT_OPTIONS: { value: ThinkingEffort; label: string }[] = [
     { value: 'off', label: intl.formatMessage(i18n.thinkingEffortOff) },
@@ -422,6 +432,11 @@ export const SwitchModelModal = ({
           request_params: { ...modelObj.request_params, thinking_effort: effort },
         };
         acpSaveThinkingEffort(effort).catch(console.warn);
+      }
+
+      if (modelChangeLockedRef.current || isModelChangePendingNow()) {
+        onClose();
+        return;
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -989,7 +1004,7 @@ export const SwitchModelModal = ({
             <Button variant="outline" onClick={handleClose} type="button">
               {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={handleSubmit} disabled={!isValid}>
+            <Button onClick={handleSubmit} disabled={!isValid || modelChangeLocked}>
               {intl.formatMessage(i18n.selectModelButton)}
             </Button>
           </div>

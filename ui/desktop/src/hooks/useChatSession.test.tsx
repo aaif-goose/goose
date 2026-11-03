@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   snapshot: undefined as unknown,
   submitMessage: vi.fn(),
+  modelChangePending: false,
 }));
 
 vi.mock('../acp/chatSessionController', () => ({
@@ -22,6 +23,10 @@ vi.mock('../acp/chatSessionStore', () => ({
 
 vi.mock('../acp/acpConnection', () => ({
   isAcpRecovering: () => false,
+}));
+
+vi.mock('../components/ModelAndProviderContext', () => ({
+  isModelChangePendingNow: () => mocks.modelChangePending,
 }));
 
 import { useChatSession } from './useChatSession';
@@ -55,6 +60,7 @@ function renderChatSession(messages: Message[]) {
 describe('useChatSession handleSubmit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.modelChangePending = false;
   });
 
   it('does not send the last assistant message as a new prompt on an empty submit', async () => {
@@ -64,6 +70,16 @@ describe('useChatSession handleSubmit', () => {
     ]);
 
     await act(() => result.current.handleSubmit({ msg: '', images: [] }));
+
+    expect(mocks.submitMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not submit while a model change is still applying', async () => {
+    mocks.modelChangePending = true;
+    const question = createUserMessage('Question');
+    const { result } = renderChatSession([question]);
+
+    await act(() => result.current.handleSubmit({ msg: 'next', images: [] }));
 
     expect(mocks.submitMessage).not.toHaveBeenCalled();
   });

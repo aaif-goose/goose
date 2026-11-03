@@ -25,6 +25,7 @@ import {
 } from '../acp/chatSessionStore';
 import { acpSteerSession } from '../acp/prompt';
 import { isAcpRecovering } from '../acp/acpConnection';
+import { isModelChangePendingNow } from '../components/ModelAndProviderContext';
 
 const initialTokenState: TokenState = {
   inputTokens: 0,
@@ -166,7 +167,7 @@ export function useChatSession({
 
   const handleSubmit = useCallback(
     async (input: UserInput) => {
-      if (isAcpRecovering()) {
+      if (isAcpRecovering() || isModelChangePendingNow()) {
         return;
       }
 
