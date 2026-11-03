@@ -42,6 +42,12 @@ fn inferred_thinking_mode(canonical_id: &str) -> Option<ThinkingMode> {
         "anthropic/claude-sonnet-5" => Some(ThinkingMode::Adaptive),
         "anthropic/claude-sonnet-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
         "anthropic/claude-haiku-5.5" => Some(ThinkingMode::AlwaysOnAdaptive),
+        // MiniMax-M3.1-Flash rejects `thinking: {type: disabled}` and
+        // requires adaptive thinking, so it must always be sent adaptively.
+        "minimax/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-cn/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-coding-plan/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
+        "minimax-cn-coding-plan/MiniMax-M3.1-Flash" => Some(ThinkingMode::AlwaysOnAdaptive),
         _ => None,
     }
 }

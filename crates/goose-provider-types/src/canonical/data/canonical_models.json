@@ -160250,6 +160250,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "always_on_adaptive",
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-19",
@@ -160547,6 +160548,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "always_on_adaptive",
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-19",
@@ -160795,6 +160797,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "always_on_adaptive",
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-19",
@@ -161090,6 +161093,7 @@
       "xhigh",
       "max"
     ],
+    "thinking_mode": "always_on_adaptive",
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-10-19",
