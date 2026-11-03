@@ -408,10 +408,13 @@ impl DatabricksV2Provider {
             if let Some(object) = payload.as_object_mut() {
                 object.remove("stream_options");
                 if let Some(effort) = object.remove("reasoning_effort") {
-                    object.insert(
-                        "thinking_config".to_string(),
-                        serde_json::json!({ "thinking_level": effort }),
-                    );
+                    // Keep any `thinking_config` the user set in request params.
+                    let thinking = object
+                        .entry("thinking_config")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(thinking) = thinking.as_object_mut() {
+                        thinking.entry("thinking_level").or_insert(effort);
+                    }
                 }
             }
         }
@@ -1113,6 +1116,44 @@ mod tests {
 
             let requests = server.received_requests().await.unwrap();
             let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert!(request.get("reasoning_effort").is_none());
+        }
+
+        #[tokio::test]
+        async fn gemini_thinking_level_keeps_user_thinking_config() {
+            let model = "system.ai.gemini-4-argon";
+            let body = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/ai-gateway/mlflow/v1/chat/completions"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(body)
+                        .append_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let mut config = ModelConfig::new(model)
+                .with_thinking_effort(ThinkingEffort::High)
+                .with_merged_request_params(std::collections::HashMap::from([(
+                    "thinking_config".to_string(),
+                    json!({"include_thoughts": true}),
+                )]));
+            config.reasoning = Some(true);
+            provider(server.uri())
+                .complete(&config, "system", &[], &[])
+                .await
+                .expect("Gemini should keep the user's thinking config");
+
+            let requests = server.received_requests().await.unwrap();
+            let request: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(
+                request["thinking_config"],
+                json!({"include_thoughts": true, "thinking_level": "high"})
+            );
             assert!(request.get("reasoning_effort").is_none());
         }
 
