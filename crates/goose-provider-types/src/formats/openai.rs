@@ -1248,6 +1248,33 @@ fn parse_streaming_chunk(line: &str) -> Result<Option<StreamingChunk>, ProviderE
         return Ok(None);
     }
 
+    if value
+        .get("choices")
+        .and_then(Value::as_array)
+        .is_some_and(|choices| {
+            choices
+                .iter()
+                .filter_map(|choice| choice.get("delta"))
+                .any(|delta| {
+                    [
+                        "content",
+                        "reasoning",
+                        "reasoning_content",
+                        "reasoning_details",
+                        "tool_calls",
+                    ]
+                    .iter()
+                    .any(|key| match delta.get(key) {
+                        Some(Value::String(text)) => !text.is_empty(),
+                        Some(Value::Array(parts)) => !parts.is_empty(),
+                        _ => false,
+                    })
+                })
+        })
+    {
+        crate::retry::record_stream_output();
+    }
+
     serde_json::from_value(value).map(Some).map_err(|e| {
         ProviderError::stream_decode_error(format!(
             "Failed to parse streaming chunk: {e}: {line:?}"

@@ -131,6 +131,11 @@ pub(crate) fn build_state_machine(
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
+            .with_recovery_budget(std::time::Duration::from_secs(
+                crate::config::Config::global()
+                    .get_param("GOOSE_PROVIDER_RETRY_TIMEOUT")
+                    .unwrap_or(120),
+            ))
             .with_request_preparer(Arc::new(request_preparer)),
     );
     let mut command_handlers = operations.clone();

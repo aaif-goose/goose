@@ -21,6 +21,7 @@ activities:
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Validate capped and uncapped auto-compaction thresholds and Desktop editing
+  - Validate provider recovery budgets, progress feedback, and cancellation
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -29,7 +30,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, provider-recovery, advanced"
 
   - key: test_depth
     input_type: string
@@ -214,6 +215,24 @@ prompt: |
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   Log results to: {{ workspace_dir }}/phase1_basic_tools.md
+  {% endif %}
+
+  {% if test_phases == "all" or "provider-recovery" in test_phases %}
+  ## Provider Recovery Validation
+
+  Run from a goose source checkout with the Rust toolchain. Record unavailable checks as SKIPPED.
+
+  1. Run `GOOSE_DISABLE_KEYRING=1 cargo test -p goose-provider-types --test stream_recovery`.
+  2. Run `GOOSE_DISABLE_KEYRING=1 cargo test -p goose-agent --test inference_recovery`.
+  3. Run `GOOSE_DISABLE_KEYRING=1 cargo test -p goose --lib agents::reply_parts::tests`.
+  4. Run `GOOSE_DISABLE_KEYRING=1 cargo test -p goose --features aws-providers --lib disables_sdk_retries`.
+  5. Confirm temporary failures emit progress immediately and recover within the budget;
+     waits and pending requests share that budget, while zero disables recovery.
+  6. Confirm cancellation interrupts backoff and pending attempts, and partial text,
+     thinking, and buffered tool-call fragments never cause request replay.
+
+  Log command results and failures to: {{ workspace_dir }}/provider_recovery.md
+  Do not modify source files or configuration to make these checks pass.
   {% endif %}
 
   {% if test_phases == "all" or "compaction" in test_phases %}

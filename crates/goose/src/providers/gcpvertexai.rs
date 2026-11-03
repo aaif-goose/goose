@@ -364,6 +364,12 @@ impl GcpVertexAIProvider {
 
             let status = response.status();
 
+            if goose_providers::retry::stream_recovery_active()
+                && (status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error())
+            {
+                return goose_providers::http_status::handle_status(response).await;
+            }
+
             if status == StatusCode::TOO_MANY_REQUESTS {
                 rate_limit_attempts += 1;
                 if rate_limit_attempts > max_retries {

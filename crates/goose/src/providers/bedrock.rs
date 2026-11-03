@@ -558,6 +558,12 @@ impl BedrockProvider {
         }
 
         let mut request = request.customize();
+        if goose_providers::retry::stream_recovery_active() {
+            request = request.config_override(
+                aws_sdk_bedrockruntime::config::Builder::new()
+                    .retry_config(aws_config::retry::RetryConfig::disabled()),
+            );
+        }
 
         if let Some(session_id) = session_id.filter(|id| !id.is_empty()) {
             let session_id = session_id.to_string();
@@ -653,6 +659,12 @@ impl BedrockProvider {
         }
 
         let mut request = request.customize();
+        if goose_providers::retry::stream_recovery_active() {
+            request = request.config_override(
+                aws_sdk_bedrockruntime::config::Builder::new()
+                    .retry_config(aws_config::retry::RetryConfig::disabled()),
+            );
+        }
 
         if let Some(session_id) = session_id.filter(|id| !id.is_empty()) {
             let session_id = session_id.to_string();
@@ -749,6 +761,7 @@ fn process_stream_event(
     match event {
         bedrock::ConverseStreamOutput::ContentBlockStart(ev) => {
             if let Some(bedrock::ContentBlockStart::ToolUse(tu)) = ev.start {
+                goose_providers::retry::record_stream_output();
                 state.tool_blocks.insert(
                     ev.content_block_index,
                     (tu.tool_use_id, tu.name, String::new()),
@@ -762,12 +775,14 @@ fn process_stream_event(
                 }
             }
             Some(bedrock::ContentBlockDelta::ToolUse(tu)) => {
+                goose_providers::retry::record_stream_output();
                 if let Some(entry) = state.tool_blocks.get_mut(&ev.content_block_index) {
                     entry.2.push_str(&tu.input);
                 }
             }
             Some(bedrock::ContentBlockDelta::ReasoningContent(rc)) => match rc {
                 bedrock::ReasoningContentBlockDelta::Text(t) => {
+                    goose_providers::retry::record_stream_output();
                     state
                         .reasoning_blocks
                         .entry(ev.content_block_index)
@@ -776,6 +791,7 @@ fn process_stream_event(
                         .push_str(&t);
                 }
                 bedrock::ReasoningContentBlockDelta::Signature(s) => {
+                    goose_providers::retry::record_stream_output();
                     state
                         .reasoning_blocks
                         .entry(ev.content_block_index)
@@ -784,6 +800,7 @@ fn process_stream_event(
                         .push_str(&s);
                 }
                 bedrock::ReasoningContentBlockDelta::RedactedContent(blob) => {
+                    goose_providers::retry::record_stream_output();
                     state
                         .redacted_blocks
                         .entry(ev.content_block_index)
@@ -1230,6 +1247,84 @@ mod tests {
     use super::*;
     use goose_providers::base::ProviderDescriptor as _;
     use serial_test::serial;
+    use std::time::Duration;
+
+    struct ConverseProvider {
+        provider: BedrockProvider,
+        streaming: bool,
+    }
+
+    #[async_trait]
+    impl Provider for ConverseProvider {
+        fn get_name(&self) -> &str {
+            "bedrock-converse-test"
+        }
+        async fn stream(
+            &self,
+            model: &ModelConfig,
+            system: &str,
+            messages: &[Message],
+            tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            if self.streaming {
+                self.provider
+                    .converse_stream(model, None, system, messages, tools)
+                    .await?;
+            } else {
+                self.provider
+                    .converse(model, None, system, messages, tools)
+                    .await?;
+            }
+            Ok(Box::pin(futures::stream::empty()))
+        }
+    }
+
+    #[tokio::test]
+    async fn zero_recovery_budget_disables_sdk_retries_on_both_converse_routes() {
+        use futures::StreamExt;
+        use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+
+        for streaming in [false, true] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                    "__type": "ServiceUnavailableException", "message": "busy"
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let config = aws_sdk_bedrockruntime::config::Builder::new()
+                .behavior_version(aws_config::BehaviorVersion::latest())
+                .region(aws_config::Region::new("us-east-1"))
+                .credentials_provider(aws_sdk_bedrockruntime::config::Credentials::new(
+                    "test", "test", None, None, "test",
+                ))
+                .endpoint_url(server.uri())
+                .http_client(ReqwestHttpClient::new())
+                .retry_config(aws_config::retry::RetryConfig::standard().with_max_attempts(3))
+                .build();
+            let (mut provider, model) =
+                create_mock_provider_and_model("anthropic.claude-3-5-sonnet-20241022-v2:0");
+            provider.client = Client::from_conf(config);
+            let provider = std::sync::Arc::new(ConverseProvider {
+                provider,
+                streaming,
+            });
+            let mut stream = goose_providers::retry::stream_with_recovery(
+                provider,
+                model,
+                "system".into(),
+                vec![Message::user().with_text("hi")],
+                vec![],
+                Duration::ZERO,
+            );
+            assert!(matches!(
+                stream.next().await.unwrap(),
+                Err(ProviderError::ServerError(_))
+            ));
+            assert!(stream.next().await.is_none());
+        }
+    }
 
     fn create_mock_provider_and_model(model_name: &str) -> (BedrockProvider, ModelConfig) {
         let sdk_config = aws_config::SdkConfig::builder()

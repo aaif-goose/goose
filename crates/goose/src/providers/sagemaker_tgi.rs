@@ -187,10 +187,32 @@ impl SageMakerTgiProvider {
             request = request.custom_attributes(format!("{SESSION_ID_HEADER}={session_id}"));
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|e| ProviderError::RequestFailed(format!("SageMaker invoke failed: {}", e)))?;
+        let mut request = request.customize();
+        if goose_providers::retry::stream_recovery_active() {
+            request = request.config_override(
+                aws_sdk_sagemakerruntime::config::Builder::new()
+                    .retry_config(aws_config::retry::RetryConfig::disabled()),
+            );
+        }
+
+        let response = request.send().await.map_err(|error| {
+            let message = format!("SageMaker invoke failed: {error}");
+            if matches!(
+                error,
+                aws_sdk_sagemakerruntime::error::SdkError::TimeoutError(_)
+                    | aws_sdk_sagemakerruntime::error::SdkError::DispatchFailure(_)
+            ) {
+                ProviderError::NetworkError(message)
+            } else if error.as_service_error().is_some_and(|error| {
+                error.is_internal_failure()
+                    || error.is_service_unavailable()
+                    || error.is_model_not_ready_exception()
+            }) {
+                ProviderError::ServerError(message)
+            } else {
+                ProviderError::RequestFailed(message)
+            }
+        })?;
 
         let response_body = response
             .body
@@ -366,5 +388,61 @@ impl Provider for SageMakerTgiProvider {
             message,
             provider_usage,
         ))
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    use futures::StreamExt;
+    use std::sync::Arc;
+    use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn zero_budget_disables_sdk_retries_and_preserves_error_classification() {
+        for (status, error_type, temporary) in [
+            (500, "InternalFailure", true),
+            (503, "ServiceUnavailable", true),
+            (400, "ValidationError", false),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+                    "__type": error_type, "Message": "test failure"
+                })))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let config = aws_sdk_sagemakerruntime::config::Builder::new()
+                .behavior_version(aws_config::BehaviorVersion::latest())
+                .region(aws_config::Region::new("us-east-1"))
+                .credentials_provider(aws_sdk_sagemakerruntime::config::Credentials::new(
+                    "test", "test", None, None, "test",
+                ))
+                .endpoint_url(server.uri())
+                .http_client(ReqwestHttpClient::new())
+                .retry_config(aws_config::retry::RetryConfig::standard().with_max_attempts(3))
+                .build();
+            let provider = Arc::new(SageMakerTgiProvider {
+                sagemaker_client: SageMakerClient::from_conf(config),
+                endpoint_name: "test".into(),
+                name: SAGEMAKER_TGI_PROVIDER_NAME.into(),
+            });
+            let mut stream = goose_providers::retry::stream_with_recovery(
+                provider,
+                ModelConfig::new("test"),
+                "system".into(),
+                vec![Message::user().with_text("hi")],
+                vec![],
+                Duration::ZERO,
+            );
+            let error = stream.next().await.unwrap().unwrap_err();
+            assert_eq!(
+                matches!(error, ProviderError::ServerError(_)),
+                temporary,
+                "{error}"
+            );
+            assert!(stream.next().await.is_none());
+        }
     }
 }

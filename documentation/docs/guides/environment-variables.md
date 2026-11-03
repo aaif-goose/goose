@@ -89,7 +89,24 @@ To see Claude's thinking output in the **CLI**, you also need to set `GOOSE_CLI_
 
 ### Provider Retries
 
-Configurable retry parameters for LLM providers. 
+During agent requests, goose retries temporary network, rate-limit, and server failures
+until a shared recovery budget expires. The budget starts at the first failure and
+includes backoff and subsequent request attempts. Retry status appears immediately;
+Stop cancels waiting and requests. Once text, thinking, or tool-call fragments arrive,
+goose preserves partial output and reports any failure without replaying the request.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `GOOSE_PROVIDER_RETRY_TIMEOUT` | Recovery budget in seconds; `0` disables automatic recovery | `120` |
+
+This setting can also be stored in `config.yaml`. Retries use exponential backoff
+starting at one second, capped at 30 seconds with jitter. A provider's `Retry-After`
+delay takes precedence but cannot extend the recovery budget. The budget does not
+limit a healthy request or the initial wait for output. Providers that manage their
+own conversation context retain control of their own recovery.
+
+The provider-specific settings below apply to requests outside the agent recovery
+policy, such as direct provider calls.
 
 #### AWS Bedrock
 

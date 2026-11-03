@@ -369,6 +369,28 @@ fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<Respon
         return Ok(None);
     };
 
+    if (matches!(
+        event_type,
+        "response.output_text.delta"
+            | "response.refusal.delta"
+            | "response.function_call_arguments.delta"
+            | "response.reasoning_text.delta"
+            | "response.reasoning_summary_text.delta"
+    ) && raw_event
+        .get("delta")
+        .and_then(Value::as_str)
+        .is_some_and(|delta| !delta.is_empty()))
+        || (matches!(
+            event_type,
+            "response.output_item.added" | "response.output_item.done"
+        ) && matches!(
+            raw_event.pointer("/item/type").and_then(Value::as_str),
+            Some("function_call" | "reasoning")
+        ))
+    {
+        crate::retry::record_stream_output();
+    }
+
     if !is_known_responses_stream_event_type(event_type) {
         return Ok(None);
     }
