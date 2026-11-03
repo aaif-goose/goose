@@ -345,6 +345,7 @@ function ProviderCards({
           setView={handleSetView}
           initialProvider={switchModelProvider}
           titleOverride={intl.formatMessage(i18n.chooseModel)}
+          modelChangeLocked={false}
         />
       )}
     </>

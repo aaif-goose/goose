@@ -40,6 +40,7 @@ export default function ModelSettingsButtons({ setView }: ConfigureModelButtonsP
           sessionId={null}
           setView={setView}
           onClose={() => setIsAddModelModalOpen(false)}
+          modelChangeLocked={false}
         />
       ) : null}
       {!hasPredefinedModels && (
