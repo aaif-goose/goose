@@ -280,6 +280,62 @@ describe('ModelsBottomBar', () => {
     });
   });
 
+  it('does not start a second recent-model switch while the first changeModel is in flight', async () => {
+    let resolveChange: (value: boolean) => void = () => {};
+    mockChangeModel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveChange = resolve;
+        })
+    );
+    vi.mocked(window.electron.getSetting).mockResolvedValue([
+      { model: 'recent-model', provider: 'recent-provider' },
+    ]);
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        modelChangeLocked={false}
+        sessionLoaded={true}
+      />
+    );
+
+    const recent = await screen.findByRole('button', { name: /recent-model/ });
+    fireEvent.click(recent);
+    await waitFor(() => expect(mockChangeModel).toHaveBeenCalledTimes(1));
+    fireEvent.click(recent);
+    expect(mockChangeModel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveChange(true);
+    });
+  });
+
+  it('uses the cancellation title while the picker is locked for a pending stop', () => {
+    renderWithIntl(
+      <ModelsBottomBar
+        sessionId="session-123"
+        dropdownRef={createDropdownRef()}
+        setView={vi.fn()}
+        sessionModel="session-model"
+        sessionProvider="session-provider"
+        onModelChanged={mockOnModelChanged}
+        sessionLoaded={true}
+        modelChangeLocked
+        modelChangeLockedTitle="Waiting for cancellation to finish"
+      />
+    );
+
+    expect(screen.getByTestId('model-menu-trigger')).toHaveAttribute(
+      'title',
+      'Waiting for cancellation to finish'
+    );
+  });
+
   it('drops a recent-model switch when a turn starts while lookups are pending', async () => {
     vi.mocked(window.electron.getSetting).mockResolvedValueOnce([
       { model: 'recent-model', provider: 'recent-provider' },
