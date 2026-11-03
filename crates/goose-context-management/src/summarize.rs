@@ -77,7 +77,7 @@ fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Mess
 /// When the model didn't follow the structured output format (schema-ignoring
 /// models, user-customized prompts), the raw response text is kept unchanged
 /// as the summary.
-fn apply_structured_summary(response: &mut Message, summary_template: &str) {
+pub fn apply_structured_summary(response: &mut Message, summary_template: &str) {
     let Some(summary) = StructuredSummary::parse(&response.as_concat_text()) else {
         return;
     };

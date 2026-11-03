@@ -76,8 +76,10 @@ pub trait InferenceEffect: From<Message> + MaybeSend + 'static {
 pub const EMPTY_RESPONSE_MESSAGE: &str =
     "The model returned an empty response. Please resend your message to continue.";
 const MAX_EMPTY_RESPONSE_RETRIES: usize = 3;
-const EMPTY_RESPONSE_NOTE_SCOPE: &str = "inference";
+const INFERENCE_NOTE_SCOPE: &str = "inference";
 const EMPTY_RESPONSE_NOTE: &str = "empty_response";
+const HIDE_RESPONSE_NOTE: &str = "hide_response";
+const CANCELLED_RESPONSE_NOTE: &str = "cancelled";
 
 /// The model's response stayed empty after retries. The fallback message is stored
 /// hidden so that operations owning the end of a turn (recipe retries, final output)
@@ -85,7 +87,14 @@ const EMPTY_RESPONSE_NOTE: &str = "empty_response";
 pub fn is_empty_response_marker(message: &Message) -> bool {
     message
         .metadata
-        .operation_note(EMPTY_RESPONSE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .operation_note(INFERENCE_NOTE_SCOPE, EMPTY_RESPONSE_NOTE)
+        .is_some()
+}
+
+pub fn is_cancelled_response(message: &Message) -> bool {
+    message
+        .metadata
+        .operation_note(INFERENCE_NOTE_SCOPE, CANCELLED_RESPONSE_NOTE)
         .is_some()
 }
 
@@ -393,23 +402,27 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         effects
     }
 
-    fn emit_message(&self, message: Message, emit: &Emitter) {
+    fn record_message(&self, message: Message, emit: Option<&Emitter>) {
         let message = message.with_generated_id_if_missing();
         self.output().accumulator.push(message.clone());
-        emit.message(message);
+        if let Some(emit) = emit {
+            emit.message(message);
+        }
     }
 
     fn error_outcome(
         &self,
         err: &ProviderError,
+        hide_response: bool,
         operation_logs: &mut Vec<String>,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
         let mut message = Message::from_provider_error(err);
+        message.metadata.user_visible = !hide_response;
         attach_operation_logs(&mut message, operation_logs);
-        self.emit_message(message, emit);
+        self.record_message(message, (!hide_response).then_some(emit));
         applied(self.take_output())
     }
 }
@@ -427,6 +440,16 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
         _conversation: &Conversation,
         _emit: &Emitter,
     ) -> Vec<E> {
+        {
+            let mut output = self.output();
+            for message in output.accumulator.messages_mut() {
+                message.metadata.set_operation_note(
+                    INFERENCE_NOTE_SCOPE,
+                    CANCELLED_RESPONSE_NOTE,
+                    serde_json::Value::Bool(true),
+                );
+            }
+        }
         self.take_output()
     }
 }
@@ -461,6 +484,12 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             return not_applicable();
         }
         let mut operation_logs = pending_operation_logs(messages);
+        let hide_response = messages.last().is_some_and(|message| {
+            message
+                .metadata
+                .operation_note(INFERENCE_NOTE_SCOPE, HIDE_RESPONSE_NOTE)
+                .is_some()
+        });
         let mut messages_for_provider = messages_for_provider(conversation, messages, false);
 
         let model_config = session
@@ -519,7 +548,14 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                Err(err) => {
+                    return self.error_outcome(
+                        &err,
+                        hide_response,
+                        &mut operation_logs,
+                        emit,
+                    )
+                }
             };
 
             let requested_model = model_config.model_name.clone();
@@ -541,7 +577,14 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, &mut operation_logs, emit),
+                    Err(err) => {
+                        return self.error_outcome(
+                            &err,
+                            hide_response,
+                            &mut operation_logs,
+                            emit,
+                        )
+                    }
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -550,6 +593,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     output.usage.push(usage);
                 }
                 if let Some(mut chunk) = msg_opt {
+                    chunk.metadata.user_visible = !hide_response;
                     if let Some(inference) = &inference {
                         chunk = chunk.with_inference_if_assistant(inference.clone());
                     }
@@ -561,10 +605,10 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     });
                     drop_repeated_tool_call_thinking(&self.output().accumulator, &mut chunk);
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
-                        self.output().accumulator.push(chunk);
+                        self.record_message(chunk, None);
                     } else {
                         attach_operation_logs(&mut chunk, &mut operation_logs);
-                        self.emit_message(chunk, emit);
+                        self.record_message(chunk, (!hide_response).then_some(emit));
                     }
                 }
             }
@@ -593,7 +637,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 .with_visibility(false, false);
             attach_operation_logs(&mut marker, &mut operation_logs);
             marker.metadata.set_operation_note(
-                EMPTY_RESPONSE_NOTE_SCOPE,
+                INFERENCE_NOTE_SCOPE,
                 EMPTY_RESPONSE_NOTE,
                 serde_json::Value::Bool(true),
             );
@@ -616,7 +660,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                     output.accumulator.clear();
                     message
                 };
-                self.emit_message(message, emit);
+                self.record_message(message, Some(emit));
             }
             applied(self.take_output())
         }

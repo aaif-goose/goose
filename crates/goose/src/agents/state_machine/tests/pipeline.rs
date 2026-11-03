@@ -223,6 +223,11 @@ impl TestPipeline {
         self.model_config.context_limit()
     }
 
+    pub(super) fn with_cache_friendly_compaction(mut self) -> Self {
+        self.turn_settings.cache_friendly_compaction = true;
+        self
+    }
+
     pub(super) async fn with_model(mut self, model: &str) -> Self {
         self.model_config = ModelConfig::new(model).with_canonical_limits("openai");
         self.session_manager
@@ -895,6 +900,7 @@ async fn build_test_pipeline(
             on_failure_timeout: std::time::Duration::from_secs(1),
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
+            cache_friendly_compaction: false,
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,

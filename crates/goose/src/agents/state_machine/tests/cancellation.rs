@@ -2,7 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use async_trait::async_trait;
-use goose_agent::{inference::InferenceRunner, tool::ToolOperation};
+use goose_agent::{
+    inference::{is_cancelled_response, InferenceRunner},
+    tool::ToolOperation,
+};
 use goose_providers::{
     base::{MessageStream, Provider},
     conversation::token_usage::{ProviderUsage, Usage},
@@ -14,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::test_pipeline;
+use super::{pipeline::MessageKind, test_pipeline};
 use crate::agents::gen_ai_telemetry::test_support::SpanFieldCapture;
 use crate::agents::state_machine::{Emitter, GooseEffect, StateMachine, Step};
 use crate::agents::AgentEvent;
@@ -114,6 +117,7 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
     let messages = session.conversation.as_ref().unwrap().messages();
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[1].as_concat_text(), "partial \noutput");
+    assert!(is_cancelled_response(&messages[1]));
     assert!(messages[1].get_tool_request_ids().contains("pending"));
     assert!(messages[2].get_tool_response_ids().contains("pending"));
     assert_eq!(session.usage.total_tokens, Some(15));
@@ -125,6 +129,52 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
         emitted_ids,
         [&messages[1].id, &messages[1].id, &messages[2].id]
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_compaction_is_discarded_before_the_next_message() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_cache_friendly_compaction();
+    pipeline
+        .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
+        .await;
+    let held_response = api.on("## Task Context").hold_reply("unused");
+    let cancel = CancellationToken::new();
+    let run = pipeline.run_with_cancel("cancelled request", cancel.clone());
+    tokio::pin!(run);
+    tokio::select! {
+        () = held_response.entered() => {}
+        _ = &mut run => panic!("compaction request was not held"),
+    }
+    cancel.cancel();
+    let cancelled = tokio::time::timeout(Duration::from_secs(5), &mut run).await??;
+    held_response.release();
+
+    let messages = cancelled.conversation().messages();
+    let trigger = messages
+        .iter()
+        .find(|message| message.as_concat_text() == "cancelled request")
+        .unwrap();
+    assert!(trigger.is_user_visible());
+    assert!(!trigger.is_agent_visible());
+    assert!(messages.iter().any(|message| {
+        message.as_concat_text().contains("## Task Context")
+            && !message.is_user_visible()
+            && !message.is_agent_visible()
+    }));
+
+    api.on("## Task Context").reply("summary");
+    api.on("Your context was compacted").reply("continued");
+    let resumed = pipeline.run(["replacement request"]).await?;
+
+    resumed.assert_message(-1, MessageKind::Agent, "continued");
+    let calls = api.calls();
+    assert_eq!(calls.len(), 3);
+    assert!(!calls[1].input_contains("cancelled request"));
+    assert!(calls[2].input_contains("replacement request"));
+    assert!(!calls[2].input_contains("cancelled request"));
+
     Ok(())
 }
 
