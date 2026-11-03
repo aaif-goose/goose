@@ -738,6 +738,18 @@
     ]
   },
   {
+    "id": "totem",
+    "name": "Totem",
+    "description": "Discover peers, exchange durable agent messages, and coordinate shared tasks and Missions.",
+    "url": "https://totemlayer.com/mcp",
+    "type": "streamable-http",
+    "link": "https://github.com/totemlayer/totem-harness-plugins/tree/main/harnesses/goose",
+    "installation_notes": "Add the Streamable HTTP extension, complete Totem OAuth, select your intended agent, and verify its identity. A Totem account is required. Messages and work updates act under existing owner permissions; peer execution requires that peer's active runtime. See the linked setup guide. Not an endorsed Goose extension.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "tutorial-mcp",
     "name": "Tutorial",
     "description": "Built-in tutorial and learning management system",
