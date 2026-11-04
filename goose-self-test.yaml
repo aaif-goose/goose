@@ -18,6 +18,7 @@ activities:
   - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
+  - Validate the SOKKAN Router declarative provider, its static model list, and tool-call continuation
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Validate capped and uncapped auto-compaction thresholds and Desktop editing
@@ -30,7 +31,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, context-relevance, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, sokkan, acp-effort, compaction, context-relevance, advanced"
 
   - key: test_depth
     input_type: string
@@ -501,6 +502,29 @@ prompt: |
      `reasoning_content` on subsequent tool-result turns. Never log API keys.
 
   Log results to: {{ workspace_dir }}/zai_coding_plan.md
+  {% endif %}
+
+  {% if test_phases == "all" or "sokkan" in test_phases %}
+  ## SOKKAN Router
+
+  **Prerequisites**: The active provider must be `sokkan`, with `SOKKAN_API_KEY` set and the
+  developer extension enabled. Otherwise record this phase as SKIPPED. Never log API keys.
+
+  1. When running from a goose source checkout, run
+     `cargo test -p goose-providers --lib declarative::tests` to verify `sokkan.json` is bundled,
+     exposed by `expose_declarative_providers!`, and valid. If the source checkout or Rust
+     toolchain is unavailable, mark this step as skipped rather than failed.
+  2. Read `crates/goose-providers/src/declarative/definitions/sokkan.json` and verify engine
+     `openai`, base URL `https://router.sokkan.ch/v1`, `dynamic_models: false`, and five models
+     with `qwen/qwen3.6-35b-a3b-eu` first, each with a `context_limit` and token costs.
+  3. Use the shell tool to run `echo sokkan-tool-ok`, then write a small Python file containing
+     Unicode text in the test workspace, read it back and run it. Verify each tool-result
+     continuation succeeds without malformed JSON, missing tool IDs, or provider errors.
+  4. When the `goose` binary is on PATH, run
+     `goose run --no-session --provider sokkan --model openai/gpt-oss-20b -t "Reply with the single word pong"`
+     and verify it exits 0 and prints `pong`, confirming a second model from the static list.
+
+  Log results to: {{ workspace_dir }}/sokkan.md
   {% endif %}
 
   {% if test_phases == "all" or "acp-effort" in test_phases %}
