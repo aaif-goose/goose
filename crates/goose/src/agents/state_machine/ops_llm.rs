@@ -38,7 +38,7 @@ impl InferenceEffect for GooseEffect {
 
 pub(crate) fn enrich_unclaimed_tool_errors(
     messages: &[Message],
-    tools: &[rmcp::model::Tool],
+    tools: &[goose_provider_types::data::Tool],
 ) -> Vec<Message> {
     let mut available_tools = tools
         .iter()
@@ -67,15 +67,20 @@ pub(crate) fn enrich_unclaimed_tool_errors(
             let Ok(result) = &mut response.tool_result else {
                 continue;
             };
-            result.content.push(rmcp::model::ContentBlock::text(format!(
-                "Available tools: [{available_tools}]."
-            )));
+            result
+                .content
+                .push(goose_provider_types::data::ContentBlock::text(format!(
+                    "Available tools: [{available_tools}]."
+                )));
         }
     }
     messages
 }
 
-fn prepare_tool_requests(message: &mut Message, advertised_tools: &[rmcp::model::Tool]) {
+fn prepare_tool_requests(
+    message: &mut Message,
+    advertised_tools: &[goose_provider_types::data::Tool],
+) {
     let tool_owners = advertised_tools
         .iter()
         .map(|tool| (tool.name.as_ref(), get_tool_owner(tool)))
@@ -150,8 +155,8 @@ impl Provider for GooseInferenceProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
-    ) -> Result<MessageStream, ProviderError> {
+        tools: &[goose_provider_types::data::Tool],
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let messages = enrich_unclaimed_tool_errors(messages, tools);
         let (tools, toolshim_tools, system_prompt) =
             crate::agents::reply_parts::prepare_tools_for_provider(
@@ -191,7 +196,7 @@ impl Provider for GooseInferenceProvider {
             result.map(|(message, usage)| {
                 let message = message.map(|mut message| {
                     prepare_tool_requests(&mut message, &advertised_tools);
-                    if message.role == rmcp::model::Role::Assistant {
+                    if message.role == goose_provider_types::data::Role::Assistant {
                         message.metadata.set_operation_note(
                             LLM_OPERATION_NAME,
                             ADVERTISED_TOOLS_NOTE,
@@ -217,7 +222,8 @@ impl Provider for GooseInferenceProvider {
 #[cfg(test)]
 mod canonicalization_tests {
     use super::*;
-    use rmcp::{model::CallToolRequestParams, object};
+    use goose_provider_types::data::CallToolRequestParams;
+    use rmcp::object;
 
     fn request(name: &str) -> Message {
         Message::assistant()
@@ -239,7 +245,7 @@ mod canonicalization_tests {
 
     #[test]
     fn canonicalizes_mangled_names_against_advertised_tools() {
-        let advertised = vec![rmcp::model::Tool::new(
+        let advertised = vec![goose_provider_types::data::Tool::new(
             "developer__shell",
             "run a shell command",
             object!({ "type": "object" }),
@@ -253,12 +259,12 @@ mod canonicalization_tests {
 
     #[test]
     fn canonicalizes_owner_qualified_unprefixed_tool_aliases() {
-        let advertised = vec![rmcp::model::Tool::new(
+        let advertised = vec![goose_provider_types::data::Tool::new(
             "shell",
             "run a shell command",
             object!({ "type": "object" }),
         )
-        .with_meta(rmcp::model::MetaObject(object!({
+        .with_meta(goose_provider_types::data::MetaObject(object!({
             "goose_extension": "developer"
         })))];
         let mut message = request("developer.shell");
@@ -276,7 +282,7 @@ mod canonicalization_tests {
 
     #[test]
     fn leaves_unrecoverable_names_unmodified() {
-        let advertised = vec![rmcp::model::Tool::new(
+        let advertised = vec![goose_provider_types::data::Tool::new(
             "developer__shell",
             "run a shell command",
             object!({ "type": "object" }),
@@ -292,7 +298,7 @@ mod canonicalization_tests {
     fn coerces_arguments_and_merges_tool_metadata() {
         use crate::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;
 
-        let advertised = vec![rmcp::model::Tool::new(
+        let advertised = vec![goose_provider_types::data::Tool::new(
             "set_enabled",
             "set a flag",
             object!({
@@ -303,7 +309,7 @@ mod canonicalization_tests {
                 }
             }),
         )
-        .with_meta(rmcp::model::MetaObject(object!({
+        .with_meta(goose_provider_types::data::MetaObject(object!({
             "ui": { "visibility": ["model"] }
         })))];
         let mut message = Message::assistant().with_tool_request_with_metadata(
@@ -339,7 +345,7 @@ mod canonicalization_tests {
 
     #[test]
     fn preserves_arguments_for_map_schemas() {
-        let advertised = vec![rmcp::model::Tool::new(
+        let advertised = vec![goose_provider_types::data::Tool::new(
             "add_values",
             "add named values",
             object!({

@@ -24,14 +24,14 @@ bundled-mcp = ["autovisualiser", "computer-controller", "document-tools", "memor
 
 [dependencies]
 rmcp = { workspace = true, features = ["server", "client", "transport-io", "macros"] }
-anyhow = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["process", "io-util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing-appender = { workspace = true }
-base64 = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 schemars = { workspace = true }
 indoc = { workspace = true }
 chrono = { workspace = true }

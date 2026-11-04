@@ -2,9 +2,11 @@ use super::{
     canonical_name, CanonicalModel, CanonicalModelRegistry, Limit, Modalities, Modality, Pricing,
     PricingTier, ThinkingMode,
 };
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::collections::BTreeMap;
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
 

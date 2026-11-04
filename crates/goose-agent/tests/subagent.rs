@@ -10,11 +10,11 @@ use goose_agent::events::AgentEvent;
 use goose_agent::operation::{
     ConversationEffect, Emitter, Operation, OperationResult, OperationStream,
 };
+use goose_agent::runtime::CancellationToken;
 use goose_agent::subagent::{SubagentOperation, SubagentOutcome, SubagentRunner, SubagentUpdate};
 use goose_provider_types::conversation::{message::Message, Conversation};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 struct Parent;
 

@@ -1,6 +1,6 @@
 use goose_provider_types::conversation::message::{Message, MessageContent};
+use goose_provider_types::data::CallToolRequestParams;
 use goose_provider_types::errors::ProviderError;
-use rmcp::model::CallToolRequestParams;
 use serde_json::Value;
 use std::borrow::Cow;
 use uuid::Uuid;
@@ -205,7 +205,7 @@ pub(super) fn generate_with_native_tools(
         }
         contents.extend(tool_call_contents);
         let mut msg = Message::new(
-            rmcp::model::Role::Assistant,
+            goose_provider_types::data::Role::Assistant,
             chrono::Utc::now().timestamp(),
             contents,
         );

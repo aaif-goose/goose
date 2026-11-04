@@ -20,9 +20,9 @@ use super::openai_compatible::{
 use super::retry::ProviderRetry;
 use super::utils::get_model;
 use crate::conversation::message::Message;
+use goose_provider_types::data::Tool;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
 
 const LITELLM_PROVIDER_NAME: &str = "litellm";
 const LITELLM_DEFAULT_HOST: &str = "http://localhost:4000";
@@ -309,7 +309,7 @@ impl Provider for LiteLLMProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let mut effective_model_config = model_config.clone();
         if effective_model_config.supports_vision.is_none() {
             effective_model_config.supports_vision = self

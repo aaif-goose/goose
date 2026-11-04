@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 use crate::anthropic::{AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION};
 use crate::api_client::{ApiClient, AuthMethod, RequestBuilderDecorator, TlsConfig};
@@ -444,7 +444,7 @@ fn configured_client(
 /// Usage chunks carry the model name the inference surface echoes back — the
 /// deployment alias, or a value the endpoint invented — but cost estimation
 /// needs the underlying model the alias resolves to, so re-tag each chunk.
-fn retag_usage_model(stream: MessageStream, model: &str) -> MessageStream {
+fn retag_usage_model(stream: MessageStream<'static>, model: &str) -> MessageStream<'static> {
     let model = model.to_string();
     Box::pin(stream.map(move |item| {
         item.map(|(message, usage)| {
@@ -556,7 +556,7 @@ impl Provider for AzureFoundryProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let maas_config = self.maas_model.as_ref().map(|model| {
             let mut config = model_config.clone();
             config.model_name = model.clone();

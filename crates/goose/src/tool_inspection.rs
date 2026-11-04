@@ -130,7 +130,7 @@ impl ToolInspectionManager {
             .and_then(|i| i.as_any().downcast_ref::<PermissionInspector>())
     }
 
-    pub fn apply_tool_annotations(&self, tools: &[rmcp::model::Tool]) {
+    pub fn apply_tool_annotations(&self, tools: &[goose_provider_types::data::Tool]) {
         if let Some(inspector) = self.get_permission_inspector() {
             inspector.apply_tool_annotations(tools);
         }
@@ -276,7 +276,7 @@ pub fn get_security_finding_id_from_results(
 mod tests {
     use super::*;
     use crate::conversation::message::ToolRequest;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
     use rmcp::object;
 
     #[test]

@@ -1,0 +1,31 @@
+[package]
+name = "goose-alloc-agent-example"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "alloc-agent"
+path = "src/main.rs"
+required-features = ["bare-metal"]
+
+[features]
+bare-metal = []
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+
+[dependencies]
+anyhow = { version = "1.0.104", default-features = false }
+async-trait = { version = "0.1.92", default-features = false }
+futures = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
+goose-agent = { version = "0.1.0-alpha.13", path = "../..", default-features = false, features = ["local"] }
+goose-provider-types = { version = "0.1.0-alpha.13", path = "../../../goose-provider-types", default-features = false, features = ["local", "formats"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["alloc"] }

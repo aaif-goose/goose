@@ -11,33 +11,39 @@ description.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["std", "formats", "mcp-interop"]
+std = ["anyhow/std", "serde/std", "serde_json/std", "futures/std", "base64/std", "strum/std", "dep:chrono", "dep:once_cell", "dep:regex", "dep:rand", "dep:reqwest", "dep:tokio", "dep:tracing", "dep:uuid", "dep:zstd", "dep:gloo-timers", "dep:getrandom"]
+formats = []
+mcp-interop = ["std", "dep:rmcp"]
+local = []
+
 [dependencies]
 anyhow = { workspace = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, optional = true }
 futures = { workspace = true }
-once_cell = { workspace = true }
-rand = { workspace = true }
-regex = { workspace = true, features = ["unicode"] }
-reqwest = { workspace = true, features = ["stream"] }
-rmcp = { workspace = true, features = ["server", "macros"] }
+once_cell = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+regex = { workspace = true, features = ["unicode"], optional = true }
+reqwest = { workspace = true, features = ["stream"], optional = true }
+rmcp = { workspace = true, features = ["server", "macros"], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "time"] }
-tracing = { workspace = true }
-unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
-uuid = { workspace = true, features = ["v4", "std"] }
-zstd = "0.14.3"
+tokio = { workspace = true, features = ["sync", "time"], optional = true }
+tracing = { workspace = true, optional = true }
+unicode-normalization = { version = "0.1.22", default-features = false }
+uuid = { workspace = true, features = ["v4", "std"], optional = true }
+zstd = { version = "0.14.3", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.4", features = ["wasm_js"] }
-uuid = { workspace = true, features = ["js"] }
-chrono = { workspace = true, features = ["wasmbind"] }
-gloo-timers = { version = "0.3.0", features = ["futures"] }
+getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
+uuid = { workspace = true, features = ["js"], optional = true }
+chrono = { workspace = true, features = ["wasmbind"], optional = true }
+gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
 
 [dev-dependencies]
 env-lock = { workspace = true }
@@ -47,4 +53,4 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 tokio-stream = { workspace = true }
 
 [build-dependencies]
-zstd = "0.14.3"
+zstd = { version = "0.14.3", optional = true }

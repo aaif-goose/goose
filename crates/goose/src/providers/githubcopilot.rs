@@ -41,10 +41,10 @@ use crate::conversation::message::{Message, MessageContent};
 
 use crate::providers::base::{ConfigKey, MessageStream};
 use futures::future::BoxFuture;
+use goose_provider_types::data::{ContentBlock, Tool};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::{ContentBlock, Tool};
 
 const GITHUB_COPILOT_PROVIDER_NAME: &str = "github_copilot";
 pub const GITHUB_COPILOT_DEFAULT_MODEL: &str = "gpt-4.1";
@@ -500,7 +500,7 @@ impl GithubCopilotProvider {
         messages: &[Message],
         tools: &[Tool],
         has_images: bool,
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let mut payload = create_responses_request(model_config, system, messages, tools)
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
         payload["stream"] = serde_json::Value::Bool(true);
@@ -538,7 +538,7 @@ impl GithubCopilotProvider {
         messages: &[Message],
         tools: &[Tool],
         has_images: bool,
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let supports_streaming = GITHUB_COPILOT_STREAM_MODELS
             .iter()
             .any(|prefix| model_config.model_name.starts_with(prefix));
@@ -683,7 +683,7 @@ impl Provider for GithubCopilotProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let is_agent_call = IS_AGENT_CALL.try_with(|&v| v).unwrap_or(false);
         let last_is_tool_response = messages.last().is_some_and(|m| {
             m.content
@@ -1383,7 +1383,7 @@ mod tests {
     #[test]
     fn detects_images_in_tool_responses() {
         use crate::conversation::message::{Message, MessageContent};
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use goose_provider_types::data::{CallToolResult, ContentBlock};
 
         let image_content =
             ContentBlock::image("aW1hZ2VkYXRh".to_string(), "image/png".to_string());

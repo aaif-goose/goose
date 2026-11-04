@@ -1,13 +1,15 @@
 use super::CanonicalModel;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use anyhow::{bail, Context, Result};
+use core::ops::Deref;
+use core::time::Duration;
 use futures::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::header::{ETAG, IF_NONE_MATCH};
 use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard};
-use std::time::Duration;
 
 const MAX_CATALOG_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_FILENAME: &str = "models_dev_api.json";
@@ -18,7 +20,7 @@ static ACTIVE_REGISTRY: Lazy<RwLock<Result<CanonicalModelRegistry>>> = Lazy::new
         include_bytes!(concat!(env!("OUT_DIR"), "/canonical_models.json.zst")).as_slice(),
     )
     .context("Failed to decompress bundled canonical models JSON")
-    .and_then(|json| CanonicalModelRegistry::from_json(std::str::from_utf8(&json)?));
+    .and_then(|json| CanonicalModelRegistry::from_json(core::str::from_utf8(&json)?));
     RwLock::new(bundled)
 });
 
@@ -187,7 +189,7 @@ pub async fn fetch_remote_catalog(url: &str, cache_dir: &Path) -> Result<Option<
 impl RemoteCatalog {
     pub fn install(self, cache_dir: &Path) -> Result<()> {
         let content =
-            std::str::from_utf8(&self.body).context("canonical model catalog is not UTF-8")?;
+            core::str::from_utf8(&self.body).context("canonical model catalog is not UTF-8")?;
         let registry = super::models_dev::from_models_dev(content)?;
 
         std::fs::create_dir_all(cache_dir)?;

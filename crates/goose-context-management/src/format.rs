@@ -1,5 +1,5 @@
 use goose_provider_types::conversation::message::{ActionRequiredData, Message, MessageContent};
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 
 pub fn format_message_for_compacting(msg: &Message) -> String {
     let content_parts: Vec<String> = msg

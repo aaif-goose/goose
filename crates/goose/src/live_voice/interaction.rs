@@ -4,10 +4,10 @@ use super::service::{
 use super::transcript::{DelegationContext, LiveTranscript};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
 use futures::future::BoxFuture;
+use goose_provider_types::data::Role;
 use goose_providers::live_voice_provider::{
     DelegationUpdate, DelegationUpdateDelivery, ProviderConnection, ProviderConnectionEvent,
 };
-use rmcp::model::Role;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;

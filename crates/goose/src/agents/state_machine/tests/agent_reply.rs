@@ -394,7 +394,7 @@ async fn state_machine_confirmation_through_agent_resumes_tool_call() -> Result<
         messages
             .iter()
             .filter(|message| {
-                message.role == rmcp::model::Role::User
+                message.role == goose_provider_types::data::Role::User
                     && message.is_user_visible()
                     && !message.is_tool_response()
             })

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::{

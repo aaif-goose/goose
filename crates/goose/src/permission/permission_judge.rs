@@ -3,8 +3,8 @@ use crate::conversation::Conversation;
 use crate::prompt_template::render_template;
 use crate::providers::base::Provider;
 use chrono::Utc;
+use goose_provider_types::data::{Tool, ToolAnnotations};
 use indoc::indoc;
-use rmcp::model::{Tool, ToolAnnotations};
 use rmcp::object;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -107,7 +107,7 @@ fn create_check_messages(tool_requests: Vec<&ToolRequest>) -> Conversation {
     let requests = serde_json::to_string_pretty(&requests).unwrap_or_else(|_| "[]".to_string());
     let mut check_messages = vec![];
     check_messages.push(Message::new(
-        rmcp::model::Role::User,
+        goose_provider_types::data::Role::User,
         Utc::now().timestamp(),
         vec![MessageContent::text(format!(
             "UNTRUSTED TOOL REQUEST DATA (JSON):\n{requests}"
@@ -195,7 +195,7 @@ pub struct PermissionCheckResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
 
     fn request(id: &str, command: &str) -> ToolRequest {
         ToolRequest {
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn judge_response_identifies_requests_instead_of_tool_names() {
         let response = Message::new(
-            rmcp::model::Role::Assistant,
+            goose_provider_types::data::Role::Assistant,
             Utc::now().timestamp(),
             vec![MessageContent::tool_request(
                 "judge-response",

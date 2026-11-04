@@ -20,6 +20,7 @@ use aws_sdk_bedrockruntime::types::error::ConverseStreamOutputError;
 use aws_sdk_bedrockruntime::{types as bedrock, Client};
 use base64::Engine;
 use futures::future::BoxFuture;
+use goose_provider_types::data::{CallToolRequestParams, ErrorCode, ErrorData, Tool};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai::extract_reasoning_effort;
@@ -27,7 +28,8 @@ use goose_providers::formats::openai_responses::create_responses_request;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
 use reqwest::header::{HeaderName, HeaderValue, AUTHORIZATION};
-use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Tool};
+
+use rmcp::model::object;
 use serde_json::Value;
 use smithy_transport_reqwest::ReqwestHttpClient;
 
@@ -680,7 +682,7 @@ impl BedrockProvider {
         messages: &[Message],
         tools: &[Tool],
         model_name: &str,
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let (bedrock_message, bedrock_usage) = self
             .with_retry(|| {
                 self.send_with_document_fallback(|| {
@@ -1016,7 +1018,7 @@ impl Provider for BedrockProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let session_id_opt = if session_id.is_empty() {
             None

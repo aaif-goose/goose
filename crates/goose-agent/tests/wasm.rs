@@ -1,16 +1,14 @@
 #![cfg(target_arch = "wasm32")]
-// The GDK takes `Arc` on every target, so native and wasm32 share one API.
-#![allow(clippy::arc_with_non_send_sync)]
 
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     rc::Rc,
-    sync::Arc,
 };
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     inference::{InferenceEffect, InferenceRunner},
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
@@ -18,6 +16,8 @@ use goose_agent::{
     tool::ToolOperation,
     tool_call_state::EXECUTABLE_KEY,
 };
+use goose_provider_types::data::{CallToolRequestParams, Tool};
+use goose_provider_types::runtime::Shared as Arc;
 use goose_provider_types::{
     base::{MessageStream, Provider},
     conversation::{
@@ -31,13 +31,12 @@ use goose_provider_types::{
 };
 use rmcp::{
     handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
-    model::{CallToolRequestParams, ErrorData, Tool},
+    model::ErrorData,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -166,7 +165,7 @@ impl InferenceEffect for Effect {
 }
 
 impl MachineEffect for Effect {
-    fn ensure_message_ids(&mut self) {}
+    fn ensure_message_ids(&mut self, _host: &dyn goose_provider_types::runtime::HostServices) {}
 }
 
 #[derive(Clone)]

@@ -14,9 +14,9 @@ use crate::session_context::{
 };
 use anyhow::{anyhow, Result};
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Tool;
 
 pub const HUGGINGFACE_API_HOST: &str = "https://router.huggingface.co/v1";
 pub const HUGGINGFACE_DOC_URL: &str = "https://huggingface.co/docs/inference-providers";
@@ -193,7 +193,7 @@ impl Provider for HuggingFaceProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         self.inner
             .stream(model_config, system, messages, tools)
             .await

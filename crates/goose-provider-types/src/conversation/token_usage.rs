@@ -1,4 +1,6 @@
-use std::ops::{Add, AddAssign};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use core::ops::{Add, AddAssign};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

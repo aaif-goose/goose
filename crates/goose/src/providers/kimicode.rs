@@ -29,10 +29,10 @@ use super::openai_compatible::handle_status;
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
 
 const KIMI_CODE_PROVIDER_NAME: &str = "kimi_code";
 pub const KIMI_CODE_DEFAULT_MODEL: &str = "kimi-for-coding";
@@ -418,7 +418,7 @@ impl Provider for KimiCodeProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let mut payload = create_request(
             KIMI_CODE_PROVIDER_NAME,
             model_config,

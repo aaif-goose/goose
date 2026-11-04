@@ -450,7 +450,7 @@ mod imp {
         model_name: &str,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
+        tools: &[goose_provider_types::data::Tool],
         tool_mode: ToolMode,
     ) -> Result<String, ProviderError> {
         match tool_mode {
@@ -658,11 +658,11 @@ mod imp {
             }
 
             match message.role {
-                rmcp::model::Role::User => values.push(json!({
+                goose_provider_types::data::Role::User => values.push(json!({
                     "role": "user",
                     "content": [{"type": "text", "text": text.trim(), "content": text.trim()}],
                 })),
-                rmcp::model::Role::Assistant => values.push(json!({
+                goose_provider_types::data::Role::Assistant => values.push(json!({
                     "role": "assistant",
                     "content": text.trim(),
                 })),
@@ -729,8 +729,8 @@ mod imp {
         }
         for message in messages.iter().filter(|message| message.is_agent_visible()) {
             let role = match message.role {
-                rmcp::model::Role::User => Role::User,
-                rmcp::model::Role::Assistant => Role::Assistant,
+                goose_provider_types::data::Role::User => Role::User,
+                goose_provider_types::data::Role::Assistant => Role::Assistant,
             };
             let text = extract_text_content(message);
             if !text.trim().is_empty() {
@@ -987,8 +987,8 @@ mod imp {
         }
         for message in messages.iter().filter(|message| message.is_agent_visible()) {
             let role = match message.role {
-                rmcp::model::Role::User => "User",
-                rmcp::model::Role::Assistant => "Assistant",
+                goose_provider_types::data::Role::User => "User",
+                goose_provider_types::data::Role::Assistant => "Assistant",
             };
             let text = extract_text_content(message);
             if !text.trim().is_empty() {

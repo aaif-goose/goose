@@ -1,5 +1,5 @@
 use crate::config::Config;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorData};
+use goose_provider_types::data::{CallToolResult, ContentBlock, ErrorData};
 use std::io::Write;
 
 const DEFAULT_LARGE_TEXT_THRESHOLD: usize = 200_000;
@@ -79,7 +79,7 @@ fn write_large_text_to_file(content: &str) -> Result<String, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::{ContentBlock, ErrorCode, ErrorData};
+    use goose_provider_types::data::{ContentBlock, ErrorCode, ErrorData};
     use std::borrow::Cow;
     use std::fs;
     use std::path::Path;

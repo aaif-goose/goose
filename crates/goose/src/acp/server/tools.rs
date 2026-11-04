@@ -2,8 +2,8 @@ use super::*;
 use crate::agents::extension_manager::{get_parameter_names, is_tool_owned_by_extension};
 use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::config::permission::PermissionLevel;
+use goose_provider_types::data::CallToolRequestParams;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
-use rmcp::model::CallToolRequestParams;
 
 impl AcpConnection {
     pub(super) async fn on_get_tools(
@@ -78,7 +78,7 @@ impl AcpConnection {
             .internal_err()?;
 
         let Some(tool) = tools.iter().find(|tool| {
-            *tool.name == req.name && is_tool_owned_by_extension(tool, &req.extension_name)
+            *tool.name == req.name && is_tool_owned_by_extension(*tool, &req.extension_name)
         }) else {
             return Err(agent_client_protocol::Error::invalid_params().data("tool not found"));
         };
@@ -127,7 +127,7 @@ impl AcpConnection {
             .await
             .internal_err()?
             .call_for_app(
-                tool_call,
+                tool_call.try_into().internal_err()?,
                 &req.extension_name,
                 crate::agents::extension_manager::CallRequest::default()
                     .with_container(container.clone()),

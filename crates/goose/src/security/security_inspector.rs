@@ -97,7 +97,7 @@ impl Default for SecurityInspector {
 mod tests {
     use super::*;
     use crate::conversation::message::ToolRequest;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
     use rmcp::object;
 
     #[tokio::test]

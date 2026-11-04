@@ -5,13 +5,13 @@ use crate::conversation::message::Message;
 use crate::session_context::session_id_request_builder_with_header_override;
 use anyhow::Result;
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::api_client::{ApiClient, AuthMethod, TlsConfig};
 use goose_providers::base::{ModelInfo, ProviderDescriptor};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::ollama::fetch_ollama_model_names;
 use goose_providers::openai::OpenAiProvider;
-use rmcp::model::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -171,7 +171,7 @@ impl Provider for OllamaCloudProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         self.inner
             .stream(model_config, system, messages, tools)
             .await

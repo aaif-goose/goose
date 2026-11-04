@@ -1,11 +1,12 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::runtime::{Cell as Mutex, Shared as Arc};
+use alloc::collections::BTreeSet as HashSet;
+use goose_provider_types::trace as tracing;
 
+use crate::runtime::CancellationToken;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
@@ -25,14 +26,20 @@ pub trait MachineSession: MaybeSend + MaybeSync {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait SessionLoader<S>: MaybeSend + MaybeSync {
     async fn load(&self, session_id: &str) -> Result<S>;
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait EffectHandler<S, E>: MaybeSend + MaybeSync {
     async fn apply_effects(&self, session: &S, effects: &mut [E], emit: &Emitter) -> Result<()>;
 }
@@ -71,14 +78,19 @@ fn empty_result<E>(status: RunStatus) -> StepResult<E> {
     }
 }
 
-fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
-    let mut tool_responses = Message::user();
+fn interrupted_tool_responses(
+    host: &dyn crate::runtime::HostServices,
+    messages: &[Message],
+) -> Option<Message> {
+    let mut tool_responses = Message::user_with_host(host);
     for (request, state) in tool_calls(messages) {
         if state.is_open() {
             tool_responses.add_tool_response_with_metadata(
                 request.id.clone(),
-                Ok(rmcp::model::CallToolResult::error(vec![
-                    rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
+                Ok(goose_provider_types::data::CallToolResult::error(vec![
+                    goose_provider_types::data::ContentBlock::text(
+                        "Tool call was interrupted before completing",
+                    ),
                 ])),
                 request.metadata.as_ref(),
             );
@@ -90,7 +102,7 @@ fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
 fn add_tools_to_inference_input(
     input: &mut InferenceInput,
     tool_names: &mut HashSet<String>,
-    tools: Vec<rmcp::model::Tool>,
+    tools: Vec<goose_provider_types::data::Tool>,
 ) -> Result<()> {
     for tool in tools {
         if !tool_names.insert(tool.name.to_string()) {
@@ -178,16 +190,21 @@ where
                     }
                 }
             };
-            let result = tokio::select! {
-                biased;
-                result = execution => Some(result),
-                _ = self.cancel.cancelled() => None,
-            };
+            let mut execution = core::pin::pin!(execution);
+            let mut cancelled = core::pin::pin!(self.cancel.cancelled());
+            let result = core::future::poll_fn(|cx| {
+                use core::{future::Future, task::Poll};
+                if let Poll::Ready(result) = execution.as_mut().poll(cx) {
+                    return Poll::Ready(Some(result));
+                }
+                cancelled.as_mut().poll(cx).map(|()| None)
+            })
+            .await;
             let result = match result {
                 Some(Ok(result)) => result,
                 Some(Err(error)) if !self.cancel.is_cancelled() => return Err(error),
                 _ => {
-                    *self.interrupted_step.lock().unwrap() = Some(index);
+                    *self.interrupted_step.borrow_mut() = Some(index);
                     return Ok(empty_result(RunStatus::Cancelled));
                 }
             };
@@ -198,7 +215,7 @@ where
                     tracing::debug!(step = name, "applied step");
                     result.applied_step = Some(name);
                     for effect in &mut result.effects {
-                        effect.ensure_message_ids();
+                        effect.ensure_message_ids(emit.host());
                     }
                     if self.cancel.is_cancelled() {
                         result.status = RunStatus::Cancelled;
@@ -225,7 +242,7 @@ where
             return Ok(());
         }
         for effect in effects.iter_mut() {
-            effect.ensure_message_ids();
+            effect.ensure_message_ids(emit.host());
         }
         runtime.apply_effects(session, effects, emit).await
     }
@@ -256,7 +273,7 @@ where
             return Ok(session);
         }
 
-        let interrupted_step = self.interrupted_step.lock().unwrap().take();
+        let interrupted_step = self.interrupted_step.borrow_mut().take();
         if let Some(index) = interrupted_step {
             session = self
                 .finalize_step_cancellation(runtime, session_id, session, &self.steps[index], emit)
@@ -266,7 +283,7 @@ where
         let interrupted = session
             .conversation()
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
-            .and_then(interrupted_tool_responses);
+            .and_then(|messages| interrupted_tool_responses(emit.host(), messages));
         if let Some(tool_responses) = interrupted {
             let effects = vec![E::from(emit.message(tool_responses))];
             session = self
@@ -337,13 +354,21 @@ mod tests {
         add_tools_to_inference_input(
             &mut input,
             &mut names,
-            vec![rmcp::model::Tool::new("duplicate", "first", schema.clone())],
+            vec![goose_provider_types::data::Tool::new(
+                "duplicate",
+                "first",
+                schema.clone(),
+            )],
         )
         .unwrap();
         let error = add_tools_to_inference_input(
             &mut input,
             &mut names,
-            vec![rmcp::model::Tool::new("duplicate", "second", schema)],
+            vec![goose_provider_types::data::Tool::new(
+                "duplicate",
+                "second",
+                schema,
+            )],
         )
         .unwrap_err();
 

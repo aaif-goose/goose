@@ -9,10 +9,10 @@ pub mod databricks {
 pub mod gcpvertexai;
 pub mod google {
     use anyhow::Result;
+    use goose_provider_types::data::Tool;
     use goose_providers::conversation::message::Message;
     pub use goose_providers::formats::google::*;
     use goose_providers::model::ModelConfig;
-    use rmcp::model::Tool;
     use serde_json::Value;
 
     use crate::config::Config;

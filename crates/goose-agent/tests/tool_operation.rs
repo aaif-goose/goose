@@ -1,3 +1,4 @@
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ErrorData, Tool};
 use std::{
     borrow::Cow,
     sync::{
@@ -8,6 +9,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
@@ -22,15 +24,11 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, ToolRequest, ToolResponse},
     Conversation,
 };
-use rmcp::{
-    handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
-    model::{CallToolRequestParams, CallToolResult, ErrorData, Tool},
-};
+use rmcp::handler::server::router::tool::{AsyncTool, SyncTool, ToolBase};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Default, Deserialize, JsonSchema)]
 struct AddInput {

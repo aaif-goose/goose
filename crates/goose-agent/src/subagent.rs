@@ -1,7 +1,10 @@
-use std::collections::HashSet;
-use std::num::NonZeroUsize;
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::collections::BTreeSet as HashSet;
+use core::num::NonZeroUsize;
+use goose_provider_types::runtime::Shared as Arc;
 
+use crate::runtime::CancellationToken;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::stream::{self, SelectAll, StreamExt};
@@ -10,7 +13,6 @@ use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 
 use crate::operation::{
     applied, not_applicable, Emitter, Operation, OperationResult, OperationStream,
@@ -35,8 +37,11 @@ pub enum SubagentUpdate {
     Finished(SubagentOutcome),
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait SubagentRunner<S>: MaybeSend + MaybeSync {
     /// Returns every subagent session ID that `message` asks to run, even if that subagent
     /// has already run. `SubagentOperation` calls this for every message in the parent
@@ -200,8 +205,11 @@ impl<S> SubagentOperation<S> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for SubagentOperation<S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -217,7 +225,7 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        let mut stopped = std::mem::take(&mut *self.running.lock().await);
+        let mut stopped = core::mem::take(&mut *self.running.lock().await);
         let pending = self.pending_subagents(session, conversation);
         let mut effects = Vec::new();
         let mut delivered = HashSet::new();

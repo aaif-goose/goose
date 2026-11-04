@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 /// Safely parse a JSON string that may contain doubly-encoded or malformed JSON.
 /// This function first attempts to parse the input string as-is. If that fails,
 /// it applies control character escaping and truncated JSON repair and tries again.

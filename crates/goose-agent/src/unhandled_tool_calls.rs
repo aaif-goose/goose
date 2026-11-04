@@ -1,8 +1,11 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::{Message, ToolRequest};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+use goose_provider_types::trace as tracing;
 
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, yielded, ConversationEffect, Emitter,
@@ -30,7 +33,7 @@ fn respond_to_unhandled_calls(
     calls: &[(&ToolRequest, ToolCallState<'_>)],
     emit: &Emitter,
 ) -> Option<Message> {
-    let mut tool_responses = Message::user();
+    let mut tool_responses = Message::user_with_host(emit.host());
     for (request, state) in calls {
         if *state != ToolCallState::AwaitingUser {
             tracing::error!(tool_call_id = %request.id, "tool call was not handled by any operation");
@@ -40,8 +43,11 @@ fn respond_to_unhandled_calls(
     (!tool_responses.content.is_empty()).then(|| emit.message(tool_responses))
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for UnhandledToolCallsOperation
 where
     S: MaybeSend + MaybeSync + 'static,

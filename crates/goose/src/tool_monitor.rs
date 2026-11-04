@@ -3,7 +3,7 @@ use crate::conversation::message::{Message, ToolRequest};
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 use serde_json::Value;
 use std::collections::HashMap;
 

@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use serde::Serialize;
 use std::future::Future;
 use std::sync::Arc;

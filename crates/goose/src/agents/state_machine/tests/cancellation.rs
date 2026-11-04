@@ -3,13 +3,13 @@ use std::{sync::Arc, time::Duration};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::{inference::InferenceRunner, tool::ToolOperation};
+use goose_provider_types::data::{CallToolRequestParams, Tool};
 use goose_providers::{
     base::{MessageStream, Provider},
     conversation::token_usage::{ProviderUsage, Usage},
     errors::ProviderError,
     model::ModelConfig,
 };
-use rmcp::model::{CallToolRequestParams, Tool};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;

@@ -1,5 +1,8 @@
-use std::collections::HashMap;
-use std::future::Future;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::trace as tracing;
+use alloc::collections::BTreeMap as HashMap;
+use core::future::Future;
 
 use crate::canonical::maybe_get_canonical_model;
 use crate::errors::ProviderError;

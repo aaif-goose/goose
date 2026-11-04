@@ -11,9 +11,9 @@ use axum::{extract::Query, response::Html, routing::get, Router};
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::io;
@@ -725,7 +725,7 @@ impl Provider for XaiOAuthProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         self.auth_provider.get_valid_token().await?;
         self.inner
             .stream(model_config, system, messages, tools)

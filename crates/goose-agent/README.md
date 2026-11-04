@@ -207,3 +207,79 @@ from JavaScript. Some things differ from native:
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
+
+## Microcontrollers (`no_std` with `alloc`)
+
+Disable default features on **both** crates. The portable core needs an allocator,
+but no operating system, atomic instructions, network library, or executor:
+
+```toml
+[dependencies]
+goose-agent = { version = "0.1.0-alpha.13", default-features = false }
+goose-provider-types = { version = "0.1.0-alpha.13", default-features = false, features = ["formats"] }
+```
+
+`formats` is optional and provides the existing OpenAI, Responses, Anthropic,
+Google, Ollama, Databricks, and Snowflake request/response helpers. It does not
+open connections. Implement `Provider::stream` with your network stack and return
+`MessageStream<'_>`; a stream may borrow the provider's socket or other resources.
+The inference runner also accepts providers borrowing a driver for the machine's
+lifetime, without requiring `'static` driver ownership.
+`base::stream_owned` retains the provider and request when an owned stream is
+needed outside that borrow. Supply decoded frames in the format expected by the chosen parser. HTTP, TLS,
+authentication, and framing not handled by that parser belong to the provider.
+A nonstreaming endpoint can return `stream_from_single_message`.
+
+Supply `HostServices` for Unix timestamps, IDs unique across your persisted
+sessions/reboots, asynchronous delays, and retry jitter. Message constructors,
+response parsers, and retry helpers have `_with_host` variants. Use
+`Emitter::with_host` with your services and an `EventSink`. The sink runs
+synchronously; process events immediately or provide your own buffering.
+`MachineEffect::ensure_message_ids` now receives these host services.
+
+Register device tools using `LocalTool<S>` and `ToolOperation::with_local_tool`,
+or implement the dynamic `ToolProvider<S>` interface. Tools describe their JSON
+input schemas directly and return GDK-owned results from
+`goose_provider_types::data`. Assemble an approval operation before tool dispatch;
+`ToolApprovalOperation` can automatically approve your local tool allowlist.
+Session loading and effect persistence remain application-defined.
+
+Use `runtime::Shared` for shared ownership. It is `Rc` in alloc-only/WASM builds
+and `Arc` in threaded desktop builds. Alloc-only futures and tool/provider objects
+need not be `Send` or `Sync`. The `local` feature also selects this execution model
+on a host with `std`; all participating core-crate consumers must use that same
+mode. Desktop provider/application crates retain their threaded configuration.
+The core cancellation token wakes pending work and supports parent/child tokens.
+Local handles are task-local: signal an executor task from an interrupt rather
+than accessing these handles directly. Synchronous embedded work runs inline and
+cannot be interrupted until it returns or yields.
+
+See [the isolated example](examples/alloc-agent/README.md) for a custom provider
+using format helpers, local sensor tool, in-memory session store, allocator, and a
+linked Cortex-M executable. Its tests exercise a streamed provider → approval →
+local tool → provider → final response loop and cancellation without `std` in the
+GDK dependency graph.
+
+### Feature differences
+
+Default builds retain desktop adapters. Alloc-only builds omit:
+
+- MCP transports, notifications, typed MCP tool registration, and protocol macros.
+  Local tools remain available. `mcp-interop` enables desktop conversions.
+- Built-in HTTP providers, filesystem image loading/path detection, skills, and
+  subagents. Supply image/document content directly from memory.
+- The bundled model catalog, compressed assets, catalog refresh/cache, and global
+  request logging/tracing. Specify model limits and capabilities explicitly;
+  registry lookups yield no metadata and existing fallback limits still apply.
+- OS time, UUID entropy, runtime timers, and the blocking pool; supply host services
+  and use cooperative device operations.
+
+The core still allocates conversations, JSON values, parser state, tool arguments,
+and formatted requests. This is not a bounded-memory or allocation-failure-safe
+implementation; size your heap and conversation retention for your application.
+
+Desktop integrations should import message/tool types from
+`goose_provider_types::data`, convert at MCP boundaries with `TryFrom`, and adapt
+thinking-effort capability subscriptions to streams. Configuration maps now use
+`BTreeMap`; serialized message/configuration shapes are retained. The default
+`std` constructors remain available as conveniences around `SystemHost`.

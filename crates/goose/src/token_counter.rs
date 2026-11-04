@@ -1,5 +1,5 @@
+use goose_provider_types::data::Tool;
 use lru::LruCache;
-use rmcp::model::Tool;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use tiktoken_rs::CoreBPE;

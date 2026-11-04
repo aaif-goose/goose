@@ -258,7 +258,7 @@ settings:
                     .contains("failed: max turns reached")
         })
         .expect("child turn-limit failure is delivered to the parent LLM");
-    assert_eq!(delivery.role, rmcp::model::Role::User);
+    assert_eq!(delivery.role, goose_provider_types::data::Role::User);
     result.assert_message(-1, Agent, "child stopped on time");
 
     Ok(())
@@ -319,7 +319,9 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
         .conversation()
         .messages()
         .iter()
-        .filter(|message| message.role == rmcp::model::Role::Assistant && message.is_user_visible())
+        .filter(|message| {
+            message.role == goose_provider_types::data::Role::Assistant && message.is_user_visible()
+        })
         .map(|message| message.as_concat_text())
         .filter(|text| text.contains("\"result\""))
         .collect();

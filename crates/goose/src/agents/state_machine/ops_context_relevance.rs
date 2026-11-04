@@ -10,6 +10,8 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::data::Role;
+use goose_provider_types::data::{Annotations, ContentBlock};
 use goose_providers::{
     decision::{
         DecisionAnswer, DecisionProvider, DecisionQuestion, DecisionRequest, DecisionResponse,
@@ -18,7 +20,6 @@ use goose_providers::{
     errors::ProviderError,
     typesafe::TYPESAFE_DEFAULT_MODEL,
 };
-use rmcp::model::{Annotations, ContentBlock, Role};
 use serde::Serialize;
 use serde_json::{json, Value};
 

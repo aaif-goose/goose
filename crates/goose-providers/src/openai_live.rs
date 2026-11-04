@@ -12,7 +12,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc};

@@ -1674,7 +1674,8 @@ mod tests {
         manager
             .add_message(
                 &parent.id,
-                &Message::user().with_tool_response("delegate-call", Ok(result)),
+                &Message::user()
+                    .with_tool_response("delegate-call", Ok(result.try_into().unwrap())),
             )
             .await
             .unwrap();
@@ -1812,7 +1813,7 @@ mod tests {
                 subagent_id,
                 &Message::assistant().with_tool_request(
                     "final-output-call",
-                    Ok(rmcp::model::CallToolRequestParams::new(
+                    Ok(goose_provider_types::data::CallToolRequestParams::new(
                         crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
                     )
                     .with_arguments(arguments)),
@@ -1824,9 +1825,11 @@ mod tests {
                 subagent_id,
                 &Message::user().with_tool_response(
                     "final-output-call",
-                    Ok(CallToolResult::success(vec![ContentBlock::text(
-                        crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
-                    )])),
+                    Ok(goose_provider_types::data::CallToolResult::success(vec![
+                        goose_provider_types::data::ContentBlock::text(
+                            crate::agents::final_output_tool::FINAL_OUTPUT_SUCCESS_MESSAGE,
+                        ),
+                    ])),
                 ),
             )
             .await?;
@@ -2718,7 +2721,7 @@ You review code."#;
         // specific params like anthropic_beta must not bleed through — they would
         // cause a 400 INVALID_ARGUMENT from the target API.
         let mut parent = parent_config();
-        parent.request_params = Some(HashMap::from([(
+        parent.request_params = Some(std::collections::BTreeMap::from([(
             "anthropic_beta".to_string(),
             serde_json::json!("custom-beta-header"),
         )]));
@@ -2747,7 +2750,7 @@ You review code."#;
         // Reasoning controls are model-family-agnostic and should be inherited,
         // while provider-specific params like anthropic_beta must not.
         let mut parent = parent_config();
-        parent.request_params = Some(HashMap::from([
+        parent.request_params = Some(std::collections::BTreeMap::from([
             ("thinking_effort".to_string(), serde_json::json!("high")),
             ("budget_tokens".to_string(), serde_json::json!(8192)),
             (

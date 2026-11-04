@@ -30,7 +30,15 @@ fn generated_elicitation_response_message(
         .with_content(MessageContent::action_required_elicitation_response(
             elicitation_id.to_string(),
             elicitation_response_user_data(response),
-            elicitation_response_action(response),
+            match elicitation_response_action(response) {
+                rmcp::model::ElicitationAction::Accept => {
+                    goose_provider_types::data::ElicitationAction::Accept
+                }
+                rmcp::model::ElicitationAction::Decline => {
+                    goose_provider_types::data::ElicitationAction::Decline
+                }
+                _ => goose_provider_types::data::ElicitationAction::Cancel,
+            },
         ))
         .agent_only()
 }

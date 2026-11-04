@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use aws_config;
 use aws_sdk_bedrockruntime::config::ProvideCredentials;
 use aws_sdk_sagemakerruntime::Client as SageMakerClient;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde_json::{json, Value};
 use smithy_transport_reqwest::ReqwestHttpClient;
 
@@ -18,10 +18,10 @@ use goose_providers::errors::ProviderError;
 
 use chrono::Utc;
 use futures::future::BoxFuture;
+use goose_provider_types::data::Role;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Role;
 
 const SAGEMAKER_TGI_PROVIDER_NAME: &str = "sagemaker_tgi";
 pub const SAGEMAKER_TGI_DOC_LINK: &str =
@@ -321,7 +321,7 @@ impl Provider for SageMakerTgiProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let session_id = if session_id.is_empty() {
             None

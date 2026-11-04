@@ -291,7 +291,7 @@ fn is_web_tool(name: &str) -> bool {
 }
 
 fn extract_text_for_inspection(
-    tool_call: &rmcp::model::CallToolRequestParams,
+    tool_call: &goose_provider_types::data::CallToolRequestParams,
     is_web: bool,
 ) -> Option<String> {
     let args = tool_call.arguments.as_ref()?;

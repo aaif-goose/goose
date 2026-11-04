@@ -7,7 +7,7 @@ use crate::permission::permission_judge::{detect_read_only_requests, PermissionC
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 
@@ -276,7 +276,7 @@ impl ToolInspector for PermissionInspector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
     use rmcp::object;
     use std::sync::Arc;
     use test_case::test_case;

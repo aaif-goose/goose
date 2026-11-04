@@ -1,12 +1,14 @@
 use crate::agents::extension_manager::TRUSTED_TOOL_UPDATE_META_KEY;
 use crate::conversation::message::{Message, ToolNameParts, ToolRequest, ToolResponse};
-use crate::mcp_utils::ToolResult;
 use agent_client_protocol::schema::v1::{
     BlobResourceContents, Content, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
     ImageContent, Meta, TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId,
     ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
 };
-use rmcp::model::{CallToolResult, ContentBlock as RmcpContentBlock, ResourceContents};
+use goose_provider_types::conversation::message::ToolResult;
+use goose_provider_types::data::{
+    CallToolResult, ContentBlock as RmcpContentBlock, ResourceContents,
+};
 
 use super::super::message_meta::merge_message_meta;
 
@@ -328,7 +330,7 @@ pub(crate) fn tool_call_update_fields_from_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::{CallToolRequestParams, ContentBlock as RmcpContent};
+    use goose_provider_types::data::{CallToolRequestParams, ContentBlock as RmcpContent};
     use std::path::PathBuf;
     use test_case::test_case;
 
@@ -407,7 +409,7 @@ mod tests {
     mod build_initial_tool_call {
         use super::*;
         use crate::conversation::message::TOOL_META_TITLE_KEY;
-        use rmcp::model::ErrorData;
+        use goose_provider_types::data::ErrorData;
 
         #[test]
         fn uses_default_title_and_preserves_request_data() {
@@ -496,7 +498,7 @@ mod tests {
 
     mod build_initial_tool_call_with_message_meta {
         use super::*;
-        use rmcp::model::Role;
+        use goose_provider_types::data::Role;
 
         #[test]
         fn merges_message_and_tool_metadata() {
@@ -871,11 +873,12 @@ mod tests {
 
         #[test]
         fn includes_transport_error_content() {
-            let response = response_from_tool_result(Err(rmcp::model::ErrorData::new(
-                rmcp::model::ErrorCode::INTERNAL_ERROR,
-                "transport failed",
-                None,
-            )));
+            let response =
+                response_from_tool_result(Err(goose_provider_types::data::ErrorData::new(
+                    goose_provider_types::data::ErrorCode::INTERNAL_ERROR,
+                    "transport failed",
+                    None,
+                )));
 
             let fields = tool_call_update_fields_from_response(&response, None);
 

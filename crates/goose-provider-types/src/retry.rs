@@ -1,15 +1,12 @@
 use crate::base::Provider;
 use crate::errors::ProviderError;
 use crate::maybe_send::MaybeSend;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::trace as tracing;
 use async_trait::async_trait;
-use std::future::Future;
-use std::time::Duration;
-
-// wasm32 hosts run without a tokio runtime, so back off on the host's timer.
-#[cfg(target_arch = "wasm32")]
-use gloo_timers::future::sleep;
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::time::sleep;
+use core::future::Future;
+use core::time::Duration;
 
 pub const DEFAULT_MAX_RETRIES: usize = 3;
 pub const DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 1000;
@@ -44,6 +41,11 @@ impl Default for RetryConfig {
 }
 
 impl RetryConfig {
+    #[cfg(feature = "std")]
+    pub fn delay_for_attempt(&self, attempt: usize) -> Duration {
+        self.delay_for_attempt_with_host(&crate::runtime::SystemHost, attempt)
+    }
+
     pub fn new(
         max_retries: usize,
         initial_interval_ms: u64,
@@ -68,18 +70,33 @@ impl RetryConfig {
         self.max_retries
     }
 
-    pub fn delay_for_attempt(&self, attempt: usize) -> Duration {
+    pub fn delay_for_attempt_with_host(
+        &self,
+        host: &dyn crate::runtime::HostServices,
+        attempt: usize,
+    ) -> Duration {
         if attempt == 0 {
             return Duration::from_millis(0);
         }
 
-        let exponent = (attempt - 1) as u32;
-        let base_delay_ms = (self.initial_interval_ms as f64
-            * self.backoff_multiplier.powi(exponent as i32)) as u64;
+        let mut exponent = attempt - 1;
+        let mut factor = self.backoff_multiplier;
+        let mut multiplier = 1.0;
+        while exponent != 0 {
+            if exponent & 1 != 0 {
+                multiplier *= factor;
+            }
+            exponent >>= 1;
+            if exponent != 0 {
+                factor *= factor;
+            }
+        }
+        let base_delay_ms = (self.initial_interval_ms as f64 * multiplier) as u64;
 
-        let capped_delay_ms = std::cmp::min(base_delay_ms, self.max_interval_ms);
+        let capped_delay_ms = core::cmp::min(base_delay_ms, self.max_interval_ms);
 
-        let jitter_factor_to_avoid_thundering_herd = 0.8 + (rand::random::<f64>() * 0.4);
+        let jitter_factor_to_avoid_thundering_herd =
+            0.8 + (host.jitter_ms(1_000_000) as f64 / 1_000_000.0 * 0.4);
         let jitter_delay_ms =
             (capped_delay_ms as f64 * jitter_factor_to_avoid_thundering_herd) as u64;
 
@@ -101,8 +118,8 @@ fn is_permanent_request_failure(message: &str) -> bool {
     PERMANENT_REQUEST_FAILURE_MARKERS
         .iter()
         .any(|marker| message.contains(marker))
-        || crate::formats::anthropic::is_thinking_signature_error(message)
-        || crate::formats::openai_responses::is_encrypted_reasoning_error(message)
+        || is_thinking_signature_error(message)
+        || is_encrypted_reasoning_error(message)
 }
 
 pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
@@ -116,7 +133,8 @@ pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
     }
 }
 
-pub async fn retry_operation<F, Fut, T>(
+pub async fn retry_operation_with_host<F, Fut, T>(
+    host: &dyn crate::runtime::HostServices,
     config: &RetryConfig,
     operation: F,
 ) -> Result<T, ProviderError>
@@ -145,10 +163,10 @@ where
                             retry_delay: Some(d),
                             ..
                         } => *d,
-                        _ => config.delay_for_attempt(attempts),
+                        _ => config.delay_for_attempt_with_host(host, attempts),
                     };
 
-                    sleep(delay).await;
+                    host.sleep(delay).await;
                     continue;
                 }
                 return Err(error);
@@ -160,24 +178,58 @@ where
 /// Trait for retry functionality to keep Provider dyn-compatible.
 ///
 /// All `Provider` implementors get this via the blanket impl below.
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-pub trait ProviderRetry {
-    fn retry_config(&self) -> RetryConfig {
-        RetryConfig::default()
-    }
-
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
+pub trait ProviderRetry: crate::maybe_send::MaybeSync {
+    #[cfg(feature = "std")]
     async fn with_retry<F, Fut, T>(&self, operation: F) -> Result<T, ProviderError>
     where
         F: Fn() -> Fut + MaybeSend,
         Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
         T: MaybeSend,
     {
-        self.with_retry_config(operation, self.retry_config()).await
+        self.with_retry_with_host(&crate::runtime::SystemHost, operation)
+            .await
     }
-
+    #[cfg(feature = "std")]
     async fn with_retry_config<F, Fut, T>(
         &self,
+        operation: F,
+        config: RetryConfig,
+    ) -> Result<T, ProviderError>
+    where
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
+    {
+        self.with_retry_config_with_host(&crate::runtime::SystemHost, operation, config)
+            .await
+    }
+
+    fn retry_config(&self) -> RetryConfig {
+        RetryConfig::default()
+    }
+
+    async fn with_retry_with_host<F, Fut, T>(
+        &self,
+        host: &dyn crate::runtime::HostServices,
+        operation: F,
+    ) -> Result<T, ProviderError>
+    where
+        F: Fn() -> Fut + MaybeSend,
+        Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+        T: MaybeSend,
+    {
+        self.with_retry_config_with_host(host, operation, self.retry_config())
+            .await
+    }
+
+    async fn with_retry_config_with_host<F, Fut, T>(
+        &self,
+        host: &dyn crate::runtime::HostServices,
         operation: F,
         config: RetryConfig,
     ) -> Result<T, ProviderError>
@@ -187,15 +239,19 @@ pub trait ProviderRetry {
         T: MaybeSend;
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<P: Provider> ProviderRetry for P {
     fn retry_config(&self) -> RetryConfig {
         Provider::retry_config(self)
     }
 
-    async fn with_retry_config<F, Fut, T>(
+    async fn with_retry_config_with_host<F, Fut, T>(
         &self,
+        host: &dyn crate::runtime::HostServices,
         operation: F,
         config: RetryConfig,
     ) -> Result<T, ProviderError>
@@ -246,9 +302,12 @@ impl<P: Provider> ProviderRetry for P {
                                 retry_delay: Some(provider_delay),
                                 ..
                             } => *provider_delay,
-                            _ => config.delay_for_attempt(attempts),
+                            _ => config.delay_for_attempt_with_host(host, attempts),
                         };
 
+                        #[cfg(not(feature = "std"))]
+                        let skip_backoff = false;
+                        #[cfg(feature = "std")]
                         let skip_backoff = std::env::var("GOOSE_PROVIDER_SKIP_BACKOFF")
                             .unwrap_or_default()
                             .parse::<bool>()
@@ -258,7 +317,7 @@ impl<P: Provider> ProviderRetry for P {
                             tracing::info!("Skipping backoff due to GOOSE_PROVIDER_SKIP_BACKOFF");
                         } else {
                             tracing::info!("Backing off for {:?} before retry", delay);
-                            sleep(delay).await;
+                            host.sleep(delay).await;
                         }
                         continue;
                     }
@@ -268,6 +327,31 @@ impl<P: Provider> ProviderRetry for P {
             };
         }
     }
+}
+
+#[cfg(feature = "std")]
+pub async fn retry_operation<F, Fut, T>(
+    config: &RetryConfig,
+    operation: F,
+) -> Result<T, ProviderError>
+where
+    F: Fn() -> Fut + MaybeSend,
+    Fut: Future<Output = Result<T, ProviderError>> + MaybeSend,
+    T: MaybeSend,
+{
+    retry_operation_with_host(&crate::runtime::SystemHost, config, operation).await
+}
+
+pub fn is_thinking_signature_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("thinking")
+        && (lower.contains("signature")
+            || lower.contains("cannot be modified")
+            || lower.contains("block_binding"))
+}
+pub fn is_encrypted_reasoning_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("encrypted content") && lower.contains("could not be verified")
 }
 
 #[cfg(test)]

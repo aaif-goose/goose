@@ -33,8 +33,15 @@ async fn complete_app_content(
     messages: &[Message],
     tools: Vec<McpTool>,
 ) -> Result<(Message, ProviderUsage), String> {
-    let (tools, toolshim_tools, system_prompt) =
-        prepare_tools_for_provider(tools, system_prompt, model_config);
+    let (tools, toolshim_tools, system_prompt) = prepare_tools_for_provider(
+        tools
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Invalid MCP tool: {error}"))?,
+        system_prompt,
+        model_config,
+    );
 
     let (response, usage) = crate::session_context::with_session_id(
         Some(session_id.to_string()),

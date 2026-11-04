@@ -13,10 +13,10 @@ use super::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::conversation::message::{Message, ToolResponse};
 use crate::utils::bytes_to_hex;
 use futures::future::BoxFuture;
+use goose_provider_types::data::{CallToolResult, Tool};
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::{CallToolResult, Tool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TestInput {
@@ -176,7 +176,7 @@ impl Provider for TestProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let hash = Self::hash_input(messages);
 
         if let Some(inner) = &self.inner {
@@ -223,8 +223,8 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use chrono::Utc;
+    use goose_provider_types::data::{Role, TextContent};
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-    use rmcp::model::{Role, TextContent};
     use std::env;
 
     #[derive(Clone)]
@@ -244,7 +244,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             let message = Message::new(
                 Role::Assistant,
                 Utc::now().timestamp(),

@@ -16,7 +16,7 @@ use crate::utils::get_model;
 
 use crate::model::ModelConfig;
 use crate::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 const SNOWFLAKE_PROVIDER_NAME: &str = "snowflake";
 pub const SNOWFLAKE_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
@@ -326,7 +326,7 @@ impl Provider for SnowflakeProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let payload = create_request(model_config, system, messages, tools)?;
 
         let mut log = start_log(model_config, &payload)?;

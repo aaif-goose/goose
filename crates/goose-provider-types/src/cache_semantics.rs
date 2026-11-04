@@ -1,9 +1,11 @@
 //! Prompt-cache semantics declared per (provider, model), instead of implied
 //! by whichever format module a request flows through.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use serde_json::{json, Value};
 
-use crate::formats::openai::is_openai_responses_model;
+use crate::model_names::is_openai_responses_model;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheSemantics {

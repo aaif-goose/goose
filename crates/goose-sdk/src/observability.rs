@@ -18,7 +18,7 @@ use std::{
 };
 
 use goose_providers::conversation::message::Message;
-use rmcp::model::Tool;
+use goose_providers::data::Tool;
 
 use crate::bindings::{GooseError, GooseStreamError, Usage};
 

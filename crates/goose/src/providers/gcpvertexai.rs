@@ -29,10 +29,10 @@ use crate::providers::formats::gcpvertexai::{
 use crate::providers::gcpauth::GcpAuth;
 use crate::providers::openai_compatible::{map_http_error_to_provider_error, sanitize_url};
 use crate::providers::retry::RetryConfig;
+use goose_provider_types::data::Tool;
 use goose_providers::errors::ProviderError;
 use goose_providers::http_status::{extract_retry_after, read_error_body};
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
 
 const GCP_VERTEX_AI_PROVIDER_NAME: &str = "gcp_vertex_ai";
 /// Base URL for GCP Vertex AI documentation
@@ -652,7 +652,7 @@ impl Provider for GcpVertexAIProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let (mut request, context) = create_request(model_config, system, messages, tools)?;
 
         if matches!(context.provider(), ModelProvider::Anthropic) {

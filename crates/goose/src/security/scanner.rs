@@ -5,7 +5,7 @@ use crate::security::patterns::{PatternMatch, PatternMatcher};
 use crate::utils::safe_truncate;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 
 const USER_SCAN_LIMIT: usize = 10;
 const ML_SCAN_CONCURRENCY: usize = 3;

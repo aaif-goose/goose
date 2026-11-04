@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -17,11 +17,11 @@ use crate::config::search_path::SearchPaths;
 use crate::conversation::message::{Message, MessageContent};
 use crate::subprocess::configure_subprocess;
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
 
 const CURSOR_AGENT_PROVIDER_NAME: &str = "cursor-agent";
 pub const CURSOR_AGENT_DEFAULT_MODEL: &str = "auto";
@@ -169,9 +169,9 @@ impl CursorAgentProvider {
                                 .content
                                 .iter()
                                 .filter_map(|content| match content {
-                                    rmcp::model::ContentBlock::Text(text_content) => {
-                                        Some(text_content.text.as_str())
-                                    }
+                                    goose_provider_types::data::ContentBlock::Text(
+                                        text_content,
+                                    ) => Some(text_content.text.as_str()),
                                     _ => None,
                                 })
                                 .collect::<Vec<&str>>()
@@ -539,7 +539,7 @@ impl Provider for CursorAgentProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let lines = self
             .execute_command(model_config, system, messages, tools)
             .await?;

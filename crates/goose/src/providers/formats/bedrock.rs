@@ -8,9 +8,11 @@ use aws_sdk_bedrockruntime::types as bedrock;
 use aws_smithy_types::{Document, Number};
 use base64::Engine;
 use chrono::Utc;
-use rmcp::model::{
-    object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, ResourceContents, Role, Tool,
+use goose_provider_types::data::{
+    CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, ResourceContents, Role, Tool,
 };
+
+use rmcp::model::object;
 use serde_json::Value;
 
 use crate::conversation::message::{Message, MessageContent};
@@ -554,7 +556,7 @@ pub fn from_bedrock_content_block(block: &bedrock::ContentBlock) -> Result<Messa
                     .iter()
                     .map(from_bedrock_tool_result_content_block)
                     .collect::<ToolResult<Vec<_>>>()
-                    .map(rmcp::model::CallToolResult::success)
+                    .map(goose_provider_types::data::CallToolResult::success)
             },
         ),
         bedrock::ContentBlock::ReasoningContent(reasoning) => {
@@ -680,8 +682,8 @@ pub fn from_bedrock_json(document: &Document) -> Result<Value> {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use goose_provider_types::data::ImageContent;
     use goose_test_support::TEST_IMAGE_B64;
-    use rmcp::model::ImageContent;
     use serde_json::json;
 
     #[test]
@@ -1065,7 +1067,7 @@ mod tests {
     #[test]
     fn test_to_bedrock_message_with_caching() -> Result<()> {
         use chrono::Utc;
-        use rmcp::model::Role;
+        use goose_provider_types::data::Role;
 
         // Multiple content blocks: cache point appended at end, order preserved
         let message = Message::new(
@@ -1408,7 +1410,7 @@ mod tests {
 
     #[test]
     fn test_from_bedrock_message_includes_reasoning_content() -> Result<()> {
-        use rmcp::model::Role;
+        use goose_provider_types::data::Role;
 
         let reasoning_text = bedrock::ReasoningTextBlock::builder()
             .text("thinking out loud")
@@ -1445,7 +1447,7 @@ mod tests {
 
     #[test]
     fn test_from_bedrock_message_filters_cache_points() -> Result<()> {
-        use rmcp::model::Role;
+        use goose_provider_types::data::Role;
 
         // Create a Bedrock message with mixed content including CachePoint
         let cache_point = bedrock::CachePointBlock::builder()
@@ -1486,7 +1488,7 @@ mod tests {
     #[test]
     fn test_cache_points_with_tool_request_messages() -> Result<()> {
         use chrono::Utc;
-        use rmcp::model::{CallToolRequestParams, Role};
+        use goose_provider_types::data::{CallToolRequestParams, Role};
         use serde_json::json;
 
         let message = Message::new(
@@ -1524,7 +1526,7 @@ mod tests {
 
     #[test]
     fn tool_request_parse_error_gets_placeholder_name() -> Result<()> {
-        use rmcp::model::{ErrorCode, ErrorData};
+        use goose_provider_types::data::{ErrorCode, ErrorData};
         // An unparseable tool call (ToolRequest(Err)) must still produce a tool_use
         // with a non-empty name; otherwise Bedrock rejects the tool_use / orphans the
         // paired tool_result. Mirrors the OpenAI/Databricks/Anthropic formatters.
@@ -1590,7 +1592,7 @@ mod tests {
     #[test]
     fn test_cache_points_with_tool_response_messages() -> Result<()> {
         use chrono::Utc;
-        use rmcp::model::{CallToolResult, Role};
+        use goose_provider_types::data::{CallToolResult, Role};
 
         let message = Message::new(
             Role::User,
@@ -1622,7 +1624,7 @@ mod tests {
     #[test]
     fn test_cache_points_with_mixed_tool_content() -> Result<()> {
         use chrono::Utc;
-        use rmcp::model::{CallToolRequestParams, Role};
+        use goose_provider_types::data::{CallToolRequestParams, Role};
         use serde_json::json;
 
         let message = Message::new(
@@ -1721,7 +1723,7 @@ mod tests {
     #[test]
     fn test_elicitation_message_becomes_empty() {
         use crate::conversation::message::{ActionRequired, ActionRequiredData};
-        use rmcp::model::Role;
+        use goose_provider_types::data::Role;
 
         let elicitation_request = Message::new(
             Role::Assistant,
@@ -1742,7 +1744,7 @@ mod tests {
                 data: ActionRequiredData::ElicitationResponse {
                     id: "elicit-1".to_string(),
                     user_data: serde_json::json!({"choice": "yes"}),
-                    action: rmcp::model::ElicitationAction::Accept,
+                    action: goose_provider_types::data::ElicitationAction::Accept,
                 },
             })],
         );

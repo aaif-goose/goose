@@ -1,11 +1,12 @@
+use crate::data::Tool;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::collections::BTreeMap as HashMap;
 use async_trait::async_trait;
+use core::pin::Pin;
 use futures::Stream;
-use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::pin::Pin;
-use tokio::sync::watch;
 
 use crate::{
     canonical::{
@@ -348,14 +349,19 @@ pub trait ProviderDescriptor {
 /// A message stream yields partial text content but complete tool calls, all within the Message object
 /// So a message with text will contain potentially just a word of a longer response, but tool calls
 /// messages will only be yielded once concatenated.
-#[cfg(not(target_arch = "wasm32"))]
-pub type MessageStream = Pin<
-    Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>> + Send>,
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
+pub type MessageStream<'a> = Pin<
+    Box<
+        dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>>
+            + Send
+            + 'a,
+    >,
 >;
 
-#[cfg(target_arch = "wasm32")]
-pub type MessageStream =
-    Pin<Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>>>>;
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
+pub type MessageStream<'a> = Pin<
+    Box<dyn Stream<Item = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>> + 'a>,
+>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PermissionRouting {
@@ -429,8 +435,16 @@ pub fn known_models_from_registry(provider: &str) -> Vec<ModelInfo> {
 }
 
 /// Collect all chunks from a MessageStream into a single Message and ProviderUsage
+#[cfg(feature = "std")]
 pub async fn collect_stream(
-    mut stream: MessageStream,
+    stream: MessageStream<'_>,
+) -> Result<(Message, ProviderUsage), ProviderError> {
+    collect_stream_with_host(&crate::runtime::SystemHost, stream).await
+}
+
+pub async fn collect_stream_with_host(
+    host: &dyn crate::runtime::HostServices,
+    mut stream: MessageStream<'_>,
 ) -> Result<(Message, ProviderUsage), ProviderError> {
     use futures::StreamExt;
 
@@ -509,8 +523,8 @@ pub async fn collect_stream(
         }
         (None, Some(usage)) => Ok((
             Message::new(
-                rmcp::model::Role::Assistant,
-                chrono::Utc::now().timestamp(),
+                crate::data::Role::Assistant,
+                host.unix_timestamp(),
                 Vec::new(),
             ),
             usage,
@@ -521,14 +535,20 @@ pub async fn collect_stream(
     }
 }
 
-pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> MessageStream {
+pub fn stream_from_single_message(
+    message: Message,
+    usage: ProviderUsage,
+) -> MessageStream<'static> {
     let stream = futures::stream::once(async move { Ok((Some(message), Some(usage))) });
     Box::pin(stream)
 }
 
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait Provider: MaybeSend + MaybeSync {
     /// Get the name of this provider instance
     fn get_name(&self) -> &str;
@@ -548,8 +568,9 @@ pub trait Provider: MaybeSend + MaybeSync {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError>;
+    ) -> Result<MessageStream<'_>, ProviderError>;
 
+    #[cfg(feature = "std")]
     async fn complete(
         &self,
         model_config: &ModelConfig,
@@ -557,8 +578,25 @@ pub trait Provider: MaybeSend + MaybeSync {
         messages: &[Message],
         tools: &[Tool],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
+        self.complete_with_host(
+            &crate::runtime::SystemHost,
+            model_config,
+            system,
+            messages,
+            tools,
+        )
+        .await
+    }
+    async fn complete_with_host(
+        &self,
+        host: &dyn crate::runtime::HostServices,
+        model_config: &ModelConfig,
+        system: &str,
+        messages: &[Message],
+        tools: &[Tool],
+    ) -> Result<(Message, ProviderUsage), ProviderError> {
         let stream = self.stream(model_config, system, messages, tools).await?;
-        collect_stream(stream).await
+        collect_stream_with_host(host, stream).await
     }
 
     /// Resolve the effective context limit for a model.
@@ -648,8 +686,8 @@ pub trait Provider: MaybeSend + MaybeSync {
         // Sort by release date (most recent first), then alphabetically for models without dates
         models_with_dates.sort_by(|a, b| match (&a.1, &b.1) {
             (Some(date_a), Some(date_b)) => date_b.cmp(date_a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(_), None) => core::cmp::Ordering::Less,
+            (None, Some(_)) => core::cmp::Ordering::Greater,
             (None, None) => a.0.cmp(&b.0),
         });
 
@@ -744,7 +782,7 @@ pub trait Provider: MaybeSend + MaybeSync {
 
     /// Subscribe to provider-managed thinking-effort capability changes.
     /// Providers without an asynchronous capability source return `None`.
-    fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
+    fn subscribe_thinking_effort_support(&self) -> Option<CapabilityStream> {
         None
     }
 
@@ -782,6 +820,40 @@ pub trait Provider: MaybeSend + MaybeSync {
     }
 }
 
+/// Retain a provider and request for consumers that need an owned stream.
+/// Stream initialization still completes (or fails) before this function returns.
+pub async fn stream_owned<'a>(
+    provider: crate::runtime::Shared<dyn Provider + 'a>,
+    model: ModelConfig,
+    system: String,
+    messages: Vec<Message>,
+    tools: Vec<Tool>,
+) -> Result<MessageStream<'a>, ProviderError> {
+    use futures::StreamExt;
+    let mut stream = crate::stream::try_stream(|mut emit| async move {
+        let mut inner = provider.stream(&model, &system, &messages, &tools).await?;
+        emit.send(None).await;
+        while let Some(item) = inner.next().await {
+            emit.send(Some(item?)).await;
+        }
+        Ok::<(), ProviderError>(())
+    });
+    match stream.next().await {
+        Some(Ok(None)) => {}
+        Some(Err(error)) => return Err(error),
+        _ => unreachable!("provider initialization produces one marker"),
+    }
+    Ok(Box::pin(stream.filter_map(|item| {
+        futures::future::ready(match item {
+            Ok(Some(chunk)) => Some(Ok(chunk)),
+            Err(error) => Some(Err(error)),
+            Ok(None) => None,
+        })
+    })))
+}
+
+pub type CapabilityStream = crate::runtime::BoxStream<'static, ThinkingEffortSupport>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -797,7 +869,7 @@ mod tests {
         let merged = merge_configured_model_info(
             "openai",
             &["declared-model".to_string(), "gpt-4o".to_string()],
-            std::slice::from_ref(&declared),
+            core::slice::from_ref(&declared),
         );
 
         assert_eq!(merged[0].context_limit, Some(4096));
@@ -840,7 +912,7 @@ mod tests {
             MessageContentBlock::image(format!("http://example.com/{}", img_data), "image/png")
         } else if let Some(tool_name) = s.strip_prefix("*tool:") {
             let tool_call = Ok(
-                rmcp::model::CallToolRequestParams::new(tool_name.to_string())
+                crate::data::CallToolRequestParams::new(tool_name.to_string())
                     .with_arguments(serde_json::Map::new()),
             );
             MessageContentBlock::tool_request(format!("tool_{}", tool_name), tool_call)
@@ -856,7 +928,7 @@ mod tests {
         stream::iter(items.into_iter().map(|item| {
             let content = content_from_str(item);
             let message = Message::new(
-                rmcp::model::Role::Assistant,
+                crate::data::Role::Assistant,
                 chrono::Utc::now().timestamp(),
                 vec![content],
             );
@@ -936,8 +1008,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_collect_stream_preserves_text_audience_boundaries() {
+        use crate::data::{Annotations, Role, TextContent};
         use futures::stream;
-        use rmcp::model::{Annotations, Role, TextContent};
 
         let message = |text: &str, audience| {
             Message::assistant().with_content(MessageContentBlock::Text(

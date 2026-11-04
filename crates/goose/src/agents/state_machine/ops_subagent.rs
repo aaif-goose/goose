@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use futures::future;
 use futures::stream::{self, BoxStream, StreamExt};
 use goose_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::final_output_tool::FinalOutputTool;
@@ -173,7 +173,9 @@ mod tests {
     use anyhow::Result;
     use goose_agent::events::AgentEvent;
     use goose_agent::subagent::SubagentOperation;
-    use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, MetaObject};
+    use goose_provider_types::data::{
+        CallToolRequestParams, CallToolResult, ContentBlock, MetaObject,
+    };
     use tempfile::TempDir;
     use tokio::sync::mpsc;
 

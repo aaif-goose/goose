@@ -57,8 +57,8 @@ impl Provider for CompactingProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
-    ) -> Result<MessageStream, ProviderError> {
+        tools: &[goose_provider_types::data::Tool],
+    ) -> Result<MessageStream<'_>, ProviderError> {
         match self
             .inner
             .stream(model_config, system, messages, tools)
@@ -79,7 +79,7 @@ impl Provider for CompactingProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
+        tools: &[goose_provider_types::data::Tool],
     ) -> Result<(Message, ProviderUsage), ProviderError> {
         match self
             .inner
@@ -126,8 +126,8 @@ mod tests {
             _model_config: &ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
-        ) -> Result<MessageStream, ProviderError> {
+            _tools: &[goose_provider_types::data::Tool],
+        ) -> Result<MessageStream<'_>, ProviderError> {
             unreachable!()
         }
     }

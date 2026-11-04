@@ -1,8 +1,8 @@
 use crate::conversation::message::{Message, MessageContent, ToolResult};
 use crate::session::Session;
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, Role};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::model::ModelConfig;
-use rmcp::model::{CallToolRequestParams, CallToolResult, Role};
 use serde_json::{json, Value};
 use tracing::Span;
 
@@ -357,8 +357,9 @@ pub(super) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use goose_provider_types::data::CallToolRequestParams;
     use goose_test_support::otel::clear_otel_env;
-    use rmcp::{model::CallToolRequestParams, object};
+    use rmcp::object;
 
     fn test_recipe(title: &str) -> crate::recipe::Recipe {
         serde_json::from_value(serde_json::json!({
@@ -492,7 +493,7 @@ mod tests {
         let _guard = capture.clone().set_default();
 
         let success_result: ToolResult<CallToolResult> = Ok(CallToolResult::success(vec![
-            rmcp::model::ContentBlock::text("ok"),
+            goose_provider_types::data::ContentBlock::text("ok"),
         ]));
         let span = tracing::info_span!(
             "test_span",
@@ -506,11 +507,12 @@ mod tests {
         let capture2 = test_support::SpanFieldCapture::new("test_span2");
         let _guard2 = capture2.clone().set_default();
 
-        let error_result: ToolResult<CallToolResult> = Err(rmcp::model::ErrorData::new(
-            rmcp::model::ErrorCode::INTERNAL_ERROR,
-            "failed".to_string(),
-            None,
-        ));
+        let error_result: ToolResult<CallToolResult> =
+            Err(goose_provider_types::data::ErrorData::new(
+                goose_provider_types::data::ErrorCode::INTERNAL_ERROR,
+                "failed".to_string(),
+                None,
+            ));
         let span2 = tracing::info_span!(
             "test_span2",
             "gen_ai.tool.call.result" = tracing::field::Empty,

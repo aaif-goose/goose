@@ -12,11 +12,11 @@ use goose_provider_types::conversation::message::{Message, MessageMetadata};
 use goose_provider_types::conversation::{
     fix_conversation, merge_consecutive_messages_for_request, Conversation,
 };
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
 use goose_provider_types::formats::anthropic::{self, AnthropicFormatOptions};
 use goose_provider_types::formats::{databricks, openai, openai_responses};
 use goose_provider_types::images::ImageFormat;
 use goose_provider_types::model::ModelConfig;
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
 use rmcp::object;
 use serde_json::{json, Value};
 

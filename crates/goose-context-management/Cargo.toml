@@ -17,14 +17,14 @@ rustls-tls = []
 native-tls = []
 
 [dependencies]
-goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
-anyhow = { workspace = true }
+goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false, features = ["formats", "mcp-interop", "std"] }
+anyhow = { workspace = true, features = ["std"] }
 async-trait = { workspace = true }
 include_dir = { workspace = true }
 minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde"] }
 rmcp = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true, features = ["preserve_order"] }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["preserve_order", "std"] }
 tracing = { workspace = true }
 
 [dev-dependencies]

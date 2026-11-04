@@ -161,6 +161,36 @@ jobs:
           CARGO_INCREMENTAL: "0"
           RUSTFLAGS: "-D warnings"
 
+  gdk-no-std:
+    name: Check alloc-only GDK on Cortex-M
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name != 'pull_request'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: thumbv6m-none-eabi,thumbv7em-none-eabi
+      - name: Check each portable crate independently
+        run: |
+          cargo check --locked -p goose-provider-types --no-default-features --target thumbv6m-none-eabi
+          cargo check --locked -p goose-agent --no-default-features --target thumbv6m-none-eabi
+          cargo clippy --locked -p goose-agent -p goose-provider-types --lib --no-default-features --features goose-provider-types/formats --target thumbv6m-none-eabi -- -D warnings
+      - name: Test isolated alloc-only agent
+        run: cargo test --locked --manifest-path crates/goose-agent/examples/alloc-agent/Cargo.toml
+      - name: Link Cortex-M example
+        run: cargo build --locked --manifest-path crates/goose-agent/examples/alloc-agent/Cargo.toml --release --features bare-metal --target thumbv7em-none-eabi
+      - name: Reject host runtime dependencies
+        shell: bash
+        run: |
+          cargo tree --locked --manifest-path crates/goose-agent/examples/alloc-agent/Cargo.toml --target thumbv7em-none-eabi -e normal,build --prefix none > /tmp/gdk-dependencies.txt
+          cat /tmp/gdk-dependencies.txt
+          if grep -E '^(tokio(-util)?|rmcp|reqwest|chrono|zstd(-sys|-safe)?|tracing(-core)?|async-stream) v' /tmp/gdk-dependencies.txt; then
+            echo 'Host runtime dependency in alloc-only GDK'
+            exit 1
+          fi
+
   goose-sdk-uniffi:
     name: Check goose-sdk UniFFI
     runs-on: ubuntu-latest

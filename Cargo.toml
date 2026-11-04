@@ -23,12 +23,12 @@ agent-client-protocol-schema = { version = "=1.9.1", default-features = false }
 agent-client-protocol = { version = "2.2.0", default-features = false }
 agent-client-protocol-http = { version = "2.2.0", default-features = false }
 arboard = { version = "3", default-features = false }
-anyhow = { version = "1.0.102", default-features = false, features = ["std"] }
+anyhow = { version = "1.0.102", default-features = false }
 async-stream = { version = "0.3.6", default-features = false }
 async-trait = { version = "0.1.89", default-features = false }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
 axum-server = { version = "0.8", default-features = false }
-base64 = { version = "0.23.0", default-features = false, features = ["std"] }
+base64 = { version = "0.23.0", default-features = false, features = ["alloc"] }
 bytes = { version = "1.10.1", default-features = false, features = ["std"] }
 candle-core = { version = "0.11", default-features = false }
 candle-nn = { version = "0.11", default-features = false }
@@ -39,7 +39,7 @@ dotenvy = { version = "0.15.7", default-features = false }
 env-lock = { version = "1", default-features = false }
 etcetera = { version = "0.11", default-features = false }
 fs2 = { version = "0.4", default-features = false }
-futures = { version = "0.3.32", default-features = false, features = ["std"] }
+futures = { version = "0.3.32", default-features = false, features = ["alloc", "async-await"] }
 http = { version = "1.1", default-features = false, features = ["std"] }
 ignore = { version = "0.4.12", default-features = false }
 include_dir = { version = "0.7", default-features = false }
@@ -54,11 +54,11 @@ regex = { version = "1.12.3", default-features = false, features = ["std"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["multipart", "form"] }
 rustls = { version = "0.23.31", default-features = false, features = ["aws_lc_rs", "std"] }
 schemars = { version = "1.0.2", default-features = false, features = ["std"] }
-serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
-serde_json = { version = "1.0.145", default-features = false, features = ["std"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0.145", default-features = false, features = ["alloc"] }
 serde_yaml = { version = "0.9.32", default-features = false }
 shellexpand = { version = "3", default-features = false, features = ["base-0", "tilde"] }
-strum = { version = "0.28.0", default-features = false, features = ["derive", "std"] }
+strum = { version = "0.28.0", default-features = false, features = ["derive"] }
 tempfile = { version = "3.10.1", default-features = false }
 thiserror = { version = "2.0.18", default-features = false }
 tokio = { version = "1.48", default-features = false }
