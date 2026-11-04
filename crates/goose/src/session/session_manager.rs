@@ -835,8 +835,7 @@ impl SessionManager {
 }
 
 pub struct SessionStorage {
-    pool: Pool<Sqlite>,
-    initialized: tokio::sync::OnceCell<()>,
+    pool: tokio::sync::OnceCell<Pool<Sqlite>>,
     session_dir: PathBuf,
     action_required: Arc<crate::action_required_manager::ActionRequiredManager>,
 }
@@ -1072,7 +1071,7 @@ async fn insert_usage_ledger_row(
 }
 
 impl SessionStorage {
-    fn create_pool(path: &Path) -> Pool<Sqlite> {
+    fn create_pool(path: &Path, max_connections: u32) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("Failed to create session database directory");
             #[cfg(unix)]
@@ -1090,42 +1089,45 @@ impl SessionStorage {
             .busy_timeout(std::time::Duration::from_secs(30))
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
-        SqlitePoolOptions::new().connect_lazy_with(options)
+        SqlitePoolOptions::new()
+            .max_connections(max_connections)
+            .connect_lazy_with(options)
     }
 
     pub fn new(data_dir: PathBuf) -> Self {
         let session_dir = data_dir.join(SESSIONS_FOLDER);
-        let db_path = session_dir.join(DB_NAME);
         Self {
-            pool: Self::create_pool(&db_path),
-            initialized: tokio::sync::OnceCell::new(),
+            pool: tokio::sync::OnceCell::new(),
             session_dir,
             action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
-        self.initialized
+        self.pool
             .get_or_try_init(|| async {
+                let db_path = self.session_dir.join(DB_NAME);
+                // Bootstrap connections must never enter the application pool with
+                // schema metadata cached before migrations finished.
+                let bootstrap = Self::create_pool(&db_path, 1);
                 let schema_exists = sqlx::query_scalar::<_, bool>(
                     r#"SELECT EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version')"#,
                 )
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(false);
+                .fetch_one(&bootstrap)
+                .await?;
 
                 if schema_exists {
-                    Self::run_migrations(&self.pool).await?;
+                    Self::run_migrations(&bootstrap).await?;
                 } else {
-                    Self::create_schema(&self.pool).await?;
-                    if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
+                    Self::create_schema(&bootstrap).await?;
+                    if let Err(e) = Self::import_legacy(&bootstrap, &self.session_dir).await {
                         warn!("Failed to import some legacy sessions: {}", e);
                     }
                 }
-                Ok::<(), anyhow::Error>(())
+                bootstrap.close().await;
+                Ok::<_, anyhow::Error>(Self::create_pool(&db_path, 10))
             })
-            .await?;
-        Ok(&self.pool)
+            .await
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
@@ -3078,7 +3080,7 @@ mod tests {
             fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
             0o700
         );
-        storage.pool.close().await;
+        storage.pool().await.unwrap().close().await;
         drop(storage);
 
         fs::set_permissions(&database_path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -4114,7 +4116,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = session_manager.storage().pool.clone();
+        let pool = session_manager.storage().pool().await.unwrap().clone();
 
         let results = run_lock_upgrade_race(pool.clone(), session.id.clone(), "BEGIN", true).await;
         assert!(
@@ -5044,7 +5046,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = &sm.storage().pool;
+        let pool = sm.storage().pool().await.unwrap();
         sqlx::query("UPDATE sessions SET goose_mode = 'garbage' WHERE id = ?")
             .bind(&session.id)
             .execute(pool)
@@ -5125,10 +5127,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_session_with_stale_schema_after_migration() {
+    async fn test_application_pool_opens_connections_after_migration() {
+        use sqlx::Row;
+
         let temp_dir = TempDir::new().unwrap();
-        let mut storage = SessionStorage::new(temp_dir.path().to_path_buf());
-        SessionStorage::create_schema(&storage.pool).await.unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap = SessionStorage::create_pool(&db_path, 1);
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
 
         for column in [
             "system_prompt_override",
@@ -5138,38 +5143,56 @@ mod tests {
             sqlx::query(AssertSqlSafe(format!(
                 "ALTER TABLE sessions DROP COLUMN {column}"
             )))
-            .execute(&storage.pool)
+            .execute(&bootstrap)
             .await
             .unwrap();
         }
         sqlx::query("UPDATE schema_version SET version = 16")
-            .execute(&storage.pool)
+            .execute(&bootstrap)
             .await
             .unwrap();
-        storage.pool.close().await;
-
-        storage.pool = SqlitePoolOptions::new()
-            .max_connections(2)
-            .connect_with(
-                SqliteConnectOptions::new()
-                    .filename(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME))
-                    .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
-            )
+        sqlx::query("INSERT INTO sessions (id, working_dir) VALUES ('before_migration', '/tmp')")
+            .execute(&bootstrap)
             .await
             .unwrap();
 
-        let mut stale = storage.pool.acquire().await.unwrap();
-        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
-            .fetch_one(&mut *stale)
-            .await
-            .unwrap();
-        assert_eq!(version, 16);
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        let migration_lock = bootstrap.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let first = storage.pool();
+        tokio::pin!(first);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut first)
+                .await
+                .is_err()
+        );
+        assert!(storage.pool.get().is_none());
+        migration_lock.commit().await.unwrap();
+        bootstrap.close().await;
 
-        storage.pool().await.unwrap();
+        let (first, second) = tokio::join!(first, storage.pool());
+        let pool = first.unwrap();
+        assert!(std::ptr::eq(pool, second.unwrap()));
 
-        // Hold the migration connection so session creation must reuse the stale one.
-        let migrated = storage.pool.acquire().await.unwrap();
-        drop(stale);
+        let mut connections = Vec::new();
+        for _ in 0..10 {
+            let mut connection = pool.acquire().await.unwrap();
+            // A wildcard deliberately exercises the SQLx stale-metadata failure
+            // independently of the explicit projection used by create_session.
+            let row = sqlx::query("SELECT * FROM sessions WHERE id = 'before_migration'")
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+            for column in [
+                "system_prompt_override",
+                "system_prompt_extras_json",
+                "container_id",
+            ] {
+                assert!(row.try_get::<Option<String>, _>(column).unwrap().is_none());
+            }
+            connections.push(connection);
+        }
+        drop(connections);
+
         let session = storage
             .create_session(
                 None,
@@ -5184,11 +5207,41 @@ mod tests {
         assert!(session.system_prompt_override.is_none());
         assert!(session.system_prompt_extras.is_empty());
         assert!(session.container.is_none());
+        pool.close().await;
+    }
 
-        let loaded = storage.get_session(&session.id, false).await.unwrap();
-        assert_eq!(loaded.id, session.id);
-        drop(migrated);
-        storage.pool.close().await;
+    #[tokio::test]
+    async fn test_failed_migration_does_not_publish_application_pool() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap = SessionStorage::create_pool(&db_path, 1);
+        sqlx::query("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version VALUES (16)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        assert!(storage.pool().await.is_err());
+        assert!(storage.pool.get().is_none());
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(&bootstrap)
+            .await
+            .unwrap();
+        assert_eq!(version, 16);
+
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
+        bootstrap.close().await;
+        let pool = storage.pool().await.unwrap();
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        pool.close().await;
     }
 
     #[tokio::test]
