@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Melewati ambang pemadatan otomatis: percakapan dipadatkan sebelum permintaan berikutnya dikirim."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "Melewati ambang kompak otomatis pada {limit} token: {model} mendeklarasikan batas kompaknya sendiri, yang mengesampingkan pengaturan global."
   }
 }

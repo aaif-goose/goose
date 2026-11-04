@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Đã vượt ngưỡng nén tự động: hội thoại sẽ được nén trước khi gửi yêu cầu tiếp theo."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "Vượt ngưỡng nén tự động tại {limit} token: {model} khai báo giới hạn nén riêng của mình, được ưu tiên so với cài đặt toàn cục."
   }
 }

@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Soglia di compattazione automatica superata: la conversazione viene compattata prima dell'invio della prossima richiesta."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "Oltre la soglia di compattazione automatica a {limit} token: {model} dichiara un proprio limite di compattazione, che prevale sull'impostazione globale."
   }
 }

@@ -53,6 +53,11 @@ const i18n = defineMessages({
     defaultMessage:
       'Past the auto-compaction threshold: the conversation is compacted before the next request is sent.',
   },
+  autoCompactionModelLimit: {
+    id: 'contextXray.autoCompactionModelLimit',
+    defaultMessage:
+      'Past the auto-compaction threshold at {limit} tokens: {model} declares its own compact limit, which takes precedence over the global setting.',
+  },
 });
 
 function ReportSkeleton() {
@@ -194,11 +199,19 @@ export function ContextXrayDialog({
                     })}
                   </div>
                 </div>
-                {report.autoCompactionPending && (
-                  <p className="text-sm text-orange-500">
-                    {intl.formatMessage(i18n.autoCompactionPending)}
-                  </p>
-                )}
+                {report.autoCompactionPending &&
+                  (report.autoCompactTokenLimitModelDeclared ? (
+                    <p className="text-sm text-orange-500">
+                      {intl.formatMessage(i18n.autoCompactionModelLimit, {
+                        limit: formatTokenCount(report.autoCompactTokenLimit),
+                        model: report.model.modelName,
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-orange-500">
+                      {intl.formatMessage(i18n.autoCompactionPending)}
+                    </p>
+                  ))}
                 <CapacityMeter report={report} />
                 <BreakdownList report={report} />
                 <p className="text-xs text-text-tertiary">

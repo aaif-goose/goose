@@ -351,6 +351,13 @@ pub struct ContextReportResponse {
     /// The session is past the auto-compaction threshold, so the loop compacts
     /// the conversation before it sends the next request.
     pub auto_compaction_pending: bool,
+    /// The effective token limit that caps auto-compaction for this session's
+    /// model: the model-declared limit when set, else the configured
+    /// `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.
+    pub auto_compact_token_limit: u64,
+    /// The limit comes from the model entry itself (e.g. a custom provider
+    /// definition) rather than from global configuration or the default.
+    pub auto_compact_token_limit_model_declared: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]

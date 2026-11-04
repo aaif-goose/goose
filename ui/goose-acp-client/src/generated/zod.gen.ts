@@ -518,7 +518,9 @@ export const zContextReportResponse_unstable = z.object({
     totalTokens: z.int().gte(0),
     segments: z.array(zContextSegment),
     providerManagesContext: z.boolean(),
-    autoCompactionPending: z.boolean()
+    autoCompactionPending: z.boolean(),
+    autoCompactTokenLimit: z.int().gte(0),
+    autoCompactTokenLimitModelDeclared: z.boolean()
 });
 
 /**

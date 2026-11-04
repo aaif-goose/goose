@@ -758,6 +758,17 @@ export type ContextReportResponse_unstable = {
      * the conversation before it sends the next request.
      */
     autoCompactionPending: boolean;
+    /**
+     * The effective token limit that caps auto-compaction for this session's
+     * model: the model-declared limit when set, else the configured
+     * `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.
+     */
+    autoCompactTokenLimit: number;
+    /**
+     * The limit comes from the model entry itself (e.g. a custom provider
+     * definition) rather than from global configuration or the default.
+     */
+    autoCompactTokenLimitModelDeclared: boolean;
 };
 
 export type ContextReportModel = {

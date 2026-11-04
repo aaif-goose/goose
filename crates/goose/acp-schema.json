@@ -1477,6 +1477,15 @@
         "autoCompactionPending": {
           "type": "boolean",
           "description": "The session is past the auto-compaction threshold, so the loop compacts\nthe conversation before it sends the next request."
+        },
+        "autoCompactTokenLimit": {
+          "type": "integer",
+          "description": "The effective token limit that caps auto-compaction for this session's\nmodel: the model-declared limit when set, else the configured\n`GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.",
+          "minimum": 0
+        },
+        "autoCompactTokenLimitModelDeclared": {
+          "type": "boolean",
+          "description": "The limit comes from the model entry itself (e.g. a custom provider\ndefinition) rather than from global configuration or the default."
         }
       },
       "required": [
@@ -1484,7 +1493,9 @@
         "totalTokens",
         "segments",
         "providerManagesContext",
-        "autoCompactionPending"
+        "autoCompactionPending",
+        "autoCompactTokenLimit",
+        "autoCompactTokenLimitModelDeclared"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/context/report"

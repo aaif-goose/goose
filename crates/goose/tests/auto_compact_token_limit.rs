@@ -3,7 +3,9 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use goose::agents::{SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::{Config, GooseMode};
-use goose::context_mgmt::auto_compact_threshold;
+use goose::context_mgmt::{
+    capped_compaction_threshold, effective_auto_compact_token_limit, DEFAULT_COMPACTION_THRESHOLD,
+};
 use goose::conversation::message::Message;
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
@@ -14,6 +16,17 @@ use goose_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+fn model_threshold(model_config: &ModelConfig, context_limit: usize) -> f64 {
+    let threshold = Config::global()
+        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+    capped_compaction_threshold(
+        threshold,
+        effective_auto_compact_token_limit(model_config).limit,
+        context_limit,
+    )
+}
 
 #[derive(Default)]
 struct CompactionProvider {
@@ -75,15 +88,15 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
     ]);
     let config = Config::global();
     let plain = ModelConfig::new("threshold-model");
-    assert_eq!(auto_compact_threshold(&plain, 1_000_000), 0.225);
-    assert_eq!(auto_compact_threshold(&plain, 200_000), 0.8);
-    assert_eq!(auto_compact_threshold(&plain, 0), 0.8);
+    assert_eq!(model_threshold(&plain, 1_000_000), 0.225);
+    assert_eq!(model_threshold(&plain, 200_000), 0.8);
+    assert_eq!(model_threshold(&plain, 0), 0.8);
     let declared = ModelConfig::new("threshold-model").with_auto_compact_token_limit(800_000);
-    assert_eq!(auto_compact_threshold(&declared, 1_000_000), 0.8);
+    assert_eq!(model_threshold(&declared, 1_000_000), 0.8);
     // A model-specific limit takes precedence over the global configuration.
     config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 400_000)?;
-    assert_eq!(auto_compact_threshold(&declared, 1_000_000), 0.8);
-    assert_eq!(auto_compact_threshold(&plain, 1_000_000), 0.4);
+    assert_eq!(model_threshold(&declared, 1_000_000), 0.8);
+    assert_eq!(model_threshold(&plain, 1_000_000), 0.4);
     config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
 
     let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
@@ -107,7 +120,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", percentage)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", cap)?;
         assert_eq!(
-            auto_compact_threshold(&plain, context),
+            model_threshold(&plain, context),
             percentage.min(cap as f64 / context as f64)
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
@@ -120,7 +133,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
     config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
     for (model_limit, context, trigger) in [(800_000usize, 1_000_000, 800_000)] {
         assert_eq!(
-            auto_compact_threshold(&declared, context),
+            model_threshold(&declared, context),
             0.8_f64.min(model_limit as f64 / context as f64)
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
@@ -140,7 +153,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", disabled)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
         for context in [1_000_000, 200_000] {
-            assert_eq!(auto_compact_threshold(&plain, context), disabled);
+            assert_eq!(model_threshold(&plain, context), disabled);
             verify_reply(&services, &session.id, context, None, 900_000, false).await?;
         }
     }

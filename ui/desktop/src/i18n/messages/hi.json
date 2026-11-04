@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "स्वतः-संकुचन सीमा पार हो गई: अगला अनुरोध भेजने से पहले वार्तालाप को संकुचित किया जाता है।"
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "स्वतः संपीड़न सीमा {limit} टोकन पर पार हो गई है: {model} अपनी स्वयं की संपीड़न सीमा घोषित करता है, जो वैश्विक सेटिंग पर प्राथमिकता लेती है।"
   }
 }

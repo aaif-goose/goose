@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "已超过自动压缩阈值：在发送下一个请求之前会先压缩对话。"
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "已超过自动压缩阈值（{limit} 个 token）：{model} 声明了自身的压缩上限，优先于全局设置。"
   }
 }

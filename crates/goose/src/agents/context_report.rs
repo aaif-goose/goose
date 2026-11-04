@@ -109,6 +109,8 @@ impl StateMachineServices {
             &session,
         )
         .await?;
+        let auto_compact_limit =
+            crate::context_mgmt::effective_auto_compact_token_limit(&model_config);
 
         let (session, lease) = self
             .extension_manager
@@ -260,6 +262,8 @@ impl StateMachineServices {
             segments,
             provider_manages_context: false,
             auto_compaction_pending,
+            auto_compact_token_limit: auto_compact_limit.limit as u64,
+            auto_compact_token_limit_model_declared: auto_compact_limit.model_declared,
         })
     }
 }

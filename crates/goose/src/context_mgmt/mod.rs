@@ -26,22 +26,37 @@ pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
+/// The effective auto-compact token limit for a model: a limit declared on
+/// the model (e.g. in a custom provider) takes precedence over the global
+/// configuration.
+pub fn effective_auto_compact_token_limit(model_config: &ModelConfig) -> EffectiveTokenLimit {
+    let model_declared = model_config.auto_compact_token_limit;
+    EffectiveTokenLimit {
+        limit: model_declared
+            .or_else(|| {
+                Config::global()
+                    .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+                    .ok()
+            })
+            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+        model_declared: model_declared.is_some(),
+    }
+}
+
+pub struct EffectiveTokenLimit {
+    pub limit: usize,
+    pub model_declared: bool,
+}
+
 /// The configured threshold, lowered so compaction starts by the token limit.
-/// A model-specific limit (declared on the model, e.g. in a custom provider)
-/// takes precedence over the global configuration.
-pub fn auto_compact_threshold(model_config: &ModelConfig, context_limit: usize) -> f64 {
+pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     let config = Config::global();
     capped_compaction_threshold(
         config
             .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
-        model_config
-            .auto_compact_token_limit
-            .or_else(|| {
-                config
-                    .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-                    .ok()
-            })
+        config
+            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
             .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
         context_limit,
     )

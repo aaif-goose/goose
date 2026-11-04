@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "자동 압축 임계값을 초과했습니다. 다음 요청을 보내기 전에 대화가 압축됩니다."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "자동 컴팩트 임계값({limit} 토큰)을 초과했습니다: {model}이(가) 자체 컴팩트 한도를 선언하여 전역 설정보다 우선합니다."
   }
 }
