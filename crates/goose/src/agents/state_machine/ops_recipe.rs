@@ -24,7 +24,7 @@ use crate::agents::state_machine::{
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::extensions::is_extension_available;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageContent, ToolResponse};
+use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
 use crate::session::Session;
@@ -50,6 +50,22 @@ fn assistant_block_bounds(messages: &[Message], message_index: usize) -> (usize,
         .last()
         .map_or(message_index + 1, |index| index + 1);
     (start, end)
+}
+
+pub(super) fn final_output_called_with_other_tools(
+    session: &Session,
+    messages: &[Message],
+    request: &ToolRequest,
+) -> bool {
+    session
+        .recipe
+        .as_ref()
+        .is_some_and(|recipe| recipe.response.is_some())
+        && request
+            .tool_call
+            .as_ref()
+            .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME)
+        && has_sibling_tool_calls(messages, &request.id)
 }
 
 fn has_sibling_tool_calls(messages: &[Message], request_id: &str) -> bool {

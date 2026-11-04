@@ -13,6 +13,7 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData
 use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
+use crate::agents::state_machine::ops_recipe::final_output_called_with_other_tools;
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
@@ -582,8 +583,10 @@ pub(super) fn call_will_not_run(
     conversation: &Conversation,
     request: &ToolRequest,
 ) -> Result<bool> {
+    let messages = messages_since_kickoff(conversation)?;
     Ok(session.goose_mode == GooseMode::Chat
-        || !request_was_advertised(messages_since_kickoff(conversation)?, request))
+        || !request_was_advertised(messages, request)
+        || final_output_called_with_other_tools(session, messages, request))
 }
 
 pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {

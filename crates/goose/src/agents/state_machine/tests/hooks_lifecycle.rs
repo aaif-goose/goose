@@ -669,7 +669,9 @@ async fn recipe_final_output_emits_tool_hooks_with_one_tool_call_id() -> Result<
 
 #[tokio::test]
 async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Result<()> {
+    let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("finish and add").calls([
         (
@@ -695,6 +697,20 @@ async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Re
         .iter()
         .all(|message| message.as_concat_text() != r#"{"answer":"guess"}"#));
     result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    let pre_hooked: Vec<_> = env
+        .payloads("pre.log")
+        .iter()
+        .map(|payload| payload["tool_call_id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(!pre_hooked.contains(&"early-output".to_string()));
+    assert!(pre_hooked.contains(&"side-effect".to_string()));
+    assert_eq!(
+        env.payloads("pre.log")
+            .iter()
+            .filter(|payload| payload["tool_name"] == FINAL_OUTPUT_TOOL_NAME)
+            .count(),
+        1
+    );
     Ok(())
 }
 
