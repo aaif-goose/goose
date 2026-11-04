@@ -765,6 +765,12 @@ export type ContextReportResponse_unstable = {
      */
     autoCompactTokenLimit: number;
     /**
+     * The token count at which auto-compaction triggers: the percentage
+     * threshold capped by `auto_compact_token_limit`, applied to the context
+     * limit.
+     */
+    autoCompactTriggerTokens: number;
+    /**
      * The limit comes from the model entry itself (e.g. a custom provider
      * definition) rather than from global configuration or the default.
      */

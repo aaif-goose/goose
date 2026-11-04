@@ -335,6 +335,9 @@ pub async fn check_if_compaction_needed(
 
     let usage_ratio = current_tokens as f64 / context_limit as f64;
 
+    let token_limit = effective_auto_compact_token_limit(&model_config).limit;
+    let threshold = capped_compaction_threshold(threshold, token_limit, context_limit);
+
     let needs_compaction = if threshold <= 0.0 || threshold >= 1.0 {
         false // Auto-compact is disabled.
     } else {

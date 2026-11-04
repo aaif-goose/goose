@@ -4836,6 +4836,6 @@
     "defaultMessage": "Otomatik sıkıştırma eşiği aşıldı: bir sonraki istek gönderilmeden önce konuşma sıkıştırılır."
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "Otomatik sıkıştırma eşiği {limit} belirteçte aşıldı: {model} kendi sıkıştırma limitini bildirir ve bu, genel ayarın yerine geçer."
+    "defaultMessage": "Otomatik sıkıştırma eşiği {trigger} belirteçte aşıldı: {model} kendi sıkıştırma limitini ({limit} belirteç) bildirir ve bu, genel ayarın yerine geçer."
   }
 }

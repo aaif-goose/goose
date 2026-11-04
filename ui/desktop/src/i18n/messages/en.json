@@ -333,7 +333,7 @@
     "defaultMessage": "{used} of {limit} tokens used. Show what is in the context window"
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "Past the auto-compaction threshold at {limit} tokens: {model} declares its own compact limit, which takes precedence over the global setting."
+    "defaultMessage": "Past the auto-compaction threshold at {trigger} tokens: {model} declares its own compact limit ({limit} tokens), which takes precedence over the global setting."
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Past the auto-compaction threshold: the conversation is compacted before the next request is sent."

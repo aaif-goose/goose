@@ -4836,6 +4836,6 @@
     "defaultMessage": "Se superó el umbral de compactación automática: la conversación se compacta antes de enviar la siguiente solicitud."
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "Se superó el umbral de compactación automática en {limit} tokens: {model} declara su propio límite de compactación, que prevalece sobre la configuración global."
+    "defaultMessage": "Se superó el umbral de compactación automática en {trigger} tokens: {model} declara su propio límite de compactación ({limit} tokens), que prevalece sobre la configuración global."
   }
 }

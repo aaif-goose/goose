@@ -355,6 +355,10 @@ pub struct ContextReportResponse {
     /// model: the model-declared limit when set, else the configured
     /// `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.
     pub auto_compact_token_limit: u64,
+    /// The token count at which auto-compaction triggers: the percentage
+    /// threshold capped by `auto_compact_token_limit`, applied to the context
+    /// limit.
+    pub auto_compact_trigger_tokens: u64,
     /// The limit comes from the model entry itself (e.g. a custom provider
     /// definition) rather than from global configuration or the default.
     pub auto_compact_token_limit_model_declared: bool,

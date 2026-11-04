@@ -4836,6 +4836,6 @@
     "defaultMessage": "Auto-Verdichtungsschwelle überschritten: Das Gespräch wird verdichtet, bevor die nächste Anfrage gesendet wird."
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "Über dem Schwellenwert für die automatische Kompaktierung bei {limit} Tokens: {model} deklariert ein eigenes Kompaktierungslimit, das Vorrang vor der globalen Einstellung hat."
+    "defaultMessage": "Über dem Schwellenwert für die automatische Kompaktierung bei {trigger} Tokens: {model} deklariert ein eigenes Kompaktierungslimit ({limit} Tokens), das Vorrang vor der globalen Einstellung hat."
   }
 }

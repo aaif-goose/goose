@@ -4836,6 +4836,6 @@
     "defaultMessage": "Seuil de compactage automatique dépassé : la conversation est compactée avant l'envoi de la prochaine requête."
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "Au-delà du seuil de compactage automatique à {limit} jetons : {model} déclare sa propre limite de compactage, qui prime sur le paramètre global."
+    "defaultMessage": "Au-delà du seuil de compactage automatique à {trigger} jetons : {model} déclare sa propre limite de compactage ({limit} jetons), qui prime sur le paramètre global."
   }
 }

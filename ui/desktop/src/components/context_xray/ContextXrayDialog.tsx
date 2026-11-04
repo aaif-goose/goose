@@ -56,7 +56,7 @@ const i18n = defineMessages({
   autoCompactionModelLimit: {
     id: 'contextXray.autoCompactionModelLimit',
     defaultMessage:
-      'Past the auto-compaction threshold at {limit} tokens: {model} declares its own compact limit, which takes precedence over the global setting.',
+      'Past the auto-compaction threshold at {trigger} tokens: {model} declares its own compact limit ({limit} tokens), which takes precedence over the global setting.',
   },
 });
 
@@ -203,6 +203,7 @@ export function ContextXrayDialog({
                   (report.autoCompactTokenLimitModelDeclared ? (
                     <p className="text-sm text-orange-500">
                       {intl.formatMessage(i18n.autoCompactionModelLimit, {
+                        trigger: formatTokenCount(report.autoCompactTriggerTokens),
                         limit: formatTokenCount(report.autoCompactTokenLimit),
                         model: report.model.modelName,
                       })}

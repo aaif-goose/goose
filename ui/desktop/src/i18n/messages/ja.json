@@ -4836,6 +4836,6 @@
     "defaultMessage": "自動コンパクション閾値を超えています。次のリクエストを送信する前に会話がコンパクションされます。"
   },
   "contextXray.autoCompactionModelLimit": {
-    "defaultMessage": "自動圧縮のしきい値（{limit} トークン）を超えました：{model} は独自の圧縮上限を宣言しており、グローバル設定より優先されます。"
+    "defaultMessage": "自動圧縮のしきい値（{trigger} トークン）を超えました：{model} は独自の圧縮上限（{limit} トークン）を宣言しており、グローバル設定より優先されます。"
   }
 }

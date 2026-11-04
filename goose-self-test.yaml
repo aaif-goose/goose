@@ -234,13 +234,12 @@ prompt: |
      global cap still applies to models without a declaration, that the declared
      value survives a custom-provider update, and that a declared value of `0`
      disables auto-compaction for that model.
-  5. Run `cd ui/desktop && pnpm exec vitest run src/components/alerts/__tests__/AlertBox.test.tsx`.
-  6. Verify the inline editor saves the displayed token cap in capped contexts and the
-     percentage in uncapped contexts, including cancellation and model changes during editing.
-  7. Verify the Desktop context-window alert shows the model-declared cap (not the global
-     one) when the current model declares `auto_compact_token_limit`, and offers
-     percentage-only editing for that model.
-  8. Confirm the smart context management guide describes when compaction starts, rather
+  5. Run `cd ui/desktop && pnpm exec vitest run src/components/context_xray/ContextXrayDialog.test.tsx`.
+  6. Verify the Desktop context X-ray's compaction banner names the model-declared compact
+     limit and the effective trigger when the current model declares
+     `auto_compact_token_limit` (not the global cap), and that the generic threshold banner
+     still shows for models without a declaration.
+  7. Confirm the smart context management guide describes when compaction starts, rather
      than promising a maximum request size. New messages, tool output, and compaction
      requests can exceed the trigger between checks.
 
