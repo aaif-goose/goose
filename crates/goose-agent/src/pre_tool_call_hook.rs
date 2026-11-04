@@ -10,7 +10,7 @@ use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
     OperationResult,
 };
-use crate::tool_call_state::{add_error_response, tool_calls, tool_meta_flag};
+use crate::tool_call_state::{add_error_response, tool_calls, tool_meta_flag, ToolCallState};
 
 pub const PRE_HOOK_ALLOWED_KEY: &str = "goose.pre_hook_allowed";
 
@@ -61,7 +61,7 @@ where
         let Some(request) = tool_calls(messages_since_kickoff(conversation)?)
             .into_iter()
             .find(|(request, state)| {
-                state.is_runnable()
+                *state == ToolCallState::Executable
                     && request.tool_call.is_ok()
                     && !request.was_executed_externally()
                     && tool_meta_flag(request, PRE_HOOK_ALLOWED_KEY) != Some(true)

@@ -130,12 +130,6 @@ fn kickoff() -> Message {
     Message::user().with_text("hi")
 }
 
-fn calls(ids: &[&str]) -> Message {
-    ids.iter().fold(Message::assistant(), |message, id| {
-        message.with_tool_request(*id, Ok(CallToolRequestParams::new(id.to_string())))
-    })
-}
-
 fn ready_calls(ids: &[&str]) -> Message {
     ids.iter().fold(Message::assistant(), |message, id| {
         message.with_tool_request_with_metadata(
@@ -197,21 +191,6 @@ async fn allow_marks_one_ready_call_allowed_per_pass() -> Result<()> {
 }
 
 #[tokio::test]
-async fn checks_calls_without_approval() -> Result<()> {
-    let hook = FakeHook::new(&[]);
-
-    let outcome = run(
-        &PreToolCallHookOperation::new(hook.clone()),
-        vec![kickoff(), calls(&["a"])],
-    )
-    .await?;
-
-    assert_eq!(outcome.marks, vec![allowed("a")]);
-    assert_eq!(hook.called(), vec!["a"]);
-    Ok(())
-}
-
-#[tokio::test]
 async fn deny_responds_with_the_reason_and_leaves_no_mark() -> Result<()> {
     let operation = PreToolCallHookOperation::new(FakeHook::new(&[("a", Reply::Deny("no"))]));
 
@@ -233,12 +212,22 @@ async fn skips_calls_that_cannot_run_or_were_already_allowed() -> Result<()> {
         &PreToolCallHookOperation::new(hook.clone()),
         vec![
             kickoff(),
+            Message::assistant()
+                .with_tool_request("unmarked", Ok(CallToolRequestParams::new("unmarked"))),
             marked_call("waiting", json!({ EXECUTABLE_KEY: false })),
-            marked_call("allowed", json!({ PRE_HOOK_ALLOWED_KEY: true })),
-            marked_call("external", json!({ TOOL_META_EXTERNAL_DISPATCH_KEY: true })),
-            Message::assistant().with_tool_request(
+            marked_call(
+                "allowed",
+                json!({ EXECUTABLE_KEY: true, PRE_HOOK_ALLOWED_KEY: true }),
+            ),
+            marked_call(
+                "external",
+                json!({ EXECUTABLE_KEY: true, TOOL_META_EXTERNAL_DISPATCH_KEY: true }),
+            ),
+            Message::assistant().with_tool_request_with_metadata(
                 "bad",
                 Err(ErrorData::invalid_params("unreadable arguments", None)),
+                None,
+                Some(json!({ EXECUTABLE_KEY: true })),
             ),
             ready_calls(&["done"]),
             tool_response("done"),

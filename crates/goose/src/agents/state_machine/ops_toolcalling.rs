@@ -559,7 +559,7 @@ pub(super) fn pending_tool_requests(messages: &[Message]) -> Vec<(ToolRequest, T
                             ToolDisposition::ParseError(parse_error.to_string()),
                         ));
                     }
-                    (request_executable(req) != Some(false))
+                    (request_executable(req) == Some(true))
                         .then(|| (req.clone(), ToolDisposition::Execute))
                 }
                 _ => None,
@@ -942,6 +942,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use goose_agent::tool_call_state::EXECUTABLE_KEY;
 
     #[test]
     fn extension_prompt_parts_render_one_block_per_extension() {
@@ -983,9 +984,11 @@ mod tests {
 
     #[test]
     fn operation_generated_requests_without_inference_remain_executable() {
-        let message = Message::assistant().with_tool_request(
+        let message = Message::assistant().with_tool_request_with_metadata(
             "operation-generated",
             Ok(CallToolRequestParams::new("registered__tool")),
+            None,
+            Some(serde_json::json!({ EXECUTABLE_KEY: true })),
         );
 
         let pending = pending_advertised_tool_requests(&[message]);

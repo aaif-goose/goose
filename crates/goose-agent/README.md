@@ -73,9 +73,8 @@ Good to know:
   `with_deny_limit_per_turn`. To tell the user why the model stopped at the
   limit, set a message with `with_deny_limit_message`; it is shown and saved.
 
-Two operations decide whether each tool call may run. Each works alone, so
-register either or both. Put them before every step that runs tools, with
-approval first:
+Two operations decide whether each tool call may run. Put them before every
+step that runs tools, with approval first:
 
 ```rust
 ToolApprovalOperation::new(approval)
@@ -100,12 +99,13 @@ When the user chooses, `on_confirmation` gets the choice once, so approval can
 remember "always allow" or "always deny". If the user declines, the call gets
 the declined message as its error result; change that text with
 `with_declined_message`. If the user allows, the call may run. To let every
-call run without asking, leave `ToolApprovalOperation` out.
+call run without asking, register a `ToolApproval` whose `check` always returns
+`Allow`. Without `ToolApprovalOperation`, no call runs.
 
-`PreToolCallHookOperation` runs the pre-tool hook on every call that is about to
-run. It never runs for a call that is denied, declined, or waiting for the
-user, so it is the place for checks with side effects, such as running user
-scripts. Implement `PreToolCallHook<S>`. Its `before_call` returns one of:
+`PreToolCallHookOperation` is optional. It runs the pre-tool hook on every call
+approval allowed. It never runs for a call that is denied, declined, or waiting
+for the user, so it is the place for checks with side effects, such as running
+user scripts. Implement `PreToolCallHook<S>`. Its `before_call` returns one of:
 
 - `Allow` — the call runs.
 - `Deny` — the call doesn't run. The model gets `reason` as its error result.
@@ -127,9 +127,8 @@ Good to know:
 - Calls with arguments that can't be read skip approval and the hook; the tool
   step responds to them with the error.
 - If you write your own step that runs tools, run only calls that have no
-  response yet and where `request_executable(request)` isn't `Some(false)`.
-  `Some(false)` means the call isn't ready: it waits for the user or the
-  pre-tool hook, or it was declined and already has its error result.
+  response yet and where `request_executable(request)` is `Some(true)`, and
+  respond to calls with arguments that can't be read with the error.
   `ToolOperation` already does this.
 - Each operation takes one approval or one hook. To run several, write one
   that calls the others.

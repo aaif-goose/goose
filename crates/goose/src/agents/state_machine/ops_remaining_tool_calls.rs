@@ -234,17 +234,28 @@ mod tests {
         run_with_hook(session, messages, Arc::default()).await
     }
 
+    fn executable_calls(calls: &[(&str, &str)]) -> Message {
+        calls
+            .iter()
+            .fold(Message::assistant(), |message, (id, tool_name)| {
+                message.with_tool_request_with_metadata(
+                    *id,
+                    Ok(CallToolRequestParams::new(tool_name.to_string())),
+                    None,
+                    Some(serde_json::json!({ EXECUTABLE_KEY: true })),
+                )
+            })
+    }
+
     #[tokio::test]
     async fn offered_calls_no_runner_ran_get_a_failed_post_hook() -> Result<()> {
         let messages = || {
             vec![
                 Message::user().with_text("go"),
-                Message::assistant()
-                    .with_tool_request("missing", Ok(CallToolRequestParams::new("missing_tool")))
-                    .with_tool_request(
-                        "final",
-                        Ok(CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)),
-                    ),
+                executable_calls(&[
+                    ("missing", "missing_tool"),
+                    ("final", FINAL_OUTPUT_TOOL_NAME),
+                ]),
             ]
         };
 
@@ -305,10 +316,7 @@ mod tests {
         };
         let messages = vec![
             Message::user().with_text("go"),
-            Message::assistant().with_tool_request(
-                "final",
-                Ok(CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)),
-            ),
+            executable_calls(&[("final", FINAL_OUTPUT_TOOL_NAME)]),
         ];
 
         assert!(matches!(

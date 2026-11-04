@@ -24,10 +24,6 @@ impl ToolCallState<'_> {
     pub(crate) fn is_open(&self) -> bool {
         !matches!(self, ToolCallState::Responded(_))
     }
-
-    pub(crate) fn is_runnable(&self) -> bool {
-        matches!(self, ToolCallState::Unchecked | ToolCallState::Executable)
-    }
 }
 
 pub(crate) fn tool_calls(messages: &[Message]) -> Vec<(&ToolRequest, ToolCallState<'_>)> {
