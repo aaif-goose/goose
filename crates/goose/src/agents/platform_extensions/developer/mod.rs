@@ -39,7 +39,7 @@ pub struct DeveloperClient {
     image_tool: Arc<ImageTool>,
 }
 
-fn developer_instructions() -> &'static str {
+fn developer_instructions() -> String {
     if cfg!(windows) {
         indoc! {"
             Use the developer extension to build software and operate a terminal.
@@ -54,22 +54,31 @@ fn developer_instructions() -> &'static str {
             Then use type or Get-Content to gather the context you need, always reading before
             editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
         "}
+        .to_string()
     } else {
-        indoc! {"
-            Use the developer extension to build software and operate a terminal.
+        let search_guidance = if which::which("rg").is_ok() {
+            "prefer rg which correctly respects gitignored content"
+        } else {
+            "prefer grep -rn, since rg is not installed"
+        };
+        format!(
+            indoc! {"
+                Use the developer extension to build software and operate a terminal.
 
-            Make sure to use the tools *efficiently* - reading all the content you need in as few
-            iterations as possible and then making the requested edits or running commands. You are
-            responsible for managing your context window, and to minimize unnecessary turns which
-            cost the user money.
+                Make sure to use the tools *efficiently* - reading all the content you need in as few
+                iterations as possible and then making the requested edits or running commands. You are
+                responsible for managing your context window, and to minimize unnecessary turns which
+                cost the user money.
 
-            For editing software, prefer the flow of using tree to understand the codebase structure
-            and file sizes. When you need to search, prefer rg which correctly respects gitignored
-            content. Then use cat or sed to gather the context you need, always reading before editing.
-            Use write and edit to efficiently make changes. Test and verify as appropriate.
+                For editing software, prefer the flow of using tree to understand the codebase structure
+                and file sizes. When you need to search, {search_guidance}. Then use cat or sed to
+                gather the context you need, always reading before editing. Use write and edit to
+                efficiently make changes. Test and verify as appropriate.
 
-            When running Python scripts or commands, always use `python3` instead of `python`.
-        "}
+                When running Python scripts or commands, always use `python3` instead of `python`.
+            "},
+            search_guidance = search_guidance
+        )
     }
 }
 
