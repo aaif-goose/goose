@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
@@ -14,6 +14,19 @@ import {
 import { defineMessages, useIntl } from '../../../i18n';
 
 const i18n = defineMessages({
+  inferenceBackend: {
+    id: 'modelSettingsPanel.inferenceBackend',
+    defaultMessage: 'Inference backend',
+  },
+  inferenceBackendDescription: {
+    id: 'modelSettingsPanel.inferenceBackendDescription',
+    defaultMessage:
+      'Automatic uses llama.cpp for GGUF and eredu for SafeTensors. Eredu checks checkpoint compatibility when loading.',
+  },
+  automaticBackend: {
+    id: 'modelSettingsPanel.automaticBackend',
+    defaultMessage: 'Automatic',
+  },
   loadingSettings: {
     id: 'modelSettingsPanel.loadingSettings',
     defaultMessage: 'Loading settings...',
@@ -392,6 +405,12 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
   const [builtinTemplateOptions, setBuiltinTemplateOptions] = useState<string[]>(['chatml']);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveSequence = useRef(0);
+  const savedSettings = useRef<ModelSettings>(DEFAULT_SETTINGS);
+  const [defaultBackend, setDefaultBackend] = useState('llamacpp');
+  const [availableBackends, setAvailableBackends] = useState<string[]>(['llamacpp']);
 
   const load = useCallback(async () => {
     try {
@@ -403,11 +422,15 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
         setBuiltinTemplateOptions(builtinsResult.value);
       }
       if (settingsResult.status === 'fulfilled') {
-        setSettings({
-          ...settingsResult.value,
-          toolCalling: settingsResult.value.toolCalling ?? 'auto',
-          chatTemplate: settingsResult.value.chatTemplate ?? { type: 'embedded' },
-        });
+        const { settings: loaded, defaultBackend, availableBackends } = settingsResult.value;
+        setDefaultBackend(defaultBackend || 'llamacpp');
+        setAvailableBackends(availableBackends ?? ['llamacpp']);
+        savedSettings.current = {
+          ...loaded,
+          toolCalling: loaded.toolCalling ?? 'auto',
+          chatTemplate: loaded.chatTemplate ?? { type: 'embedded' },
+        };
+        setSettings(savedSettings.current);
       }
     } catch {
       // use defaults
@@ -432,16 +455,30 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
     }
   }, [settings.chatTemplate]);
 
-  const save = async (updated: ModelSettings) => {
+  const save = (updated: ModelSettings) => {
+    const sequence = ++saveSequence.current;
     setSettings(updated);
+    setSaveError(null);
     setSaving(true);
-    try {
-      await updateModelSettings(modelId, updated);
-    } catch (e) {
-      console.error('Failed to save settings:', e);
-    } finally {
-      setSaving(false);
-    }
+    saveQueue.current = saveQueue.current.then(async () => {
+      try {
+        const saved = await updateModelSettings(modelId, updated);
+        savedSettings.current = saved;
+        if (sequence === saveSequence.current) {
+          setSettings(saved);
+        }
+      } catch (e) {
+        if (sequence === saveSequence.current) {
+          setSettings(savedSettings.current);
+          setSaveError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (sequence === saveSequence.current) {
+          setSaving(false);
+        }
+      }
+    });
+    return saveQueue.current;
   };
 
   const resetDefaults = () => save(DEFAULT_SETTINGS);
@@ -449,6 +486,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
   const updateField = <K extends keyof ModelSettings>(key: K, value: ModelSettings[K]) => {
     save({ ...settings, [key]: value });
   };
+
+  const effectiveBackend = settings.backendId || defaultBackend;
+  const usesEredu = effectiveBackend === 'eredu';
 
   const samplingType: SamplingType = settings.sampling?.type ?? 'Temperature';
   const chatTemplate = settings.chatTemplate ?? { type: 'embedded' };
@@ -515,22 +555,64 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
     : [builtinTemplateDraft, ...builtinTemplateOptions].filter(Boolean);
 
   if (loading) {
-    return <div className="py-2 text-xs text-text-muted">{intl.formatMessage(i18n.loadingSettings)}</div>;
+    return (
+      <div className="py-2 text-xs text-text-muted">{intl.formatMessage(i18n.loadingSettings)}</div>
+    );
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
-        {saving && <span className="text-xs text-text-muted mr-auto">{intl.formatMessage(i18n.saving)}</span>}
-        <Button variant="ghost" size="sm" onClick={resetDefaults} title={intl.formatMessage(i18n.resetToDefaults)}>
+        {saving && (
+          <span className="text-xs text-text-muted mr-auto">{intl.formatMessage(i18n.saving)}</span>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={resetDefaults}
+          title={intl.formatMessage(i18n.resetToDefaults)}
+        >
           <RotateCcw className="w-3.5 h-3.5 mr-1" />
           <span className="text-xs">{intl.formatMessage(i18n.reset)}</span>
         </Button>
       </div>
 
+      {saveError && (
+        <p role="alert" className="text-xs text-red-500">
+          {saveError}
+        </p>
+      )}
+      <SelectField<string>
+        label={intl.formatMessage(i18n.inferenceBackend)}
+        description={intl.formatMessage(i18n.inferenceBackendDescription)}
+        value={settings.backendId || 'auto'}
+        options={[
+          { value: 'auto', label: intl.formatMessage(i18n.automaticBackend) },
+          ...Array.from(
+            new Set([...availableBackends, ...(settings.backendId ? [effectiveBackend] : [])])
+          ).map((backend) => ({
+            value: backend,
+            label: backend === 'llamacpp' ? 'llama.cpp' : 'eredu',
+          })),
+        ]}
+        onChange={(backend) =>
+          save({
+            ...settings,
+            backendId: backend === 'auto' ? null : backend,
+            chatTemplate:
+              (backend === 'eredu' || (backend === 'auto' && defaultBackend === 'eredu')) &&
+              settings.chatTemplate?.type === 'builtin'
+                ? { type: 'embedded' }
+                : settings.chatTemplate,
+          })
+        }
+      />
+
       {/* Context & Generation */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.contextAndGeneration)}</h5>
+        <h5 className="text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.contextAndGeneration)}
+        </h5>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label={intl.formatMessage(i18n.contextSize)}
@@ -640,7 +722,9 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
       {/* Repetition Penalty */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.repetitionPenalty)}</h5>
+        <h5 className="text-xs font-medium text-text-default">
+          {intl.formatMessage(i18n.repetitionPenalty)}
+        </h5>
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             label={intl.formatMessage(i18n.repeatPenalty)}
@@ -680,59 +764,65 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
 
       {/* Performance */}
       <div className="space-y-2">
-        <h5 className="text-xs font-medium text-text-default">{intl.formatMessage(i18n.performance)}</h5>
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label={intl.formatMessage(i18n.batchSize)}
-            description={intl.formatMessage(i18n.batchSizeDescription)}
-            value={settings.nBatch}
-            onChange={(v) => updateField('nBatch', v)}
-            placeholder="Auto"
-            min={1}
-            allowNull
-          />
-          <NumberField
-            label={intl.formatMessage(i18n.gpuLayers)}
-            description={intl.formatMessage(i18n.gpuLayersDescription)}
-            value={settings.nGpuLayers}
-            onChange={(v) => updateField('nGpuLayers', v)}
-            placeholder="All"
-            min={0}
-            allowNull
-          />
-          <NumberField
-            label={intl.formatMessage(i18n.threads)}
-            description={intl.formatMessage(i18n.threadsDescription)}
-            value={settings.nThreads}
-            onChange={(v) => updateField('nThreads', v)}
-            placeholder="Auto"
-            min={1}
-            allowNull
-          />
-        </div>
-        <ToggleField
-          label={intl.formatMessage(i18n.lockModelInRam)}
-          description={intl.formatMessage(i18n.lockModelInRamDescription)}
-          value={settings.useMlock ?? false}
-          onChange={(v) => updateField('useMlock', v)}
-        />
-        <SelectField
-          label={intl.formatMessage(i18n.flashAttention)}
-          description={intl.formatMessage(i18n.flashAttentionDescription)}
-          value={
-            settings.flashAttention === null || settings.flashAttention === undefined
-              ? 'auto'
-              : settings.flashAttention
-                ? 'on'
-                : 'off'
-          }
-          options={[
-            { value: 'auto', label: 'Auto' },
-            { value: 'on', label: 'On' },
-            { value: 'off', label: 'Off' },
-          ]}
-          onChange={(v) => updateField('flashAttention', v === 'auto' ? null : v === 'on')}
-        />
+        {!usesEredu && (
+          <>
+            <h5 className="text-xs font-medium text-text-default">
+              {intl.formatMessage(i18n.performance)}
+            </h5>
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label={intl.formatMessage(i18n.batchSize)}
+                description={intl.formatMessage(i18n.batchSizeDescription)}
+                value={settings.nBatch}
+                onChange={(v) => updateField('nBatch', v)}
+                placeholder="Auto"
+                min={1}
+                allowNull
+              />
+              <NumberField
+                label={intl.formatMessage(i18n.gpuLayers)}
+                description={intl.formatMessage(i18n.gpuLayersDescription)}
+                value={settings.nGpuLayers}
+                onChange={(v) => updateField('nGpuLayers', v)}
+                placeholder="All"
+                min={0}
+                allowNull
+              />
+              <NumberField
+                label={intl.formatMessage(i18n.threads)}
+                description={intl.formatMessage(i18n.threadsDescription)}
+                value={settings.nThreads}
+                onChange={(v) => updateField('nThreads', v)}
+                placeholder="Auto"
+                min={1}
+                allowNull
+              />
+            </div>
+            <ToggleField
+              label={intl.formatMessage(i18n.lockModelInRam)}
+              description={intl.formatMessage(i18n.lockModelInRamDescription)}
+              value={settings.useMlock ?? false}
+              onChange={(v) => updateField('useMlock', v)}
+            />
+            <SelectField
+              label={intl.formatMessage(i18n.flashAttention)}
+              description={intl.formatMessage(i18n.flashAttentionDescription)}
+              value={
+                settings.flashAttention === null || settings.flashAttention === undefined
+                  ? 'auto'
+                  : settings.flashAttention
+                    ? 'on'
+                    : 'off'
+              }
+              options={[
+                { value: 'auto', label: 'Auto' },
+                { value: 'on', label: 'On' },
+                { value: 'off', label: 'Off' },
+              ]}
+              onChange={(v) => updateField('flashAttention', v === 'auto' ? null : v === 'on')}
+            />
+          </>
+        )}
         <SelectField<ToolCallingMode>
           label={intl.formatMessage(i18n.toolCalling)}
           description={intl.formatMessage(i18n.toolCallingDescription)}
@@ -750,7 +840,14 @@ export const ModelSettingsPanel = ({ modelId }: { modelId: string }) => {
           value={chatTemplateMode}
           options={[
             { value: 'embedded', label: intl.formatMessage(i18n.chatTemplateEmbedded) },
-            { value: 'builtin', label: intl.formatMessage(i18n.chatTemplateBuiltin) },
+            ...(!usesEredu
+              ? [
+                  {
+                    value: 'builtin' as ChatTemplateMode,
+                    label: intl.formatMessage(i18n.chatTemplateBuiltin),
+                  },
+                ]
+              : []),
             {
               value: 'custom_inline',
               label: intl.formatMessage(i18n.chatTemplateCustomInline),
