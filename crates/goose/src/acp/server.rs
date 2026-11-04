@@ -2253,6 +2253,14 @@ impl AcpConnection {
             return Ok(PromptResponse::new(StopReason::Cancelled));
         }
 
+        if self.closed_session_ids.lock().await.contains(&session_id) {
+            self.clear_active_run(&session_id, &run_id).await;
+            return Err(
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {}", session_id)),
+            );
+        }
+
         if let Err(error) = Self::send_active_run_update(cx, &args.session_id, Some(&run_id)) {
             self.clear_active_run(&session_id, &run_id).await;
             return Err(error);
