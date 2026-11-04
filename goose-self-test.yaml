@@ -177,10 +177,10 @@ prompt: |
   Verify both success and failure paths work correctly.
 
   ### Code Analysis Testing
-  1. Create sample code files in Python, JavaScript, and Go
-  2. Analyze each file for structure
+  1. Create sample code files in Python, JavaScript, Go, C, and C++. For C/C++, include a `.h` header defining a function that a `.c` file calls, and a C++ class whose method is defined out of line as `Foo::method` and called from another `.cpp` file
+  2. Analyze each file for structure, and verify `.c`, `.cpp`, and `.h` files are analyzed rather than reported as unsupported
   3. Test directory-wide analysis
-  4. Test symbol focus and call graphs
+  4. Test symbol focus and call graphs, including the C call into the header function and the cross-file call to `Foo::method`
   5. Verify LOC, function, and class counting
 
   ### Azure AI Foundry Provider Validation

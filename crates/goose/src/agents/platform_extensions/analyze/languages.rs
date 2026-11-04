@@ -319,6 +319,89 @@ static LANGUAGES: &[LangInfo] = &[
             "#,
         },
     },
+    LangInfo {
+        name: "c",
+        extensions: &["c"],
+        language: || tree_sitter_c::LANGUAGE.into(),
+        fn_kinds: &["function_definition"],
+        fn_name_kinds: &[],
+        class_kinds: &["struct_specifier", "union_specifier"],
+        queries: LangQueries {
+            functions: r#"
+                (function_declarator declarator: (identifier) @name)
+            "#,
+            classes: r#"
+                (struct_specifier name: (type_identifier) @name body: (field_declaration_list))
+                (union_specifier name: (type_identifier) @name body: (field_declaration_list))
+                (enum_specifier name: (type_identifier) @name body: (enumerator_list))
+                (type_definition
+                  type: (struct_specifier !name body: (field_declaration_list))
+                  declarator: (type_identifier) @name)
+                (type_definition
+                  type: (union_specifier !name body: (field_declaration_list))
+                  declarator: (type_identifier) @name)
+                (type_definition
+                  type: (enum_specifier !name body: (enumerator_list))
+                  declarator: (type_identifier) @name)
+            "#,
+            imports: r#"
+                (preproc_include path: (_) @path)
+            "#,
+            calls: r#"
+                (call_expression function: (identifier) @name)
+                (call_expression function: (field_expression field: (field_identifier) @name))
+            "#,
+        },
+    },
+    // `.h` is mapped here rather than to C: the C++ grammar parses nearly all C
+    // headers, while the reverse fails on classes and templates.
+    LangInfo {
+        name: "cpp",
+        extensions: &[
+            "cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "h", "ipp", "tpp",
+        ],
+        language: || tree_sitter_cpp::LANGUAGE.into(),
+        fn_kinds: &["function_definition"],
+        fn_name_kinds: &[],
+        class_kinds: &["class_specifier", "struct_specifier", "union_specifier"],
+        queries: LangQueries {
+            functions: r#"
+                (function_declarator
+                  declarator: [
+                    (identifier)
+                    (field_identifier)
+                    (qualified_identifier)
+                    (destructor_name)
+                    (operator_name)
+                  ] @name)
+            "#,
+            classes: r#"
+                (class_specifier name: (type_identifier) @name body: (field_declaration_list))
+                (struct_specifier name: (type_identifier) @name body: (field_declaration_list))
+                (union_specifier name: (type_identifier) @name body: (field_declaration_list))
+                (enum_specifier name: (type_identifier) @name body: (enumerator_list))
+                (type_definition
+                  type: (struct_specifier !name body: (field_declaration_list))
+                  declarator: (type_identifier) @name)
+                (type_definition
+                  type: (union_specifier !name body: (field_declaration_list))
+                  declarator: (type_identifier) @name)
+                (type_definition
+                  type: (enum_specifier !name body: (enumerator_list))
+                  declarator: (type_identifier) @name)
+            "#,
+            imports: r#"
+                (preproc_include path: (_) @path)
+            "#,
+            calls: r#"
+                (call_expression function: (identifier) @name)
+                (call_expression function: (field_expression field: (field_identifier) @name))
+                (call_expression function: (qualified_identifier) @name)
+                (call_expression function: (template_function name: (identifier) @name))
+                (new_expression type: (type_identifier) @name)
+            "#,
+        },
+    },
 ];
 
 pub fn lang_for_ext(ext: &str) -> Option<&'static LangInfo> {

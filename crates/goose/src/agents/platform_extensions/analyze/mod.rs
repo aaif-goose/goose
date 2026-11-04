@@ -379,6 +379,169 @@ fn helper() { validate(0); }
         assert!(out.contains("validate(") && out.contains("•5"));
     }
 
+    fn analyze_path(path: &std::path::Path, focus: Option<&str>) -> CallToolResult {
+        AnalyzeClient::new(ctx()).unwrap().analyze(
+            AnalyzeParams {
+                path: path.to_str().unwrap().into(),
+                focus: focus.map(Into::into),
+                max_depth: 3,
+                follow_depth: 2,
+                force: false,
+            },
+            path.to_path_buf(),
+        )
+    }
+
+    #[tokio::test]
+    async fn cpp_semantic_mode() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("demo.cpp");
+        fs::write(
+            &file,
+            r#"#include <vector>
+#include "workload.h"
+
+class Foo : public Base {
+public:
+  Foo();
+  int get(int a) const;
+  int x;
+};
+
+int Foo::get(int a) const { return helper(a); }
+int helper(int a) { return a; }
+void run() { Foo f(a, b); f.get(1); helper(2); }
+"#,
+        )
+        .unwrap();
+
+        let result = analyze_path(&file, None);
+        let out = text(&result);
+
+        assert!(out.contains("5F, 1C"), "{out}");
+        assert!(out.contains("Foo:4(Base) {x}"), "{out}");
+        assert!(out.contains("Foo.get(int a)->int:7"), "{out}");
+        assert!(out.contains("Foo.get(int a)->int:11"), "{out}");
+        assert!(out.contains("helper(int a)->int:12"), "{out}");
+        assert!(out.contains("run:13"), "{out}");
+        assert!(!out.contains(" f("), "{out}");
+        assert!(out.contains("<vector>; workload.h"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_header_is_analyzed() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("shapes.h");
+        fs::write(
+            &file,
+            "namespace geo {\ntemplate <typename T> struct Box { T v; T get() const { return v; } };\n}\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(&file, None);
+        let out = text(&result);
+
+        assert!(out.contains("Box:2{v}"), "{out}");
+        assert!(out.contains("Box.get()->T:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_focused_mode_links_qualified_definitions() {
+        let tmp = tempdir().unwrap();
+        fs::write(tmp.path().join("a.cpp"), "void run() { f.get(1); }\n").unwrap();
+        fs::write(
+            tmp.path().join("b.cpp"),
+            "int Foo::get(int a) { return a; }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("get"));
+        let out = text(&result);
+
+        assert!(out.contains("FOCUS: get"), "{out}");
+        assert!(out.contains("b.cpp:get:1 → a.cpp:run:1"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn c_callers_link_to_header_definitions() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("util.h"),
+            "static inline int helper(int a) { return a; }\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("main.c"),
+            "#include \"util.h\"\nint main(void) { return helper(1); }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("helper"));
+        let out = text(&result);
+
+        assert!(out.contains("util.h:helper:1 → main.c:main:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_qualified_template_call_links_to_definition() {
+        let tmp = tempdir().unwrap();
+        fs::write(
+            tmp.path().join("t.cpp"),
+            "namespace ns { template <typename T> T foo(T v) { return v; } }\nvoid run() { ns::foo<int>(1); }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(tmp.path(), Some("foo"));
+        let out = text(&result);
+
+        assert!(out.contains("t.cpp:foo:1 → t.cpp:run:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn cpp_multi_field_declarations_and_trailing_return() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("t.cpp");
+        fs::write(
+            &file,
+            "struct S { int x, y; int *p, **q; };\nauto load() -> Result { return {}; }\n",
+        )
+        .unwrap();
+
+        let result = analyze_path(&file, None);
+        let out = text(&result);
+
+        assert!(out.contains("S:1{x,y,p,q}"), "{out}");
+        assert!(out.contains("load()->Result:2"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn c_semantic_mode() {
+        let tmp = tempdir().unwrap();
+        let file = tmp.path().join("demo.c");
+        fs::write(
+            &file,
+            r#"#include <stdio.h>
+#include "util.h"
+
+struct Point { int x; int y; void (*cb)(int); };
+typedef struct { int q; } Anon;
+
+static int add(int a, int b) { return a + b; }
+void run(void) { printf("%d", add(1, 2)); }
+"#,
+        )
+        .unwrap();
+
+        let result = analyze_path(&file, None);
+        let out = text(&result);
+
+        assert!(out.contains("Point:4{x,y,cb}"), "{out}");
+        assert!(out.contains("Anon:5{q}"), "{out}");
+        assert!(out.contains("add(int a, int b)->int:7"), "{out}");
+        assert!(out.contains("run(void):8"), "{out}");
+        assert!(out.contains("<stdio.h>; util.h"), "{out}");
+    }
+
     #[tokio::test]
     async fn focused_mode() {
         let tmp = tempdir().unwrap();

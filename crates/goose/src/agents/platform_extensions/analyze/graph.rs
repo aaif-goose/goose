@@ -240,6 +240,14 @@ fn resolve_caller_key(
     }
 }
 
+/// `.h` files are parsed as C++, so C sources must be able to link to them.
+fn link_group(language: &str) -> &str {
+    match language {
+        "c" => "cpp",
+        other => other,
+    }
+}
+
 fn resolve_callee(
     analysis: &FileAnalysis,
     call: &Call,
@@ -275,7 +283,11 @@ fn resolve_callee(
         }
         // Cross-file matches filtered to same language only
         keys.iter()
-            .filter(|(path, _, _)| lang_index.get(path).copied() == Some(caller_lang))
+            .filter(|(path, _, _)| {
+                lang_index
+                    .get(path)
+                    .is_some_and(|lang| link_group(lang) == link_group(caller_lang))
+            })
             .cloned()
             .collect()
     } else {

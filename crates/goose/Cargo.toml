@@ -23,6 +23,8 @@ otel = [
 code-mode = ["dep:boa_engine"]
 tree-sitter = [
     "dep:tree-sitter",
+    "dep:tree-sitter-c",
+    "dep:tree-sitter-cpp",
     "dep:tree-sitter-go",
     "dep:tree-sitter-java",
     "dep:tree-sitter-javascript",
@@ -218,6 +220,8 @@ indexmap = { version = "2.9", default-features = false, features = ["serde", "st
 ignore = { workspace = true }
 rayon = { workspace = true }
 tree-sitter = { workspace = true, optional = true }
+tree-sitter-c = { workspace = true, optional = true }
+tree-sitter-cpp = { workspace = true, optional = true }
 tree-sitter-go = { workspace = true, optional = true }
 tree-sitter-java = { workspace = true, optional = true }
 tree-sitter-javascript = { workspace = true, optional = true }
