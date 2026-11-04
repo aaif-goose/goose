@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -37,11 +38,10 @@ pub enum SubagentUpdate {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait SubagentRunner<S>: MaybeSend + MaybeSync {
-    fn started_subagent_session_ids(
-        &self,
-        parent_session: &S,
-        conversation: &Conversation,
-    ) -> Vec<String>;
+    /// Returns every subagent session ID that `message` asks to run, even if that subagent
+    /// has already run. `SubagentOperation` calls this for every message in the parent
+    /// conversation and decides which still need to run.
+    fn requested_subagent_session_ids(&self, parent_session: &S, message: &Message) -> Vec<String>;
 
     async fn start(
         &self,
@@ -73,19 +73,6 @@ fn finished_subagent_session_ids(message: &Message) -> impl Iterator<Item = &str
         .flatten()
         .filter_map(serde_json::Value::as_str);
     delivered.into_iter().chain(cancelled)
-}
-
-fn pending_subagents(conversation: &Conversation, started: Vec<String>) -> Vec<String> {
-    let mut seen: HashSet<String> = conversation
-        .messages()
-        .iter()
-        .flat_map(finished_subagent_session_ids)
-        .map(str::to_owned)
-        .collect();
-    started
-        .into_iter()
-        .filter(|subagent_session_id| seen.insert(subagent_session_id.clone()))
-        .collect()
 }
 
 fn subagent_label(subagent_session_id: &str) -> String {
@@ -121,7 +108,7 @@ fn subagent_cancelled_message(subagent_session_ids: &[String]) -> Option<Message
         .iter()
         .map(|subagent_session_id| {
             format!(
-                "{} was cancelled before it finished and will not run again.",
+                "{} was cancelled before it finished.",
                 subagent_label(subagent_session_id)
             )
         })
@@ -165,6 +152,7 @@ struct Running {
 pub struct SubagentOperation<S> {
     runner: Arc<dyn SubagentRunner<S>>,
     running: Mutex<Running>,
+    max_concurrency: NonZeroUsize,
 }
 
 impl<S> SubagentOperation<S> {
@@ -172,7 +160,30 @@ impl<S> SubagentOperation<S> {
         Self {
             runner,
             running: Mutex::default(),
+            max_concurrency: NonZeroUsize::MAX,
         }
+    }
+
+    /// Limits how many subagents run at once; additional subagents remain pending.
+    pub fn with_max_concurrency(mut self, max_concurrency: NonZeroUsize) -> Self {
+        self.max_concurrency = max_concurrency;
+        self
+    }
+
+    fn pending_subagents(&self, session: &S, conversation: &Conversation) -> Vec<String> {
+        let mut pending: Vec<String> = Vec::new();
+        for message in conversation.messages() {
+            for subagent_session_id in finished_subagent_session_ids(message) {
+                pending.retain(|pending_id| pending_id != subagent_session_id);
+            }
+            for subagent_session_id in self.runner.requested_subagent_session_ids(session, message)
+            {
+                if !pending.contains(&subagent_session_id) {
+                    pending.push(subagent_session_id);
+                }
+            }
+        }
+        pending
     }
 
     fn deliver<E: From<Message>>(
@@ -207,11 +218,7 @@ where
         emit: &Emitter,
     ) -> Vec<E> {
         let mut stopped = std::mem::take(&mut *self.running.lock().await);
-        let pending = pending_subagents(
-            conversation,
-            self.runner
-                .started_subagent_session_ids(session, conversation),
-        );
+        let pending = self.pending_subagents(session, conversation);
         let mut effects = Vec::new();
         let mut delivered = HashSet::new();
         let finished = std::iter::from_fn(|| loop {
@@ -248,15 +255,14 @@ where
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let pending = pending_subagents(
-            conversation,
-            self.runner
-                .started_subagent_session_ids(session, conversation),
-        );
+        let pending = self.pending_subagents(session, conversation);
         let remaining = pending.len().saturating_sub(1);
 
         let mut running = self.running.lock().await;
         for subagent_session_id in &pending {
+            if running.subagent_session_ids.len() >= self.max_concurrency.get() {
+                break;
+            }
             if running.subagent_session_ids.contains(subagent_session_id) {
                 continue;
             }

@@ -3,14 +3,11 @@ use super::{
     PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
 };
 use agent_client_protocol::schema::v1::{
-    ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
-    DeleteSessionRequest, FileSystemCapabilities, ImageContent, InitializeRequest,
-    KillTerminalRequest, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, McpServer,
-    NewSessionRequest, PromptRequest, ReadTextFileRequest, ReleaseTerminalRequest,
-    RequestPermissionRequest, SessionConfigKind, SessionConfigOptionCategory,
+    CloseSessionRequest, ContentBlock, DeleteSessionRequest, ImageContent, InitializeRequest,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, McpServer, NewSessionRequest,
+    PromptRequest, RequestPermissionRequest, SessionConfigKind, SessionConfigOptionCategory,
     SessionConfigOptionValue, SessionId, SessionModeId, SessionNotification, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason, TerminalOutputRequest,
-    TextContent, ToolCallStatus, WaitForTerminalExitRequest, WriteTextFileRequest,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason, TextContent, ToolCallStatus,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
@@ -209,21 +206,10 @@ impl Connection for AcpServerConnection {
         let notify = Arc::new(Notify::new());
         let permission = Arc::new(Mutex::new(PermissionDecision::Cancel));
 
-        let mut fs_cap = FileSystemCapabilities::default();
-        if config.read_text_file.is_some() {
-            fs_cap = fs_cap.read_text_file(true);
-        }
-        if config.write_text_file.is_some() {
-            fs_cap = fs_cap.write_text_file(true);
-        }
-
         let cx = {
             let updates_clone = updates.clone();
             let notify_clone = notify.clone();
             let permission_clone = permission.clone();
-            let read_handler = config.read_text_file;
-            let write_handler = config.write_text_file;
-            let terminal = config.terminal;
 
             let cx_holder: Arc<Mutex<Option<ConnectionTo<Agent>>>> = Arc::new(Mutex::new(None));
             let cx_holder_clone = cx_holder.clone();
@@ -255,104 +241,11 @@ impl Connection for AcpServerConnection {
                         },
                         agent_client_protocol::on_receive_request!(),
                     )
-                    .on_receive_request(
-                        async move |req: ReadTextFileRequest, responder, _cx| match read_handler {
-                            Some(ref rh) => match rh(&req) {
-                                Ok(resp) => responder.respond(resp),
-                                Err(msg) => responder.respond_with_internal_error(msg),
-                            },
-                            None => responder.respond_with_error(
-                                agent_client_protocol::Error::method_not_found(),
-                            ),
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        async move |req: WriteTextFileRequest, responder, _cx| match write_handler {
-                            Some(ref wh) => match wh(&req) {
-                                Ok(resp) => responder.respond(resp),
-                                Err(msg) => responder.respond_with_internal_error(msg),
-                            },
-                            None => responder.respond_with_error(
-                                agent_client_protocol::Error::method_not_found(),
-                            ),
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let t = terminal.clone();
-                            async move |req: CreateTerminalRequest, responder, _cx| match t {
-                                Some(ref f) => responder.respond(f.on_create(&req.command)),
-                                None => responder.respond_with_error(
-                                    agent_client_protocol::Error::method_not_found(),
-                                ),
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let t = terminal.clone();
-                            async move |req: WaitForTerminalExitRequest, responder, _cx| match t {
-                                Some(ref f) => {
-                                    responder.respond(f.on_wait_for_exit(&req.terminal_id))
-                                }
-                                None => responder.respond_with_error(
-                                    agent_client_protocol::Error::method_not_found(),
-                                ),
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let t = terminal.clone();
-                            async move |req: TerminalOutputRequest, responder, _cx| match t {
-                                Some(ref f) => responder.respond(f.on_output(&req.terminal_id)),
-                                None => responder.respond_with_error(
-                                    agent_client_protocol::Error::method_not_found(),
-                                ),
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let t = terminal.clone();
-                            async move |req: ReleaseTerminalRequest, responder, _cx| match t {
-                                Some(ref f) => responder.respond(f.on_release(&req.terminal_id)),
-                                None => responder.respond_with_error(
-                                    agent_client_protocol::Error::method_not_found(),
-                                ),
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
-                    .on_receive_request(
-                        {
-                            let t = terminal.clone();
-                            async move |req: KillTerminalRequest, responder, _cx| match t {
-                                Some(ref f) => responder.respond(f.on_kill(&req.terminal_id)),
-                                None => responder.respond_with_error(
-                                    agent_client_protocol::Error::method_not_found(),
-                                ),
-                            }
-                        },
-                        agent_client_protocol::on_receive_request!(),
-                    )
                     .connect_with(transport.into_byte_streams(), {
                         let cx_holder = cx_holder_clone;
                         async move |cx: ConnectionTo<Agent>| {
                             let resp = cx
-                                .send_request(
-                                    InitializeRequest::new(ProtocolVersion::V1)
-                                        .client_capabilities(
-                                            ClientCapabilities::new()
-                                                .fs(fs_cap)
-                                                .terminal(terminal.is_some()),
-                                        ),
-                                )
+                                .send_request(InitializeRequest::new(ProtocolVersion::V1))
                                 .block_task()
                                 .await
                                 .unwrap();

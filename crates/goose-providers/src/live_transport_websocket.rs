@@ -1,25 +1,24 @@
 //! Native WebSocket transport for OpenAI Live sessions.
 
-use crate::{live::LiveTransport, openai_live::OpenAiLiveWebSocketRequest};
+use crate::{
+    api_client::{ApiClient, TlsConfig},
+    live::LiveTransport,
+    openai_live::OpenAiLiveWebSocketRequest,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
+use reqwest_websocket::{Message, Upgrade, WebSocket};
 use serde_json::Value;
 use tokio::{
     sync::Mutex,
     time::{timeout, Duration},
 };
-use tokio_tungstenite::{
-    connect_async,
-    tungstenite::{client::IntoClientRequest, Message},
-    MaybeTlsStream, WebSocketStream,
-};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
-type SocketSink = SplitSink<Socket, Message>;
-type SocketStream = SplitStream<Socket>;
+type SocketSink = SplitSink<WebSocket, Message>;
+type SocketStream = SplitStream<WebSocket>;
 
 pub struct WebSocketLiveTransport {
     sink: Mutex<SocketSink>,
@@ -28,21 +27,36 @@ pub struct WebSocketLiveTransport {
 
 impl WebSocketLiveTransport {
     pub async fn connect(request: OpenAiLiveWebSocketRequest) -> Result<Self> {
-        let mut websocket_request = request.endpoint.into_client_request()?;
+        Self::connect_with_tls_config(request, None).await
+    }
+
+    pub(crate) async fn connect_with_tls_config(
+        request: OpenAiLiveWebSocketRequest,
+        tls_config: Option<&TlsConfig>,
+    ) -> Result<Self> {
+        let client = ApiClient::http_client_builder(tls_config)?
+            .http1_only()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        let mut websocket_request = client.get(request.endpoint);
         for (name, value) in request.headers {
-            websocket_request.headers_mut().insert(
-                http::header::HeaderName::try_from(name)?,
-                http::header::HeaderValue::try_from(value)?,
-            );
+            websocket_request = websocket_request.header(name, value);
         }
-        let (socket, _) = timeout(CONNECT_TIMEOUT, connect_async(websocket_request))
-            .await
-            .context("live WebSocket connection timed out")?
-            .context("live WebSocket connection failed")?;
+        let socket = timeout(CONNECT_TIMEOUT, async {
+            websocket_request
+                .upgrade()
+                .send()
+                .await?
+                .into_websocket()
+                .await
+        })
+        .await
+        .context("live WebSocket connection timed out")?
+        .context("live WebSocket connection failed")?;
         let (mut sink, stream) = socket.split();
         timeout(CONNECT_TIMEOUT, async {
             for message in request.initial_messages {
-                sink.send(Message::Text(message.to_string().into())).await?;
+                sink.send(Message::Text(message.to_string())).await?;
             }
             Result::<()>::Ok(())
         })
@@ -61,7 +75,7 @@ impl LiveTransport for WebSocketLiveTransport {
         self.sink
             .lock()
             .await
-            .send(Message::Text(message.to_string().into()))
+            .send(Message::Text(message.to_string()))
             .await?;
         Ok(())
     }
@@ -72,7 +86,7 @@ impl LiveTransport for WebSocketLiveTransport {
             match message? {
                 Message::Text(text) => return Ok(Some(serde_json::from_str(&text)?)),
                 Message::Binary(bytes) => return Ok(Some(serde_json::from_slice(&bytes)?)),
-                Message::Close(_) => return Ok(None),
+                Message::Close { .. } => return Ok(None),
                 _ => {}
             }
         }

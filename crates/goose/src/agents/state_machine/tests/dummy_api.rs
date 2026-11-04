@@ -47,6 +47,7 @@ enum ApiResponse {
     OutputLimit,
     ContextLimitError(String),
     ServerError(String),
+    HttpError(u16),
     EmptyServerError,
     ReplyThenServerError {
         reply: String,
@@ -379,6 +380,10 @@ impl<'a> ApiRuleBuilder<'a> {
         self.configured(ApiResponse::ServerError(message.into()))
     }
 
+    pub(super) fn http_error(self, status: u16) -> ConfiguredResponse<'a> {
+        self.configured(ApiResponse::HttpError(status))
+    }
+
     pub(super) fn no_choices(self) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::NoChoices)
     }
@@ -590,6 +595,9 @@ impl DummyApiState {
             ),
             ApiResponse::ServerError(message) => {
                 sse_response(format!("data: {}\n\n", api_error(message)))
+            }
+            ApiResponse::HttpError(status) => {
+                ResponseTemplate::new(status).set_body_json(api_error("rejected"))
             }
             ApiResponse::EmptyServerError => ResponseTemplate::new(500),
             ApiResponse::ReplyThenServerError { reply, error } => sse_response(reply_events(

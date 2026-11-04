@@ -5,6 +5,7 @@ image: /img/blog/agentic-state-machines.jpg
 authors:
   - douwe
 featured: true
+tags: [gdk]
 ---
 
 ![A goose walking from a tangled agent loop into an orderly sequence of machines](/img/blog/agentic-state-machines.jpg)

@@ -12,6 +12,7 @@ activities:
   - Validate the configurable Databricks AI Gateway path across all inference routes
   - Validate declared vision through persisted custom-provider configuration and outbound requests
   - Analyze code structure and parsing capabilities
+  - Validate Boa JavaScript discovery, batching, cancellation, and isolation
   - Test extension discovery and management
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation
@@ -20,6 +21,7 @@ activities:
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Validate capped and uncapped auto-compaction thresholds and Desktop editing
+  - Validate the opt-in context relevance shadow operation without TypeSafe calls
   - Test error boundaries including nested delegation prevention
   - Generate comprehensive test report
 
@@ -28,7 +30,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, code-mode, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, context-relevance, advanced"
 
   - key: test_depth
     input_type: string
@@ -86,6 +88,21 @@ instructions: |
   - Enable/disable extensions
   - Test extension interactions
   - Verify isolation between extensions
+
+  ### Code Mode: Boa Runtime
+  When code mode is enabled (or test_phases is code-mode):
+  - Use list_functions and get_function_details to inspect exact tool names and original JSON schemas.
+  - Use execute_javascript with async function run() and tools.call(name, arguments).
+  - Compare sequential calls and Promise.all batches; verify results and caught tool errors.
+  - Verify unknown names and invalid arguments produce actionable errors.
+  - Verify console output and returned JSON contain only the information requested.
+  - Verify typeof fetch, process, Deno, and require are undefined; imports must fail.
+  - Check cyclic and BigInt return values produce useful errors.
+  - Check infinite loops before and after await, recursive calls, and unresolved promises terminate.
+  - Cancel a script awaiting a long-running tool and verify the tool stops.
+  - Run a normal script afterward and in another session; verify no JavaScript state leaks.
+  - Verify hidden tools cannot be discovered or called and hidden results remain hidden.
+  - Record any permission or mutation checks that require manual interaction.
 
   ### Phase 3: Delegate & Load Testing
   Test the unified delegation and knowledge-loading tools:
@@ -177,6 +194,10 @@ prompt: |
   ### Gondola Provider Validation
   When running from a goose source checkout:
   1. Run `cargo test -p goose test_gondola_provider_registry_wiring` to verify Gondola is registered with the correct name, default model (`deepseek-v4-flash`), and a secret `GONDOLA_API_KEY` config key.
+
+  ### Lemonade Provider Validation
+  When running from a goose source checkout:
+  1. Run `cargo test -p goose --features scheduler --lib test_lemonade_provider_registry_wiring` to verify Lemonade is registered with the correct name and display name, an empty default model (it serves dynamic models), an optional secret `LEMONADE_API_KEY` config key, and a `LEMONADE_HOST` key defaulting to `http://localhost:13305`.
   If the source checkout or Rust toolchain is unavailable, mark this validation as skipped rather than failed.
 
   ### Databricks AI Gateway Path Validation
@@ -217,6 +238,46 @@ prompt: |
 
   Log command results and failures to: {{ workspace_dir }}/compaction.md
   Do not modify source files or configuration to make these checks pass.
+  {% endif %}
+
+  {% if test_phases == "all" or "context-relevance" in test_phases %}
+  ## Context Relevance Shadow Validation
+
+  When running from a goose source checkout with the Rust toolchain:
+  1. Run `cargo test -p goose --lib context_relevance`. The tests use a scripted decision
+     provider and make no TypeSafe calls.
+  2. Verify the operation stays off unless `GOOSE_CONTEXT_RELEVANCE_SHADOW=true`, is skipped
+     for providers that manage their own context, and reports a setup error when the flag is
+     on but `TYPESAFE_API_KEY` is missing.
+  3. Verify it makes at most one decision call per turn, only above the compaction threshold,
+     and that compaction still runs afterward.
+  4. Verify the goal, tool arguments, and tool output it sends are capped and flagged when
+     incomplete, including goals with visible images or documents. Hidden content must not
+     be sent or mark an otherwise complete goal as incomplete.
+  5. Verify FIFO steers extend the original goal within one shared budget, the whole current
+     turn stays protected, and another steer or compaction replay cannot repeat an observation.
+  6. Verify persisted errors and response model names are capped, tool error status remains
+     explicit in decision evidence, and failures, timeouts, and invalid answers never propose
+     omission.
+  If the source checkout or Rust toolchain is unavailable, mark this phase as SKIPPED.
+
+  Log command results and failures to: {{ workspace_dir }}/context_relevance.md
+  Do not modify source files or configuration to make these checks pass.
+  {% endif %}
+
+  {% if test_phases == "all" or "code-mode" in test_phases %}
+  ## Code Mode: JavaScript Runtime
+  Enable the code_execution extension if necessary. Discover exact names with list_functions
+  and inspect the JSON schemas of two read-only tools with get_function_details.
+  Execute async function run() scripts using tools.call(name, arguments):
+  1. Compare sequential calls with a Promise.all batch and log only a short summary.
+  2. Catch an unknown-tool error and confirm it points back to discovery.
+  3. Check syntax errors, invalid argument objects, cyclic returns, and BigInt returns.
+  4. Check infinite loops before and after await and unresolved promises terminate, then run a normal script.
+  5. Confirm JavaScript globals do not expose filesystem, network, package, or environment APIs.
+  6. Run a second script to confirm globals from the first execution are absent.
+  Record checks requiring external cancellation or a second session as manual follow-up.
+  Log results to: {{ workspace_dir }}/code_mode.md
   {% endif %}
 
   {% if test_phases == "all" or "extensions" in test_phases %}

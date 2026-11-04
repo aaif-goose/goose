@@ -17,6 +17,20 @@ struct GooseMessageMeta<'a> {
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inference: Option<GooseInferenceMeta<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_logs: Option<&'a [String]>,
+}
+
+// The provider session id stays on the server: clients only need to know which model answered.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GooseInferenceMeta<'a> {
+    provider: &'a str,
+    requested_model: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved_model: Option<&'a str>,
 }
 
 fn goose_message_meta(
@@ -29,6 +43,17 @@ fn goose_message_meta(
         steer,
         output_token_limit_reached: message.metadata.output_token_limit_reached,
         fallback_content: has_output_token_limit_fallback_content(message),
+        inference: message
+            .metadata
+            .inference
+            .as_ref()
+            .map(|inference| GooseInferenceMeta {
+                provider: &inference.provider,
+                requested_model: &inference.requested_model,
+                resolved_model: inference.resolved_model.as_deref(),
+            }),
+        operation_logs: (!message.metadata.operation_logs.is_empty())
+            .then_some(message.metadata.operation_logs.as_slice()),
     };
 
     match serde_json::to_value(message_meta) {
@@ -102,6 +127,7 @@ fn has_output_token_limit_fallback_content(message: &Message) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::InferenceMetadata;
     use agent_client_protocol::schema::v1::TextContent;
     use rmcp::model::Role;
 
@@ -185,6 +211,47 @@ mod tests {
                 "outputTokenLimitReached": true,
                 "fallbackContent": true,
                 "steer": true,
+            })),
+        );
+    }
+
+    #[test]
+    fn content_chunk_carries_inference_without_provider_session_id() {
+        let inference = InferenceMetadata {
+            provider: "openai".to_string(),
+            requested_model: "gpt-4o".to_string(),
+            resolved_model: None,
+            provider_session_id: Some("provider-session".to_string()),
+        };
+        let message = Message::new(Role::Assistant, 1_700_000_000, vec![])
+            .with_id("msg_live")
+            .with_inference(inference.clone());
+        let chunk = content_chunk_for_message(&message, ContentBlock::Text(TextContent::new("hi")));
+
+        assert_eq!(
+            chunk.meta.as_ref().and_then(|meta| meta.get("goose")),
+            Some(&serde_json::json!({
+                "created": 1_700_000_000,
+                "messageId": "msg_live",
+                "inference": {
+                    "provider": "openai",
+                    "requestedModel": "gpt-4o",
+                },
+            })),
+        );
+
+        let resolved_message = message.with_inference(InferenceMetadata {
+            resolved_model: Some("gpt-4o-2024-08-06".to_string()),
+            ..inference
+        });
+        assert_eq!(
+            message_meta(&resolved_message)
+                .get("goose")
+                .and_then(|goose| goose.get("inference")),
+            Some(&serde_json::json!({
+                "provider": "openai",
+                "requestedModel": "gpt-4o",
+                "resolvedModel": "gpt-4o-2024-08-06",
             })),
         );
     }

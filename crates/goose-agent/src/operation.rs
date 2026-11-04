@@ -24,6 +24,8 @@ pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 #[cfg(target_arch = "wasm32")]
 pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + 'a>>;
 
+pub const CLIENT_LOG: &str = "client_log";
+
 pub struct SlashCommand<'a> {
     pub command: &'a str,
     pub params_str: &'a str,
@@ -31,12 +33,14 @@ pub struct SlashCommand<'a> {
 
 pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]> {
     let messages = conversation.messages();
+    let is_kickoff = |msg: &Message| msg.role == rmcp::model::Role::User && !msg.is_tool_response();
     let start = messages
         .iter()
-        .rposition(|message| {
-            message.role == rmcp::model::Role::User
-                && message.is_user_visible()
-                && !message.is_tool_response()
+        .rposition(|msg| is_kickoff(msg) && msg.is_user_visible())
+        .or_else(|| {
+            messages
+                .iter()
+                .rposition(|msg| is_kickoff(msg) && msg.is_agent_visible())
         })
         .ok_or_else(|| anyhow!("state machine conversation has no kickoff message"))?;
     Ok(&messages[start..])
@@ -227,6 +231,12 @@ pub enum ConversationEffect {
     PatchToolRequestMeta {
         tool_call_id: String,
         patch: serde_json::Value,
+    },
+    SetMessageOperationNote {
+        message_id: String,
+        operation: String,
+        key: String,
+        value: serde_json::Value,
     },
     SetMessageVisibility {
         message_id: String,

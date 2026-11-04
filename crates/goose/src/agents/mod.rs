@@ -1,5 +1,6 @@
-mod agent;
+mod active_run;
 pub mod container;
+pub mod context_report;
 pub mod execute_commands;
 pub mod extension;
 pub mod extension_malware_check;
@@ -18,6 +19,8 @@ pub mod reply_parts;
 pub mod retry;
 #[cfg(feature = "scheduler")]
 mod schedule_tool;
+mod services;
+mod session_runtime;
 pub mod state_machine;
 mod state_machine_builder;
 pub mod subagent_execution_tool;
@@ -29,7 +32,8 @@ mod tool_schema_normalize;
 pub mod types;
 pub mod validate_extensions;
 
-pub use agent::{Agent, AgentConfig, GoosePlatform};
+pub use active_run::ActiveRunRegistry;
+pub(crate) use active_run::StartRunError;
 pub use container::Container;
 pub use execute_commands::{context_management_unsupported_message, COMPACT_TRIGGERS};
 pub use extension::{ExtensionConfig, ExtensionError};
@@ -39,6 +43,8 @@ pub(crate) use large_response_handler::max_tool_response_size;
 pub use prompt_manager::PromptManager;
 #[cfg(feature = "scheduler")]
 pub use schedule_tool::ScheduleTool;
+pub use services::{GoosePlatform, StateMachineServices, StateMachineServicesConfig, TurnSettings};
+pub use session_runtime::{Attachment, SessionRuntime};
 pub use subagent_handler::SUBAGENT_TOOL_REQUEST_TYPE;
 pub use subagent_task_config::TaskConfig;
 pub use tool_execution::ToolCallContext;

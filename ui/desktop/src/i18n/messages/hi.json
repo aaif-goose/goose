@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "ऑटो कॉम्पैक्ट पर"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "अब संक्षिप्त करें"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "सीमा सहेजने में विफल: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "समझ गया!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose ने कार्य पूरा किया।"
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "प्रसंग विंडो"
   },
   "chatInput.dictationError": {
     "defaultMessage": "श्रुतलेख त्रुटि"
@@ -1090,6 +1078,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "ठीक है"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "क्या आप वाकई {name} एक्सटेंशन इंस्टॉल करना चाहते हैं? आदेश: {command}"
@@ -2633,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "हम क्या एकत्र करते हैं:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "संदेश लोड हो रहे हैं... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# संदेश छिपाया गया} other {# संदेश छिपाए गए}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "मॉडल बदला गया: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "खोज के लिए सभी संदेशों को तुरंत लोड करने के लिए Cmd/Ctrl+F दबाएँ"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (अनुरोधित)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "सभी दिखाएँ"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "सभी संकेत डिफ़ॉल्ट पर रीसेट हो गए"
@@ -4133,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "सहेजें"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "हमेशा"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "क्लिक करने पर"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "चैट में मॉडल की सोच दिखाएँ। \"क्लिक करने पर\" विकल्प में यह तब तक बंद रहती है जब तक आप इसे खोलते नहीं।"
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "कभी नहीं"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "सोच दिखाएँ"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "कौशल जोड़ें"
   },
@@ -4276,6 +4288,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "ऐसी सबरेसिपी कॉन्फ़िगर करें जिसे रेसिपी निष्पादन के दौरान टूल की तरह कॉल किया जा सके"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "नवीनतम प्रगति लोड करें"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "सबएजेंट की प्रगति यहाँ लाइव नहीं दिखाई जाती।"
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "मॉडल सूची पर वापस जाएँ"
@@ -4670,8 +4688,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "जाएं"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{limit} में से {used} टोकन उपयोग में। कॉन्टेक्स्ट विंडो में क्या है, दिखाएँ"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "अभी संक्षिप्त करें"
+  },
+  "contextXray.free": {
+    "defaultMessage": "खाली"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "कॉन्टेक्स्ट रिपोर्ट लोड नहीं हो सकी।"
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · {limit} टोकन कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "रीफ़्रेश करें"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "पुनः प्रयास करें"
+  },
+  "contextXray.title": {
+    "defaultMessage": "कॉन्टेक्स्ट विंडो"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "टोकन गिनती o200k टोकनाइज़र से अनुमानित है।"
+  },
+  "contextXray.usage": {
+    "defaultMessage": "{limit} टोकन में से · कॉन्टेक्स्ट विंडो का {percent}"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "निर्देश और संकेत"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "संक्षेपण सारांश"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "एक्सटेंशन निर्देश"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "वार्तालाप"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "सिस्टम प्रॉम्प्ट"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "टूल परिभाषाएँ"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "टर्न कॉन्टेक्स्ट"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "स्वचालित"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "कॉन्फ़िगर किया गया"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "TypeSafe API कुंजी"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "API कुंजी दर्ज करें"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "कुंजी हटाएँ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "कुंजी सहेजें"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "हर अनुरोध के लिए सोचने का स्तर चुनने हेतु Jev का उपयोग करता है। अनुरोध का पाठ TypeSafe AI को भेजा जाता है; स्किल और रेसिपी स्लैश कमांड में उनके विस्तारित स्थानीय निर्देश शामिल होते हैं।"
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "स्वचालित सोचने का स्तर"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "ब्लॉक सीमा"
@@ -4738,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "एजेंट लूप"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} अपना स्वयं का वार्तालाप इतिहास रखता है और goose से केवल नवीनतम प्रॉम्प्ट प्राप्त करता है, इसलिए विश्लेषण के लिए कोई अनुरोध नहीं है।"
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "स्वतः-संकुचन सीमा पार हो गई: अगला अनुरोध भेजने से पहले वार्तालाप को संकुचित किया जाता है।"
   }
 }

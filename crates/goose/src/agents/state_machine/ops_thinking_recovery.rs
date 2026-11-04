@@ -81,11 +81,17 @@ impl Operation<Session, GooseEffect> for ThinkingRecoveryOperation {
         }
 
         let mut attempts = 0u32;
-        for message in messages {
-            if message.role == Role::Assistant && message.content.iter().any(is_answer_content) {
-                attempts = 0;
-            } else if self.message_meta(message, CONTINUED).is_some() {
+        for message in conversation.messages().iter().rev() {
+            if self.message_meta(message, CONTINUED).is_some() {
                 attempts += 1;
+            } else if (message.role == Role::User
+                && !message.is_tool_response()
+                && !message.is_turn_context()
+                && (message.is_user_visible() || message.is_agent_visible()))
+                || (message.role == Role::Assistant
+                    && message.content.iter().any(is_answer_content))
+            {
+                break;
             }
         }
 

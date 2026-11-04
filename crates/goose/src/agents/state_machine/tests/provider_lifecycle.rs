@@ -442,6 +442,26 @@ async fn persistent_thinking_only_responses_surface_a_message() -> Result<()> {
 }
 
 #[tokio::test]
+async fn thinking_only_recovery_is_bounded_for_agent_only_kickoffs() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    api.on("hidden kickoff").reply("unexpected extra inference");
+
+    for turn in 1..=2 {
+        api.on("hidden kickoff").reasoning("just thinking").times(4);
+        let result = pipeline
+            .run_message(Message::user().with_text("hidden kickoff").agent_only())
+            .await?;
+        assert_eq!(api.call_count(), 4 * turn);
+        result.assert_message(
+            -1,
+            Agent,
+            "The model finished thinking but did not produce an answer",
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_and_provider_errors_survive_persistence() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("hello").reply("hi there");

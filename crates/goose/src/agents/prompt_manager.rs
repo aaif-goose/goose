@@ -31,7 +31,6 @@ struct SystemPromptContext {
     current_date_time: String,
     goose_mode: GooseMode,
     is_autonomous: bool,
-    enable_subagents: bool,
     code_execution_mode: bool,
     include_extensions: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,7 +43,6 @@ pub struct SystemPromptBuilder<'a, M> {
     system_prompt_override: Option<String>,
     extensions_info: Vec<ExtensionInfo>,
     prompt_extras: IndexMap<String, String>,
-    subagents_enabled: bool,
     hints: Option<String>,
     code_execution_mode: bool,
     include_extensions: bool,
@@ -101,17 +99,16 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         self
     }
 
-    pub fn with_enable_subagents(mut self, subagents_enabled: bool) -> Self {
-        self.subagents_enabled = subagents_enabled;
-        self
-    }
-
     pub fn with_goose_mode(mut self, mode: GooseMode) -> Self {
         self.goose_mode = Some(mode);
         self
     }
 
-    pub fn build(self) -> String {
+    pub fn build(self) -> anyhow::Result<String> {
+        Ok(self.build_parts()?.join())
+    }
+
+    pub fn build_parts(self) -> anyhow::Result<SystemPromptParts> {
         let mut extensions_info = self.extensions_info;
 
         // Stable tool ordering is important for multi session prompt caching.
@@ -124,7 +121,6 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
                 ext_info
             })
             .collect();
-
         let goose_mode = self
             .goose_mode
             .unwrap_or_else(|| Config::global().get_goose_mode().unwrap_or_default());
@@ -134,51 +130,69 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
             current_date_time: self.manager.current_date_timestamp.clone(),
             goose_mode,
             is_autonomous: goose_mode == GooseMode::Auto,
-            enable_subagents: self.subagents_enabled,
             code_execution_mode: self.code_execution_mode,
             include_extensions: self.include_extensions,
             moim_system_prompt_block: moim::system_prompt_block(),
         };
 
-        let base_prompt = if let Some(override_prompt) = &self.system_prompt_override {
+        let base_is_override = self.system_prompt_override.is_some();
+        let rendered = if let Some(override_prompt) = &self.system_prompt_override {
             let sanitized_override_prompt = sanitize_unicode_tags(override_prompt);
             prompt_template::render_string(&sanitized_override_prompt, &context)
         } else {
             prompt_template::render_template("system.md", &context)
         }
-        .unwrap_or_else(|_| {
-            "You are a general-purpose AI agent called goose, created by Block".to_string()
-        });
+        .map_err(|error| anyhow::anyhow!("Could not render system prompt: {error}"))?;
 
-        let mut system_prompt_extras = self.prompt_extras;
+        let mut extras = self.prompt_extras;
 
-        // Add hints if provided
         if let Some(hints) = self.hints {
-            system_prompt_extras.insert("hints".to_string(), hints);
+            extras.insert("hints".to_string(), hints);
         }
 
         if goose_mode == GooseMode::Chat {
-            system_prompt_extras.insert(
+            extras.insert(
                 "chat_mode".to_string(),
                 "Right now you are in the chat only mode, no access to any tool use and system."
                     .to_string(),
             );
         }
 
-        if system_prompt_extras.is_empty() {
-            base_prompt
-        } else {
-            let sanitized_system_prompt_extras: Vec<String> = system_prompt_extras
-                .into_values()
-                .map(|extra| sanitize_unicode_tags(&extra))
-                .collect();
+        let extras = extras
+            .into_iter()
+            .map(|(key, extra)| (key, sanitize_unicode_tags(&extra)))
+            .collect();
 
-            format!(
-                "{}\n\n# Additional Instructions:\n\n{}",
-                base_prompt,
-                sanitized_system_prompt_extras.join("\n\n")
-            )
+        Ok(SystemPromptParts {
+            base: rendered.clone(),
+            rendered,
+            base_is_override,
+            extras,
+        })
+    }
+}
+
+pub struct SystemPromptParts {
+    rendered: String,
+    pub base: String,
+    pub base_is_override: bool,
+    pub extras: IndexMap<String, String>,
+}
+
+impl SystemPromptParts {
+    pub fn join(&self) -> String {
+        if self.extras.is_empty() {
+            return self.rendered.clone();
         }
+        format!(
+            "{}\n\n# Additional Instructions:\n\n{}",
+            self.rendered,
+            self.extras
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        )
     }
 }
 
@@ -203,14 +217,25 @@ impl PromptManager {
         session: &Session,
         prompt_parts: Vec<(String, String)>,
         goose_mode: GooseMode,
-    ) -> String {
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .build_system_prompt_parts(session, prompt_parts, goose_mode)?
+            .join())
+    }
+
+    pub fn build_system_prompt_parts(
+        &self,
+        session: &Session,
+        prompt_parts: Vec<(String, String)>,
+        goose_mode: GooseMode,
+    ) -> anyhow::Result<SystemPromptParts> {
         self.builder()
             .with_session(session)
             .with_prompt_extras(prompt_parts)
             .with_hints(&session.working_dir)
             .with_goose_mode(goose_mode)
             .without_extensions()
-            .build()
+            .build_parts()
     }
 
     pub fn builder<'a>(&'a self) -> SystemPromptBuilder<'a, Self> {
@@ -220,7 +245,6 @@ impl PromptManager {
             system_prompt_override: None,
             extensions_info: vec![],
             prompt_extras: IndexMap::new(),
-            subagents_enabled: false,
             hints: None,
             code_execution_mode: false,
             include_extensions: true,
@@ -248,7 +272,7 @@ mod tests {
         let session =
             session_with_override("System prompt\u{E0041}\u{E0042}\u{E0043}with hidden text");
 
-        let result = manager.builder().with_session(&session).build();
+        let result = manager.builder().with_session(&session).build().unwrap();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -262,7 +286,7 @@ mod tests {
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
         let session = session_with_override("It is currently {{current_date_time}}");
 
-        let result = manager.builder().with_session(&session).build();
+        let result = manager.builder().with_session(&session).build().unwrap();
 
         assert_eq!(result, "It is currently 1970-01-01 00:00:00 +00:00");
     }
@@ -274,7 +298,8 @@ mod tests {
         let result = PromptManager::new()
             .builder()
             .with_prompt_extras([("test".to_string(), malicious_extra.to_string())])
-            .build();
+            .build()
+            .unwrap();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -284,14 +309,35 @@ mod tests {
     }
 
     #[test]
+    fn build_parts_preserves_prompt_contribution_keys() {
+        let manager = PromptManager::new();
+        let parts = manager
+            .builder()
+            .with_prompt_extras([
+                ("recipe".to_string(), "Follow the recipe.".to_string()),
+                ("project".to_string(), "Project instructions.".to_string()),
+            ])
+            .build_parts()
+            .unwrap();
+
+        assert_eq!(
+            parts.extras.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["recipe", "project"]
+        );
+        assert!(parts.join().contains("Follow the recipe."));
+        assert!(parts.join().contains("Project instructions."));
+    }
+
+    #[test]
     fn prompt_contributions_are_not_retained() {
         let manager = PromptManager::new();
 
         let with_contribution = manager
             .builder()
             .with_prompt_extras([("operation".to_string(), "temporary instruction".to_string())])
-            .build();
-        let without_contribution = manager.builder().build();
+            .build()
+            .unwrap();
+        let without_contribution = manager.builder().build().unwrap();
 
         assert!(with_contribution.contains("temporary instruction"));
         assert!(!without_contribution.contains("temporary instruction"));
@@ -307,14 +353,16 @@ mod tests {
             ..Session::default()
         };
 
-        let prompt = manager.build_system_prompt(
-            &session,
-            vec![(
-                "extensions".to_string(),
-                "# Extensions\n\n## developer".to_string(),
-            )],
-            GooseMode::Auto,
-        );
+        let prompt = manager
+            .build_system_prompt(
+                &session,
+                vec![(
+                    "extensions".to_string(),
+                    "# Extensions\n\n## developer".to_string(),
+                )],
+                GooseMode::Auto,
+            )
+            .unwrap();
 
         assert!(prompt.contains("## developer"));
         assert!(!prompt.contains("No extensions are defined"));
@@ -350,7 +398,8 @@ mod tests {
         let prompt = PromptManager::new()
             .builder()
             .with_prompt_extras([("hints".to_string(), hints)])
-            .build();
+            .build()
+            .unwrap();
 
         assert!(prompt.contains("project instructions"));
         assert!(prompt.contains("legitimate project configuration"));
@@ -369,7 +418,8 @@ mod tests {
                 ),
                 ("test3".to_string(), "Third\u{E0043}instruction".to_string()),
             ])
-            .build();
+            .build()
+            .unwrap();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -386,7 +436,8 @@ mod tests {
         let result = PromptManager::new()
             .builder()
             .with_prompt_extras([("test".to_string(), legitimate_unicode.to_string())])
-            .build();
+            .build()
+            .unwrap();
 
         assert!(result.contains("世界"));
         assert!(result.contains("🌍"));
@@ -406,7 +457,8 @@ mod tests {
         let result = manager
             .builder()
             .with_extension(malicious_extension_info)
-            .build();
+            .build()
+            .unwrap();
 
         assert!(!result.contains('\u{E0041}'));
         assert!(!result.contains('\u{E0042}'));
@@ -416,10 +468,20 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_override_prompt_returns_error() {
+        let manager = PromptManager::new();
+        let session = session_with_override("{{ unclosed");
+
+        let result = manager.builder().with_session(&session).build();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_basic() {
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 
-        let system_prompt = manager.builder().build();
+        let system_prompt = manager.builder().build().unwrap();
 
         assert_snapshot!(system_prompt)
     }
@@ -435,7 +497,8 @@ mod tests {
                 "how to use this extension",
                 true,
             ))
-            .build();
+            .build()
+            .unwrap();
 
         assert_snapshot!(system_prompt)
     }
@@ -456,11 +519,20 @@ mod tests {
                 "<instructions on how to use extension B (no resources)>",
                 false,
             ))
-            .build();
+            .build()
+            .unwrap();
 
         assert_snapshot!(system_prompt)
     }
 
+    // The snapshot lists every platform extension, so it needs every feature that adds one.
+    #[cfg(all(
+        feature = "chat-recall",
+        feature = "code-mode",
+        feature = "platform-apps",
+        feature = "scheduler",
+        feature = "tree-sitter"
+    ))]
     #[tokio::test]
     async fn test_all_platform_extensions() {
         use crate::agents::platform_extensions::{PlatformExtensionContext, PLATFORM_EXTENSIONS};
@@ -519,7 +591,8 @@ mod tests {
         let system_prompt = manager
             .builder()
             .with_extensions(extensions.into_iter())
-            .build();
+            .build()
+            .unwrap();
 
         assert_snapshot!(system_prompt);
     }

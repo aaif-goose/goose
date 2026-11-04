@@ -7,8 +7,10 @@
 
 mod effects;
 mod inference_preparation;
+mod ops_auto_effort;
 mod ops_bang_shell;
 mod ops_compaction;
+mod ops_context_relevance;
 mod ops_doctor;
 mod ops_empty_response;
 mod ops_exit_on_error;
@@ -28,6 +30,7 @@ mod ops_thinking_recovery;
 mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
+mod proactive_compaction;
 mod session;
 pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
@@ -45,6 +48,7 @@ pub use goose_agent::operation::{
     applied, assistant_turn_count, ends_turn, last_effective_role, messages_since_kickoff,
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
+    CLIENT_LOG,
 };
 pub(super) use goose_agent::subagent::SubagentOperation;
 pub(crate) use tool_confirmation::{
@@ -53,16 +57,21 @@ pub(crate) use tool_confirmation::{
 };
 
 pub(super) use inference_preparation::GooseInferenceRequestPreparer;
+pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
+pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDecisions};
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_empty_response::EmptyResponseOperation;
+pub(crate) use ops_exit_on_error::turn_failure;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
+pub(super) use ops_llm::{enrich_unclaimed_tool_errors, GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
 pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;
+#[cfg(test)]
+pub(super) use ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 pub(super) use ops_retry::RetryOperation;
 pub(super) use ops_skills::SkillOperation;
 pub(super) use ops_slash_command::SlashCommandOperation;

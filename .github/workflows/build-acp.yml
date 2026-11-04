@@ -1,0 +1,137 @@
+# Keep this build separate from the CLI so Cargo feature unification does not
+# pull the CLI's heavier features into the lean ACP binary.
+name: Build Goose ACP
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to set for the build'
+        required: false
+        default: ''
+        type: string
+      ref:
+        description: 'Git ref to checkout'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-acp:
+    name: Build Goose ACP (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container || null }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            # Match the CLI's glibc 2.28 baseline.
+            container: quay.io/pypa/manylinux_2_28_x86_64@sha256:441c35fdc6ee809ff9260894f8468ab4fea8c15dc880f8700a3f81b7922c1cda
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64@sha256:8b5f2b4e8c072ae5aefeb659f22c03e1ff46e6a82f154b6c904b106c87e65ff7
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Update Cargo version
+        if: ${{ inputs.version != '' }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bash scripts/set-cargo-version.sh "$VERSION"
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            openssl-devel \
+            dbus-devel \
+            libxcb-devel \
+            cmake \
+            perl-core \
+            clang \
+            git \
+            tar
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: ${{ matrix.target }}
+          cache-key: lean-acp-${{ matrix.target }}
+
+      - name: Build lean ACP binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo build -p goose --bin goose-acp \
+            --profile lean \
+            --no-default-features \
+            --features rustls-tls,system-keyring,online-model-meta \
+            --target "$TARGET"
+
+      - name: Verify macOS system library dependencies
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          otool -L "target/${TARGET}/lean/goose-acp" | tail -n +2 | while read -r library _; do
+            case "$library" in
+              /usr/lib/*|/System/Library/*) ;;
+              *) echo "::error::goose-acp links a non-system library: $library"; exit 1 ;;
+            esac
+          done
+
+      - name: Smoke test ACP binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          binary="target/${TARGET}/lean/goose-acp"
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            binary="${binary}.exe"
+          fi
+          "$binary" --help
+          "$binary" --version
+
+      - name: Package ACP binary (Unix)
+        if: runner.os != 'Windows'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p dist
+          COPYFILE_DISABLE=1 tar -czf "dist/goose-acp-${TARGET}.tar.gz" -C "target/${TARGET}/lean" goose-acp
+
+      - name: Package ACP binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          New-Item -ItemType Directory -Force dist
+          Compress-Archive -Path "target/$env:TARGET/lean/goose-acp.exe" -DestinationPath "dist/goose-acp-$env:TARGET.zip"
+
+      - name: Upload ACP artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: goose-acp-${{ matrix.target }}
+          path: dist/goose-acp-${{ matrix.target }}.*
+          if-no-files-found: error

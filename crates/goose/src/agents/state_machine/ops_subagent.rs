@@ -2,13 +2,13 @@ use async_trait::async_trait;
 use futures::future;
 use futures::stream::{self, BoxStream, StreamExt};
 use goose_agent::subagent::{SubagentOutcome, SubagentRunner, SubagentUpdate};
+use rmcp::model::Role;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::Emitter;
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
-use crate::conversation::Conversation;
 use crate::session::{Session, SessionType};
 use crate::utils::safe_truncate;
 
@@ -29,6 +29,21 @@ fn start_notice(subagent_id: &str, task: Option<&str>) -> String {
         })
         .unwrap_or_default();
     format!("Running subagent {subagent_id}{snippet}")
+}
+
+fn is_resume(subagent: &Session) -> bool {
+    subagent.conversation.as_ref().is_some_and(|conversation| {
+        conversation
+            .messages()
+            .iter()
+            .filter(|message| {
+                message.role == Role::User
+                    && !message.is_tool_response()
+                    && message.is_user_visible()
+            })
+            .count()
+            > 1
+    })
 }
 
 fn finished_notice(
@@ -87,18 +102,15 @@ fn readable_output(output: &str) -> String {
 
 #[async_trait]
 impl SubagentRunner<Session> for ForegroundSubagentRunner {
-    fn started_subagent_session_ids(
+    fn requested_subagent_session_ids(
         &self,
         parent_session: &Session,
-        conversation: &Conversation,
+        message: &Message,
     ) -> Vec<String> {
         if parent_session.session_type == SessionType::SubAgent {
             return Vec::new();
         }
-        conversation
-            .messages()
-            .iter()
-            .flat_map(|message| delegated_subagent_ids(&message.content))
+        delegated_subagent_ids(&message.content)
             .map(str::to_owned)
             .collect()
     }
@@ -123,16 +135,20 @@ impl SubagentRunner<Session> for ForegroundSubagentRunner {
         if let Some(output) = subagent
             .conversation
             .as_ref()
-            .and_then(|conversation| FinalOutputTool::successful_output(conversation.messages()))
+            .and_then(FinalOutputTool::latest_turn_output)
         {
             return ended(SubagentOutcome::Completed(output));
         }
-        let task = subagent
-            .recipe
-            .as_ref()
-            .and_then(|recipe| recipe.prompt.as_deref());
-        let notice =
-            SubagentUpdate::ToParent(inline_notice(start_notice(subagent_session_id, task)));
+        let notice = if is_resume(&subagent) {
+            format!("Resuming subagent {subagent_session_id}")
+        } else {
+            let task = subagent
+                .recipe
+                .as_ref()
+                .and_then(|recipe| recipe.prompt.as_deref());
+            start_notice(subagent_session_id, task)
+        };
+        let notice = SubagentUpdate::ToParent(inline_notice(notice));
         Box::pin(stream::once(future::ready(notice)).chain(self.spawn(subagent, cancel)))
     }
 
@@ -167,6 +183,7 @@ mod tests {
         ConversationEffect, GooseEffect, Operation, OperationResult, RunStatus,
     };
     use crate::config::GooseMode;
+    use crate::conversation::Conversation;
     use crate::session::SessionManager;
     use goose_agent::machine::EffectHandler;
 
@@ -182,15 +199,15 @@ mod tests {
 
     impl Fixture {
         fn runner(&self) -> ForegroundSubagentRunner {
-            let mut agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
+            let mut config = crate::agents::StateMachineServicesConfig::new(
                 self.manager.clone(),
                 crate::config::permission::PermissionManager::instance(),
                 None,
                 true,
                 crate::agents::GoosePlatform::GooseCli,
-            ));
-            agent.set_hook_manager_for_test(crate::hooks::HookManager::default());
-            ForegroundSubagentRunner::new(agent)
+            );
+            config.hooks = Some(crate::hooks::HookManager::default());
+            ForegroundSubagentRunner::new(crate::agents::StateMachineServices::with_config(config))
         }
 
         fn operation(&self) -> SubagentOperation<Session> {
@@ -238,6 +255,9 @@ mod tests {
             .update(&subagent.id)
             .parent_session_id(Some(parent_id.to_string()))
             .apply()
+            .await?;
+        manager
+            .add_message(&subagent.id, &Message::user().with_text("Write a summary"))
             .await?;
         manager
             .add_message(parent_id, &delegate_message(&subagent.id))
@@ -311,22 +331,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn successful_foreground_delegations_are_the_started_subagents() -> Result<()> {
+    async fn a_message_starts_its_successful_foreground_delegations() -> Result<()> {
         let fixture = fixture().await?;
         let mut failed_delegate = delegate_result("failed", true);
         failed_delegate.is_error = Some(true);
-        let conversation = Conversation::new_unvalidated(vec![
-            Message::user().with_text("delegate"),
-            Message::user()
-                .with_tool_response("a", Ok(delegate_result("first", true)))
-                .with_tool_response("b", Ok(delegate_result("background", false)))
-                .with_tool_response("c", Ok(failed_delegate))
-                .with_tool_response(
-                    "d",
-                    Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
-                ),
-            delegate_message("second"),
-        ]);
+        let mixed = Message::user()
+            .with_tool_response("a", Ok(delegate_result("first", true)))
+            .with_tool_response("b", Ok(delegate_result("background", false)))
+            .with_tool_response("c", Ok(failed_delegate))
+            .with_tool_response(
+                "d",
+                Ok(CallToolResult::success(vec![ContentBlock::text("done")])),
+            );
         let mut parent = fixture
             .manager
             .get_session(&fixture.parent_id, false)
@@ -334,12 +350,19 @@ mod tests {
         let runner = fixture.runner();
 
         assert_eq!(
-            runner.started_subagent_session_ids(&parent, &conversation),
-            ["first", "second"]
+            runner.requested_subagent_session_ids(&parent, &mixed),
+            ["first"]
         );
+        assert_eq!(
+            runner.requested_subagent_session_ids(&parent, &delegate_message("second")),
+            ["second"]
+        );
+        assert!(runner
+            .requested_subagent_session_ids(&parent, &Message::user().with_text("delegate"))
+            .is_empty());
         parent.session_type = SessionType::SubAgent;
         assert!(runner
-            .started_subagent_session_ids(&parent, &conversation)
+            .requested_subagent_session_ids(&parent, &mixed)
             .is_empty());
         Ok(())
     }
@@ -507,6 +530,43 @@ mod tests {
         assert!(matches!(
             updates.last(),
             Some(SubagentUpdate::Finished(SubagentOutcome::Cancelled))
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_completed_subagent_given_a_follow_up_runs_again() -> Result<()> {
+        let fixture = fixture().await?;
+        save_final_output(&fixture.manager, &fixture.subagent_id).await?;
+        fixture
+            .manager
+            .add_message(
+                &fixture.subagent_id,
+                &Message::user().with_text("Also cover the tests"),
+            )
+            .await?;
+        let parent = fixture
+            .manager
+            .get_session(&fixture.parent_id, false)
+            .await?;
+        let updates: Vec<_> = fixture
+            .runner()
+            .start(&parent, &fixture.subagent_id, CancellationToken::new())
+            .await
+            .collect()
+            .await;
+        let Some(SubagentUpdate::ToParent(notice)) = updates.first() else {
+            panic!("expected a start notice");
+        };
+        assert!(matches!(
+            notice.content.as_slice(),
+            [MessageContent::SystemNotification(notification)]
+                if notification.msg == format!("Resuming subagent {}", fixture.subagent_id)
+        ));
+        assert!(matches!(
+            updates.last(),
+            Some(SubagentUpdate::Finished(SubagentOutcome::Failed(reason)))
+                if reason.contains("has no saved recipe")
         ));
         Ok(())
     }

@@ -93,9 +93,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
 
-      - name: Repair stale v8 prebuilt marker
-        run: .github/scripts/repair-v8-prebuilt.sh
-
       - name: Install Dependencies
         run: |
           sudo apt update -y
@@ -321,9 +318,6 @@ jobs:
           sudo apt update -y
           sudo apt install -y libdbus-1-dev libxcb1-dev
 
-      - name: Repair stale v8 prebuilt marker
-        run: .github/scripts/repair-v8-prebuilt.sh
-
       - name: Check with MSRV toolchain
         run: cargo check --workspace --locked --all-targets
         env:
@@ -340,9 +334,6 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
 
-      - name: Repair stale v8 prebuilt marker
-        run: .github/scripts/repair-v8-prebuilt.sh
-
       - name: Lint
         run: |
           source ./bin/activate-hermit
@@ -350,7 +341,7 @@ jobs:
           # play nicely with hermit-managed rust
           hermit uninstall rustup
           export CARGO_INCREMENTAL=0
-          cargo clippy --workspace --all-targets --exclude v8 -- -D warnings
+          cargo clippy --workspace --all-targets -- -D warnings
 
   schema-check:
     name: Check Generated Schemas are Up-to-Date

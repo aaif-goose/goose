@@ -58,7 +58,7 @@ fn default_mcp_apps_ui_extensions() -> ExtensionCapabilities {
     extensions
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GooseMcpHostInfo {
     pub explicit_extensions: bool,
     pub extensions: ExtensionCapabilities,

@@ -14,10 +14,14 @@ use crate::operation::{
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+use goose_provider_types::thinking::ThinkingEffort;
 
 pub trait MachineSession: MaybeSend + MaybeSync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
+    fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        None
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -118,6 +122,43 @@ where
         }
     }
 
+    /// The tools and prompt contributions every operation adds to the next
+    /// request. Derived from the session and conversation, so this is safe to
+    /// call outside a turn to preview the request.
+    pub async fn collect_prompt_contributions(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+    ) -> Result<InferenceInput> {
+        let mut input = InferenceInput::default();
+        let mut tool_names = HashSet::new();
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            let tools = operation.inference_tools(session).await?;
+            add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
+            input
+                .prompt_parts
+                .extend(operation.prompt_parts(session, conversation).await?);
+        }
+        Ok(input)
+    }
+
+    /// The prompt contributions plus the turn-context parts.
+    pub async fn collect_inference_input(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+    ) -> Result<InferenceInput> {
+        let mut input = self
+            .collect_prompt_contributions(session, conversation)
+            .await?;
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            input
+                .moim_parts
+                .extend(operation.moim_parts(session, conversation).await?);
+        }
+        Ok(input)
+    }
+
     pub async fn step(&self, session: &S, emit: &Emitter) -> Result<StepResult<E>> {
         let conversation = session
             .conversation()
@@ -140,18 +181,7 @@ where
                         if !inference.applies(conversation) {
                             return Ok(OperationResult::NotApplicable);
                         }
-                        let mut input = InferenceInput::default();
-                        let mut tool_names = HashSet::new();
-                        for operation in self.steps.iter().map(|step| step.operation()) {
-                            let tools = operation.inference_tools(session).await?;
-                            add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
-                            input
-                                .prompt_parts
-                                .extend(operation.prompt_parts(session, conversation).await?);
-                            input
-                                .moim_parts
-                                .extend(operation.moim_parts(session, conversation).await?);
-                        }
+                        let input = self.collect_inference_input(session, conversation).await?;
                         inference.infer(session, conversation, input, emit).await
                     }
                 }

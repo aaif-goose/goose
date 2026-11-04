@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::final_output_tool::{
     structured_output_unsupported_message, FinalOutputTool, FINAL_OUTPUT_CONTINUATION_MESSAGE,
     FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
@@ -20,6 +21,7 @@ use crate::agents::state_machine::{
     Emitter, GooseEffect, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
+use crate::config::extensions::is_extension_available;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
@@ -81,14 +83,20 @@ pub(crate) fn recipe_prompt_parts(session: &Session) -> Result<Vec<(String, Stri
 
 pub struct RecipeOperation {
     provider: Arc<dyn Provider>,
+    extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
     response: std::sync::Mutex<Option<Message>>,
 }
 
 impl RecipeOperation {
-    pub fn new(provider: Arc<dyn Provider>, hook_manager: HookManager) -> Self {
+    pub fn new(
+        provider: Arc<dyn Provider>,
+        extension_manager: Arc<ExtensionManager>,
+        hook_manager: HookManager,
+    ) -> Self {
         Self {
             provider,
+            extension_manager,
             hook_manager,
             response: std::sync::Mutex::default(),
         }
@@ -151,7 +159,7 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
     async fn run_command(
         &self,
         command: &SlashCommand<'_>,
-        _session: &Session,
+        session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
@@ -169,6 +177,28 @@ impl Operation<Session, GooseEffect> for RecipeOperation {
                 return self.command_error(
                     conversation,
                     format!("Recipe is not valid: {error}"),
+                    emit,
+                );
+            }
+        }
+
+        for extension in recipe
+            .extensions
+            .iter()
+            .flatten()
+            .filter(|extension| is_extension_available(extension))
+        {
+            if let Err(error) = self
+                .extension_manager
+                .enable(&session.id, extension.clone())
+                .await
+            {
+                return self.command_error(
+                    conversation,
+                    format!(
+                        "Could not load recipe extension '{}': {error}",
+                        extension.name()
+                    ),
                     emit,
                 );
             }

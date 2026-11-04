@@ -583,7 +583,9 @@ fn render_tool_request(req: &ToolRequest, theme: Theme, debug: bool) {
         Ok(call) => match call.name.to_string().as_str() {
             name if is_shell_tool_name(name) => render_shell_request(call, debug),
             name if is_file_tool_name(name) => render_text_editor_request(call, debug),
-            "execute_typescript" | "execute_code" => render_execute_code_request(call, debug),
+            "execute_javascript" | "execute_typescript" | "execute_code" => {
+                render_execute_code_request(call, debug)
+            }
             "delegate" => render_delegate_request(call, debug),
             "subagent" => render_delegate_request(call, debug),
             TODO_WRITE_TOOL_NAME_COMPLETE => render_todo_request(call, debug),
@@ -1033,13 +1035,19 @@ pub fn render_subagent_tool_call(
     arguments: Option<&JsonObject>,
     debug: bool,
 ) {
-    if tool_name == "code_execution__execute_typescript" {
+    if matches!(
+        tool_name,
+        "execute_javascript"
+            | "code_execution__execute_javascript"
+            | "execute_typescript"
+            | "code_execution__execute_typescript"
+    ) {
         let tool_graph = arguments
             .and_then(|args| args.get("tool_graph"))
             .and_then(Value::as_array)
             .filter(|arr| !arr.is_empty());
         if let Some(tool_graph) = tool_graph {
-            return render_subagent_tool_graph(subagent_id, tool_graph);
+            return render_subagent_tool_graph(subagent_id, tool_name, tool_graph);
         }
     }
     let tool_header = format!(
@@ -1053,7 +1061,7 @@ pub fn render_subagent_tool_call(
     println!();
 }
 
-fn render_subagent_tool_graph(subagent_id: &str, tool_graph: &[Value]) {
+fn render_subagent_tool_graph(subagent_id: &str, tool_name: &str, tool_graph: &[Value]) {
     let short_id = subagent_id.rsplit('_').next().unwrap_or(subagent_id);
     let count = tool_graph.len();
     let plural = if count == 1 { "" } else { "s" };
@@ -1062,7 +1070,7 @@ fn render_subagent_tool_graph(subagent_id: &str, tool_graph: &[Value]) {
         "  {} {} {} {} tool call{}",
         style("▸").dim(),
         style(format!("[subagent:{}]", short_id)).dim(),
-        style("execute_typescript").dim(),
+        style(ToolNameParts::from(tool_name).tool_name).dim(),
         style(count).dim(),
         plural,
     );
@@ -1770,9 +1778,9 @@ mod tests {
     #[test]
     fn tool_confirmation_shows_execute_code_and_graph() {
         let arguments = json!({
-            "code": "await developer.shell({ command: \"cat ~/.ssh/id_rsa\" });",
+            "code": "async function run() { return await tools.call(\"shell\", { command: \"cat ~/.ssh/id_rsa\" }); }",
             "tool_graph": [{
-                "tool": "developer/read",
+                "tool": "text_editor",
                 "description": "read package manifest",
                 "depends_on": []
             }]
@@ -1781,9 +1789,9 @@ mod tests {
         .unwrap()
         .clone();
 
-        let rendered = format_tool_confirmation("execute_typescript", &arguments);
+        let rendered = format_tool_confirmation("execute_javascript", &arguments);
 
-        assert!(rendered.contains("execute_typescript"));
+        assert!(rendered.contains("execute_javascript"));
         assert!(rendered.contains("read package manifest"));
         assert!(rendered.contains("cat ~/.ssh/id_rsa"));
     }
@@ -1941,6 +1949,10 @@ mod tests {
         assert_eq!(
             format_subagent_tool_call_message("subagent_42", "developer__shell"),
             "[subagent:42] shell | developer"
+        );
+        assert_eq!(
+            format_subagent_tool_call_message("subagent_42", "code_execution__execute_javascript"),
+            "[subagent:42] execute_javascript | Code Mode"
         );
         assert_eq!(
             format_subagent_tool_call_message("subagent_42", "code_execution__execute_typescript"),

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use goose::agents::{Agent, AgentEvent, SessionConfig};
+use goose::agents::{AgentEvent, SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageContent};
 use goose::conversation::Conversation;
@@ -210,13 +210,12 @@ impl ProviderDef for MockCompactionProvider {
 
 /// Helper: Set up a test session with initial messages and token counts
 async fn setup_test_session(
-    agent: &Agent,
+    services: &StateMachineServices,
     temp_dir: &TempDir,
     session_name: &str,
     messages: Vec<Message>,
 ) -> Result<Session> {
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .create_session(
             temp_dir.path().to_path_buf(),
@@ -227,15 +226,13 @@ async fn setup_test_session(
         .await?;
 
     let conversation = Conversation::new_unvalidated(messages);
-    agent
-        .config
+    services
         .session_manager
         .replace_conversation(&session.id, &conversation)
         .await?;
 
     // Set initial token counts
-    agent
-        .config
+    services
         .session_manager
         .update(&session.id)
         .usage(Usage::new(Some(600), Some(400), Some(1000)))
@@ -249,7 +246,7 @@ async fn setup_test_session(
 #[tokio::test]
 async fn test_auto_compaction_during_reply() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let agent = Agent::new();
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
     // Setup session with many messages to have substantial context
     // 20 exchanges = 40 messages * 100 tokens = ~4000 tokens in conversation
@@ -259,12 +256,11 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         messages.push(Message::assistant().with_text(format!("Assistant response {}", i)));
     }
 
-    let session = setup_test_session(&agent, &temp_dir, "auto-compact-test", messages).await?;
+    let session = setup_test_session(&services, &temp_dir, "auto-compact-test", messages).await?;
 
     // Capture initial context size before triggering reply
     // Should be: system (6000) + 40 messages (4000) = ~10000 tokens
-    let initial_session = agent
-        .config
+    let initial_session = services
         .session_manager
         .get_session(&session.id, true)
         .await?;
@@ -272,7 +268,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
 
     // Setup mock provider (no context limit enforcement)
     let provider = Arc::new(MockCompactionProvider::new());
-    agent
+    services
         .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
 
@@ -288,7 +284,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         max_turns: None,
     };
 
-    let reply_stream = agent.reply(user_message, session_config, None).await?;
+    let reply_stream = services.reply(user_message, session_config, None).await?;
     tokio::pin!(reply_stream);
 
     // Track compaction and context size changes
@@ -301,8 +297,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
                 compaction_occurred = true;
 
                 // Capture the input tokens immediately after compaction
-                let session_after_compact = agent
-                    .config
+                let session_after_compact = services
                     .session_manager
                     .get_session(&session.id, true)
                     .await?;
@@ -313,8 +308,7 @@ async fn test_auto_compaction_during_reply() -> Result<()> {
         }
     }
 
-    let updated_session = agent
-        .config
+    let updated_session = services
         .session_manager
         .get_session(&session.id, true)
         .await?;

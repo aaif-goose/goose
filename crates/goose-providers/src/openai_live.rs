@@ -4,6 +4,7 @@
 //! WebRTC connectors own their distinct connection establishment flows.
 
 use crate::{
+    api_client::{ApiClient, TlsConfig},
     http_status::handle_response,
     live::{
         LiveProtocol, LiveSession, LiveSessionEvent, LiveTransport, LIVE_EVENT_CHANNEL_CAPACITY,
@@ -198,6 +199,7 @@ pub struct OpenAiLiveClient {
     api_key: String,
     http_endpoint: String,
     websocket_endpoint: String,
+    tls_config: Option<TlsConfig>,
 }
 
 impl OpenAiLiveClient {
@@ -206,6 +208,7 @@ impl OpenAiLiveClient {
             api_key: api_key.into(),
             http_endpoint: DEFAULT_OPENAI_LIVE_HTTP_URL.into(),
             websocket_endpoint: DEFAULT_OPENAI_LIVE_WEBSOCKET_URL.into(),
+            tls_config: None,
         }
     }
 
@@ -224,6 +227,11 @@ impl OpenAiLiveClient {
 
     pub fn with_websocket_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.websocket_endpoint = endpoint.into();
+        self
+    }
+
+    pub fn with_tls_config(mut self, tls_config: TlsConfig) -> Self {
+        self.tls_config = Some(tls_config);
         self
     }
 
@@ -337,8 +345,11 @@ impl OpenAiLiveExistingSessionConnector {
         let client = self.client.clone();
         let session_id = self.session_id.clone();
         let transport = Arc::new(
-            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
-                .await?,
+            crate::live_transport_websocket::WebSocketLiveTransport::connect_with_tls_config(
+                self.request()?,
+                client.tls_config.as_ref(),
+            )
+            .await?,
         );
         Ok(client
             .connect_transport(transport, OpenAiLiveConnectionKind::MediaControl)
@@ -374,8 +385,11 @@ impl OpenAiLiveWebSocketConnector {
     pub async fn connect(self) -> Result<ConnectedOpenAiLiveSession> {
         let client = self.client.clone();
         let transport = Arc::new(
-            crate::live_transport_websocket::WebSocketLiveTransport::connect(self.request()?)
-                .await?,
+            crate::live_transport_websocket::WebSocketLiveTransport::connect_with_tls_config(
+                self.request()?,
+                client.tls_config.as_ref(),
+            )
+            .await?,
         );
         client
             .connect_transport(transport, OpenAiLiveConnectionKind::PrimaryWebSocket)
@@ -434,10 +448,12 @@ impl OpenAiLiveWebRtcConnector {
     ) -> Result<OpenAiLiveWebRtcNegotiation> {
         let client = self.client.clone();
         let request = self.request(offer_sdp)?;
-        let mut http_request = reqwest::Client::new().post(request.endpoint).json(&json!({
-            "session": request.session,
-            "transport": { "type": "webrtc", "sdp": request.offer_sdp },
-        }));
+        let mut http_request = ApiClient::http_client(client.tls_config.as_ref())?
+            .post(request.endpoint)
+            .json(&json!({
+                "session": request.session,
+                "transport": { "type": "webrtc", "sdp": request.offer_sdp },
+            }));
         for (name, value) in request.headers {
             http_request = http_request.header(name, value);
         }

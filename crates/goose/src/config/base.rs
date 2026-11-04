@@ -1336,6 +1336,10 @@ config_value!(GOOSE_MAX_ACTIVE_AGENTS, usize);
 config_value!(GOOSE_DISABLE_SESSION_NAMING, bool);
 
 impl Config {
+    pub(crate) fn default_max_turns(&self) -> u32 {
+        self.get_param::<u32>("GOOSE_MAX_TURNS").unwrap_or(1000)
+    }
+
     pub fn get_goose_context_limit(&self) -> Result<Option<usize>, ConfigError> {
         match self.get_param::<usize>("GOOSE_CONTEXT_LIMIT") {
             Ok(0) => Err(ConfigError::DeserializeError(
