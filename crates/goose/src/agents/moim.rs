@@ -281,7 +281,7 @@ mod tests {
     #[tokio::test]
     async fn turn_context_uses_the_inference_lease() {
         let (session_id, em, _tmp) = session_and_manager().await;
-        em.add_client(
+        em.add_test_client(
             &session_id,
             moim_extension(),
             Arc::new(MoimClient("old context")),
@@ -289,7 +289,7 @@ mod tests {
         )
         .await;
         let lease = em.current_lease(&session_id).await.unwrap();
-        em.add_client(
+        em.add_test_client(
             &session_id,
             moim_extension(),
             Arc::new(MoimClient("new context")),

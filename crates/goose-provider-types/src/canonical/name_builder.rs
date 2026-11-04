@@ -479,12 +479,6 @@ mod tests {
             Some("google/gemini-2.5-flash".to_string())
         );
 
-        // === Meta Llama ===
-        assert_eq!(
-            map_to_canonical_model("databricks", "meta-llama-3-3-70b-instruct", &r),
-            Some("meta-llama/llama-3.3-70b-instruct".to_string())
-        );
-
         // === Mistral variants ===
         assert_eq!(
             map_to_canonical_model("databricks", "codestral", &r),

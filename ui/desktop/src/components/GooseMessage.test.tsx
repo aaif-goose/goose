@@ -5,7 +5,7 @@ import type { Message } from '../types/message';
 import GooseMessage from './GooseMessage';
 
 describe('GooseMessage', () => {
-  it('renders operation details for a thinking-only message', () => {
+  it('renders operation details for a thinking-only message', async () => {
     const message: Message = {
       content: [{ type: 'thinking', thinking: 'Working it out', signature: '' }],
       created: 1,
@@ -31,7 +31,7 @@ describe('GooseMessage', () => {
       { wrapper: IntlTestWrapper }
     );
 
-    expect(screen.getByText('Thinking')).toBeInTheDocument();
+    expect(await screen.findByText('Thinking')).toBeInTheDocument();
     expect(screen.getByLabelText('ops_auto_effort: thinking high')).toBeInTheDocument();
   });
 });

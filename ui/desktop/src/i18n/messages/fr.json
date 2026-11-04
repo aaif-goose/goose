@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Compactage automatique à"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Compacter maintenant"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Échec de l'enregistrement du seuil : {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Compris !"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose a terminé la tâche."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Fenêtre de contexte"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Erreur de dictée"
@@ -4142,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Enregistrer"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Toujours"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Réduite"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Afficher la réflexion du modèle dans la discussion. Avec « Réduite », elle reste fermée jusqu'à ce que vous l'ouvriez."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Jamais"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Afficher la réflexion"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Ajouter une compétence"
   },
@@ -4685,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Visitez"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} sur {limit} jetons utilisés. Afficher le contenu de la fenêtre de contexte"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Compacter maintenant"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Libre"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Impossible de charger le rapport de contexte."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · fenêtre de contexte de {limit} jetons"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Actualiser"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Réessayer"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Fenêtre de contexte"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Le nombre de jetons est estimé avec le tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "sur {limit} jetons · {percent} de la fenêtre de contexte"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instructions et indices"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Résumé de compactage"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instructions des extensions"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Conversation"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt système"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Définitions d'outils"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Contexte du tour"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Automatique"
   },
@@ -4774,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Boucle d’agent"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} conserve son propre historique de conversation et ne reçoit de goose que le dernier message ; il n'y a donc aucune requête à détailler."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Seuil de compactage automatique dépassé : la conversation est compactée avant l'envoi de la prochaine requête."
   }
 }

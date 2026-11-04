@@ -240,7 +240,8 @@ function renderDocumentation(schemas, meta, gooseVersion = 'Preview') {
   const output = [
     '---',
     'title: goose ACP Reference',
-    'sidebar_label: Reference',
+    'sidebar_label: goose extensions',
+    'displayed_sidebar: gdkSidebar',
     'sidebar_position: 2',
     '---',
     '',

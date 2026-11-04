@@ -96,7 +96,7 @@ async fn interrupted_inference_saves_streamed_output_then_answers_its_request() 
         crate::agents::state_machine::session::run(
             &machine,
             pipeline.session_manager.as_ref(),
-            &pipeline.hook_manager,
+            &pipeline.services().await.hook_manager,
             &pipeline.session_id,
             &emit,
         )

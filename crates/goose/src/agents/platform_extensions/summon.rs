@@ -1731,13 +1731,15 @@ mod tests {
             })
         }));
 
-        let reloaded_agent = crate::agents::Agent::with_config(crate::agents::AgentConfig::new(
-            Arc::new(reloaded),
-            crate::config::permission::PermissionManager::instance(),
-            None,
-            true,
-            crate::agents::GoosePlatform::GooseCli,
-        ));
+        let reloaded_agent = crate::agents::StateMachineServices::with_config(
+            crate::agents::StateMachineServicesConfig::new(
+                Arc::new(reloaded),
+                crate::config::permission::PermissionManager::instance(),
+                None,
+                true,
+                crate::agents::GoosePlatform::GooseCli,
+            ),
+        );
         crate::agents::subagent_handler::prepare_subagent(&reloaded_agent, &child)
             .await
             .unwrap();

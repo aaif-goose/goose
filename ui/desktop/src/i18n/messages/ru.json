@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Автосжимать при"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Сжать сейчас"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Не удалось сохранить пороговое значение: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Понятно!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose завершил задачу."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Контекстное окно"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Ошибка диктовки"
@@ -4142,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Сохранить"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Всегда"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Свёрнуто"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Показывать размышления модели в чате. В режиме «Свёрнуто» блок закрыт, пока вы его не откроете."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Никогда"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Показывать размышления"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Добавить навык"
   },
@@ -4685,6 +4688,57 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Перейдите на"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Использовано {used} из {limit} токенов. Показать содержимое контекстного окна"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Сжать сейчас"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Свободно"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Не удалось загрузить отчёт о контексте."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · контекстное окно {limit} токенов"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Обновить"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Повторить"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Контекстное окно"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Число токенов оценивается токенизатором o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "из {limit} токенов · {percent} контекстного окна"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Инструкции и подсказки"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Сводка сжатия"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Инструкции расширений"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Диалог"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Системный промпт"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Определения инструментов"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Контекст хода"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
   },
@@ -4774,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Цикл агента"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} хранит собственную историю разговора и получает от goose только последний запрос, поэтому разбирать нечего."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Превышен порог автокомпактизации: разговор будет сжат перед отправкой следующего запроса."
   }
 }
