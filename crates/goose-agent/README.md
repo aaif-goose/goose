@@ -207,3 +207,28 @@ from JavaScript. Some things differ from native:
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
+
+## MCP
+
+`mcp::Manager` resolves explicit server registrations into a `Lease`. A lease
+pins a public tool catalog and its clients; later registration changes or scope
+release do not redirect its calls. Hosts provide resolved options and connector
+revisions, not user configuration or credential-store paths.
+
+Use `Registration::attached` for initialized clients, or implement `Connector`
+for lazy startup. `TransportClient` attaches an rmcp transport and handles roots,
+optional elicitation, request timeouts, and notifications. Native stdio and HTTP
+helpers are opt-in features (`mcp-stdio`, `mcp-http`); HTTP accepts a host-configured
+client. OAuth interaction and persistence remain host responsibilities.
+
+`McpOperation::new(Arc::new(lease))` contributes tools and instructions and executes
+calls. Put it after approval/pre-tool-hook operations and before unhandled-call
+handling. The inference runner stamps the advertised binding onto requests;
+requests without the original binding fail closed. Keep the lease and operation
+alive while approval is pending, and use a new lease/operation for a new selection
+only after its pending calls complete. A host requiring dynamic inference-boundary
+selection can implement `McpHost` to share its run binding explicitly.
+
+Resources and prompts are available through the lease/client API; they are not
+automatically injected into model context. The `mcp` example demonstrates two
+host-supplied clients without configuration or persistence.

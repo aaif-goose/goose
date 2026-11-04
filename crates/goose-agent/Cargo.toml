@@ -17,7 +17,7 @@ tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
 tokio-util = { workspace = true, features = ["compat"] }
 async-trait = { workspace = true }
 goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
-rmcp = { workspace = true, features = ["server"] }
+rmcp = { workspace = true, features = ["client", "server"] }
 uuid = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
@@ -26,12 +26,19 @@ tracing-futures = { workspace = true }
 serde.workspace = true
 regex = { workspace = true, features = ["unicode-perl"] }
 goose-sdk-types = { version = "0.1.0-alpha.13", path = "../goose-sdk-types", default-features = false }
+blake3 = "1.8.7"
+indexmap = "2.14.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rmcp = { workspace = true, features = ["local"] }
+wasm-bindgen-futures = "0.4.78"
 
 [dev-dependencies]
 schemars.workspace = true
+
+[features]
+mcp-stdio = ["rmcp/transport-child-process"]
+mcp-http = ["rmcp/transport-streamable-http-client-reqwest", "dep:reqwest"]
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 js-sys = "0.3.105"
@@ -39,4 +46,5 @@ wasm-bindgen-futures = "0.4.78"
 wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, optional = true }
 serde_yaml.workspace = true
