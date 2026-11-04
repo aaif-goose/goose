@@ -28,7 +28,7 @@ use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::session::Session;
 
-const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
+pub(super) const LOAD_SKILL_TOOL_NAME: &str = "load_skill";
 
 pub struct SkillOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,

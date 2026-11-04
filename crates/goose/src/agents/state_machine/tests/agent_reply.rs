@@ -642,8 +642,8 @@ async fn state_machine_rejects_resumed_skill_approval_without_its_lease() -> Res
 
 #[tokio::test]
 async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()> {
-    let (services, api, session_id, calculator, _temp_dir) =
-        agent_with_calculator(crate::hooks::HookManager::default()).await?;
+    let (hooks, _hook_dir, hook_log_path) = hook_log(&["PreToolUse"], 0)?;
+    let (services, api, session_id, calculator, _temp_dir) = agent_with_calculator(hooks).await?;
 
     api.on("add one").call(ADD, value(1));
     api.on(EXPIRED_APPROVAL_RESPONSE).reply("request it again");
@@ -701,6 +701,9 @@ async fn state_machine_rejects_resumed_approval_without_its_lease() -> Result<()
                 .is_some_and(|text| text.contains(EXPIRED_APPROVAL_RESPONSE))
         }));
     assert_eq!(api.call_count(), 2);
+    assert!(std::fs::read_to_string(&hook_log_path)
+        .unwrap_or_default()
+        .is_empty());
 
     Ok(())
 }

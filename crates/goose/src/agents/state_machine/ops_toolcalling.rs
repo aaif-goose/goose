@@ -12,8 +12,10 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData
 
 use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
+use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_recipe::final_output_called_with_other_tools;
+use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
@@ -617,6 +619,56 @@ pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest
         })
 }
 
+pub(super) fn approval_expired(
+    extension_lease: &StdMutex<Option<Arc<ExtensionLease>>>,
+    messages: &[Message],
+    request: &ToolRequest,
+) -> bool {
+    if extension_lease
+        .lock()
+        .expect("extension lease unavailable")
+        .is_some()
+    {
+        return false;
+    }
+    match request
+        .tool_call
+        .as_ref()
+        .map(|tool_call| tool_call.name.as_ref())
+    {
+        Ok(FINAL_OUTPUT_TOOL_NAME) => false,
+        Ok(LOAD_SKILL_TOOL_NAME) => true,
+        _ => {
+            let pending = pending_advertised_tool_requests(messages);
+            !requests_can_resolve_a_lease(
+                messages,
+                pending
+                    .iter()
+                    .filter(|(request, disposition)| {
+                        *disposition == ToolDisposition::Execute
+                            && !request.tool_call.as_ref().is_ok_and(|tool_call| {
+                                tool_call.name == FINAL_OUTPUT_TOOL_NAME
+                                    || tool_call.name == LOAD_SKILL_TOOL_NAME
+                            })
+                    })
+                    .map(|(request, _)| request),
+            )
+        }
+    }
+}
+
+fn requests_can_resolve_a_lease<'a>(
+    messages: &[Message],
+    requests: impl IntoIterator<Item = &'a ToolRequest>,
+) -> bool {
+    let mut requests = requests.into_iter().peekable();
+    requests.peek().is_some()
+        && requests.all(|request| {
+            request_was_generated_by_operation(messages, request)
+                && !request_has_approval_history(messages, request)
+        })
+}
+
 fn request_was_generated_by_operation(messages: &[Message], request: &ToolRequest) -> bool {
     messages.iter().any(|message| {
         message.role == Role::Assistant
@@ -787,16 +839,13 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             .clone();
         let lease = match lease {
             Some(lease) => Some(lease),
-            None if pending
-                .iter()
-                .any(|(_, disposition)| *disposition == ToolDisposition::Execute)
-                && pending
+            None if requests_can_resolve_a_lease(
+                messages,
+                pending
                     .iter()
                     .filter(|(_, disposition)| *disposition == ToolDisposition::Execute)
-                    .all(|(request, _)| {
-                        request_was_generated_by_operation(messages, request)
-                            && !request_has_approval_history(messages, request)
-                    }) =>
+                    .map(|(request, _)| request),
+            ) =>
             {
                 Some(self.resolve_lease(session).await?)
             }

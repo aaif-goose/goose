@@ -6,8 +6,9 @@ use async_trait::async_trait;
 use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
 
 use crate::agents::extension_manager::ExtensionLease;
+use crate::agents::state_machine::messages_since_kickoff;
 use crate::agents::state_machine::ops_toolcalling::{
-    call_will_not_run, leased_working_dir, tool_span,
+    approval_expired, call_will_not_run, leased_working_dir, tool_span,
 };
 use crate::conversation::message::ToolRequest;
 use crate::conversation::Conversation;
@@ -98,7 +99,13 @@ impl PreToolCallHook<Session> for GoosePreToolHook {
         conversation: &Conversation,
         request: &ToolRequest,
     ) -> Result<PreToolCallDecision> {
-        if call_will_not_run(session, conversation, request)? {
+        if call_will_not_run(session, conversation, request)?
+            || approval_expired(
+                &self.extension_lease,
+                messages_since_kickoff(conversation)?,
+                request,
+            )
+        {
             return Ok(PreToolCallDecision::Allow);
         }
         let Ok(tool_call) = &request.tool_call else {
