@@ -169,6 +169,7 @@ interface ChatInputProps {
   queueProcessingBlocked?: boolean;
   commandHistory?: string[];
   initialValue?: string;
+  initialImages?: ImageData[];
   /**
    * Unsent input, held above the route outlet so it outlives the unmount.
    * Only New Chat passes it: every other chat stays mounted in
@@ -214,6 +215,7 @@ export default function ChatInput({
   queueProcessingBlocked = false,
   commandHistory = [],
   initialValue = '',
+  initialImages,
   draftRef,
   droppedFiles = [],
   onFilesProcessed,
@@ -552,11 +554,17 @@ export default function ChatInput({
     const restored = draftRef?.current || initialValue;
     setValue(restored);
     setDisplayValue(restored);
-    setPastedImages([]);
+    setPastedImages(
+      (initialImages ?? []).map((image, index) => ({
+        id: `restored-${index}`,
+        dataUrl: `data:${image.mimeType};base64,${image.data}`,
+        isLoading: false,
+      }))
+    );
     setHistoryIndex(-1);
     setIsInGlobalHistory(false);
     setHasUserTyped(false);
-  }, [initialValue, draftRef]);
+  }, [initialValue, initialImages, draftRef]);
 
   useEffect(() => {
     if (initialPrompt && messages.length === 0) {
