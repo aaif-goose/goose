@@ -20,7 +20,6 @@ vulkan = ["local-inference", "goose-local-inference/vulkan"]
 mlx = ["local-inference", "goose-local-inference/mlx"]
 rustls-tls = [
     "reqwest/rustls",
-    "rmcp/reqwest",
 ]
 live-websocket = ["dep:reqwest-websocket"]
 native-tls = [
@@ -28,7 +27,6 @@ native-tls = [
     "dep:pkcs8",
     "dep:sec1",
     "reqwest/native-tls",
-    "rmcp/reqwest-native-tls",
 ]
 
 [dependencies]
@@ -39,7 +37,6 @@ futures = { workspace = true, features = ["std"] }
 goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false, features = ["formats", "mcp-interop", "std"] }
 goose-local-inference = { version = "0.1.0-alpha.13", path = "../goose-local-inference", default-features = false, optional = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
-rmcp = { workspace = true, features = ["server", "macros"] }
 serde = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }

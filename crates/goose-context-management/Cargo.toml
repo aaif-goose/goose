@@ -22,7 +22,6 @@ anyhow = { workspace = true, features = ["std"] }
 async-trait = { workspace = true }
 include_dir = { workspace = true }
 minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde"] }
-rmcp = { workspace = true }
 serde = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["preserve_order", "std"] }
 tracing = { workspace = true }
