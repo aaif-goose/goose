@@ -183,3 +183,138 @@ fn catalog_rejects_collisions_and_preserves_original_name() {
     assert!(catalog.entries[0].tool.name.len() <= 64);
     assert_eq!(catalog.entries[0].server_name, "db.query");
 }
+
+#[tokio::test]
+async fn original_binding_executes_after_replacement() {
+    let manager = Manager::new();
+    let lease = manager
+        .resolve("scope", vec![registration(fixture("old"), 0)])
+        .await
+        .unwrap();
+    let id = lease.id().to_string();
+    let operation = McpOperation::<()>::new(Arc::new(lease));
+    manager
+        .resolve("scope", vec![registration(fixture("new"), 1)])
+        .await
+        .unwrap();
+    let conversation = Conversation::new_unvalidated(vec![
+        Message::user().with_text("go"),
+        Message::assistant().with_tool_request_with_metadata(
+            "call",
+            Ok(CallToolRequestParams::new("fixture__first")),
+            None,
+            Some(serde_json::json!({ BINDING_META_KEY: id })),
+        ),
+    ]);
+    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+    let emit = Emitter::new(tx, CancellationToken::new());
+    let result = <McpOperation<()> as Operation<(), ConversationEffect>>::run(
+        &operation,
+        &(),
+        &conversation,
+        &emit,
+    )
+    .await
+    .unwrap();
+    let OperationResult::Applied(result) = result else {
+        panic!("must execute")
+    };
+    let ConversationEffect::AppendMessage(message) = &result.effects[0] else {
+        panic!("must append")
+    };
+    let response = message.content[0]
+        .as_tool_response()
+        .unwrap()
+        .tool_result
+        .as_ref()
+        .unwrap();
+    assert_eq!(response.content[0].as_text().unwrap().text, "old:first");
+}
+
+#[tokio::test]
+async fn duplicate_registrations_do_not_replace_selection() {
+    let manager = Manager::new();
+    let fixture = fixture("old");
+    let old = manager
+        .resolve("scope", vec![registration(fixture.clone(), 0)])
+        .await
+        .unwrap();
+    assert!(manager
+        .resolve(
+            "scope",
+            vec![
+                registration(fixture.clone(), 1),
+                registration(fixture.clone(), 2)
+            ]
+        )
+        .await
+        .is_err());
+    let current = manager
+        .resolve("scope", vec![registration(fixture.clone(), 0)])
+        .await
+        .unwrap();
+    tokio::join!(
+        old.start(CancellationToken::new()),
+        current.start(CancellationToken::new())
+    );
+    assert_eq!(fixture.starts.load(Ordering::SeqCst), 1);
+}
+
+struct ProtocolServer {
+    started: CancellationToken,
+    cancelled: CancellationToken,
+}
+impl rmcp::ServerHandler for ProtocolServer {
+    fn get_info(&self) -> rmcp::model::ServerConfig {
+        rmcp::model::ServerConfig::new(
+            rmcp::model::ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+        )
+    }
+    async fn call_tool(
+        &self,
+        _request: CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, ErrorData> {
+        self.started.cancel();
+        let cancelled = self.cancelled.clone();
+        let token = context.ct.clone();
+        tokio::spawn(async move {
+            token.cancelled().await;
+            cancelled.cancel();
+        });
+        futures::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn dropping_transport_call_notifies_peer_of_cancellation() {
+    use rmcp::ServiceExt;
+    let started = CancellationToken::new();
+    let cancelled = CancellationToken::new();
+    let (server_io, client_io) = tokio::io::duplex(4096);
+    let server = ProtocolServer {
+        started: started.clone(),
+        cancelled: cancelled.clone(),
+    };
+    let task = tokio::spawn(async move { server.serve(server_io).await.unwrap().waiting().await });
+    let client = goose_agent::mcp::TransportClient::connect(client_io, Default::default())
+        .await
+        .unwrap();
+    let mut call = Box::pin(client.call_tool(
+        "call",
+        CallToolRequestParams::new("wait"),
+        CancellationToken::new(),
+    ));
+    tokio::select! {
+        result = &mut call => panic!("call unexpectedly completed: {result:?}"),
+        _ = started.cancelled() => {},
+    }
+    drop(call);
+    tokio::time::timeout(std::time::Duration::from_secs(2), cancelled.cancelled())
+        .await
+        .expect("peer must receive cancellation even when caller future is dropped");
+    drop(client);
+    task.abort();
+}

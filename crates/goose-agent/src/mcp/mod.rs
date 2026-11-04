@@ -14,3 +14,11 @@ pub use transport::{ClientOptions, ElicitationHandler, TransportClient};
 
 /// Runtime identity copied from advertised tools to generated requests.
 pub const BINDING_META_KEY: &str = "gdk.mcp_binding";
+
+mod scoped_client;
+pub use scoped_client::ScopedClient;
+
+mod request;
+pub use request::await_response;
+
+pub mod schema;

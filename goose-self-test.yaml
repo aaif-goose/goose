@@ -13,7 +13,7 @@ activities:
   - Validate declared vision through persisted custom-provider configuration and outbound requests
   - Analyze code structure and parsing capabilities
   - Validate Boa JavaScript discovery, batching, cancellation, and isolation
-  - Test extension discovery and management
+  - Test extension discovery and management through the GDK MCP operation
   - Test load tool for knowledge injection and discovery
   - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
@@ -293,6 +293,10 @@ prompt: |
   2. Document all available extensions
   3. Test enabling and disabling dynamic extensions (if any available)
   4. Verify extension isolation between enabled extensions
+  5. Exercise two extension tools in one reply and verify each call has exactly one response
+  6. Cancel an in-flight extension tool, then verify a subsequent call still succeeds
+  7. Verify extension changes affect subsequent inference without redirecting calls awaiting approval
+  8. Record approval and elicitation checks that require manual interaction rather than claiming they passed
 
   Log results to: {{ workspace_dir }}/phase2_extensions.md
   {% endif %}

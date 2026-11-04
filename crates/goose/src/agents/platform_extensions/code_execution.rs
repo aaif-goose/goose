@@ -3,7 +3,7 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{
     get_tool_resource_uri, is_tool_owned_by_extension, CallRequest, ExtensionLease,
 };
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::tool_execution::ToolCallContext;
 use anyhow::Result;
@@ -256,7 +256,9 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 }
 
 #[async_trait]
-impl McpClientTrait for CodeExecutionClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for CodeExecutionClient
+{
     async fn list_tools(
         &self,
         _: &str,
@@ -388,7 +390,9 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for PendingClient {
+    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+        for PendingClient
+    {
         async fn list_tools(
             &self,
             session_id: &str,
@@ -484,7 +488,9 @@ mod tests {
     }
 
     #[async_trait]
-    impl McpClientTrait for VisibilityClient {
+    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+        for VisibilityClient
+    {
         async fn list_tools(
             &self,
             _session_id: &str,

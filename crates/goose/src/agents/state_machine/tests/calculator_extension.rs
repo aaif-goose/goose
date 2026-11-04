@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
-use crate::agents::mcp_client::{Error as McpError, McpClientTrait};
+use crate::agents::mcp_client::Error as McpError;
 use crate::agents::tool_execution::ToolCallContext;
 
 pub(super) const ADD: &str = "calculator__add";
@@ -102,7 +102,9 @@ impl CalculatorExtension {
 }
 
 #[async_trait]
-impl McpClientTrait for CalculatorExtension {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for CalculatorExtension
+{
     async fn list_tools(
         &self,
         _session_id: &str,

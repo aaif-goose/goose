@@ -218,7 +218,8 @@ revisions, not user configuration or credential-store paths.
 Use `Registration::attached` for initialized clients, or implement `Connector`
 for lazy startup. `TransportClient` attaches an rmcp transport and handles roots,
 optional elicitation, request timeouts, and notifications. Native stdio and HTTP
-helpers are opt-in features (`mcp-stdio`, `mcp-http`); HTTP accepts a host-configured
+helpers are opt-in, native-target features (`mcp-stdio`, `mcp-http`); do not
+enable these features in Wasm builds. HTTP accepts a host-configured
 client. OAuth interaction and persistence remain host responsibilities.
 
 `McpOperation::new(Arc::new(lease))` contributes tools and instructions and executes
@@ -232,3 +233,9 @@ selection can implement `McpHost` to share its run binding explicitly.
 Resources and prompts are available through the lease/client API; they are not
 automatically injected into model context. The `mcp` example demonstrates two
 host-supplied clients without configuration or persistence.
+
+The goose host uses the same `ScopedRuntime`, single-flight `Runtime`, immutable
+`Catalog`, schema normalization, request-cancellation helper and `McpOperation`.
+`ScopedClient<C>` accommodates hosts with per-request context, while `Client`
+and `TransportClient` offer a simpler interface for a connection bound to one
+scope. goose retains its authenticated connectors and platform adapters.

@@ -4352,6 +4352,7 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "uuid",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
 ]

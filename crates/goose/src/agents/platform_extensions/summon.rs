@@ -1,6 +1,6 @@
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::final_output_tool::FinalOutputTool;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
@@ -1440,7 +1440,9 @@ impl SummonClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SummonClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for SummonClient
+{
     async fn list_tools(
         &self,
         session_id: &str,
@@ -1548,6 +1550,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
+    use goose_agent::mcp::ScopedClient;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;

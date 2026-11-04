@@ -1,13 +1,15 @@
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::extension_manager::{is_hidden_extension, ExtensionMutation};
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::extensions::name_to_key;
 use crate::config::{get_all_extensions, get_extension_by_name};
 use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
+#[cfg(test)]
+use goose_agent::mcp::ScopedClient;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult, Implementation,
@@ -350,7 +352,9 @@ impl ExtensionManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for ExtensionManagerClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for ExtensionManagerClient
+{
     async fn list_resources(
         &self,
         _session_id: &str,

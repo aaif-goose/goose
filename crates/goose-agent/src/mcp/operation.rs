@@ -22,7 +22,40 @@ use tokio_util::sync::CancellationToken;
 /// Host-specific binding and decoration, shared by inference and execution in one run.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-pub trait McpHost<S>: MaybeSend + MaybeSync {
+pub trait McpHost<S: MaybeSync>: MaybeSend + MaybeSync {
+    fn operation_name(&self) -> &'static str {
+        "mcp"
+    }
+    async fn pending(&self, session: &S, conversation: &Conversation) -> Result<Vec<ToolRequest>> {
+        let tools = self.tools(session).await?;
+        Ok(tool_calls(messages_since_kickoff(conversation)?)
+            .into_iter()
+            .filter(|(request, state)| {
+                !request.was_executed_externally()
+                    && matches!(state, ToolCallState::Unchecked | ToolCallState::Executable)
+            })
+            .filter(|(request, _)| {
+                request
+                    .tool_call
+                    .as_ref()
+                    .is_ok_and(|call| tools.iter().any(|tool| tool.name == call.name))
+            })
+            .map(|(request, _)| request.clone())
+            .collect())
+    }
+    fn take_actions(&self) -> Vec<Message> {
+        Vec::new()
+    }
+    async fn run_command(
+        &self,
+        _command: &crate::operation::SlashCommand<'_>,
+        _session: &S,
+        _conversation: &Conversation,
+        _emit: &Emitter,
+    ) -> Result<Option<Vec<crate::operation::ConversationEffect>>> {
+        Ok(None)
+    }
+
     async fn tools(&self, session: &S) -> Result<Vec<Tool>>;
     async fn prompt_parts(
         &self,
@@ -43,12 +76,12 @@ pub trait McpHost<S>: MaybeSend + MaybeSync {
 }
 
 /// A run-scoped operation. Keep its host binding alive while approvals are pending.
-pub struct McpOperation<S> {
+pub struct McpOperation<S: MaybeSync> {
     host: Arc<dyn McpHost<S>>,
     post_hook: Option<Arc<dyn PostToolCallHook<S>>>,
     responses: Mutex<Option<Message>>,
 }
-impl<S> McpOperation<S> {
+impl<S: MaybeSync> McpOperation<S> {
     pub fn new(host: Arc<dyn McpHost<S>>) -> Self {
         Self {
             host,
@@ -67,10 +100,10 @@ impl<S> McpOperation<S> {
 impl<S, E> Operation<S, E> for McpOperation<S>
 where
     S: MaybeSend + MaybeSync + 'static,
-    E: From<Message> + MaybeSend + 'static,
+    E: From<Message> + From<crate::operation::ConversationEffect> + MaybeSend + 'static,
 {
     fn name(&self) -> &'static str {
-        "mcp"
+        self.host.operation_name()
     }
     async fn inference_tools(&self, session: &S) -> Result<Vec<Tool>> {
         self.host.tools(session).await
@@ -91,62 +124,70 @@ where
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        self.responses
-            .lock()
-            .unwrap()
-            .take()
-            .map(|message| E::from(emit.message(message)))
-            .into_iter()
-            .collect()
+        let response = self.responses.lock().unwrap().take();
+        let actions = self.host.take_actions();
+        if let Some(response) = &response {
+            emit.emit(crate::events::AgentEvent::Message(
+                response.user_visible_content(),
+            ));
+        }
+        actions.into_iter().chain(response).map(E::from).collect()
     }
+    async fn run_command(
+        &self,
+        command: &crate::operation::SlashCommand<'_>,
+        session: &S,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<E>> {
+        match self
+            .host
+            .run_command(command, session, conversation, emit)
+            .await?
+        {
+            Some(effects) => applied(effects.into_iter().map(E::from)),
+            None => not_applicable(),
+        }
+    }
+
     async fn run(
         &self,
         session: &S,
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<E>> {
-        let pending = tool_calls(messages_since_kickoff(conversation)?)
-            .into_iter()
-            .filter(|(request, state)| {
-                !request.was_executed_externally()
-                    && matches!(state, ToolCallState::Unchecked | ToolCallState::Executable)
-            })
-            .map(|(request, _)| request.clone())
-            .collect::<Vec<_>>();
+        let pending = self.host.pending(session, conversation).await?;
         if pending.is_empty() {
             return not_applicable();
         }
-        let tools = self.host.tools(session).await?;
-        let mut handled = false;
+        use futures::StreamExt;
+        let mut calls = futures::stream::FuturesUnordered::new();
         for request in pending {
-            if request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|call| !tools.iter().any(|tool| tool.name == call.name))
-            {
-                continue;
-            }
-            let result = match &request.tool_call {
-                Ok(_) => self.host.call(session, &request, emit).await,
-                Err(error) => Err(error.clone()),
-            };
-            let response = {
-                let mut buffer = self.responses.lock().unwrap();
-                let message =
-                    buffer.get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-                message.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    result,
-                    request.metadata.as_ref(),
-                );
-                message
-                    .content
-                    .last()
-                    .and_then(MessageContent::as_tool_response)
-                    .cloned()
-                    .expect("response added")
-            };
-            handled = true;
+            calls.push(async move {
+                let result = match &request.tool_call {
+                    Ok(_) => self.host.call(session, &request, emit).await,
+                    Err(error) => Err(error.clone()),
+                };
+                let response = {
+                    let mut buffer = self.responses.lock().unwrap();
+                    let message = buffer
+                        .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
+                    message.add_tool_response_with_metadata(
+                        request.id.clone(),
+                        result,
+                        request.metadata.as_ref(),
+                    );
+                    message
+                        .content
+                        .last()
+                        .and_then(MessageContent::as_tool_response)
+                        .cloned()
+                        .expect("response added")
+                };
+                (request, response)
+            });
+        }
+        while let Some((request, response)) = calls.next().await {
             if let Some(hook) = &self.post_hook {
                 if let Err(error) = hook
                     .after_call(session, conversation, &request, &response)
@@ -156,16 +197,22 @@ where
                 }
             }
         }
-        if !handled {
-            return not_applicable();
-        }
         let response = self
             .responses
             .lock()
             .unwrap()
             .take()
             .expect("responses buffered");
-        applied([E::from(emit.message(response))])
+        emit.emit(crate::events::AgentEvent::Message(
+            response.user_visible_content(),
+        ));
+        applied(
+            self.host
+                .take_actions()
+                .into_iter()
+                .chain([response])
+                .map(E::from),
+        )
     }
 }
 

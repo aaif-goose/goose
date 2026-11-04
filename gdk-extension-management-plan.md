@@ -142,3 +142,32 @@ Run affected crate tests, format/clippy checks, native/Wasm feature checks, and 
 ## Documentation verification
 
 Public behavior and architectural boundaries were checked against [GDK reference](https://goose-docs.ai/docs/gdk/reference/index), [using extensions](https://goose-docs.ai/docs/getting-started/using-extensions), [MCP roots](https://goose-docs.ai/docs/guides/mcp-roots), and [MCP elicitation](https://goose-docs.ai/docs/guides/mcp-elicitation). Internal lifecycle details are grounded in the source links above; proposed APIs and changes are explicitly design choices, not documented existing functionality.
+
+## Implementation notes
+
+The two implementation commits introduce standalone GDK MCP support and migrate
+goose execution to `McpOperation` with a `GooseMcpHost` adapter. Both paths share
+scoped ownership/reconciliation, lazy startup, catalogs, schema normalization,
+and protocol-request cancellation. goose's extension service still owns config
+invalidation, durable selection, connection construction, prompt commands,
+notification/action-required bridging and result trust policy. Its existing
+lease remains a host wrapper rather than being replaced with the standalone
+GDK `Lease`; `ScopedClient<C>` supports its richer per-call context.
+
+Standalone bindings are explicit: keep a lease while approvals are pending;
+`Lease::refresh` creates a fresh catalog/binding on the same connections for a
+subsequent inference boundary. This does not yet provide an automatic dynamic
+registration operation or automatic background catalog refresh. Hosts drive
+that boundary. Explicit async shutdown/drain remains follow-up work; scope
+release removes ownership and held leases/host-owned clients retain theirs.
+Native transport convenience features must not be enabled on Wasm; the core
+and host-supplied clients compile for Wasm, but all-features Wasm builds do not.
+These are remaining differences from the full proposed surface, not completed
+parity claims.
+
+Verification: GDK tests and native feature clippy pass; the Wasm core compiles.
+goose's 156 state-machine, 43 extension-manager and 17 MCP-client tests pass.
+Affected-crate clippy and a CLI build without local inference pass; code-mode
+and tree-sitter compilation also passes. Workspace clippy is blocked by an
+existing llama-cpp/OpenSSL C++ compile failure. The updated live self-test recipe
+was attempted but timed out without output, so it is not counted as passed.

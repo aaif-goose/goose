@@ -129,32 +129,26 @@ impl Manager {
             }
         }
         let mut scopes = self.runtime.scopes.lock().await;
-        let current = scopes.selected.entry(scope.clone()).or_default();
-        let slots = registrations
-            .into_iter()
-            .map(|registration| {
-                current
-                    .values()
-                    .find(|slot| {
-                        let old = &slot.registration;
-                        old.id == registration.id
-                            && old.revision == registration.revision
-                            && old.available_tools == registration.available_tools
-                            && old.unprefixed == registration.unprefixed
+        let slots = scopes
+            .reconcile(
+                &scope,
+                registrations,
+                |registration| registration.id.clone(),
+                |slot, registration| {
+                    let old = &slot.registration;
+                    let compatible = old.revision == registration.revision
+                        && old.available_tools == registration.available_tools
+                        && old.unprefixed == registration.unprefixed;
+                    std::future::ready(compatible)
+                },
+                |registration| {
+                    Arc::new(Slot {
+                        registration: registration.clone(),
+                        client: Runtime::new(),
                     })
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        Arc::new(Slot {
-                            registration,
-                            client: Runtime::new(),
-                        })
-                    })
-            })
-            .collect::<Vec<_>>();
-        *current = slots
-            .iter()
-            .map(|slot| (slot.registration.id.clone(), Arc::clone(slot)))
-            .collect();
+                },
+            )
+            .await;
         Ok(Lease {
             id: uuid::Uuid::new_v4().to_string(),
             scope,
@@ -178,6 +172,16 @@ pub struct Lease {
     catalog: Arc<PinnedCatalog>,
 }
 impl Lease {
+    /// Create the next inference binding without restarting its connections.
+    /// The previous binding remains valid for its outstanding requests.
+    pub fn refresh(&self) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            scope: self.scope.clone(),
+            slots: self.slots.clone(),
+            catalog: Arc::new(OnceCell::new()),
+        }
+    }
     pub fn id(&self) -> &str {
         &self.id
     }
@@ -226,6 +230,10 @@ impl Lease {
                                     .any(|name| name == tool.name.as_ref())
                             {
                                 continue;
+                            }
+                            let mut schema = (*tool.input_schema).clone();
+                            if super::schema::normalize_input_schema(&mut schema) {
+                                tool.input_schema = Arc::new(schema);
                             }
                             let server_name = tool.name.to_string();
                             if !slot.registration.unprefixed {

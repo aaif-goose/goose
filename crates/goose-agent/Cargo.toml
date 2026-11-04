@@ -30,7 +30,9 @@ blake3 = "1.8.7"
 indexmap = "2.14.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.105"
 rmcp = { workspace = true, features = ["local"] }
+wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.78"
 
 [dev-dependencies]

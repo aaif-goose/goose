@@ -167,7 +167,6 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 mod tests {
     use super::*;
     use crate::agents::extension_manager::ExtensionSet;
-    use crate::agents::mcp_client::McpClientTrait;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
     use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
@@ -178,7 +177,7 @@ mod tests {
     struct MoimClient(&'static str);
 
     #[async_trait::async_trait]
-    impl McpClientTrait for MoimClient {
+    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext> for MoimClient {
         async fn list_tools(
             &self,
             _session_id: &str,

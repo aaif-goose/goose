@@ -10,24 +10,23 @@ use rmcp::model::{
 };
 use rmcp::{
     model::{
-        CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
-        InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
-        ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
-        ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
-        ServerNotification, ServerResult,
+        CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, ClientRequest,
+        GetPromptRequestParams, GetPromptResult, Implementation, InitializeRequestParams,
+        InitializeResult, ListPromptsResult, ListResourcesResult, ListToolsResult, Notification,
+        PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams, ReadResourceResult,
+        Request, RequestOptionalParam, ServerNotification, ServerResult,
     },
     service::{
         ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
-        RequestContext, RequestHandle, RunningService, ServiceRole,
+        RequestContext, RunningService,
     },
     transport::IntoTransport,
-    ClientHandler, ErrorData, Peer, RoleClient, ServiceError,
+    ClientHandler, ErrorData, RoleClient, ServiceError,
 };
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
@@ -72,74 +71,9 @@ impl GooseMcpHostInfo {
     }
 }
 
-#[async_trait::async_trait]
-pub trait McpClientTrait: Send + Sync {
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        next_cursor: Option<String>,
-        cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error>;
-
-    async fn call_tool(
-        &self,
-        ctx: &ToolCallContext,
-        name: &str,
-        arguments: Option<JsonObject>,
-        cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, Error>;
-
-    fn get_info(&self) -> Option<&InitializeResult>;
-
-    async fn get_instructions(&self, _session_id: &str, _working_dir: &Path) -> Option<String> {
-        self.get_info().and_then(|info| info.instructions.clone())
-    }
-
-    async fn list_resources(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListResourcesResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn read_resource(
-        &self,
-        _session_id: &str,
-        _uri: &str,
-        _cancel_token: CancellationToken,
-    ) -> Result<ReadResourceResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn list_prompts(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListPromptsResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn get_prompt(
-        &self,
-        _session_id: &str,
-        _name: &str,
-        _arguments: Value,
-        _cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        mpsc::channel(1).1
-    }
-
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
-        None
-    }
-}
+pub use goose_agent::mcp::ScopedClient;
+pub trait McpClientTrait: ScopedClient<ToolCallContext> {}
+impl<T: ScopedClient<ToolCallContext> + ?Sized> McpClientTrait for T {}
 
 struct ActiveToolCallGuard {
     active_tool_calls: Arc<StdMutex<HashMap<String, Vec<String>>>>,
@@ -617,42 +551,10 @@ impl McpClient {
     }
 }
 
-async fn await_response(
-    handle: RequestHandle<RoleClient>,
-    timeout: Duration,
-    cancel_token: &CancellationToken,
-) -> Result<<RoleClient as ServiceRole>::PeerResp, ServiceError> {
-    let receiver = handle.rx;
-    let peer = handle.peer;
-    let request_id = handle.id;
-    tokio::select! {
-        result = receiver => {
-            result.map_err(|_e| ServiceError::TransportClosed)?
-        }
-        _ = tokio::time::sleep(timeout) => {
-            send_cancel_message(&peer, request_id, Some("timed out".to_owned())).await?;
-            Err(ServiceError::Timeout{timeout})
-        }
-        _ = cancel_token.cancelled() => {
-            send_cancel_message(&peer, request_id, Some("operation cancelled".to_owned())).await?;
-            Err(ServiceError::Cancelled { reason: None })
-        }
-    }
-}
-
-async fn send_cancel_message(
-    peer: &Peer<RoleClient>,
-    request_id: RequestId,
-    reason: Option<String>,
-) -> Result<(), ServiceError> {
-    peer.send_notification(
-        Notification::new(CancelledNotificationParam::new(Some(request_id), reason)).into(),
-    )
-    .await
-}
+use goose_agent::mcp::await_response;
 
 #[async_trait::async_trait]
-impl McpClientTrait for McpClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext> for McpClient {
     fn get_info(&self) -> Option<&InitializeResult> {
         self.server_info.as_ref()
     }

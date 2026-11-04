@@ -123,7 +123,12 @@ impl TransportClient {
             options: options.clone(),
             notifications: notifications.clone(),
         };
-        let service = handler.serve(transport).await?;
+        let startup = handler.serve(transport);
+        tokio::pin!(startup);
+        let service = tokio::select! {
+            result = &mut startup => result?,
+            _ = super::request::sleep(options.timeout) => anyhow::bail!("MCP initialization timed out"),
+        };
         Ok(Self {
             service: Arc::new(service),
             notifications,
@@ -141,34 +146,9 @@ impl TransportClient {
             .peer()
             .send_cancellable_request(request, PeerRequestOptions::no_options())
             .await?;
-        let peer = self.service.peer().clone();
-        let request_id = handle.id.clone();
-        let done = CancellationToken::new();
-        let finished = done.clone();
-        let guard = cancel.clone().drop_guard();
-        // The watcher outlives a dropped caller future and sends protocol cancellation.
-        let watcher = async move {
-            tokio::select! {
-                biased;
-                _ = finished.cancelled() => {},
-                _ = cancel.cancelled() => {
-                    let _ = peer.notify_cancelled(CancelledNotificationParam::new(Some(request_id), None)).await;
-                }
-            }
-        };
-        #[cfg(not(target_arch = "wasm32"))]
-        tokio::spawn(watcher);
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(watcher);
-        let result = tokio::time::timeout(self.timeout, handle.await_response()).await;
-        match result {
-            Ok(result) => {
-                done.cancel();
-                guard.disarm();
-                result.map_err(anyhow::Error::from)
-            }
-            Err(error) => Err(error.into()),
-        }
+        super::await_response(handle, self.timeout, &cancel)
+            .await
+            .map_err(anyhow::Error::from)
     }
 }
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]

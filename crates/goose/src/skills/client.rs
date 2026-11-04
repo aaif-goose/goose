@@ -1,6 +1,6 @@
 use super::discover_skills_with_config;
 use super::loaded_skill_context_with_args;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::ToolCallContext;
 use crate::config::Config;
 use async_trait::async_trait;
@@ -59,7 +59,9 @@ impl SkillsClient {
 }
 
 #[async_trait]
-impl McpClientTrait for SkillsClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for SkillsClient
+{
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -273,6 +275,7 @@ impl McpClientTrait for SkillsClient {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use goose_agent::mcp::ScopedClient;
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;

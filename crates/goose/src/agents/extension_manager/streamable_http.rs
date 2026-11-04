@@ -1,3 +1,4 @@
+use goose_agent::mcp::ScopedClient;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -421,7 +422,9 @@ impl OAuthStepUpClient {
 }
 
 #[async_trait::async_trait]
-impl McpClientTrait for OAuthStepUpClient {
+impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    for OAuthStepUpClient
+{
     async fn list_tools(
         &self,
         session_id: &str,

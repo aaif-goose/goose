@@ -18,7 +18,6 @@ use super::dummy_api::{ApiCall, DummyApi, ProviderFeatures};
 use super::pipeline::calculator_extension;
 use crate::acp::server::AcpConnection;
 use crate::agents::extension::ExtensionConfig;
-use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
 use crate::agents::{
     AgentEvent, GoosePlatform, SessionConfig, StateMachineServices, StateMachineServicesConfig,
@@ -29,6 +28,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
+use goose_agent::mcp::ScopedClient;
 use goose_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(

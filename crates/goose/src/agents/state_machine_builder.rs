@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_agent::mcp::McpOperation;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
@@ -14,12 +15,13 @@ use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     deny_limit_warning, BangShellOperation, CompactionOperation, ContextRelevanceOperation,
     DoctorOperation, EmptyResponseOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook, GoosePreToolHook,
-    GooseStopHook, GooseToolApproval, InferenceRunner, MaxTurnsOperation, Operation,
-    PreToolCallHookOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    GooseInferenceProvider, GooseInferenceRequestPreparer, GooseMcpHost, GoosePostToolHook,
+    GoosePreToolHook, GooseStopHook, GooseToolApproval, InferenceRunner, MaxTurnsOperation,
+    Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -137,12 +139,14 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_manager),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&extension_manager),
-            hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
-            Arc::clone(&extension_lease),
-        )),
+        Arc::new(
+            McpOperation::new(Arc::new(GooseMcpHost::new(
+                Arc::clone(&extension_manager),
+                hook_manager.clone(),
+                Arc::clone(&extension_lease),
+            )))
+            .with_post_tool_call_hook(Arc::clone(&post_tool_call_hook)),
+        ),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,

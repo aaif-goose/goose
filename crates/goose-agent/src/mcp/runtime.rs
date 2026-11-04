@@ -71,3 +71,44 @@ impl<T> Default for ScopedRuntime<T> {
         Self::new()
     }
 }
+
+impl<T> Scopes<T> {
+    /// Preserve compatible selected or in-flight slots while replacing a scope selection.
+    /// Compatibility may inspect host policy, but ownership and ordering stay in the runtime.
+    pub async fn reconcile<I, K, C, F, Fut>(
+        &mut self,
+        scope: &str,
+        inputs: I,
+        key: K,
+        compatible: C,
+        create: F,
+    ) -> Vec<Arc<T>>
+    where
+        I: IntoIterator,
+        K: Fn(&I::Item) -> String,
+        C: Fn(Arc<T>, &I::Item) -> Fut,
+        Fut: std::future::Future<Output = bool>,
+        F: Fn(&I::Item) -> Arc<T>,
+    {
+        let mut current = self.selected.get(scope).cloned().unwrap_or_default();
+        let mut selected = indexmap::IndexMap::new();
+        for input in inputs {
+            let key = key(&input);
+            let pending = self
+                .enabling
+                .get(&(scope.to_string(), key.clone()))
+                .cloned();
+            let mut reusable = None;
+            for slot in current.swap_remove(&key).into_iter().chain(pending) {
+                if compatible(Arc::clone(&slot), &input).await {
+                    reusable = Some(slot);
+                    break;
+                }
+            }
+            selected.insert(key, reusable.unwrap_or_else(|| create(&input)));
+        }
+        let slots = selected.values().cloned().collect();
+        self.selected.insert(scope.to_string(), selected);
+        slots
+    }
+}
