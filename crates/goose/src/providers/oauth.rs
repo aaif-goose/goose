@@ -10,11 +10,21 @@ use reqwest::{redirect::Policy, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Digest;
-use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use url::{Host, Url};
 
 static OAUTH_MUTEX: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
+
+// `expires_at` is computed from when the token response arrived, which is later than when the
+// server issued the token, so refresh early rather than send a token the server already rejects.
+const TOKEN_EXPIRY_MARGIN: chrono::TimeDelta = chrono::TimeDelta::minutes(5);
 
 #[derive(Clone, Copy)]
 enum EndpointTransport {
@@ -88,6 +98,13 @@ struct TokenData {
     expires_at: Option<DateTime<Utc>>,
 }
 
+impl TokenData {
+    fn needs_refresh(&self, now: DateTime<Utc>) -> bool {
+        self.expires_at
+            .is_some_and(|expires_at| expires_at - TOKEN_EXPIRY_MARGIN <= now)
+    }
+}
+
 struct TokenCache {
     cache_path: PathBuf,
 }
@@ -102,6 +119,27 @@ pub fn cleanup_oauth_cache() -> Result<()> {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Marks every cached Databricks OAuth access token as expired, so the next request refreshes it.
+/// Called after the server rejects a request as unauthenticated, when the cached token may still
+/// look valid locally.
+pub fn expire_cached_oauth_tokens() {
+    expire_cached_oauth_tokens_in(&get_base_path());
+}
+
+fn expire_cached_oauth_tokens_in(directory: &Path) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let cache_path = entry.path();
+        if cache_path.extension().is_some_and(|ext| ext == "json") {
+            if let Err(e) = (TokenCache { cache_path }).expire_token() {
+                tracing::warn!("Failed to expire cached OAuth token: {}", e);
+            }
+        }
     }
 }
 
@@ -145,6 +183,13 @@ impl TokenCache {
         let contents = serde_json::to_string(token_data)?;
         write_private_file(&self.cache_path, &contents)?;
         Ok(())
+    }
+
+    fn expire_token(&self) -> Result<()> {
+        let mut token_data: TokenData =
+            serde_json::from_str(&fs::read_to_string(&self.cache_path)?)?;
+        token_data.expires_at = Some(DateTime::UNIX_EPOCH);
+        self.save_token(&token_data)
     }
 }
 
@@ -446,12 +491,21 @@ pub(crate) async fn get_oauth_token_async(
     let _guard = OAUTH_MUTEX.lock().await;
 
     let token_cache = TokenCache::new(host, client_id, scopes);
+    get_oauth_token_with_cache(&token_cache, host, client_id, redirect_url, scopes).await
+}
 
+async fn get_oauth_token_with_cache(
+    token_cache: &TokenCache,
+    host: &str,
+    client_id: &str,
+    redirect_url: &str,
+    scopes: &[String],
+) -> Result<String> {
     // Try cache first
     if let Some(token) = token_cache.load_token() {
         // If token has an expiration time, check if it's expired
-        if let Some(expires_at) = token.expires_at {
-            if expires_at > Utc::now() {
+        if token.expires_at.is_some() {
+            if !token.needs_refresh(Utc::now()) {
                 return Ok(token.access_token);
             }
             // Token is expired, will try to refresh below
@@ -812,6 +866,122 @@ mod tests {
             result.is_err(),
             "plaintext remote token endpoint was accepted"
         );
+    }
+
+    async fn mock_workspace_with_refreshed_token(access_token: &str) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/oidc/.well-known/oauth-authorization-server"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "authorization_endpoint": format!("{}/authorize", server.uri()),
+                "token_endpoint": format!("{}/token", server.uri())
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": access_token,
+                "expires_in": 3600
+            })))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn cache_with_token(
+        directory: &tempfile::TempDir,
+        expires_in: chrono::TimeDelta,
+    ) -> TokenCache {
+        let cache = TokenCache {
+            cache_path: directory.path().join("token.json"),
+        };
+        cache
+            .save_token(&TokenData {
+                access_token: "cached-token".to_string(),
+                refresh_token: Some("refresh-token".to_string()),
+                expires_at: Some(Utc::now() + expires_in),
+            })
+            .unwrap();
+        cache
+    }
+
+    async fn token_from_cache(cache: &TokenCache, server: &MockServer) -> String {
+        get_oauth_token_with_cache(
+            cache,
+            &server.uri(),
+            "databricks-cli",
+            "http://localhost",
+            &["all-apis".to_string(), "offline_access".to_string()],
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn token_requests(server: &MockServer) -> usize {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == "/token")
+            .count()
+    }
+
+    #[test]
+    fn token_needs_refresh_within_expiry_margin() {
+        let now = Utc::now();
+        let token = |expires_at| TokenData {
+            access_token: "access".to_string(),
+            refresh_token: Some("refresh".to_string()),
+            expires_at,
+        };
+
+        assert!(token(Some(now - chrono::TimeDelta::seconds(1))).needs_refresh(now));
+        assert!(token(Some(now + chrono::TimeDelta::seconds(1))).needs_refresh(now));
+        assert!(token(Some(now + TOKEN_EXPIRY_MARGIN)).needs_refresh(now));
+        assert!(!token(Some(
+            now + TOKEN_EXPIRY_MARGIN + chrono::TimeDelta::seconds(1)
+        ))
+        .needs_refresh(now));
+        assert!(!token(None).needs_refresh(now));
+    }
+
+    #[tokio::test]
+    async fn cached_token_is_used_until_expiry_margin() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(30));
+        let server = mock_workspace_with_refreshed_token("refreshed-token").await;
+
+        assert_eq!(token_from_cache(&cache, &server).await, "cached-token");
+        assert_eq!(token_requests(&server).await, 0);
+    }
+
+    #[tokio::test]
+    async fn cached_token_about_to_expire_is_refreshed() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::seconds(1));
+        let server = mock_workspace_with_refreshed_token("refreshed-token").await;
+
+        assert_eq!(token_from_cache(&cache, &server).await, "refreshed-token");
+        assert_eq!(token_requests(&server).await, 1);
+        assert_eq!(token_from_cache(&cache, &server).await, "refreshed-token");
+        assert_eq!(token_requests(&server).await, 1);
+    }
+
+    #[tokio::test]
+    async fn expired_cache_refreshes_token_that_looks_valid() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(30));
+        let server = mock_workspace_with_refreshed_token("refreshed-token").await;
+
+        expire_cached_oauth_tokens_in(directory.path());
+
+        let expired = cache.load_token().unwrap();
+        assert_eq!(expired.access_token, "cached-token");
+        assert_eq!(expired.refresh_token.as_deref(), Some("refresh-token"));
+        assert_eq!(token_from_cache(&cache, &server).await, "refreshed-token");
+        assert_eq!(token_requests(&server).await, 1);
     }
 
     #[tokio::test]

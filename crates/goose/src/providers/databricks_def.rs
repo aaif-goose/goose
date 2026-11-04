@@ -108,7 +108,10 @@ fn token_resolver() -> DatabricksTokenResolver {
 }
 
 fn refresh_hook() -> DatabricksRefreshHook {
-    Arc::new(|| Config::global().invalidate_secrets_cache())
+    Arc::new(|| {
+        Config::global().invalidate_secrets_cache();
+        crate::providers::oauth::expire_cached_oauth_tokens();
+    })
 }
 
 fn session_id_provider() -> DatabricksSessionIdProvider {
