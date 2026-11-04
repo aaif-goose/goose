@@ -823,6 +823,7 @@ Once you're in an interactive session (via `goose session` or `goose run --inter
 - **`/mode <name>`** - Set the goose mode to use ('auto', 'approve', 'chat', 'smart_approve')
 - **`/model [name]`** - Show the current model, or switch models for this session while keeping the same provider
 - **`/model --provider <name> [model]`** - Switch to a different provider, optionally specifying a model
+- **`/model --effort <level> [model]`** - Set the thinking effort for this session (`off`, `low`, `medium`, `high`, `max`), optionally switching model at the same time
 - **`/prompt <n> [--info] [key=value...]`** - Get prompt info or execute a prompt
 - **`/prompts [--extension <name>]`** - List all available prompts, optionally filtered by extension
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
