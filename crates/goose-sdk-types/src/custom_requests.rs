@@ -351,6 +351,17 @@ pub struct ContextReportResponse {
     /// The session is past the auto-compaction threshold, so the loop compacts
     /// the conversation before it sends the next request.
     pub auto_compaction_pending: bool,
+    /// The effective token limit that caps auto-compaction for this session's
+    /// model: the model-declared limit when set, else the configured
+    /// `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.
+    pub auto_compact_token_limit: u64,
+    /// The token count at which auto-compaction triggers: the percentage
+    /// threshold capped by `auto_compact_token_limit`, applied to the context
+    /// limit.
+    pub auto_compact_trigger_tokens: u64,
+    /// The limit comes from the model entry itself (e.g. a custom provider
+    /// definition) rather than from global configuration or the default.
+    pub auto_compact_token_limit_model_declared: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1868,6 +1879,10 @@ pub struct ProviderInventoryModelDto {
     /// Whether the model supports reasoning/extended thinking.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+    /// Model-declared auto-compaction cap, overriding the global
+    /// GOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_compact_token_limit: Option<usize>,
     /// Whether this model should appear in the compact recommended picker.
     #[serde(default)]
     pub recommended: bool,

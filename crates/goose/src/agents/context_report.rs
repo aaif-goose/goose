@@ -12,6 +12,8 @@ pub use goose_sdk_types::custom_requests::{
 use crate::agents::extension_manager::get_tool_owner;
 use crate::agents::state_machine::enrich_unclaimed_tool_errors;
 use crate::agents::{PromptManager, SessionConfig, StateMachineServices};
+use crate::config::Config;
+use crate::context_mgmt::capped_compaction_threshold;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{
     effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
@@ -107,8 +109,20 @@ impl StateMachineServices {
             &persisted,
             None,
             &session,
+            &model_config,
         )
         .await?;
+        let auto_compact_limit =
+            crate::context_mgmt::effective_auto_compact_token_limit(&model_config);
+        let auto_compact_threshold = capped_compaction_threshold(
+            Config::global()
+                .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+                .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
+            auto_compact_limit.limit,
+            context_limit,
+        );
+        let auto_compact_trigger_tokens =
+            (auto_compact_threshold * context_limit as f64).round() as u64;
 
         let (session, lease) = self
             .extension_manager
@@ -260,6 +274,9 @@ impl StateMachineServices {
             segments,
             provider_manages_context: false,
             auto_compaction_pending,
+            auto_compact_token_limit: auto_compact_limit.limit as u64,
+            auto_compact_trigger_tokens,
+            auto_compact_token_limit_model_declared: auto_compact_limit.model_declared,
         })
     }
 }

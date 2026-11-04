@@ -29,6 +29,8 @@ goose automatically compacts older parts of your conversation into a summary whe
 Auto-compaction is triggered by default when you reach 80% of the token limit or 225,000 tokens, whichever comes first, in goose Desktop and the goose CLI.
 The effective trigger is `min(GOOSE_AUTO_COMPACT_THRESHOLD × model context window, GOOSE_AUTO_COMPACT_TOKEN_LIMIT)`. It is recalculated for the current model's context window. Change the token cap with `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`.
 
+A model can also declare its own cap with `auto_compact_token_limit` in a [custom provider](/docs/getting-started/providers.md#configure-custom-provider) model entry. When set, it takes precedence over `GOOSE_AUTO_COMPACT_TOKEN_LIMIT` for that model, so a large-context model can compact later than the global default without changing the setting for other models. Subagents using a different model get that model's own cap. Setting it to `0` disables auto-compaction for that model.
+
 The default cap leaves headroom below OpenAI's long-context price tier (above 272,000 input tokens). It controls when compaction starts, not a guaranteed maximum request size: new messages, tool output, and the compaction request itself can exceed the trigger between checks.
 
 Control the auto-compaction behavior with the `GOOSE_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 

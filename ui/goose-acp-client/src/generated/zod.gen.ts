@@ -518,7 +518,10 @@ export const zContextReportResponse_unstable = z.object({
     totalTokens: z.int().gte(0),
     segments: z.array(zContextSegment),
     providerManagesContext: z.boolean(),
-    autoCompactionPending: z.boolean()
+    autoCompactionPending: z.boolean(),
+    autoCompactTokenLimit: z.int().gte(0),
+    autoCompactTriggerTokens: z.int().gte(0),
+    autoCompactTokenLimitModelDeclared: z.boolean()
 });
 
 /**
@@ -658,6 +661,7 @@ export const zProviderInventoryModelDto = z.object({
     family: z.string().nullish(),
     contextLimit: z.int().gte(0).nullish(),
     reasoning: z.boolean().nullish(),
+    autoCompactTokenLimit: z.int().gte(0).nullish(),
     recommended: z.boolean().optional().default(false)
 });
 

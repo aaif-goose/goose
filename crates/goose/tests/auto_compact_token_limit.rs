@@ -3,7 +3,9 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use goose::agents::{SessionConfig, StateMachineServices, StateMachineServicesConfig};
 use goose::config::{Config, GooseMode};
-use goose::context_mgmt::auto_compact_threshold;
+use goose::context_mgmt::{
+    capped_compaction_threshold, effective_auto_compact_token_limit, DEFAULT_COMPACTION_THRESHOLD,
+};
 use goose::conversation::message::Message;
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
@@ -14,6 +16,17 @@ use goose_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+fn model_threshold(model_config: &ModelConfig, context_limit: usize) -> f64 {
+    let threshold = Config::global()
+        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+    capped_compaction_threshold(
+        threshold,
+        effective_auto_compact_token_limit(model_config).limit,
+        context_limit,
+    )
+}
 
 #[derive(Default)]
 struct CompactionProvider {
@@ -74,9 +87,17 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         ("GOOSE_DISABLE_SESSION_NAMING", Some("true")),
     ]);
     let config = Config::global();
-    assert_eq!(auto_compact_threshold(1_000_000), 0.225);
-    assert_eq!(auto_compact_threshold(200_000), 0.8);
-    assert_eq!(auto_compact_threshold(0), 0.8);
+    let plain = ModelConfig::new("threshold-model");
+    assert_eq!(model_threshold(&plain, 1_000_000), 0.225);
+    assert_eq!(model_threshold(&plain, 200_000), 0.8);
+    assert_eq!(model_threshold(&plain, 0), 0.8);
+    let declared = ModelConfig::new("threshold-model").with_auto_compact_token_limit(800_000);
+    assert_eq!(model_threshold(&declared, 1_000_000), 0.8);
+    // A model-specific limit takes precedence over the global configuration.
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 400_000)?;
+    assert_eq!(model_threshold(&declared, 1_000_000), 0.8);
+    assert_eq!(model_threshold(&plain, 1_000_000), 0.4);
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
 
     let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
     let session = services
@@ -99,11 +120,32 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", percentage)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", cap)?;
         assert_eq!(
-            auto_compact_threshold(context),
+            model_threshold(&plain, context),
             percentage.min(cap as f64 / context as f64)
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
-            verify_reply(&services, &session.id, context, tokens, expected).await?;
+            verify_reply(&services, &session.id, context, None, tokens, expected).await?;
+        }
+    }
+
+    // A limit declared on the model overrides the global configuration.
+    config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", 0.8)?;
+    config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
+    for (model_limit, context, trigger) in [(800_000usize, 1_000_000, 800_000)] {
+        assert_eq!(
+            model_threshold(&declared, context),
+            0.8_f64.min(model_limit as f64 / context as f64)
+        );
+        for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
+            verify_reply(
+                &services,
+                &session.id,
+                context,
+                Some(model_limit),
+                tokens,
+                expected,
+            )
+            .await?;
         }
     }
 
@@ -111,8 +153,8 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", disabled)?;
         config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", 225_000)?;
         for context in [1_000_000, 200_000] {
-            assert_eq!(auto_compact_threshold(context), disabled);
-            verify_reply(&services, &session.id, context, 900_000, false).await?;
+            assert_eq!(model_threshold(&plain, context), disabled);
+            verify_reply(&services, &session.id, context, None, 900_000, false).await?;
         }
     }
     Ok(())
@@ -122,16 +164,17 @@ async fn verify_reply(
     services: &Arc<StateMachineServices>,
     session_id: &str,
     context: usize,
+    model_limit: Option<usize>,
     tokens: i32,
     expected_compaction: bool,
 ) -> Result<()> {
     let provider = Arc::new(CompactionProvider::default());
+    let mut model_config = ModelConfig::new(context.to_string());
+    if let Some(limit) = model_limit {
+        model_config = model_config.with_auto_compact_token_limit(limit);
+    }
     services
-        .update_provider(
-            provider.clone(),
-            ModelConfig::new(context.to_string()),
-            session_id,
-        )
+        .update_provider(provider.clone(), model_config, session_id)
         .await?;
     services
         .session_manager

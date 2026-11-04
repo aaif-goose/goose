@@ -1349,6 +1349,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1385,6 +1386,7 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1406,6 +1408,7 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1428,6 +1431,7 @@ mod tests {
             toolshim_model: None,
             request_params: Some(params),
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1448,6 +1452,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1468,6 +1473,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1488,6 +1494,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1901,6 +1908,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };
@@ -1955,6 +1963,7 @@ mod tests {
             toolshim_model: None,
             request_params: None,
             reasoning: None,
+            auto_compact_token_limit: None,
             supports_vision: None,
             request_headers: None,
         };

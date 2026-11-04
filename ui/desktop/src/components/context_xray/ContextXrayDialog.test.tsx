@@ -41,6 +41,9 @@ const report: ContextReport = {
   ],
   providerManagesContext: false,
   autoCompactionPending: false,
+  autoCompactTokenLimit: 225_000,
+  autoCompactTriggerTokens: 225_000,
+  autoCompactTokenLimitModelDeclared: false,
 };
 
 function renderDialog() {
@@ -85,6 +88,25 @@ describe('ContextXrayDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Compact now' }));
     expect(props.onCompact).toHaveBeenCalledTimes(1);
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('names the model-declared limit when compaction is pending', async () => {
+    getContextReport.mockResolvedValue({
+      ...report,
+      autoCompactionPending: true,
+      autoCompactTokenLimit: 800_000,
+      autoCompactTriggerTokens: 800_000,
+      autoCompactTokenLimitModelDeclared: true,
+    });
+    renderDialog();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Past the auto-compaction threshold at 800k tokens: claude-opus-5 declares its own compact limit (800k tokens), which takes precedence over the global setting.'
+        )
+      ).toBeInTheDocument()
+    );
   });
 
   it('replaces a loaded report with an error and retry when a refresh fails', async () => {

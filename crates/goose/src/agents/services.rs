@@ -762,9 +762,12 @@ impl StateMachineServices {
             None => TurnSettings::from_config(provider.as_ref(), &model_config),
         };
         let max_turns = session_config.max_turns.unwrap_or(settings.max_turns);
+        let token_limit = model_config
+            .auto_compact_token_limit
+            .unwrap_or(settings.compaction_token_limit);
         let compaction_threshold = crate::context_mgmt::capped_compaction_threshold(
             settings.compaction_threshold,
-            settings.compaction_token_limit,
+            token_limit,
             context_limit,
         );
         let tool_call_cutoff = settings.tool_call_cutoff.unwrap_or_else(|| {

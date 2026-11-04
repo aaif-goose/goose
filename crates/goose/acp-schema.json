@@ -1477,6 +1477,20 @@
         "autoCompactionPending": {
           "type": "boolean",
           "description": "The session is past the auto-compaction threshold, so the loop compacts\nthe conversation before it sends the next request."
+        },
+        "autoCompactTokenLimit": {
+          "type": "integer",
+          "description": "The effective token limit that caps auto-compaction for this session's\nmodel: the model-declared limit when set, else the configured\n`GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.",
+          "minimum": 0
+        },
+        "autoCompactTriggerTokens": {
+          "type": "integer",
+          "description": "The token count at which auto-compaction triggers: the percentage\nthreshold capped by `auto_compact_token_limit`, applied to the context\nlimit.",
+          "minimum": 0
+        },
+        "autoCompactTokenLimitModelDeclared": {
+          "type": "boolean",
+          "description": "The limit comes from the model entry itself (e.g. a custom provider\ndefinition) rather than from global configuration or the default."
         }
       },
       "required": [
@@ -1484,7 +1498,10 @@
         "totalTokens",
         "segments",
         "providerManagesContext",
-        "autoCompactionPending"
+        "autoCompactionPending",
+        "autoCompactTokenLimit",
+        "autoCompactTriggerTokens",
+        "autoCompactTokenLimitModelDeclared"
       ],
       "x-side": "agent",
       "x-method": "_goose/unstable/context/report"
@@ -2113,6 +2130,14 @@
             "null"
           ],
           "description": "Whether the model supports reasoning/extended thinking."
+        },
+        "autoCompactTokenLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Model-declared auto-compaction cap, overriding the global\nGOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.",
+          "minimum": 0
         },
         "recommended": {
           "type": "boolean",

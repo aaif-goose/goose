@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Limite de compactação automática ultrapassado: a conversa é compactada antes de o próximo pedido ser enviado."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "Passou do limite de compactação automática em {trigger} tokens: {model} declara o próprio limite de compactação ({limit} tokens), que tem precedência sobre a configuração global."
   }
 }

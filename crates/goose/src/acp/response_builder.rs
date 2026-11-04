@@ -561,6 +561,7 @@ mod tests {
                     family: None,
                     context_limit: None,
                     reasoning: None,
+                    auto_compact_token_limit: None,
                     recommended: false,
                 })
                 .collect(),

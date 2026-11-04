@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "Превышен порог автокомпактизации: разговор будет сжат перед отправкой следующего запроса."
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "Превышен порог автосжатия в {trigger} токенов: {model} объявляет собственный предел сжатия ({limit} токенов), который имеет приоритет над глобальной настройкой."
   }
 }

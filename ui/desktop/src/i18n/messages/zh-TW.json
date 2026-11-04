@@ -4834,5 +4834,8 @@
   },
   "contextXray.autoCompactionPending": {
     "defaultMessage": "已超過自動壓縮閾值：在送出下一個請求之前會先壓縮對話。"
+  },
+  "contextXray.autoCompactionModelLimit": {
+    "defaultMessage": "已超過自動壓縮閾值（{trigger} 個 token）：{model} 宣告了自身的壓縮上限（{limit} 個 token），優先於全域設定。"
   }
 }

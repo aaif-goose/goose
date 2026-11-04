@@ -758,6 +758,23 @@ export type ContextReportResponse_unstable = {
      * the conversation before it sends the next request.
      */
     autoCompactionPending: boolean;
+    /**
+     * The effective token limit that caps auto-compaction for this session's
+     * model: the model-declared limit when set, else the configured
+     * `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, else the default.
+     */
+    autoCompactTokenLimit: number;
+    /**
+     * The token count at which auto-compaction triggers: the percentage
+     * threshold capped by `auto_compact_token_limit`, applied to the context
+     * limit.
+     */
+    autoCompactTriggerTokens: number;
+    /**
+     * The limit comes from the model entry itself (e.g. a custom provider
+     * definition) rather than from global configuration or the default.
+     */
+    autoCompactTokenLimitModelDeclared: boolean;
 };
 
 export type ContextReportModel = {
@@ -1048,6 +1065,11 @@ export type ProviderInventoryModelDto = {
      * Whether the model supports reasoning/extended thinking.
      */
     reasoning?: boolean | null;
+    /**
+     * Model-declared auto-compaction cap, overriding the global
+     * GOOSE_AUTO_COMPACT_TOKEN_LIMIT for this model.
+     */
+    autoCompactTokenLimit?: number | null;
     /**
      * Whether this model should appear in the compact recommended picker.
      */
