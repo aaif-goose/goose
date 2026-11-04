@@ -1071,7 +1071,7 @@ async fn insert_usage_ledger_row(
 }
 
 impl SessionStorage {
-    fn create_pool(path: &Path, max_connections: u32) -> Pool<Sqlite> {
+    fn create_pool(path: &Path, pool_options: SqlitePoolOptions) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("Failed to create session database directory");
             #[cfg(unix)]
@@ -1089,9 +1089,7 @@ impl SessionStorage {
             .busy_timeout(std::time::Duration::from_secs(30))
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
-        SqlitePoolOptions::new()
-            .max_connections(max_connections)
-            .connect_lazy_with(options)
+        pool_options.connect_lazy_with(options)
     }
 
     pub fn new(data_dir: PathBuf) -> Self {
@@ -1109,7 +1107,7 @@ impl SessionStorage {
                 let db_path = self.session_dir.join(DB_NAME);
                 // Bootstrap connections must never enter the application pool with
                 // schema metadata cached before migrations finished.
-                let bootstrap = Self::create_pool(&db_path, 1);
+                let bootstrap = Self::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
                 let schema_exists = sqlx::query_scalar::<_, bool>(
                     r#"SELECT EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version')"#,
                 )
@@ -1125,7 +1123,7 @@ impl SessionStorage {
                     }
                 }
                 bootstrap.close().await;
-                Ok::<_, anyhow::Error>(Self::create_pool(&db_path, 10))
+                Ok::<_, anyhow::Error>(Self::create_pool(&db_path, SqlitePoolOptions::new()))
             })
             .await
     }
@@ -5132,7 +5130,8 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
-        let bootstrap = SessionStorage::create_pool(&db_path, 1);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
         SessionStorage::create_schema(&bootstrap).await.unwrap();
 
         for column in [
@@ -5174,7 +5173,7 @@ mod tests {
         assert!(std::ptr::eq(pool, second.unwrap()));
 
         let mut connections = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..pool.options().get_max_connections() {
             let mut connection = pool.acquire().await.unwrap();
             // A wildcard deliberately exercises the SQLx stale-metadata failure
             // independently of the explicit projection used by create_session.
@@ -5214,7 +5213,8 @@ mod tests {
     async fn test_failed_migration_does_not_publish_application_pool() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
-        let bootstrap = SessionStorage::create_pool(&db_path, 1);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
         sqlx::query("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
             .execute(&bootstrap)
             .await
