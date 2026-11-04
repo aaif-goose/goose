@@ -1440,9 +1440,7 @@ impl SummonClient {
 }
 
 #[async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-    for SummonClient
-{
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for SummonClient {
     async fn list_tools(
         &self,
         session_id: &str,
@@ -1550,7 +1548,7 @@ fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, an
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContent;
-    use goose_agent::mcp::ScopedClient;
+    use goose_agent::mcp::Client;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
     use std::fs;

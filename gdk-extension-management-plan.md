@@ -152,7 +152,7 @@ and protocol-request cancellation. goose's extension service still owns config
 invalidation, durable selection, connection construction, prompt commands,
 notification/action-required bridging and result trust policy. Its existing
 lease remains a host wrapper rather than being replaced with the standalone
-GDK `Lease`; `ScopedClient<C>` supports its richer per-call context.
+GDK `Lease`; `Client<C>` supports its richer per-call context.
 
 Standalone bindings are explicit: keep a lease while approvals are pending;
 `Lease::refresh` creates a fresh catalog/binding on the same connections for a
@@ -171,3 +171,19 @@ Affected-crate clippy and a CLI build without local inference pass; code-mode
 and tree-sitter compilation also passes. Workspace clippy is blocked by an
 existing llama-cpp/OpenSSL C++ compile failure. The updated live self-test recipe
 was attempted but timed out without output, so it is not counted as passed.
+
+### Consolidation follow-up
+
+Removed the parallel client contracts and the empty goose compatibility trait.
+`Client<C>` now serves both paths, with protocol dispatch implemented once through
+`RequestSender<C>`. goose uses `TransportClient<GooseClient>` for transport startup,
+server information and request/cancellation ownership; it retains request metadata,
+active-call tracking and modern-protocol special cases. Paginated discovery and
+tool exposure are shared, including resource/prompt pagination in goose.
+
+The former standalone manager wrapper and scoped runtime are now one generic
+`Manager<T>`, and both leases use a pinned `Selection<T>`. This reduces duplicate
+ownership types but does not finish the originally proposed concrete registration
+migration: goose still supplies its own startup slots, reuse/config validation,
+and app-aware lease wrapper. Converting those to resolved GDK registrations is
+remaining work, not implied by the generic manager consolidation.

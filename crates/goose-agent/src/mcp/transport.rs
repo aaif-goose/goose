@@ -1,4 +1,4 @@
-use super::Client;
+use super::{CallContext, Client};
 use crate::operation::OperationFuture;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -6,7 +6,7 @@ use rmcp::{
     model::*,
     service::{PeerRequestOptions, RunningService},
     transport::IntoTransport,
-    ClientHandler, RoleClient, ServiceExt,
+    ClientHandler, ClientServiceExt, RoleClient,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
@@ -107,8 +107,9 @@ impl ClientHandler for Handler {
 }
 
 /// An initialized rmcp service; dropping its last owner closes the transport.
-pub struct TransportClient {
-    service: Arc<RunningService<RoleClient, Handler>>,
+pub struct TransportClient<H: ClientHandler = Handler> {
+    server_info: Option<InitializeResult>,
+    service: Arc<RunningService<RoleClient, H>>,
     notifications: broadcast::Sender<ServerNotification>,
     timeout: Duration,
 }
@@ -123,44 +124,148 @@ impl TransportClient {
             options: options.clone(),
             notifications: notifications.clone(),
         };
-        let startup = handler.serve(transport);
+        let service =
+            Self::connect_handler(transport, handler, options.timeout, None, notifications).await?;
+        Ok(service)
+    }
+}
+
+impl<H: ClientHandler> TransportClient<H> {
+    pub async fn connect_handler<T, E, A>(
+        transport: T,
+        handler: H,
+        timeout: Duration,
+        lifecycle: Option<rmcp::service::ClientLifecycleMode>,
+        notifications: broadcast::Sender<ServerNotification>,
+    ) -> Result<Self, Box<rmcp::service::ClientInitializeError>>
+    where
+        T: IntoTransport<RoleClient, E, A>,
+        E: std::error::Error + From<std::io::Error> + Send + Sync + 'static,
+    {
+        let startup = handler.serve_with_lifecycle(
+            transport,
+            lifecycle.unwrap_or(rmcp::service::ClientLifecycleMode::Initialize),
+        );
         tokio::pin!(startup);
         let service = tokio::select! {
             result = &mut startup => result?,
-            _ = super::request::sleep(options.timeout) => anyhow::bail!("MCP initialization timed out"),
+            _ = super::request::sleep(timeout) => return Err(Box::new(rmcp::service::ClientInitializeError::Cancelled)),
         };
+        let server_info = service.peer_info().map(|info| {
+            let mut result = InitializeResult::new(info.capabilities.clone())
+                .with_protocol_version(info.protocol_version.clone());
+            if let Some(server_info) = &info.server_info {
+                result = result.with_server_info(server_info.clone());
+            }
+            result.instructions = info.instructions.clone();
+            result.meta = info.meta.clone();
+            result
+        });
         Ok(Self {
+            server_info,
             service: Arc::new(service),
             notifications,
-            timeout: options.timeout,
+            timeout,
         })
     }
 
-    async fn request(
+    pub fn service(&self) -> &Arc<RunningService<RoleClient, H>> {
+        &self.service
+    }
+    pub fn server_info(&self) -> Option<&InitializeResult> {
+        self.server_info.as_ref()
+    }
+    pub async fn request(
         &self,
         request: ClientRequest,
         cancel: CancellationToken,
-    ) -> Result<ServerResult> {
+    ) -> Result<ServerResult, rmcp::ServiceError> {
         let handle = self
             .service
             .peer()
             .send_cancellable_request(request, PeerRequestOptions::no_options())
             .await?;
-        super::await_response(handle, self.timeout, &cancel)
-            .await
-            .map_err(anyhow::Error::from)
+        super::await_response(handle, self.timeout, &cancel).await
+    }
+}
+
+/// Transport boundary: hosts decorate requests and handle authentication without
+/// reimplementing tools, resources, or prompts protocol dispatch.
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait RequestSender<C: goose_provider_types::maybe_send::MaybeSync>:
+    goose_provider_types::maybe_send::MaybeSend + goose_provider_types::maybe_send::MaybeSync
+{
+    fn scope<'a>(&self, context: &'a C) -> &'a str;
+    fn info(&self) -> Option<&InitializeResult>;
+    async fn send(
+        &self,
+        scope: &str,
+        context: Option<&C>,
+        request: ClientRequest,
+        cancel: CancellationToken,
+    ) -> Result<ServerResult, rmcp::ServiceError>;
+    async fn notifications(&self) -> tokio::sync::mpsc::Receiver<ServerNotification>;
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl RequestSender<CallContext> for TransportClient {
+    fn scope<'a>(&self, context: &'a CallContext) -> &'a str {
+        &context.scope
+    }
+    fn info(&self) -> Option<&InitializeResult> {
+        self.server_info.as_ref()
+    }
+    async fn send(
+        &self,
+        _scope: &str,
+        _context: Option<&CallContext>,
+        request: ClientRequest,
+        cancel: CancellationToken,
+    ) -> Result<ServerResult, rmcp::ServiceError> {
+        self.request(request, cancel).await
+    }
+    async fn notifications(&self) -> tokio::sync::mpsc::Receiver<ServerNotification> {
+        let mut source = self.notifications.subscribe();
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let forward = async move {
+            loop {
+                match source.recv().await {
+                    Ok(notification) => {
+                        if tx.send(notification).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(_) => break,
+                }
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        tokio::spawn(forward);
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(forward);
+        rx
     }
 }
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl Client for TransportClient {
+impl<C, T> Client<C> for T
+where
+    C: goose_provider_types::maybe_send::MaybeSync,
+    T: RequestSender<C>,
+{
     async fn list_tools(
         &self,
+        scope: &str,
         cursor: Option<String>,
         cancel: CancellationToken,
-    ) -> Result<ListToolsResult> {
+    ) -> Result<ListToolsResult, rmcp::ServiceError> {
         match self
-            .request(
+            .send(
+                scope,
+                None,
                 ClientRequest::ListToolsRequest(RequestOptionalParam::with_param(
                     PaginatedRequestParams::default().with_cursor(cursor),
                 )),
@@ -169,31 +274,42 @@ impl Client for TransportClient {
             .await?
         {
             ServerResult::ListToolsResult(result) => Ok(result),
-            _ => anyhow::bail!("unexpected tools response"),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
     async fn call_tool(
         &self,
-        _request_id: &str,
-        call: CallToolRequestParams,
+        context: &C,
+        name: &str,
+        arguments: Option<JsonObject>,
         cancel: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResult, rmcp::ServiceError> {
         match self
-            .request(ClientRequest::CallToolRequest(Request::new(call)), cancel)
-            .await
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            .send(
+                self.scope(context),
+                Some(context),
+                ClientRequest::CallToolRequest(Request::new(
+                    CallToolRequestParams::new(name.to_string())
+                        .with_arguments(arguments.unwrap_or_default()),
+                )),
+                cancel,
+            )
+            .await?
         {
             ServerResult::CallToolResult(result) => Ok(result),
-            _ => Err(ErrorData::internal_error("unexpected tool response", None)),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
     async fn list_resources(
         &self,
+        scope: &str,
         cursor: Option<String>,
         cancel: CancellationToken,
-    ) -> Result<ListResourcesResult> {
+    ) -> Result<ListResourcesResult, rmcp::ServiceError> {
         match self
-            .request(
+            .send(
+                scope,
+                None,
                 ClientRequest::ListResourcesRequest(RequestOptionalParam::with_param(
                     PaginatedRequestParams::default().with_cursor(cursor),
                 )),
@@ -202,16 +318,19 @@ impl Client for TransportClient {
             .await?
         {
             ServerResult::ListResourcesResult(result) => Ok(result),
-            _ => anyhow::bail!("unexpected resources response"),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
     async fn read_resource(
         &self,
+        scope: &str,
         uri: &str,
         cancel: CancellationToken,
-    ) -> Result<ReadResourceResult> {
+    ) -> Result<ReadResourceResult, rmcp::ServiceError> {
         match self
-            .request(
+            .send(
+                scope,
+                None,
                 ClientRequest::ReadResourceRequest(Request::new(ReadResourceRequestParams::new(
                     uri,
                 ))),
@@ -220,16 +339,19 @@ impl Client for TransportClient {
             .await?
         {
             ServerResult::ReadResourceResult(result) => Ok(result),
-            _ => anyhow::bail!("unexpected resource response"),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
     async fn list_prompts(
         &self,
+        scope: &str,
         cursor: Option<String>,
         cancel: CancellationToken,
-    ) -> Result<ListPromptsResult> {
+    ) -> Result<ListPromptsResult, rmcp::ServiceError> {
         match self
-            .request(
+            .send(
+                scope,
+                None,
                 ClientRequest::ListPromptsRequest(RequestOptionalParam::with_param(
                     PaginatedRequestParams::default().with_cursor(cursor),
                 )),
@@ -238,35 +360,36 @@ impl Client for TransportClient {
             .await?
         {
             ServerResult::ListPromptsResult(result) => Ok(result),
-            _ => anyhow::bail!("unexpected prompts response"),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
     async fn get_prompt(
         &self,
+        scope: &str,
         name: &str,
-        arguments: Option<JsonObject>,
+        arguments: serde_json::Value,
         cancel: CancellationToken,
-    ) -> Result<GetPromptResult> {
+    ) -> Result<GetPromptResult, rmcp::ServiceError> {
         let mut params = GetPromptRequestParams::new(name);
-        params.arguments = arguments;
+        params.arguments = arguments.as_object().cloned();
         match self
-            .request(
+            .send(
+                scope,
+                None,
                 ClientRequest::GetPromptRequest(Request::new(params)),
                 cancel,
             )
             .await?
         {
             ServerResult::GetPromptResult(result) => Ok(result),
-            _ => anyhow::bail!("unexpected prompt response"),
+            _ => Err(rmcp::ServiceError::UnexpectedResponse),
         }
     }
-    async fn instructions(&self) -> Option<String> {
-        self.service
-            .peer_info()
-            .and_then(|info| info.instructions.clone())
+    fn get_info(&self) -> Option<&InitializeResult> {
+        self.info()
     }
-    fn subscribe(&self) -> Option<broadcast::Receiver<ServerNotification>> {
-        Some(self.notifications.subscribe())
+    async fn subscribe(&self) -> tokio::sync::mpsc::Receiver<ServerNotification> {
+        self.notifications().await
     }
 }
 

@@ -38,9 +38,7 @@ impl SchedulerClient {
 }
 
 #[async_trait::async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-    for SchedulerClient
-{
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for SchedulerClient {
     async fn list_tools(
         &self,
         _session_id: &str,

@@ -50,10 +50,10 @@ impl<T> Default for Scopes<T> {
 
 /// Generic ownership primitive for hosts with their own durable selection policy.
 /// GDK never persists the selection or inspects host configuration.
-pub struct ScopedRuntime<T> {
+pub struct Manager<T = super::manager::Slot> {
     pub scopes: Mutex<Scopes<T>>,
 }
-impl<T> ScopedRuntime<T> {
+impl<T> Manager<T> {
     pub fn new() -> Self {
         Self {
             scopes: Mutex::new(Scopes::default()),
@@ -66,7 +66,7 @@ impl<T> ScopedRuntime<T> {
     }
 }
 
-impl<T> Default for ScopedRuntime<T> {
+impl<T> Default for Manager<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -110,5 +110,28 @@ impl<T> Scopes<T> {
         let slots = selected.values().cloned().collect();
         self.selected.insert(scope.to_string(), selected);
         slots
+    }
+}
+
+/// A pinned scope selection shared by standalone and application-specific leases.
+pub struct Selection<T> {
+    pub scope: String,
+    pub slots: Vec<Arc<T>>,
+}
+impl<T> Selection<T> {
+    pub fn new(scope: impl Into<String>, slots: Vec<Arc<T>>) -> Self {
+        Self {
+            scope: scope.into(),
+            slots,
+        }
+    }
+}
+
+impl<T> Clone for Selection<T> {
+    fn clone(&self) -> Self {
+        Self {
+            scope: self.scope.clone(),
+            slots: self.slots.clone(),
+        }
     }
 }

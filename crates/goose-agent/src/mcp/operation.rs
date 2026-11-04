@@ -15,7 +15,7 @@ use goose_provider_types::{
     },
     maybe_send::{MaybeSend, MaybeSync},
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ErrorData, Tool};
+use rmcp::model::{CallToolResult, ErrorData, Tool};
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
@@ -270,24 +270,20 @@ impl<S: MaybeSend + MaybeSync> McpHost<S> for Lease {
             .ok_or_else(|| ErrorData::invalid_params("tool is not in this MCP binding", None))?;
         let cancel = emit.cancel_token().child_token();
         let _guard = cancel.clone().drop_guard();
-        let future = entry.owner.call_tool(
-            &request.id,
-            CallToolRequestParams::new(entry.server_name.clone())
-                .with_arguments(call.arguments.clone().unwrap_or_default()),
-            cancel,
-        );
-        let mut notifications = entry.owner.subscribe();
+        let context = super::CallContext {
+            scope: self.scope().into(),
+            request_id: request.id.clone(),
+        };
+        let future =
+            entry
+                .owner
+                .call_tool(&context, &entry.server_name, call.arguments.clone(), cancel);
+        let mut notifications = entry.owner.subscribe().await;
         tokio::pin!(future);
         loop {
             tokio::select! {
-                result = &mut future => return result,
-                notification = async { match &mut notifications { Some(receiver) => receiver.recv().await, None => futures::future::pending().await } } => {
-                    match notification {
-                        Ok(notification) => emit.emit(crate::events::AgentEvent::McpNotification((request.id.clone(), notification))),
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {},
-                        Err(_) => notifications = None,
-                    }
-                }
+                result = &mut future => return result.map_err(|error| match error { rmcp::ServiceError::McpError(error) => error, error => ErrorData::internal_error(error.to_string(), None) }),
+                Some(notification) = notifications.recv() => emit.emit(crate::events::AgentEvent::McpNotification((request.id.clone(), notification))),
             }
         }
     }

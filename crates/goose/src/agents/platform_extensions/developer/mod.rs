@@ -186,9 +186,7 @@ impl DeveloperClient {
 }
 
 #[async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-    for DeveloperClient
-{
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for DeveloperClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -266,7 +264,7 @@ impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallConte
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goose_agent::mcp::ScopedClient;
+    use goose_agent::mcp::Client;
     use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;

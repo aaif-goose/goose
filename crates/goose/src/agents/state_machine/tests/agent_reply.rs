@@ -28,7 +28,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::{SessionManager, SessionType};
-use goose_agent::mcp::ScopedClient;
+use goose_agent::mcp::Client;
 use goose_providers::model::ModelConfig;
 
 async fn agent_with_dummy_api() -> Result<(

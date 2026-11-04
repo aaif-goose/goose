@@ -59,9 +59,7 @@ impl SkillsClient {
 }
 
 #[async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-    for SkillsClient
-{
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for SkillsClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -275,7 +273,7 @@ impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallConte
 mod tests {
     use super::*;
     use crate::config::Config;
-    use goose_agent::mcp::ScopedClient;
+    use goose_agent::mcp::Client;
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;

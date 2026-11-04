@@ -9,7 +9,7 @@ use crate::session::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
 #[cfg(test)]
-use goose_agent::mcp::ScopedClient;
+use goose_agent::mcp::Client;
 use indoc::indoc;
 use rmcp::model::{
     CallToolResult, ContentBlock, ErrorCode, ErrorData, GetPromptResult, Implementation,
@@ -352,7 +352,7 @@ impl ExtensionManagerClient {
 }
 
 #[async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
     for ExtensionManagerClient
 {
     async fn list_resources(

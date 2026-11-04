@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::super::container::Container;
 use super::super::extension::{ExtensionError, ExtensionResult};
-use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use super::super::mcp_client::{ConnectContext, McpClient};
 use super::stdio;
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
@@ -11,7 +11,9 @@ pub(super) async fn connect(
     name: &str,
     container: Option<&Container>,
     mut ctx: ConnectContext,
-) -> ExtensionResult<Box<dyn McpClientTrait>> {
+) -> ExtensionResult<
+    Box<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>,
+> {
     let key = name_to_key(name);
     let extension_fn = get_builtin_extension(&key)
         .ok_or_else(|| ExtensionError::ConfigError(format!("Unknown extension: {}", name)))?;

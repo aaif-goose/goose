@@ -24,7 +24,7 @@ use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
 use crate::session::{GoalState, Session, SessionManager, SessionType};
-use goose_agent::mcp::ScopedClient;
+use goose_agent::mcp::Client;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 

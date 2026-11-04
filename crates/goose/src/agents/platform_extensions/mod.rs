@@ -19,7 +19,6 @@ pub mod tom;
 
 use std::collections::HashMap;
 
-use crate::agents::mcp_client::McpClientTrait;
 use once_cell::sync::Lazy;
 
 pub use ext_manager::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
@@ -307,5 +306,9 @@ pub struct PlatformExtensionDef {
     pub unprefixed_tools: bool,
     /// If true, the extension is not shown in the UI or discoverable via search_available_extensions.
     pub hidden: bool,
-    pub client_factory: fn(PlatformExtensionContext) -> Option<Box<dyn McpClientTrait>>,
+    pub client_factory: fn(
+        PlatformExtensionContext,
+    ) -> Option<
+        Box<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>,
+    >,
 }

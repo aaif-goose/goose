@@ -23,11 +23,15 @@ struct Fixture {
 }
 #[async_trait]
 impl Client for Fixture {
+    fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
+        None
+    }
     async fn list_tools(
         &self,
+        _scope: &str,
         cursor: Option<String>,
         _cancel: CancellationToken,
-    ) -> Result<ListToolsResult> {
+    ) -> Result<ListToolsResult, rmcp::ServiceError> {
         let mut page = ListToolsResult::default();
         page.tools.push(Tool::new(
             if cursor.is_none() { "first" } else { "second" },
@@ -41,13 +45,14 @@ impl Client for Fixture {
     }
     async fn call_tool(
         &self,
-        _request: &str,
-        call: CallToolRequestParams,
+        _context: &goose_agent::mcp::CallContext,
+        name: &str,
+        _arguments: Option<rmcp::model::JsonObject>,
         _cancel: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResult, rmcp::ServiceError> {
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "{}:{}",
-            self.label, call.name
+            self.label, name
         ))]))
     }
 }
@@ -302,11 +307,8 @@ async fn dropping_transport_call_notifies_peer_of_cancellation() {
     let client = goose_agent::mcp::TransportClient::connect(client_io, Default::default())
         .await
         .unwrap();
-    let mut call = Box::pin(client.call_tool(
-        "call",
-        CallToolRequestParams::new("wait"),
-        CancellationToken::new(),
-    ));
+    let context = goose_agent::mcp::CallContext::default();
+    let mut call = Box::pin(client.call_tool(&context, "wait", None, CancellationToken::new()));
     tokio::select! {
         result = &mut call => panic!("call unexpectedly completed: {result:?}"),
         _ = started.cancelled() => {},

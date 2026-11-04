@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
-pub trait ScopedClient<C: MaybeSync>: MaybeSend + MaybeSync {
+pub trait Client<C: MaybeSync = CallContext>: MaybeSend + MaybeSync {
     async fn list_tools(
         &self,
         session_id: &str,
@@ -77,4 +77,11 @@ pub trait ScopedClient<C: MaybeSync>: MaybeSend + MaybeSync {
     async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
         None
     }
+}
+
+/// Context for a standalone connection. Richer hosts may use their own context type.
+#[derive(Clone, Default)]
+pub struct CallContext {
+    pub scope: String,
+    pub request_id: String,
 }

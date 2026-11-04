@@ -256,7 +256,7 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
 }
 
 #[async_trait]
-impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
     for CodeExecutionClient
 {
     async fn list_tools(
@@ -390,9 +390,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-        for PendingClient
-    {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for PendingClient {
         async fn list_tools(
             &self,
             session_id: &str,
@@ -488,9 +486,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-        for VisibilityClient
-    {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for VisibilityClient {
         async fn list_tools(
             &self,
             _session_id: &str,

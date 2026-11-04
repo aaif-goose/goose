@@ -5,20 +5,22 @@ use goose_agent::{
     mcp::{Client, Manager, McpOperation, Registration},
     operation::{ConversationEffect, Operation},
 };
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, ListToolsResult, Tool,
-};
+use rmcp::model::{CallToolResult, ContentBlock, ListToolsResult, Tool};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 struct Server(&'static str);
 #[async_trait]
 impl Client for Server {
+    fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
+        None
+    }
     async fn list_tools(
         &self,
+        _scope: &str,
         _cursor: Option<String>,
         _cancel: CancellationToken,
-    ) -> Result<ListToolsResult> {
+    ) -> Result<ListToolsResult, rmcp::ServiceError> {
         let result = ListToolsResult {
             tools: vec![Tool::new(
                 "hello",
@@ -31,10 +33,11 @@ impl Client for Server {
     }
     async fn call_tool(
         &self,
-        _id: &str,
-        _call: CallToolRequestParams,
+        _context: &goose_agent::mcp::CallContext,
+        _name: &str,
+        _arguments: Option<rmcp::model::JsonObject>,
         _cancel: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResult, rmcp::ServiceError> {
         Ok(CallToolResult::success(vec![ContentBlock::text(self.0)]))
     }
 }

@@ -234,8 +234,9 @@ Resources and prompts are available through the lease/client API; they are not
 automatically injected into model context. The `mcp` example demonstrates two
 host-supplied clients without configuration or persistence.
 
-The goose host uses the same `ScopedRuntime`, single-flight `Runtime`, immutable
+The goose host uses the same `Manager<T>`, single-flight `Runtime`, immutable
 `Catalog`, schema normalization, request-cancellation helper and `McpOperation`.
-`ScopedClient<C>` accommodates hosts with per-request context, while `Client`
-and `TransportClient` offer a simpler interface for a connection bound to one
-scope. goose retains its authenticated connectors and platform adapters.
+`Client<C>` is the shared protocol contract for standalone and hosted clients.
+`RequestSender<C>` lets a host decorate protocol requests without duplicating
+tool, resource, and prompt dispatch. `TransportClient<H>` owns the initialized
+transport with either the default handler or a host-supplied handler. goose retains its authenticated connectors and platform adapters.

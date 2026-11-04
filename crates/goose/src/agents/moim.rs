@@ -177,7 +177,7 @@ mod tests {
     struct MoimClient(&'static str);
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext> for MoimClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for MoimClient {
         async fn list_tools(
             &self,
             _session_id: &str,

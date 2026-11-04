@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
-use goose_agent::mcp::{Runtime as LazyRuntime, ScopedRuntime};
+use goose_agent::mcp::{Manager as McpManager, Runtime as LazyRuntime};
 #[cfg(test)]
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -23,9 +23,7 @@ use super::extension::{
 };
 use super::tool_execution::ToolCallResult;
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::mcp_client::{
-    ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
-};
+use crate::agents::mcp_client::{ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo};
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::agents::services::GoosePlatform;
 use crate::config::extensions::name_to_key;
@@ -71,7 +69,8 @@ impl ExtensionMutation {
     }
 }
 
-type McpClientBox = Arc<dyn McpClientTrait>;
+type McpClientBox =
+    Arc<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>;
 
 const TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY: usize = 32;
 
@@ -341,47 +340,35 @@ impl Extension {
     }
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
-        let cancel_token = CancellationToken::default();
-        let expose_unprefixed = is_unprefixed_extension(&self.config);
-        let mut tools = Vec::new();
-        let mut cursor = None;
-        loop {
-            let page = match self
-                .client
-                .list_tools(session_id, cursor, cancel_token.clone())
-                .await
-            {
-                Ok(page) => page,
-                Err(e) => {
-                    warn!(extension = %self.key, error = %e, "Failed to list tools");
-                    break;
-                }
-            };
-            for mut tool in page.tools {
-                if !self.config.is_tool_available(&tool.name) {
-                    continue;
-                }
-                if !expose_unprefixed {
-                    tool.name = format!("{}__{}", self.key, tool.name).into();
-                }
-                let mut meta = tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
-                meta.insert(
-                    TOOL_EXTENSION_META_KEY.to_string(),
+        let listed = match goose_agent::mcp::discovery::tools(
+            self.client.as_ref(),
+            session_id,
+            CancellationToken::new(),
+        )
+        .await
+        {
+            Ok(tools) => tools,
+            Err(error) => {
+                warn!(extension = %self.key, %error, "Failed to list tools");
+                return Vec::new();
+            }
+        };
+        listed
+            .into_iter()
+            .filter(|tool| self.config.is_tool_available(&tool.name))
+            .map(|tool| {
+                let mut tool = goose_agent::mcp::discovery::expose_tool(
+                    tool,
+                    &self.key,
+                    is_unprefixed_extension(&self.config),
+                );
+                tool.meta.get_or_insert_with(Default::default).0.insert(
+                    TOOL_EXTENSION_META_KEY.into(),
                     Value::String(self.key.clone()),
                 );
-                tool.meta = Some(MetaObject(meta));
-                let mut schema = (*tool.input_schema).clone();
-                if goose_agent::mcp::schema::normalize_input_schema(&mut schema) {
-                    tool.input_schema = Arc::new(schema);
-                }
-                tools.push(tool);
-            }
-            cursor = page.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-        tools
+                tool
+            })
+            .collect()
     }
 }
 
@@ -454,7 +441,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
-    runtime: ScopedRuntime<ExtensionSlot>,
+    runtime: McpManager<ExtensionSlot>,
     context: PlatformExtensionContext,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
@@ -679,7 +666,7 @@ impl ExtensionManager {
         default_client: ClientContext,
     ) -> Self {
         Self {
-            runtime: ScopedRuntime::new(),
+            runtime: McpManager::new(),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -888,7 +875,9 @@ impl ExtensionManager {
             tools_version: Arc::clone(&tools_version),
         };
 
-        let mcp_client: Box<dyn McpClientTrait> = match &resolved_config {
+        let mcp_client: Box<
+            dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>,
+        > = match &resolved_config {
             ExtensionConfig::StreamableHttp {
                 uri,
                 timeout,
@@ -1237,7 +1226,7 @@ mod tests {
     struct MockClient {}
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext> for MockClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for MockClient {
         fn get_info(&self) -> Option<&InitializeResult> {
             None
         }
@@ -1349,9 +1338,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-        for ResourceClient
-    {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for ResourceClient {
         async fn list_resources(
             &self,
             _session_id: &str,
@@ -1405,7 +1392,7 @@ mod tests {
     struct ContextNotificationClient;
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
         for ContextNotificationClient
     {
         fn get_info(&self) -> Option<&InitializeResult> {
@@ -1603,9 +1590,7 @@ mod tests {
     struct NamedToolsClient(Vec<Tool>);
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
-        for NamedToolsClient
-    {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for NamedToolsClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -1638,7 +1623,7 @@ mod tests {
     struct SubagentMetaClient;
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
         for SubagentMetaClient
     {
         async fn list_tools(
@@ -1794,7 +1779,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl goose_agent::mcp::ScopedClient<crate::agents::tool_execution::ToolCallContext>
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
         for BlockingToolsClient
     {
         async fn list_tools(
