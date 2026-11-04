@@ -109,6 +109,7 @@ impl StateMachineServices {
             &persisted,
             None,
             &session,
+            &model_config,
         )
         .await?;
         let auto_compact_limit =

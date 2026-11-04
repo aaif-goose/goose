@@ -296,6 +296,7 @@ pub async fn check_if_compaction_needed(
     conversation: &Conversation,
     threshold_override: Option<f64>,
     session: &crate::session::Session,
+    model_config: &ModelConfig,
 ) -> Result<bool> {
     if provider.manages_own_context() {
         return Ok(false);
@@ -309,10 +310,6 @@ pub async fn check_if_compaction_needed(
             .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
     });
 
-    let model_config = session
-        .model_config
-        .clone()
-        .unwrap_or_else(|| ModelConfig::new("unknown"));
     let context_limit =
         crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
 
@@ -335,7 +332,7 @@ pub async fn check_if_compaction_needed(
 
     let usage_ratio = current_tokens as f64 / context_limit as f64;
 
-    let token_limit = effective_auto_compact_token_limit(&model_config).limit;
+    let token_limit = effective_auto_compact_token_limit(model_config).limit;
     let threshold = capped_compaction_threshold(threshold, token_limit, context_limit);
 
     let needs_compaction = if threshold <= 0.0 || threshold >= 1.0 {
@@ -1286,5 +1283,54 @@ mod tests {
         let result = tool_ids_to_summarize(&conversation, 2, 7);
         assert_eq!(result.len(), TOOLCALL_SUMMARIZATION_BATCH_SIZE);
         assert_eq!(result[0], "call0");
+    }
+
+    #[tokio::test]
+    async fn pending_compaction_uses_the_model_declared_limit() {
+        let _env = env_lock::lock_env([
+            ("GOOSE_AUTO_COMPACT_THRESHOLD", None),
+            ("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", Some("900000")),
+        ]);
+        let provider = MockProvider::new(Message::assistant().with_text("hi"), 1_000_000);
+        let session = crate::session::Session {
+            usage: goose_providers::conversation::token_usage::Usage::new(
+                Some(750_000),
+                Some(0),
+                Some(750_000),
+            ),
+            ..Default::default()
+        };
+        let conversation = Conversation::empty();
+
+        let declared = ModelConfig {
+            model_name: "test".to_string(),
+            context_limit: Some(1_000_000),
+            temperature: None,
+            max_tokens: None,
+            toolshim: false,
+            toolshim_model: None,
+            request_params: None,
+            reasoning: None,
+            supports_vision: None,
+            auto_compact_token_limit: Some(700_000),
+            request_headers: None,
+        };
+        // 75% of the window is past the 70% a 700k declared cap implies, but
+        // under both the 80% percentage threshold and the 900k global cap.
+        assert!(
+            check_if_compaction_needed(&provider, &conversation, None, &session, &declared)
+                .await
+                .unwrap()
+        );
+
+        let plain = ModelConfig {
+            auto_compact_token_limit: None,
+            ..declared
+        };
+        assert!(
+            !check_if_compaction_needed(&provider, &conversation, None, &session, &plain)
+                .await
+                .unwrap()
+        );
     }
 }
