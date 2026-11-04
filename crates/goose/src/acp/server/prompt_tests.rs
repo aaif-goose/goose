@@ -262,6 +262,91 @@ async fn dispatch_cancel_during_lazy_activation_prevents_work() {
 }
 
 #[tokio::test]
+async fn closing_during_lazy_activation_preserves_other_connections_session() {
+    for cancel_prompt in [false, true] {
+        let (root, attached, session, provider) = server_with_session(false).await;
+        let pending = connection_with_services(root.path(), attached.services.clone()).await;
+        provider.pause_activation.store(true, Ordering::SeqCst);
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            Client.builder().connect_with(
+                SacpAgent.builder().with_handler(AcpConnectionHandler {
+                    connection: pending.clone(),
+                }),
+                async |cx| {
+                    let prompt_cx = cx.clone();
+                    let request = prompt(&session.id);
+                    let response =
+                        tokio::spawn(
+                            async move { prompt_cx.send_request(request).block_task().await },
+                        );
+                    provider.activation_entered.notified().await;
+                    assert!(pending.has_session(&session.id));
+                    assert!(attached.has_session(&session.id));
+                    let token = pending.runs().agent_cancel_token(&session.id).unwrap();
+                    pending.on_close_session(&session.id).await?;
+                    assert!(!pending.has_session(&session.id));
+                    assert!(attached.has_session(&session.id));
+                    assert!(!token.is_cancelled());
+                    if cancel_prompt {
+                        pending
+                            .on_cancel(CancelNotification::new(SessionId::new(session.id.clone())))
+                            .await?;
+                        assert!(token.is_cancelled());
+                    }
+                    provider.activation_release.notify_one();
+                    let response = response.await.unwrap();
+                    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+                    if cancel_prompt {
+                        assert_eq!(response?.stop_reason, StopReason::Cancelled);
+                    } else {
+                        assert!(response.is_err());
+                    }
+                    assert!(!pending.runs().is_active(&session.id));
+                    assert!(!pending.has_session(&session.id));
+                    assert!(attached.has_session(&session.id));
+                    let stored = pending
+                        .services
+                        .session_manager
+                        .get_session(&session.id, true)
+                        .await
+                        .unwrap();
+                    assert!(stored.conversation.unwrap_or_default().is_empty());
+                    let pinned = pending.services.providers.pinned(&session).await.unwrap();
+                    let expected: Arc<dyn Provider> = provider.clone();
+                    assert!(Arc::ptr_eq(&pinned, &expected));
+                    Ok(())
+                },
+            ),
+        )
+        .await
+        .expect("prompt timed out")
+        .unwrap();
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            Client.builder().connect_with(
+                SacpAgent.builder().with_handler(AcpConnectionHandler {
+                    connection: attached.clone(),
+                }),
+                async |cx| {
+                    let response = cx.send_request(prompt(&session.id)).block_task().await?;
+                    assert_eq!(response.stop_reason, StopReason::EndTurn);
+                    assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+                    assert!(attached.has_session(&session.id));
+                    assert!(!pending.has_session(&session.id));
+                    assert!(!attached.runs().is_active(&session.id));
+                    Ok(())
+                },
+            ),
+        )
+        .await
+        .expect("surviving connection's prompt timed out")
+        .unwrap();
+    }
+}
+
+#[tokio::test]
 async fn dispatch_prompt_error_and_idle_cancel_allow_later_prompt() {
     let (_root, server, session, provider) = server_with_session(false).await;
     tokio::time::timeout(
