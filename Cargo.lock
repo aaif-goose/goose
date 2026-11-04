@@ -4187,7 +4187,7 @@ dependencies = [
 
 [[package]]
 name = "goose"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-http",
@@ -4322,7 +4322,7 @@ dependencies = [
 
 [[package]]
 name = "goose-acp-macros"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "quote",
  "syn 3.0.5",
@@ -4355,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "goose-cli"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "agent-client-protocol",
  "anstream",
@@ -4480,7 +4480,7 @@ dependencies = [
 
 [[package]]
 name = "goose-mcp"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4579,7 +4579,7 @@ dependencies = [
 
 [[package]]
 name = "goose-roaming"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4630,7 +4630,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -4638,7 +4638,7 @@ dependencies = [
 
 [[package]]
 name = "goose-test-support"
-version = "1.57.0"
+version = "1.58.0"
 dependencies = [
  "axum",
  "env-lock",
@@ -7792,9 +7792,9 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.4"
+version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+checksum = "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b"
 dependencies = [
  "bitflags 2.13.2",
  "memchr",
