@@ -371,7 +371,7 @@ impl Extension {
                 );
                 tool.meta = Some(MetaObject(meta));
                 let mut schema = (*tool.input_schema).clone();
-                if super::tool_schema_normalize::normalize_input_schema(&mut schema) {
+                if goose_agent::mcp::schema::normalize_input_schema(&mut schema) {
                     tool.input_schema = Arc::new(schema);
                 }
                 tools.push(tool);
