@@ -1807,6 +1807,8 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        // An explicit projection avoids SQLx's stale column metadata when SQLite
+        // refreshes another pooled connection's pre-migration schema during execution.
         let session = sqlx::query_as(
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
@@ -1823,7 +1825,16 @@ impl SessionStorage {
                     '{}',
                     ?
                 )
-                RETURNING *
+                RETURNING id, working_dir, name, description, user_set_name, session_type,
+                          created_at, updated_at, extension_data,
+                          total_tokens, input_tokens, output_tokens,
+                          cache_read_tokens, cache_write_tokens,
+                          accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+                          accumulated_cache_read_tokens, accumulated_cache_write_tokens,
+                          accumulated_cost, schedule_id, recipe_json, user_recipe_values_json,
+                          provider_name, model_config_json, goose_mode,
+                          archived_at, project_id, parent_session_id,
+                          system_prompt_override, system_prompt_extras_json, container_id
                 "#,
         )
             .bind(id)
@@ -5111,6 +5122,73 @@ mod tests {
 
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_with_stale_schema_after_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        SessionStorage::create_schema(&storage.pool).await.unwrap();
+
+        for column in [
+            "system_prompt_override",
+            "system_prompt_extras_json",
+            "container_id",
+        ] {
+            sqlx::query(AssertSqlSafe(format!(
+                "ALTER TABLE sessions DROP COLUMN {column}"
+            )))
+            .execute(&storage.pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query("UPDATE schema_version SET version = 16")
+            .execute(&storage.pool)
+            .await
+            .unwrap();
+        storage.pool.close().await;
+
+        storage.pool = SqlitePoolOptions::new()
+            .max_connections(2)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME))
+                    .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal),
+            )
+            .await
+            .unwrap();
+
+        let mut stale = storage.pool.acquire().await.unwrap();
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(&mut *stale)
+            .await
+            .unwrap();
+        assert_eq!(version, 16);
+
+        storage.pool().await.unwrap();
+
+        // Hold the migration connection so session creation must reuse the stale one.
+        let migrated = storage.pool.acquire().await.unwrap();
+        drop(stale);
+        let session = storage
+            .create_session(
+                None,
+                temp_dir.path().to_path_buf(),
+                "After migration".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.name, "After migration");
+        assert!(session.system_prompt_override.is_none());
+        assert!(session.system_prompt_extras.is_empty());
+        assert!(session.container.is_none());
+
+        let loaded = storage.get_session(&session.id, false).await.unwrap();
+        assert_eq!(loaded.id, session.id);
+        drop(migrated);
+        storage.pool.close().await;
     }
 
     #[tokio::test]
