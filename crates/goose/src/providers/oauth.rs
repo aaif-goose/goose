@@ -531,14 +531,21 @@ async fn get_oauth_token_with_cache(
 ) -> Result<String> {
     // Try cache first
     if let Some(token) = token_cache.load_token() {
+        // A token refreshed early, inside the expiry margin, still works if the refresh fails.
+        let mut fallback_token = None;
         if force_refresh {
             tracing::debug!("Server rejected the cached token, attempting to refresh");
-        } else if token.expires_at.is_some() {
-            if !token.needs_refresh(Utc::now()) {
+        } else if let Some(expires_at) = token.expires_at {
+            let now = Utc::now();
+            if !token.needs_refresh(now) {
                 return Ok(token.access_token);
             }
-            // Token is expired, will try to refresh below
-            tracing::debug!("Token is expired, attempting to refresh");
+            if expires_at > now {
+                tracing::debug!("Token expires soon, attempting to refresh");
+                fallback_token = Some(token.access_token.clone());
+            } else {
+                tracing::debug!("Token is expired, attempting to refresh");
+            }
         } else {
             // No expiration time was provided by the server
             // We'll use the token without checking expiration
@@ -585,6 +592,11 @@ async fn get_oauth_token_with_cache(
                     // Continue to new auth flow
                 }
             }
+        }
+
+        if let Some(access_token) = fallback_token {
+            tracing::warn!("Could not refresh token early, using it until it expires");
+            return Ok(access_token);
         }
     }
 
@@ -918,6 +930,24 @@ mod tests {
         server
     }
 
+    async fn mock_workspace_with_failing_refresh() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/oidc/.well-known/oauth-authorization-server"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "authorization_endpoint": format!("{}/authorize", server.uri()),
+                "token_endpoint": format!("{}/token", server.uri())
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        server
+    }
+
     fn cache_with_token(
         directory: &tempfile::TempDir,
         expires_in: chrono::TimeDelta,
@@ -1007,6 +1037,25 @@ mod tests {
         assert_eq!(token_requests(&server).await, 1);
         assert_eq!(token_from_cache(&cache, &server).await, "refreshed-token");
         assert_eq!(token_requests(&server).await, 1);
+    }
+
+    #[tokio::test]
+    async fn cached_token_about_to_expire_is_kept_when_refresh_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(1));
+        let server = mock_workspace_with_failing_refresh().await;
+
+        assert_eq!(token_from_cache(&cache, &server).await, "cached-token");
+        assert_eq!(token_requests(&server).await, 1);
+    }
+
+    #[tokio::test]
+    async fn cached_token_about_to_expire_is_kept_when_discovery_fails() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(1));
+        let server = MockServer::start().await;
+
+        assert_eq!(token_from_cache(&cache, &server).await, "cached-token");
     }
 
     #[tokio::test]
