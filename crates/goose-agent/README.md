@@ -210,85 +210,31 @@ The reference assembly of these pieces is `goose::agents::state_machine` in the
 
 ## MCP
 
-`mcp::Manager` resolves explicit server registrations into a `Lease`. A lease
-pins a public tool catalog and its clients; later registration changes or scope
-release do not redirect its calls. Hosts provide resolved options and connector
-revisions, not user configuration or credential-store paths.
+Use `Lease::connect(scope, registrations, policy, cancel)` for one-shot attachment,
+then install `McpOperation::new(Arc::new(lease))` after approval/pre-tool hooks and
+before unhandled-call handling. See [`examples/mcp.rs`](examples/mcp.rs).
 
-Use `Registration::attached` for initialized clients, or implement `Connector`
-for lazy startup. `TransportClient` attaches an rmcp transport and handles roots,
-optional elicitation, request timeouts, and notifications. Native stdio and HTTP
-helpers are opt-in, native-target features (`mcp-stdio`, `mcp-http`); do not
-enable these features in Wasm builds. HTTP accepts a host-configured
-client. OAuth interaction and persistence remain host responsibilities.
+Registrations accept initialized clients (`attached`), custom `Connector`s (`new`),
+or native `StdioConnector`/`HttpConnector` inputs (`stdio`/`http`). Native transports
+require `mcp-stdio`/`mcp-http`; leave these features off for Wasm. Stdio defaults to
+a clean environment and discarded stderr; cwd and inheritance are explicit.
+HTTP validates URLs/headers and disables redirects by default; `with_client`
+accepts host-managed HTTP policy. Config loading, secrets and OAuth stay in the host.
 
-`McpOperation::new(Arc::new(lease))` contributes tools and instructions and executes
-calls. Put it after approval/pre-tool-hook operations and before unhandled-call
-handling. The inference runner stamps the advertised binding onto requests;
-requests without the original binding fail closed. Keep the lease and operation
-alive while approval is pending, and use a new lease/operation for a new selection
-only after its pending calls complete. A host requiring dynamic inference-boundary
-selection can implement `McpHost` to share its run binding explicitly.
+For dynamic selection, retain a `Manager` and use `resolve` (strict) or
+`resolve_with_policy`. Use `Registration::with_revision` when connection inputs
+change. `release` removes manager ownership without invalidating held leases.
+A lease pins tool names, schemas and clients for outstanding calls, including
+calls awaiting approval. `new_binding()` rediscovers tools on the same connections;
+it does not reconnect. Requests without the advertised binding fail closed.
 
-Resources and prompts are available through the lease/client API; they are not
-automatically injected into model context. The `mcp` example demonstrates two
-host-supplied clients without configuration or persistence.
+`ready(cancel)` and lazy `catalog(cancel)` use the same selection policy:
+`Strict` fails on initialization or discovery errors; `BestEffort` excludes failed
+servers and returns per-server diagnostics from `ready`. Name collisions remain
+fatal. Connection failures are cached until the registration revision changes.
+Resources and prompts are available through the lease, not injected automatically.
 
-The goose host uses the same `host::Manager<T>`, single-flight `Runtime`, immutable
-`Catalog`, schema normalization, request-cancellation helper and `McpOperation`.
-`Client<C>` is the shared protocol contract for standalone and hosted clients.
-`RequestSender<C>` lets a host decorate protocol requests without duplicating
-tool, resource, and prompt dispatch. `TransportClient<H>` owns the initialized
-transport with either the default handler or a host-supplied handler. goose retains its authenticated connectors and platform adapters.
-
-Native hosts can use `StdioConnector::new` and `HttpConnector::new` with
-`Registration::new` for lazy connections instead of constructing transports.
-Stdio executes without a shell and kills the child on drop; environment inheritance,
-working directory and stderr inheritance are explicit host choices (defaults: clean
-environment, no cwd override, discarded stderr). HTTP validates URLs and headers
-and disables redirects by default; `with_client` accepts host-managed HTTP policy.
-Neither connector loads configuration or credentials.
-
-### One-shot attachment
-
-Use `Lease::connect(scope, registrations, policy, cancel)` to initialize connections
-and pin tool discovery, then pass the lease to `McpOperation`. No manager or
-revision bookkeeping is required. Construct registrations with
-`Registration::stdio(id, connector)`, `Registration::http(id, connector)`,
-`Registration::attached(id, client)` or `Registration::new(id, custom_connector)`.
-
-### Managed selections and inference bindings
-
-For dynamic replacement, retain a `Manager` and call `resolve` (strict by default)
-or `resolve_with_policy`. Registrations default to revision zero; use
-`with_revision` when credentials, transport configuration or placement changes.
-Resolve reuses compatible connections; `release` removes manager ownership without
-invalidating held leases.
-
-A lease is an immutable inference binding over a connection selection.
-`new_binding()` retains those connections and policy but creates a new identity
-and rediscovers tools on demand. It does not reconnect or retry cached connection
-failures. Old bindings remain valid for their outstanding calls.
-
-### One readiness contract
-
-Both `ready(cancel)` and lazy `catalog(cancel)` initialize the same pinned binding
-with the policy chosen at selection time:
-
-- `Strict`: any server initialization or tool discovery failure fails the binding.
-- `BestEffort`: exclude servers that fail initialization or discovery; `ready`
-  returns per-server `LoadResult` diagnostics with `Connect`, `Discover` or `Ready`
-  stages. Instructions from excluded servers are not injected.
-- Catalog name collisions are fatal under either policy.
-
-Cancellation interrupts initialization and discovery, even for custom clients
-that ignore the token. Connection failures are cached for the selected revision;
-use a replacement revision to retry. Discovery is pinned per inference binding.
-
-### Advanced host integration
-
-The primary `Manager` encapsulates its storage. Hosts such as goose with custom
-startup slots and persistence policy use `mcp::host::{Manager<T>, Runtime<T>,
-Scopes<T>, Selection<T>}` instead. These are low-level ownership primitives, not
-requirements for attaching servers. `Client`, `RequestSender` and `McpHost` are
-extension points for protocol decoration and operation policy.
+For custom integration, implement `Client`, `RequestSender` (request decoration),
+or `McpHost` (operation policy). `TransportClient` owns an initialized rmcp service.
+Low-level selection primitives for hosts with custom startup/persistence policy
+live under `mcp::host`; ordinary attachment does not require them.

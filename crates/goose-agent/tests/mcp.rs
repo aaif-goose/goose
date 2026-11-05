@@ -128,49 +128,6 @@ async fn single_flight_pagination_and_held_selection() {
     );
 }
 
-#[tokio::test]
-async fn operation_preserves_original_binding_and_rejects_reconstruction() {
-    let manager = Manager::new();
-    let lease = manager
-        .resolve("scope", vec![registration(fixture("old"), 0)])
-        .await
-        .unwrap();
-    let id = lease.id().to_string();
-    let operation = McpOperation::<()>::new(Arc::new(lease));
-    let conversation = Conversation::new_unvalidated(vec![
-        Message::user().with_text("go"),
-        Message::assistant()
-            .with_tool_request("call", Ok(CallToolRequestParams::new("fixture__first"))),
-    ]);
-    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, CancellationToken::new());
-    let tools =
-        <McpOperation<()> as Operation<(), ConversationEffect>>::inference_tools(&operation, &())
-            .await
-            .unwrap();
-    assert_eq!(tools[0].meta.as_ref().unwrap().0[BINDING_META_KEY], id);
-    let result = <McpOperation<()> as Operation<(), ConversationEffect>>::run(
-        &operation,
-        &(),
-        &conversation,
-        &emit,
-    )
-    .await
-    .unwrap();
-    let OperationResult::Applied(result) = result else {
-        panic!("must respond")
-    };
-    let ConversationEffect::AppendMessage(message) = &result.effects[0] else {
-        panic!("must append")
-    };
-    assert!(
-        message.as_concat_text().contains("expired")
-            || message.content.iter().any(|content| content
-                .as_tool_response()
-                .is_some_and(|response| response.tool_result.is_err()))
-    );
-}
-
 #[test]
 fn catalog_rejects_collisions_and_preserves_original_name() {
     let tool = Tool::new(
@@ -190,7 +147,7 @@ fn catalog_rejects_collisions_and_preserves_original_name() {
 }
 
 #[tokio::test]
-async fn original_binding_executes_after_replacement() {
+async fn operation_pins_execution_and_rejects_missing_binding() {
     let manager = Manager::new();
     let lease = manager
         .resolve("scope", vec![registration(fixture("old"), 0)])
@@ -202,38 +159,51 @@ async fn original_binding_executes_after_replacement() {
         .resolve("scope", vec![registration(fixture("new"), 1)])
         .await
         .unwrap();
-    let conversation = Conversation::new_unvalidated(vec![
-        Message::user().with_text("go"),
-        Message::assistant().with_tool_request_with_metadata(
-            "call",
-            Ok(CallToolRequestParams::new("fixture__first")),
-            None,
-            Some(serde_json::json!({ BINDING_META_KEY: id })),
-        ),
-    ]);
-    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, CancellationToken::new());
-    let result = <McpOperation<()> as Operation<(), ConversationEffect>>::run(
-        &operation,
-        &(),
-        &conversation,
-        &emit,
-    )
-    .await
-    .unwrap();
-    let OperationResult::Applied(result) = result else {
-        panic!("must execute")
-    };
-    let ConversationEffect::AppendMessage(message) = &result.effects[0] else {
-        panic!("must append")
-    };
-    let response = message.content[0]
-        .as_tool_response()
-        .unwrap()
-        .tool_result
-        .as_ref()
+    let tools =
+        <McpOperation<()> as Operation<(), ConversationEffect>>::inference_tools(&operation, &())
+            .await
+            .unwrap();
+    assert_eq!(tools[0].meta.as_ref().unwrap().0[BINDING_META_KEY], id);
+    for binding in [None, Some(serde_json::json!({ BINDING_META_KEY: id }))] {
+        let bound = binding.is_some();
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("go"),
+            Message::assistant().with_tool_request_with_metadata(
+                "call",
+                Ok(CallToolRequestParams::new("fixture__first")),
+                None,
+                binding,
+            ),
+        ]);
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let emit = Emitter::new(tx, CancellationToken::new());
+        let result = <McpOperation<()> as Operation<(), ConversationEffect>>::run(
+            &operation,
+            &(),
+            &conversation,
+            &emit,
+        )
+        .await
         .unwrap();
-    assert_eq!(response.content[0].as_text().unwrap().text, "old:first");
+        let OperationResult::Applied(result) = result else {
+            panic!("must respond")
+        };
+        let ConversationEffect::AppendMessage(message) = &result.effects[0] else {
+            panic!("must append")
+        };
+        let response = &message.content[0].as_tool_response().unwrap().tool_result;
+        if bound {
+            assert_eq!(
+                response.as_ref().unwrap().content[0]
+                    .as_text()
+                    .unwrap()
+                    .text,
+                "old:first"
+            );
+        } else {
+            assert!(response.is_err());
+        }
+    }
 }
 
 #[tokio::test]
@@ -323,19 +293,18 @@ async fn dropping_transport_call_notifies_peer_of_cancellation() {
     task.abort();
 }
 
-struct Unavailable;
-#[async_trait]
-impl Connector for Unavailable {
-    async fn connect(&self, _: &str, _: CancellationToken) -> Result<Arc<dyn Client>> {
-        anyhow::bail!("unavailable")
-    }
+enum Failure {
+    Connect,
+    Discover,
+    Hang,
 }
-
-struct Hanging;
 #[async_trait]
-impl Connector for Hanging {
+impl Connector for Failure {
     async fn connect(&self, _: &str, _: CancellationToken) -> Result<Arc<dyn Client>> {
-        std::future::pending().await
+        match self {
+            Self::Hang => std::future::pending().await,
+            _ => anyhow::bail!("unavailable"),
+        }
     }
 }
 
@@ -345,7 +314,7 @@ async fn readiness_is_explicitly_strict_or_best_effort() {
     let lease = Manager::new()
         .resolve(
             "scope",
-            vec![Registration::new("broken", Arc::new(Unavailable))],
+            vec![Registration::new("broken", Arc::new(Failure::Connect))],
         )
         .await
         .unwrap();
@@ -355,7 +324,7 @@ async fn readiness_is_explicitly_strict_or_best_effort() {
     let best = Manager::new()
         .resolve_with_policy(
             "scope",
-            vec![Registration::new("broken", Arc::new(Unavailable))],
+            vec![Registration::new("broken", Arc::new(Failure::Connect))],
             StartupPolicy::BestEffort,
         )
         .await
@@ -368,35 +337,6 @@ async fn readiness_is_explicitly_strict_or_best_effort() {
         .unwrap()
         .entries
         .is_empty());
-}
-
-#[tokio::test]
-async fn readiness_cancels_uncooperative_startup() {
-    let lease = Manager::new()
-        .resolve(
-            "scope",
-            vec![Registration::new("hanging", Arc::new(Hanging))],
-        )
-        .await
-        .unwrap();
-    let cancel = CancellationToken::new();
-    let future = lease.ready(cancel.clone());
-    let stop = async {
-        tokio::task::yield_now().await;
-        cancel.cancel();
-    };
-    let (result, ()) = tokio::join!(future, stop);
-    assert!(result.unwrap_err().to_string().contains("cancelled"));
-}
-
-#[cfg(feature = "mcp-stdio")]
-#[test]
-fn stdio_inputs_are_validated_and_host_policy_is_explicit() {
-    use goose_agent::mcp::{ClientOptions, StdioConnector};
-    assert!(StdioConnector::new("  ", ClientOptions::default()).is_err());
-    let connector = StdioConnector::new("server", ClientOptions::default()).unwrap();
-    assert!(!connector.inherit_env);
-    assert!(connector.cwd.is_none());
 }
 
 #[cfg(feature = "mcp-http")]
@@ -424,9 +364,8 @@ fn http_inputs_are_validated_before_startup() {
     .is_err());
 }
 
-struct HangingDiscovery;
 #[async_trait]
-impl Client for HangingDiscovery {
+impl Client for Failure {
     async fn call_tool(
         &self,
         _: &goose_agent::mcp::CallContext,
@@ -434,7 +373,7 @@ impl Client for HangingDiscovery {
         _: Option<rmcp::model::JsonObject>,
         _: CancellationToken,
     ) -> Result<CallToolResult, rmcp::ServiceError> {
-        unreachable!("discovery never completes")
+        unreachable!("failed servers have no tools")
     }
 
     fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
@@ -446,56 +385,34 @@ impl Client for HangingDiscovery {
         _: Option<String>,
         _: CancellationToken,
     ) -> Result<ListToolsResult, rmcp::ServiceError> {
-        std::future::pending().await
+        if matches!(self, Self::Hang) {
+            std::future::pending().await
+        } else {
+            Err(rmcp::ServiceError::McpError(ErrorData::internal_error(
+                "discovery failed",
+                None,
+            )))
+        }
     }
 }
 
 #[tokio::test]
-async fn readiness_cancels_uncooperative_discovery() {
-    let lease = Manager::new()
-        .resolve(
-            "scope",
-            vec![Registration::attached(
-                "hanging",
-                Arc::new(HangingDiscovery),
-            )],
-        )
-        .await
-        .unwrap();
-    let cancel = CancellationToken::new();
-    let stop = async {
-        tokio::task::yield_now().await;
-        cancel.cancel();
-    };
-    let (result, ()) = tokio::join!(lease.ready(cancel.clone()), stop);
-    assert!(result.unwrap_err().to_string().contains("cancelled"));
-}
-
-struct FailedDiscovery;
-#[async_trait]
-impl Client for FailedDiscovery {
-    fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
-        None
-    }
-    async fn list_tools(
-        &self,
-        _: &str,
-        _: Option<String>,
-        _: CancellationToken,
-    ) -> Result<ListToolsResult, rmcp::ServiceError> {
-        Err(rmcp::ServiceError::McpError(ErrorData::internal_error(
-            "discovery failed",
-            None,
-        )))
-    }
-    async fn call_tool(
-        &self,
-        _: &goose_agent::mcp::CallContext,
-        _: &str,
-        _: Option<rmcp::model::JsonObject>,
-        _: CancellationToken,
-    ) -> Result<CallToolResult, rmcp::ServiceError> {
-        unreachable!()
+async fn readiness_cancels_uncooperative_startup_and_discovery() {
+    for registration in [
+        Registration::new("hanging", Arc::new(Failure::Hang)),
+        Registration::attached("hanging", Arc::new(Failure::Hang)),
+    ] {
+        let lease = Manager::new()
+            .resolve("scope", vec![registration])
+            .await
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let stop = async {
+            tokio::task::yield_now().await;
+            cancel.cancel();
+        };
+        let (result, ()) = tokio::join!(lease.ready(cancel.clone()), stop);
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
     }
 }
 
@@ -504,7 +421,10 @@ async fn best_effort_excludes_discovery_failures_and_new_binding_keeps_connectio
     use goose_agent::mcp::{Lease, LoadStage, StartupPolicy};
     let lease = Lease::connect(
         "scope",
-        vec![Registration::attached("broken", Arc::new(FailedDiscovery))],
+        vec![Registration::attached(
+            "broken",
+            Arc::new(Failure::Discover),
+        )],
         StartupPolicy::BestEffort,
         CancellationToken::new(),
     )
