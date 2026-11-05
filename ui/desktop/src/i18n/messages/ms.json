@@ -3956,6 +3956,9 @@
   "settings.language.description": {
     "defaultMessage": "Pilih bahasa paparan untuk goose"
   },
+  "settings.language.dutch": {
+    "defaultMessage": "Bahasa Belanda"
+  },
   "settings.language.english": {
     "defaultMessage": "English"
   },
