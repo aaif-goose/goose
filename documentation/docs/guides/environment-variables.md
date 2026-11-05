@@ -547,7 +547,7 @@ These variables are automatically set by goose during command execution.
 |----------|---------|---------|---------|
 | `GOOSE_TERMINAL` | Indicates that a command is being executed by goose, enables [customizing shell behavior](#customizing-shell-behavior) | "1" when set | Unset |
 | `AGENT` | Generic agent identifier for cross-tool compatibility, enables tools and scripts to detect when they're being run by goose | "goose" when set | Unset |
-| `AGENT_SESSION_ID` | The current session ID for [session-isolated workflows](#using-session-ids-in-workflows), automatically available to STDIO extensions and the Developer extension shell commands | Session ID string (e.g., `20260217_5`) | Unset (only set in extension/shell contexts) |
+| `AGENT_SESSION_ID` | The current session ID for [session-isolated workflows](#using-session-ids-in-workflows), automatically available to STDIO extensions and the Developer extension shell commands | Session ID string (e.g., `019c5a3e-8f21-7b4d-9a6e-2f1c0d3b4e5a`) | Unset (only set in extension/shell contexts) |
 
 ### Customizing Shell Behavior
 
