@@ -14,13 +14,22 @@ use std::{
     collections::HashMap,
     fs,
     net::SocketAddr,
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 use tokio::sync::{oneshot, Mutex as TokioMutex};
 use url::{Host, Url};
 
-static OAUTH_MUTEX: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
+/// Serializes OAuth token reads, refreshes and saves. It holds the `FORCED_REFRESHES` generation
+/// each token cache was last read or refreshed at.
+static OAUTH_MUTEX: Lazy<TokioMutex<HashMap<PathBuf, u64>>> =
+    Lazy::new(|| TokioMutex::new(HashMap::new()));
+
+/// Increased each time a server rejects a request as unauthenticated.
+static FORCED_REFRESHES: AtomicU64 = AtomicU64::new(0);
 
 // `expires_at` is computed from when the token response arrived, which is later than when the
 // server issued the token, so refresh early rather than send a token the server already rejects.
@@ -122,25 +131,14 @@ pub fn cleanup_oauth_cache() -> Result<()> {
     }
 }
 
-/// Marks every cached Databricks OAuth access token as expired, so the next request refreshes it.
-/// Called after the server rejects a request as unauthenticated, when the cached token may still
-/// look valid locally.
-pub fn expire_cached_oauth_tokens() {
-    expire_cached_oauth_tokens_in(&get_base_path());
-}
-
-fn expire_cached_oauth_tokens_in(directory: &Path) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let cache_path = entry.path();
-        if cache_path.extension().is_some_and(|ext| ext == "json") {
-            if let Err(e) = (TokenCache { cache_path }).expire_token() {
-                tracing::warn!("Failed to expire cached OAuth token: {}", e);
-            }
-        }
-    }
+/// Makes the next OAuth token request refresh its cached access token instead of reusing it.
+/// Call it after a server rejects a request as unauthenticated: the cached token can look valid
+/// locally after the server has stopped accepting it.
+///
+/// It only records the request; the refresh itself runs under `OAUTH_MUTEX` with the rest of the
+/// token cache's reads and writes, so it cannot overwrite a token that a concurrent refresh saved.
+pub fn force_oauth_token_refresh() {
+    FORCED_REFRESHES.fetch_add(1, Ordering::SeqCst);
 }
 
 impl TokenCache {
@@ -183,13 +181,6 @@ impl TokenCache {
         let contents = serde_json::to_string(token_data)?;
         write_private_file(&self.cache_path, &contents)?;
         Ok(())
-    }
-
-    fn expire_token(&self) -> Result<()> {
-        let mut token_data: TokenData =
-            serde_json::from_str(&fs::read_to_string(&self.cache_path)?)?;
-        token_data.expires_at = Some(DateTime::UNIX_EPOCH);
-        self.save_token(&token_data)
     }
 }
 
@@ -488,10 +479,46 @@ pub(crate) async fn get_oauth_token_async(
     scopes: &[String],
 ) -> Result<String> {
     // Acquire the global mutex to ensure only one OAuth flow runs at a time
-    let _guard = OAUTH_MUTEX.lock().await;
+    let mut seen_refreshes = OAUTH_MUTEX.lock().await;
 
     let token_cache = TokenCache::new(host, client_id, scopes);
-    get_oauth_token_with_cache(&token_cache, host, client_id, redirect_url, scopes).await
+    get_oauth_token_tracking_refreshes(
+        &mut seen_refreshes,
+        FORCED_REFRESHES.load(Ordering::SeqCst),
+        &token_cache,
+        host,
+        client_id,
+        redirect_url,
+        scopes,
+    )
+    .await
+}
+
+/// Forces a refresh when `forced_refreshes` has grown since this cache was last read. A cache this
+/// process has not read yet is not forced, because the rejected token came from another cache.
+async fn get_oauth_token_tracking_refreshes(
+    seen_refreshes: &mut HashMap<PathBuf, u64>,
+    forced_refreshes: u64,
+    token_cache: &TokenCache,
+    host: &str,
+    client_id: &str,
+    redirect_url: &str,
+    scopes: &[String],
+) -> Result<String> {
+    let force_refresh = seen_refreshes
+        .get(&token_cache.cache_path)
+        .is_some_and(|&seen| seen < forced_refreshes);
+    let token = get_oauth_token_with_cache(
+        token_cache,
+        host,
+        client_id,
+        redirect_url,
+        scopes,
+        force_refresh,
+    )
+    .await?;
+    seen_refreshes.insert(token_cache.cache_path.clone(), forced_refreshes);
+    Ok(token)
 }
 
 async fn get_oauth_token_with_cache(
@@ -500,11 +527,13 @@ async fn get_oauth_token_with_cache(
     client_id: &str,
     redirect_url: &str,
     scopes: &[String],
+    force_refresh: bool,
 ) -> Result<String> {
     // Try cache first
     if let Some(token) = token_cache.load_token() {
-        // If token has an expiration time, check if it's expired
-        if token.expires_at.is_some() {
+        if force_refresh {
+            tracing::debug!("Server rejected the cached token, attempting to refresh");
+        } else if token.expires_at.is_some() {
             if !token.needs_refresh(Utc::now()) {
                 return Ok(token.access_token);
             }
@@ -907,7 +936,18 @@ mod tests {
     }
 
     async fn token_from_cache(cache: &TokenCache, server: &MockServer) -> String {
-        get_oauth_token_with_cache(
+        token_after_refreshes(&mut HashMap::new(), 0, cache, server).await
+    }
+
+    async fn token_after_refreshes(
+        seen_refreshes: &mut HashMap<PathBuf, u64>,
+        forced_refreshes: u64,
+        cache: &TokenCache,
+        server: &MockServer,
+    ) -> String {
+        get_oauth_token_tracking_refreshes(
+            seen_refreshes,
+            forced_refreshes,
             cache,
             &server.uri(),
             "databricks-cli",
@@ -970,17 +1010,69 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn expired_cache_refreshes_token_that_looks_valid() {
+    async fn forced_refresh_replaces_token_that_looks_valid_once() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(30));
+        let server = mock_workspace_with_refreshed_token("refreshed-token").await;
+        let mut seen_refreshes = HashMap::new();
+
+        assert_eq!(
+            token_after_refreshes(&mut seen_refreshes, 0, &cache, &server).await,
+            "cached-token"
+        );
+        assert_eq!(token_requests(&server).await, 0);
+
+        // The server rejected "cached-token".
+        assert_eq!(
+            token_after_refreshes(&mut seen_refreshes, 1, &cache, &server).await,
+            "refreshed-token"
+        );
+        assert_eq!(token_requests(&server).await, 1);
+
+        assert_eq!(
+            token_after_refreshes(&mut seen_refreshes, 1, &cache, &server).await,
+            "refreshed-token"
+        );
+        assert_eq!(token_requests(&server).await, 1);
+    }
+
+    #[tokio::test]
+    async fn forced_refresh_skips_cache_not_read_yet() {
         let directory = tempfile::tempdir().unwrap();
         let cache = cache_with_token(&directory, chrono::TimeDelta::minutes(30));
         let server = mock_workspace_with_refreshed_token("refreshed-token").await;
 
-        expire_cached_oauth_tokens_in(directory.path());
+        assert_eq!(
+            token_after_refreshes(&mut HashMap::new(), 1, &cache, &server).await,
+            "cached-token"
+        );
+        assert_eq!(token_requests(&server).await, 0);
+    }
 
-        let expired = cache.load_token().unwrap();
-        assert_eq!(expired.access_token, "cached-token");
-        assert_eq!(expired.refresh_token.as_deref(), Some("refresh-token"));
-        assert_eq!(token_from_cache(&cache, &server).await, "refreshed-token");
+    #[tokio::test]
+    async fn forced_refresh_refreshes_token_without_expiry() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = TokenCache {
+            cache_path: directory.path().join("token.json"),
+        };
+        cache
+            .save_token(&TokenData {
+                access_token: "cached-token".to_string(),
+                refresh_token: Some("refresh-token".to_string()),
+                expires_at: None,
+            })
+            .unwrap();
+        let server = mock_workspace_with_refreshed_token("refreshed-token").await;
+        let mut seen_refreshes = HashMap::new();
+
+        assert_eq!(
+            token_after_refreshes(&mut seen_refreshes, 0, &cache, &server).await,
+            "cached-token"
+        );
+        assert_eq!(
+            token_after_refreshes(&mut seen_refreshes, 1, &cache, &server).await,
+            "refreshed-token"
+        );
         assert_eq!(token_requests(&server).await, 1);
     }
 
