@@ -215,7 +215,8 @@ impl AcpConnection {
             .await
             .internal_err_ctx("Failed to update session")?;
         if !config.meta.tags.is_empty() {
-            self.session_manager
+            self.services
+                .session_manager
                 .set_session_tags(session_id, &config.meta.tags)
                 .await
                 .internal_err_ctx("Failed to save session tags")?;
