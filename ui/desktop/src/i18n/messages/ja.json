@@ -3708,7 +3708,7 @@
     "defaultMessage": "MLモデルを使用してチャット内の潜在的なプロンプトインジェクションを検出します"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "値が高いほど厳格です（0.01 = 非常に緩い、1.0 = 最大限に厳格）"
+    "defaultMessage": "値が低いほど厳格です（0.01 = 最大限に厳格、1.0 = 非常に緩い）"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "コマンドインジェクション検出は、WARPに接続していると最も効果的です（分類サービスに到達するために必要です）。"
