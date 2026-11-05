@@ -258,10 +258,12 @@ async fn duplicate_registrations_do_not_replace_selection() {
         .resolve("scope", vec![registration(fixture.clone(), 0)])
         .await
         .unwrap();
-    tokio::join!(
-        old.start(CancellationToken::new()),
-        current.start(CancellationToken::new())
+    let (old_ready, current_ready) = tokio::join!(
+        old.ready(CancellationToken::new()),
+        current.ready(CancellationToken::new())
     );
+    old_ready.unwrap();
+    current_ready.unwrap();
     assert_eq!(fixture.starts.load(Ordering::SeqCst), 1);
 }
 
@@ -343,22 +345,29 @@ async fn readiness_is_explicitly_strict_or_best_effort() {
     let lease = Manager::new()
         .resolve(
             "scope",
-            vec![Registration::new("broken", 0, Arc::new(Unavailable))],
+            vec![Registration::new("broken", Arc::new(Unavailable))],
         )
         .await
         .unwrap();
-    // Building a partial catalog does not accidentally satisfy strict readiness.
-    lease.catalog(CancellationToken::new()).await.unwrap();
-    let error = lease
-        .ready(StartupPolicy::Strict, CancellationToken::new())
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("broken: unavailable"));
-    let reports = lease
-        .ready(StartupPolicy::BestEffort, CancellationToken::new())
+    assert!(lease.catalog(CancellationToken::new()).await.is_err());
+    let error = lease.ready(CancellationToken::new()).await.unwrap_err();
+    assert!(error.to_string().contains("broken (Connect): unavailable"));
+    let best = Manager::new()
+        .resolve_with_policy(
+            "scope",
+            vec![Registration::new("broken", Arc::new(Unavailable))],
+            StartupPolicy::BestEffort,
+        )
         .await
         .unwrap();
+    let reports = best.ready(CancellationToken::new()).await.unwrap();
     assert_eq!(reports[0].error.as_deref(), Some("unavailable"));
+    assert!(best
+        .catalog(CancellationToken::new())
+        .await
+        .unwrap()
+        .entries
+        .is_empty());
 }
 
 #[tokio::test]
@@ -366,12 +375,12 @@ async fn readiness_cancels_uncooperative_startup() {
     let lease = Manager::new()
         .resolve(
             "scope",
-            vec![Registration::new("hanging", 0, Arc::new(Hanging))],
+            vec![Registration::new("hanging", Arc::new(Hanging))],
         )
         .await
         .unwrap();
     let cancel = CancellationToken::new();
-    let future = lease.ready(goose_agent::mcp::StartupPolicy::Strict, cancel.clone());
+    let future = lease.ready(cancel.clone());
     let stop = async {
         tokio::task::yield_now().await;
         cancel.cancel();
@@ -448,7 +457,6 @@ async fn readiness_cancels_uncooperative_discovery() {
             "scope",
             vec![Registration::attached(
                 "hanging",
-                0,
                 Arc::new(HangingDiscovery),
             )],
         )
@@ -459,9 +467,67 @@ async fn readiness_cancels_uncooperative_discovery() {
         tokio::task::yield_now().await;
         cancel.cancel();
     };
-    let (result, ()) = tokio::join!(
-        lease.ready(goose_agent::mcp::StartupPolicy::Strict, cancel.clone()),
-        stop
-    );
+    let (result, ()) = tokio::join!(lease.ready(cancel.clone()), stop);
     assert!(result.unwrap_err().to_string().contains("cancelled"));
+}
+
+struct FailedDiscovery;
+#[async_trait]
+impl Client for FailedDiscovery {
+    fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
+        None
+    }
+    async fn list_tools(
+        &self,
+        _: &str,
+        _: Option<String>,
+        _: CancellationToken,
+    ) -> Result<ListToolsResult, rmcp::ServiceError> {
+        Err(rmcp::ServiceError::McpError(ErrorData::internal_error(
+            "discovery failed",
+            None,
+        )))
+    }
+    async fn call_tool(
+        &self,
+        _: &goose_agent::mcp::CallContext,
+        _: &str,
+        _: Option<rmcp::model::JsonObject>,
+        _: CancellationToken,
+    ) -> Result<CallToolResult, rmcp::ServiceError> {
+        unreachable!()
+    }
+}
+
+#[tokio::test]
+async fn best_effort_excludes_discovery_failures_and_new_binding_keeps_connections() {
+    use goose_agent::mcp::{Lease, LoadStage, StartupPolicy};
+    let lease = Lease::connect(
+        "scope",
+        vec![Registration::attached("broken", Arc::new(FailedDiscovery))],
+        StartupPolicy::BestEffort,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let reports = lease.ready(CancellationToken::new()).await.unwrap();
+    assert_eq!(reports[0].stage, LoadStage::Discover);
+    assert!(lease
+        .catalog(CancellationToken::new())
+        .await
+        .unwrap()
+        .entries
+        .is_empty());
+    let binding = lease.new_binding();
+    assert_ne!(lease.id(), binding.id());
+    assert!(Arc::ptr_eq(
+        &lease
+            .client("broken", CancellationToken::new())
+            .await
+            .unwrap(),
+        &binding
+            .client("broken", CancellationToken::new())
+            .await
+            .unwrap()
+    ));
 }

@@ -155,7 +155,7 @@ lease remains a host wrapper rather than being replaced with the standalone
 GDK `Lease`; `Client<C>` supports its richer per-call context.
 
 Standalone bindings are explicit: keep a lease while approvals are pending;
-`Lease::refresh` creates a fresh catalog/binding on the same connections for a
+`Lease::new_binding` creates a fresh catalog/binding on the same connections for a
 subsequent inference boundary. This does not yet provide an automatic dynamic
 registration operation or automatic background catalog refresh. Hosts drive
 that boundary. Explicit async shutdown/drain remains follow-up work; scope
@@ -182,7 +182,7 @@ active-call tracking and modern-protocol special cases. Paginated discovery and
 tool exposure are shared, including resource/prompt pagination in goose.
 
 The former standalone manager wrapper and scoped runtime are now one generic
-`Manager<T>`, and both leases use a pinned `Selection<T>`. This reduces duplicate
+`mcp::host::Manager<T>`, and both leases use a pinned `Selection<T>`. This reduces duplicate
 ownership types but does not finish the originally proposed concrete registration
 migration: goose still supplies its own startup slots, reuse/config validation,
 and app-aware lease wrapper. Converting those to resolved GDK registrations is

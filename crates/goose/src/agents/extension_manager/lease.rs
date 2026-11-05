@@ -150,7 +150,7 @@ async fn build_tool_catalog(scope_id: &str, extensions: &[Arc<Extension>]) -> To
 #[derive(Clone)]
 pub struct ExtensionLease {
     id: LeaseId,
-    selection: goose_agent::mcp::Selection<ExtensionSlot>,
+    selection: goose_agent::mcp::host::Selection<ExtensionSlot>,
     working_dir: Option<PathBuf>,
     tool_catalog: Arc<OnceCell<ToolCatalog>>,
     action_required: Arc<ActionRequiredManager>,
@@ -173,7 +173,7 @@ impl ExtensionLease {
     ) -> Self {
         Self {
             id: LeaseId::next(),
-            selection: goose_agent::mcp::Selection::new(scope_id, slots),
+            selection: goose_agent::mcp::host::Selection::new(scope_id, slots),
             working_dir,
             tool_catalog: Arc::new(OnceCell::new()),
             action_required,

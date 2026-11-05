@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
-use goose_agent::mcp::{Manager as McpManager, Runtime as LazyRuntime};
+use goose_agent::mcp::host::{Manager as McpManager, Runtime as LazyRuntime};
 #[cfg(test)]
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -997,7 +997,7 @@ impl ExtensionManager {
         let pending_key = (session_id.to_string(), config.key());
         let slot = {
             let mut state = self.runtime.scopes.lock().await;
-            let goose_agent::mcp::Scopes {
+            let goose_agent::mcp::host::Scopes {
                 selected: scopes,
                 enabling,
             } = &mut *state;
@@ -1041,7 +1041,7 @@ impl ExtensionManager {
             Runtime::Running(_) | Runtime::Declined => self.select(session_id, config).await,
         };
         let mut state = self.runtime.scopes.lock().await;
-        let goose_agent::mcp::Scopes {
+        let goose_agent::mcp::host::Scopes {
             selected: scopes,
             enabling,
         } = &mut *state;

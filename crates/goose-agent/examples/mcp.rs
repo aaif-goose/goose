@@ -2,7 +2,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::{
-    mcp::{Client, Manager, McpOperation, Registration},
+    mcp::{Client, Lease, McpOperation, Registration, StartupPolicy},
     operation::{ConversationEffect, Operation},
 };
 use rmcp::model::{CallToolResult, ContentBlock, ListToolsResult, Tool};
@@ -43,16 +43,16 @@ impl Client for Server {
 }
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    let manager = Manager::new();
-    let lease = manager
-        .resolve(
-            "session",
-            vec![
-                Registration::attached("one", 0, Arc::new(Server("one"))),
-                Registration::attached("two", 0, Arc::new(Server("two"))),
-            ],
-        )
-        .await?;
+    let lease = Lease::connect(
+        "session",
+        vec![
+            Registration::attached("one", Arc::new(Server("one"))),
+            Registration::attached("two", Arc::new(Server("two"))),
+        ],
+        StartupPolicy::Strict,
+        CancellationToken::new(),
+    )
+    .await?;
     let operation = McpOperation::<()>::new(Arc::new(lease));
     for tool in
         <McpOperation<()> as Operation<(), ConversationEffect>>::inference_tools(&operation, &())

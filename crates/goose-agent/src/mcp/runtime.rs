@@ -50,7 +50,7 @@ impl<T> Default for Scopes<T> {
 
 /// Generic ownership primitive for hosts with their own durable selection policy.
 /// GDK never persists the selection or inspects host configuration.
-pub struct Manager<T = super::manager::Slot> {
+pub struct Manager<T> {
     pub scopes: Mutex<Scopes<T>>,
 }
 impl<T> Manager<T> {

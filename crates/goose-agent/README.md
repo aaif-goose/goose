@@ -234,7 +234,7 @@ Resources and prompts are available through the lease/client API; they are not
 automatically injected into model context. The `mcp` example demonstrates two
 host-supplied clients without configuration or persistence.
 
-The goose host uses the same `Manager<T>`, single-flight `Runtime`, immutable
+The goose host uses the same `host::Manager<T>`, single-flight `Runtime`, immutable
 `Catalog`, schema normalization, request-cancellation helper and `McpOperation`.
 `Client<C>` is the shared protocol contract for standalone and hosted clients.
 `RequestSender<C>` lets a host decorate protocol requests without duplicating
@@ -249,10 +249,46 @@ environment, no cwd override, discarded stderr). HTTP validates URLs and headers
 and disables redirects by default; `with_client` accepts host-managed HTTP policy.
 Neither connector loads configuration or credentials.
 
-Call `lease.ready(StartupPolicy::Strict, cancel)` before inference to require every
-configured server and tool discovery to succeed. `BestEffort` returns per-server
-connection failures and discovers tools on surviving connections. Discovery errors
-remain fatal and identify the server. Readiness cancels even uncooperative custom
-connectors/discovery; native connectors also accept startup cancellation directly.
-Connection failures are cached for the selected revision; bump it to retry.
-`catalog` alone retains its lazy, partial-start behavior and is not strict readiness.
+### One-shot attachment
+
+Use `Lease::connect(scope, registrations, policy, cancel)` to initialize connections
+and pin tool discovery, then pass the lease to `McpOperation`. No manager or
+revision bookkeeping is required. Construct registrations with
+`Registration::stdio(id, connector)`, `Registration::http(id, connector)`,
+`Registration::attached(id, client)` or `Registration::new(id, custom_connector)`.
+
+### Managed selections and inference bindings
+
+For dynamic replacement, retain a `Manager` and call `resolve` (strict by default)
+or `resolve_with_policy`. Registrations default to revision zero; use
+`with_revision` when credentials, transport configuration or placement changes.
+Resolve reuses compatible connections; `release` removes manager ownership without
+invalidating held leases.
+
+A lease is an immutable inference binding over a connection selection.
+`new_binding()` retains those connections and policy but creates a new identity
+and rediscovers tools on demand. It does not reconnect or retry cached connection
+failures. Old bindings remain valid for their outstanding calls.
+
+### One readiness contract
+
+Both `ready(cancel)` and lazy `catalog(cancel)` initialize the same pinned binding
+with the policy chosen at selection time:
+
+- `Strict`: any server initialization or tool discovery failure fails the binding.
+- `BestEffort`: exclude servers that fail initialization or discovery; `ready`
+  returns per-server `LoadResult` diagnostics with `Connect`, `Discover` or `Ready`
+  stages. Instructions from excluded servers are not injected.
+- Catalog name collisions are fatal under either policy.
+
+Cancellation interrupts initialization and discovery, even for custom clients
+that ignore the token. Connection failures are cached for the selected revision;
+use a replacement revision to retry. Discovery is pinned per inference binding.
+
+### Advanced host integration
+
+The primary `Manager` encapsulates its storage. Hosts such as goose with custom
+startup slots and persistence policy use `mcp::host::{Manager<T>, Runtime<T>,
+Scopes<T>, Selection<T>}` instead. These are low-level ownership primitives, not
+requirements for attaching servers. `Client`, `RequestSender` and `McpHost` are
+extension points for protocol decoration and operation policy.
