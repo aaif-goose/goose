@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 17;
+pub const CURRENT_SCHEMA_VERSION: i32 = 18;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -376,6 +376,7 @@ pub(crate) struct SessionListFilters<'a> {
     pub(crate) types: Option<&'a [SessionType]>,
     pub(crate) working_dir: Option<&'a Path>,
     pub(crate) keyword: Option<&'a str>,
+    pub(crate) tags: &'a [(String, String)],
     pub(crate) only_sessions_with_messages: bool,
 }
 
@@ -551,6 +552,14 @@ impl SessionManager {
         query: SessionListPageQuery<'_>,
     ) -> Result<SessionListPage> {
         self.storage.list_sessions_paged(query).await
+    }
+
+    pub async fn set_session_tags(
+        &self,
+        session_id: &str,
+        tags: &[(String, String)],
+    ) -> Result<()> {
+        self.storage.set_session_tags(session_id, tags).await
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
@@ -1269,6 +1278,7 @@ impl SessionStorage {
         )
         .execute(&mut *tx)
         .await?;
+        Self::create_session_tags_table(&mut tx).await?;
 
         // Create the inventory tables inside the same transaction so that a
         // second SessionStorage opening the same DB file never observes a
@@ -1770,11 +1780,52 @@ impl SessionStorage {
                     }
                 }
             }
+            18 => {
+                Self::create_session_tags_table(tx).await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
         }
 
+        Ok(())
+    }
+
+    async fn create_session_tags_table(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_tags (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (session_id, key)
+            )
+        "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_tags_key_value ON session_tags(key, value, session_id)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn set_session_tags(&self, session_id: &str, tags: &[(String, String)]) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        for (key, value) in tags {
+            sqlx::query(
+                "INSERT INTO session_tags (session_id, key, value) VALUES (?, ?, ?) ON CONFLICT(session_id, key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(session_id)
+            .bind(key)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -2323,6 +2374,12 @@ impl SessionStorage {
         if filters.working_dir.is_some() {
             where_clauses.push("s.working_dir = ?".to_string());
         }
+        for _ in filters.tags {
+            where_clauses.push(
+                "s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?)"
+                    .to_string(),
+            );
+        }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
         }
@@ -2405,6 +2462,9 @@ impl SessionStorage {
         }
         if let Some(working_dir) = filters.working_dir {
             q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+        for (key, value) in filters.tags {
+            q = q.bind(key).bind(value);
         }
         for term in keywords {
             q = q.bind(term);
@@ -2546,6 +2606,11 @@ impl SessionStorage {
             .await?;
 
         sqlx::query("DELETE FROM usage_ledger WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM session_tags WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
@@ -4378,6 +4443,187 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    fn tags(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    async fn list_ids_with_tags(sm: &SessionManager, filter: &[(String, String)]) -> Vec<String> {
+        let types = [SessionType::User];
+        let mut ids = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    tags: filter,
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_by_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let thread_one =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "first").await;
+        let thread_two =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "second").await;
+        create_session_for_list_with_message(&sm, "/tmp/session-list", "untagged").await;
+        sm.set_session_tags(
+            &thread_one,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t1")]),
+        )
+        .await
+        .unwrap();
+        sm.set_session_tags(
+            &thread_two,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![thread_one.clone()]
+        );
+        let mut channel = vec![thread_one.clone(), thread_two.clone()];
+        channel.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1")])).await,
+            channel
+        );
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")])).await,
+            vec![thread_two.clone()]
+        );
+        assert!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "t1")]))
+                .await
+                .is_empty(),
+            "a value must match under its own key"
+        );
+        assert_eq!(list_ids_with_tags(&sm, &[]).await.len(), 3);
+
+        sm.set_session_tags(&thread_two, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+        let mut retagged = vec![thread_one, thread_two];
+        retagged.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            retagged
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_removes_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "tagged").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        sm.delete_session(&session_id).await.unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_tags")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_session_tag_filter_seeks_tag_index() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN \
+             SELECT s.id FROM sessions s JOIN messages m ON s.id = m.session_id \
+             WHERE s.session_type IN (?) AND s.working_dir = ? \
+               AND s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?) \
+             GROUP BY s.id",
+        )
+        .bind("acp")
+        .bind("/tmp")
+        .bind("buzz.thread")
+        .bind("t1")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_text = plan_rows
+            .iter()
+            .map(|row| row.try_get::<String, _>("detail").unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            plan_text.contains("idx_session_tags_key_value"),
+            "tag filters should seek idx_session_tags_key_value, got: {plan_text}"
+        );
+        assert!(
+            !plan_text.contains("SCAN s"),
+            "tag filters must not scan every session, got: {plan_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_tags_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TABLE session_tags")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 17")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "migrated").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![session_id]
+        );
+    }
+
     #[tokio::test]
     async fn test_session_list_paged_keyword_uses_or_terms() {
         let temp_dir = TempDir::new().unwrap();
@@ -4534,6 +4780,7 @@ mod tests {
             working_dir: Some(Path::new("/tmp/session-list/a")),
             keyword: Some("postgres"),
             only_sessions_with_messages: true,
+            ..Default::default()
         };
         let cursor = sm
             .list_sessions_paged(SessionListPageQuery {
