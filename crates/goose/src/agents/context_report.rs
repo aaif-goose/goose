@@ -148,7 +148,7 @@ impl StateMachineServices {
                 self.runtime.steer_queue(session_id),
                 extension_lease,
             )
-            .await;
+            .await?;
         let input = machine
             .collect_inference_input(&session, &next_conversation)
             .await?;

@@ -196,7 +196,7 @@ where
                 OperationResult::NotApplicable => {}
                 OperationResult::Applied(mut result) => {
                     tracing::debug!(step = name, "applied step");
-                    result.applied_step = Some(name);
+                    result.applied_step = Some(name.to_owned());
                     for effect in &mut result.effects {
                         effect.ensure_message_ids();
                     }

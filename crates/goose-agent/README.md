@@ -207,3 +207,8 @@ from JavaScript. Some things differ from native:
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
+
+On native Goose, the `js-operations` feature adds runtime-loaded JavaScript
+Operations backed by Boa. See the [file format and configuration](../goose/examples/js-operations/README.md).
+Operation names can be supplied at runtime; `StepResult::applied_step` owns its
+name so it remains available after the Operation is dropped.

@@ -7,6 +7,10 @@ pub mod extension_malware_check;
 pub mod extension_manager;
 pub mod final_output_tool;
 pub(crate) mod gen_ai_telemetry;
+#[cfg(feature = "js-operations")]
+pub mod js_operations;
+#[cfg(any(feature = "code-mode", feature = "js-operations"))]
+pub(crate) mod js_runtime;
 mod large_response_handler;
 pub mod mcp_client;
 pub mod moim;

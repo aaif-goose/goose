@@ -20,7 +20,9 @@ otel = [
     "dep:opentelemetry-otlp",
     "dep:opentelemetry-stdout",
 ]
-code-mode = ["dep:boa_engine"]
+js-runtime = ["dep:boa_engine"]
+code-mode = ["js-runtime"]
+js-operations = ["js-runtime"]
 tree-sitter = [
     "dep:tree-sitter",
     "dep:tree-sitter-go",
