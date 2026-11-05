@@ -39,6 +39,7 @@ use crate::security::security_inspector::SecurityInspector;
 use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
+use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
@@ -49,7 +50,6 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, instrument, warn};
 
-const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 const AUTO_EFFORTS: [ThinkingEffort; 5] = [
     ThinkingEffort::Off,
     ThinkingEffort::Low,
@@ -146,7 +146,7 @@ impl TurnSettings {
             ),
             stop_hook_block_cap: config
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
-                .unwrap_or(DEFAULT_STOP_HOOK_BLOCK_CAP),
+                .unwrap_or(DEFAULT_DENY_LIMIT),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
             compaction_threshold: config
                 .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
