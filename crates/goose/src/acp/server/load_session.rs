@@ -460,10 +460,10 @@ impl AcpConnection {
 mod tests {
     use super::*;
     use crate::conversation::message::InferenceMetadata;
+    use goose_provider_types::data::CallToolRequestParams;
     use goose_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
-    use rmcp::model::CallToolRequestParams;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[derive(Debug)]
@@ -504,7 +504,7 @@ mod tests {
             _model_config: &goose_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
+            _tools: &[goose_provider_types::data::Tool],
         ) -> std::result::Result<crate::providers::base::MessageStream, ProviderError> {
             Ok(Box::pin(futures::stream::empty()))
         }
@@ -572,8 +572,10 @@ mod tests {
     fn replay_start_index_never_splits_tool_call_pairs() {
         let tool_request = Message::assistant()
             .with_tool_request("tool_1", Ok(CallToolRequestParams::new("developer__shell")));
-        let tool_response = Message::user()
-            .with_tool_response("tool_1", Ok(rmcp::model::CallToolResult::success(vec![])));
+        let tool_response = Message::user().with_tool_response(
+            "tool_1",
+            Ok(goose_provider_types::data::CallToolResult::success(vec![])),
+        );
         let messages = vec![
             Message::user().with_text("q1"),
             tool_request,

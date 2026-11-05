@@ -12,10 +12,10 @@ use futures::future::BoxFuture;
 use goose_providers::errors::ProviderError;
 use goose_providers::images::ImageFormat;
 
+use goose_provider_types::data::Tool;
 use goose_providers::formats::openai::create_request;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Tool;
 use serde_json::Value;
 
 pub const TETRATE_PROVIDER_NAME: &str = "tetrate";
@@ -132,7 +132,7 @@ impl Provider for TetrateProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let payload = create_request(
             model_config,
             system,

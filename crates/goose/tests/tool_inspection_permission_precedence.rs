@@ -3,7 +3,7 @@ use goose::permission::permission_judge::PermissionCheckResult;
 use goose::tool_inspection::{
     apply_inspection_results_to_permissions, InspectionAction, InspectionResult,
 };
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 use rmcp::object;
 
 fn request(id: &str) -> ToolRequest {

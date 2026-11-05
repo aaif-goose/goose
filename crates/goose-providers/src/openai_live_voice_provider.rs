@@ -76,8 +76,10 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
                 .into_iter()
                 .map(|message| OpenAiLiveMessage {
                     role: match message.role {
-                        rmcp::model::Role::User => OpenAiLiveMessageRole::User,
-                        rmcp::model::Role::Assistant => OpenAiLiveMessageRole::Assistant,
+                        goose_provider_types::data::Role::User => OpenAiLiveMessageRole::User,
+                        goose_provider_types::data::Role::Assistant => {
+                            OpenAiLiveMessageRole::Assistant
+                        }
                     },
                     text: message.text,
                 })
@@ -324,14 +326,14 @@ mod tests {
                 message(OpenAiLiveEventKind::TranscriptDelta {
                     event_id: "event_transcript_1".into(),
                     client_event_id: None,
-                    role: rmcp::model::Role::Assistant,
+                    role: goose_provider_types::data::Role::Assistant,
                     delta: "hello".into(),
                     start_ms: 10,
                     end_ms: 20,
                 }),
                 Some(ProviderConnectionEvent::TranscriptDelta {
                     event_id: "event_transcript_1".into(),
-                    role: rmcp::model::Role::Assistant,
+                    role: goose_provider_types::data::Role::Assistant,
                     text: "hello".into(),
                     start_ms: 10,
                     end_ms: 20,

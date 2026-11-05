@@ -1,12 +1,14 @@
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use goose_provider_types::runtime::Shared as Arc;
 
 use anyhow::{ensure, Result};
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::{Message, MessageContent, ToolRequest};
 use goose_provider_types::conversation::Conversation;
+use goose_provider_types::data::CallToolRequestParams;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 use goose_provider_types::permission::Permission;
-use rmcp::model::CallToolRequestParams;
 
 use crate::operation::{
     applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, Operation,
@@ -23,8 +25,11 @@ pub enum ApprovalDecision {
     Ask { prompt: Option<String> },
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait ToolApproval<S>: MaybeSend + MaybeSync {
     async fn check(
         &self,
@@ -43,14 +48,18 @@ pub trait ToolApproval<S>: MaybeSend + MaybeSync {
     }
 }
 
-pub fn confirmation_response_message(tool_call_id: &str, permission: Permission) -> Message {
-    Message::user()
+pub fn confirmation_response_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    tool_call_id: &str,
+    permission: Permission,
+) -> Message {
+    Message::user_with_host(host)
         .with_visibility(false, false)
         .with_content(MessageContent::action_required_tool_confirmation_response(
             tool_call_id.to_string(),
             permission,
         ))
-        .with_generated_id_if_missing()
+        .with_generated_id_if_missing_with_host(host)
 }
 
 pub struct ToolApprovalOperation<'a, S> {
@@ -84,7 +93,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
         if matches!(permission, Permission::AllowOnce | Permission::AlwaysAllow) {
             return applied([E::from(mark_executable(&request.id, true))]);
         }
-        let mut tool_responses = Message::user();
+        let mut tool_responses = Message::user_with_host(emit.host());
         add_error_response(&mut tool_responses, request, &self.declined_message);
         applied([E::from(ConversationEffect::from(
             emit.message(tool_responses),
@@ -111,7 +120,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
         );
 
         let mut effects = Vec::new();
-        let mut tool_responses = Message::user();
+        let mut tool_responses = Message::user_with_host(emit.host());
         for ((request, call), decision) in unchecked.into_iter().zip(decisions) {
             match decision {
                 ApprovalDecision::Allow => effects.push(mark_executable(&request.id, true)),
@@ -120,7 +129,7 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
                 }
                 ApprovalDecision::Ask { prompt } => {
                     effects.push(mark_executable(&request.id, false));
-                    effects.push(confirmation_request(request, call, prompt).into());
+                    effects.push(confirmation_request(emit.host(), request, call, prompt).into());
                 }
             }
         }
@@ -132,11 +141,12 @@ impl<'a, S> ToolApprovalOperation<'a, S> {
 }
 
 fn confirmation_request(
+    host: &dyn crate::runtime::HostServices,
     request: &ToolRequest,
     call: &CallToolRequestParams,
     prompt: Option<String>,
 ) -> Message {
-    Message::assistant()
+    Message::assistant_with_host(host)
         .with_action_required(
             request.id.clone(),
             call.name.to_string(),
@@ -144,11 +154,14 @@ fn confirmation_request(
             prompt,
         )
         .user_only()
-        .with_generated_id_if_missing()
+        .with_generated_id_if_missing_with_host(host)
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for ToolApprovalOperation<'_, S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -191,4 +204,13 @@ where
         self.check_new_calls(session, conversation, unchecked, emit)
             .await
     }
+}
+
+#[cfg(feature = "std")]
+pub fn confirmation_response_message(tool_call_id: &str, permission: Permission) -> Message {
+    confirmation_response_message_with_host(
+        &goose_provider_types::runtime::SystemHost,
+        tool_call_id,
+        permission,
+    )
 }

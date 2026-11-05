@@ -19,9 +19,9 @@ use crate::providers::toolshim::{
     augment_message_with_selected_tool_interpreter, convert_tool_messages_to_text,
     modify_system_prompt_for_tool_json, sanitize_residual_markers,
 };
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage};
 use goose_providers::model::ModelConfig;
-use rmcp::model::Tool;
 use tracing::warn;
 
 async fn enhance_model_error(
@@ -169,7 +169,7 @@ fn message_has_timing_content(message: &Message) -> bool {
 }
 
 fn is_mergeable_assistant_chunk(message: &Message) -> bool {
-    message.role == rmcp::model::Role::Assistant
+    message.role == goose_provider_types::data::Role::Assistant
         && !message.content.is_empty()
         && message.content.iter().all(|content| {
             matches!(
@@ -254,7 +254,7 @@ pub(crate) async fn stream_response_from_provider(
     messages: &[Message],
     tools: &[Tool],
     toolshim_tools: &[Tool],
-) -> Result<MessageStream, ProviderError> {
+) -> Result<MessageStream<'static>, ProviderError> {
     let config = model_config.clone();
 
     let projected_messages =
@@ -293,6 +293,7 @@ pub(crate) async fn stream_response_from_provider(
         model_config.with_default_thinking_effort(Config::global().get_goose_thinking_effort());
     let request_started = std::time::Instant::now();
     debug!("WAITING_LLM_STREAM_START");
+    Ok(Box::pin(try_stream! {
     let stream_result = crate::session_context::with_session_id(
         Some(session_id.clone()),
         provider.stream(
@@ -312,13 +313,11 @@ pub(crate) async fn stream_response_from_provider(
             let enhanced_error = enhance_model_error(e, &provider, config.toolshim).await;
             // Return a stream that immediately yields the error
             // This allows the error to be caught by existing error handling in agent.rs
-            return Ok(Box::pin(try_stream! {
-                yield Err(enhanced_error)?;
-            }));
+            Err(enhanced_error)?;
+            unreachable!()
         }
     };
 
-    Ok(Box::pin(try_stream! {
         if !provider.manages_own_context() {
             let retry_config = provider.retry_config().transient_only();
             let mut attempts = 0;
@@ -495,11 +494,13 @@ pub(crate) async fn stream_response_from_provider(
 /// Per the MCP Apps spec (2026-01-26), if `_meta.ui.visibility` is present and does not
 /// include `"app"`, the tool is model-only and must not be callable by app UIs.
 /// If the field is absent, the tool defaults to visible to both model and app.
-pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
-    let Some(meta) = &tool.meta else {
+pub fn is_tool_visible_to_app(
+    tool: &impl crate::agents::extension_manager::ToolDescriptor,
+) -> bool {
+    let Some(meta) = tool.metadata() else {
         return true;
     };
-    let Some(ui) = meta.0.get("ui") else {
+    let Some(ui) = meta.get("ui") else {
         return true;
     };
     let Some(visibility) = ui.get("visibility") else {
@@ -516,11 +517,13 @@ pub fn is_tool_visible_to_app(tool: &Tool) -> bool {
 /// Per the MCP Apps spec (2026-01-26), tools may declare `_meta.ui.visibility` as an array
 /// of `"model"` and/or `"app"`. If the field is absent, the tool defaults to visible to both.
 /// If present and does not include `"model"`, the tool is app-only and must not be sent to the LLM.
-pub fn is_tool_visible_to_model(tool: &Tool) -> bool {
-    let Some(meta) = &tool.meta else {
+pub fn is_tool_visible_to_model(
+    tool: &impl crate::agents::extension_manager::ToolDescriptor,
+) -> bool {
+    let Some(meta) = tool.metadata() else {
         return true;
     };
-    let Some(ui) = meta.0.get("ui") else {
+    let Some(ui) = meta.get("ui") else {
         return true;
     };
     let Some(visibility) = ui.get("visibility") else {
@@ -539,9 +542,9 @@ mod tests {
     use crate::conversation::message::{Message, SystemNotificationType};
     use crate::providers::base::Provider;
     use async_trait::async_trait;
+    use goose_provider_types::data::{Annotations, Role, TextContent};
     use goose_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
     use goose_providers::model::ModelConfig;
-    use rmcp::model::{Annotations, Role, TextContent};
     use rmcp::object;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
@@ -561,7 +564,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             let usage = ProviderUsage::new(
                 "resolved-model".to_string(),
                 Usage::new(Some(11), Some(7), Some(18)).with_cache_tokens(Some(3), Some(2)),
@@ -590,7 +593,7 @@ mod tests {
             _system: &str,
             messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             *self.messages.lock().unwrap() = messages.to_vec();
             let message = Message::assistant().with_text("ok");
             let usage = ProviderUsage::new("capturing".to_string(), Usage::default());
@@ -659,7 +662,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -670,6 +673,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
@@ -691,7 +696,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -702,6 +707,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
@@ -715,7 +722,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_input_refixes_tool_result_emptied_by_agent_projection() {
-        let user_only_result = rmcp::model::ContentBlock::Text(
+        let user_only_result = goose_provider_types::data::ContentBlock::Text(
             TextContent::new("hidden result")
                 .with_annotations(Annotations::default().with_audience(vec![Role::User])),
         );
@@ -723,11 +730,15 @@ mod tests {
             Message::user().with_text("run the tool"),
             Message::assistant().with_tool_request(
                 "tool-1",
-                Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+                Ok(goose_provider_types::data::CallToolRequestParams::new(
+                    "test_tool",
+                )),
             ),
             Message::user().with_tool_response(
                 "tool-1",
-                Ok(rmcp::model::CallToolResult::success(vec![user_only_result])),
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
+                    user_only_result,
+                ])),
             ),
         ];
         let captured = Arc::new(Mutex::new(Vec::new()));
@@ -735,7 +746,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -746,6 +757,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         let tool_response = captured
@@ -824,7 +837,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             type StreamItem = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>;
             Ok(Box::pin(futures::stream::iter(vec![
                 Ok((Some(Message::assistant().with_text("Hel")), None)),
@@ -860,7 +873,9 @@ mod tests {
                 Ok((
                     Some(Message::assistant().with_tool_request(
                         "tool-t",
-                        Ok(rmcp::model::CallToolRequestParams::new("test_tool")),
+                        Ok(goose_provider_types::data::CallToolRequestParams::new(
+                            "test_tool",
+                        )),
                     )),
                     None,
                 )),
@@ -960,7 +975,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             type StreamItem = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>;
             let items = self
                 .messages
@@ -1049,7 +1064,7 @@ mod tests {
         let mut tool = Tool::new("test_tool", "a test tool", object!({ "type": "object" }));
         if let Some(v) = meta_json {
             let obj = v.as_object().unwrap().clone();
-            tool = tool.with_meta(rmcp::model::MetaObject(obj));
+            tool = tool.with_meta(goose_provider_types::data::MetaObject(obj));
         }
         tool
     }
@@ -1286,7 +1301,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let response = self.responses.lock().unwrap().pop_front().unwrap();
             response.map(|items| Box::pin(futures::stream::iter(items)) as MessageStream)
@@ -1301,7 +1316,7 @@ mod tests {
         ProviderError::NetworkError("stream closed".into())
     }
 
-    async fn stream_for_test(provider: Arc<dyn Provider>) -> MessageStream {
+    async fn stream_for_test(provider: Arc<dyn Provider>) -> MessageStream<'static> {
         stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
@@ -1442,7 +1457,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             Ok(Box::pin(futures::stream::pending()))
         }
     }

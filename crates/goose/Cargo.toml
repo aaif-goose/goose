@@ -117,14 +117,14 @@ rmcp = { workspace = true, features = [
 ] }
 oauth2 = { version = "5.0", default-features = false }
 arboard = { workspace = true }
-anyhow = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
-futures = { workspace = true }
+futures = { workspace = true, features = ["std"] }
 dirs = { workspace = true }
 reqwest = { workspace = true, features = ["json", "cookies", "gzip", "brotli", "deflate", "zstd", "charset", "http2", "stream", "blocking", "multipart", "system-proxy"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "fs", "process", "net", "signal", "io-std", "io-util"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 serde_path_to_error = { version = "0.1.8", default-features = false }
 serde_urlencoded = { version = "0.7.1", default-features = false }
 jsonschema = { version = "0.55", default-features = false }
@@ -140,7 +140,7 @@ clap = { workspace = true }
 indoc = { workspace = true }
 nanoid = { version = "0.5", default-features = false }
 sha2 = { workspace = true }
-base64 = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 url = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 webbrowser = { workspace = true }
@@ -155,7 +155,7 @@ opentelemetry-otlp = { workspace = true, optional = true }
 opentelemetry-stdout = { workspace = true, optional = true }
 keyring = { workspace = true, optional = true }
 serde_yaml = { workspace = true }
-strum = { workspace = true }
+strum = { workspace = true, features = ["std"] }
 once_cell = { workspace = true }
 etcetera = { workspace = true }
 fs-err = { version = "3.1", default-features = false }
@@ -245,6 +245,7 @@ image = { version = "0.24.9", default-features = false, features = ["png", "jpeg
 subtle = { version = "2.5", default-features = false, features = ["std"] }
 gethostname = "1.1.0"
 boa_engine = { version = "0.22", default-features = false, optional = true, features = ["fuzz"] }
+goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handleapi", "jobapi2", "minwinbase", "processthreadsapi", "sddl", "securitybaseapi", "synchapi", "winbase", "winerror"] }

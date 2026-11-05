@@ -2,9 +2,9 @@ use serde_json::Value;
 
 use crate::conversation::message::{Message, MessageContent};
 use crate::utils::safe_truncate;
+use goose_provider_types::data::Role;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
-use rmcp::model::Role;
 
 pub(crate) fn extract_usage_tokens(usage_info: &Value) -> Usage {
     let get = |key: &str| {
@@ -102,7 +102,7 @@ pub(crate) fn generate_simple_session_description(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::{Annotations, TextContent};
+    use goose_provider_types::data::{Annotations, TextContent};
 
     #[test]
     fn session_description_uses_only_user_visible_content() {

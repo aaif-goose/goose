@@ -20,7 +20,7 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock};
 use serde_json::{json, Map, Value};
 
 use crate::conversation::message::Message;

@@ -1,6 +1,7 @@
-use std::{fmt, str::FromStr, sync::LazyLock};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use core::{fmt, str::FromStr};
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 pub const GEMINI_THOUGHT_SIGNATURE_KEY: &str = "thoughtSignature";
@@ -122,7 +123,7 @@ impl ThinkFilter {
                         self.buffer.drain(..pos);
                     }
                     if self.buffer.len() > MAX_BUFFERED_THINK_TAG_BYTES {
-                        let oversized = std::mem::take(&mut self.buffer);
+                        let oversized = core::mem::take(&mut self.buffer);
                         if self.inside_think {
                             out.thinking.push_str(&oversized);
                         } else {
@@ -271,18 +272,29 @@ fn is_possible_partial_think_tag(suffix: &str) -> bool {
     if contains_unquoted_gt(suffix) {
         return false;
     }
-
-    // Allow a trailing `/` so a chunk boundary that lands between `<think` and
-    // `>` in a self-closing `<think/>` (or `<thinking/>`) is still recognised
-    // as a partial tag and buffered until the `>` arrives in the next chunk.
-    static OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)^<(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s.*|/)?$").unwrap()
-    });
-    static CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)^</(?:t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)(?:\s*)?$").unwrap()
-    });
-
-    OPEN_RE.is_match(suffix) || CLOSE_RE.is_match(suffix)
+    let Some(rest) = suffix.strip_prefix('<') else {
+        return false;
+    };
+    let (closing, rest) = match rest.strip_prefix('/') {
+        Some(s) => (true, s),
+        None => (false, rest),
+    };
+    let end = rest
+        .find(|c: char| c.is_whitespace() || c == '/')
+        .unwrap_or(rest.len());
+    let name = rest.get(..end).unwrap();
+    if !"thinking"
+        .get(..name.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(name))
+    {
+        return false;
+    }
+    let tail = rest.get(end..).unwrap();
+    if closing {
+        tail.chars().all(char::is_whitespace)
+    } else {
+        tail.is_empty() || tail == "/" || tail.starts_with(char::is_whitespace)
+    }
 }
 
 fn contains_unquoted_gt(text: &str) -> bool {
@@ -653,7 +665,7 @@ mod tests {
             let mut content = String::new();
 
             for chunk in payload.as_bytes().chunks(17) {
-                let out = filter.push(std::str::from_utf8(chunk).unwrap());
+                let out = filter.push(core::str::from_utf8(chunk).unwrap());
                 content.push_str(&out.content);
                 assert!(filter.buffer.len() <= MAX_BUFFERED_THINK_TAG_BYTES);
             }
@@ -670,7 +682,7 @@ mod tests {
         let mut content = String::new();
 
         for chunk in payload.as_bytes().chunks(19) {
-            let out = filter.push(std::str::from_utf8(chunk).unwrap());
+            let out = filter.push(core::str::from_utf8(chunk).unwrap());
             content.push_str(&out.content);
             assert!(filter.buffer.len() <= MAX_BUFFERED_THINK_TAG_BYTES);
         }

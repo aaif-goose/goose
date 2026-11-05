@@ -9,14 +9,14 @@ repository.workspace = true
 description = "Peer-to-peer roaming transport for goose agents (iroh-based)"
 
 [dependencies]
-anyhow = { workspace = true }
-base64 = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
+base64 = { workspace = true, features = ["std"] }
 fs2.workspace = true
-futures = { workspace = true }
+futures = { workspace = true, features = ["std"] }
 iroh = { workspace = true, features = ["tls-aws-lc-rs"] }
 iroh-relay = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 sha2.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "io-util"] }

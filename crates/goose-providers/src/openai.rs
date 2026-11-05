@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use crate::base::{MessageStream, ProviderDescriptor};
 use crate::model::ModelConfig;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 pub const OPEN_AI_PROVIDER_NAME: &str = "openai";
 pub const OPEN_AI_DEFAULT_BASE_PATH: &str = "v1/chat/completions";
@@ -302,7 +302,7 @@ impl OpenAiProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let mut request_config = model_config.clone();
         request_config.supports_vision = self.vision_support(model_config);
         if self.native_openai && request_config.reasoning.is_none() {
@@ -368,7 +368,7 @@ impl OpenAiProvider {
         &self,
         model_config: &ModelConfig,
         mut payload: serde_json::Value,
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         self.insert_prompt_cache_key(&mut payload);
         let mut log = start_log(model_config, &payload)?;
         let response = match self.post_responses(model_config, &payload).await {
@@ -861,7 +861,7 @@ impl Provider for OpenAiProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         if self.should_use_responses_api_for_provider(&model_config.model_name) {
             let (wire_model, _) =
                 crate::formats::openai::extract_reasoning_effort(&model_config.model_name);
@@ -958,7 +958,7 @@ impl Provider for OpenAiProvider {
 /// Reserved keys are skipped so a declaration cannot clobber the streaming setup.
 fn apply_declared_request_params(
     payload: &mut serde_json::Value,
-    params: &HashMap<String, serde_json::Value>,
+    params: &std::collections::BTreeMap<String, serde_json::Value>,
 ) {
     let Some(object) = payload.as_object_mut() else {
         return;
@@ -2058,7 +2058,7 @@ mod tests {
             "messages": [{"role": "user", "content": "hi"}]
         });
 
-        let params = HashMap::from([
+        let params = std::collections::BTreeMap::from([
             ("reasoning_format".to_string(), json!("parsed")),
             ("model".to_string(), json!("hijacked")),
             ("stream".to_string(), json!(false)),

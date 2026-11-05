@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use futures::future::BoxFuture;
+use goose_provider_types::data::Tool;
 use goose_providers::anthropic::{
     AnthropicFormatOptions, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION,
 };
@@ -14,7 +15,6 @@ use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::Client;
-use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -625,7 +625,7 @@ impl Provider for MuseCodeProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         self.auth.get_valid_token().await?;
         self.inner
             .stream(model_config, system, messages, tools)

@@ -5,7 +5,10 @@ use crate::formats::anthropic::{
     thinking_block_is_stale, thinking_budget_tokens, thinking_type_for_provider, ThinkingType,
 };
 use crate::model::{is_goose_internal_request_param, ModelConfig};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
+use crate::data::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
 use crate::documents::{
     convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
     ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
@@ -14,13 +17,14 @@ use crate::formats::openai::{
     extract_reasoning_effort, is_valid_function_name, openai_reasoning_effort_for_thinking,
     sanitize_function_name, validate_tool_schemas,
 };
-use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
+use crate::images::{convert_image, ImageFormat};
+#[cfg(feature = "std")]
+use crate::images::{detect_image_path, load_image_file};
 use crate::mcp_utils::extract_text_from_resource;
+use alloc::borrow::Cow;
 use anyhow::{anyhow, Error};
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::borrow::Cow;
 
 pub const DATABRICKS_PROVIDER_NAME: &str = "databricks";
 
@@ -39,7 +43,15 @@ fn format_text_content(
     image_format: &ImageFormat,
     supports_vision: bool,
 ) -> (Vec<Value>, bool) {
-    let mut items = vec![json!({"type": "text", "text": text})];
+    let items = vec![json!({"type": "text", "text": text})];
+    #[cfg(feature = "std")]
+    let mut items = items;
+    #[cfg(not(feature = "std"))]
+    let has_image = {
+        let _ = (supports_vision, image_format);
+        false
+    };
+    #[cfg(feature = "std")]
     let has_image = if supports_vision {
         if let Some(path) = detect_image_path(text) {
             if let Ok(image) = load_image_file(path.as_ref()) {
@@ -345,7 +357,7 @@ fn apply_claude_thinking_config(
 }
 
 pub fn format_tools(tools: &[Tool], _model_name: &str) -> anyhow::Result<Vec<Value>> {
-    let mut tool_names = std::collections::HashSet::new();
+    let mut tool_names = alloc::collections::BTreeSet::new();
     let mut result = Vec::new();
 
     for tool in tools {
@@ -362,7 +374,7 @@ pub fn format_tools(tools: &[Tool], _model_name: &str) -> anyhow::Result<Vec<Val
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.input_schema,
+                "parameters": tool.input_schema.as_ref(),
             },
         }));
     }
@@ -372,7 +384,15 @@ pub fn format_tools(tools: &[Tool], _model_name: &str) -> anyhow::Result<Vec<Val
 
 /// Convert Databricks' API response to internal Message format
 #[allow(clippy::too_many_lines)]
+#[cfg(feature = "std")]
 pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &Value,
+) -> anyhow::Result<Message> {
     let original = &response["choices"][0]["message"];
     let mut content = Vec::new();
 
@@ -500,7 +520,7 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
 
     Ok(Message::new(
         Role::Assistant,
-        chrono::Utc::now().timestamp(),
+        host.unix_timestamp(),
         content,
     ))
 }
@@ -684,8 +704,8 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
-    use rmcp::model::CallToolResult;
-    use rmcp::object;
+    use crate::data::CallToolResult;
+    use crate::object;
     use serde_json::json;
 
     const OPENAI_TOOL_USE_RESPONSE: &str = r#"{
@@ -867,7 +887,7 @@ mod tests {
             }),
         );
 
-        let spec = format_tools(std::slice::from_ref(&tool), "gpt-4o")?;
+        let spec = format_tools(core::slice::from_ref(&tool), "gpt-4o")?;
         assert_eq!(
             spec[0]["function"]["parameters"]["$schema"],
             "http://json-schema.org/draft-07/schema#"
@@ -875,7 +895,7 @@ mod tests {
 
         // Databricks Gemini endpoints use OpenAI-compatible format, so tools use
         // "parameters" (not "parametersJsonSchema") regardless of model family.
-        let spec = format_tools(std::slice::from_ref(&tool), "gemini-2-5-flash")?;
+        let spec = format_tools(core::slice::from_ref(&tool), "gemini-2-5-flash")?;
         assert!(spec[0]["function"].get("parametersJsonSchema").is_none());
         assert!(spec[0]["function"].get("parameters").is_some());
         assert_eq!(spec[0]["function"]["parameters"]["type"], "object");
@@ -982,7 +1002,7 @@ mod tests {
             }),
         );
 
-        let spec = format_tools(std::slice::from_ref(&tool), "glm-5-3")?;
+        let spec = format_tools(core::slice::from_ref(&tool), "glm-5-3")?;
 
         let function = &spec[0]["function"];
         assert!(
@@ -1118,7 +1138,7 @@ mod tests {
         // Non-vision: explicit image content is replaced with a text placeholder
         // at format time — session history is untouched.
         let as_value = serde_json::to_value(format_messages(
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             &ImageFormat::OpenAi,
             None,
             false,
@@ -1152,15 +1172,15 @@ mod tests {
     fn test_tool_response_image_omitted_when_not_vision() -> anyhow::Result<()> {
         let tool_response = Message::user().with_tool_response(
             "tool1",
-            Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::ContentBlock::image("aW1hZ2VkYXRh", "image/png"),
+            Ok(crate::data::CallToolResult::success(vec![
+                crate::data::ContentBlock::image("aW1hZ2VkYXRh", "image/png"),
             ])),
         );
 
         // Non-vision: no separate user image message is emitted — this is what
         // un-bricks sessions (a converted image in the next request 400s).
         let as_value = serde_json::to_value(format_messages(
-            std::slice::from_ref(&tool_response),
+            core::slice::from_ref(&tool_response),
             &ImageFormat::OpenAi,
             None,
             false,
@@ -1374,7 +1394,7 @@ mod tests {
 
     #[test]
     fn test_create_request_reasoning_effort() -> anyhow::Result<()> {
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("high"));
         let model_config = ModelConfig {
             model_name: "o3-mini".to_string(),
@@ -1395,7 +1415,7 @@ mod tests {
 
     #[test]
     fn test_create_request_off_effort_uses_low() -> anyhow::Result<()> {
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("off"));
         let model_config = ModelConfig {
             model_name: "databricks-o3-mini".to_string(),
@@ -1417,7 +1437,7 @@ mod tests {
 
     #[test]
     fn test_create_request_max_effort_uses_supported_level() -> anyhow::Result<()> {
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("max"));
         let model_config = ModelConfig {
             model_name: "databricks-gpt-5.2-pro".to_string(),
@@ -1500,7 +1520,7 @@ mod tests {
     #[test]
     fn test_create_request_one_shot_claude() -> anyhow::Result<()> {
         let model_config = ModelConfig::new("databricks-claude-sonnet-4-5")
-            .with_merged_request_params(std::collections::HashMap::from([
+            .with_merged_request_params(alloc::collections::BTreeMap::from([
                 ("anthropic_beta".to_string(), serde_json::json!(["ctx-1m"])),
                 ("disable_prompt_cache".to_string(), serde_json::json!(true)),
             ]));
@@ -1525,7 +1545,7 @@ mod tests {
     fn test_create_request_adaptive_thinking_for_46_models() -> anyhow::Result<()> {
         let mut model_config = ModelConfig::new("databricks-claude-opus-4-6");
         model_config.max_tokens = Some(4096);
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("low"));
         model_config.request_params = Some(params);
 
@@ -1555,7 +1575,7 @@ mod tests {
         ] {
             let mut model_config = ModelConfig::new(name);
             model_config.max_tokens = Some(4096);
-            let mut params = std::collections::HashMap::new();
+            let mut params = alloc::collections::BTreeMap::new();
             params.insert("thinking_effort".to_string(), serde_json::json!("high"));
             model_config.request_params = Some(params);
 
@@ -1576,7 +1596,7 @@ mod tests {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
         let mut model_config = ModelConfig::new("databricks-claude-fable-5");
         model_config.max_tokens = Some(4096);
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("off"));
         model_config.request_params = Some(params);
 
@@ -1591,7 +1611,7 @@ mod tests {
     #[test]
     fn test_create_request_disabled_thinking_omits_display() -> anyhow::Result<()> {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("off"));
 
         let mut model_config = ModelConfig::new("databricks-claude-sonnet-4.5");
@@ -1612,7 +1632,7 @@ mod tests {
     fn test_create_request_enabled_thinking_with_budget() -> anyhow::Result<()> {
         let mut model_config = ModelConfig::new("databricks-claude-sonnet-4.5");
         model_config.max_tokens = Some(4096);
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("high"));
         model_config.request_params = Some(params);
 
@@ -1639,7 +1659,7 @@ mod tests {
         ] {
             let mut model_config = ModelConfig::new("databricks-claude-sonnet-4.5");
             model_config.max_tokens = Some(4096);
-            let mut params = std::collections::HashMap::new();
+            let mut params = alloc::collections::BTreeMap::new();
             params.insert("thinking_effort".to_string(), serde_json::json!(effort));
             model_config.request_params = Some(params);
 
@@ -1775,7 +1795,7 @@ mod tests {
     fn format_messages_post_parse_error_history_is_wellformed() -> anyhow::Result<()> {
         // An unparseable tool call (ToolRequest(Err)) paired with its error tool
         // response must not serialize as an orphan role:"tool" message.
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
         let err = ErrorData::new(
             ErrorCode::INVALID_PARAMS,
             "Tool arguments for id call_bad must be a JSON object".to_string(),
@@ -1796,7 +1816,7 @@ mod tests {
             None,
             false,
         ))?;
-        let mut open = std::collections::HashSet::new();
+        let mut open = alloc::collections::BTreeSet::new();
         for m in spec.as_array().unwrap() {
             match m.get("role").and_then(|v| v.as_str()) {
                 Some("assistant") => {

@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_provider_types::data::{CallToolResult, ContentBlock, ErrorData, Tool};
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
-use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
+use rmcp::model::JsonObject;
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
 use serde_json::Value;
@@ -303,7 +304,10 @@ impl Operation<Session, GooseEffect> for SkillOperation {
         ])
     }
 
-    async fn inference_tools(&self, _session: &Session) -> Result<Vec<Tool>> {
+    async fn inference_tools(
+        &self,
+        _session: &Session,
+    ) -> Result<Vec<goose_provider_types::data::Tool>> {
         Ok(vec![skill_tool()?])
     }
 

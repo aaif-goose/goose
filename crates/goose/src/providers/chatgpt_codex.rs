@@ -16,13 +16,13 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
+use goose_provider_types::data::{ContentBlock, Role, Tool};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai_responses::{
     is_encrypted_reasoning_error, reasoning_input_item, responses_api_to_streaming_message,
     strip_reasoning_items,
 };
 use goose_providers::model::ModelConfig;
-use rmcp::model::{ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Digest;
@@ -940,7 +940,7 @@ impl Provider for ChatGptCodexProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let mut payload = create_codex_request(model_config, system, messages, tools)
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
         payload["stream"] = serde_json::Value::Bool(true);
@@ -1013,8 +1013,10 @@ impl Provider for ChatGptCodexProvider {
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
+    use goose_provider_types::data::{
+        CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData,
+    };
     use goose_test_support::TEST_IMAGE_B64;
-    use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
     use rmcp::object;
     use test_case::test_case;
     use wiremock::matchers::{body_string_contains, method, path};
@@ -1192,7 +1194,7 @@ mod tests {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("max"));
         let mut config = ModelConfig::new("gpt-5.5");
-        config.request_params = Some(params);
+        config.request_params = Some(params.into_iter().collect());
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"]["effort"], "xhigh");
@@ -1204,7 +1206,7 @@ mod tests {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("max"));
         let mut config = ModelConfig::new("unknown-model");
-        config.request_params = Some(params);
+        config.request_params = Some(params.into_iter().collect());
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"]["effort"], "high");
@@ -1216,7 +1218,7 @@ mod tests {
         let mut params = std::collections::HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
         let mut config = ModelConfig::new("gpt-5.6-sol");
-        config.request_params = Some(params);
+        config.request_params = Some(params.into_iter().collect());
 
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"]["effort"], "none");

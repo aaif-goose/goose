@@ -1,4 +1,6 @@
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use goose_provider_types::runtime::Shared as Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -24,16 +26,19 @@ pub enum StopHookDecision {
 const DENIED: &str = "denied";
 pub const DEFAULT_DENY_LIMIT: u32 = 8;
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait StopHook<S>: MaybeSend + MaybeSync {
     async fn on_stop(&self, session: &S, conversation: &Conversation) -> Result<StopHookDecision>;
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 type DenyLimitMessage = dyn Fn() -> Message + Send + Sync;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
 type DenyLimitMessage = dyn Fn() -> Message;
 
 pub struct StopHookOperation<S> {
@@ -65,8 +70,11 @@ impl<S> StopHookOperation<S> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for StopHookOperation<S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -105,7 +113,7 @@ where
                 .map(|build| emit.message(build()).into());
             return yielded_with(message);
         }
-        let mut denial_message = Message::user()
+        let mut denial_message = Message::user_with_host(emit.host())
             .with_text(reason)
             .with_visibility(false, true);
         Operation::<S, E>::set_message_meta(

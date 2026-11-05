@@ -1,5 +1,8 @@
 //! Native filesystem skill discovery under caller-supplied roots.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use goose_provider_types::trace as tracing;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;

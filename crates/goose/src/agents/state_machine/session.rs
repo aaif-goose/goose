@@ -57,7 +57,7 @@ impl EffectHandler<Session, GooseEffect> for SessionManager {
         emit: &Emitter,
     ) -> Result<()> {
         for effect in effects.iter_mut() {
-            effect.ensure_message_ids();
+            effect.ensure_message_ids(emit.host());
         }
         usage::enrich(session, effects);
 
@@ -283,7 +283,7 @@ pub(crate) async fn run_turn_start_hooks(
         .ok_or_else(|| anyhow::anyhow!("state-machine session loaded without conversation"))?;
     let messages = crate::agents::state_machine::messages_since_kickoff(conversation)?;
     if messages.iter().any(|message| {
-        message.role == rmcp::model::Role::Assistant
+        message.role == goose_provider_types::data::Role::Assistant
             && ((message.is_user_visible() && message.is_agent_visible())
                 || message.error_kind().is_some())
     }) {
@@ -294,7 +294,7 @@ pub(crate) async fn run_turn_start_hooks(
     let messages_before_kickoff = &conversation.messages()[..conversation.len() - messages.len()];
     if !messages_before_kickoff.iter().any(|message| {
         is_session_start_message(message)
-            || (message.role == rmcp::model::Role::User
+            || (message.role == goose_provider_types::data::Role::User
                 && message.is_user_visible()
                 && !message.is_tool_response())
     }) {
@@ -368,7 +368,7 @@ pub(crate) async fn run(
         .into_iter()
         .flatten()
         .rev()
-        .filter(|message| message.role == rmcp::model::Role::Assistant)
+        .filter(|message| message.role == goose_provider_types::data::Role::Assistant)
         .map(crate::conversation::message::Message::user_visible_content)
         .map(|message| message.as_concat_text())
         .find(|text| !text.is_empty())

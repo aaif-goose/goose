@@ -1,3 +1,4 @@
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock};
 use goose_providers::{
     api_client::{ApiClient, AuthMethod},
     base::{ModelInfo, Provider},
@@ -5,7 +6,6 @@ use goose_providers::{
     model::ModelConfig,
     openai::OpenAiProviderBuilder,
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 use serde_json::{json, Value};
 use wiremock::{
     matchers::{method, path},

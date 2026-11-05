@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::conversation::token_usage::Usage;

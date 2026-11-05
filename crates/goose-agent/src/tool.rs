@@ -1,7 +1,8 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::runtime::{Cell as Mutex, Shared as Arc};
+use alloc::collections::BTreeSet as HashSet;
+use goose_provider_types::trace as tracing;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -9,10 +10,12 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, ToolRequest},
     Conversation,
 };
-use rmcp::{
-    handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
-    model::{CallToolRequestParams, CallToolResult, ErrorData, JsonObject, Tool},
+use goose_provider_types::data::{
+    CallToolRequestParams, CallToolResult, ErrorData, JsonObject, Tool,
 };
+#[cfg(feature = "mcp-interop")]
+use rmcp::handler::server::router::tool::{AsyncTool, SyncTool, ToolBase};
+#[cfg(feature = "mcp-interop")]
 use serde_json::{json, Value};
 
 use crate::operation::{
@@ -23,28 +26,22 @@ use crate::post_tool_call_hook::PostToolCallHook;
 use crate::tool_call_state::{tool_calls, ToolCallState};
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
-fn empty_input_schema() -> Arc<JsonObject> {
-    Arc::new(
-        serde_json::from_value(json!({
-            "type": "object",
-            "properties": {},
-            "additionalProperties": false
-        }))
-        .expect("empty tool input schema is an object"),
-    )
-}
-
+#[cfg(feature = "mcp-interop")]
 fn definition<T: ToolBase>() -> Tool {
-    let mut tool = Tool::new_with_raw(
-        T::name(),
-        T::description(),
-        T::input_schema().unwrap_or_else(empty_input_schema),
-    );
+    let schema = T::input_schema().unwrap_or_else(|| {
+        std::sync::Arc::new(
+            serde_json::from_value(
+                json!({"type":"object", "properties":{}, "additionalProperties":false}),
+            )
+            .unwrap(),
+        )
+    });
+    let mut tool = rmcp::model::Tool::new_with_raw(T::name(), T::description(), schema);
     if let Some(title) = T::title() {
         tool = tool.with_title(title);
     }
-    if let Some(output_schema) = T::output_schema() {
-        tool = tool.with_raw_output_schema(output_schema);
+    if let Some(schema) = T::output_schema() {
+        tool = tool.with_raw_output_schema(schema);
     }
     if let Some(annotations) = T::annotations() {
         tool = tool.with_annotations(annotations);
@@ -55,9 +52,9 @@ fn definition<T: ToolBase>() -> Tool {
     if let Some(meta) = T::meta() {
         tool = tool.with_meta(meta);
     }
-    tool
+    tool.try_into()
+        .expect("MCP tool definition matches GDK data")
 }
-
 fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> Vec<ToolRequest> {
     requests
         .into_iter()
@@ -70,6 +67,7 @@ fn pending_requests(requests: Vec<ToolRequest>, tool_names: &HashSet<&str>) -> V
         .collect()
 }
 
+#[cfg(feature = "mcp-interop")]
 fn parameters<T: ToolBase>(arguments: Option<JsonObject>) -> Result<T::Parameter, ErrorData> {
     if T::input_schema().is_none() {
         return Ok(T::Parameter::default());
@@ -80,15 +78,20 @@ fn parameters<T: ToolBase>(arguments: Option<JsonObject>) -> Result<T::Parameter
     })
 }
 
+#[cfg(feature = "mcp-interop")]
 fn result<T: ToolBase>(output: Result<T::Output, T::Error>) -> Result<CallToolResult, ErrorData> {
-    let output = output.map_err(Into::into)?;
+    let output = output.map_err(|error| {
+        let error: rmcp::ErrorData = error.into();
+        ErrorData::from(error)
+    })?;
     let value = serde_json::to_value(output).map_err(|error| {
         ErrorData::internal_error(format!("failed to serialize tool output: {error}"), None)
     })?;
     Ok(CallToolResult::structured(value))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
+#[cfg(feature = "mcp-interop")]
 async fn invoke_sync<S, T>(
     session: S,
     parameters: T::Parameter,
@@ -106,24 +109,39 @@ where
 
 // wasm32 has no threads to move blocking work onto, so the tool runs inline
 // and cancellation cannot interrupt it.
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
+#[cfg(feature = "mcp-interop")]
 async fn invoke_sync<S, T>(
     session: S,
     parameters: T::Parameter,
 ) -> Result<CallToolResult, ErrorData>
 where
-    S: MaybeSend + MaybeSync + 'static,
+    S: MaybeSend + MaybeSync + rmcp::service::MaybeSend + 'static,
     T: SyncTool<S>,
 {
     result::<T>(T::invoke(&session, parameters))
+}
+
+/// A local asynchronous tool. Implementations own their JSON schema and use the embedder's peripherals directly.
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
+pub trait LocalTool<S>: MaybeSend + MaybeSync {
+    fn definition(&self) -> Tool;
+    async fn call(&self, session: &S, arguments: JsonObject) -> Result<CallToolResult, ErrorData>;
 }
 
 /// Supplies tools whose definitions and implementations may vary by session.
 ///
 /// A provider's tool names and their handlers must remain stable from an inference
 /// advertisement until every tool call produced by that inference has been handled.
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     async fn tools(&self, session: &S) -> Result<Vec<Tool>>;
 
@@ -136,12 +154,12 @@ pub trait ToolProvider<S>: MaybeSend + MaybeSync {
     ) -> Result<CallToolResult, ErrorData>;
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 type ToolHandler<S> = dyn for<'a> Fn(&'a S, Option<JsonObject>) -> OperationFuture<'a, Result<CallToolResult, ErrorData>>
     + Send
     + Sync;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
 type ToolHandler<S> = dyn for<'a> Fn(
     &'a S,
     Option<JsonObject>,
@@ -156,8 +174,11 @@ struct RegisteredToolProvider<S> {
     tools: Vec<RegisteredTool<S>>,
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S> ToolProvider<S> for RegisteredToolProvider<S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -225,6 +246,19 @@ where
         }
     }
 
+    pub fn with_local_tool<T: LocalTool<S> + 'static>(mut self, tool: T) -> Self {
+        let definition = tool.definition();
+        let tool = Arc::new(tool);
+        self.register(RegisteredTool {
+            definition,
+            handler: Arc::new(move |session, arguments| {
+                let tool = tool.clone();
+                Box::pin(async move { tool.call(session, arguments.unwrap_or_default()).await })
+            }),
+        });
+        self
+    }
+
     pub fn with_provider(mut self, provider: Arc<dyn ToolProvider<S>>) -> Self {
         self.providers.push(provider);
         self
@@ -235,9 +269,10 @@ where
         self
     }
 
+    #[cfg(feature = "mcp-interop")]
     pub fn with_sync_tool<T>(mut self) -> Self
     where
-        S: Clone,
+        S: Clone + rmcp::service::MaybeSend,
         T: SyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
@@ -253,8 +288,10 @@ where
         self
     }
 
+    #[cfg(feature = "mcp-interop")]
     pub fn with_async_tool<T>(mut self) -> Self
     where
+        S: rmcp::service::MaybeSend,
         T: AsyncTool<S> + MaybeSend + MaybeSync + 'static,
     {
         self.register(RegisteredTool {
@@ -301,8 +338,11 @@ where
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for ToolOperation<S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -318,7 +358,7 @@ where
         _conversation: &Conversation,
         emit: &Emitter,
     ) -> Vec<E> {
-        let tool_responses = self.tool_responses.lock().unwrap().take();
+        let tool_responses = self.tool_responses.borrow_mut().take();
         match tool_responses {
             Some(tool_responses) => vec![E::from(emit.message(tool_responses))],
             None => Vec::new(),
@@ -382,9 +422,11 @@ where
                 }
             };
             let tool_response = {
-                let mut tool_responses = self.tool_responses.lock().unwrap();
-                let tool_responses = tool_responses
-                    .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
+                let mut tool_responses = self.tool_responses.borrow_mut();
+                let tool_responses = tool_responses.get_or_insert_with(|| {
+                    Message::user_with_host(emit.host())
+                        .with_generated_id_if_missing_with_host(emit.host())
+                });
                 tool_responses.add_tool_response_with_metadata(
                     request.id.clone(),
                     tool_result,
@@ -408,8 +450,7 @@ where
         }
         let tool_responses = self
             .tool_responses
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .take()
             .expect("tool responses retained");
         applied([E::from(emit.message(tool_responses))])

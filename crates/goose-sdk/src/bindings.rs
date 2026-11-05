@@ -8,6 +8,9 @@ use std::{collections::HashMap, future::Future, sync::Arc, sync::OnceLock, time:
 
 use base64::Engine as _;
 use futures::StreamExt;
+use goose_providers::data::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, Role, Tool,
+};
 use goose_providers::{
     anthropic::AnthropicProviderBuilder,
     api_client::{ApiClient, AuthMethod},
@@ -33,9 +36,6 @@ use goose_providers::{
         OPEN_AI_VERSIONLESS_BASE_PATH,
     },
     utils::sanitize_unicode_tags,
-};
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, Role, Tool,
 };
 use serde_json::Value;
 
@@ -529,10 +529,14 @@ impl ProviderModelConfig {
         merge_params(&mut request_params, self.request_params_json.as_ref())?;
         merge_params(&mut request_params, self.provider_params_json.as_ref())?;
         if !request_params.is_empty() {
-            config = config.with_merged_request_params(request_params.into_iter().collect());
+            config = config.with_merged_request_params(request_params);
         }
 
-        config = config.with_request_headers(self.request_headers.clone());
+        config = config.with_request_headers(
+            self.request_headers
+                .clone()
+                .map(|headers| headers.into_iter().collect()),
+        );
         config.reasoning = self.reasoning;
         Ok(config)
     }
@@ -809,7 +813,7 @@ impl ProviderHandle {
         }));
         let provider = Arc::clone(&self.provider);
         let stream = match run_provider_future(timeout_ms, async move {
-            provider.stream(&model, &system, &messages, &tools).await
+            goose_providers::base::stream_owned(provider, model, system, messages, tools).await
         })
         .await
         {
@@ -1537,7 +1541,7 @@ pub struct ProviderStream {
 }
 
 struct ProviderStreamState {
-    stream: MessageStream,
+    stream: MessageStream<'static>,
     pending: Vec<StreamChunk>,
     final_usage: Option<Usage>,
     ended: bool,
@@ -2033,8 +2037,8 @@ mod tests {
 
     #[test]
     fn completion_content_preserves_malformed_tool_requests() {
-        let error = rmcp::model::ErrorData {
-            code: rmcp::model::ErrorCode::INVALID_REQUEST,
+        let error = goose_providers::data::ErrorData {
+            code: goose_providers::data::ErrorCode::INVALID_REQUEST,
             message: std::borrow::Cow::from(
                 "The provided function name was empty; a tool call must name a tool".to_string(),
             ),
@@ -2078,7 +2082,10 @@ mod tests {
             .tool_call
             .as_ref()
             .expect_err("replayed request must stay a failed tool call");
-        assert_eq!(replayed_error.code, rmcp::model::ErrorCode::INVALID_REQUEST);
+        assert_eq!(
+            replayed_error.code,
+            goose_providers::data::ErrorCode::INVALID_REQUEST
+        );
         assert!(replayed_error.message.contains("must name a tool"));
     }
 

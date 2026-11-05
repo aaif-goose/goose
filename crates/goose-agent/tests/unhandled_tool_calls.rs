@@ -1,3 +1,4 @@
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
     tool_call_state::EXECUTABLE_KEY,
@@ -7,10 +8,9 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY},
     Conversation,
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Default)]
 struct Outcome {

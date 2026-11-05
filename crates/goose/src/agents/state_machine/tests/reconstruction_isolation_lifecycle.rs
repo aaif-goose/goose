@@ -29,7 +29,7 @@ async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
 #[cfg(feature = "tree-sitter")]
 #[tokio::test]
 async fn reconstruction_and_session_isolation() -> Result<()> {
-    use rmcp::model::ElicitationAction;
+    use goose_provider_types::data::ElicitationAction;
     use serde_json::json;
 
     use super::calculator_extension::REQUEST_VALUE;

@@ -11,24 +11,28 @@ description = "The GDK's Agent Loop"
 [lints]
 workspace = true
 
+[features]
+default = ["std", "mcp-interop"]
+std = ["goose-provider-types/std", "goose-provider-types/formats", "anyhow/std", "serde/std", "serde_json/std", "futures/std", "dep:tokio", "dep:tokio-util", "dep:tracing", "dep:regex", "dep:goose-sdk-types", "dep:serde_yaml"]
+mcp-interop = ["std", "goose-provider-types/mcp-interop", "dep:rmcp"]
+local = ["goose-provider-types/local"]
+
 [dependencies]
 anyhow = { workspace = true }
-tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
-tokio-util = { workspace = true, features = ["compat"] }
+tokio = { workspace = true, features = ["macros", "sync", "rt", "time"], optional = true }
+tokio-util = { workspace = true, features = ["compat"], optional = true }
 async-trait = { workspace = true }
 goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
-rmcp = { workspace = true, features = ["server"] }
-uuid = { workspace = true }
+rmcp = { workspace = true, features = ["server"], optional = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
-tracing = { workspace = true }
-tracing-futures = { workspace = true }
+tracing = { workspace = true, optional = true }
 serde.workspace = true
-regex = { workspace = true, features = ["unicode-perl"] }
-goose-sdk-types = { version = "0.1.0-alpha.13", path = "../goose-sdk-types", default-features = false }
+regex = { workspace = true, features = ["unicode-perl"], optional = true }
+goose-sdk-types = { version = "0.1.0-alpha.13", path = "../goose-sdk-types", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-rmcp = { workspace = true, features = ["local"] }
+rmcp = { workspace = true, features = ["local"], optional = true }
 
 [dev-dependencies]
 schemars.workspace = true
@@ -39,4 +43,4 @@ wasm-bindgen-futures = "0.4.78"
 wasm-bindgen-test = "0.3.78"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-serde_yaml.workspace = true
+serde_yaml = { workspace = true, optional = true }

@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use anyhow::Result;
 use regex::{Captures, Regex};
 use std::sync::LazyLock;
@@ -16,7 +18,7 @@ fn split_command_args(input: &str) -> anyhow::Result<Vec<String>> {
             }
             c if c.is_whitespace() && !in_double_quote && !in_single_quote => {
                 if !current.is_empty() {
-                    parts.push(std::mem::take(&mut current));
+                    parts.push(core::mem::take(&mut current));
                 }
             }
             _ => current.push(c),

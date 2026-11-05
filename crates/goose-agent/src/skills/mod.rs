@@ -1,11 +1,13 @@
 //! Application-independent skill argument substitution and rendering.
 //! Native targets also support filesystem discovery under explicit roots.
 
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 mod arguments;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 mod discovery;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 pub use discovery::{discover_skills, SkillRoot};
 
 use anyhow::Result;

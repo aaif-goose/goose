@@ -1,8 +1,9 @@
 use crate::{conversation::message::Message, providers::create};
 use anyhow::Result;
 use futures::StreamExt;
-use rmcp::model::ToolAnnotations;
-use rmcp::{model::Tool, object};
+use goose_provider_types::data::Tool;
+use goose_provider_types::data::ToolAnnotations;
+use rmcp::object;
 
 pub async fn test_provider_configuration(
     provider_name: &str,

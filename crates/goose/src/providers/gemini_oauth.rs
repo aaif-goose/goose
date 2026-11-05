@@ -22,7 +22,7 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::TryStreamExt;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Digest;
@@ -986,7 +986,7 @@ impl Provider for GeminiOAuthProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let payload = create_request(model_config, system, messages, tools)?;
         let mut log = start_log(model_config, &payload)?;
 

@@ -11,18 +11,18 @@
 
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::maybe_send::MaybeSend;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::{
     conversation::token_usage::ProviderUsage,
     formats::openai::{self, is_valid_function_name},
 };
-use async_stream::try_stream;
-use chrono;
+
 use futures::Stream;
-use regex::Regex;
-use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData, Role};
+
+use crate::data::{object, CallToolRequestParams, ErrorCode, ErrorData, Role};
+use alloc::borrow::Cow;
 use serde_json::Value;
-use std::borrow::Cow;
-use uuid::Uuid;
 
 pub use crate::formats::openai::{
     create_request, format_messages, format_tools, get_usage, validate_tool_schemas,
@@ -33,11 +33,16 @@ pub use crate::formats::openai::{
 /// Format: `<function=name><parameter=key>value</parameter>...</function>`
 ///
 /// Returns a tuple of (prefix_text, tool_calls) where prefix_text is any text before the first function tag.
+#[cfg(feature = "std")]
 pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageContentBlock>) {
-    let mut tool_calls = Vec::new();
+    parse_xml_tool_calls_with_host(&crate::runtime::SystemHost, content)
+}
 
-    let function_re = Regex::new(r"<function=([^>]+)>([\s\S]*?)</function>").unwrap();
-    let param_re = Regex::new(r"<parameter=([^>]+)>([\s\S]*?)</parameter>").unwrap();
+pub fn parse_xml_tool_calls_with_host(
+    host: &dyn crate::runtime::HostServices,
+    content: &str,
+) -> (Option<String>, Vec<MessageContentBlock>) {
+    let mut tool_calls = Vec::new();
 
     let prefix = content
         .find("<function=")
@@ -46,17 +51,17 @@ pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageConten
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    for func_cap in function_re.captures_iter(content) {
-        let function_name = func_cap[1].trim().to_string();
-        let function_body = &func_cap[2];
+    for (name, function_body) in xml_elements(content, "function") {
+        let function_name = name.trim().to_string();
+
         let mut arguments = serde_json::Map::new();
-        for param_cap in param_re.captures_iter(function_body) {
-            let param_name = param_cap[1].trim().to_string();
-            let param_value = param_cap[2].trim().to_string();
+        for (name, value) in xml_elements(function_body, "parameter") {
+            let param_name = name.trim().to_string();
+            let param_value = value.trim().to_string();
             arguments.insert(param_name, serde_json::Value::String(param_value));
         }
 
-        let id = Uuid::new_v4().to_string();
+        let id = host.new_id();
 
         if is_valid_function_name(&function_name) {
             tool_calls.push(MessageContentBlock::tool_request(
@@ -84,8 +89,16 @@ pub fn parse_xml_tool_calls(content: &str) -> (Option<String>, Vec<MessageConten
 ///
 /// This wraps the standard OpenAI response parsing and adds XML fallback for models
 /// like Qwen3-coder that output XML tool calls when given many tools.
+#[cfg(feature = "std")]
 pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
-    let message = openai::response_to_message(response)?;
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &Value,
+) -> anyhow::Result<Message> {
+    let message = openai::response_to_message_with_host(host, response)?;
 
     let has_tool_requests = message
         .content
@@ -104,7 +117,7 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
     if let Some(original) = original {
         if let Some(text) = original.get("content").and_then(|c| c.as_str()) {
             if text.contains("<function=") {
-                let (prefix, xml_tool_calls) = parse_xml_tool_calls(text);
+                let (prefix, xml_tool_calls) = parse_xml_tool_calls_with_host(host, text);
                 if !xml_tool_calls.is_empty() {
                     let mut content = Vec::new();
                     if let Some(prefix_text) = prefix {
@@ -114,7 +127,7 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
 
                     return Ok(Message::new(
                         Role::Assistant,
-                        chrono::Utc::now().timestamp(),
+                        host.unix_timestamp(),
                         content,
                     ));
                 }
@@ -157,17 +170,28 @@ fn is_text_only_message(message: &Message) -> bool {
 /// the tool calls.
 ///
 /// This approach avoids exposing any internal types from openai.rs.
+#[cfg(feature = "std")]
 pub fn response_to_streaming_message_ollama<S>(
     stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    try_stream! {
+    response_to_streaming_message_ollama_with_host(&crate::runtime::SystemHost, stream)
+}
+
+pub fn response_to_streaming_message_ollama_with_host<'a, S>(
+    host: &'a dyn crate::runtime::HostServices,
+    stream: S,
+) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'a
+where
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'a,
+{
+    crate::stream::try_stream(|mut emit| async move {
         use futures::StreamExt;
 
-        let base_stream = openai::response_to_streaming_message(stream);
-        let mut base_stream = std::pin::pin!(base_stream);
+        let base_stream = openai::response_to_streaming_message_with_host(host, stream);
+        let mut base_stream = core::pin::pin!(base_stream);
 
         let mut accumulated_text = String::new();
         let mut xml_detected = false;
@@ -193,14 +217,14 @@ where
                     }
                 }
 
-                yield (Some(message), usage);
+                emit.send((Some(message), usage)).await;
             } else if usage.is_some() && !xml_detected {
-                yield (None, usage);
+                emit.send((None, usage)).await;
             }
         }
 
         if xml_detected && !accumulated_text.is_empty() {
-            let (prefix, xml_tool_calls) = parse_xml_tool_calls(&accumulated_text);
+            let (prefix, xml_tool_calls) = parse_xml_tool_calls_with_host(host, &accumulated_text);
 
             if !xml_tool_calls.is_empty() {
                 let mut contents = Vec::new();
@@ -209,25 +233,45 @@ where
                 }
                 contents.extend(xml_tool_calls);
 
-                let msg = Message::new(
-                    Role::Assistant,
-                    chrono::Utc::now().timestamp(),
-                    contents,
-                );
+                let msg = Message::new(Role::Assistant, host.unix_timestamp(), contents);
 
-                yield (Some(msg), buffered_usage);
+                emit.send((Some(msg), buffered_usage)).await;
             } else {
                 let msg = Message::new(
                     Role::Assistant,
-                    chrono::Utc::now().timestamp(),
+                    host.unix_timestamp(),
                     vec![MessageContentBlock::text(&accumulated_text)],
                 )
-                .with_generated_id();
+                .with_generated_id_with_host(host);
 
-                yield (Some(msg), buffered_usage);
+                emit.send((Some(msg), buffered_usage)).await;
             }
         }
+
+        Ok::<(), anyhow::Error>(())
+    })
+}
+
+fn xml_elements<'a>(mut text: &'a str, tag: &str) -> Vec<(&'a str, &'a str)> {
+    let open = format!("<{tag}=");
+    let close = format!("</{tag}>");
+    let mut elements = Vec::new();
+    while let Some(start) = text.find(&open) {
+        text = text.get(start + open.len()..).unwrap();
+        let Some(name_end) = text.find('>') else {
+            break;
+        };
+        let name = text.get(..name_end).unwrap();
+        text = text.get(name_end + 1..).unwrap();
+        let Some(end) = text.find(&close) else {
+            break;
+        };
+        if !name.is_empty() {
+            elements.push((name, text.get(..end).unwrap()));
+        }
+        text = text.get(end + close.len()..).unwrap();
     }
+    elements
 }
 
 #[cfg(test)]
@@ -383,7 +427,7 @@ data: {"id":"ollama-source-id","model":"test-model","choices":[{"delta":{"conten
 data: [DONE]"#;
         let lines = response_lines.lines().map(|s| Ok(s.to_string()));
         let response_stream = tokio_stream::iter(lines);
-        let mut messages = std::pin::pin!(response_to_streaming_message_ollama(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message_ollama(response_stream));
 
         let (message, usage) = messages
             .next()

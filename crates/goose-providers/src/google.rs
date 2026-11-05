@@ -13,7 +13,7 @@ use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::TryStreamExt;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde_json::Value;
 use std::io;
 use tokio::pin;
@@ -144,7 +144,7 @@ impl Provider for GoogleProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let payload = create_request_with_thinking_budget(
             model_config,
             system,

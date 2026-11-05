@@ -349,13 +349,18 @@ mod tests {
 
     fn annotated_text(text: &str, audience: Vec<Role>) -> MessageContent {
         MessageContent::Text(
-            TextContent::new(text).with_annotations(Annotations::default().with_audience(audience)),
+            TextContent::new(text)
+                .with_annotations(Annotations::default().with_audience(audience))
+                .try_into()
+                .unwrap(),
         )
     }
 
     fn projected_tool_text(content: Vec<ContentBlock>, audience: Role) -> String {
-        let message =
-            Message::user().with_tool_response("chatrecall", Ok(CallToolResult::success(content)));
+        let message = Message::user().with_tool_response(
+            "chatrecall",
+            Ok(CallToolResult::success(content).try_into().unwrap()),
+        );
         let projected = match audience {
             Role::Assistant => message.agent_visible_content(),
             Role::User => message.user_visible_content(),

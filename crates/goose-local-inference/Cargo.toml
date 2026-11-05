@@ -24,16 +24,16 @@ hf-hub = [
 ]
 
 [dependencies]
-anyhow = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-base64 = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 chrono = { workspace = true }
 etcetera = { workspace = true }
 encoding_rs = { version = "0.8.35", default-features = false }
-futures = { workspace = true, optional = true }
+futures = { workspace = true, optional = true, features = ["std"] }
 goose-download-manager = { version = "0.1.0-alpha.13", path = "../goose-download-manager", optional = true }
-goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
+goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false, features = ["formats", "mcp-interop", "std"] }
 goose-sdk-types = { version = "0.1.0-alpha.13", path = "../goose-sdk-types", default-features = false, optional = true }
 hf-hub = { version = "1.0.0", default-features = false, optional = true }
 include_dir = { workspace = true }
@@ -43,8 +43,8 @@ minijinja = { version = "2.18", default-features = false, features = ["loader", 
 pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = { workspace = true }
 rmcp = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "rt-multi-thread", "sync", "time"] }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }

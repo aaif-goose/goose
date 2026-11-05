@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::Result;
-use rmcp::model::{Role, Tool};
+use goose_provider_types::data::{Role, Tool};
 use tokio_util::sync::CancellationToken;
 
 pub use goose_sdk_types::custom_requests::{
@@ -587,7 +587,7 @@ mod tests {
             })),
         );
         if let Some(owner) = owner {
-            tool.meta = Some(rmcp::model::MetaObject(
+            tool.meta = Some(goose_provider_types::data::MetaObject(
                 rmcp::object!({ "goose_extension": owner }),
             ));
         }
@@ -681,13 +681,15 @@ Finish the regression test
                 .with_metadata(MessageMetadata::agent_only().with_turn_context()),
             Message::assistant().with_tool_request(
                 "call_1",
-                Ok(rmcp::model::CallToolRequestParams::new("read_file")
-                    .with_arguments(rmcp::object!({"path": "a.txt"}))),
+                Ok(
+                    goose_provider_types::data::CallToolRequestParams::new("read_file")
+                        .with_arguments(rmcp::object!({"path": "a.txt"})),
+                ),
             ),
             Message::user().with_tool_response(
                 "call_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
-                    rmcp::model::ContentBlock::text("file contents"),
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
+                    goose_provider_types::data::ContentBlock::text("file contents"),
                 ])),
             ),
         ];
@@ -746,8 +748,10 @@ Finish the regression test
         let mut response = Message::user();
         response.add_tool_response_with_metadata(
             "call_1",
-            Ok(rmcp::model::CallToolResult::error(vec![
-                rmcp::model::ContentBlock::text("Tool missing__tool is not available."),
+            Ok(goose_provider_types::data::CallToolResult::error(vec![
+                goose_provider_types::data::ContentBlock::text(
+                    "Tool missing__tool is not available.",
+                ),
             ])),
             Some(&serde_json::Map::from_iter([(
                 crate::agents::state_machine::UNCLAIMED_TOOL_ERROR.to_string(),
@@ -779,16 +783,20 @@ Finish the regression test
             Message::assistant()
                 .with_tool_request(
                     "answered",
-                    Ok(rmcp::model::CallToolRequestParams::new("read_file")),
+                    Ok(goose_provider_types::data::CallToolRequestParams::new(
+                        "read_file",
+                    )),
                 )
                 .with_tool_request(
                     "unanswered",
-                    Ok(rmcp::model::CallToolRequestParams::new("read_file")),
+                    Ok(goose_provider_types::data::CallToolRequestParams::new(
+                        "read_file",
+                    )),
                 ),
             Message::user().with_tool_response(
                 "answered",
-                Ok(rmcp::model::CallToolResult::success(vec![
-                    rmcp::model::ContentBlock::text("a"),
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
+                    goose_provider_types::data::ContentBlock::text("a"),
                 ])),
             ),
             Message::assistant().with_text("done"),

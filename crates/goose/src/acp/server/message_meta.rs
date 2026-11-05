@@ -103,7 +103,7 @@ pub(super) fn content_chunk_for_message(message: &Message, content: ContentBlock
 }
 
 pub(super) fn populate_output_token_limit_content(message: &mut Message) {
-    if message.role != rmcp::model::Role::Assistant
+    if message.role != goose_provider_types::data::Role::Assistant
         || !message.content.is_empty()
         || !message.metadata.output_token_limit_reached
     {
@@ -116,7 +116,7 @@ pub(super) fn populate_output_token_limit_content(message: &mut Message) {
 }
 
 fn has_output_token_limit_fallback_content(message: &Message) -> bool {
-    message.role == rmcp::model::Role::Assistant
+    message.role == goose_provider_types::data::Role::Assistant
         && message.metadata.output_token_limit_reached
         && matches!(
             message.content.as_slice(),
@@ -129,7 +129,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::InferenceMetadata;
     use agent_client_protocol::schema::v1::TextContent;
-    use rmcp::model::Role;
+    use goose_provider_types::data::Role;
 
     #[test]
     fn message_meta_serializes_message_fields() {

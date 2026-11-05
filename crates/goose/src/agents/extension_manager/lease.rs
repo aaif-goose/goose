@@ -739,7 +739,9 @@ impl ExtensionLease {
                     .attach_resource(&*client, &session_id, &mut result, cancellation_token)
                     .await;
             }
-            Ok(result)
+            goose_provider_types::data::CallToolResult::try_from(result).map_err(|e| {
+                goose_provider_types::data::ErrorData::internal_error(e.to_string(), None)
+            })
         };
 
         ToolCallResult {

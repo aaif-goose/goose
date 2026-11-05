@@ -2,7 +2,7 @@ use crate::images::ImageFormat;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,7 +23,7 @@ use crate::openai_compatible::{handle_status, stream_openai_compat};
 use crate::openrouter_format;
 use crate::request_log::{start_log, LoggerHandleExt};
 use crate::retry::ProviderRetry;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 pub const OPENROUTER_PROVIDER_NAME: &str = "openrouter";
 const OPENROUTER_PARAMETERS_CONFIG_KEY: &str = "OPENROUTER_PARAMETERS";
@@ -67,7 +67,7 @@ pub struct OpenRouterProvider {
     #[serde(skip)]
     name: String,
     #[serde(skip)]
-    configured_parameters: Option<HashMap<String, Value>>,
+    configured_parameters: Option<BTreeMap<String, Value>>,
     #[serde(skip)]
     session_id_provider: Option<OpenRouterSessionIdProvider>,
     #[serde(skip)]
@@ -77,7 +77,7 @@ pub struct OpenRouterProvider {
 impl OpenRouterProvider {
     pub fn new(
         api_client: ApiClient,
-        configured_parameters: Option<HashMap<String, Value>>,
+        configured_parameters: Option<BTreeMap<String, Value>>,
         session_id_provider: Option<OpenRouterSessionIdProvider>,
     ) -> Self {
         Self {
@@ -466,15 +466,15 @@ fn escape_gemini_schema_ref_keys_in_tool_responses(payload: &mut Value) -> usize
 }
 
 fn merge_request_params(
-    request_params: &mut Option<HashMap<String, Value>>,
-    params: HashMap<String, Value>,
+    request_params: &mut Option<BTreeMap<String, Value>>,
+    params: BTreeMap<String, Value>,
 ) {
     request_params
-        .get_or_insert_with(HashMap::new)
+        .get_or_insert_with(BTreeMap::new)
         .extend(params);
 }
 
-fn merge_openrouter_parameters(model: &mut ModelConfig, params: HashMap<String, Value>) {
+fn merge_openrouter_parameters(model: &mut ModelConfig, params: BTreeMap<String, Value>) {
     merge_request_params(&mut model.request_params, params);
 }
 
@@ -604,7 +604,7 @@ impl Provider for OpenRouterProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = self
             .session_id_provider
             .as_ref()
@@ -744,8 +744,8 @@ mod tests {
     #[test]
     fn merge_openrouter_parameters_updates_model_request_params() {
         let mut model = model_config("anthropic/claude-sonnet-4");
-        model.request_params = Some(HashMap::from([("verbosity".to_string(), json!("low"))]));
-        let params = HashMap::from([
+        model.request_params = Some(BTreeMap::from([("verbosity".to_string(), json!("low"))]));
+        let params = BTreeMap::from([
             ("plugins".to_string(), json!([{ "id": "web" }])),
             ("verbosity".to_string(), json!("xhigh")),
         ]);
@@ -801,7 +801,7 @@ mod tests {
 
         let mut config = model_config("google/gemini-3.5-flash");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("off"),
         )]));

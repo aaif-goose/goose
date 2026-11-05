@@ -1,8 +1,8 @@
 use anyhow::Result;
 use goose_provider_types::conversation::message::{Message, MessageContent};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
+use goose_provider_types::data::Role;
 use goose_provider_types::errors::ProviderError;
-use rmcp::model::Role;
 use serde::Serialize;
 use tracing::warn;
 
@@ -187,7 +187,7 @@ mod tests {
     use crate::model::CompactionModel;
     use crate::templates::Templates;
     use async_trait::async_trait;
-    use rmcp::model::CallToolResult;
+    use goose_provider_types::data::CallToolResult;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct OverflowingModel {
@@ -246,7 +246,7 @@ mod tests {
             Message::user().with_tool_response(
                 "tool_0",
                 Ok(CallToolResult::success(vec![
-                    rmcp::model::ContentBlock::text("contents"),
+                    goose_provider_types::data::ContentBlock::text("contents"),
                 ])),
             ),
         ];

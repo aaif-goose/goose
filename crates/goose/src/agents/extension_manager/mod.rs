@@ -60,10 +60,18 @@ impl ExtensionMutation {
     }
 
     pub fn take(result: &mut CallToolResult) -> Option<Self> {
-        let meta = result.meta.as_mut()?;
-        let value = meta.0.remove(EXTENSION_MUTATION_META_KEY)?;
-        if meta.0.is_empty() {
-            result.meta = None;
+        Self::take_metadata(&mut result.meta)
+    }
+    pub fn take_portable(result: &mut goose_provider_types::data::CallToolResult) -> Option<Self> {
+        Self::take_metadata(&mut result.meta)
+    }
+    fn take_metadata<T: std::ops::DerefMut<Target = serde_json::Map<String, serde_json::Value>>>(
+        metadata: &mut Option<T>,
+    ) -> Option<Self> {
+        let meta = metadata.as_mut()?;
+        let value = meta.remove(EXTENSION_MUTATION_META_KEY)?;
+        if meta.is_empty() {
+            *metadata = None;
         }
         serde_json::from_value(value).ok()
     }
@@ -495,9 +503,30 @@ impl ResourceItem {
     }
 }
 
-pub fn get_parameter_names(tool: &Tool) -> Vec<String> {
+pub trait ToolDescriptor {
+    fn input_schema(&self) -> &serde_json::Map<String, serde_json::Value>;
+    fn metadata(&self) -> Option<&serde_json::Map<String, serde_json::Value>>;
+}
+impl ToolDescriptor for Tool {
+    fn input_schema(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.input_schema
+    }
+    fn metadata(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.meta.as_ref().map(|m| &m.0)
+    }
+}
+impl ToolDescriptor for goose_provider_types::data::Tool {
+    fn input_schema(&self) -> &serde_json::Map<String, serde_json::Value> {
+        &self.input_schema
+    }
+    fn metadata(&self) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.meta.as_ref().map(|m| &m.0)
+    }
+}
+
+pub fn get_parameter_names(tool: &impl ToolDescriptor) -> Vec<String> {
     let mut names: Vec<String> = tool
-        .input_schema
+        .input_schema()
         .get("properties")
         .and_then(|props| props.as_object())
         .map(|props| props.keys().cloned().collect())
@@ -508,15 +537,14 @@ pub fn get_parameter_names(tool: &Tool) -> Vec<String> {
 
 const TOOL_EXTENSION_META_KEY: &str = "goose_extension";
 
-pub fn get_tool_owner(tool: &Tool) -> Option<String> {
-    tool.meta
-        .as_ref()
-        .and_then(|m| m.0.get(TOOL_EXTENSION_META_KEY))
+pub fn get_tool_owner(tool: &impl ToolDescriptor) -> Option<String> {
+    tool.metadata()
+        .and_then(|m| m.get(TOOL_EXTENSION_META_KEY))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
 
-pub(crate) fn is_tool_owned_by_extension(tool: &Tool, extension_name: &str) -> bool {
+pub(crate) fn is_tool_owned_by_extension(tool: &impl ToolDescriptor, extension_name: &str) -> bool {
     let expected_owner = name_to_key(extension_name);
     get_tool_owner(tool).is_some_and(|owner| name_to_key(&owner) == expected_owner)
 }
@@ -570,10 +598,9 @@ fn get_tool_meta_value(tool: &Tool) -> Option<Value> {
     tool.meta.as_ref().map(|meta| Value::Object(meta.0.clone()))
 }
 
-pub(crate) fn get_tool_resource_uri(tool: &Tool) -> Option<String> {
-    tool.meta
-        .as_ref()
-        .and_then(|meta| meta.0.get("ui"))
+pub(crate) fn get_tool_resource_uri(tool: &impl ToolDescriptor) -> Option<String> {
+    tool.metadata()
+        .and_then(|meta| meta.get("ui"))
         .and_then(Value::as_object)
         .and_then(|ui| ui.get("resourceUri"))
         .and_then(Value::as_str)
@@ -1116,7 +1143,7 @@ impl ExtensionManager {
             result: Box::new(
                 async move {
                     let mut result = inner.await?;
-                    if let Some(mutation) = ExtensionMutation::take(&mut result) {
+                    if let Some(mutation) = ExtensionMutation::take_portable(&mut result) {
                         manager.apply(mutation, &session_id).await.map_err(|e| {
                             ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
                         })?;
@@ -1672,7 +1699,10 @@ mod tests {
         }
     }
 
-    async fn dispatch_subagent_meta_tool(extension: &str, tool: &str) -> Option<MetaObject> {
+    async fn dispatch_subagent_meta_tool(
+        extension: &str,
+        tool: &str,
+    ) -> Option<goose_provider_types::data::MetaObject> {
         let temp_dir = tempfile::tempdir().unwrap();
         let extension_manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),

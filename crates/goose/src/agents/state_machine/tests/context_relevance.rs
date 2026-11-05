@@ -3,13 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_provider_types::data::Role;
+use goose_provider_types::data::{
+    Annotations, CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, TextContent,
+};
 use goose_providers::decision::{
     DecisionAnswer, DecisionProvider, DecisionRequest, DecisionResponse, DecisionUsage,
 };
 use goose_providers::errors::ProviderError;
-use rmcp::model::{
-    Annotations, CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, TextContent,
-};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 

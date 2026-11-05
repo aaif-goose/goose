@@ -576,7 +576,7 @@ impl GatewayHandler {
                         content_items = msg.content.len(),
                         "gateway stream: message event #{event_count}"
                     );
-                    if msg.role == rmcp::model::Role::Assistant {
+                    if msg.role == goose_provider_types::data::Role::Assistant {
                         for content in &msg.content {
                             match content {
                                 MessageContent::Text(t) => {

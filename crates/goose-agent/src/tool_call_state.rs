@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::collections::{BTreeMap as HashMap, BTreeSet as HashSet};
 
 use goose_provider_types::conversation::message::{
     ActionRequiredData, Message, MessageContent, ToolRequest, ToolResponse,
 };
+use goose_provider_types::data::{CallToolResult, ContentBlock};
 use goose_provider_types::permission::Permission;
-use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::operation::ConversationEffect;
 

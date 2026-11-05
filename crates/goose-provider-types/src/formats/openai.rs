@@ -6,25 +6,31 @@ use crate::documents::{
     ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
 };
 use crate::errors::ProviderError;
-use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
+use crate::images::{convert_image, ImageFormat};
+#[cfg(feature = "std")]
+use crate::images::{detect_image_path, load_image_file};
 use crate::json::{parse_tool_arguments, truncation_error_message};
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::{is_goose_internal_request_param, ModelConfig};
+pub use crate::model_names::{
+    extract_reasoning_effort, is_openai_responses_model, is_xai_reasoning_model,
+    supports_xai_reasoning_effort,
+};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::thinking::{
     split_think_blocks, ThinkFilter, ThinkingEffort, GEMINI_THOUGHT_SIGNATURE_KEY,
 };
 use anyhow::{anyhow, Error};
-use async_stream::try_stream;
-use chrono;
+
 use futures::Stream;
-use regex::Regex;
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
+
+use crate::data::{object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Role, Tool};
+use alloc::borrow::Cow;
+use alloc::collections::BTreeMap as HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::OnceLock;
 
 type ToolCallData = HashMap<
     i32,
@@ -301,6 +307,9 @@ pub fn format_messages_with_options(
                     if !text.text.is_empty() {
                         if message.role == Role::User {
                             if options.supports_vision {
+                                #[cfg(not(feature = "std"))]
+                                content_array.push(json!({"type": "text", "text": text.text}));
+                                #[cfg(feature = "std")]
                                 if let Some(image_path) = detect_image_path(&text.text) {
                                     if let Ok(image) = load_image_file(image_path.as_ref()) {
                                         has_non_text_content = true;
@@ -697,7 +706,7 @@ fn is_image_only_user_message(msg: &Value) -> bool {
 }
 
 pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
-    let mut tool_names = std::collections::HashSet::new();
+    let mut tool_names = alloc::collections::BTreeSet::new();
     let mut result = Vec::new();
 
     for tool in tools {
@@ -710,7 +719,7 @@ pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
             "function": {
                 "name": tool.name,
                 "description": tool.description,
-                "parameters": tool.input_schema,
+                "parameters": tool.input_schema.as_ref(),
                 "strict": false,
             }
         }));
@@ -739,7 +748,15 @@ pub fn record_response_metadata(usage: &mut ProviderUsage, response: &Value) {
 }
 
 /// Convert OpenAI's API response to internal Message format
+#[cfg(feature = "std")]
 pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &Value,
+) -> anyhow::Result<Message> {
     let output_token_limit_reached = response
         .pointer("/choices/0/finish_reason")
         .and_then(Value::as_str)
@@ -899,7 +916,7 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
         }
     }
 
-    let mut message = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), content);
+    let mut message = Message::new(Role::Assistant, host.unix_timestamp(), content);
     message.metadata.output_token_limit_reached = output_token_limit_reached;
     Ok(message)
 }
@@ -1255,8 +1272,11 @@ fn parse_streaming_chunk(line: &str) -> Result<Option<StreamingChunk>, ProviderE
     })
 }
 
-fn output_token_limit_marker(id: Option<String>) -> Message {
-    let mut message = Message::assistant();
+fn output_token_limit_marker_with_host(
+    host: &dyn crate::runtime::HostServices,
+    id: Option<String>,
+) -> Message {
+    let mut message = Message::assistant_with_host(host);
     if let Some(id) = id {
         message = message.with_id(id);
     }
@@ -1264,13 +1284,24 @@ fn output_token_limit_marker(id: Option<String>) -> Message {
     message
 }
 
+#[cfg(feature = "std")]
 pub fn response_to_streaming_message<S>(
-    mut stream: S,
+    stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    try_stream! {
+    response_to_streaming_message_with_host(&crate::runtime::SystemHost, stream)
+}
+
+pub fn response_to_streaming_message_with_host<'a, S>(
+    host: &'a dyn crate::runtime::HostServices,
+    mut stream: S,
+) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'a
+where
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'a,
+{
+    crate::stream::try_stream(|mut emit| async move {
         use futures::StreamExt;
 
         let mut accumulated_reasoning: Vec<Value> = Vec::new();
@@ -1299,13 +1330,13 @@ where
             }
 
             if line.is_none() || line.is_some_and(|l| l.is_empty()) {
-                continue
+                continue;
             }
 
-            let Some(chunk) = parse_streaming_chunk(
-                line.ok_or_else(|| anyhow!("unexpected stream format"))?
-            )? else {
-                continue  // metadata-only frame
+            let Some(chunk) =
+                parse_streaming_chunk(line.ok_or_else(|| anyhow!("unexpected stream format"))?)?
+            else {
+                continue; // metadata-only frame
             };
             if let Some(model) = &chunk.model {
                 last_seen_model = Some(model.clone());
@@ -1343,15 +1374,28 @@ where
 
             if chunk.choices.is_empty() {
                 usage_emitted |= usage.is_some();
-                yield (None, usage)
-            } else if chunk.choices[0].delta.tool_calls.as_ref().is_some_and(|tc| !tc.is_empty()) {
+                emit.send((None, usage)).await
+            } else if chunk.choices[0]
+                .delta
+                .tool_calls
+                .as_ref()
+                .is_some_and(|tc| !tc.is_empty())
+            {
                 let mut tool_call_data: ToolCallData = HashMap::new();
 
                 if let Some(tool_calls) = &chunk.choices[0].delta.tool_calls {
                     for (position, tool_call) in tool_calls.iter().enumerate() {
                         if let (Some(id), Some(name)) = (&tool_call.id, &tool_call.function.name) {
                             let index = tool_call.index.unwrap_or(position as i32);
-                            tool_call_data.insert(index, (id.clone(), name.clone(), tool_call.function.arguments.clone(), tool_call.extra.clone()));
+                            tool_call_data.insert(
+                                index,
+                                (
+                                    id.clone(),
+                                    name.clone(),
+                                    tool_call.function.arguments.clone(),
+                                    tool_call.extra.clone(),
+                                ),
+                            );
                         }
                     }
                 }
@@ -1375,7 +1419,7 @@ where
                                 // empty-choices branch below, which ends accumulation and
                                 // would truncate this tool call's arguments.
                                 let Some(tool_chunk) = parse_streaming_chunk(line)? else {
-                                    continue
+                                    continue;
                                 };
                                 if let Some(model) = &tool_chunk.model {
                                     last_seen_model = Some(model.clone());
@@ -1383,11 +1427,18 @@ where
                                 if let Some(id) = &tool_chunk.id {
                                     last_response_id = Some(id.clone());
                                 }
-                                if let Some(reason) = tool_chunk.choices.first().and_then(|c| c.finish_reason.clone()) {
+                                if let Some(reason) = tool_chunk
+                                    .choices
+                                    .first()
+                                    .and_then(|c| c.finish_reason.clone())
+                                {
                                     last_finish_reason = Some(reason);
                                 }
 
-                                if let Some(mut chunk_usage) = extract_usage_with_output_tokens(&tool_chunk, last_seen_model.as_deref()) {
+                                if let Some(mut chunk_usage) = extract_usage_with_output_tokens(
+                                    &tool_chunk,
+                                    last_seen_model.as_deref(),
+                                ) {
                                     if let Some(reason) = &last_finish_reason {
                                         chunk_usage.finish_reasons = Some(vec![reason.clone()]);
                                     }
@@ -1402,7 +1453,9 @@ where
                                         tool_chunk.choices[0].finish_reason.as_deref()
                                             == Some("length");
 
-                                    if let Some(details) = &tool_chunk.choices[0].delta.reasoning_details {
+                                    if let Some(details) =
+                                        &tool_chunk.choices[0].delta.reasoning_details
+                                    {
                                         accumulated_reasoning.extend(details.iter().cloned());
                                     }
                                     if let Some(rc) = tool_chunk.choices[0].delta.reasoning_text() {
@@ -1412,25 +1465,53 @@ where
                                             pending_inline_thinking.clear();
                                         }
                                     }
-                                    if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
+                                    if let Some(delta_tool_calls) =
+                                        &tool_chunk.choices[0].delta.tool_calls
+                                    {
                                         for delta_call in delta_tool_calls {
                                             if let Some(index) = delta_call.index {
-                                                if let Some((_, ref mut stored_name, ref mut args, ref mut extra)) = tool_call_data.get_mut(&index) {
-                                                    if let Some(new_name) = &delta_call.function.name {
+                                                if let Some((
+                                                    _,
+                                                    ref mut stored_name,
+                                                    ref mut args,
+                                                    ref mut extra,
+                                                )) = tool_call_data.get_mut(&index)
+                                                {
+                                                    if let Some(new_name) =
+                                                        &delta_call.function.name
+                                                    {
                                                         if !new_name.is_empty() {
                                                             *stored_name = new_name.clone();
                                                         }
                                                     }
                                                     args.push_str(&delta_call.function.arguments);
-                                                    if extra.is_none() && delta_call.extra.is_some() {
+                                                    if extra.is_none() && delta_call.extra.is_some()
+                                                    {
                                                         *extra = delta_call.extra.clone();
-                                                    } else if let (Some(existing), Some(new_extra)) = (extra.as_mut(), &delta_call.extra) {
+                                                    } else if let (
+                                                        Some(existing),
+                                                        Some(new_extra),
+                                                    ) =
+                                                        (extra.as_mut(), &delta_call.extra)
+                                                    {
                                                         for (key, value) in new_extra {
-                                                            existing.entry(key.clone()).or_insert(value.clone());
+                                                            existing
+                                                                .entry(key.clone())
+                                                                .or_insert(value.clone());
                                                         }
                                                     }
-                                                } else if let (Some(id), Some(name)) = (&delta_call.id, &delta_call.function.name) {
-                                                    tool_call_data.insert(index, (id.clone(), name.clone(), delta_call.function.arguments.clone(), delta_call.extra.clone()));
+                                                } else if let (Some(id), Some(name)) =
+                                                    (&delta_call.id, &delta_call.function.name)
+                                                {
+                                                    tool_call_data.insert(
+                                                        index,
+                                                        (
+                                                            id.clone(),
+                                                            name.clone(),
+                                                            delta_call.function.arguments.clone(),
+                                                            delta_call.extra.clone(),
+                                                        ),
+                                                    );
                                                 }
                                             }
                                         }
@@ -1450,7 +1531,10 @@ where
 
                 let _metadata: Option<ProviderMetadata> = if !accumulated_reasoning.is_empty() {
                     let mut map = ProviderMetadata::new();
-                    map.insert("reasoning_details".to_string(), json!(accumulated_reasoning));
+                    map.insert(
+                        "reasoning_details".to_string(),
+                        json!(accumulated_reasoning),
+                    );
                     Some(map)
                 } else {
                     None
@@ -1473,17 +1557,14 @@ where
                     }
 
                     if !filtered_contents.is_empty() {
-                        let mut msg = Message::new(
-                            Role::Assistant,
-                            chrono::Utc::now().timestamp(),
-                            filtered_contents,
-                        );
+                        let mut msg =
+                            Message::new(Role::Assistant, host.unix_timestamp(), filtered_contents);
 
                         if let Some(id) = chunk.id.clone() {
                             msg = msg.with_id(id);
                         }
 
-                        yield (Some(msg), None);
+                        emit.send((Some(msg), None)).await;
                     }
                 }
 
@@ -1503,13 +1584,12 @@ where
                 sorted_indices.sort();
 
                 for index in sorted_indices {
-                    if let Some((id, function_name, arguments, extra_fields)) = tool_call_data.get(&index) {
+                    if let Some((id, function_name, arguments, extra_fields)) =
+                        tool_call_data.get(&index)
+                    {
                         let metadata = if let Some(sig) = &last_signature {
                             let mut combined = extra_fields.clone().unwrap_or_default();
-                            combined.insert(
-                                GEMINI_THOUGHT_SIGNATURE_KEY.to_string(),
-                                json!(sig)
-                            );
+                            combined.insert(GEMINI_THOUGHT_SIGNATURE_KEY.to_string(), json!(sig));
                             Some(combined)
                         } else {
                             extra_fields.as_ref().filter(|m| !m.is_empty()).cloned()
@@ -1525,18 +1605,22 @@ where
                         } else if arguments.is_empty() {
                             MessageContentBlock::tool_request_with_provider_index(
                                 id.clone(),
-                                Ok(CallToolRequestParams::new(function_name.clone()).with_arguments(object(json!({})))),
+                                Ok(CallToolRequestParams::new(function_name.clone())
+                                    .with_arguments(object(json!({})))),
                                 metadata.as_ref(),
                                 index,
                             )
                         } else {
                             match parse_tool_arguments(arguments) {
-                                Some(params) if params.is_object() => MessageContentBlock::tool_request_with_provider_index(
-                                    id.clone(),
-                                    Ok(CallToolRequestParams::new(function_name.clone()).with_arguments(object(params))),
-                                    metadata.as_ref(),
-                                    index,
-                                ),
+                                Some(params) if params.is_object() => {
+                                    MessageContentBlock::tool_request_with_provider_index(
+                                        id.clone(),
+                                        Ok(CallToolRequestParams::new(function_name.clone())
+                                            .with_arguments(object(params))),
+                                        metadata.as_ref(),
+                                        index,
+                                    )
+                                }
                                 // Valid JSON but NOT an object (a bare array/string/number).
                                 // Surface a tool error so the model retries instead of
                                 // crashing the run (rmcp's `object()` debug-asserts on
@@ -1550,7 +1634,12 @@ where
                                         )),
                                         data: None,
                                     };
-                                    MessageContentBlock::tool_request_with_provider_index(id.clone(), Err(error), metadata.as_ref(), index)
+                                    MessageContentBlock::tool_request_with_provider_index(
+                                        id.clone(),
+                                        Err(error),
+                                        metadata.as_ref(),
+                                        index,
+                                    )
                                 }
                                 None => {
                                     let message_text = truncation_error_message(arguments)
@@ -1562,7 +1651,12 @@ where
                                         message: Cow::from(message_text),
                                         data: None,
                                     };
-                                    MessageContentBlock::tool_request_with_provider_index(id.clone(), Err(error), metadata.as_ref(), index)
+                                    MessageContentBlock::tool_request_with_provider_index(
+                                        id.clone(),
+                                        Err(error),
+                                        metadata.as_ref(),
+                                        index,
+                                    )
                                 }
                             }
                         };
@@ -1571,11 +1665,7 @@ where
                     }
                 }
 
-                let mut msg = Message::new(
-                    Role::Assistant,
-                    chrono::Utc::now().timestamp(),
-                    contents,
-                );
+                let mut msg = Message::new(Role::Assistant, host.unix_timestamp(), contents);
 
                 // Add ID if present
                 if let Some(id) = chunk.id {
@@ -1585,11 +1675,10 @@ where
                 output_token_limit_metadata_emitted |= output_token_limit_reached;
 
                 usage_emitted |= usage.is_some();
-                yield (
-                    Some(msg),
-                    usage,
-                )
-            } else if chunk.choices[0].delta.content.is_some() || chunk.choices[0].delta.reasoning_text().is_some() {
+                emit.send((Some(msg), usage)).await
+            } else if chunk.choices[0].delta.content.is_some()
+                || chunk.choices[0].delta.reasoning_text().is_some()
+            {
                 let mut content = Vec::new();
 
                 if let Some(reasoning) = chunk.choices[0].delta.reasoning_text() {
@@ -1598,7 +1687,8 @@ where
                     yielded_reasoning_content_len = accumulated_reasoning_content.len();
                 }
 
-                let (text_content, thought_signature) = extract_content_and_signature(chunk.choices[0].delta.content.as_ref());
+                let (text_content, thought_signature) =
+                    extract_content_and_signature(chunk.choices[0].delta.content.as_ref());
 
                 if let Some(sig) = thought_signature {
                     last_signature = Some(sig);
@@ -1617,11 +1707,7 @@ where
                 }
 
                 if !content.is_empty() {
-                    let mut msg = Message::new(
-                        Role::Assistant,
-                        chrono::Utc::now().timestamp(),
-                        content,
-                    );
+                    let mut msg = Message::new(Role::Assistant, host.unix_timestamp(), content);
 
                     if let Some(id) = chunk.id {
                         msg = msg.with_id(id);
@@ -1633,14 +1719,14 @@ where
                         None
                     };
                     usage_emitted |= final_usage.is_some();
-                    yield (Some(msg), final_usage)
+                    emit.send((Some(msg), final_usage)).await
                 } else if usage.is_some() {
                     usage_emitted = true;
-                    yield (None, usage)
+                    emit.send((None, usage)).await
                 }
             } else if usage.is_some() {
                 usage_emitted = true;
-                yield (None, usage)
+                emit.send((None, usage)).await
             }
         }
 
@@ -1663,11 +1749,7 @@ where
                 content.push(MessageContentBlock::thinking(trailing_thinking, ""));
             }
 
-            let mut message = Message::new(
-                Role::Assistant,
-                chrono::Utc::now().timestamp(),
-                content,
-            );
+            let mut message = Message::new(Role::Assistant, host.unix_timestamp(), content);
             if let Some(id) = last_response_id.clone() {
                 message = message.with_id(id);
             }
@@ -1675,11 +1757,18 @@ where
                 output_token_limit_reached && !output_token_limit_metadata_emitted;
             output_token_limit_metadata_emitted |= message.metadata.output_token_limit_reached;
 
-            yield (Some(message), None)
+            emit.send((Some(message), None)).await
         }
 
         if output_token_limit_reached && !output_token_limit_metadata_emitted {
-            yield (Some(output_token_limit_marker(last_response_id.clone())), None)
+            emit.send((
+                Some(output_token_limit_marker_with_host(
+                    host,
+                    last_response_id.clone(),
+                )),
+                None,
+            ))
+            .await
         }
 
         if !usage_emitted && (last_response_id.is_some() || last_finish_reason.is_some()) {
@@ -1689,9 +1778,11 @@ where
             );
             usage.response_id = last_response_id;
             usage.finish_reasons = last_finish_reason.map(|reason| vec![reason]);
-            yield (None, Some(usage))
+            emit.send((None, Some(usage))).await
         }
-    }
+
+        Ok::<(), anyhow::Error>(())
+    })
 }
 
 pub fn create_request(
@@ -1842,75 +1933,6 @@ pub fn create_request_for_model_with_options(
     Ok(payload)
 }
 
-/// Extract an explicit reasoning-effort suffix from a model name.
-///
-/// Returns `(base_model_name, Some(effort))` when the user appended a
-/// recognised suffix like `-high` or `-xhigh`, e.g. `gpt-5.4-high` →
-/// `("gpt-5.4", Some("high"))`.
-///
-/// When no suffix is present the effort is `None` — callers should omit
-/// the `reasoning` field entirely so the API applies its own per-model
-/// default. This avoids hard-coding a default that may be invalid for
-/// certain models (e.g. `gpt-5-pro` only accepts `high`; older o-series
-/// models reject `none` and `xhigh`).
-pub fn extract_reasoning_effort(model_name: &str) -> (String, Option<String>) {
-    if !is_openai_responses_model(model_name) {
-        return (model_name.to_string(), None);
-    }
-
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)^(?P<base>.+)-(?P<effort>none|low|medium|high|xhigh)$").unwrap()
-    });
-
-    if let Some(captures) = re.captures(model_name) {
-        let base = captures["base"].to_string();
-        let effort = captures["effort"].to_ascii_lowercase();
-        return (base, Some(effort));
-    }
-
-    (model_name.to_string(), None)
-}
-
-/// True when the model should use the OpenAI Responses API.
-///
-/// The Responses API is backwards-compatible with all OpenAI reasoning
-/// models, so every `o`-series (`o1`, `o3`, `o4`, …), `gpt-5`, and `gpt-6` variant
-/// routes here. The matcher intentionally scans the full model identifier so
-/// hosted aliases like `databricks-gpt-5.4`, `goose-o3-mini`, or
-/// `headless-goose-o3-mini` work without provider-specific normalization.
-pub fn is_openai_responses_model(model_name: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"(?i)(?:^|[-/])(?:o\d+(?:$|-)|gpt-(?:5|6)(?:$|[-.]))").unwrap()
-    });
-    re.is_match(model_name)
-}
-
-/// Returns whether an xAI Chat Completions model accepts `reasoning_effort`.
-pub fn supports_xai_reasoning_effort(model_name: &str) -> bool {
-    let model_name = model_name.to_ascii_lowercase();
-
-    model_name.starts_with("grok-4.5")
-        || model_name.starts_with("grok-4.3")
-        || model_name.starts_with("grok-3-mini")
-}
-
-/// Returns whether an xAI model performs server-side reasoning.
-pub fn is_xai_reasoning_model(model_name: &str) -> bool {
-    let model_name = model_name.to_ascii_lowercase();
-
-    if model_name.contains("non-reasoning") || model_name.contains("non_reasoning") {
-        return false;
-    }
-
-    supports_xai_reasoning_effort(&model_name)
-        || model_name.starts_with("grok-4.20")
-        || model_name.starts_with("grok-4-0709")
-        || model_name.starts_with("grok-4-fast-reasoning")
-        || model_name.starts_with("grok-4-1-fast-reasoning")
-}
-
 /// Maps Goose's effort levels to values accepted by xAI Chat Completions.
 pub fn xai_reasoning_effort_for_thinking(
     model_name: &str,
@@ -1966,18 +1988,23 @@ pub(crate) fn openai_reasoning_efforts_for_model(_model_name: &str) -> &'static 
 const MAX_FUNCTION_NAME_LENGTH: usize = 128;
 
 pub fn sanitize_function_name(name: &str) -> String {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"[^a-zA-Z0-9_-]").unwrap());
-    re.replace_all(name, "_")
-        .chars()
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(MAX_FUNCTION_NAME_LENGTH)
         .collect()
 }
 
 pub fn is_valid_function_name(name: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
-    re.is_match(name)
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
 }
 
 #[cfg(test)]
@@ -2051,8 +2078,8 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
-    use rmcp::model::CallToolResult;
-    use rmcp::object;
+    use crate::data::CallToolResult;
+    use crate::object;
     use serde_json::json;
     use test_case::test_case;
     use tokio::pin;
@@ -2496,7 +2523,7 @@ mod tests {
         let user_message = Message::user().with_text(format!("Here is an image: {}", png_path_str));
 
         let spec = format_messages_with_options(
-            std::slice::from_ref(&user_message),
+            core::slice::from_ref(&user_message),
             &ImageFormat::OpenAi,
             OpenAiFormatOptions {
                 preserve_thinking_context: true,
@@ -2541,7 +2568,7 @@ mod tests {
         let request = create_request(
             &vision,
             "system",
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             &[],
             &ImageFormat::OpenAi,
             false,
@@ -2556,7 +2583,7 @@ mod tests {
         let request = create_request(
             &unknown,
             "system",
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             &[],
             &ImageFormat::OpenAi,
             false,
@@ -2591,7 +2618,7 @@ mod tests {
         // at format time — session history is untouched, so a vision model (or a
         // delegated vision subagent) can still see the real image later.
         let spec = format_messages_with_options(
-            std::slice::from_ref(&user_message),
+            core::slice::from_ref(&user_message),
             &ImageFormat::OpenAi,
             OpenAiFormatOptions {
                 preserve_thinking_context: true,
@@ -2630,15 +2657,15 @@ mod tests {
     fn test_tool_response_image_omitted_when_not_vision() -> anyhow::Result<()> {
         let tool_response = Message::user().with_tool_response(
             "tool1",
-            Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::ContentBlock::image("aW1hZ2VkYXRh", "image/png"),
+            Ok(crate::data::CallToolResult::success(vec![
+                crate::data::ContentBlock::image("aW1hZ2VkYXRh", "image/png"),
             ])),
         );
 
         // Non-vision: the separate user image message is NOT emitted — this is
         // what un-bricks sessions (a converted image in the next request 400s).
         let spec = format_messages_with_options(
-            std::slice::from_ref(&tool_response),
+            core::slice::from_ref(&tool_response),
             &ImageFormat::OpenAi,
             OpenAiFormatOptions {
                 preserve_thinking_context: true,
@@ -3340,7 +3367,7 @@ mod tests {
 
     #[test]
     fn test_request_params_preserve_reserved_fields() -> anyhow::Result<()> {
-        let params = std::collections::HashMap::from([
+        let params = alloc::collections::BTreeMap::from([
             (
                 "thinking".to_string(),
                 json!({
@@ -4238,7 +4265,7 @@ data: [DONE]"#;
 
         let response_stream =
             tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut text = String::new();
         let mut thinking = String::new();
@@ -4277,7 +4304,7 @@ data: [DONE]"#;
 
         let response_stream =
             tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
         let mut streamed_messages = Vec::new();
         let mut usage_count = 0;
 
@@ -4323,7 +4350,7 @@ data: [DONE]"#;
 
         let response_stream =
             tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
         let mut streamed_messages = Vec::new();
         let mut usage_count = 0;
 
@@ -4363,7 +4390,7 @@ data: [DONE]"#;
 
         let response_stream =
             tokio_stream::iter(response_lines.lines().map(|line| Ok(line.to_string())));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut text = String::new();
         let mut thinking = String::new();
@@ -4502,7 +4529,7 @@ data: [DONE]"#;
         // Add a tool call to test that reasoning_content works with tool calls
         message = message.with_tool_request(
             "tool1",
-            Ok(rmcp::model::CallToolRequestParams::new("test_tool")
+            Ok(crate::data::CallToolRequestParams::new("test_tool")
                 .with_arguments(rmcp::object!({"param": "value"}))),
         );
 
@@ -4588,7 +4615,7 @@ data: [DONE]"#;
             .with_content(MessageContentBlock::thinking("preserve this", ""))
             .with_tool_request(
                 "tool1",
-                Ok(rmcp::model::CallToolRequestParams::new("test_tool")
+                Ok(crate::data::CallToolRequestParams::new("test_tool")
                     .with_arguments(rmcp::object!({}))),
             );
 
@@ -4776,8 +4803,8 @@ data: [DONE]"#;
         // merge_split_tool_call_messages can reunite them into one assistant message.
         let tool_result1 = Message::user().with_tool_response(
             "tool1",
-            Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::ContentBlock::text("result1"),
+            Ok(crate::data::CallToolResult::success(vec![
+                crate::data::ContentBlock::text("result1"),
             ])),
         );
         let messages = vec![
@@ -4828,8 +4855,8 @@ data: [DONE]"#;
         // turn's reasoning must not leak into it).
         let tool_result1 = Message::user().with_tool_response(
             "tool1",
-            Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::ContentBlock::text("result1"),
+            Ok(crate::data::CallToolResult::success(vec![
+                crate::data::ContentBlock::text("result1"),
             ])),
         );
         let messages = vec![
@@ -4916,7 +4943,7 @@ data: [DONE]"#;
     async fn test_mid_stream_server_error(response_lines: &str, expected_msg: &str) {
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
         let mut found_error = false;
         while let Some(result) = messages.next().await {
             if let Err(e) = result {
@@ -5135,7 +5162,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut tool_calls = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5266,7 +5293,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let first = messages.next().await.expect("stream should yield an item");
         let err = first.expect_err("an in-stream error frame must not be skipped");
@@ -5296,7 +5323,7 @@ data: [DONE]"#;
         let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hi\"},\"finish_reason\":null}]}\ndata: [DONE]";
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
         while let Some(result) = messages.next().await {
             result?;
         }
@@ -5314,7 +5341,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut thinking = String::new();
         let mut tool_calls = 0;
@@ -5361,7 +5388,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut history = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5394,7 +5421,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut thinking = String::new();
         let mut tool_calls = 0;
@@ -5424,7 +5451,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut tool_calls = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5453,7 +5480,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut tool_calls = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5482,7 +5509,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut names = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5515,7 +5542,7 @@ data: [DONE]"#;
         );
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut tool_calls = Vec::new();
         while let Some(result) = messages.next().await {
@@ -5545,7 +5572,7 @@ data: [DONE]"#;
         let response_lines = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"thinking...\",\"reasoning_content\":\"thinking...\"},\"finish_reason\":null}]}\ndata: [DONE]";
         let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
         let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
-        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+        let mut messages = core::pin::pin!(response_to_streaming_message(response_stream));
 
         let mut saw_thinking = false;
         while let Some(result) = messages.next().await {
@@ -5789,7 +5816,7 @@ data: [DONE]"#;
 
     #[test]
     fn formatter_post_parse_error_history_is_wellformed() {
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
         let err = ErrorData::new(
             ErrorCode::INVALID_PARAMS,
             "Tool arguments for id call_bad must be a JSON object".to_string(),
@@ -5807,7 +5834,7 @@ data: [DONE]"#;
 
         let spec = format_messages(&messages, &ImageFormat::OpenAi);
 
-        let mut open = std::collections::HashSet::new();
+        let mut open = alloc::collections::BTreeSet::new();
         for m in &spec {
             match m.get("role").and_then(|v| v.as_str()) {
                 Some("assistant") => {
@@ -5853,7 +5880,7 @@ data: [DONE]"#;
             .with_text("Hello");
 
         let spec = format_with_preservation(
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             ThinkingPreservationFormat::ContentPrepend,
         );
 
@@ -5869,7 +5896,7 @@ data: [DONE]"#;
             .with_text("Hello");
 
         let spec = format_with_preservation(
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             ThinkingPreservationFormat::ContentXml,
         );
 
@@ -5888,7 +5915,7 @@ data: [DONE]"#;
             .with_text("Hello");
 
         let spec = format_with_preservation(
-            std::slice::from_ref(&message),
+            core::slice::from_ref(&message),
             ThinkingPreservationFormat::ReasoningContent,
         );
 
@@ -5911,7 +5938,7 @@ data: [DONE]"#;
                 ),
             Message::user().with_tool_response(
                 "tool1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("result1"),
                 ])),
             ),

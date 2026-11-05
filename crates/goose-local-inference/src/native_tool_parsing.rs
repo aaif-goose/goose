@@ -1,8 +1,8 @@
 use goose_provider_types::conversation::message::{Message, MessageContent};
+use goose_provider_types::data::{object, CallToolRequestParams, ErrorCode, ErrorData};
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::formats::openai::is_valid_function_name;
 use goose_provider_types::json::safely_parse_json;
-use rmcp::model::{object, CallToolRequestParams, ErrorCode, ErrorData};
 use serde_json::{json, Value};
 use std::borrow::Cow;
 use uuid::Uuid;
@@ -35,7 +35,7 @@ pub(crate) fn message_from_native_tool_text(
         .any(|content| matches!(content, MessageContent::ToolRequest(_)))
     {
         let mut message = Message::new(
-            rmcp::model::Role::Assistant,
+            goose_provider_types::data::Role::Assistant,
             chrono::Utc::now().timestamp(),
             content,
         );

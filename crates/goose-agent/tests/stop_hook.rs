@@ -5,6 +5,7 @@ use std::sync::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     events::AgentEvent,
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
@@ -16,7 +17,6 @@ use goose_provider_types::conversation::{
 };
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy)]
 enum Reply {

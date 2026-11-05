@@ -40,11 +40,13 @@ use crate::model_config::model_config_from_user_config;
 use crate::providers::base::DEFAULT_PROVIDER_TIMEOUT_SECS;
 use anyhow::Result;
 use futures::StreamExt;
+use goose_provider_types::data::{CallToolRequestParams, ContentBlock, Tool};
 use goose_providers::errors::ProviderError;
 use goose_providers::formats::openai::create_request;
 use goose_providers::images::ImageFormat;
 use reqwest::Client;
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, Tool};
+
+use rmcp::model::object;
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::{json, Value};
 use std::fmt;

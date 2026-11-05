@@ -40,11 +40,11 @@ use crate::session::{Session, SessionManager};
 use crate::tool_inspection::ToolInspectionManager;
 use crate::tool_monitor::RepetitionInspector;
 use goose_agent::stop_hook::DEFAULT_DENY_LIMIT;
+use goose_provider_types::data::{ElicitationAction, Tool};
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::errors::ProviderError;
 use goose_providers::thinking::{ThinkingEffort, ThinkingEffortSupport};
 use goose_providers::typesafe::{TypeSafeProvider, TYPESAFE_DEFAULT_HOST, TYPESAFE_DEFAULT_MODEL};
-use rmcp::model::{ElicitationAction, Tool};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -612,10 +612,15 @@ impl StateMachineServices {
     ) -> Result<Vec<Tool>> {
         let include_final_output = extension_name.is_none();
         let lease = self.extension_manager.current_lease(session_id).await?;
-        let mut prefixed_tools = match extension_name {
+        let prefixed_tools = match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
         };
+
+        let mut prefixed_tools = prefixed_tools
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<Tool>, _>>()?;
 
         if include_final_output {
             let final_output_tool = self
@@ -1665,8 +1670,8 @@ mod tests {
     use crate::plugins::discovery::{DiscoveredPlugin, PluginScope};
     use crate::providers::base::{stream_from_single_message, MessageStream, ModelInfo};
     use crate::session::session_manager::SessionType;
+    use goose_provider_types::data::Tool;
     use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-    use rmcp::model::Tool;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
@@ -1736,7 +1741,7 @@ mod tests {
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             self.record("stream");
             Ok(stream_from_single_message(
                 Message::assistant().with_text("done"),
@@ -1891,7 +1896,7 @@ mod tests {
 
     #[test]
     fn agent_visible_message_text_excludes_user_only_blocks() {
-        use rmcp::model::{Annotations, Role, TextContent};
+        use goose_provider_types::data::{Annotations, Role, TextContent};
 
         let user_only = TextContent::new("SECRET_USER_ONLY")
             .with_annotations(Annotations::default().with_audience(vec![Role::User]));
@@ -1933,7 +1938,7 @@ mod tests {
             _: &goose_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
-            _: &[rmcp::model::Tool],
+            _: &[goose_provider_types::data::Tool],
         ) -> Result<crate::providers::base::MessageStream, ProviderError> {
             unimplemented!()
         }
@@ -2047,7 +2052,7 @@ mod tests {
             _: &goose_providers::model::ModelConfig,
             _: &str,
             _: &[crate::conversation::message::Message],
-            _: &[rmcp::model::Tool],
+            _: &[goose_provider_types::data::Tool],
         ) -> Result<crate::providers::base::MessageStream, ProviderError> {
             unimplemented!()
         }
@@ -2487,7 +2492,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             let call = self.call_count.fetch_add(1, Ordering::SeqCst);
             let message = Message::assistant().with_text(format!("provider response {call}"));
             let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
@@ -2509,7 +2514,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
             Ok(Box::pin(futures::stream::iter(vec![
                 Ok((Some(Message::assistant().with_text("streamed ")), None)),
@@ -2551,7 +2556,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             let message_id = "provider-output-limit";
             let content = Message::assistant()
@@ -2586,7 +2591,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             _system_prompt: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(Box::pin(futures::stream::once(async {
                 Err(ProviderError::Refusal {
@@ -2879,7 +2884,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
             .messages()
             .iter()
             .filter(|message| {
-                message.role == rmcp::model::Role::User
+                message.role == goose_provider_types::data::Role::User
                     && !message.is_user_visible()
                     && message.is_agent_visible()
                     && message

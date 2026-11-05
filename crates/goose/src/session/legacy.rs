@@ -117,7 +117,7 @@ fn parse_session_timestamp(session_name: &str) -> Option<SystemTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::Role;
+    use goose_provider_types::data::Role;
     use tempfile::TempDir;
 
     #[test]

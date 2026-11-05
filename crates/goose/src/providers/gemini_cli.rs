@@ -17,11 +17,11 @@ use crate::providers::base::ConfigKey;
 use crate::subprocess::configure_subprocess;
 use async_stream::try_stream;
 use futures::future::BoxFuture;
+use goose_provider_types::data::Role;
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Role;
-use rmcp::model::Tool;
 
 const GEMINI_CLI_PROVIDER_NAME: &str = "gemini-cli";
 pub const GEMINI_CLI_DEFAULT_MODEL: &str = "gemini-2.5-pro";
@@ -217,7 +217,7 @@ impl Provider for GeminiCliProvider {
         system: &str,
         messages: &[Message],
         _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let GeminiCliProcess {
             mut child,
             mut reader,

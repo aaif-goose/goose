@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     operation::{ConversationEffect, Emitter, Operation, OperationResult, RunStatus},
     pre_tool_call_hook::{
@@ -13,10 +14,9 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, ToolRequest, TOOL_META_EXTERNAL_DISPATCH_KEY},
     Conversation,
 };
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData};
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy)]
 enum Reply {

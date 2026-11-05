@@ -1,3 +1,6 @@
+use goose_provider_types::data::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Tool,
+};
 use std::{
     borrow::Cow,
     sync::{
@@ -9,6 +12,7 @@ use std::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use goose_agent::runtime::CancellationToken;
 use goose_agent::{
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{applied, not_applicable, ConversationEffect, Emitter, Operation, OperationResult},
@@ -20,13 +24,9 @@ use goose_provider_types::conversation::{
     message::{Message, MessageContent, ToolRequest, ToolResponse},
     Conversation,
 };
-use rmcp::{
-    handler::server::router::tool::{SyncTool, ToolBase},
-    model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Tool},
-};
+use rmcp::handler::server::router::tool::{SyncTool, ToolBase};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 struct Session(Conversation);

@@ -1,4 +1,6 @@
-use std::sync::Arc;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use goose_provider_types::runtime::Shared as Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,8 +22,11 @@ pub enum PreToolCallDecision {
     Deny { reason: String },
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait PreToolCallHook<S>: MaybeSend + MaybeSync {
     async fn before_call(
         &self,
@@ -41,8 +46,11 @@ impl<'a, S> PreToolCallHookOperation<'a, S> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S, E> Operation<S, E> for PreToolCallHookOperation<'_, S>
 where
     S: MaybeSend + MaybeSync + 'static,
@@ -82,7 +90,7 @@ where
                 })])
             }
             PreToolCallDecision::Deny { reason } => {
-                let mut tool_responses = Message::user();
+                let mut tool_responses = Message::user_with_host(emit.host());
                 add_error_response(&mut tool_responses, request, &reason);
                 applied([E::from(ConversationEffect::from(
                     emit.message(tool_responses),

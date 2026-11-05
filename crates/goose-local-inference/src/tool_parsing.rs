@@ -1,4 +1,4 @@
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde_json::{json, Value};
 
 pub(super) fn compact_tools_json(tools: &[Tool]) -> Option<String> {
@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn test_compact_tools_json_produces_minimal_output() {
-        use rmcp::model::Tool;
+        use goose_provider_types::data::Tool;
         use rmcp::object;
 
         let tools = vec![Tool::new(

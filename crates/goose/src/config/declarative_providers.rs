@@ -813,7 +813,7 @@ mod tests {
             .with_vision_support(true);
         model.cache_read_token_cost = Some(0.0000002);
         model.cache_write_token_cost = Some(0.0000004);
-        model.request_params = Some(HashMap::from([(
+        model.request_params = Some(std::collections::BTreeMap::from([(
             "temperature".to_string(),
             serde_json::json!(0.25),
         )]));

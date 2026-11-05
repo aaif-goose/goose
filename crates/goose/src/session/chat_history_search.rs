@@ -2,7 +2,7 @@ use crate::conversation::message::MessageContent;
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use serde::Serialize;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use std::collections::HashMap;
@@ -351,7 +351,7 @@ impl<'a> ChatHistorySearch<'a> {
 mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent, MessageMetadata};
-    use rmcp::model::{Annotations, TextContent};
+    use goose_provider_types::data::{Annotations, TextContent};
     use sqlx::sqlite::SqlitePoolOptions;
 
     fn user_only_text(text: &str) -> MessageContent {

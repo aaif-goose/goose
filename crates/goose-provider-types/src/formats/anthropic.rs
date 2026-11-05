@@ -2,6 +2,10 @@ use crate::canonical::maybe_get_canonical_model;
 use crate::canonical::ThinkingMode;
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::conversation::token_usage::{CostSource, ProviderUsage, Usage};
+use crate::data::{
+    object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, JsonObject,
+    ResourceContents, Role, Tool,
+};
 use crate::documents::{
     convert_document, document_media_type_is_supported, unsupported_document_text, DocumentFormat,
     ASSISTANT_ROLE_REASON, UNSUPPORTED_MEDIA_TYPE_REASON,
@@ -11,18 +15,17 @@ use crate::images::{convert_image, ImageFormat};
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
+use crate::object as json_object;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::runtime::Shared as Arc;
 use crate::thinking::ThinkingEffort;
+use crate::trace as tracing;
+use alloc::collections::BTreeSet as HashSet;
 use anyhow::{anyhow, Result};
-use rmcp::model::{
-    object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, JsonObject,
-    ResourceContents, Role, Tool,
-};
-use rmcp::object as json_object;
+use core::fmt;
+use core::str::FromStr;
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
-use std::fmt;
-use std::str::FromStr;
-use std::sync::Arc;
 
 pub const ANTHROPIC_PROVIDER_NAME: &str = "anthropic";
 
@@ -564,7 +567,7 @@ pub fn format_tools(tools: &[Tool], options: &AnthropicFormatOptions) -> Vec<Val
             tool_specs.push(json!({
                 NAME_FIELD: tool.name,
                 "description": tool.description,
-                "input_schema": anthropic_flavored_input_schema(tool.input_schema.clone())
+                "input_schema": anthropic_flavored_input_schema(tool.input_schema.clone()).as_ref()
             }));
         }
     }
@@ -601,13 +604,21 @@ pub fn format_system(system: &str, options: &AnthropicFormatOptions) -> Value {
 }
 
 /// Convert Anthropic's API response to internal Message format
+#[cfg(feature = "std")]
 pub fn response_to_message(response: &Value) -> Result<Message> {
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &Value,
+) -> Result<Message> {
     let content_blocks = response
         .get(CONTENT_FIELD)
         .and_then(|c| c.as_array())
         .ok_or_else(|| anyhow!("Invalid response format: missing content array"))?;
 
-    let mut message = Message::assistant();
+    let mut message = Message::assistant_with_host(host);
 
     for block in content_blocks {
         match block.get(TYPE_FIELD).and_then(|t| t.as_str()) {
@@ -915,13 +926,7 @@ pub fn block_binding_behavior(payload: &Value) -> Option<PrefixMismatchBehavior>
         .and_then(|behavior| behavior.parse().ok())
 }
 
-pub fn is_thinking_signature_error(message: &str) -> bool {
-    let lower = message.to_lowercase();
-    lower.contains("thinking")
-        && (lower.contains("signature")
-            || lower.contains("cannot be modified")
-            || lower.contains("block_binding"))
-}
+pub use crate::retry::is_thinking_signature_error;
 
 pub fn create_request(
     provider_name: &str,
@@ -1002,13 +1007,23 @@ pub fn create_request_for_model(
 }
 
 /// Process streaming response from Anthropic's API
+#[cfg(feature = "std")]
 pub fn response_to_streaming_message<S>(
-    mut stream: S,
+    stream: S,
 ) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
     S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    use async_stream::try_stream;
+    response_to_streaming_message_with_host(&crate::runtime::SystemHost, stream)
+}
+
+pub fn response_to_streaming_message_with_host<'a, S>(
+    host: &'a dyn crate::runtime::HostServices,
+    mut stream: S,
+) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'a
+where
+    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'a,
+{
     use futures::StreamExt;
     use serde::{Deserialize, Serialize};
 
@@ -1042,14 +1057,15 @@ where
             .map(|index| index as i32)
     }
 
-    try_stream! {
+    crate::stream::try_stream(|mut emit| async move {
         struct StreamingToolCall {
             id: String,
             name: String,
             arguments: String,
         }
 
-        let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
+        let mut accumulated_tool_calls: alloc::collections::BTreeMap<i32, StreamingToolCall> =
+            alloc::collections::BTreeMap::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
@@ -1065,7 +1081,10 @@ where
                 continue;
             }
 
-            let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
+            let data_part = line
+                .strip_prefix("data: ")
+                .or_else(|| line.strip_prefix("data:"))
+                .unwrap_or(&line);
 
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
@@ -1076,7 +1095,11 @@ where
             let event: StreamingEvent = match serde_json::from_str(data_part) {
                 Ok(event) => event,
                 Err(e) => {
-                    tracing::debug!("Failed to parse streaming event: {} - Line: {}", e, data_part);
+                    tracing::debug!(
+                        "Failed to parse streaming event: {} - Line: {}",
+                        e,
+                        data_part
+                    );
                     continue;
                 }
             };
@@ -1096,11 +1119,13 @@ where
 
                         if let Some(usage_data) = message_data.get("usage") {
                             let usage = get_usage(usage_data).unwrap_or_default();
-                            let model = message_data.get("model")
+                            let model = message_data
+                                .get("model")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
-                            final_usage = Some(provider_usage_with_cost(model, usage, usage_data, None));
+                            final_usage =
+                                Some(provider_usage_with_cost(model, usage, usage_data, None));
                         }
                     }
                     continue;
@@ -1114,11 +1139,14 @@ where
                                     content_block.get("id").and_then(|v| v.as_str()),
                                     content_block.get("name").and_then(|v| v.as_str()),
                                 ) {
-                                    accumulated_tool_calls.insert(index, StreamingToolCall {
-                                        id: id.to_string(),
-                                        name: name.to_string(),
-                                        arguments: String::new(),
-                                    });
+                                    accumulated_tool_calls.insert(
+                                        index,
+                                        StreamingToolCall {
+                                            id: id.to_string(),
+                                            name: name.to_string(),
+                                            arguments: String::new(),
+                                        },
+                                    );
                                 }
                             }
                             Some(THINKING_TYPE) => {
@@ -1136,13 +1164,18 @@ where
                                 });
                             }
                             Some(REDACTED_THINKING_TYPE) => {
-                                if let Some(data) = content_block.get(DATA_FIELD).and_then(|d| d.as_str()) {
-                                    let mut message = Message::assistant()
+                                if let Some(data) =
+                                    content_block.get(DATA_FIELD).and_then(|d| d.as_str())
+                                {
+                                    let mut message = Message::assistant_with_host(host)
                                         .with_redacted_thinking(data);
                                     message.id = message_id.clone();
-                                    yield (Some(message), None);
+                                    emit.send((Some(message), None)).await;
                                 } else {
-                                    tracing::warn!("redacted_thinking block missing '{}' field", DATA_FIELD);
+                                    tracing::warn!(
+                                        "redacted_thinking block missing '{}' field",
+                                        DATA_FIELD
+                                    );
                                 }
                             }
                             _ => {}
@@ -1154,9 +1187,10 @@ where
                     if let Some(delta) = event.data.get("delta") {
                         match serde_json::from_value::<ContentBlockDelta>(delta.clone()) {
                             Ok(ContentBlockDelta::TextDelta { text }) => {
-                                let mut message = Message::assistant().with_text(&text);
+                                let mut message =
+                                    Message::assistant_with_host(host).with_text(&text);
                                 message.id = message_id.clone();
-                                yield (Some(message), None);
+                                emit.send((Some(message), None)).await;
                             }
                             Ok(ContentBlockDelta::InputJsonDelta { partial_json }) => {
                                 if let Some(call) = block_index(&event.data)
@@ -1186,25 +1220,31 @@ where
                     if let Some(state) = thinking.take() {
                         // Omitted thinking arrives as an empty string with a signature and must still be replayed.
                         if !state.text.is_empty() || !state.signature.is_empty() {
-                            let mut message = Message::assistant()
+                            let mut message = Message::assistant_with_host(host)
                                 .with_thinking(state.text, state.signature);
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            emit.send((Some(message), None)).await;
                         }
                     }
                     if let Some(index) = block_index(&event.data) {
                         if let Some(call) = accumulated_tool_calls.remove(&index) {
-                            let StreamingToolCall { id, name, arguments } = call;
+                            let StreamingToolCall {
+                                id,
+                                name,
+                                arguments,
+                            } = call;
                             let parsed_args = if arguments.is_empty() {
                                 json!({})
                             } else {
                                 match crate::json::parse_tool_arguments(&arguments) {
                                     Some(parsed) => parsed,
                                     None => {
-                                        let message_text = crate::json::truncation_error_message(&arguments)
-                                            .unwrap_or_else(|| {
-                                                format!("Could not parse tool arguments: {arguments}")
-                                            });
+                                        let message_text = crate::json::truncation_error_message(
+                                            &arguments,
+                                        )
+                                        .unwrap_or_else(|| {
+                                            format!("Could not parse tool arguments: {arguments}")
+                                        });
                                         let error = ErrorData::new(
                                             ErrorCode::INVALID_PARAMS,
                                             message_text,
@@ -1212,25 +1252,31 @@ where
                                         );
                                         let mut message = Message::new(
                                             Role::Assistant,
-                                            chrono::Utc::now().timestamp(),
+                                            host.unix_timestamp(),
                                             vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
                                         );
                                         message.id = message_id.clone();
-                                        yield (Some(message), None);
+                                        emit.send((Some(message), None)).await;
                                         continue;
                                     }
                                 }
                             };
 
-                            let tool_call = CallToolRequestParams::new(name).with_arguments(object(parsed_args));
+                            let tool_call = CallToolRequestParams::new(name)
+                                .with_arguments(object(parsed_args));
 
                             let mut message = Message::new(
-                                rmcp::model::Role::Assistant,
-                                chrono::Utc::now().timestamp(),
-                                vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
+                                crate::data::Role::Assistant,
+                                host.unix_timestamp(),
+                                vec![MessageContentBlock::tool_request_with_provider_index(
+                                    id,
+                                    Ok(tool_call),
+                                    None,
+                                    index,
+                                )],
                             );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            emit.send((Some(message), None)).await;
                         }
                     }
                     continue;
@@ -1240,7 +1286,8 @@ where
                         let delta_usage = get_usage(usage_data).unwrap_or_default();
 
                         if let Some(existing_usage) = &final_usage {
-                            let merged_usage = merge_delta_usage(&existing_usage.usage, &delta_usage, usage_data);
+                            let merged_usage =
+                                merge_delta_usage(&existing_usage.usage, &delta_usage, usage_data);
                             final_usage = Some(provider_usage_with_cost(
                                 existing_usage.model.clone(),
                                 merged_usage,
@@ -1248,11 +1295,18 @@ where
                                 existing_usage.cost,
                             ));
                         } else {
-                            let model = event.data.get("model")
+                            let model = event
+                                .data
+                                .get("model")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string();
-                            final_usage = Some(provider_usage_with_cost(model, delta_usage, usage_data, None));
+                            final_usage = Some(provider_usage_with_cost(
+                                model,
+                                delta_usage,
+                                usage_data,
+                                None,
+                            ));
                         }
                     }
                     if let Some(delta) = event.data.get("delta") {
@@ -1262,11 +1316,15 @@ where
                                 stop_reason = Some(sr.to_string());
                             }
                         }
-                        if delta.get("stop_reason").and_then(|v| v.as_str()) == Some(STOP_REASON_REFUSAL) {
-                            let str_field = |key: &str| stop_details
-                                .and_then(|d| d.get(key))
-                                .and_then(|v| v.as_str())
-                                .map(str::to_string);
+                        if delta.get("stop_reason").and_then(|v| v.as_str())
+                            == Some(STOP_REASON_REFUSAL)
+                        {
+                            let str_field = |key: &str| {
+                                stop_details
+                                    .and_then(|d| d.get(key))
+                                    .and_then(|v| v.as_str())
+                                    .map(str::to_string)
+                            };
                             let details = str_field("explanation")
                                 .or_else(|| stop_details.map(|d| d.to_string()))
                                 .unwrap_or_else(|| REFUSAL_FALLBACK_DETAILS.to_string());
@@ -1277,17 +1335,17 @@ where
                                 usage.finish_reasons = Some(vec![STOP_REASON_REFUSAL.to_string()]);
                                 usage.response_id = message_id.clone();
                                 usage.additional_data = additional_data.clone();
-                                yield (None, Some(usage));
+                                emit.send((None, Some(usage))).await;
                             }
                             Err(ProviderError::Refusal { details, category })?;
                         } else if let Some(details) = stop_details {
                             // No specific handling for these stop details yet —
                             // forward them rather than silently dropping the turn.
-                            let mut message = Message::assistant().with_text(format!(
-                                "The provider ended the response with: {details}"
-                            ));
+                            let mut message = Message::assistant_with_host(host).with_text(
+                                format!("The provider ended the response with: {details}"),
+                            );
                             message.id = message_id.clone();
-                            yield (Some(message), None);
+                            emit.send((Some(message), None)).await;
                         }
                     }
                     continue;
@@ -1295,12 +1353,19 @@ where
                 EVENT_MESSAGE_STOP => {
                     if let Some(usage_data) = event.data.get("usage") {
                         let usage = get_usage(usage_data).unwrap_or_default();
-                        let model = event.data.get("model")
+                        let model = event
+                            .data
+                            .get("model")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown")
                             .to_string();
                         let fallback_cost = final_usage.as_ref().and_then(|u| u.cost);
-                        final_usage = Some(provider_usage_with_cost(model, usage, usage_data, fallback_cost));
+                        final_usage = Some(provider_usage_with_cost(
+                            model,
+                            usage,
+                            usage_data,
+                            fallback_cost,
+                        ));
                     }
                     break;
                 }
@@ -1319,7 +1384,12 @@ where
             let mut indices: Vec<i32> = accumulated_tool_calls.keys().copied().collect();
             indices.sort();
             for index in indices {
-                if let Some(StreamingToolCall { id, arguments: args, .. }) = accumulated_tool_calls.remove(&index) {
+                if let Some(StreamingToolCall {
+                    id,
+                    arguments: args,
+                    ..
+                }) = accumulated_tool_calls.remove(&index)
+                {
                     let guidance = if truncated_by_limit {
                         "The model's response was truncated — it hit the output token limit while generating this tool call. \
                          Try increasing max_tokens for this provider or breaking the task into smaller steps."
@@ -1328,27 +1398,39 @@ where
                          Try resending your message or breaking the task into smaller steps."
                     };
                     let snippet_len = args.chars().count();
-                    let tail: String = args.chars().rev().take(80).collect::<Vec<_>>().into_iter().rev().collect();
+                    let tail: String = args
+                        .chars()
+                        .rev()
+                        .take(80)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
                     let message_text = format!(
                         "{guidance}\nReceived {snippet_len} characters of arguments; cut off at: …{tail}"
                     );
                     let error = ErrorData::new(ErrorCode::INVALID_PARAMS, message_text, None);
                     let mut message = Message::new(
                         Role::Assistant,
-                        chrono::Utc::now().timestamp(),
-                        vec![MessageContentBlock::tool_request_with_provider_index(id, Err(error), None, index)],
+                        host.unix_timestamp(),
+                        vec![MessageContentBlock::tool_request_with_provider_index(
+                            id,
+                            Err(error),
+                            None,
+                            index,
+                        )],
                     );
                     message.id = message_id.clone();
-                    yield (Some(message), None);
+                    emit.send((Some(message), None)).await;
                 }
             }
         }
 
         if stop_reason.as_deref() == Some("max_tokens") {
-            let mut message = Message::assistant();
+            let mut message = Message::assistant_with_host(host);
             message.id = message_id.clone();
             message.metadata.output_token_limit_reached = true;
-            yield (Some(message), None);
+            emit.send((Some(message), None)).await;
         }
 
         if let Some(mut usage) = final_usage {
@@ -1359,9 +1441,11 @@ where
                 usage.response_id = Some(id);
             }
             usage.additional_data = additional_data;
-            yield (None, Some(usage));
+            emit.send((None, Some(usage))).await;
         }
-    }
+
+        Ok::<(), anyhow::Error>(())
+    })
 }
 
 #[cfg(test)]
@@ -1436,7 +1520,7 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use crate::model::ModelConfig;
-    use rmcp::object;
+    use crate::object;
     use serde_json::json;
 
     /// Create a complete request payload for Anthropic's API
@@ -1813,7 +1897,7 @@ mod tests {
     fn test_create_request_adaptive_thinking_for_46_models() -> Result<()> {
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
 
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
 
         let mut config = cfg("claude-opus-4-6");
@@ -1835,7 +1919,7 @@ mod tests {
         // require thinking.type=adaptive + output_config.effort.
         let _guard = env_lock::lock_env([("GOOSE_THINKING_EFFORT", None::<&str>)]);
 
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
 
         let mut config = cfg("claude-opus-5");
@@ -2045,7 +2129,7 @@ mod tests {
             ("ANTHROPIC_PRESERVE_UNSIGNED_THINKING", None::<&str>),
         ]);
 
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("preserve_thinking_context".to_string(), json!(true));
         params.insert("emit_clear_thinking".to_string(), json!(true));
 
@@ -2102,7 +2186,7 @@ mod tests {
     #[test]
     fn test_tool_error_handling_maintains_pairing() {
         use crate::conversation::message::Message;
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
 
         let messages = vec![
             Message::assistant().with_tool_request(
@@ -2148,7 +2232,7 @@ mod tests {
                 Ok(CallToolRequestParams::new("search").with_arguments(object!({"query": "test"}))),
             ),
             Message::user()
-                .with_tool_response("tool_1", Ok(rmcp::model::CallToolResult::success(vec![]))),
+                .with_tool_response("tool_1", Ok(crate::data::CallToolResult::success(vec![]))),
         ];
 
         let spec = format_messages(&messages);
@@ -2162,7 +2246,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_with_resource_content() {
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use crate::data::{CallToolResult, ContentBlock};
 
         let resource_content = ContentBlock::embedded_text(
             "file:///test/file.txt",
@@ -2195,7 +2279,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_with_mixed_content() {
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use crate::data::{CallToolResult, ContentBlock};
 
         let text_content = ContentBlock::text("Summary: file loaded");
         let resource_content =
@@ -2227,7 +2311,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_forwards_image_resource_as_image_block() {
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         let image = ContentBlock::resource(ResourceContents::BlobResourceContents {
             uri: "file:///shot.png".to_string(),
@@ -2253,7 +2337,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_unsupported_image_mime_falls_back_to_text() {
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         // image/svg+xml is not a Claude-supported image type, so it must fall
         // through to text rather than an image block.
@@ -2279,7 +2363,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_forwards_raw_image_as_image_block() {
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         let image = ContentBlock::image("aGVsbG8=", "image/png");
 
@@ -2300,7 +2384,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_unsupported_raw_image_mime_falls_back_to_text() {
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         // image/svg+xml is not a Claude-supported image type, so a raw image with
         // that mime must fall back to a text marker rather than an image block
@@ -2328,7 +2412,7 @@ mod tests {
 
     #[test]
     fn test_unparseable_tool_request_emits_placeholder_tool_use() {
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
 
         let err = ErrorData::new(
             ErrorCode::INVALID_PARAMS,
@@ -2344,7 +2428,7 @@ mod tests {
 
         let spec = format_messages(&messages);
 
-        let mut open = std::collections::HashSet::new();
+        let mut open = alloc::collections::BTreeSet::new();
         for m in &spec {
             for block in m["content"].as_array().into_iter().flatten() {
                 match block["type"].as_str() {
@@ -2379,7 +2463,7 @@ mod tests {
             Message::assistant()
                 .with_tool_request("tool_1", Ok(CallToolRequestParams::new("list_things"))),
             Message::user()
-                .with_tool_response("tool_1", Ok(rmcp::model::CallToolResult::success(vec![]))),
+                .with_tool_response("tool_1", Ok(crate::data::CallToolResult::success(vec![]))),
         ];
 
         let spec = format_messages(&messages);
@@ -2395,7 +2479,7 @@ mod tests {
     }
 
     fn cfg_with_effort(name: &str, effort: &str) -> ModelConfig {
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!(effort));
         ModelConfig::new(name).with_merged_request_params(params)
     }
@@ -3149,7 +3233,7 @@ mod tests {
     /// `tests/prefix_invariance.rs`.
     mod cache_breakpoint_placement {
         use super::*;
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         fn sample_tools() -> Vec<Tool> {
             vec![
@@ -3196,7 +3280,7 @@ mod tests {
                 Message::user().with_tool_response(
                     "tool_1",
                     Ok(CallToolResult::success(vec![
-                        rmcp::model::ContentBlock::text("fn main() { run(); }"),
+                        crate::data::ContentBlock::text("fn main() { run(); }"),
                     ])),
                 ),
                 Message::assistant().with_text("It calls `run()`."),
@@ -3227,7 +3311,7 @@ mod tests {
         #[test]
         fn disable_prompt_cache_removes_every_breakpoint() {
             let config = cfg("claude-sonnet-4-5").with_merged_request_params(
-                std::collections::HashMap::from([(
+                alloc::collections::BTreeMap::from([(
                     "disable_prompt_cache".to_string(),
                     json!(true),
                 )]),

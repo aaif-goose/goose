@@ -202,7 +202,7 @@ impl AdversaryInspector {
         messages
             .iter()
             .rev()
-            .filter(|m| m.role == rmcp::model::Role::User && !m.is_turn_context())
+            .filter(|m| m.role == goose_provider_types::data::Role::User && !m.is_turn_context())
             .filter_map(|m| {
                 let text: String = m
                     .content
@@ -228,7 +228,7 @@ impl AdversaryInspector {
 
     fn extract_original_task(messages: &[Message]) -> String {
         for msg in messages {
-            if msg.role == rmcp::model::Role::User && !msg.is_turn_context() {
+            if msg.role == goose_provider_types::data::Role::User && !msg.is_turn_context() {
                 let text: String = msg
                     .content
                     .iter()
@@ -293,7 +293,7 @@ impl AdversaryInspector {
             the next line.";
 
         let check_messages = vec![Message::new(
-            rmcp::model::Role::User,
+            goose_provider_types::data::Role::User,
             Utc::now().timestamp(),
             vec![MessageContent::text(user_message)],
         )];
@@ -472,7 +472,7 @@ impl ToolInspector for AdversaryInspector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
     use rmcp::object;
     use std::sync::Arc;
 
@@ -610,12 +610,12 @@ mod tests {
     fn test_extract_original_task() {
         let messages = vec![
             Message::new(
-                rmcp::model::Role::User,
+                goose_provider_types::data::Role::User,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("Refactor the auth module")],
             ),
             Message::new(
-                rmcp::model::Role::Assistant,
+                goose_provider_types::data::Role::Assistant,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("Sure, I'll start by...")],
             ),
@@ -628,22 +628,22 @@ mod tests {
     fn test_extract_recent_user_messages() {
         let messages = vec![
             Message::new(
-                rmcp::model::Role::User,
+                goose_provider_types::data::Role::User,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("First message")],
             ),
             Message::new(
-                rmcp::model::Role::Assistant,
+                goose_provider_types::data::Role::Assistant,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("Response")],
             ),
             Message::new(
-                rmcp::model::Role::User,
+                goose_provider_types::data::Role::User,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("Second message")],
             ),
             Message::new(
-                rmcp::model::Role::User,
+                goose_provider_types::data::Role::User,
                 Utc::now().timestamp(),
                 vec![MessageContent::text("Third message")],
             ),

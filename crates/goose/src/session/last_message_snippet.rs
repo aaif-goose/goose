@@ -1,7 +1,7 @@
 use crate::conversation::message::Message;
 use crate::session::session_manager::Session;
 use anyhow::Result;
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
 use std::collections::HashMap;
 
@@ -207,16 +207,16 @@ mod tests {
     }
 
     fn assistant_audience_text(text: &str) -> MessageContent {
-        use rmcp::model::TextContent;
+        use goose_provider_types::data::TextContent;
 
         MessageContent::Text(TextContent::new(text.to_string()).with_annotations(
-            rmcp::model::Annotations::default().with_audience(vec![Role::Assistant]),
+            goose_provider_types::data::Annotations::default().with_audience(vec![Role::Assistant]),
         ))
     }
 
     #[test]
     fn test_message_snippet_collapses_whitespace_and_truncates() {
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
 
         let collapsed = Message::user().with_text("  hello\n\nworld\t  again  ");
         assert_eq!(
@@ -301,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_last_message_snippet_ignores_tool_messages() {
-        use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
+        use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock};
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -346,7 +346,7 @@ mod tests {
     #[tokio::test]
     async fn test_live_last_message_snippet_reads_replaced_conversation() {
         use crate::conversation::Conversation;
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -374,7 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_last_message_snippet_reads_truncated_conversation() {
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -416,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_last_message_snippet_null_after_truncate_without_text_messages() {
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -443,7 +443,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_live_last_message_snippets_read_from_recent_messages() {
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
 
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());

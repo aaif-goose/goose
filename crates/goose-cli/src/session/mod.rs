@@ -43,10 +43,10 @@ use goose::agents::{
 };
 use goose::config::extensions::name_to_key;
 use goose::config::{Config, GooseMode};
+use goose_providers::data::{ErrorCode, ErrorData};
 use input::InputResult;
 use rmcp::model::ServerNotification;
 use rmcp::model::{ElicitationAction, PromptMessage};
-use rmcp::model::{ErrorCode, ErrorData};
 use strum::VariantNames;
 
 use goose::config::paths::Paths;
@@ -650,8 +650,8 @@ impl CliSession {
                 .iter()
                 .map(|msg| {
                     let role = match msg.role {
-                        rmcp::model::Role::User => "User",
-                        rmcp::model::Role::Assistant => "Assistant",
+                        goose_providers::data::Role::User => "User",
+                        goose_providers::data::Role::Assistant => "Assistant",
                     };
                     format!("## {}: {}", role, msg.as_concat_text())
                 })
@@ -1503,7 +1503,7 @@ impl CliSession {
                                             .with_content(MessageContent::action_required_elicitation_response(
                                                 elicitation_id,
                                                 user_data_value,
-                                                action,
+                                                action.try_into()?,
                                             ))
                                             .with_visibility(false, true);
                                         self.messages.push(response_message.clone());
@@ -1724,7 +1724,7 @@ impl CliSession {
         let tool_requests = self
             .messages
             .last()
-            .filter(|msg| msg.role == rmcp::model::Role::Assistant)
+            .filter(|msg| msg.role == goose_providers::data::Role::Assistant)
             .map_or(Vec::new(), |msg| {
                 msg.content
                     .iter()
@@ -1769,7 +1769,7 @@ impl CliSession {
                 self.messages.pop();
             }
             if let Some(last_msg) = self.messages.last() {
-                if last_msg.role == rmcp::model::Role::User {
+                if last_msg.role == goose_providers::data::Role::User {
                     match last_msg.content.first() {
                         Some(MessageContent::ToolResponse(_)) => {
                             self.push_message(Message::assistant().with_text(interrupt_prompt));
@@ -2031,12 +2031,14 @@ impl CliSession {
                     let mut valid = true;
                     let num_messages = messages.len();
                     for (i, prompt_message) in messages.into_iter().enumerate() {
-                        let msg = Message::from(prompt_message);
+                        let msg = Message::from(goose_providers::data::PromptMessage::try_from(
+                            prompt_message,
+                        )?);
                         // ensure we get a User - Assistant - User type pattern
                         let expected_role = if i % 2 == 0 {
-                            rmcp::model::Role::User
+                            goose_providers::data::Role::User
                         } else {
-                            rmcp::model::Role::Assistant
+                            goose_providers::data::Role::Assistant
                         };
 
                         if msg.role != expected_role {
@@ -2050,7 +2052,7 @@ impl CliSession {
                             break;
                         }
 
-                        if msg.role == rmcp::model::Role::User {
+                        if msg.role == goose_providers::data::Role::User {
                             output::render_message(&msg, self.debug);
                         }
                         self.push_message(msg);
@@ -3062,7 +3064,7 @@ mod tests {
             max_tokens: Some(16_384),
             toolshim: true,
             toolshim_model: Some("qwen2.5-coder".to_string()),
-            request_params: Some(HashMap::from([(
+            request_params: Some(std::collections::BTreeMap::from([(
                 "anthropic_beta".to_string(),
                 serde_json::json!(["output-128k-2025-02-19"]),
             )])),
@@ -3281,7 +3283,7 @@ mod tests {
             _model_config: &goose_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
+            _tools: &[goose_providers::data::Tool],
         ) -> std::result::Result<
             goose::providers::base::MessageStream,
             goose_providers::errors::ProviderError,

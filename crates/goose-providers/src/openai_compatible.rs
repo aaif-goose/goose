@@ -26,7 +26,7 @@ use crate::formats::openai::{
 use crate::formats::openai_responses::responses_api_to_streaming_message;
 use crate::model::ModelConfig;
 use crate::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 pub struct OpenAiCompatibleProvider {
     name: String,
@@ -89,7 +89,7 @@ impl OpenAiCompatibleProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let payload = self.build_request_for_model(
             model_config,
             wire_model,
@@ -106,7 +106,7 @@ impl OpenAiCompatibleProvider {
         &self,
         model_config: &ModelConfig,
         payload: Value,
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let mut log = start_log(model_config, &payload)?;
         let path = format!("{}chat/completions", self.completions_prefix);
         let response = self
@@ -219,7 +219,7 @@ impl Provider for OpenAiCompatibleProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let payload = self.build_request(
             model_config,
             system,
@@ -258,7 +258,7 @@ pub(crate) fn annotate_request_id(
 pub fn stream_openai_compat(
     response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
-) -> Result<MessageStream, ProviderError> {
+) -> Result<MessageStream<'static>, ProviderError> {
     let request_id = extract_request_id(response.headers());
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
@@ -289,7 +289,7 @@ pub fn stream_openai_compat(
 pub fn stream_responses_compat(
     response: Response,
     mut log: Option<Box<dyn RequestLogHandle>>,
-) -> Result<MessageStream, ProviderError> {
+) -> Result<MessageStream<'static>, ProviderError> {
     let request_id = extract_request_id(response.headers());
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 

@@ -1,14 +1,17 @@
 use crate::conversation::message::{Message, MessageContentBlock};
 use crate::conversation::token_usage::Usage;
+use crate::data::{object, CallToolRequestParams, Role, Tool};
 use crate::documents::{unsupported_document_text, UNSUPPORTED_PROVIDER_REASON};
 use crate::errors::ProviderError;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
+use crate::object;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::trace as tracing;
+use alloc::collections::BTreeSet as HashSet;
 use anyhow::{anyhow, Result};
-use rmcp::model::{object, CallToolRequestParams, Role, Tool};
-use rmcp::object;
 use serde_json::{json, Value};
-use std::collections::HashSet;
 
 /// Convert internal Message format to Snowflake's API message specification
 pub fn format_messages(messages: &[Message]) -> Vec<Value> {
@@ -119,7 +122,7 @@ pub fn format_tools(tools: &[Tool]) -> Vec<Value> {
                 "type": "generic",
                 "name": tool.name,
                 "description": tool.description,
-                "input_schema": tool.input_schema
+                "input_schema": tool.input_schema.as_ref()
             });
 
             tool_specs.push(json!({"tool_spec": tool_spec}));
@@ -138,8 +141,16 @@ pub fn format_system(system: &str) -> Value {
 }
 
 /// Convert Snowflake's streaming API response to internal Message format
+#[cfg(feature = "std")]
 pub fn parse_streaming_response(sse_data: &str) -> Result<Message> {
-    let mut message = Message::assistant();
+    parse_streaming_response_with_host(&crate::runtime::SystemHost, sse_data)
+}
+
+pub fn parse_streaming_response_with_host(
+    host: &dyn crate::runtime::HostServices,
+    sse_data: &str,
+) -> Result<Message> {
+    let mut message = Message::assistant_with_host(host);
     let mut accumulated_text = String::new();
     let mut tool_use_id: Option<String> = None;
     let mut tool_name: Option<String> = None;
@@ -217,8 +228,16 @@ pub fn parse_streaming_response(sse_data: &str) -> Result<Message> {
 }
 
 /// Convert Snowflake's API response to internal Message format
+#[cfg(feature = "std")]
 pub fn response_to_message(response: &Value) -> Result<Message> {
-    let mut message = Message::assistant();
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &Value,
+) -> Result<Message> {
+    let mut message = Message::assistant_with_host(host);
 
     let content_list = response.get("content_list").and_then(|cl| cl.as_array());
 
@@ -379,7 +398,7 @@ pub fn create_request(
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
-    use rmcp::object;
+    use crate::object;
     use serde_json::json;
 
     #[test]

@@ -7,9 +7,8 @@ use std::sync::Arc;
 use std::{env, fs};
 
 use futures::StreamExt;
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ErrorCode, ErrorData, ProtocolVersion, Tool,
-};
+use goose_provider_types::data::CallToolResult;
+use rmcp::model::{CallToolRequestParams, ErrorCode, ErrorData, ProtocolVersion, Tool};
 use rmcp::object;
 use tokio_util::sync::CancellationToken;
 
@@ -235,6 +234,7 @@ async fn call(
         .await?
         .result
         .await
+        .map_err(Into::into)
 }
 
 fn text_of(result: &CallToolResult) -> String {

@@ -54,7 +54,7 @@ pub enum DelegationUpdateDelivery {
 pub enum ProviderConnectionEvent {
     TranscriptDelta {
         event_id: String,
-        role: rmcp::model::Role,
+        role: goose_provider_types::data::Role,
         text: String,
         start_ms: u64,
         end_ms: u64,
@@ -77,7 +77,7 @@ pub struct DelegationUpdate {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveVoiceInputMessage {
-    pub role: rmcp::model::Role,
+    pub role: goose_provider_types::data::Role,
     pub text: String,
 }
 

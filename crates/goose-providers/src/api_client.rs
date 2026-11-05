@@ -1034,7 +1034,7 @@ mod tests {
             .unwrap();
 
             let model_config = crate::model::ModelConfig::new("test-model").with_request_headers(
-                Some(std::collections::HashMap::from([
+                Some(std::collections::BTreeMap::from([
                     ("queue_threshold".to_string(), "500".to_string()),
                     ("Idempotency-Key".to_string(), "abc-123".to_string()),
                 ])),
@@ -1070,7 +1070,10 @@ mod tests {
         .unwrap();
 
         let model_config = crate::model::ModelConfig::new("test-model").with_request_headers(Some(
-            std::collections::HashMap::from([("bad header name".to_string(), "value".to_string())]),
+            std::collections::BTreeMap::from([(
+                "bad header name".to_string(),
+                "value".to_string(),
+            )]),
         ));
 
         assert!(client
