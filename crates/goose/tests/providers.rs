@@ -381,8 +381,7 @@ impl ProviderFixture {
             .result
             .await
             .unwrap();
-        let tool_response =
-            Message::user().with_tool_response(&tool_req.id, Ok(result));
+        let tool_response = Message::user().with_tool_response(&tool_req.id, Ok(result));
 
         let (response2, _) = goose::session_context::with_session_id(
             Some(self.session_id.clone()),

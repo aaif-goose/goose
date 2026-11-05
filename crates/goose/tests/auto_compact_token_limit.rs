@@ -8,10 +8,10 @@ use goose::conversation::message::Message;
 use goose::conversation::Conversation;
 use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
 use goose::session::SessionType;
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
