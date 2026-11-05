@@ -3064,7 +3064,7 @@ mod tests {
             max_tokens: Some(16_384),
             toolshim: true,
             toolshim_model: Some("qwen2.5-coder".to_string()),
-            request_params: Some(HashMap::from([(
+            request_params: Some(std::collections::BTreeMap::from([(
                 "anthropic_beta".to_string(),
                 serde_json::json!(["output-128k-2025-02-19"]),
             )])),
@@ -3283,7 +3283,7 @@ mod tests {
             _model_config: &goose_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
+            _tools: &[goose_providers::data::Tool],
         ) -> std::result::Result<
             goose::providers::base::MessageStream,
             goose_providers::errors::ProviderError,
