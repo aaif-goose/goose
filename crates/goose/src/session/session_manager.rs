@@ -371,12 +371,25 @@ pub(crate) struct SessionListPage {
     pub(crate) next_cursor: Option<SessionListCursor>,
 }
 
+/// Which sessions to return based on whether they have been archived.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArchivedFilter {
+    /// Archived and unarchived sessions alike.
+    #[default]
+    Include,
+    /// Only sessions that are not archived.
+    Exclude,
+    /// Only archived sessions.
+    Only,
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct SessionListFilters<'a> {
     pub(crate) types: Option<&'a [SessionType]>,
     pub(crate) working_dir: Option<&'a Path>,
     pub(crate) keyword: Option<&'a str>,
     pub(crate) tags: &'a [(String, String)],
+    pub(crate) archived: ArchivedFilter,
     pub(crate) only_sessions_with_messages: bool,
 }
 
@@ -2379,6 +2392,11 @@ impl SessionStorage {
                 "s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?)"
                     .to_string(),
             );
+        }
+        match filters.archived {
+            ArchivedFilter::Include => {}
+            ArchivedFilter::Exclude => where_clauses.push("s.archived_at IS NULL".to_string()),
+            ArchivedFilter::Only => where_clauses.push("s.archived_at IS NOT NULL".to_string()),
         }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
@@ -4757,6 +4775,55 @@ mod tests {
             .map(|session| session.id.clone())
             .collect::<Vec<_>>();
         assert_eq!(underscore_ids, vec![underscore_id]);
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_by_archived_state() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let active_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "Active work").await;
+        let archived_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "Archived work").await;
+        sm.update(&archived_id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await
+            .unwrap();
+
+        let types = [SessionType::User];
+        let list_ids = |archived| {
+            let sm = &sm;
+            let types = &types;
+            async move {
+                let mut ids = sm
+                    .list_sessions_paged(SessionListPageQuery {
+                        filters: SessionListFilters {
+                            types: Some(types),
+                            archived,
+                            only_sessions_with_messages: true,
+                            ..Default::default()
+                        },
+                        cursor: None,
+                        page_size: 10,
+                        include_last_message_snippet: false,
+                    })
+                    .await
+                    .unwrap()
+                    .sessions
+                    .into_iter()
+                    .map(|session| session.id)
+                    .collect::<Vec<_>>();
+                ids.sort();
+                ids
+            }
+        };
+
+        let mut all_ids = vec![active_id.clone(), archived_id.clone()];
+        all_ids.sort();
+        assert_eq!(list_ids(ArchivedFilter::Include).await, all_ids);
+        assert_eq!(list_ids(ArchivedFilter::Exclude).await, vec![active_id]);
+        assert_eq!(list_ids(ArchivedFilter::Only).await, vec![archived_id]);
     }
 
     #[tokio::test]
