@@ -809,7 +809,7 @@ export type GooseExtensionEntry = {
 export type AddConfigExtensionRequest_unstable = {
     extension: GooseExtension;
     enabled?: boolean;
-    configKey?: string;
+    configKey?: string | null;
 };
 
 /**
