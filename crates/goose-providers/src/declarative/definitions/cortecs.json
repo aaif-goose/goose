@@ -1,0 +1,79 @@
+{
+  "name": "cortecs",
+  "engine": "openai",
+  "display_name": "Cortecs",
+  "description": "EU-based AI router with a focus on privacy and security. Offers a wide range of GDPR-compliant AI models.",
+  "api_key_env": "CORTECS_API_KEY",
+  "base_url": "https://api.cortecs.ai/v1",
+  "models": [
+    {
+      "name": "deepseek-v4-flash-0731",
+      "context_limit": 1048576,
+      "reasoning": true
+    },
+    {
+      "name": "glm-5.3-flash",
+      "context_limit": 1048576,
+      "reasoning": true
+    },
+    {
+      "name": "glm-5.3",
+      "context_limit": 1048576,
+      "reasoning": true
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "context_limit": 1048576,
+      "reasoning": true
+    },
+    {
+      "name": "claude-opus-5.5",
+      "context_limit": 1000000,
+      "reasoning": true
+    },
+    {
+      "name": "claude-sonnet-5",
+      "context_limit": 1000000,
+      "reasoning": true
+    },
+    {
+      "name": "gpt-5.6-sol",
+      "context_limit": 1050000,
+      "reasoning": true
+    },
+    {
+      "name": "gpt-5.6-terra",
+      "context_limit": 1050000,
+      "reasoning": true
+    },
+    {
+      "name": "gpt-5.6-luna",
+      "context_limit": 1050000,
+      "reasoning": true
+    },
+    {
+      "name": "gemini-3.8-flash",
+      "context_limit": 1048576,
+      "reasoning": true
+    },
+    {
+      "name": "kimi-k3",
+      "context_limit": 1048576,
+      "reasoning": true
+    }
+  ],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://cortecs.ai/serverlessModels",
+  "setup": {
+    "category": "model",
+    "setup_method": "single_api_key",
+    "group": "additional",
+    "docs_url": "https://docs.cortecs.ai/"
+  },
+  "setup_steps": [
+    "Create an account at https://cortecs.ai",
+    "Create an API key",
+    "Paste the key above as CORTECS_API_KEY"
+  ]
+}
