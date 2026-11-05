@@ -542,8 +542,14 @@ pub fn format_messages_with_options(
             converted.reasoning_content = Some(reasoning_text);
         }
 
+        // Tool results must directly follow the assistant tool calls they
+        // answer, so a user message's own content goes after them.
         if has_message_payload {
-            output.insert(0, converted);
+            if message.role == Role::User {
+                output.push(converted);
+            } else {
+                output.insert(0, converted);
+            }
         }
 
         messages_spec.extend(output.into_iter().map(|message| {
@@ -2709,6 +2715,26 @@ mod tests {
         assert_eq!(roles, vec!["assistant", "tool", "tool", "user", "user"]);
         assert_eq!(spec[1]["tool_call_id"], "call_a");
         assert_eq!(spec[2]["tool_call_id"], "call_b");
+    }
+
+    #[test]
+    fn user_text_follows_the_tool_results_in_the_same_message() {
+        let messages = vec![
+            Message::assistant()
+                .with_tool_request("call_a", Ok(CallToolRequestParams::new("read_file"))),
+            Message::user()
+                .with_tool_response(
+                    "call_a",
+                    Ok(CallToolResult::success(vec![ContentBlock::text("out")])),
+                )
+                .with_text("now summarize"),
+        ];
+
+        let spec = format_messages(&messages, &ImageFormat::OpenAi);
+
+        let roles: Vec<&str> = spec.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["assistant", "tool", "user"]);
+        assert_eq!(spec[2]["content"], "now summarize");
     }
 
     #[test]
