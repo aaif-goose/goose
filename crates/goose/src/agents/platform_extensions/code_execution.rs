@@ -443,7 +443,7 @@ mod tests {
         let started = Arc::new(tokio::sync::Notify::new());
         let released = Arc::new(tokio::sync::Notify::new());
         manager
-            .add_client(
+            .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
                     name: "pending".into(),
@@ -564,7 +564,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let manager = Arc::new(ExtensionManager::with_data_dir(temp.path().join("manager")));
         manager
-            .add_client(
+            .install_test_client(
                 "test-session",
                 ExtensionConfig::Builtin {
                     name: "visibility".to_string(),
@@ -730,7 +730,7 @@ mod tests {
             .await
             .unwrap();
         manager
-            .add_client(
+            .add_test_client(
                 &session.id,
                 ExtensionConfig::Builtin {
                     name: "visibility".into(),

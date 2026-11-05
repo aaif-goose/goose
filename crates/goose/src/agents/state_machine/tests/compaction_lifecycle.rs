@@ -4,7 +4,10 @@ use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
 use super::dummy_api::ProviderFeatures;
-use super::pipeline::{self, test_pipeline, MessageKind::Agent};
+use super::pipeline::{
+    self, test_pipeline,
+    MessageKind::{Agent, Error},
+};
 use crate::agents::state_machine;
 use crate::agents::state_machine::ops_compaction::MAX_CONTEXT_ERROR_COMPACTIONS;
 use crate::context_mgmt::{compute_tool_call_cutoff, TOOLCALL_SUMMARIZATION_BATCH_SIZE};
@@ -184,7 +187,7 @@ async fn a_failed_compact_command_reports_the_error_and_keeps_working() -> Resul
 
     let failed = pipeline.run(["/compact"]).await?;
     assert_eq!(failed.history_replacements(), 0);
-    failed.assert_message(-1, Agent, "summarizer offline");
+    failed.assert_message(-1, Error, "summarizer offline");
     assert!(failed
         .conversation()
         .messages()

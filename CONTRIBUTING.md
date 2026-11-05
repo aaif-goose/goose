@@ -1,6 +1,6 @@
 # Contribution Guide
 
-goose is open source, and code is only one way to contribute. Reporting a problem, reproducing it, sharing domain knowledge, shaping the design, implementing the solution, and verifying the result are all valuable work.
+goose is open source, and code is not the only way to contribute. Reporting a problem, reproducing it, sharing domain knowledge, shaping the design, implementing the solution, and verifying the result are all valuable work.
 
 We organize this work on the public [Goose Issues board](https://github.com/orgs/aaif-goose/projects/1). The issue is the main record of a contribution, from the first report through design, implementation, and verification.
 

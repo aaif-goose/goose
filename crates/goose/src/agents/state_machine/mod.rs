@@ -10,6 +10,7 @@ mod inference_preparation;
 mod ops_auto_effort;
 mod ops_bang_shell;
 mod ops_compaction;
+mod ops_context_relevance;
 mod ops_doctor;
 mod ops_empty_response;
 mod ops_exit_on_error;
@@ -23,14 +24,17 @@ mod ops_skills;
 mod ops_slash_command;
 mod ops_status;
 mod ops_steer;
-mod ops_stop_hook;
 mod ops_subagent;
-mod ops_tool_approval;
 mod ops_tool_pair_compaction;
 mod ops_toolcalling;
+mod post_tool_hook;
+mod pre_tool_hook;
+mod proactive_compaction;
 mod session;
+mod stop_hook;
 pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
+mod tool_approval;
 mod tool_confirmation;
 mod usage;
 
@@ -47,7 +51,11 @@ pub use goose_agent::operation::{
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
     CLIENT_LOG,
 };
+pub(super) use goose_agent::pre_tool_call_hook::PreToolCallHookOperation;
+pub(super) use goose_agent::stop_hook::StopHookOperation;
 pub(super) use goose_agent::subagent::SubagentOperation;
+pub(super) use goose_agent::tool_approval::ToolApprovalOperation;
+pub(super) use goose_agent::unhandled_tool_calls::UnhandledToolCallsOperation;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,
@@ -57,22 +65,27 @@ pub(super) use inference_preparation::GooseInferenceRequestPreparer;
 pub(super) use ops_auto_effort::AutoEffortOperation;
 pub(super) use ops_bang_shell::BangShellOperation;
 pub(super) use ops_compaction::CompactionOperation;
+pub(super) use ops_context_relevance::{ContextRelevanceOperation, UnavailableDecisions};
 pub(super) use ops_doctor::DoctorOperation;
 pub(super) use ops_empty_response::EmptyResponseOperation;
 pub(crate) use ops_exit_on_error::turn_failure;
 pub(super) use ops_exit_on_error::ExitOnErrorOperation;
-pub(super) use ops_llm::{GooseInferenceProvider, InferenceRunner};
+pub(super) use ops_llm::{enrich_unclaimed_tool_errors, GooseInferenceProvider, InferenceRunner};
 pub(super) use ops_maxturns::{MaxTurnsOperation, MAX_TURNS_MESSAGE};
 pub(super) use ops_project::ProjectOperation;
 pub(super) use ops_recipe::RecipeOperation;
 pub(super) use ops_remaining_tool_calls::RemainingToolCallsOperation;
+#[cfg(test)]
+pub(super) use ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
 pub(super) use ops_retry::RetryOperation;
 pub(super) use ops_skills::SkillOperation;
 pub(super) use ops_slash_command::SlashCommandOperation;
 pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
-pub(super) use ops_stop_hook::StopHookOperation;
 pub(super) use ops_subagent::DELEGATED_META_KEY;
-pub(super) use ops_tool_approval::ToolApprovalOperation;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
 pub(super) use ops_toolcalling::ToolExecutionOperation;
+pub(super) use post_tool_hook::GoosePostToolHook;
+pub(super) use pre_tool_hook::GoosePreToolHook;
+pub(super) use stop_hook::{deny_limit_warning, GooseStopHook};
+pub(super) use tool_approval::GooseToolApproval;

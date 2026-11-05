@@ -109,7 +109,7 @@ impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
 }
 
 use crate::agents::extension_manager::ExtensionLease;
-use crate::agents::Agent;
+use crate::agents::StateMachineServices;
 
 pub(super) enum ToolStreamItem<T> {
     ActionRequired(Message),
@@ -161,4 +161,4 @@ pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool ca
                                         2. **Outline Steps** - Break down the steps.\n \
                                         If needed, adjust the explanation based on user preferences or questions.";
 
-impl Agent {}
+impl StateMachineServices {}

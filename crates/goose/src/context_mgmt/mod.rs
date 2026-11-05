@@ -29,15 +29,26 @@ pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 /// The configured threshold, lowered so compaction starts by the token limit.
 pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     let config = Config::global();
-    let threshold = config
-        .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
+    capped_compaction_threshold(
+        config
+            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
+        config
+            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+        context_limit,
+    )
+}
+
+/// `threshold` of the context, but never more than `token_limit` tokens.
+pub fn capped_compaction_threshold(
+    threshold: f64,
+    token_limit: usize,
+    context_limit: usize,
+) -> f64 {
     if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
         return threshold;
     }
-    let token_limit = config
-        .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-        .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
     threshold.min(token_limit as f64 / context_limit as f64)
 }
 
@@ -61,6 +72,25 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
     "Your context was compacted at the user's request. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
+
+/// Summaries persisted before the `compaction_summary` flag existed are known
+/// by the continuation text compaction merges into them. Conversation repair
+/// may have concatenated it onto the summary text, so match the tail.
+pub fn is_compaction_summary(message: &Message) -> bool {
+    message.is_compaction_summary()
+        || (message.is_agent_visible()
+            && !message.metadata.user_visible
+            && message.content.iter().any(|content| match content {
+                MessageContent::Text(text) => [
+                    CONVERSATION_CONTINUATION_TEXT,
+                    TOOL_LOOP_CONTINUATION_TEXT,
+                    MANUAL_COMPACT_CONTINUATION_TEXT,
+                ]
+                .iter()
+                .any(|continuation| text.text.ends_with(continuation)),
+                _ => false,
+            }))
+}
 
 pub struct CompactionResult {
     pub conversation: Conversation,
@@ -162,7 +192,8 @@ pub async fn compact_messages(
         final_messages.push(updated_msg);
     }
 
-    let summary_msg = summary_message.with_metadata(MessageMetadata::agent_only());
+    let summary_msg =
+        summary_message.with_metadata(MessageMetadata::agent_only().with_compaction_summary());
 
     let mut continuation_messages = vec![summary_msg];
 
@@ -232,7 +263,7 @@ pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
     let total: usize = messages
         .iter()
         .filter(|message| message.is_agent_visible())
-        .map(|message| counter.count_chat_tokens("", std::slice::from_ref(message), &[]))
+        .map(|message| counter.count_message_tokens(message))
         .sum();
     Ok(total.try_into()?)
 }
@@ -270,13 +301,13 @@ pub async fn check_if_compaction_needed(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-            let token_counts: Vec<_> = messages
+            let estimated: usize = messages
                 .iter()
-                .filter(|m| m.is_agent_visible())
-                .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
-                .collect();
+                .filter(|message| message.is_agent_visible())
+                .map(|message| token_counter.count_message_tokens(message))
+                .sum();
 
-            (token_counts.iter().sum(), "estimated")
+            (estimated, "estimated")
         }
     };
 
@@ -512,6 +543,33 @@ mod tests {
     use async_trait::async_trait;
     use goose_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
+
+    #[test]
+    fn summaries_written_before_the_flag_are_still_recognized() {
+        let legacy = Message::assistant()
+            .with_text("# Conversation Summary\nWe were adding a test.")
+            .with_text(CONVERSATION_CONTINUATION_TEXT)
+            .with_metadata(MessageMetadata::agent_only());
+        let ordinary = Message::assistant()
+            .with_text("Continuing.")
+            .with_metadata(MessageMetadata::agent_only());
+        let quoted = Message::assistant().with_text(CONVERSATION_CONTINUATION_TEXT);
+
+        assert!(is_compaction_summary(&legacy));
+        assert!(!is_compaction_summary(&ordinary));
+        assert!(!is_compaction_summary(&quoted));
+
+        // The report repairs the conversation first, which concatenates the
+        // summary's text blocks.
+        let (repaired, _) =
+            crate::conversation::fix_conversation(Conversation::new_unvalidated(vec![
+                Message::user().with_text("hi"),
+                legacy,
+                Message::user().with_text("next"),
+            ]));
+        assert_eq!(repaired.messages()[1].content.len(), 1);
+        assert!(is_compaction_summary(&repaired.messages()[1]));
+    }
 
     fn create_tool_pair(
         call_id: &str,

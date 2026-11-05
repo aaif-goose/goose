@@ -39,7 +39,7 @@ use anyhow::Result;
 use completion::GooseCompleter;
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
 use goose::agents::{
-    context_management_unsupported_message, Agent, SessionConfig, COMPACT_TRIGGERS,
+    context_management_unsupported_message, SessionConfig, StateMachineServices, COMPACT_TRIGGERS,
 };
 use goose::config::extensions::name_to_key;
 use goose::config::{Config, GooseMode};
@@ -237,7 +237,7 @@ impl HistoryManager {
 }
 
 pub struct CliSession {
-    agent: Arc<Agent>,
+    services: Arc<StateMachineServices>,
     messages: Conversation,
     session_id: String,
     completion_cache: Arc<std::sync::RwLock<CompletionCache>>,
@@ -289,7 +289,7 @@ impl CompletionCache {
 impl CliSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        agent: Arc<Agent>,
+        services: Arc<StateMachineServices>,
         session_id: String,
         debug: bool,
         scheduled_job_id: Option<String>,
@@ -300,8 +300,7 @@ impl CliSession {
         refresh_completions: bool,
         extension_loading: Option<AbortOnDropHandle<Result<Vec<ExtensionFailure>>>>,
     ) -> Self {
-        let messages = agent
-            .config
+        let messages = services
             .session_manager
             .get_session(&session_id, true)
             .await
@@ -309,7 +308,7 @@ impl CliSession {
             .unwrap();
         let completion_cache = Arc::new(std::sync::RwLock::new(CompletionCache::new()));
         let extension_loading = extension_loading.map(|handle| {
-            let agent = agent.clone();
+            let services = services.clone();
             let session_id = session_id.clone();
             let completion_cache = completion_cache.clone();
             AbortOnDropHandle::new(tokio::spawn(async move {
@@ -317,14 +316,15 @@ impl CliSession {
                     anyhow::anyhow!("Extension loading task failed: {}", error)
                 })??;
                 if refresh_completions {
-                    Self::refresh_completion_cache(&agent, &session_id, &completion_cache).await?;
+                    Self::refresh_completion_cache(&services, &session_id, &completion_cache)
+                        .await?;
                 }
                 Ok(failures)
             }))
         });
 
         CliSession {
-            agent,
+            services,
             messages,
             session_id,
             completion_cache,
@@ -461,8 +461,9 @@ impl CliSession {
         // Extension-set mutations must not race the background loader.
         self.ensure_extensions_loaded(true).await?;
         for config in configs {
-            self.agent
-                .add_extension(config, &self.session_id)
+            self.services
+                .extension_manager
+                .enable(&self.session_id, config)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to start extension: {}", e))?;
         }
@@ -495,7 +496,13 @@ impl CliSession {
         extension: Option<String>,
     ) -> Result<HashMap<String, Vec<String>>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
+        let prompts = self
+            .services
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
 
         // Early validation if filtering by extension
         if let Some(filter) = &extension {
@@ -517,7 +524,13 @@ impl CliSession {
 
     pub async fn get_prompt_info(&mut self, name: &str) -> Result<Option<output::PromptInfo>> {
         self.ensure_extensions_loaded(true).await?;
-        let prompts = self.agent.list_extension_prompts(&self.session_id).await?;
+        let prompts = self
+            .services
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
 
         // Find which extension has this prompt
         for (extension, prompt_list) in prompts {
@@ -536,9 +549,20 @@ impl CliSession {
 
     pub async fn get_prompt(&mut self, name: &str, arguments: Value) -> Result<Vec<PromptMessage>> {
         self.ensure_extensions_loaded(true).await?;
-        Ok(self
-            .agent
-            .get_prompt(&self.session_id, name, arguments)
+        let lease = self
+            .services
+            .extension_manager
+            .current_lease(&self.session_id)
+            .await?;
+        let extension = lease
+            .list_prompts(CancellationToken::default())
+            .await
+            .into_iter()
+            .find(|(_, prompts)| prompts.iter().any(|prompt| prompt.name == name))
+            .map(|(extension, _)| extension)
+            .ok_or_else(|| anyhow::anyhow!("Prompt '{}' not found", name))?;
+        Ok(lease
+            .get_prompt(&extension, name, arguments, CancellationToken::default())
             .await?
             .messages)
     }
@@ -560,7 +584,7 @@ impl CliSession {
 
     /// Start an interactive session, optionally with an initial message
     pub async fn interactive(&mut self, prompt: Option<String>) -> Result<()> {
-        let banners = self.agent.emit_session_start(&self.session_id).await?;
+        let banners = self.services.emit_session_start(&self.session_id).await?;
         if !banners.is_empty() {
             output::display_banner(&banners);
         }
@@ -568,7 +592,7 @@ impl CliSession {
 
         let result = self.run_interactive(prompt).await;
 
-        self.agent
+        self.services
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
@@ -790,7 +814,7 @@ impl CliSession {
         history.save(editor);
         self.push_message(Message::user().with_text(content));
 
-        let _provider = self.agent.provider(&self.session_id).await?;
+        let _provider = self.services.provider(&self.session_id).await?;
 
         println!();
         output::run_status_hook("thinking");
@@ -877,17 +901,19 @@ impl CliSession {
                 return Ok(());
             }
         };
-        self.agent.update_goose_mode(mode, &self.session_id).await?;
+        self.services
+            .update_goose_mode(mode, &self.session_id)
+            .await?;
         config.set_goose_mode(mode)?;
         output::goose_mode_message(&format!("Goose mode set to '{mode}'"));
         Ok(())
     }
 
     async fn handle_model(&mut self, options: input::ModelCommandOptions) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let provider = self.services.provider(&self.session_id).await?;
         let current_provider_name = provider.get_name().to_string();
         let current_model_config = self
-            .agent
+            .services
             .model_config_for_session(&self.session_id)
             .await?;
         let current_model_name = current_model_config.model_name.clone();
@@ -997,7 +1023,7 @@ impl CliSession {
         .await?;
 
         let new_provider = match session_provider(
-            &self.agent,
+            &self.services,
             &self.session_id,
             target_provider_name,
         )
@@ -1039,7 +1065,7 @@ impl CliSession {
             );
         }
 
-        self.agent
+        self.services
             .switch_provider(&self.session_id, target_provider_name, new_model_config)
             .await?;
 
@@ -1060,7 +1086,7 @@ impl CliSession {
     }
 
     async fn handle_clear(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let provider = self.services.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&context_management_unsupported_message(
                 "clear",
@@ -1070,8 +1096,7 @@ impl CliSession {
         }
 
         if let Err(e) = self
-            .agent
-            .config
+            .services
             .session_manager
             .replace_conversation(&self.session_id, &Conversation::default())
             .await
@@ -1081,8 +1106,7 @@ impl CliSession {
         }
 
         if let Err(e) = self
-            .agent
-            .config
+            .services
             .session_manager
             .update(&self.session_id)
             .usage(goose_providers::conversation::token_usage::Usage::new(
@@ -1107,7 +1131,7 @@ impl CliSession {
     }
 
     async fn handle_new(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let provider = self.services.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&format!(
                 "Starting a new session is not supported for provider '{}' because it manages its own conversation context.",
@@ -1130,24 +1154,32 @@ impl CliSession {
         };
 
         let has_extensions = !self
-            .agent
+            .services
+            .extension_manager
             .get_extension_configs(&self.session_id)
             .await?
             .is_empty();
 
-        self.agent
+        self.services
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
 
-        self.agent.discard_pending_steers(&self.session_id).await;
-        self.agent.extension_manager.release(&self.session_id).await;
-        self.agent.config.providers.release(&self.session_id);
+        self.services.release_session(&self.session_id).await;
 
         self.session_id = new_session_id;
         self.messages.clear();
 
-        let mode = self.agent.goose_mode(&self.session_id).await?;
-        if let Err(e) = self.agent.update_goose_mode(mode, &self.session_id).await {
+        let mode = self
+            .services
+            .session_manager
+            .get_session(&self.session_id, false)
+            .await?
+            .goose_mode;
+        if let Err(e) = self
+            .services
+            .update_goose_mode(mode, &self.session_id)
+            .await
+        {
             output::render_error(&format!("Failed to apply the current mode: {}", e));
         }
 
@@ -1157,7 +1189,7 @@ impl CliSession {
 
         let mut unavailable = Vec::new();
         for result in self
-            .agent
+            .services
             .extension_manager
             .current_lease(&self.session_id)
             .await?
@@ -1186,15 +1218,18 @@ impl CliSession {
     }
 
     async fn prepare_successor_session(&self) -> Result<String> {
-        let session_manager = &self.agent.config.session_manager;
+        let session_manager = &self.services.session_manager;
         let old_session = session_manager.get_session(&self.session_id, false).await?;
         let new_session_id =
             create_successor_session(session_manager, &old_session, old_session.goose_mode).await?;
-        self.agent
-            .persist_extension_configs(
-                &new_session_id,
-                self.agent.get_extension_configs(&self.session_id).await?,
-            )
+        let extensions = self
+            .services
+            .extension_manager
+            .get_extension_configs(&self.session_id)
+            .await?;
+        self.services
+            .session_manager
+            .update_enabled_extensions(&new_session_id, |selected| *selected = extensions)
             .await?;
         Ok(new_session_id)
     }
@@ -1261,7 +1296,7 @@ impl CliSession {
     }
 
     async fn handle_compact(&mut self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let provider = self.services.provider(&self.session_id).await?;
         if provider.manages_own_context() {
             output::render_error(&context_management_unsupported_message(
                 "compact",
@@ -1300,7 +1335,7 @@ impl CliSession {
         let result = self
             .process_message(message, CancellationToken::default(), false)
             .await;
-        self.agent
+        self.services
             .emit_hook(goose::hooks::HookEvent::SessionEnd, &self.session_id)
             .await;
         result?;
@@ -1334,7 +1369,7 @@ impl CliSession {
 
         program_status::report(ProgramStatus::Working, None);
         let mut stream = self
-            .agent
+            .services
             .reply(
                 user_message.clone(),
                 session_config.clone(),
@@ -1396,7 +1431,7 @@ impl CliSession {
                                 if cancelled_by_user {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
                                 }
-                                self.agent
+                                self.services
                                     .submit_tool_confirmation(
                                         &self.session_id,
                                         &confirmation_request.id,
@@ -1418,8 +1453,7 @@ impl CliSession {
                                                 data: None,
                                             }),
                                         ));
-                                        self.agent
-                                            .config
+                                        self.services
                                             .session_manager
                                             .add_message(&self.session_id, &response_message)
                                             .await?;
@@ -1475,7 +1509,7 @@ impl CliSession {
                                         self.messages.push(response_message.clone());
                                         // Elicitation responses return an empty stream - the response
                                         // unblocks the waiting tool call via ActionRequiredManager
-                                        let _ = self.agent.reply(response_message, session_config.clone(), Some(cancel_token.clone())).await?;
+                                        let _ = self.services.reply(response_message, session_config.clone(), Some(cancel_token.clone())).await?;
                                         if should_cancel {
                                             cancel_token_clone.cancel();
                                             drain_stopped_run(&mut stream, &mut self.messages, &mut last_usage).await;
@@ -1591,8 +1625,7 @@ impl CliSession {
                 "completed"
             };
             let metadata = match self
-                .agent
-                .config
+                .services
                 .session_manager
                 .get_session_usage_totals(&self.session_id)
                 .await
@@ -1623,8 +1656,7 @@ impl CliSession {
             println!("{}", serde_json::to_string_pretty(&json_output)?);
         } else if is_stream_json_mode && terminal_error.is_none() {
             let totals = self
-                .agent
-                .config
+                .services
                 .session_manager
                 .get_session_usage_totals(&self.session_id)
                 .await
@@ -1790,17 +1822,23 @@ impl CliSession {
     }
 
     pub async fn update_completion_cache(&mut self) -> Result<()> {
-        Self::refresh_completion_cache(&self.agent, &self.session_id, &self.completion_cache).await
+        Self::refresh_completion_cache(&self.services, &self.session_id, &self.completion_cache)
+            .await
     }
 
     async fn refresh_completion_cache(
-        agent: &Agent,
+        services: &StateMachineServices,
         session_id: &str,
         completion_cache: &Arc<std::sync::RwLock<CompletionCache>>,
     ) -> Result<()> {
-        let prompts = agent.list_extension_prompts(session_id).await?;
+        let prompts = services
+            .extension_manager
+            .current_lease(session_id)
+            .await?
+            .list_prompts(CancellationToken::default())
+            .await;
         let all_providers = goose::providers::providers().await;
-        let session_provider = agent.provider(session_id).await?.get_name().to_string();
+        let session_provider = services.provider(session_id).await?.get_name().to_string();
 
         let provider_ids: Vec<String> = all_providers.iter().map(|(m, _)| m.name.clone()).collect();
         let inventory_models: HashMap<String, Vec<String>> = {
@@ -1916,8 +1954,7 @@ impl CliSession {
     }
 
     pub async fn get_session(&self) -> Result<goose::session::Session> {
-        self.agent
-            .config
+        self.services
             .session_manager
             .get_session(&self.session_id, false)
             .await
@@ -1930,9 +1967,9 @@ impl CliSession {
 
     /// Display enhanced context usage with session totals
     pub async fn display_context_usage(&self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
+        let provider = self.services.provider(&self.session_id).await?;
         let model_config = self
-            .agent
+            .services
             .model_config_for_session(&self.session_id)
             .await?;
         let context_limit =
@@ -2023,8 +2060,7 @@ impl CliSession {
                         if num_messages > 1 {
                             for i in 0..(num_messages - 1) {
                                 let msg = &self.messages.messages()[start_len + i];
-                                self.agent
-                                    .config
+                                self.services
                                     .session_manager
                                     .add_message(&self.session_id, msg)
                                     .await?;
@@ -2052,17 +2088,16 @@ impl CliSession {
 /// The provider `session_id` would get with `provider_name`, without switching
 /// the session to it.
 pub(crate) async fn session_provider(
-    agent: &Agent,
+    services: &StateMachineServices,
     session_id: &str,
     provider_name: &str,
 ) -> anyhow::Result<Arc<dyn Provider>> {
-    let mut session = agent
-        .config
+    let mut session = services
         .session_manager
         .get_session(session_id, false)
         .await?;
     session.provider_name = Some(provider_name.to_string());
-    agent.config.providers.provider_for(&session).await
+    services.providers.provider_for(&session).await
 }
 
 async fn create_successor_session(
@@ -3277,16 +3312,18 @@ mod tests {
             .await
             .unwrap();
 
-        let agent = goose::agents::Agent::with_config(goose::agents::AgentConfig::new(
-            Arc::new(session_manager),
-            Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
-            None,
-            // Disable background session naming so the test agent starts no
-            // provider-dependent tasks.
-            true,
-            goose::agents::GoosePlatform::GooseCli,
-        ));
-        agent
+        let services = goose::agents::StateMachineServices::with_config(
+            goose::agents::StateMachineServicesConfig::new(
+                Arc::new(session_manager),
+                Arc::new(goose::config::PermissionManager::new(data_dir.clone())),
+                None,
+                // Disable background session naming so the test agent starts no
+                // provider-dependent tasks.
+                true,
+                goose::agents::GoosePlatform::GooseCli,
+            ),
+        );
+        services
             .update_provider(
                 Arc::new(StubProvider),
                 goose_providers::model::ModelConfig::new("stub-model"),
@@ -3296,7 +3333,7 @@ mod tests {
             .unwrap();
 
         CliSession::new(
-            agent,
+            services,
             session.id,
             false,
             None,

@@ -585,7 +585,8 @@ async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Resu
         "version: 1.0.0\n\
          title: Scheduled task\n\
          description: A scheduled task\n\
-         prompt: Do the scheduled work\n",
+         prompt: Do the scheduled work\n\
+         extensions: []\n",
     )?;
     let recipe_path = recipe_path.to_string_lossy();
 
@@ -674,6 +675,29 @@ async fn scheduler_is_advertised_only_when_configured_and_manages_jobs() -> Resu
     let rejected = pipeline.run(["schedule an empty recipe"]).await?;
     rejected.assert_message(-2, ToolResponse, "Recipe must specify");
     rejected.assert_message(-1, Agent, "empty recipe rejected");
+
+    let host = api.uri();
+    let _guard = env_lock::lock_env([
+        ("GOOSE_PROVIDER", Some("openai")),
+        ("OPENAI_BASE_PATH", Some("chat/completions")),
+        ("GOOSE_MODEL", Some("gpt-4o")),
+        ("OPENAI_API_KEY", Some("fake-openai-no-keyring")),
+        ("OPENAI_HOST", Some(host.as_str())),
+        ("OPENAI_CUSTOM_HEADERS", Some("")),
+    ]);
+    api.on("Do the scheduled work").reply("scheduled work done");
+    let run_id = scheduler.run_now(&job_id).await?;
+    let run = pipeline.session_manager.get_session(&run_id, true).await?;
+    assert_eq!(
+        run.conversation
+            .expect("the run has a conversation")
+            .messages()
+            .last()
+            .map(Message::as_concat_text)
+            .as_deref(),
+        Some("scheduled work done")
+    );
+    assert!(!pipeline.services().await.tracks_confirmations_for(&run_id));
 
     Ok(())
 }
@@ -774,6 +798,15 @@ prompt: check
         session_manager.clone(),
     )
     .await?;
+    let _services = crate::agents::StateMachineServices::with_config(
+        crate::agents::StateMachineServicesConfig::new(
+            session_manager.clone(),
+            crate::config::permission::PermissionManager::instance(),
+            Some(scheduler.clone()),
+            true,
+            crate::agents::GoosePlatform::GooseCli,
+        ),
+    );
     let job = crate::scheduler::ScheduledJob {
         id: "ordering_guard".to_string(),
         source: recipe_path.to_string_lossy().into_owned(),

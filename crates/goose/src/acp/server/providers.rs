@@ -484,7 +484,7 @@ fn refresh_plan_to_response(refresh_plan: RefreshPlan) -> RefreshProviderInvento
     }
 }
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_list_providers(
         &self,
         req: ListProvidersRequest,

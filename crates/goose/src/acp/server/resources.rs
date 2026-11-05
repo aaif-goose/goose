@@ -1,14 +1,15 @@
 use super::*;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_read_resource(
         &self,
         req: ReadResourceRequest,
     ) -> Result<ReadResourceResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
+        self.open_session(&req.session_id).await?;
         let cancel_token = CancellationToken::new();
-        let result = agent
+        let result = self
+            .services
             .extension_manager
             .current_lease(session_id)
             .await
