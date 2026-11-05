@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::mcp_utils::ToolResult;
 use anyhow::{anyhow, bail, Result};
 use aws_sdk_bedrockruntime::types as bedrock;
 use aws_smithy_types::{Document, Number};
 use base64::Engine;
 use chrono::Utc;
+use goose_provider_types::conversation::message::ToolResult;
 use goose_provider_types::data::{
     CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, ResourceContents, Role, Tool,
 };
@@ -685,10 +685,11 @@ mod tests {
     use goose_provider_types::data::ImageContent;
     use goose_test_support::TEST_IMAGE_B64;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_bedrock_anthropic_thinking_fields_enabled() {
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!("low"));
         let mut config = ModelConfig::new("us.anthropic.claude-3-7-sonnet-20250219-v1:0");
         config.request_params = Some(params);
@@ -712,7 +713,7 @@ mod tests {
         // budget (4000) exceeds the room left under an explicit max_tokens, so it
         // is clamped to max_tokens - MIN_ANSWER_TOKENS, matching the Anthropic
         // formatter. Without max_tokens set there is nothing to clamp against.
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!("low"));
         let mut config = ModelConfig::new("us.anthropic.claude-3-7-sonnet-20250219-v1:0");
         config.request_params = Some(params);
@@ -736,7 +737,7 @@ mod tests {
     fn test_bedrock_anthropic_thinking_fields_dropped_when_no_room() {
         // When even a minimal budget wouldn't leave MIN_ANSWER_TOKENS under the
         // cap, thinking is dropped rather than emitting an unsatisfiable request.
-        let mut params = HashMap::new();
+        let mut params = BTreeMap::new();
         params.insert("thinking_effort".to_string(), json!("low"));
         let mut config = ModelConfig::new("us.anthropic.claude-3-7-sonnet-20250219-v1:0");
         config.request_params = Some(params);
@@ -750,7 +751,7 @@ mod tests {
     fn test_bedrock_anthropic_thinking_fields_disabled() {
         let mut config = ModelConfig::new("us.anthropic.claude-3-7-sonnet-20250219-v1:0");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("off"),
         )]));
@@ -769,7 +770,7 @@ mod tests {
     fn test_bedrock_anthropic_thinking_fields_always_on_adaptive() {
         let mut config = ModelConfig::new("global.anthropic.claude-fable-5");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("off"),
         )]));
@@ -788,7 +789,7 @@ mod tests {
     fn test_bedrock_anthropic_thinking_fields_adaptive_with_effort() {
         let mut config = ModelConfig::new("us.anthropic.claude-opus-4.7");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("low"),
         )]));
@@ -807,7 +808,7 @@ mod tests {
     fn test_bedrock_anthropic_thinking_fields_adaptive_with_version_suffix() {
         let mut config = ModelConfig::new("us.anthropic.claude-opus-4-7-20251101-v1:0");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("low"),
         )]));
@@ -826,7 +827,7 @@ mod tests {
     fn test_bedrock_thinking_fields_skipped_for_non_anthropic() {
         let mut config = ModelConfig::new("us.deepseek.r1-v1:0");
         config.reasoning = Some(true);
-        config.request_params = Some(HashMap::from([(
+        config.request_params = Some(BTreeMap::from([(
             "thinking_effort".to_string(),
             json!("low"),
         )]));

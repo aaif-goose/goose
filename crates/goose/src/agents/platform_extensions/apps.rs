@@ -805,7 +805,7 @@ mod tests {
             model_config: &goose_providers::model::ModelConfig,
             system: &str,
             _messages: &[Message],
-            tools: &[McpTool],
+            tools: &[goose_provider_types::data::Tool],
         ) -> Result<MessageStream, ProviderError> {
             *self.request.lock().unwrap() =
                 Some((model_config.toolshim, system.to_string(), tools.len()));

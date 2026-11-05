@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use crate::mcp_utils::ToolResult;
 use chrono::Utc;
-use goose_provider_types::data::Role;
 use rmcp::model::{Annotations, ContentBlock, ErrorCode, ErrorData, TextContent};
 
 use crate::conversation::Conversation;
