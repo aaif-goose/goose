@@ -10,10 +10,10 @@ use goose::providers::base::{
 };
 use goose::session::session_manager::SessionType;
 use goose::session::Session;
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
-use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;

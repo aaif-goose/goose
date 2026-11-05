@@ -5,8 +5,8 @@ use goose::conversation::message::Message;
 use goose::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
 use goose::providers::create;
 use goose::providers::openai::OPEN_AI_DEFAULT_MODEL;
+use goose_provider_types::data::{CallToolRequestParams, ContentBlock, Tool};
 use goose_providers::databricks::DATABRICKS_DEFAULT_MODEL;
-use rmcp::model::{CallToolRequestParams, ContentBlock, Tool};
 use rmcp::object;
 use std::fs;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
             ),
             Message::user().with_tool_response(
                 "000",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
                     ContentBlock::image(base64_image, "image/png"),
                 ])),
             ),

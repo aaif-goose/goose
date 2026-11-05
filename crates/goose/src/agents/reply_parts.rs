@@ -662,7 +662,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -673,6 +673,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
@@ -694,7 +696,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -705,6 +707,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         assert_eq!(captured.len(), 1);
@@ -742,7 +746,7 @@ mod tests {
             messages: captured.clone(),
         });
 
-        let _stream = stream_response_from_provider(
+        let mut stream = stream_response_from_provider(
             provider,
             ModelConfig::new("test-model"),
             "test-session",
@@ -753,6 +757,8 @@ mod tests {
         )
         .await
         .unwrap();
+
+        stream.next().await.unwrap().unwrap();
 
         let captured = captured.lock().unwrap();
         let tool_response = captured
