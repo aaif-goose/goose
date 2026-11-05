@@ -871,7 +871,10 @@ extensions:
         if let crate::agents::extension::ExtensionConfig::Stdio { cmd, .. } =
             &after_update.get("mytool").unwrap().config
         {
-            assert_eq!(cmd, "other-tool", "mytool must keep its own cmd after update");
+            assert_eq!(
+                cmd, "other-tool",
+                "mytool must keep its own cmd after update"
+            );
         } else {
             panic!("mytool must remain a stdio extension");
         }

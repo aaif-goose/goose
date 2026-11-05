@@ -1063,10 +1063,7 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
 
     // Update enabled status for each extension
     for (name, config_key, _) in &extension_status {
-        set_extension_enabled(
-            config_key,
-            selected.iter().any(|s| s.as_str() == name),
-        );
+        set_extension_enabled(config_key, selected.iter().any(|s| s.as_str() == name));
     }
 
     let config = Config::global();

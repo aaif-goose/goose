@@ -111,10 +111,8 @@ impl GooseAcpAgent {
             .internal_err()?;
 
         let config = crate::config::Config::global();
-        let extensions = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            config,
-        );
+        let extensions =
+            EnabledExtensionsState::extensions_or_default(Some(&session.extension_data), config);
         let config_key_by_name: HashMap<String, String> =
             crate::config::extensions::get_extensions_map_with_config(config)
                 .into_iter()
@@ -437,9 +435,11 @@ mod tests {
 
     #[test]
     fn session_entries_preserve_backend_distinct_unicode_keys() {
-        let entries =
-            session_configs_to_entries(vec![builtin_config("\u{130}"), builtin_config("i\u{307}")], &HashMap::new())
-                .expect("backend-distinct keys should be listed");
+        let entries = session_configs_to_entries(
+            vec![builtin_config("\u{130}"), builtin_config("i\u{307}")],
+            &HashMap::new(),
+        )
+        .expect("backend-distinct keys should be listed");
 
         assert_eq!(entries[0].extension_key, "_");
         assert_eq!(entries[1].extension_key, "i_");
@@ -447,7 +447,10 @@ mod tests {
 
     #[test]
     fn session_entries_reject_duplicate_authoritative_keys() {
-        let result = session_configs_to_entries(vec![builtin_config("a.b"), builtin_config("a/b")], &HashMap::new());
+        let result = session_configs_to_entries(
+            vec![builtin_config("a.b"), builtin_config("a/b")],
+            &HashMap::new(),
+        );
 
         assert!(result.is_err());
     }
