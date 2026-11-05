@@ -84,7 +84,7 @@ fn parse_extensions_map(raw: &Mapping) -> IndexMap<String, ExtensionEntry> {
     extensions_map
 }
 
-fn get_extensions_map_with_config(config: &Config) -> IndexMap<String, ExtensionEntry> {
+pub fn get_extensions_map_with_config(config: &Config) -> IndexMap<String, ExtensionEntry> {
     let raw: Mapping = config
         .get_param(EXTENSIONS_CONFIG_KEY)
         .unwrap_or_else(|err| {
@@ -868,6 +868,13 @@ extensions:
             after_update.contains_key("mytool"),
             "mytool must still exist after update"
         );
+        if let crate::agents::extension::ExtensionConfig::Stdio { cmd, .. } =
+            &after_update.get("mytool").unwrap().config
+        {
+            assert_eq!(cmd, "other-tool", "mytool must keep its own cmd after update");
+        } else {
+            panic!("mytool must remain a stdio extension");
+        }
 
         remove_extension_with_config(&config, "my-tool");
         let after_remove = get_extensions_map_with_config(&config);

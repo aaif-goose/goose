@@ -10,7 +10,7 @@ use goose::config::declarative_providers::{
 };
 use goose::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
-    name_to_key, remove_extension, set_extension, set_extension_enabled,
+    remove_extension, set_extension, set_extension_enabled,
 };
 use goose::config::paths::Paths;
 use goose::config::permission::PermissionLevel;
@@ -1024,10 +1024,16 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Create a list of extension names and their enabled status
-    let mut extension_status: Vec<(String, bool)> = extensions
+    // Create a list of (display_name, config_key, enabled)
+    let mut extension_status: Vec<(String, String, bool)> = extensions
         .iter()
-        .map(|entry| (entry.config.name().to_string(), entry.enabled))
+        .map(|entry| {
+            let config_key = entry
+                .storage_key
+                .clone()
+                .unwrap_or_else(|| entry.config.key());
+            (entry.config.name().to_string(), config_key, entry.enabled)
+        })
         .collect();
 
     // Sort extensions alphabetically by name
@@ -1036,8 +1042,8 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
     // Get currently enabled extensions for the selection
     let enabled_extensions: Vec<&String> = extension_status
         .iter()
-        .filter(|(_, enabled)| *enabled)
-        .map(|(name, _)| name)
+        .filter(|(_, _, enabled)| *enabled)
+        .map(|(name, _, _)| name)
         .collect();
 
     // Let user toggle extensions
@@ -1048,7 +1054,7 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
     .items(
         &extension_status
             .iter()
-            .map(|(name, _)| (name, name.as_str(), MULTISELECT_VISIBILITY_HINT))
+            .map(|(name, _, _)| (name, name.as_str(), MULTISELECT_VISIBILITY_HINT))
             .collect::<Vec<_>>(),
     )
     .initial_values(enabled_extensions)
@@ -1056,9 +1062,9 @@ pub fn toggle_extensions_dialog() -> anyhow::Result<()> {
     .interact()?;
 
     // Update enabled status for each extension
-    for name in extension_status.iter().map(|(name, _)| name) {
+    for (name, config_key, _) in &extension_status {
         set_extension_enabled(
-            &name_to_key(name),
+            config_key,
             selected.iter().any(|s| s.as_str() == name),
         );
     }
@@ -1374,10 +1380,16 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
 
     let extensions = get_all_extensions();
 
-    // Create a list of extension names and their enabled status
-    let mut extension_status: Vec<(String, bool)> = extensions
+    // Create a list of (display_name, config_key, enabled)
+    let mut extension_status: Vec<(String, String, bool)> = extensions
         .iter()
-        .map(|entry| (entry.config.name().to_string(), entry.enabled))
+        .map(|entry| {
+            let config_key = entry
+                .storage_key
+                .clone()
+                .unwrap_or_else(|| entry.config.key());
+            (entry.config.name().to_string(), config_key, entry.enabled)
+        })
         .collect();
 
     // Sort extensions alphabetically by name
@@ -1391,7 +1403,7 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
     }
 
     // Check if all extensions are enabled
-    if extension_status.iter().all(|(_, enabled)| *enabled) {
+    if extension_status.iter().all(|(_, _, enabled)| *enabled) {
         cliclack::outro(
             "All extensions are currently enabled. You must first disable extensions before removing them.",
         )?;
@@ -1399,10 +1411,9 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
     }
 
     // Filter out only disabled extensions
-    let disabled_extensions: Vec<_> = extensions
+    let disabled_extensions: Vec<_> = extension_status
         .iter()
-        .filter(|entry| !entry.enabled)
-        .map(|entry| (entry.config.name().to_string(), entry.enabled))
+        .filter(|(_, _, enabled)| !enabled)
         .collect();
 
     let selected = cliclack::multiselect("Select extensions to remove (note: you can only remove disabled extensions - use \"space\" to toggle and \"enter\" to submit)")
@@ -1410,16 +1421,20 @@ pub fn remove_extension_dialog() -> anyhow::Result<()> {
         .items(
             &disabled_extensions
                 .iter()
-                .filter(|(_, enabled)| !enabled)
-                .map(|(name, _)| (name, name.as_str(), MULTISELECT_VISIBILITY_HINT))
+                .map(|(name, _, _)| (name, name.as_str(), MULTISELECT_VISIBILITY_HINT))
                 .collect::<Vec<_>>(),
         )
         .filter_mode()
         .interact()?;
 
     for name in selected {
-        remove_extension(&name_to_key(name));
-        PermissionManager::instance().remove_extension(&name_to_key(name));
+        let config_key = extension_status
+            .iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, k, _)| k.as_str())
+            .unwrap_or_else(|| name.as_str());
+        remove_extension(config_key);
+        PermissionManager::instance().remove_extension(config_key);
         cliclack::outro(format!("Removed {} extension", style(name).green()))?;
     }
 

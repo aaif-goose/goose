@@ -2,7 +2,7 @@ use super::*;
 use crate::agents::extension::Envs;
 use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 impl GooseAcpAgent {
     pub(super) async fn on_add_session_extension(
@@ -72,7 +72,7 @@ impl GooseAcpAgent {
         crate::config::extensions::set_extension(ExtensionEntry {
             enabled: req.enabled,
             config: conversion.config,
-            storage_key: None,
+            storage_key: req.config_key,
         });
         Ok(EmptyResponse {})
     }
@@ -110,24 +110,35 @@ impl GooseAcpAgent {
             .await
             .internal_err()?;
 
+        let config = crate::config::Config::global();
         let extensions = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
-            crate::config::Config::global(),
+            config,
         );
+        let config_key_by_name: HashMap<String, String> =
+            crate::config::extensions::get_extensions_map_with_config(config)
+                .into_iter()
+                .map(|(storage_key, entry)| (entry.config.key(), storage_key))
+                .collect();
 
         Ok(GetSessionExtensionsResponse {
-            extensions: session_configs_to_entries(extensions)?,
+            extensions: session_configs_to_entries(extensions, &config_key_by_name)?,
         })
     }
 }
 
 fn session_configs_to_entries(
     configs: Vec<ExtensionConfig>,
+    config_key_by_name: &HashMap<String, String>,
 ) -> Result<Vec<SessionExtensionEntry>, agent_client_protocol::Error> {
     let mut extension_keys = HashSet::with_capacity(configs.len());
     let mut entries = Vec::with_capacity(configs.len());
     for config in configs {
-        let extension_key = config.key();
+        let name_key = config.key();
+        let extension_key = config_key_by_name
+            .get(&name_key)
+            .cloned()
+            .unwrap_or(name_key);
         if !extension_keys.insert(extension_key.clone()) {
             return Err(agent_client_protocol::Error::internal_error()
                 .data(format!("Duplicate session extension key '{extension_key}'")));
@@ -427,7 +438,7 @@ mod tests {
     #[test]
     fn session_entries_preserve_backend_distinct_unicode_keys() {
         let entries =
-            session_configs_to_entries(vec![builtin_config("\u{130}"), builtin_config("i\u{307}")])
+            session_configs_to_entries(vec![builtin_config("\u{130}"), builtin_config("i\u{307}")], &HashMap::new())
                 .expect("backend-distinct keys should be listed");
 
         assert_eq!(entries[0].extension_key, "_");
@@ -436,7 +447,7 @@ mod tests {
 
     #[test]
     fn session_entries_reject_duplicate_authoritative_keys() {
-        let result = session_configs_to_entries(vec![builtin_config("a.b"), builtin_config("a/b")]);
+        let result = session_configs_to_entries(vec![builtin_config("a.b"), builtin_config("a/b")], &HashMap::new());
 
         assert!(result.is_err());
     }

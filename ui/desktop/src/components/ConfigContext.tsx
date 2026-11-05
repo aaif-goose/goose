@@ -31,7 +31,7 @@ interface ConfigContextType {
   upsert: (key: string, value: unknown, is_secret: boolean) => Promise<void>;
   read: (key: string, is_secret: boolean, options?: { throwOnError?: boolean }) => Promise<unknown>;
   remove: (key: string, is_secret: boolean) => Promise<void>;
-  addExtension: (name: string, config: ExtensionConfig, enabled: boolean) => Promise<void>;
+  addExtension: (name: string, config: ExtensionConfig, enabled: boolean, configKey?: string) => Promise<void>;
   setExtensionEnabled: (configKey: string, enabled: boolean) => Promise<void>;
   removeExtension: (name: string) => Promise<void>;
   getProviders: (b: boolean) => Promise<ProviderDetails[]>;
@@ -97,8 +97,8 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
   }, []);
 
   const addExtension = useCallback(
-    async (_name: string, config: ExtensionConfig, enabled: boolean) => {
-      await addConfigExtension(config, enabled);
+    async (_name: string, config: ExtensionConfig, enabled: boolean, configKey?: string) => {
+      await addConfigExtension(config, enabled, configKey);
       await reloadConfig();
       // Refresh extensions list after successful addition
       await refreshExtensions();

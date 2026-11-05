@@ -164,13 +164,17 @@ export default function ExtensionsSection({
     handleModalClose();
 
     const extensionConfig = createExtensionConfig(formData);
-    const originalName = selectedExtension.name;
+    const configKey = selectedExtension.configKey;
 
     try {
-      if (originalName !== extensionConfig.name) {
-        await removeExtension(originalName);
+      if (configKey) {
+        await addExtension(extensionConfig.name, extensionConfig, formData.enabled, configKey);
+      } else {
+        if (selectedExtension.name !== extensionConfig.name) {
+          await removeExtension(selectedExtension.name);
+        }
+        await addExtension(extensionConfig.name, extensionConfig, formData.enabled);
       }
-      await addExtension(extensionConfig.name, extensionConfig, formData.enabled);
     } catch (error) {
       console.error('Failed to update extension:', error);
     } finally {
