@@ -28,6 +28,14 @@ pub struct LoadResult {
     pub error: Option<String>,
 }
 
+/// Whether readiness permits configured servers that failed to connect.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum StartupPolicy {
+    #[default]
+    Strict,
+    BestEffort,
+}
+
 pub struct Slot {
     registration: Registration,
     client: Runtime<std::result::Result<Arc<dyn Client>, String>>,
@@ -40,11 +48,12 @@ impl Slot {
     ) -> &std::result::Result<Arc<dyn Client>, String> {
         self.client
             .get_or_init(|| async {
-                self.registration
-                    .connector
-                    .connect(scope, cancel)
-                    .await
-                    .map_err(|e| e.to_string())
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => Err("MCP connection cancelled".to_string()),
+                    result = self.registration.connector.connect(scope, cancel.clone()) =>
+                        result.map_err(|e| format!("{e:#}")),
+                }
             })
             .await
     }
@@ -135,6 +144,33 @@ impl Lease {
         .await
     }
 
+    /// Start connections and pin discovery before accepting inference requests.
+    /// Best effort tolerates connection failures, not invalid or failed discovery.
+    /// Cancellation drops in-flight initialization; resolve a fresh revision to retry failures.
+    pub async fn ready(
+        &self,
+        policy: StartupPolicy,
+        cancel: CancellationToken,
+    ) -> Result<Vec<LoadResult>> {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => bail!("MCP startup cancelled"),
+            result = async {
+                let reports = self.start(cancel.clone()).await;
+                if matches!(policy, StartupPolicy::Strict) {
+                    let failures: Vec<_> = reports.iter().filter_map(|report| {
+                        report.error.as_ref().map(|error| format!("{}: {error}", report.id))
+                    }).collect();
+                    if !failures.is_empty() {
+                        bail!("MCP startup failed: {}", failures.join("; "));
+                    }
+                }
+                self.catalog(cancel.clone()).await?;
+                Ok(reports)
+            } => result,
+        }
+    }
+
     pub async fn catalog(&self, cancel: CancellationToken) -> Result<&Catalog<Arc<dyn Client>>> {
         self.catalog
             .get_or_init(|| async {
@@ -149,7 +185,9 @@ impl Lease {
                         cancel.clone(),
                     )
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| {
+                        format!("discover MCP server {}: {error}", slot.registration.id)
+                    })?;
                     for tool in tools {
                         if !slot.registration.available_tools.is_empty()
                             && !slot
@@ -218,6 +256,16 @@ impl Connector for Attached {
     }
 }
 impl Registration {
+    pub fn new(id: impl Into<String>, revision: u64, connector: Arc<dyn Connector>) -> Self {
+        Self {
+            id: id.into(),
+            revision,
+            connector,
+            available_tools: Vec::new(),
+            unprefixed: false,
+        }
+    }
+
     pub fn attached(id: impl Into<String>, revision: u64, client: Arc<dyn Client>) -> Self {
         Self {
             id: id.into(),

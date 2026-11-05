@@ -320,3 +320,148 @@ async fn dropping_transport_call_notifies_peer_of_cancellation() {
     drop(client);
     task.abort();
 }
+
+struct Unavailable;
+#[async_trait]
+impl Connector for Unavailable {
+    async fn connect(&self, _: &str, _: CancellationToken) -> Result<Arc<dyn Client>> {
+        anyhow::bail!("unavailable")
+    }
+}
+
+struct Hanging;
+#[async_trait]
+impl Connector for Hanging {
+    async fn connect(&self, _: &str, _: CancellationToken) -> Result<Arc<dyn Client>> {
+        std::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn readiness_is_explicitly_strict_or_best_effort() {
+    use goose_agent::mcp::StartupPolicy;
+    let lease = Manager::new()
+        .resolve(
+            "scope",
+            vec![Registration::new("broken", 0, Arc::new(Unavailable))],
+        )
+        .await
+        .unwrap();
+    // Building a partial catalog does not accidentally satisfy strict readiness.
+    lease.catalog(CancellationToken::new()).await.unwrap();
+    let error = lease
+        .ready(StartupPolicy::Strict, CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("broken: unavailable"));
+    let reports = lease
+        .ready(StartupPolicy::BestEffort, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(reports[0].error.as_deref(), Some("unavailable"));
+}
+
+#[tokio::test]
+async fn readiness_cancels_uncooperative_startup() {
+    let lease = Manager::new()
+        .resolve(
+            "scope",
+            vec![Registration::new("hanging", 0, Arc::new(Hanging))],
+        )
+        .await
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let future = lease.ready(goose_agent::mcp::StartupPolicy::Strict, cancel.clone());
+    let stop = async {
+        tokio::task::yield_now().await;
+        cancel.cancel();
+    };
+    let (result, ()) = tokio::join!(future, stop);
+    assert!(result.unwrap_err().to_string().contains("cancelled"));
+}
+
+#[cfg(feature = "mcp-stdio")]
+#[test]
+fn stdio_inputs_are_validated_and_host_policy_is_explicit() {
+    use goose_agent::mcp::{ClientOptions, StdioConnector};
+    assert!(StdioConnector::new("  ", ClientOptions::default()).is_err());
+    let connector = StdioConnector::new("server", ClientOptions::default()).unwrap();
+    assert!(!connector.inherit_env);
+    assert!(connector.cwd.is_none());
+}
+
+#[cfg(feature = "mcp-http")]
+#[test]
+fn http_inputs_are_validated_before_startup() {
+    use goose_agent::mcp::{ClientOptions, HttpConnector};
+    for url in [
+        "file:///tmp/server",
+        "not a url",
+        "https://user:secret@example.com",
+    ] {
+        assert!(HttpConnector::new(url, [], ClientOptions::default()).is_err());
+    }
+    assert!(HttpConnector::new(
+        "https://example.com",
+        [("invalid header".into(), "x".into())],
+        ClientOptions::default()
+    )
+    .is_err());
+    assert!(HttpConnector::new(
+        "https://example.com",
+        [("Authorization".into(), "bad\nvalue".into())],
+        ClientOptions::default()
+    )
+    .is_err());
+}
+
+struct HangingDiscovery;
+#[async_trait]
+impl Client for HangingDiscovery {
+    async fn call_tool(
+        &self,
+        _: &goose_agent::mcp::CallContext,
+        _: &str,
+        _: Option<rmcp::model::JsonObject>,
+        _: CancellationToken,
+    ) -> Result<CallToolResult, rmcp::ServiceError> {
+        unreachable!("discovery never completes")
+    }
+
+    fn get_info(&self) -> Option<&rmcp::model::InitializeResult> {
+        None
+    }
+    async fn list_tools(
+        &self,
+        _: &str,
+        _: Option<String>,
+        _: CancellationToken,
+    ) -> Result<ListToolsResult, rmcp::ServiceError> {
+        std::future::pending().await
+    }
+}
+
+#[tokio::test]
+async fn readiness_cancels_uncooperative_discovery() {
+    let lease = Manager::new()
+        .resolve(
+            "scope",
+            vec![Registration::attached(
+                "hanging",
+                0,
+                Arc::new(HangingDiscovery),
+            )],
+        )
+        .await
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let stop = async {
+        tokio::task::yield_now().await;
+        cancel.cancel();
+    };
+    let (result, ()) = tokio::join!(
+        lease.ready(goose_agent::mcp::StartupPolicy::Strict, cancel.clone()),
+        stop
+    );
+    assert!(result.unwrap_err().to_string().contains("cancelled"));
+}

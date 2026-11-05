@@ -240,3 +240,19 @@ The goose host uses the same `Manager<T>`, single-flight `Runtime`, immutable
 `RequestSender<C>` lets a host decorate protocol requests without duplicating
 tool, resource, and prompt dispatch. `TransportClient<H>` owns the initialized
 transport with either the default handler or a host-supplied handler. goose retains its authenticated connectors and platform adapters.
+
+Native hosts can use `StdioConnector::new` and `HttpConnector::new` with
+`Registration::new` for lazy connections instead of constructing transports.
+Stdio executes without a shell and kills the child on drop; environment inheritance,
+working directory and stderr inheritance are explicit host choices (defaults: clean
+environment, no cwd override, discarded stderr). HTTP validates URLs and headers
+and disables redirects by default; `with_client` accepts host-managed HTTP policy.
+Neither connector loads configuration or credentials.
+
+Call `lease.ready(StartupPolicy::Strict, cancel)` before inference to require every
+configured server and tool discovery to succeed. `BestEffort` returns per-server
+connection failures and discovers tools on surviving connections. Discovery errors
+remain fatal and identify the server. Readiness cancels even uncooperative custom
+connectors/discovery; native connectors also accept startup cancellation directly.
+Connection failures are cached for the selected revision; bump it to retry.
+`catalog` alone retains its lazy, partial-start behavior and is not strict readiness.

@@ -7,7 +7,7 @@ mod runtime;
 mod transport;
 
 pub use catalog::{provider_safe_tool_name, Catalog, CatalogEntry, CollisionPolicy};
-pub use manager::{Connector, Lease, LoadResult, Registration};
+pub use manager::{Connector, Lease, LoadResult, Registration, StartupPolicy};
 pub use operation::{McpHost, McpOperation};
 pub use runtime::{Manager, Runtime, Scopes, Selection};
 pub use transport::{ClientOptions, ElicitationHandler, RequestSender, TransportClient};
@@ -24,3 +24,13 @@ pub use request::await_response;
 pub mod schema;
 
 pub mod discovery;
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "mcp-stdio", feature = "mcp-http")
+))]
+mod connectors;
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp-http"))]
+pub use connectors::HttpConnector;
+#[cfg(all(not(target_arch = "wasm32"), feature = "mcp-stdio"))]
+pub use connectors::{StderrPolicy, StdioConnector};
