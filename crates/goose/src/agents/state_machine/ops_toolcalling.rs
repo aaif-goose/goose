@@ -21,7 +21,9 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
-use crate::agents::tool_discovery::{names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME};
+use crate::agents::tool_discovery::{
+    names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME,
+};
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
 };
@@ -652,7 +654,7 @@ pub(super) fn approval_expired(
         .map(|tool_call| tool_call.name.as_ref())
     {
         Ok(FINAL_OUTPUT_TOOL_NAME) => false,
-        Ok(LOAD_SKILL_TOOL_NAME | LOAD_TOOLS_TOOL_NAME) => true,
+        Ok(LOAD_SKILL_TOOL_NAME | LOAD_TOOLS_TOOL_NAME | SEARCH_TOOLS_TOOL_NAME) => true,
         _ => {
             let pending = pending_advertised_tool_requests(messages);
             !requests_can_resolve_a_lease(
@@ -665,6 +667,7 @@ pub(super) fn approval_expired(
                                 tool_call.name == FINAL_OUTPUT_TOOL_NAME
                                     || tool_call.name == LOAD_SKILL_TOOL_NAME
                                     || tool_call.name == LOAD_TOOLS_TOOL_NAME
+                                    || tool_call.name == SEARCH_TOOLS_TOOL_NAME
                             })
                     })
                     .map(|(request, _)| request),
@@ -733,6 +736,7 @@ fn extension_prompt_parts(
         header.push_str(&format!(
             "\n\nTo keep your context small, some extension tools are not loaded yet: each extension lists them under \"Not loaded\". \
              Before calling one, call `{LOAD_TOOLS_TOOL_NAME}` with its exact name, or `<extension>__*` for all of an extension's tools. \
+             If no listed name fits what you need, call `{SEARCH_TOOLS_TOOL_NAME}` with a few words describing it. \
              A loaded tool stays loaded for the rest of the session and becomes callable in your next response."
         ));
     }
@@ -1069,6 +1073,7 @@ mod tests {
         let parts = extension_prompt_parts(&extensions, &unloaded);
 
         assert!(parts[0].1.contains("call `load_tools`"));
+        assert!(parts[0].1.contains("call `search_tools`"));
         assert_eq!(
             parts[2].1,
             "## github\n\n### Instructions\nWork with GitHub.\n\nNot loaded: github__create_pr, github__list_prs"

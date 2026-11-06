@@ -3,15 +3,21 @@ use std::sync::Arc;
 use anyhow::Result;
 use serde_json::json;
 
-use super::calculator_extension::{value, ADD, ADD_VALUES, APP_ONLY, MULTIPLY};
+use super::calculator_extension::{value, ADD, ADD_VALUES, APP_ONLY, DIVIDE, MULTIPLY};
 use super::dummy_api::DummyApi;
-use super::pipeline::MessageKind::Agent;
+use super::pipeline::MessageKind::{Agent, ToolResponse};
 use super::pipeline::TestPipeline;
 use super::test_pipeline;
-use crate::agents::tool_discovery::{not_loaded_message, LOAD_TOOLS_TOOL_NAME};
+use crate::agents::tool_discovery::{
+    not_loaded_message, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME,
+};
+use crate::config::permission::PermissionLevel;
+use crate::config::GooseMode;
 use crate::session::ToolDiscoveryState;
 
 const LOADED_ADD: &str = r#""loaded":["calculator__add"]"#;
+const LOADED_DIVIDE: &str = r#""loaded":["calculator__divide"]"#;
+const DIVIDE_HIT: &str = r#"[{"name":"calculator__divide","extension":"calculator","description":"Divide the running total by a value","loaded":false}"#;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 
 async fn deferring_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
@@ -24,6 +30,24 @@ async fn deferring_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
 
 fn load(names: &[&str]) -> serde_json::Value {
     json!({ "tool_names": names })
+}
+
+fn search(query: &str) -> serde_json::Value {
+    json!({ "query": query })
+}
+
+async fn search_load_and_divide(pipeline: &TestPipeline, api: &DummyApi) -> Result<()> {
+    api.on("halve the total")
+        .call(SEARCH_TOOLS_TOOL_NAME, search("divide the running total"));
+    api.on(DIVIDE_HIT)
+        .call(LOAD_TOOLS_TOOL_NAME, load(&[DIVIDE]));
+    api.on(LOADED_DIVIDE).call(DIVIDE, value(2));
+    api.on("result: 0").reply("halved");
+    pipeline
+        .run(["halve the total"])
+        .await?
+        .assert_message(-1, Agent, "halved");
+    Ok(())
 }
 
 async fn load_and_add_four(pipeline: &TestPipeline, api: &DummyApi) -> Result<()> {
@@ -47,6 +71,7 @@ async fn sessions_that_do_not_defer_tools_send_every_tool() -> Result<()> {
     let call = &api.calls()[0];
     assert!(call.advertises_tool(ADD));
     assert!(!call.advertises_tool(LOAD_TOOLS_TOOL_NAME));
+    assert!(!call.advertises_tool(SEARCH_TOOLS_TOOL_NAME));
     assert!(!call.system_contains("Not loaded"));
     Ok(())
 }
@@ -217,5 +242,70 @@ async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<(
         .assert_message(-1, Agent, "added four");
 
     assert_eq!(pipeline.calculator_total(), 4);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_searched_tool_is_loaded_and_called() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+
+    search_load_and_divide(&pipeline, &api).await?;
+
+    let calls = api.calls();
+    assert!(calls[0].advertises_tool(SEARCH_TOOLS_TOOL_NAME));
+    assert!(calls[0].system_contains("call `search_tools`"));
+    assert!(calls[1].input_contains(DIVIDE_HIT));
+    assert!(!calls[1].input_contains(MULTIPLY));
+    assert!(!calls[1].input_contains(APP_ONLY));
+    assert!(!calls[1].advertises_tool(DIVIDE));
+    assert!(calls[2].advertises_tool(DIVIDE));
+    assert_eq!(pipeline.tool_discovery().await.loaded_tools, [DIVIDE]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn search_marks_loaded_tools() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    load_and_add_four(&pipeline, &api).await?;
+
+    api.on("find add").call(SEARCH_TOOLS_TOOL_NAME, search(ADD));
+    api.on(r#""loaded":true"#).reply("found");
+
+    let result = pipeline.run(["find add"]).await?;
+
+    result.assert_message(
+        -2,
+        ToolResponse,
+        r#"[{"name":"calculator__add","extension":"calculator","description":"Add a value to the running total","loaded":true}"#,
+    );
+    result.assert_message(-1, Agent, "found");
+    assert_eq!(pipeline.tool_discovery().await.loaded_tools, [ADD]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_search_without_matches_says_how_to_continue() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    api.on("send email")
+        .call(SEARCH_TOOLS_TOOL_NAME, search("send an email"));
+    api.on(r#"No tools matched "send an email""#)
+        .reply("no email tool");
+
+    pipeline
+        .run(["send email"])
+        .await?
+        .assert_message(-1, Agent, "no email tool");
+    Ok(())
+}
+
+#[tokio::test]
+async fn searching_and_loading_need_no_approval() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    pipeline.set_permission(DIVIDE, PermissionLevel::AlwaysAllow);
+
+    search_load_and_divide(&pipeline, &api).await?;
+
+    assert_eq!(pipeline.tool_discovery().await.loaded_tools, [DIVIDE]);
     Ok(())
 }
