@@ -1,6 +1,7 @@
 //! Answers tool requests that no other operation handled.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -8,6 +9,7 @@ use goose_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData};
 use tracing_futures::Instrument;
 
+use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
@@ -18,28 +20,45 @@ use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
+use crate::agents::tool_discovery::{deferred_tool_names, not_loaded_message};
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
-use crate::session::Session;
+use crate::session::{Session, ToolDiscoveryState};
 
 pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
 impl RemainingToolCallsOperation {
     pub fn new(
         hook_manager: HookManager,
         post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
             hook_manager,
             post_tool_call_hook,
+            extension_lease,
+        }
+    }
+
+    async fn deferred_tool_names(&self, session: &Session) -> HashSet<String> {
+        let lease = self
+            .extension_lease
+            .lock()
+            .expect("extension lease unavailable")
+            .clone()
+            .filter(|lease| lease.scope_id() == session.id.as_str());
+        match lease {
+            Some(lease) => deferred_tool_names(session, &lease).await,
+            None => HashSet::new(),
         }
     }
 }
@@ -77,6 +96,8 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
             return not_applicable();
         }
 
+        let deferred = self.deferred_tool_names(session).await;
+        let loaded = ToolDiscoveryState::of(session).loaded_tools;
         let mut response = Message::user();
         for (request, disposition) in pending {
             let tool_name = request
@@ -92,6 +113,19 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     ))])),
                     false,
                 ),
+                ToolDisposition::Execute
+                    if deferred.contains(tool_name)
+                        && !request_was_advertised(messages, &request) =>
+                {
+                    span.record("error.type", "tool_not_loaded");
+                    let loaded = loaded.iter().any(|name| name == tool_name);
+                    (
+                        Ok(CallToolResult::error(vec![ContentBlock::text(
+                            not_loaded_message(tool_name, loaded),
+                        )])),
+                        true,
+                    )
+                }
                 ToolDisposition::Execute if !request_was_advertised(messages, &request) => {
                     span.record("error.type", "tool_not_available");
                     (
@@ -222,7 +256,7 @@ mod tests {
     ) -> Result<OperationResult<GooseEffect>> {
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
-        RemainingToolCallsOperation::new(HookManager::default(), hook)
+        RemainingToolCallsOperation::new(HookManager::default(), hook, Arc::default())
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
     }

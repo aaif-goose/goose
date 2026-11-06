@@ -22,6 +22,7 @@ pub(super) const APP_ONLY: &str = "calculator__app_only";
 pub(super) const ADD_VALUES: &str = "calculator__add_values";
 pub(super) const ADD_WITH_AUDIENCE: &str = "calculator__add_with_audience";
 pub(super) const DIVIDE: &str = "calculator__divide";
+pub(super) const MULTIPLY: &str = "calculator__multiply";
 pub(super) const REQUEST_VALUE: &str = "calculator__request_value";
 const EXECUTION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
@@ -160,7 +161,13 @@ impl McpClientTrait for CalculatorExtension {
                 "multiply",
                 "Multiply the running total by a value",
                 Arc::new(schema.clone()),
-            ),
+            )
+            .with_meta(rmcp::model::MetaObject(
+                json!({ crate::agents::tool_discovery::ALWAYS_LOAD_META_KEY: true })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )),
             Tool::new(
                 "subtract",
                 "Subtract a value from the running total",

@@ -24,7 +24,7 @@ use crate::hooks::HookManager;
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::{GoalState, Session, SessionManager, SessionType};
+use crate::session::{GoalState, Session, SessionManager, SessionType, ToolDiscoveryState};
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -389,6 +389,17 @@ impl TestPipeline {
             .set_extension_state(&self.session_id, &state)
             .await
             .unwrap();
+    }
+
+    pub(super) async fn set_tool_discovery(&self, state: ToolDiscoveryState) {
+        self.session_manager
+            .set_extension_state(&self.session_id, &state)
+            .await
+            .unwrap();
+    }
+
+    pub(super) async fn tool_discovery(&self) -> ToolDiscoveryState {
+        ToolDiscoveryState::of(&self.session().await.unwrap())
     }
 
     pub(super) async fn session(&self) -> Result<Session> {
@@ -1226,10 +1237,11 @@ impl TestRun {
     }
 }
 
-const TOOL_OPERATIONS: [&str; 7] = [
+const TOOL_OPERATIONS: [&str; 8] = [
     "tool_approval",
     "pre_tool_call_hook",
     "skills",
+    "tool_discovery",
     "recipe",
     "tool_execution",
     "remaining_tool_calls",

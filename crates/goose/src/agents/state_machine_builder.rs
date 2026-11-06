@@ -19,7 +19,8 @@ use crate::agents::state_machine::{
     PreToolCallHookOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
     RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
     SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    ToolDiscoveryOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -132,6 +133,10 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
         )),
+        Arc::new(ToolDiscoveryOperation::new(
+            Arc::clone(&extension_lease),
+            Arc::clone(&post_tool_call_hook),
+        )),
         Arc::new(RecipeOperation::new(
             provider.clone(),
             Arc::clone(&extension_manager),
@@ -146,6 +151,7 @@ pub(crate) fn build_state_machine(
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,
+            Arc::clone(&extension_lease),
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(
