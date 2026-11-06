@@ -55,6 +55,73 @@ pub enum Theme {
     Ansi,
 }
 
+/// Detect the system theme (light or dark) from the OS.
+/// Returns `None` if detection is not possible on this platform.
+fn detect_system_theme() -> Option<Theme> {
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, check AppleInterfaceStyle via defaults command
+        match std::process::Command::new("defaults")
+            .args(["read", "-g", "AppleInterfaceStyle"])
+            .output()
+        {
+            Ok(output) => {
+                if String::from_utf8_lossy(&output.stdout).trim() == "Dark" {
+                    Some(Theme::Dark)
+                } else {
+                    Some(Theme::Light)
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, try gsettings (GNOME) first
+        if let Ok(output) = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+        {
+            let val = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
+            if val.contains("dark") {
+                return Some(Theme::Dark);
+            } else if val.contains("light") || val.contains("default") {
+                return Some(Theme::Light);
+            }
+        }
+
+        // Fallback: check GTK_THEME env var
+        if let Ok(gtk_theme) = std::env::var("GTK_THEME") {
+            if gtk_theme.to_lowercase().contains("dark") {
+                return Some(Theme::Dark);
+            }
+        }
+
+        None
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+/// Resolve the configured theme string to a concrete Theme.
+/// "auto" triggers system detection, falling back to Dark if detection fails.
+/// "light", "dark", "ansi" map to their respective themes.
+fn resolve_theme(val: &str) -> Theme {
+    if val.eq_ignore_ascii_case("auto") {
+        detect_system_theme().unwrap_or(Theme::Dark)
+    } else if val.eq_ignore_ascii_case("light") {
+        Theme::Light
+    } else if val.eq_ignore_ascii_case("ansi") {
+        Theme::Ansi
+    } else {
+        Theme::Dark
+    }
+}
+
 impl Theme {
     fn as_str(&self) -> String {
         match self {
@@ -69,13 +136,7 @@ impl Theme {
     }
 
     fn from_config_str(val: &str) -> Self {
-        if val.eq_ignore_ascii_case("light") {
-            Theme::Light
-        } else if val.eq_ignore_ascii_case("ansi") {
-            Theme::Ansi
-        } else {
-            Theme::Dark
-        }
+        resolve_theme(val)
     }
 
     fn as_config_string(&self) -> String {
@@ -119,6 +180,26 @@ pub fn set_theme(theme: Theme) {
     if let Err(e) = config.set_param("GOOSE_CLI_THEME", theme_str) {
         eprintln!("Failed to save theme setting to config: {}", e);
     }
+}
+
+/// Save "auto" to config and resolve the current theme via system detection.
+/// Falls back to Dark if detection is not possible.
+pub fn set_auto_theme() {
+    let config = Config::global();
+    if let Err(e) = config.set_param("GOOSE_CLI_THEME", "auto") {
+        eprintln!("Failed to save theme setting to config: {}", e);
+    }
+
+    let detected = detect_system_theme().unwrap_or(Theme::Dark);
+    CURRENT_THEME.with(|t| *t.borrow_mut() = detected);
+    println!(
+        "System theme detected: {}",
+        match detected {
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+            Theme::Ansi => "ansi",
+        }
+    );
 }
 
 /// Ring the terminal bell so an unfocused terminal can badge or chime.
