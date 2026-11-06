@@ -1,4 +1,4 @@
-import type { ExtensionConfig, ExtensionEntry } from '../types/extensions';
+import type { ExtensionConfig, ExtensionEntry, ToolCallMeta } from '../types/extensions';
 import type { GooseExtension, GooseExtensionEntry } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 
@@ -15,6 +15,23 @@ export function gooseExtensionName(extension: GooseExtension): string {
 
 function headersToRecord(headers: { name: string; value: string }[] = []) {
   return Object.fromEntries(headers.map(({ name, value }) => [name, value]));
+}
+
+function toolCallMetaFromServerMeta(
+  meta?: { [key: string]: unknown } | null
+): { tool_call_meta: ToolCallMeta } | undefined {
+  const toolCallMeta = meta?.toolCallMeta;
+  return toolCallMeta && typeof toolCallMeta === 'object' && !Array.isArray(toolCallMeta)
+    ? { tool_call_meta: toolCallMeta as ToolCallMeta }
+    : undefined;
+}
+
+function toolCallMetaToServerMeta(
+  toolCallMeta?: ToolCallMeta
+): { _meta: { toolCallMeta: ToolCallMeta } } | undefined {
+  return toolCallMeta && Object.keys(toolCallMeta).length > 0
+    ? { _meta: { toolCallMeta } }
+    : undefined;
 }
 
 function availableToolsOrUndefined(availableTools?: string[] | null): string[] | undefined {
@@ -43,6 +60,7 @@ export function gooseExtensionToExtensionConfig(extension: GooseExtension): Exte
           timeout: extension.timeout,
           bundled: extension.bundled,
           available_tools: availableToolsOrUndefined(extension.available_tools),
+          ...toolCallMetaFromServerMeta(server._meta),
         };
       }
       if ('url' in server) {
@@ -60,6 +78,7 @@ export function gooseExtensionToExtensionConfig(extension: GooseExtension): Exte
           scopes: extension.scopes ?? [],
           bundled: extension.bundled,
           available_tools: availableToolsOrUndefined(extension.available_tools),
+          ...toolCallMetaFromServerMeta(server._meta),
         };
       }
       return null;
@@ -118,7 +137,13 @@ export function extensionConfigToGooseExtension(config: ExtensionConfig): GooseE
     case 'stdio':
       return {
         type: 'mcp',
-        server: { name: config.name, command: config.cmd, args: config.args ?? [], env: [] },
+        server: {
+          name: config.name,
+          command: config.cmd,
+          args: config.args ?? [],
+          env: [],
+          ...toolCallMetaToServerMeta(config.tool_call_meta),
+        },
         envKeys: config.env_keys ?? [],
         description: config.description,
         timeout: config.timeout,
@@ -133,6 +158,7 @@ export function extensionConfigToGooseExtension(config: ExtensionConfig): GooseE
           name: config.name,
           url: config.uri,
           headers: Object.entries(config.headers ?? {}).map(([name, value]) => ({ name, value })),
+          ...toolCallMetaToServerMeta(config.tool_call_meta),
         },
         envKeys: config.env_keys ?? [],
         description: config.description,
