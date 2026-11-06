@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -204,10 +205,41 @@ fn relative_components(path: &Path) -> Option<Vec<String>> {
     }
 }
 
+/// Max bytes read when counting lines for one file.
+///
+/// Procfs pseudo-files such as `pagemap` often report size 0 but yield a huge
+/// stream when read. An uncapped `read_to_string` can OOM the process; a buffer
+/// alone can still stall for minutes. Cap the read so `tree` stays bounded.
+const LINE_COUNT_MAX_BYTES: u64 = 1024 * 1024; // 1 MiB
+const LINE_COUNT_BUF_SIZE: usize = 64 * 1024; // 64 KiB
+
 fn count_file_lines(path: &Path) -> usize {
-    match fs::read_to_string(path) {
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+
+    let mut reader =
+        io::BufReader::with_capacity(LINE_COUNT_BUF_SIZE, file.take(LINE_COUNT_MAX_BYTES));
+    let mut bytes = Vec::new();
+    if reader.read_to_end(&mut bytes).is_err() {
+        return 0;
+    }
+
+    match std::str::from_utf8(&bytes) {
         Ok(content) => content.lines().count(),
-        Err(_) => 0,
+        Err(err) => {
+            // Match prior `read_to_string` behavior: invalid UTF-8 → 0 lines.
+            // When the byte cap cuts a multi-byte sequence, `error_len` is None;
+            // count lines in the valid prefix instead of treating it as binary.
+            if err.error_len().is_some() {
+                return 0;
+            }
+            match std::str::from_utf8(&bytes[..err.valid_up_to()]) {
+                Ok(content) => content.lines().count(),
+                Err(_) => 0,
+            }
+        }
     }
 }
 
@@ -295,5 +327,71 @@ mod tests {
         assert!(text.contains("visible.rs"));
         assert!(!text.contains("ignored"));
         assert!(!text.contains("debug.log"));
+    }
+    #[test]
+    fn count_file_lines_counts_small_utf8_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("small.txt");
+        fs::write(&path, "a\nb\nc\n").unwrap();
+        assert_eq!(count_file_lines(&path), 3);
+        fs::write(&path, "a\nb\nc").unwrap();
+        assert_eq!(count_file_lines(&path), 3);
+        fs::write(&path, "").unwrap();
+        assert_eq!(count_file_lines(&path), 0);
+    }
+
+    #[test]
+    fn count_file_lines_invalid_utf8_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bin.dat");
+        fs::write(&path, [0xff, 0xfe, 0xfd, b'\n']).unwrap();
+        assert_eq!(count_file_lines(&path), 0);
+    }
+
+    #[test]
+    fn count_file_lines_respects_byte_cap() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.txt");
+        let line = b"x\n";
+        let lines_to_write = (LINE_COUNT_MAX_BYTES as usize / line.len()) + 500;
+        {
+            let mut f = fs::File::create(&path).unwrap();
+            for _ in 0..lines_to_write {
+                f.write_all(line).unwrap();
+            }
+        }
+
+        let counted = count_file_lines(&path);
+        let max_lines = (LINE_COUNT_MAX_BYTES as usize) / line.len();
+        assert!(counted > 0, "expected some lines within the cap");
+        assert!(
+            counted <= max_lines,
+            "counted {counted} lines, cap allows at most {max_lines}"
+        );
+        assert!(
+            counted < lines_to_write,
+            "cap should stop before reading the whole {lines_to_write}-line file"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn count_file_lines_proc_pagemap_finishes_quickly() {
+        use std::time::{Duration, Instant};
+
+        let path = Path::new("/proc/self/pagemap");
+        if !path.exists() {
+            return;
+        }
+
+        let start = Instant::now();
+        let _count = count_file_lines(path);
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "pagemap line count took {:?}; expected a capped fast read",
+            start.elapsed()
+        );
     }
 }
