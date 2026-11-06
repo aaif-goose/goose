@@ -28,7 +28,7 @@ const i18n = defineMessages({
   description: {
     id: 'localInferenceSettings.description',
     defaultMessage:
-      'Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or MLX models.',
+      'Download and manage local LLM models for inference without API keys. Search Hugging Face for GGUF or SafeTensors models.',
   },
   downloading: {
     id: 'localInferenceSettings.downloading',
