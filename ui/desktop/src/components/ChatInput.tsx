@@ -276,6 +276,8 @@ export default function ChatInput({
   // Queue functionality - ephemeral, only exists in memory for this chat instance
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const queuePausedRef = useRef(false);
+  const resumeWhenModelChangeSettlesRef = useRef(false);
+  const wasModelChangePendingRef = useRef(false);
   const editingMessageIdRef = useRef<string | null>(null);
   const sendAfterStopMessageIdRef = useRef<string | null>(null);
   const sendNowInFlightMessageIdsRef = useRef<Set<string>>(new Set());
@@ -319,7 +321,15 @@ export default function ChatInput({
     getCurrentModelAndProvider,
     currentModel: configModel,
     currentProvider: configProvider,
+    modelChangePending,
+    isModelChangePending,
   } = useModelAndProvider();
+  const modelChangeInFlight = useCallback(
+    () => isModelChangePending?.() ?? Boolean(modelChangePending),
+    [isModelChangePending, modelChangePending]
+  );
+  const modelPickerLocked =
+    isSubmissionBusy || queueProcessingBlocked || Boolean(modelChangePending);
 
   // Local override for when the user changes the model in the modal,
   // before the session object is re-fetched from the backend.
@@ -404,9 +414,23 @@ export default function ChatInput({
     const becameUnblocked = wasQueueProcessingBlockedRef.current && !queueProcessingBlocked;
     const hasSendNowInFlight = sendNowInFlightMessageIdsRef.current.size > 0;
 
+    const modelChangeSettled = wasModelChangePendingRef.current && !modelChangeInFlight();
+    wasModelChangePendingRef.current = modelChangeInFlight();
+
+    if (modelChangeInFlight() && (becameAvailable || becameUnblocked)) {
+      return;
+    }
+
+    if (modelChangeSettled && resumeWhenModelChangeSettlesRef.current) {
+      resumeWhenModelChangeSettlesRef.current = false;
+      queuePausedRef.current = false;
+      setLastInterruption(null);
+    }
+
     if (
-      (becameAvailable || (becameUnblocked && !isSubmissionBusy)) &&
+      (becameAvailable || (becameUnblocked && !isSubmissionBusy) || modelChangeSettled) &&
       !queueProcessingBlocked &&
+      !modelChangeInFlight() &&
       !hasSendNowInFlight &&
       queuedMessages.length > 0
     ) {
@@ -464,6 +488,8 @@ export default function ChatInput({
   }, [
     isSubmissionBusy,
     queueProcessingBlocked,
+    modelChangePending,
+    modelChangeInFlight,
     queuedMessages,
     handleSubmit,
     lastInterruption,
@@ -1103,12 +1129,14 @@ export default function ChatInput({
   const canSubmit =
     !isSubmissionBusy &&
     !queueProcessingBlocked &&
+    !modelChangeInFlight() &&
     (displayValue.trim() ||
       pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
       allDroppedFiles.some((file) => !file.error && !file.isLoading));
 
   const performSubmit = useCallback(
     (text?: string) => {
+      if (modelChangeInFlight()) return;
       const imageData = convertImagesToImageData();
       const textToSend = appendDroppedFilePaths(text ?? displayValue.trim());
 
@@ -1156,6 +1184,7 @@ export default function ChatInput({
       lastInterruption,
       clearInputState,
       sessionId,
+      modelChangeInFlight,
     ]
   );
 
@@ -1220,7 +1249,7 @@ export default function ChatInput({
 
   const onFormSubmit = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
-    if (queueProcessingBlocked) {
+    if (queueProcessingBlocked || modelChangeInFlight()) {
       return;
     }
     if (isSubmissionBusy && hasSubmittableContent) {
@@ -1230,6 +1259,7 @@ export default function ChatInput({
     const canSubmit =
       !isSubmissionBusy &&
       !queueProcessingBlocked &&
+      !modelChangeInFlight() &&
       (displayValue.trim() ||
         pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
         allDroppedFiles.some((file) => !file.error && !file.isLoading));
@@ -1345,6 +1375,7 @@ export default function ChatInput({
     isRecording ||
     isTranscribing ||
     queueProcessingBlocked ||
+    modelChangeInFlight() ||
     chatState === ChatState.RestartingAgent;
 
   const getSubmitButtonTooltip = (): string => {
@@ -1388,7 +1419,7 @@ export default function ChatInput({
   const handleStopAndSend = async (messageId: string) => {
     const messageToSend = queuedMessages.find((msg) => msg.id === messageId);
     if (!messageToSend) return;
-    if (queueProcessingBlocked) return;
+    if (queueProcessingBlocked || modelChangeInFlight()) return;
 
     if (!isSubmissionBusy) {
       setQueuedMessages((prev) => removeQueuedMessage(prev, messageId));
@@ -1458,6 +1489,10 @@ export default function ChatInput({
   };
 
   const handleResumeQueue = () => {
+    if (modelChangeInFlight()) {
+      resumeWhenModelChangeSettlesRef.current = true;
+      return;
+    }
     queuePausedRef.current = false;
     setLastInterruption(null);
     if (!isSubmissionBusy && !queueProcessingBlocked && queuedMessages.length > 0) {
@@ -1682,6 +1717,12 @@ export default function ChatInput({
               latestInference={latestInference}
               onModelChanged={setModelOverride}
               sessionLoaded={sessionLoaded}
+              modelChangeLocked={modelPickerLocked}
+              modelChangeLockedTitle={
+                queueProcessingBlocked && !isSubmissionBusy
+                  ? intl.formatMessage(i18n.waitingForCancellation)
+                  : undefined
+              }
             />
           </div>
         </Tooltip>
@@ -1895,7 +1936,10 @@ export default function ChatInput({
             onOpenChange={setContextXrayOpen}
             sessionId={sessionId}
             totalTokens={totalTokens || 0}
-            onCompact={() => handleSubmit({ msg: MANUAL_COMPACT_TRIGGER, images: [] })}
+            onCompact={() => {
+              if (modelChangeInFlight()) return;
+              handleSubmit({ msg: MANUAL_COMPACT_TRIGGER, images: [] });
+            }}
             compactDisabled={!totalTokens || isLoading}
           />
         )}

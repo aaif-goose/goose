@@ -19,7 +19,9 @@ import {
   acpReadThinkingEffort,
   acpSaveThinkingEffort,
 } from '../../../../acp/providers';
-import { useModelAndProvider } from '../../../ModelAndProviderContext';
+import { acpChatSessionStore } from '../../../../acp/chatSessionStore';
+import { ChatState } from '../../../../types/chatState';
+import { isModelChangePendingNow, useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
 import Model, {
   fetchModelReasoning,
@@ -248,7 +250,22 @@ type SwitchModelModalProps = {
   titleOverride?: string;
   sessionModel?: string | null;
   sessionProvider?: string | null;
+  modelChangeLocked: boolean;
 };
+
+function sessionTurnInFlight(sessionId: string | null): boolean {
+  if (!sessionId) return false;
+  const snapshot = acpChatSessionStore.getSnapshot(sessionId);
+  if (!snapshot) return false;
+  return (
+    snapshot.activeRunId !== null ||
+    snapshot.pendingCancelPromptAttemptId !== null ||
+    snapshot.chatState === ChatState.Streaming ||
+    snapshot.chatState === ChatState.Thinking ||
+    snapshot.chatState === ChatState.Compacting ||
+    snapshot.chatState === ChatState.LoadingConversation
+  );
+}
 export const SwitchModelModal = ({
   sessionId,
   onClose,
@@ -258,8 +275,27 @@ export const SwitchModelModal = ({
   titleOverride,
   sessionModel,
   sessionProvider,
+  modelChangeLocked,
 }: SwitchModelModalProps) => {
   const intl = useIntl();
+  const modelChangeLockedRef = useRef(modelChangeLocked);
+  modelChangeLockedRef.current = modelChangeLocked;
+  const closedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    return () => {
+      closedRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (modelChangeLocked) {
+      closedRef.current = true;
+      onCloseRef.current();
+    }
+  }, [modelChangeLocked]);
 
   const THINKING_EFFORT_OPTIONS: { value: ThinkingEffort; label: string }[] = [
     { value: 'off', label: intl.formatMessage(i18n.thinkingEffortOff) },
@@ -389,6 +425,7 @@ export const SwitchModelModal = ({
   }, [model, provider, usePredefinedModels, selectedPredefinedModel, intl]);
 
   const handleClose = () => {
+    closedRef.current = true;
     onClose();
   };
 
@@ -422,6 +459,15 @@ export const SwitchModelModal = ({
           request_params: { ...modelObj.request_params, thinking_effort: effort },
         };
         acpSaveThinkingEffort(effort).catch(console.warn);
+      }
+
+      if (
+        closedRef.current ||
+        modelChangeLockedRef.current ||
+        isModelChangePendingNow() ||
+        sessionTurnInFlight(sessionId)
+      ) {
+        return;
       }
 
       const success = await changeModel(sessionId, modelObj);
@@ -989,7 +1035,7 @@ export const SwitchModelModal = ({
             <Button variant="outline" onClick={handleClose} type="button">
               {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={handleSubmit} disabled={!isValid}>
+            <Button onClick={handleSubmit} disabled={!isValid || modelChangeLocked}>
               {intl.formatMessage(i18n.selectModelButton)}
             </Button>
           </div>

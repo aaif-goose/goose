@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toastError, toastSuccess } from '../toasts';
 import Model, { getProviderMetadata } from './settings/models/modelInterface';
 import type { ProviderMetadata } from '../types/providers';
@@ -46,6 +46,10 @@ const i18n = defineMessages({
 interface ModelAndProviderContextType {
   currentModel: string | null;
   currentProvider: string | null;
+  /** True while changeModel's provider/model/thinking RPCs are still in flight. */
+  modelChangePending: boolean;
+  /** Same signal as modelChangePending, readable before the next render. */
+  isModelChangePending: () => boolean;
   changeModel: (sessionId: string | null, model: Model) => Promise<boolean>;
   getCurrentModelAndProvider: () => Promise<{ model: string; provider: string }>;
   getFallbackModelAndProvider: () => Promise<{ model: string; provider: string }>;
@@ -60,6 +64,25 @@ interface ModelAndProviderProviderProps {
 }
 
 const ModelAndProviderContext = createContext<ModelAndProviderContextType | undefined>(undefined);
+
+let modelChangePendingCount = 0;
+const modelChangeListeners = new Set<() => void>();
+
+/** Readable before the next render, including from submit paths outside ChatInput. */
+export function isModelChangePendingNow(): boolean {
+  return modelChangePendingCount > 0;
+}
+
+export function subscribeModelChangePending(listener: () => void): () => void {
+  modelChangeListeners.add(listener);
+  return () => {
+    modelChangeListeners.delete(listener);
+  };
+}
+
+function notifyModelChangePending() {
+  for (const listener of modelChangeListeners) listener();
+}
 
 export { i18n as modelAndProviderMessages };
 
@@ -87,13 +110,18 @@ function patchAcpSessionProviderModel(
 export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> = ({ children }) => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
+  const [modelChangePending, setModelChangePending] = useState(false);
   const intl = useIntl();
+  const isModelChangePending = useCallback(() => isModelChangePendingNow(), []);
 
   const changeModel = useCallback(
     async (sessionId: string | null, model: Model) => {
       const modelName = model.name;
       const providerName = model.provider;
       let phase = 'agent';
+      modelChangePendingCount += 1;
+      setModelChangePending(true);
+      notifyModelChangePending();
 
       try {
         if (sessionId) {
@@ -137,6 +165,10 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
           traceback: errorMessage(error),
         });
         return false;
+      } finally {
+        modelChangePendingCount = Math.max(0, modelChangePendingCount - 1);
+        setModelChangePending(modelChangePendingCount > 0);
+        notifyModelChangePending();
       }
     },
     [intl]
@@ -234,6 +266,8 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
     () => ({
       currentModel,
       currentProvider,
+      modelChangePending,
+      isModelChangePending,
       changeModel,
       getCurrentModelAndProvider,
       getFallbackModelAndProvider,
@@ -245,6 +279,8 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
     [
       currentModel,
       currentProvider,
+      modelChangePending,
+      isModelChangePending,
       changeModel,
       getCurrentModelAndProvider,
       getFallbackModelAndProvider,
