@@ -200,3 +200,22 @@ async fn calling_a_tool_before_loading_it_explains_how_to_load_it() -> Result<()
     assert_eq!(pipeline.calculator_total(), 4);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    api.on("add four")
+        .unadvertised_call("calculator.add", value(4));
+    api.on(not_loaded_message(ADD, false))
+        .call(LOAD_TOOLS_TOOL_NAME, load(&[ADD]));
+    api.on(LOADED_ADD).call(ADD, value(4));
+    api.on("result: 4").reply("added four");
+
+    pipeline
+        .run(["add four"])
+        .await?
+        .assert_message(-1, Agent, "added four");
+
+    assert_eq!(pipeline.calculator_total(), 4);
+    Ok(())
+}

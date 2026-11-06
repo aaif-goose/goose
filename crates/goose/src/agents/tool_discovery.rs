@@ -10,7 +10,7 @@ use rmcp::model::Tool;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::agents::extension_manager::{get_tool_owner, ExtensionLease};
+use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name, ExtensionLease};
 use crate::session::{Session, ToolDiscoveryState};
 
 /// A tool sets `_meta["goose/alwaysLoad"]: true` to be sent up front in a
@@ -80,20 +80,30 @@ pub(crate) fn names_by_extension(tools: &[Tool]) -> BTreeMap<String, Vec<String>
     grouped
 }
 
-/// Names of the tools a deferring session sends only once loaded, loaded or not.
-pub(crate) async fn deferred_tool_names(
-    session: &Session,
-    lease: &ExtensionLease,
-) -> HashSet<String> {
+/// The tools a deferring session sends only once loaded, loaded or not.
+pub(crate) async fn deferred_tools(session: &Session, lease: &ExtensionLease) -> Vec<Tool> {
     if !defers_tools(session, lease) {
-        return HashSet::new();
+        return Vec::new();
     }
-    lease
-        .deferrable_tools()
-        .await
-        .into_iter()
-        .map(|tool| tool.name.to_string())
-        .collect()
+    lease.deferrable_tools().await
+}
+
+/// The deferred tool a call names, including the mangled forms some models
+/// emit, such as `github.create_pr` or `functions.github__create_pr`. The
+/// provider layer only recovers names it advertised, which deferred tools
+/// weren't.
+pub(crate) fn deferred_tool_named(emitted: &str, deferred: &[Tool]) -> Option<String> {
+    if deferred.iter().any(|tool| tool.name == emitted) {
+        return Some(emitted.to_string());
+    }
+    let owners: Vec<_> = deferred
+        .iter()
+        .map(|tool| (tool.name.as_ref(), get_tool_owner(tool)))
+        .collect();
+    recover_mangled_tool_name(
+        emitted,
+        owners.iter().map(|(name, owner)| (*name, owner.as_deref())),
+    )
 }
 
 /// Answers a call to a deferred tool that wasn't sent with the response that
@@ -134,14 +144,17 @@ pub struct LoadOutcome {
 /// Resolves a `load_tools` request against the session's tools.
 ///
 /// `available` is every extension tool the session can call, `deferrable` the
-/// subset sent only when loaded, and `loaded` the names loaded so far. Returns
-/// what to tell the model and the names to add to the loaded set. A load that
-/// would take the session past [`MAX_ADVERTISED_TOOLS`] loads nothing.
+/// subset sent only when loaded, `loaded` the names loaded so far, and
+/// `advertised` how many tools the next request carries without this load,
+/// operation tools such as `load_tools` included. Returns what to tell the
+/// model and the names to add to the loaded set. A load that would take the
+/// request past [`MAX_ADVERTISED_TOOLS`] loads nothing.
 pub(crate) fn resolve_load(
     requested: &[String],
     available: &[Tool],
     deferrable: &[Tool],
     loaded: &[String],
+    advertised: usize,
 ) -> (LoadOutcome, Vec<String>) {
     let deferrable_names: HashSet<&str> = deferrable.iter().map(|tool| &*tool.name).collect();
     let is_loaded = |name: &str| loaded.iter().any(|loaded| loaded == name);
@@ -181,12 +194,7 @@ pub(crate) fn resolve_load(
         }
     }
 
-    let still_deferred = deferrable
-        .iter()
-        .filter(|tool| !is_loaded(&tool.name))
-        .count();
-    let advertised = available.len() - still_deferred + newly_loaded.len();
-    if advertised > MAX_ADVERTISED_TOOLS {
+    if advertised + newly_loaded.len() > MAX_ADVERTISED_TOOLS {
         let rejected = std::mem::take(&mut outcome.loaded)
             .into_iter()
             .map(|name| Rejected {
@@ -260,6 +268,7 @@ mod tests {
             &available,
             &available,
             &[],
+            0,
         );
         assert_eq!(
             outcome.loaded,
@@ -279,6 +288,7 @@ mod tests {
             &available,
             &[deferred],
             &names(&["linear__get_issue"]),
+            2,
         );
         assert_eq!(outcome.loaded, names(&["shell", "linear__get_issue"]));
         assert!(newly.is_empty());
@@ -292,6 +302,7 @@ mod tests {
             &available,
             &available,
             &[],
+            0,
         );
         assert_eq!(outcome.loaded, names(&["linear__get_issue"]));
         assert_eq!(
@@ -312,23 +323,60 @@ mod tests {
 
     #[test]
     fn a_load_past_the_tool_limit_loads_nothing() {
-        let eager: Vec<Tool> = (0..MAX_ADVERTISED_TOOLS)
-            .map(|i| tool("developer", &format!("tool_{i}")))
-            .collect();
-        let deferred = tool("github", "github__create_pr");
-        let mut available = eager;
-        available.push(deferred.clone());
+        let deferred = vec![
+            tool("github", "github__create_pr"),
+            tool("github", "github__list_prs"),
+        ];
 
-        let (outcome, newly) =
-            resolve_load(&names(&["github__create_pr"]), &available, &[deferred], &[]);
+        let (outcome, newly) = resolve_load(
+            &names(&["github__*"]),
+            &deferred,
+            &deferred,
+            &[],
+            MAX_ADVERTISED_TOOLS - 1,
+        );
         assert!(outcome.loaded.is_empty());
         assert_eq!(
             outcome.rejected,
-            vec![Rejected {
-                name: "github__create_pr".to_string(),
-                reason: RejectReason::ToolLimit,
-            }]
+            vec![
+                Rejected {
+                    name: "github__create_pr".to_string(),
+                    reason: RejectReason::ToolLimit,
+                },
+                Rejected {
+                    name: "github__list_prs".to_string(),
+                    reason: RejectReason::ToolLimit,
+                },
+            ]
         );
         assert!(newly.is_empty());
+
+        let (outcome, newly) = resolve_load(
+            &names(&["github__create_pr"]),
+            &deferred,
+            &deferred,
+            &[],
+            MAX_ADVERTISED_TOOLS - 1,
+        );
+        assert_eq!(outcome.loaded, names(&["github__create_pr"]));
+        assert_eq!(newly, names(&["github__create_pr"]));
+    }
+
+    #[test]
+    fn deferred_tool_named_recovers_mangled_names() {
+        let deferred = vec![tool("github", "github__create_pr")];
+
+        for emitted in [
+            "github__create_pr",
+            "github.create_pr",
+            "functions.github__create_pr",
+        ] {
+            assert_eq!(
+                deferred_tool_named(emitted, &deferred).as_deref(),
+                Some("github__create_pr"),
+                "{emitted}"
+            );
+        }
+        assert_eq!(deferred_tool_named("github.merge_pr", &deferred), None);
     }
 }

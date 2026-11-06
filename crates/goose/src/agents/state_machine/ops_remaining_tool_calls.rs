@@ -1,12 +1,11 @@
 //! Answers tool requests that no other operation handled.
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData};
+use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
 use tracing_futures::Instrument;
 
 use crate::agents::extension_manager::ExtensionLease;
@@ -20,7 +19,7 @@ use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::agents::tool_discovery::{deferred_tool_names, not_loaded_message};
+use crate::agents::tool_discovery::{deferred_tool_named, deferred_tools, not_loaded_message};
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
@@ -49,7 +48,7 @@ impl RemainingToolCallsOperation {
         }
     }
 
-    async fn deferred_tool_names(&self, session: &Session) -> HashSet<String> {
+    async fn deferred_tools(&self, session: &Session) -> Vec<Tool> {
         let lease = self
             .extension_lease
             .lock()
@@ -57,8 +56,8 @@ impl RemainingToolCallsOperation {
             .clone()
             .filter(|lease| lease.scope_id() == session.id.as_str());
         match lease {
-            Some(lease) => deferred_tool_names(session, &lease).await,
-            None => HashSet::new(),
+            Some(lease) => deferred_tools(session, &lease).await,
+            None => Vec::new(),
         }
     }
 }
@@ -96,7 +95,7 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
             return not_applicable();
         }
 
-        let deferred = self.deferred_tool_names(session).await;
+        let deferred = self.deferred_tools(session).await;
         let loaded = ToolDiscoveryState::of(session).loaded_tools;
         let mut response = Message::user();
         for (request, disposition) in pending {
@@ -106,6 +105,9 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                 .map(|tool_call| tool_call.name.as_ref())
                 .unwrap_or("unknown");
             let span = tool_span(tool_name, &request.id, &session.id);
+            let not_loaded = (!request_was_advertised(messages, &request))
+                .then(|| deferred_tool_named(tool_name, &deferred))
+                .flatten();
             let (result, unclaimed) = match disposition {
                 ToolDisposition::ParseError(error) => (
                     Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -113,15 +115,13 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     ))])),
                     false,
                 ),
-                ToolDisposition::Execute
-                    if deferred.contains(tool_name)
-                        && !request_was_advertised(messages, &request) =>
-                {
+                ToolDisposition::Execute if not_loaded.is_some() => {
                     span.record("error.type", "tool_not_loaded");
-                    let loaded = loaded.iter().any(|name| name == tool_name);
+                    let name = not_loaded.as_deref().unwrap_or(tool_name);
+                    let loaded = loaded.iter().any(|loaded| loaded == name);
                     (
                         Ok(CallToolResult::error(vec![ContentBlock::text(
-                            not_loaded_message(tool_name, loaded),
+                            not_loaded_message(name, loaded),
                         )])),
                         true,
                     )

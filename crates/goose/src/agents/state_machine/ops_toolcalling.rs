@@ -592,18 +592,32 @@ pub(super) fn call_will_not_run(
         || final_output_called_with_other_tools(session, messages, request))
 }
 
-pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
-    let Some(tool_call) = request.tool_call.as_ref().ok() else {
-        return true;
-    };
-    let Some(message) = messages.iter().find(|message| {
+fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Option<&'a Message> {
+    messages.iter().find(|message| {
         message.role == Role::Assistant
             && message.content.iter().any(|content| {
                 content
                     .as_tool_request()
                     .is_some_and(|item| item.id == request.id)
             })
-    }) else {
+    })
+}
+
+/// How many tools the inference that made `request` advertised, when it
+/// recorded them.
+pub(super) fn advertised_tool_count(messages: &[Message], request: &ToolRequest) -> Option<usize> {
+    requesting_message(messages, request)?
+        .metadata
+        .operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE)
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+}
+
+pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
+    let Some(tool_call) = request.tool_call.as_ref().ok() else {
+        return true;
+    };
+    let Some(message) = requesting_message(messages, request) else {
         return false;
     };
     if message.metadata.inference.is_none() {

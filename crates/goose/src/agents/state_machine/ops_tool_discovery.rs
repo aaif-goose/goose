@@ -14,7 +14,8 @@ use tracing_futures::Instrument;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_toolcalling::{
-    pending_advertised_tool_requests, tool_span, ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
+    advertised_tool_count, pending_advertised_tool_requests, tool_span, ToolDisposition,
+    EXPIRED_APPROVAL_RESPONSE,
 };
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
@@ -63,6 +64,11 @@ fn parse_tool_names(arguments: Option<&JsonObject>) -> Result<Vec<String>, Strin
         .map_err(|error| format!("Invalid arguments: {error}"))
 }
 
+/// Slots for the tools operations add to a request (`load_skill`,
+/// `load_tools`, a recipe's `final_output`) when the request's own count
+/// wasn't recorded.
+const RESERVED_OPERATION_TOOLS: usize = 3;
+
 pub struct ToolDiscoveryOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
@@ -87,10 +93,13 @@ impl ToolDiscoveryOperation {
             .filter(|lease| lease.scope_id() == session.id.as_str())
     }
 
+    /// `advertised` is how many tools the inference that called `load_tools`
+    /// sent, when it recorded them.
     async fn load(
         lease: &ExtensionLease,
         state: &mut ToolDiscoveryState,
         arguments: Option<&JsonObject>,
+        advertised: Option<usize>,
     ) -> CallToolResult {
         let requested = match parse_tool_names(arguments) {
             Ok(requested) => requested,
@@ -99,8 +108,20 @@ impl ToolDiscoveryOperation {
         let mut available = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
         available.retain(is_tool_visible_to_model);
         let deferrable = lease.deferrable_tools().await;
-        let (outcome, newly_loaded) =
-            resolve_load(&requested, &available, &deferrable, &state.loaded_tools);
+        let advertised = advertised.unwrap_or_else(|| {
+            let still_deferred = deferrable
+                .iter()
+                .filter(|tool| !state.loaded_tools.iter().any(|name| name == &*tool.name))
+                .count();
+            available.len() - still_deferred + RESERVED_OPERATION_TOOLS
+        });
+        let (outcome, newly_loaded) = resolve_load(
+            &requested,
+            &available,
+            &deferrable,
+            &state.loaded_tools,
+            advertised,
+        );
         state.loaded_tools.extend(newly_loaded);
         let text = serde_json::to_string(&outcome).expect("load outcome serializes");
         if outcome.loaded.is_empty() {
@@ -172,9 +193,18 @@ impl Operation<Session, GooseEffect> for ToolDiscoveryOperation {
                         anyhow!("load_tools tool call could not be parsed: {error}")
                     })?;
                     let span = tool_span(&tool_call.name, &request.id, &session.id);
-                    let result = Self::load(lease, &mut state, tool_call.arguments.as_ref())
-                        .instrument(span.clone())
-                        .await;
+                    let loaded_this_batch =
+                        state.loaded_tools.len() - original_state.loaded_tools.len();
+                    let advertised = advertised_tool_count(messages, &request)
+                        .map(|count| count + loaded_this_batch);
+                    let result = Self::load(
+                        lease,
+                        &mut state,
+                        tool_call.arguments.as_ref(),
+                        advertised,
+                    )
+                    .instrument(span.clone())
+                    .await;
                     if result.is_error == Some(true) {
                         span.record("error.type", "tool_error");
                     }
