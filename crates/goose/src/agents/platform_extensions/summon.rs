@@ -1255,7 +1255,6 @@ impl SummonClient {
             params.extensions.as_deref(),
         )?;
 
-
         let (provider_name, model_config) = self
             .resolve_provider_config(params, recipe, session)
             .await?;
@@ -1500,10 +1499,6 @@ impl McpClientTrait for SummonClient {
     }
 }
 
-/// Resolve a requested `working_dir` override against the parent session
-/// directory. Relative paths are joined to the parent dir; the result must
-/// canonicalize to an existing directory contained within the parent dir.
-
 fn extension_matches_filter(ext: &ExtensionConfig, requested: &str) -> bool {
     let key = ext.key();
     requested == ext.name() || requested == key || name_to_key(requested) == key
@@ -1562,6 +1557,9 @@ fn apply_delegate_extension_filter(
         .collect())
 }
 
+/// Resolve a requested `working_dir` override against the parent session
+/// directory. Relative paths are joined to the parent dir; the result must
+/// canonicalize to an existing directory contained within the parent dir.
 fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, anyhow::Error> {
     let requested_path = PathBuf::from(requested);
     let resolved = if requested_path.is_absolute() {
@@ -1657,7 +1655,6 @@ mod tests {
         Ok(())
     }
 
-
     fn test_extension(name: &str) -> ExtensionConfig {
         ExtensionConfig::stdio(name, "echo", "", 30u64)
     }
@@ -1723,7 +1720,6 @@ mod tests {
         let inherited = apply_delegate_extension_filter(extensions.clone(), None).unwrap();
         assert_eq!(inherited, extensions);
     }
-
 
     #[tokio::test]
     #[serial]
