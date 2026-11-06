@@ -26,7 +26,7 @@ const detectLinuxArch = async () => {
   return /aarch64|arm64/i.test(navigator.userAgent || '') ? 'arm64' : 'x64';
 };
 
-const LinuxDesktopInstallButtons = () => {
+const LinuxDesktopInstallButtons = ({ includeSnap = true }) => {
   const [downloadUrls, setDownloadUrls] = useState({
     deb: FALLBACK_URL,
     rpm: FALLBACK_URL,
@@ -91,7 +91,7 @@ const LinuxDesktopInstallButtons = () => {
 
   return (
     <div>
-      <p>Click one of the buttons below to download goose Desktop for Linux:</p>
+      <p>Choose a package format to install goose Desktop on Linux:</p>
       <div className="pill-button" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         <Link
           className="button button--primary button--lg"
@@ -111,6 +111,14 @@ const LinuxDesktopInstallButtons = () => {
         >
           <IconDownload /> Flatpak (Universal)
         </Link>
+        {includeSnap && (
+          <Link
+            className="button button--primary button--lg"
+            to="https://snapcraft.io/goose"
+          >
+            <IconDownload /> Snap Store (Classic)
+          </Link>
+        )}
       </div>
     </div>
   );
