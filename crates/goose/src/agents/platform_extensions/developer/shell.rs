@@ -217,7 +217,7 @@ pub struct ShellTool {
 impl ShellTool {
     pub fn new() -> std::io::Result<Self> {
         Ok(Self {
-            output_dir: tempfile::tempdir()?,
+            output_dir: crate::utils::private_tempdir_builder().tempdir()?,
             call_index: AtomicUsize::new(0),
         })
     }
@@ -843,6 +843,20 @@ mod tests {
 
         assert_eq!(result.is_error, Some(false));
         assert!(extract_text(&result).contains("hello"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_directory_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tool = ShellTool::new().unwrap();
+        let mode = std::fs::metadata(tool.output_dir.path())
+            .unwrap()
+            .permissions()
+            .mode();
+
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     #[cfg(not(windows))]
