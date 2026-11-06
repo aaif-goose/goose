@@ -10,7 +10,7 @@ Give GooseBusters a phone number and a task. It proposes a plan, asks for your
 approval, conducts the call, and reports what happened with supporting quotes
 from the conversation. A CLI and a Tauri desktop app expose the same workflow.
 
-Built with **GDK**: `goose-agent` and the provider components, without depending
+Built with **oi-kit**: `goose-agent` and the provider components, without depending
 on the complete goose application.
 
 [Source](https://github.com/DOsinga/goose-busters) ·

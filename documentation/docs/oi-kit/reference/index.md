@@ -1,12 +1,12 @@
 ---
-title: GDK Reference
+title: oi-kit Reference
 sidebar_label: Reference
-description: GDK crates and generated API documentation for Rust, Python, and Kotlin.
+description: oi-kit crates and generated API documentation for Rust, Python, and Kotlin.
 ---
 
-# GDK Reference
+# oi-kit Reference
 
-GDK is a set of Rust crates. Use the crates your application needs, or use the
+oi-kit is a set of Rust crates. Use the crates your application needs, or use the
 Python and Kotlin bindings provided by `goose-sdk`.
 
 ## Crates
@@ -38,7 +38,7 @@ shared model metadata and helpers for context limits, prompt caching, and
 reasoning content, so these concepts do not need a different representation for
 every provider.
 
-Depend on this crate when implementing a provider or working with GDK messages
+Depend on this crate when implementing a provider or working with oi-kit messages
 without needing the provider implementations or agent runtime. A provider
 implements streaming through `MessageStream`; the default `complete` method
 collects that stream into a message and usage. Text can arrive incrementally,
@@ -71,7 +71,7 @@ a summary message and records the model usage. The higher-level `compact`
 function reads and writes through `CompactionInput` and `CompactionOutput`, so
 your application can keep its own conversation representation and storage.
 
-Use `ProviderModel` to summarize with an existing GDK provider, or implement
+Use `ProviderModel` to summarize with an existing oi-kit provider, or implement
 `CompactionModel` to control model selection yourself. Prompt templates and an
 optional `TokenEstimator` let you shape the summary and limit its input; the
 crate also defines structured summaries with file activity. For a simpler
@@ -126,7 +126,7 @@ messages without depending on the goose application. The types include
 serialization and JSON-schema definitions, keeping the wire format in one place
 for the server, clients, and generated documentation. It does not start an agent
 or establish a connection: use an ACP client library for transport and standard
-protocol methods, and the [goose ACP reference](/docs/gdk/acp/reference) for the
+protocol methods, and the [goose ACP reference](/docs/oi-kit/acp/reference) for the
 additional methods.
 
 ### [goose-sdk](https://docs.rs/goose-sdk/latest/goose_sdk/)
@@ -134,7 +134,7 @@ additional methods.
 The cross-language bindings package and a small Rust entry point for the shared
 wire types. With default features, it re-exports `custom_requests` and
 `custom_notifications` from `goose-sdk-types`. It is not an umbrella crate that
-automatically assembles an agent or exposes every GDK component; Rust
+automatically assembles an agent or exposes every oi-kit component; Rust
 applications building an in-process runtime use the component crates above.
 
 The optional `uniffi` feature exposes native APIs to Python and Kotlin. These
@@ -148,24 +148,24 @@ bindings; see the generated language references below for the available API.
 ## API documentation
 
 - **Rust:** follow the crate links above for the full native APIs.
-- **[Python](/docs/gdk/sdk/api-reference?language=python):** generated bindings reference.
-- **[Kotlin](/docs/gdk/sdk/api-reference?language=kotlin):** generated bindings reference.
+- **[Python](/docs/oi-kit/sdk/api-reference?language=python):** generated bindings reference.
+- **[Kotlin](/docs/oi-kit/sdk/api-reference?language=kotlin):** generated bindings reference.
 
 For coding agents or other clients without JavaScript, use the generated
-[Python Markdown reference](pathname:///docs/gdk/sdk/api-reference-python.md) or
-[Kotlin Markdown reference](pathname:///docs/gdk/sdk/api-reference-kotlin.md).
+[Python Markdown reference](pathname:///docs/oi-kit/sdk/api-reference-python.md) or
+[Kotlin Markdown reference](pathname:///docs/oi-kit/sdk/api-reference-kotlin.md).
 Both include method anchors and links to their versioned API snapshots.
 
 The Python and Kotlin bindings currently expose model providers, streaming
 completions, and conversation compaction. They do not expose the full agent
 runtime available in Rust.
 
-Select the documentation version that matches your dependencies. GDK is in alpha;
+Select the documentation version that matches your dependencies. oi-kit is in alpha;
 APIs may change between releases.
 
 ## ACP
 
 For apps that connect to the pre-built goose agent, see the
-[ACP walkthrough](/docs/gdk/acp), the
+[ACP walkthrough](/docs/oi-kit/acp), the
 [standard protocol reference](https://agentclientprotocol.com/protocol/v1/overview),
-and the generated reference for [goose extensions](/docs/gdk/acp/reference).
+and the generated reference for [goose extensions](/docs/oi-kit/acp/reference).

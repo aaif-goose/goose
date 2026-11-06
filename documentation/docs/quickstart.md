@@ -18,7 +18,7 @@ import { PanelLeft } from 'lucide-react';
 # goose in 5 minutes
 
 goose is an extensible open source AI agent that enhances your software development by automating coding tasks.
-To build agents into your own application, explore the [goose Development Kit (GDK)](/docs/gdk/).
+To build agents into your own application, explore [oi-kit](/docs/oi-kit/).
 
 This quick tutorial will guide you through:
 

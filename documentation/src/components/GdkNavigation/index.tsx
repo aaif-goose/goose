@@ -7,8 +7,8 @@ export const GdkBlogContext = createContext(false);
 
 export function useGdkNavigation(): boolean {
   const { pathname } = useLocation();
-  const gdkPath = useBaseUrl("/docs/gdk");
-  const blogPath = useBaseUrl("/blog/tags/gdk");
+  const gdkPath = useBaseUrl("/docs/oi-kit");
+  const blogPath = useBaseUrl("/blog/tags/oi-kit");
   const isGdkPost = useContext(GdkBlogContext);
 
   return (
@@ -21,7 +21,7 @@ export function useGdkNavigation(): boolean {
 
 export const gdkNavbarItems = [
   {
-    to: "/blog/tags/gdk",
+    to: "/blog/tags/oi-kit",
     label: "Blog",
     activeBasePath: "blog",
   },

@@ -12,7 +12,7 @@ secret store, an existing user login, or an organization-specific credential
 service. That choice should not require changing the agent's operations or
 conversation format.
 
-GDK separates the HTTP authentication mechanism from the provider's request
+oi-kit separates the HTTP authentication mechanism from the provider's request
 format. `ApiClient` accepts an `AuthMethod`; a custom method can ask your
 application for the current credential whenever it prepares a request. Provider
 implementations can also have their own authentication flows where a service
@@ -49,10 +49,10 @@ requires custom certificate authorities or a client certificate.
 
 The Databricks implementation supports token and OAuth configurations through
 `DatabricksAuth`. Its auth provider accepts application-supplied callbacks for
-obtaining tokens; GDK does not assume every host has the same browser login or
+obtaining tokens; oi-kit does not assume every host has the same browser login or
 credential storage.
 
-[Declarative providers](/docs/gdk/concepts/providers#declarative-providers) can
+[Declarative providers](/docs/oi-kit/concepts/providers#declarative-providers) can
 name an API-key variable and resolve it through `KeyResolver`. The supplied
 `EnvKeyResolver` uses the process environment. A definition can alternatively
 configure a command that obtains a credential, with caching and refresh
@@ -106,7 +106,7 @@ Authenticating a model request is also different from authenticating a client
 connection to goose. If your application uses the pre-built binary over ACP,
 the backend's provider credentials belong on the backend; a `goose serve`
 connection has its own authentication. See
-[Build an app with goose](/docs/gdk/acp#use-a-server-instead) for that path.
+[Build an app with goose](/docs/oi-kit/acp#use-a-server-instead) for that path.
 
 The full HTTP authentication and TLS APIs are in
 [`goose-providers::api_client`](https://docs.rs/goose-providers/latest/goose_providers/api_client/).
