@@ -3,8 +3,9 @@ use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::state_machine::DELEGATED_META_KEY;
 use crate::agents::tool_execution::ToolCallContext;
+use crate::config::extensions::name_to_key;
 use crate::config::paths::Paths;
-use crate::config::{resolve_extensions_for_new_session, Config, GooseMode};
+use crate::config::{resolve_extensions_for_new_session, Config, ExtensionConfig, GooseMode};
 use crate::conversation::message::Message;
 use crate::providers;
 use crate::recipe::build_recipe::build_recipe_from_template;
@@ -1243,34 +1244,17 @@ impl SummonClient {
         recipe: &Recipe,
         session: &Session,
     ) -> Result<SubagentConfig> {
-        let mut extensions = resolve_extensions_for_new_session(
-            recipe.extensions.as_deref(),
-            Some(EnabledExtensionsState::extensions_or_default(
-                Some(&session.extension_data),
-                Config::global(),
-            )),
-        );
+        let extensions = apply_delegate_extension_filter(
+            resolve_extensions_for_new_session(
+                recipe.extensions.as_deref(),
+                Some(EnabledExtensionsState::extensions_or_default(
+                    Some(&session.extension_data),
+                    Config::global(),
+                )),
+            ),
+            params.extensions.as_deref(),
+        )?;
 
-        if let Some(filter) = &params.extensions {
-            if filter.is_empty() {
-                extensions = Vec::new();
-            } else {
-                let available_names: Vec<String> =
-                    extensions.iter().map(|ext| ext.name()).collect();
-                extensions.retain(|ext| filter.contains(&ext.name()));
-                let unmatched: Vec<&str> = filter
-                    .iter()
-                    .filter(|name| !available_names.iter().any(|n| n == *name))
-                    .map(String::as_str)
-                    .collect();
-                if !unmatched.is_empty() {
-                    warn!(
-                        "Delegate requested extensions not available: {:?}. Available: {:?}",
-                        unmatched, available_names
-                    );
-                }
-            }
-        }
 
         let (provider_name, model_config) = self
             .resolve_provider_config(params, recipe, session)
@@ -1519,6 +1503,65 @@ impl McpClientTrait for SummonClient {
 /// Resolve a requested `working_dir` override against the parent session
 /// directory. Relative paths are joined to the parent dir; the result must
 /// canonicalize to an existing directory contained within the parent dir.
+
+fn extension_matches_filter(ext: &ExtensionConfig, requested: &str) -> bool {
+    let key = ext.key();
+    requested == ext.name() || requested == key || name_to_key(requested) == key
+}
+
+fn available_extension_labels(extensions: &[ExtensionConfig]) -> Vec<String> {
+    extensions
+        .iter()
+        .map(|ext| {
+            let name = ext.name();
+            let key = ext.key();
+            if name == key {
+                name
+            } else {
+                format!("{name} ({key})")
+            }
+        })
+        .collect()
+}
+
+fn apply_delegate_extension_filter(
+    extensions: Vec<ExtensionConfig>,
+    filter: Option<&[String]>,
+) -> Result<Vec<ExtensionConfig>> {
+    let Some(filter) = filter else {
+        return Ok(extensions);
+    };
+    if filter.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let unmatched: Vec<&str> = filter
+        .iter()
+        .filter(|requested| {
+            !extensions
+                .iter()
+                .any(|ext| extension_matches_filter(ext, requested))
+        })
+        .map(String::as_str)
+        .collect();
+    if !unmatched.is_empty() {
+        anyhow::bail!(
+            "Delegate requested extensions not available in session: {:?}. Available: {:?}",
+            unmatched,
+            available_extension_labels(&extensions)
+        );
+    }
+
+    Ok(extensions
+        .into_iter()
+        .filter(|ext| {
+            filter
+                .iter()
+                .any(|requested| extension_matches_filter(ext, requested))
+        })
+        .collect())
+}
+
 fn resolve_working_dir(parent_dir: &Path, requested: &str) -> Result<PathBuf, anyhow::Error> {
     let requested_path = PathBuf::from(requested);
     let resolved = if requested_path.is_absolute() {
@@ -1611,6 +1654,110 @@ mod tests {
                 expected
             );
         }
+        Ok(())
+    }
+
+
+    fn test_extension(name: &str) -> ExtensionConfig {
+        ExtensionConfig::stdio(name, "echo", "", 30u64)
+    }
+
+    #[test]
+    fn test_extension_filter_matches_display_name_and_normalized_key() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+
+        let by_name =
+            apply_delegate_extension_filter(extensions.clone(), Some(&["Exa Search".to_string()]))
+                .unwrap();
+        let by_key =
+            apply_delegate_extension_filter(extensions.clone(), Some(&["exasearch".to_string()]))
+                .unwrap();
+
+        assert_eq!(by_name, by_key);
+        assert_eq!(by_name.len(), 1);
+        assert_eq!(by_name[0].name(), "Exa Search");
+
+        let by_platform_case =
+            apply_delegate_extension_filter(extensions, Some(&["Developer".to_string()])).unwrap();
+        assert_eq!(by_platform_case.len(), 1);
+        assert_eq!(by_platform_case[0].name(), "developer");
+    }
+
+    #[test]
+    fn test_extension_filter_unknown_name_errors() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+        let err = apply_delegate_extension_filter(extensions, Some(&["missing".to_string()]))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("missing"), "got {err}");
+        assert!(err.contains("Exa Search"), "got {err}");
+        assert!(err.contains("exasearch"), "got {err}");
+        assert!(err.contains("developer"), "got {err}");
+    }
+
+    #[test]
+    fn test_extension_filter_mixed_valid_and_invalid_fails() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+        let err = apply_delegate_extension_filter(
+            extensions,
+            Some(&["exasearch".to_string(), "missing".to_string()]),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("missing"), "got {err}");
+        assert!(
+            !err.contains("No provider configured"),
+            "filter errors must not reach provider resolution, got {err}"
+        );
+    }
+
+    #[test]
+    fn test_extension_filter_empty_disables_all_and_omitted_inherits() {
+        let extensions = vec![test_extension("Exa Search"), test_extension("developer")];
+
+        let disabled = apply_delegate_extension_filter(extensions.clone(), Some(&[])).unwrap();
+        assert!(disabled.is_empty());
+
+        let inherited = apply_delegate_extension_filter(extensions.clone(), None).unwrap();
+        assert_eq!(inherited, extensions);
+    }
+
+
+    #[tokio::test]
+    #[serial]
+    async fn delegate_extension_filter_unmatched_fails_closed() -> Result<()> {
+        let _env = env_lock::lock_env([
+            ("GOOSE_SUBAGENT_PROVIDER", Some("openai")),
+            ("GOOSE_SUBAGENT_MODEL", Some("test-model")),
+        ]);
+        let client = SummonClient::new(create_test_context())?;
+        let mut parent = session_with(goose_providers::model::ModelConfig::new("test-model"));
+        let inherited = Recipe::from_content(
+            "title: Parent\ndescription: Parent\nprompt: Run\nextensions:\n  - type: platform\n    name: summon\n",
+        )?
+        .extensions
+        .unwrap();
+        EnabledExtensionsState::new(inherited).to_extension_data(&mut parent.extension_data)?;
+        let recipe = empty_recipe();
+        let params = DelegateParams {
+            extensions: Some(vec!["missing".to_string()]),
+            ..Default::default()
+        };
+        let err = match client
+            .resolve_subagent_config(&params, &recipe, &parent)
+            .await
+        {
+            Ok(_) => panic!("expected unmatched extension filter to fail closed"),
+            Err(e) => e.to_string(),
+        };
+        assert!(err.contains("missing"), "got {err}");
+        assert!(err.contains("summon"), "got {err}");
+        assert!(
+            !err.contains("No provider configured"),
+            "unmatched filters must fail before provider resolution, got {err}"
+        );
         Ok(())
     }
 
