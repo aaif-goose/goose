@@ -1,8 +1,8 @@
 {
-  "label": "GDK",
+  "label": "oi-kit",
   "position": 3,
   "link": {
     "type": "doc",
-    "id": "gdk/index"
+    "id": "oi-kit/index"
   }
 }

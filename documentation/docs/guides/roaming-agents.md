@@ -35,7 +35,7 @@ or wire p2p agent access into your own application.
 ## The core idea: roaming is an ACP transport
 
 Roaming does exactly one thing: it provides an **authenticated, peer-to-peer
-[ACP](/docs/gdk/acp) transport**. The host runs goose's real ACP
+[ACP](/docs/oi-kit/acp) transport**. The host runs goose's real ACP
 server; the connecting side is an ACP client. That's it.
 
 Everything that feels "session-shaped" is therefore just plain ACP that happens

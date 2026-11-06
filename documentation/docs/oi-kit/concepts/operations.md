@@ -111,7 +111,7 @@ let machine = StateMachine::new(
 ```
 
 Here `tools`, `inference`, and the runtime come from your agent assembly, as in
-[Hello World](/docs/gdk/hello-world). The ordering is intentional: a tool request
+[Hello World](/docs/oi-kit/hello-world). The ordering is intentional: a tool request
 from the third assistant turn still gets a response. After that response is
 saved, the budget operation yields before a fourth inference call can start.
 Putting the limit before tools would stop earlier but could leave unanswered
@@ -124,7 +124,7 @@ application has its own `MaxTurnsOperation` with additional prompt context.
 
 ## Operations available today
 
-### Reusable GDK components
+### Reusable oi-kit components {#reusable-gdk-components}
 
 These are public APIs in `goose-agent`; your application supplies the required
 tools, provider, or subagent runner:
@@ -138,7 +138,7 @@ tools, provider, or subagent runner:
 ### Operations in goose
 
 goose composes a larger agent from the same interfaces. The following are
-implementations in the goose application, **not stable, reusable GDK APIs**.
+implementations in the goose application, **not stable, reusable oi-kit APIs**.
 They depend on goose's session, configuration, extensions, and hooks. Use them
 as examples of the behavior an operation can own, not as an import list for
 your application.
@@ -190,6 +190,6 @@ an operation has already done. If a step holds received output across an await,
 implement `finalize_cancellation` to return output that has not yet been saved.
 Cancellation does not roll back external actions.
 
-For a larger example, [GooseBusters](/docs/gdk/demos/goosebusters) uses custom
+For a larger example, [GooseBusters](/docs/oi-kit/demos/goosebusters) uses custom
 operations to coordinate a phone call. The full contract and result types are
 in [`goose-agent::operation`](https://docs.rs/goose-agent/latest/goose_agent/operation/).

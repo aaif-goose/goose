@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate GDK API reference data from the UniFFI surface in goose-sdk.
+"""Generate oi-kit API reference data from the UniFFI surface in goose-sdk.
 
 `crates/goose-sdk/src/bindings.rs` is the single source of truth for the Rust,
-Python, and Kotlin GDK APIs, so the docs are derived from it instead of being
+Python, and Kotlin oi-kit APIs, so the docs are derived from it instead of being
 written by hand. Output is `documentation/src/data/gdk-api.json`, holding one
-entry per GDK release series, consumed by the GdkApiReference component.
+entry per oi-kit release series, consumed by the GdkApiReference component.
 
 Usage:
     python3 documentation/automation/gdk-api/generate.py [--check]

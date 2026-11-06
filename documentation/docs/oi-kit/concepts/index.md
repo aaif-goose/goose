@@ -1,12 +1,12 @@
 ---
 title: Concepts
-description: How GDK's state machine, operations, providers, and authentication fit together.
+description: How oi-kit's state machine, operations, providers, and authentication fit together.
 displayed_sidebar: gdkSidebar
 ---
 
 # Concepts
 
-GDK gives you components for building an agent, rather than one fixed agent
+oi-kit gives you components for building an agent, rather than one fixed agent
 with a set of configuration options. Your application decides what work is
 allowed, how state is stored, which models to use, and how the agent interacts
 with the outside world.
@@ -19,21 +19,21 @@ before deciding what to do next.
 
 ## Start here
 
-- [State machine](/docs/gdk/concepts/state-machine): how the execution cycle
+- [State machine](/docs/oi-kit/concepts/state-machine): how the execution cycle
   works, what yielding means, and how persistence makes resuming possible.
-- [Operations](/docs/gdk/concepts/operations): the units you compose into that
+- [Operations](/docs/oi-kit/concepts/operations): the units you compose into that
   machine, a worked example, the operations available today, and when to write
   your own.
-- [Providers](/docs/gdk/concepts/providers): the model interface, built-in and
+- [Providers](/docs/oi-kit/concepts/providers): the model interface, built-in and
   declarative implementations, and the difference between local inference and
   talking to a local model server.
-- [Authentication](/docs/gdk/concepts/authentication): how a provider gets its
-  credentials, which mechanisms ship with GDK, and how to supply your own.
+- [Authentication](/docs/oi-kit/concepts/authentication): how a provider gets its
+  credentials, which mechanisms ship with oi-kit, and how to supply your own.
 
-Read [Hello World](/docs/gdk/hello-world) for a concrete assembly of these
-pieces. These pages explain the design; the [reference](/docs/gdk/reference)
-links to the full APIs. Examples here follow the GDK APIs in this checkout
+Read [Hello World](/docs/oi-kit/hello-world) for a concrete assembly of these
+pieces. These pages explain the design; the [reference](/docs/oi-kit/reference)
+links to the full APIs. Examples here follow the oi-kit APIs in this checkout
 (`0.1.0-alpha.13`); Hello World follows the example's pinned alpha.12 release.
 
 If you want an existing agent behind your own interface instead, you can
-[build an app with goose over ACP](/docs/gdk/acp) without assembling the runtime.
+[build an app with goose over ACP](/docs/oi-kit/acp) without assembling the runtime.

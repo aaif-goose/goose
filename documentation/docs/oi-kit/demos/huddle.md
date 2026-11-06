@@ -1,6 +1,6 @@
 ---
 title: Huddle
-description: A voice interface that delegates longer tasks to an ACP agent through GDK live provider events.
+description: A voice interface that delegates longer tasks to an ACP agent through oi-kit live provider events.
 displayed_sidebar: gdkSidebar
 ---
 
@@ -10,7 +10,7 @@ Huddle is a small desktop application for talking to a local agent. A live voice
 model handles the conversation. When a request needs work, Huddle passes it to
 an ACP agent and sends the result back to the voice model to speak aloud.
 
-Built with **GDK + ACP**: the live provider interface from `goose-providers`,
+Built with **oi-kit + ACP**: the live provider interface from `goose-providers`,
 with goose or another ACP agent doing the delegated work.
 
 [Source](https://github.com/jamadeo/goose-huddle)
@@ -31,7 +31,7 @@ agent instead of rebuilding the entire stack for a new interface.
 ## How it works
 
 1. The webview captures microphone audio and plays the response over WebRTC.
-2. Rust starts the live session through GDK and listens on its sideband control
+2. Rust starts the live session through oi-kit and listens on its sideband control
    connection for transcript and delegation events.
 3. A delegation becomes a prompt to the persistent ACP session.
 4. The agent's result is returned through the live provider connection.

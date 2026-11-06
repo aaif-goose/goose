@@ -12,12 +12,12 @@ commands, and keep a conversation across turns and application restarts.
 
 This is an annotated walkthrough of Jack's
 [`ngrc` example](https://github.com/jamadeo/ngrc/tree/dc25c579cd40d85f8d90b61e80cbf02b8838564f).
-GDK handles inference, tool dispatch, and the model/tool loop. The application
+oi-kit handles inference, tool dispatch, and the model/tool loop. The application
 chooses the provider, tools, prompt, storage, and interface.
 
 The code blocks below are selected excerpts, with some setup shortened for
 clarity. Use the linked repository for the complete runnable program, imports,
-and session store. This walkthrough uses revision `dc25c57`, which pins GDK
+and session store. This walkthrough uses revision `dc25c57`, which pins oi-kit
 `0.1.0-alpha.12`; newer alpha releases may have different APIs.
 
 ## Run it first
@@ -100,7 +100,7 @@ function. The application only needs a loop for accepting new user messages.
 
 ## Choose a provider and model
 
-The example uses three GDK crates:
+The example uses three oi-kit crates:
 
 ```toml
 [dependencies]
@@ -247,7 +247,7 @@ context instead of relying on one fixed prompt.
 
 ## Own the session and its effects
 
-GDK does not require a particular database or session format. The application
+oi-kit does not require a particular database or session format. The application
 provides a session that exposes its ID and conversation:
 
 ```rust
@@ -387,7 +387,7 @@ machine around the same stored session. The machine has no conversation of its
 own to carry between turns.
 
 The application also connects Ctrl-C to the shared `CancellationToken`. It
-awaits the machine after cancellation so GDK can finalize interrupted tool
+awaits the machine after cancellation so oi-kit can finalize interrupted tool
 responses before the display task finishes.
 
 ## Resume the conversation
@@ -420,6 +420,6 @@ tool, replace the request preparer, choose another provider, or implement a
 different session store. More specialized behavior can become another
 operation in the machine's ordered list.
 
-Explore the [demos](/docs/gdk/demos) for larger applications, or use the
-[reference](/docs/gdk/reference) to find the component APIs. For this example,
+Explore the [demos](/docs/oi-kit/demos) for larger applications, or use the
+[reference](/docs/oi-kit/reference) to find the component APIs. For this example,
 select version `0.1.0-alpha.12` in the generated Rust documentation.

@@ -1,6 +1,6 @@
-# goose and GDK
+# goose and oi-kit
 
-> This site covers using goose, the open-source agent application, and building applications with the goose Development Kit (GDK).
+> This site covers using goose, the open-source agent application, and building applications with oi-kit.
 
 Read the relevant documentation before writing commands, configuration, or code. Guides and Python/Kotlin references below are Markdown; native Rust APIs link to docs.rs.
 
@@ -20,18 +20,18 @@ Read the relevant documentation before writing commands, configuration, or code.
 
 ## For developers
 
-Use GDK's Rust crates to assemble an agent or call models directly. Python and Kotlin bindings expose providers and conversation compaction, not the full agent runtime. Use ACP to make the pre-built goose agent the backend for your application.
+Use oi-kit's Rust crates to assemble an agent or call models directly. Python and Kotlin bindings expose providers and conversation compaction, not the full agent runtime. Use ACP to make the pre-built goose agent the backend for your application.
 
-- [Introduction](/docs/gdk/index.md): Choose how GDK and goose fit your application.
-- [Getting Started](/docs/gdk/hello-world.md): Build a small Rust agent with tools, streaming, and a saved conversation.
-- [Demos](/docs/gdk/demos/index.md): Find working projects, source code, and explanations of their architectural choices.
-- [State machine](/docs/gdk/concepts/state-machine.md): Understand execution order, effects, persistence, yielding, and resuming.
-- [Operations](/docs/gdk/concepts/operations.md): Compose behavior, inspect existing implementations, and write your own operation.
-- [Providers](/docs/gdk/concepts/providers.md): Choose or implement a model backend, including declarative providers, local inference and voice.
-- [Authentication](/docs/gdk/concepts/authentication.md): Supply provider credentials or integrate your own authentication.
-- [Build an app with goose](/docs/gdk/acp/index.md): Launch goose over ACP, connect, send prompts, and handle streamed updates and permissions.
-- [goose ACP extensions](/docs/gdk/acp/reference.md): Look up goose-specific protocol methods, notifications, and types; use the linked ACP specification for standard methods.
-- [Reference](/docs/gdk/reference/index.md): Choose crates and follow links to generated Rust, Python, and Kotlin API documentation. Check the API version against your dependencies before writing code.
+- [Introduction](/docs/oi-kit/index.md): Choose how oi-kit and goose fit your application.
+- [Getting Started](/docs/oi-kit/hello-world.md): Build a small Rust agent with tools, streaming, and a saved conversation.
+- [Demos](/docs/oi-kit/demos/index.md): Find working projects, source code, and explanations of their architectural choices.
+- [State machine](/docs/oi-kit/concepts/state-machine.md): Understand execution order, effects, persistence, yielding, and resuming.
+- [Operations](/docs/oi-kit/concepts/operations.md): Compose behavior, inspect existing implementations, and write your own operation.
+- [Providers](/docs/oi-kit/concepts/providers.md): Choose or implement a model backend, including declarative providers, local inference and voice.
+- [Authentication](/docs/oi-kit/concepts/authentication.md): Supply provider credentials or integrate your own authentication.
+- [Build an app with goose](/docs/oi-kit/acp/index.md): Launch goose over ACP, connect, send prompts, and handle streamed updates and permissions.
+- [goose ACP extensions](/docs/oi-kit/acp/reference.md): Look up goose-specific protocol methods, notifications, and types; use the linked ACP specification for standard methods.
+- [Reference](/docs/oi-kit/reference/index.md): Choose crates and follow links to generated Rust, Python, and Kotlin API documentation. Check the API version against your dependencies before writing code.
 
 ### Generated Rust APIs
 
@@ -48,11 +48,11 @@ Use the docs.rs version selector to match your dependencies; `latest` may differ
 
 These references require no JavaScript. Each identifies the exact API snapshot and links to a versioned copy.
 
-- [Python API](/docs/gdk/sdk/api-reference-python.md): Provider constructors, records, enums, callbacks, and errors. Start at [functions](/docs/gdk/sdk/api-reference-python.md#functions) to construct a provider.
-- Python calls: [completion](/docs/gdk/sdk/api-reference-python.md#provider-complete), [streaming](/docs/gdk/sdk/api-reference-python.md#provider-stream), [stream chunks](/docs/gdk/sdk/api-reference-python.md#providerstream-next-chunk), [compaction](/docs/gdk/sdk/api-reference-python.md#provider-compact).
-- [Kotlin API](/docs/gdk/sdk/api-reference-kotlin.md): The same bindings surface with Kotlin names, types, and signatures; includes [completion](/docs/gdk/sdk/api-reference-kotlin.md#provider-complete), [streaming](/docs/gdk/sdk/api-reference-kotlin.md#provider-stream), and [compaction](/docs/gdk/sdk/api-reference-kotlin.md#provider-compact).
+- [Python API](/docs/oi-kit/sdk/api-reference-python.md): Provider constructors, records, enums, callbacks, and errors. Start at [functions](/docs/oi-kit/sdk/api-reference-python.md#functions) to construct a provider.
+- Python calls: [completion](/docs/oi-kit/sdk/api-reference-python.md#provider-complete), [streaming](/docs/oi-kit/sdk/api-reference-python.md#provider-stream), [stream chunks](/docs/oi-kit/sdk/api-reference-python.md#providerstream-next-chunk), [compaction](/docs/oi-kit/sdk/api-reference-python.md#provider-compact).
+- [Kotlin API](/docs/oi-kit/sdk/api-reference-kotlin.md): The same bindings surface with Kotlin names, types, and signatures; includes [completion](/docs/oi-kit/sdk/api-reference-kotlin.md#provider-complete), [streaming](/docs/oi-kit/sdk/api-reference-kotlin.md#provider-stream), and [compaction](/docs/oi-kit/sdk/api-reference-kotlin.md#provider-compact).
 
 ## More documentation
 
-- [Documentation map](/goose-docs-map.md): Find additional guides and GDK pages by topic, with Markdown paths and section headings.
+- [Documentation map](/goose-docs-map.md): Find additional guides and oi-kit pages by topic, with Markdown paths and section headings.
 - [Source repository](https://github.com/aaif-goose/goose): Inspect implementations and examples. The main branch may be ahead of published releases.

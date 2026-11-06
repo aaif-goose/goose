@@ -13,8 +13,8 @@ repeat. That works until the application also needs approvals, retries,
 compaction, external events, or a way to stop and resume. Those concerns need
 places in the execution order, not just more instructions in a prompt.
 
-GDK represents execution as an ordered list of steps. You compose a
-`StateMachine` from [operations](/docs/gdk/concepts/operations) and inference
+oi-kit represents execution as an ordered list of steps. You compose a
+`StateMachine` from [operations](/docs/oi-kit/concepts/operations) and inference
 steps. Changing the agent means changing that composition or writing an
 operation, not extending the state machine itself.
 
@@ -73,7 +73,7 @@ Because decisions are made from loaded state, a fresh machine can continue a
 saved conversation without remembering which branch of a loop it was in.
 Operations must record decisions that matter to subsequent runs rather than
 keep them only in local variables. The
-[Hello World session store](/docs/gdk/hello-world#own-the-session-and-its-effects)
+[Hello World session store](/docs/oi-kit/hello-world#own-the-session-and-its-effects)
 shows a file-backed version of this boundary.
 
 ## Yielding and resuming
@@ -112,6 +112,6 @@ to preserve received output and finalize interrupted tool responses. `run`
 handles that finalization before returning. This cannot undo external side
 effects or guarantee that work started outside the async task has stopped.
 
-Next, read [Operations](/docs/gdk/concepts/operations) to see how to compose a
+Next, read [Operations](/docs/oi-kit/concepts/operations) to see how to compose a
 policy into this cycle. The full API is in
 [`goose-agent::machine`](https://docs.rs/goose-agent/latest/goose_agent/machine/).
