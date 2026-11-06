@@ -1,6 +1,7 @@
 //! Offers `search_tools` and `load_tools` to sessions that defer tools and
 //! records what `load_tools` loads.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
@@ -24,9 +25,9 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
     OperationResult,
 };
+use crate::agents::tool_discovery::search::{search_tools, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT};
 use crate::agents::tool_discovery::{
-    defers_tools, resolve_load, search_tools, DEFAULT_SEARCH_LIMIT, LOAD_TOOLS_TOOL_NAME,
-    MAX_SEARCH_LIMIT, SEARCH_TOOLS_TOOL_NAME,
+    defers_tools, resolve_load, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
@@ -182,7 +183,19 @@ impl ToolDiscoveryOperation {
         }
         let limit = params.limit.clamp(1, MAX_SEARCH_LIMIT);
         let deferrable = lease.deferrable_tools().await;
-        let hits = search_tools(&params.query, limit, &deferrable, &state.loaded_tools);
+        let summaries: HashMap<String, String> = lease
+            .instructions()
+            .await
+            .into_iter()
+            .map(|extension| (extension.name, extension.instructions))
+            .collect();
+        let hits = search_tools(
+            &params.query,
+            limit,
+            &deferrable,
+            &summaries,
+            &state.loaded_tools,
+        );
         let text = if hits.is_empty() {
             format!(
                 "No tools matched \"{}\". Try other words, or load all of an extension's tools \

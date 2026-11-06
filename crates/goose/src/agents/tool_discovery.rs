@@ -4,8 +4,9 @@
 //! load is recorded in the session's [`ToolDiscoveryState`], not in the
 //! conversation, so compaction and resume keep it.
 
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+pub(crate) mod search;
+
+use std::collections::{BTreeMap, HashSet};
 
 use rmcp::model::Tool;
 use serde::Serialize;
@@ -19,9 +20,6 @@ use crate::session::{Session, ToolDiscoveryState};
 pub const ALWAYS_LOAD_META_KEY: &str = "goose/alwaysLoad";
 pub const LOAD_TOOLS_TOOL_NAME: &str = "load_tools";
 pub const SEARCH_TOOLS_TOOL_NAME: &str = "search_tools";
-pub const DEFAULT_SEARCH_LIMIT: usize = 10;
-pub const MAX_SEARCH_LIMIT: usize = 50;
-const DESCRIPTION_PREVIEW_CHARS: usize = 200;
 const ALL_TOOLS_SUFFIX: &str = "__*";
 /// OpenAI rejects requests with more tools than this, so a load never takes a
 /// session past it.
@@ -212,151 +210,6 @@ pub(crate) fn resolve_load(
     (outcome, newly_loaded)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct SearchHit {
-    pub name: String,
-    pub extension: String,
-    pub description: String,
-    pub loaded: bool,
-}
-
-const BM25_K1: f64 = 1.2;
-const BM25_B: f64 = 0.75;
-/// Name terms count double: a query word in a tool's name says more about
-/// what it does than the same word in its description.
-const NAME_WEIGHT: f64 = 2.0;
-
-/// Lowercased words, split on punctuation and camelCase, with a plural `s`
-/// dropped so "issues" matches "issue".
-fn terms(text: &str) -> Vec<String> {
-    let mut terms = Vec::new();
-    let mut word = String::new();
-    let mut after_lowercase = false;
-    for c in text.chars() {
-        if !c.is_alphanumeric() || (c.is_uppercase() && after_lowercase) {
-            push_term(&mut terms, std::mem::take(&mut word));
-        }
-        if c.is_alphanumeric() {
-            word.extend(c.to_lowercase());
-        }
-        after_lowercase = c.is_lowercase() || c.is_ascii_digit();
-    }
-    push_term(&mut terms, word);
-    terms
-}
-
-fn push_term(terms: &mut Vec<String>, mut word: String) {
-    if word.is_empty() {
-        return;
-    }
-    if word.chars().count() > 2 && word.ends_with('s') && !word.ends_with("ss") {
-        word.pop();
-    }
-    terms.push(word);
-}
-
-/// One field of every tool, scored with BM25 against a query.
-struct Bm25Field {
-    docs: Vec<Vec<String>>,
-    avg_len: f64,
-    idf: HashMap<String, f64>,
-}
-
-impl Bm25Field {
-    fn new(docs: Vec<Vec<String>>, query: &[String]) -> Self {
-        let n = docs.len() as f64;
-        let total_len: usize = docs.iter().map(Vec::len).sum();
-        let avg_len = (total_len as f64 / n.max(1.0)).max(1.0);
-        let idf = query
-            .iter()
-            .map(|term| {
-                let df = docs.iter().filter(|doc| doc.contains(term)).count() as f64;
-                (term.clone(), (1.0 + (n - df + 0.5) / (df + 0.5)).ln())
-            })
-            .collect();
-        Self { docs, avg_len, idf }
-    }
-
-    fn score(&self, doc: usize) -> f64 {
-        let doc = &self.docs[doc];
-        let len_norm = 1.0 - BM25_B + BM25_B * doc.len() as f64 / self.avg_len;
-        self.idf
-            .iter()
-            .map(|(term, idf)| {
-                let tf = doc.iter().filter(|word| *word == term).count() as f64;
-                idf * tf * (BM25_K1 + 1.0) / (tf + BM25_K1 * len_norm)
-            })
-            .sum()
-    }
-}
-
-fn description_preview(description: &str) -> String {
-    let first_line = description
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or_default();
-    if first_line.chars().count() <= DESCRIPTION_PREVIEW_CHARS {
-        return first_line.to_string();
-    }
-    let preview: String = first_line.chars().take(DESCRIPTION_PREVIEW_CHARS).collect();
-    format!("{}…", preview.trim_end())
-}
-
-/// Ranks `tools` against `query` with BM25 over each tool's name and
-/// description. A tool whose full name is the query ranks first; tools that
-/// match no query word are left out.
-pub(crate) fn search_tools(
-    query: &str,
-    limit: usize,
-    tools: &[Tool],
-    loaded: &[String],
-) -> Vec<SearchHit> {
-    let query = query.trim();
-    let mut query_terms = terms(query);
-    query_terms.sort();
-    query_terms.dedup();
-    let names = Bm25Field::new(
-        tools.iter().map(|tool| terms(&tool.name)).collect(),
-        &query_terms,
-    );
-    let descriptions = Bm25Field::new(
-        tools
-            .iter()
-            .map(|tool| terms(tool.description.as_deref().unwrap_or_default()))
-            .collect(),
-        &query_terms,
-    );
-
-    let mut ranked: Vec<(bool, f64, &Tool)> = tools
-        .iter()
-        .enumerate()
-        .map(|(i, tool)| {
-            let exact = tool.name.eq_ignore_ascii_case(query);
-            let score = NAME_WEIGHT * names.score(i) + descriptions.score(i);
-            (exact, score, tool)
-        })
-        .filter(|(exact, score, _)| *exact || *score > 0.0)
-        .collect();
-    ranked.sort_by(|(a_exact, a_score, a), (b_exact, b_score, b)| {
-        b_exact
-            .cmp(a_exact)
-            .then(b_score.partial_cmp(a_score).unwrap_or(Ordering::Equal))
-            .then_with(|| a.name.cmp(&b.name))
-    });
-
-    ranked
-        .into_iter()
-        .take(limit)
-        .map(|(_, _, tool)| SearchHit {
-            name: tool.name.to_string(),
-            extension: get_tool_owner(tool).unwrap_or_default(),
-            description: description_preview(tool.description.as_deref().unwrap_or_default()),
-            loaded: loaded.iter().any(|name| name == &*tool.name),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,16 +223,6 @@ mod tests {
         meta.insert("goose_extension".to_string(), json!(owner));
         tool.meta = Some(MetaObject(meta));
         tool
-    }
-
-    fn described(owner: &str, name: &str, description: &str) -> Tool {
-        let mut tool = tool(owner, name);
-        tool.description = Some(description.to_string().into());
-        tool
-    }
-
-    fn hit_names(hits: &[SearchHit]) -> Vec<&str> {
-        hits.iter().map(|hit| hit.name.as_str()).collect()
     }
 
     fn names(items: &[&str]) -> Vec<String> {
@@ -538,112 +381,5 @@ mod tests {
             );
         }
         assert_eq!(deferred_tool_named("github.merge_pr", &deferred), None);
-    }
-
-    #[test]
-    fn terms_split_names_and_drop_plurals() {
-        assert_eq!(
-            terms("github__listPullRequests v2"),
-            names(&["github", "list", "pull", "request", "v2"])
-        );
-        assert_eq!(
-            terms("Get issues, PRs & class"),
-            names(&["get", "issue", "pr", "class"])
-        );
-    }
-
-    #[test]
-    fn an_exact_name_ranks_first() {
-        let tools = vec![
-            described(
-                "linear",
-                "linear__get_issue_comments",
-                "Get a Linear issue's comments, or get the issue itself and its linked issues",
-            ),
-            described("linear", "linear__get_issue", "Fetch one record"),
-        ];
-        let hits = search_tools("linear__get_issue", 10, &tools, &[]);
-        assert_eq!(
-            hit_names(&hits),
-            ["linear__get_issue", "linear__get_issue_comments"]
-        );
-    }
-
-    #[test]
-    fn name_matches_outrank_description_matches() {
-        let tools = vec![
-            described(
-                "github",
-                "github__get_file",
-                "Read a file at a pull request's head",
-            ),
-            described("github", "github__create_pull_request", "Open a new PR"),
-            described(
-                "slack",
-                "slack__post_message",
-                "Post a message to a channel",
-            ),
-        ];
-        let hits = search_tools("pull requests", 10, &tools, &[]);
-        assert_eq!(
-            hit_names(&hits),
-            ["github__create_pull_request", "github__get_file"]
-        );
-    }
-
-    #[test]
-    fn rare_words_outweigh_common_ones() {
-        let tools = vec![
-            described("jira", "jira__get_issue", "Get an issue"),
-            described("jira", "jira__get_sprint", "Get a sprint"),
-            described("jira", "jira__get_board", "Get a board"),
-        ];
-        let hits = search_tools("get sprint", 10, &tools, &[]);
-        assert_eq!(hit_names(&hits)[0], "jira__get_sprint");
-        assert_eq!(hits.len(), 3);
-    }
-
-    #[test]
-    fn search_leaves_out_tools_that_match_nothing_and_respects_the_limit() {
-        let tools = vec![
-            described("drive", "drive__list_files", "List files"),
-            described("drive", "drive__read_file", "Read a file"),
-            described("drive", "drive__share", "Share a document"),
-        ];
-        assert!(search_tools("calendar event", 10, &tools, &[]).is_empty());
-        assert!(search_tools("  ", 10, &tools, &[]).is_empty());
-        assert_eq!(
-            hit_names(&search_tools("file", 10, &tools, &[])),
-            ["drive__list_files", "drive__read_file"]
-        );
-        assert_eq!(search_tools("file", 1, &tools, &[]).len(), 1);
-    }
-
-    #[test]
-    fn hits_carry_the_extension_a_description_preview_and_whether_they_are_loaded() {
-        let long = "x".repeat(DESCRIPTION_PREVIEW_CHARS + 10);
-        let tools = vec![
-            described(
-                "linear",
-                "linear__get_issue",
-                "\n  Get an issue by key.  \nArgs: key, the issue key.",
-            ),
-            described("linear", "linear__list_issues", &long),
-        ];
-        let hits = search_tools("issue", 10, &tools, &names(&["linear__list_issues"]));
-        assert_eq!(
-            hits[0],
-            SearchHit {
-                name: "linear__get_issue".to_string(),
-                extension: "linear".to_string(),
-                description: "Get an issue by key.".to_string(),
-                loaded: false,
-            }
-        );
-        assert!(hits[1].loaded);
-        assert_eq!(
-            hits[1].description,
-            format!("{}…", "x".repeat(DESCRIPTION_PREVIEW_CHARS))
-        );
     }
 }
