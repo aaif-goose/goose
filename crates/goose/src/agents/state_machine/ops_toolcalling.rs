@@ -21,6 +21,9 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
+use crate::agents::tool_discovery::{
+    defers_tools, unloaded_tools, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME, TOOL_DISCOVERY_NOTE,
+};
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
 };
@@ -591,18 +594,32 @@ pub(super) fn call_will_not_run(
         || final_output_called_with_other_tools(session, messages, request))
 }
 
-pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
-    let Some(tool_call) = request.tool_call.as_ref().ok() else {
-        return true;
-    };
-    let Some(message) = messages.iter().find(|message| {
+fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Option<&'a Message> {
+    messages.iter().find(|message| {
         message.role == Role::Assistant
             && message.content.iter().any(|content| {
                 content
                     .as_tool_request()
                     .is_some_and(|item| item.id == request.id)
             })
-    }) else {
+    })
+}
+
+/// How many tools the inference that made `request` advertised, when it
+/// recorded them.
+pub(super) fn advertised_tool_count(messages: &[Message], request: &ToolRequest) -> Option<usize> {
+    requesting_message(messages, request)?
+        .metadata
+        .operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE)
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+}
+
+pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {
+    let Some(tool_call) = request.tool_call.as_ref().ok() else {
+        return true;
+    };
+    let Some(message) = requesting_message(messages, request) else {
         return false;
     };
     if message.metadata.inference.is_none() {
@@ -637,7 +654,7 @@ pub(super) fn approval_expired(
         .map(|tool_call| tool_call.name.as_ref())
     {
         Ok(FINAL_OUTPUT_TOOL_NAME) => false,
-        Ok(LOAD_SKILL_TOOL_NAME) => true,
+        Ok(LOAD_SKILL_TOOL_NAME | LOAD_TOOLS_TOOL_NAME | SEARCH_TOOLS_TOOL_NAME) => true,
         _ => {
             let pending = pending_advertised_tool_requests(messages);
             !requests_can_resolve_a_lease(
@@ -649,6 +666,8 @@ pub(super) fn approval_expired(
                             && !request.tool_call.as_ref().is_ok_and(|tool_call| {
                                 tool_call.name == FINAL_OUTPUT_TOOL_NAME
                                     || tool_call.name == LOAD_SKILL_TOOL_NAME
+                                    || tool_call.name == LOAD_TOOLS_TOOL_NAME
+                                    || tool_call.name == SEARCH_TOOLS_TOOL_NAME
                             })
                     })
                     .map(|(request, _)| request),
@@ -704,15 +723,17 @@ pub(super) enum ToolDisposition {
 /// The extension block, as a header part plus one part per extension. Prompt
 /// extras are joined with a blank line, so this renders the same text as one
 /// combined part while keeping each extension's tokens attributable.
-fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)> {
-    let mut parts = vec![(
-        "extensions".to_string(),
-        "# Extensions\n\n\
+fn extension_prompt_parts(extensions: &[ExtensionInfo], defers: bool) -> Vec<(String, String)> {
+    let mut header = "# Extensions\n\n\
          Extensions provide additional tools and context from different data sources and applications.\n\
          You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
          Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
-            .to_string(),
-    )];
+        .to_string();
+    if defers {
+        header.push_str("\n\n");
+        header.push_str(TOOL_DISCOVERY_NOTE);
+    }
+    let mut parts = vec![("extensions".to_string(), header)];
     for extension in extensions {
         let mut lines = vec![format!("## {}", extension.name)];
         if extension.has_resources {
@@ -767,11 +788,15 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(self
-            .lease(session)
-            .await?
-            .tools_excluding(crate::skills::EXTENSION_NAME)
-            .await)
+        let lease = self.lease(session).await?;
+        let unloaded: HashSet<String> = unloaded_tools(session, &lease)
+            .await
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect();
+        let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
+        tools.retain(|tool| !unloaded.contains(tool.name.as_ref()));
+        Ok(tools)
     }
 
     async fn moim_parts(
@@ -816,7 +841,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        prompt_parts.extend(extension_prompt_parts(&extensions));
+        prompt_parts.extend(extension_prompt_parts(
+            &extensions,
+            defers_tools(session, &lease),
+        ));
         Ok(prompt_parts)
     }
 
@@ -1003,7 +1031,7 @@ mod tests {
             ExtensionInfo::new("memory", "", true),
         ];
 
-        let parts = extension_prompt_parts(&extensions);
+        let parts = extension_prompt_parts(&extensions, false);
 
         let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
         assert_eq!(
@@ -1018,6 +1046,21 @@ mod tests {
         assert!(rendered.ends_with(
             "## developer\n\n### Instructions\nShell things.\n\n## memory\n\nmemory supports resources."
         ));
+    }
+
+    #[test]
+    fn the_discovery_note_depends_only_on_deferring() {
+        let extensions = vec![
+            ExtensionInfo::new("developer", "Shell things.", false),
+            ExtensionInfo::new("github", "Work with GitHub.", false),
+        ];
+
+        let deferring = extension_prompt_parts(&extensions, true);
+        let not_deferring = extension_prompt_parts(&extensions, false);
+
+        assert!(deferring[0].1.ends_with(TOOL_DISCOVERY_NOTE));
+        assert!(!not_deferring[0].1.contains(TOOL_DISCOVERY_NOTE));
+        assert_eq!(deferring[1..], not_deferring[1..]);
     }
 
     #[test]

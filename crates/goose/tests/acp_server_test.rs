@@ -36,7 +36,7 @@ use goose::custom_requests::{
 };
 use goose::recipe::{Recipe, Settings};
 use goose::recipe_deeplink;
-use goose::session::{SessionManager, SessionType};
+use goose::session::{SessionManager, SessionType, ToolDiscoveryState};
 use goose_test_support::{McpFixture, FAKE_CODE};
 use std::path::Path;
 
@@ -1041,6 +1041,47 @@ fn test_new_session_cleans_up_when_config_fails() {
             .await
             .unwrap();
         assert!(sessions.is_empty());
+    });
+}
+
+#[test]
+fn test_new_session_defers_tools_from_meta() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let sessions = SessionManager::new(data_root.path().to_path_buf());
+        let discovery = |meta: serde_json::Value| {
+            let conn = &conn;
+            let sessions = &sessions;
+            let work_dir = work_dir.path();
+            async move {
+                let serde_json::Value::Object(meta) = meta else {
+                    unreachable!()
+                };
+                let id = new_session_with_meta(conn, work_dir, meta).await?;
+                let session = sessions.get_session(&id, false).await?;
+                anyhow::Ok(ToolDiscoveryState::of(&session))
+            }
+        };
+
+        assert_eq!(
+            discovery(serde_json::json!({ "enabledExtensions": [], "deferTools": true }))
+                .await
+                .unwrap(),
+            ToolDiscoveryState::deferring()
+        );
+        assert_eq!(
+            discovery(serde_json::json!({ "enabledExtensions": [] }))
+                .await
+                .unwrap(),
+            ToolDiscoveryState::default()
+        );
+        assert_invalid_params(
+            discovery(serde_json::json!({ "deferTools": "yes" }))
+                .await
+                .unwrap_err(),
+        );
     });
 }
 

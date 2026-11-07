@@ -1,5 +1,6 @@
 use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
 use crate::agents::provider_manager::ProviderManager;
+use crate::agents::tool_discovery::{LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME};
 use crate::config::permission::PermissionLevel;
 use crate::config::{GooseMode, PermissionManager};
 use crate::conversation::message::{Message, ToolRequest};
@@ -169,9 +170,13 @@ impl ToolInspector for PermissionInspector {
                                     InspectionAction::RequireApproval(None)
                                 }
                             }
-                        // 2. Check for a read-only annotation in SmartApprove mode
-                        } else if goose_mode == GooseMode::SmartApprove
-                            && self.is_readonly_annotated_tool(tool_name)
+                        // 2. Allow read-only tools in SmartApprove mode, and searching
+                        // or loading tools, which only shows the model their names or
+                        // schemas: calling a loaded tool is checked on its own.
+                        } else if (goose_mode == GooseMode::SmartApprove
+                            && self.is_readonly_annotated_tool(tool_name))
+                            || tool_name == LOAD_TOOLS_TOOL_NAME
+                            || tool_name == SEARCH_TOOLS_TOOL_NAME
                         {
                             InspectionAction::Allow
                         // 3. Special case for extension management
