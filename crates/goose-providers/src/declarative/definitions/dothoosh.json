@@ -1,0 +1,17 @@
+{
+  "name": "dothoosh",
+  "engine": "openai",
+  "display_name": "DotHoosh",
+  "description": "Iranian AI API gateway billed in Toman from a prepaid wallet: DeepSeek, Kimi, Gemini and GPT-6 models through one OpenAI-compatible endpoint. The model list is read live from the gateway.",
+  "api_key_env": "DOTHOOSH_API_KEY",
+  "base_url": "https://gateway.dothoosh.com/v1",
+  "models": [],
+  "dynamic_models": true,
+  "supports_streaming": true,
+  "model_doc_link": "https://www.dothoosh.com/gateway/v1/models",
+  "setup_steps": [
+    "Sign up at https://gateway.dothoosh.com",
+    "Create an API key at https://gateway.dothoosh.com/api-keys",
+    "Paste the key above as DOTHOOSH_API_KEY"
+  ]
+}
