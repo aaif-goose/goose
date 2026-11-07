@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -51,21 +51,33 @@ impl ContractInspector {
     }
 }
 
-fn extract_path_candidates(arguments: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+/// Returns `(base_dir, token)` pairs: path-ish args resolve against the
+/// session working dir, while tokens inside shell commands resolve against a
+/// cwd tracked across `cd`/`pushd`/`chdir` within that command string.
+fn extract_path_candidates(
+    arguments: &serde_json::Map<String, serde_json::Value>,
+    working_dir: &Path,
+) -> Vec<(PathBuf, String)> {
     let mut candidates = Vec::new();
     for key in PATH_ARG_KEYS {
         if let Some(value) = arguments.get(*key).and_then(|v| v.as_str()) {
-            candidates.push(value.to_string());
+            candidates.push((working_dir.to_path_buf(), value.to_string()));
         }
     }
     for key in COMMAND_ARG_KEYS {
         if let Some(command) = arguments.get(*key).and_then(|v| v.as_str()) {
             let tokens = shell_words::split(command).unwrap_or_default();
+            let mut shell_cwd = working_dir.to_path_buf();
             for (i, token) in tokens.iter().enumerate() {
                 if matches!(token.as_str(), "cd" | "pushd" | "chdir") {
                     if let Some(target) = tokens.get(i + 1) {
                         if !target.starts_with('-') {
-                            candidates.push(target.clone());
+                            candidates.push((shell_cwd.clone(), target.clone()));
+                            shell_cwd = if Path::new(target).is_absolute() {
+                                PathBuf::from(target)
+                            } else {
+                                shell_cwd.join(target)
+                            };
                         }
                     }
                     continue;
@@ -73,7 +85,7 @@ fn extract_path_candidates(arguments: &serde_json::Map<String, serde_json::Value
                 if !token.starts_with('-')
                     && (token.contains('/') || token.contains('\\') || token.contains('.'))
                 {
-                    candidates.push(token.clone());
+                    candidates.push((shell_cwd.clone(), token.clone()));
                 }
             }
         }
@@ -145,8 +157,8 @@ impl ToolInspector for ContractInspector {
                 continue;
             }
 
-            for candidate in extract_path_candidates(arguments) {
-                if let Some(pattern) = loaded.forbidden_match(&working_dir, &candidate) {
+            for (base, candidate) in extract_path_candidates(arguments, &working_dir) {
+                if let Some(pattern) = loaded.forbidden_match(&base, &candidate) {
                     results.push(deny_result(
                         tool_request,
                         format!(
@@ -188,23 +200,26 @@ mod tests {
 
     #[test]
     fn test_extract_path_candidates() {
+        let wd = Path::new("/repo");
         let args = object!({
             "path": "src/.env",
             "command": "cat secrets/api.key && cargo build"
         });
-        let candidates = extract_path_candidates(&args);
-        assert!(candidates.contains(&"src/.env".to_string()));
-        assert!(candidates.contains(&"secrets/api.key".to_string()));
-        assert!(!candidates.iter().any(|c| c == "cargo"));
+        let candidates = extract_path_candidates(&args, wd);
+        assert!(candidates.contains(&(wd.to_path_buf(), "src/.env".to_string())));
+        assert!(candidates.contains(&(wd.to_path_buf(), "secrets/api.key".to_string())));
+        assert!(!candidates.iter().any(|(_, c)| c == "cargo"));
     }
 
     #[test]
     fn test_extract_path_candidates_cd_target() {
+        let wd = Path::new("/repo");
         let args = object!({
-            "command": "cd secrets && cat key"
+            "command": "cd nested && cat .env"
         });
-        let candidates = extract_path_candidates(&args);
-        assert!(candidates.contains(&"secrets".to_string()));
+        let candidates = extract_path_candidates(&args, wd);
+        assert!(candidates.contains(&(wd.to_path_buf(), "nested".to_string())));
+        assert!(candidates.contains(&(wd.join("nested"), ".env".to_string())));
     }
 
     #[test]

@@ -194,12 +194,16 @@ fn resolve_symlinks(path: &Path) -> PathBuf {
     out
 }
 
-fn strip_file_scheme(candidate: &str) -> &str {
+fn strip_file_scheme(candidate: &str) -> std::borrow::Cow<'_, str> {
     let Some(rest) = candidate.strip_prefix("file://") else {
-        return candidate;
+        return std::borrow::Cow::Borrowed(candidate);
     };
+    let rest = urlencoding::decode(rest).unwrap_or(std::borrow::Cow::Borrowed(rest));
     if rest.len() >= 3 && rest.as_bytes()[1].is_ascii_alphabetic() && rest.as_bytes()[2] == b':' {
-        rest.strip_prefix('/').unwrap_or(rest)
+        match rest.strip_prefix('/') {
+            Some(stripped) => std::borrow::Cow::Owned(stripped.to_string()),
+            None => rest,
+        }
     } else {
         rest
     }
@@ -217,7 +221,7 @@ impl LoadedContract {
     /// forbidden pattern it matches, if any.
     pub fn forbidden_match(&self, working_dir: &Path, candidate: &str) -> Option<String> {
         let candidate = strip_file_scheme(candidate);
-        let raw = Path::new(candidate);
+        let raw = Path::new(candidate.as_ref());
         let resolved = resolve_symlinks(&normalize(&if raw.is_absolute() {
             raw.to_path_buf()
         } else {
@@ -384,6 +388,10 @@ instructions: Always run verify before finishing.
 
         let file_url = format!("file://{}", wd.join("secrets/photo.png").display());
         assert!(loaded.forbidden_match(wd, &file_url).is_some());
+
+        // percent-encoded components are decoded before matching
+        let encoded = format!("file://{}", wd.join("%73ecrets/photo.png").display());
+        assert!(loaded.forbidden_match(wd, &encoded).is_some());
     }
 
     #[test]
