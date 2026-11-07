@@ -68,13 +68,13 @@ fn load_call(name: &str) -> CallToolRequestParams {
         .with_arguments(json!({ "tool_names": [name] }).as_object().unwrap().clone())
 }
 
-/// Known gap: a tool loaded before its extension was turned off comes back
-/// loaded when the extension returns, and no budget check runs then. The
-/// budget accepted the last load when the next request would carry 13 tools;
-/// the request after the extension returns carries 15. At
-/// MAX_ADVERTISED_TOOLS = 13 that request is past the limit.
+/// A tool loaded before its extension was turned off comes back loaded when
+/// the extension returns, past the budget: the last load was accepted for a
+/// request of 13 tools, and the request after the extension returns carries
+/// 15. When such a request passes MAX_ADVERTISED_TOOLS, prepare_inference_tools
+/// leaves out the newest loads (`a_full_request_leaves_out_the_newest_loads`).
 #[tokio::test]
-async fn replay_an_extension_returning_with_loads_skips_the_budget() -> Result<()> {
+async fn replay_an_extension_returning_brings_its_loads_back() -> Result<()> {
     let (pipeline, api) = deferring_pipeline().await?;
     attach(&pipeline, "abacus").await;
 
