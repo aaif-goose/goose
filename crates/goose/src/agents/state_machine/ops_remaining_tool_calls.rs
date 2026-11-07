@@ -12,7 +12,7 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, requesting_message,
+    advertised_tool_names, emit_extended_pre_hooks, pending_tool_requests, request_was_advertised,
     tool_span, ToolDisposition,
 };
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
@@ -20,7 +20,7 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
 use crate::agents::tool_discovery::{
-    deferred_tool_named, deferred_tools, not_loaded_message, NotSent, LOAD_TOOLS_TOOL_NAME,
+    deferred_tool_named, deferred_tools, not_loaded_message, NotSent, MAX_ADVERTISED_TOOLS,
 };
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
@@ -64,18 +64,11 @@ impl RemainingToolCallsOperation {
     }
 }
 
-/// Whether the response that made `request` also called `load_tools`.
-fn loads_in_same_response(messages: &[Message], request: &ToolRequest) -> bool {
-    requesting_message(messages, request).is_some_and(|message| {
-        message.content.iter().any(|content| {
-            content.as_tool_request().is_some_and(|other| {
-                other
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|call| call.name == LOAD_TOOLS_TOOL_NAME)
-            })
-        })
-    })
+/// Whether the request that made `request` carried the most tools a request
+/// may. A full request loads nothing new, so a loaded tool it didn't send was
+/// left out for the limit, not loaded in the same response.
+fn request_was_full(messages: &[Message], request: &ToolRequest) -> bool {
+    advertised_tool_names(messages, request).is_some_and(|sent| sent.len() >= MAX_ADVERTISED_TOOLS)
 }
 
 #[async_trait]
@@ -136,10 +129,10 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     let name = not_loaded.as_deref().unwrap_or(tool_name);
                     let why = if !loaded.iter().any(|loaded| loaded == name) {
                         NotSent::NotLoaded
-                    } else if loads_in_same_response(messages, &request) {
-                        NotSent::LoadedInSameResponse
-                    } else {
+                    } else if request_was_full(messages, &request) {
                         NotSent::LeftOutForLimit
+                    } else {
+                        NotSent::LoadedInSameResponse
                     };
                     (
                         Ok(CallToolResult::error(vec![ContentBlock::text(

@@ -302,9 +302,14 @@ async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<(
     Ok(())
 }
 
+/// A full request left out a loaded tool, and its response both loads and
+/// calls that tool. Nothing can load into a full request, so the call is
+/// answered as left out, not as loaded in the same response, which would
+/// have the model retry a tool the next request leaves out again.
 #[tokio::test]
 async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
     use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
+    use crate::agents::tool_discovery::MAX_ADVERTISED_TOOLS;
     use crate::conversation::message::{InferenceMetadata, Message};
     use rmcp::model::CallToolRequestParams;
 
@@ -318,7 +323,15 @@ async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
     api.on("kickoff").reply("ready");
     pipeline.run(["kickoff"]).await?;
 
+    let sent: Vec<String> = std::iter::once(LOAD_TOOLS_TOOL_NAME.to_string())
+        .chain((1..MAX_ADVERTISED_TOOLS).map(|n| format!("tool_{n:03}")))
+        .collect();
     let mut request = Message::assistant()
+        .with_tool_request(
+            "load",
+            Ok(CallToolRequestParams::new(LOAD_TOOLS_TOOL_NAME)
+                .with_arguments(json!({ "tool_names": [ADD] }).as_object().unwrap().clone())),
+        )
         .with_tool_request(
             "left-out",
             Ok(CallToolRequestParams::new(ADD)
@@ -330,11 +343,9 @@ async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
             resolved_model: None,
             provider_session_id: None,
         });
-    request.metadata.set_operation_note(
-        LLM_OPERATION_NAME,
-        ADVERTISED_TOOLS_NOTE,
-        json!([LOAD_TOOLS_TOOL_NAME]),
-    );
+    request
+        .metadata
+        .set_operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE, json!(sent));
     pipeline.seed([request]).await?;
     api.on(not_loaded_message(ADD, NotSent::LeftOutForLimit))
         .reply("no room");
@@ -343,6 +354,10 @@ async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
         .resume()
         .await?
         .assert_message(-1, Agent, "no room");
+    let calls = api.calls();
+    let last = calls.last().expect("an inference ran");
+    assert!(last.input_contains(r#""reason":"tool_limit""#));
+    assert!(!last.input_contains(&not_loaded_message(ADD, NotSent::LoadedInSameResponse)));
     assert_eq!(pipeline.calculator_total(), 0);
     Ok(())
 }

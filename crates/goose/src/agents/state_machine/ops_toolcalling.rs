@@ -594,10 +594,7 @@ pub(super) fn call_will_not_run(
         || final_output_called_with_other_tools(session, messages, request))
 }
 
-pub(super) fn requesting_message<'a>(
-    messages: &'a [Message],
-    request: &ToolRequest,
-) -> Option<&'a Message> {
+fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Option<&'a Message> {
     messages.iter().find(|message| {
         message.role == Role::Assistant
             && message.content.iter().any(|content| {
