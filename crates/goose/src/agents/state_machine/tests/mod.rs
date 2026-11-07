@@ -22,6 +22,7 @@ mod recipe_scheduling_lifecycle;
 mod reconstruction_isolation_lifecycle;
 mod steering_lifecycle;
 mod tool_discovery_lifecycle;
+mod tool_discovery_replay;
 mod tool_lifecycle;
 
 async fn capture_state_machine_trace_fields(
