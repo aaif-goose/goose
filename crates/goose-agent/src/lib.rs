@@ -5,6 +5,7 @@ pub mod operation;
 pub mod post_tool_call_hook;
 pub mod pre_tool_call_hook;
 pub mod skills;
+pub mod spillway;
 pub mod stop_hook;
 pub mod subagent;
 pub mod tool;

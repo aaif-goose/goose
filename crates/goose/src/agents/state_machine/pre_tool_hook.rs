@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::pre_tool_call_hook::{PreToolCallDecision, PreToolCallHook};
+use goose_agent::spillway::{evaluate_request, SpillwayConfig, SpillwayOutcome};
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::state_machine::messages_since_kickoff;
@@ -77,6 +78,12 @@ async fn pre_tool_use_denial(
 pub struct GoosePreToolHook {
     hook_manager: HookManager,
     extension_lease: Arc<Mutex<Option<Arc<ExtensionLease>>>>,
+    /// SPILLWAY target admission: deterministic, no-model-call
+    /// prompt-injection floor. When set, every proposed call is checked
+    /// against it before the hook chain runs; a denial short-circuits with
+    /// the refused target and the reason. `None` preserves the previous
+    /// behavior exactly.
+    spillway: Option<Arc<SpillwayConfig>>,
 }
 
 impl GoosePreToolHook {
@@ -87,7 +94,13 @@ impl GoosePreToolHook {
         Self {
             hook_manager,
             extension_lease,
+            spillway: None,
         }
+    }
+
+    pub fn with_spillway(mut self, config: Arc<SpillwayConfig>) -> Self {
+        self.spillway = Some(config);
+        self
     }
 }
 
@@ -107,6 +120,13 @@ impl PreToolCallHook<Session> for GoosePreToolHook {
             )
         {
             return Ok(PreToolCallDecision::Allow);
+        }
+        if let Some(config) = &self.spillway {
+            if let SpillwayOutcome::Deny { reason } =
+                evaluate_request(config, conversation, request)
+            {
+                return Ok(PreToolCallDecision::Deny { reason });
+            }
         }
         let Ok(tool_call) = &request.tool_call else {
             return Ok(PreToolCallDecision::Allow);
