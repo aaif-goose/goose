@@ -177,6 +177,12 @@ fn normalize(path: &Path) -> PathBuf {
 /// `Path::exists()` misses — then canonicalize the deepest existing ancestor
 /// so paths like `alias/token` (with `alias -> secrets`) match `secrets/**`.
 fn resolve_symlinks(path: &Path) -> PathBuf {
+    resolve_symlinks_inner(path, 0)
+}
+
+const MAX_SYMLINK_DEPTH: usize = 40;
+
+fn resolve_symlinks_inner(path: &Path, depth: usize) -> PathBuf {
     let mut resolved = PathBuf::new();
     for component in path.components() {
         resolved.push(component.as_os_str());
@@ -184,7 +190,9 @@ fn resolve_symlinks(path: &Path) -> PathBuf {
             .symlink_metadata()
             .map(|m| m.file_type().is_symlink())
             .unwrap_or(false);
-        if is_link {
+        // re-walk resolved targets so link chains fully resolve; the depth
+        // cap stops symlink loops
+        if is_link && depth < MAX_SYMLINK_DEPTH {
             if let Ok(target) = std::fs::read_link(&resolved) {
                 resolved.pop();
                 resolved = normalize(&if target.is_absolute() {
@@ -192,6 +200,7 @@ fn resolve_symlinks(path: &Path) -> PathBuf {
                 } else {
                     resolved.join(&target)
                 });
+                resolved = resolve_symlinks_inner(&resolved, depth + 1);
             }
         }
     }
@@ -222,6 +231,7 @@ fn strip_file_scheme(candidate: &str) -> std::borrow::Cow<'_, str> {
         return std::borrow::Cow::Borrowed(candidate);
     }
     let rest = candidate.get(7..).unwrap_or("");
+    let rest = rest.split(['?', '#']).next().unwrap_or(rest);
     let rest = urlencoding::decode(rest).unwrap_or(std::borrow::Cow::Borrowed(rest));
     if rest.len() >= 3 && rest.as_bytes()[1].is_ascii_alphabetic() && rest.as_bytes()[2] == b':' {
         match rest.strip_prefix('/') {

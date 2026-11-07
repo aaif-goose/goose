@@ -81,8 +81,15 @@ fn extract_path_candidates(
 ) -> Vec<(PathBuf, String)> {
     let mut candidates = Vec::new();
     for key in PATH_ARG_KEYS {
-        if let Some(value) = arguments.get(*key).and_then(|v| v.as_str()) {
-            candidates.push((working_dir.to_path_buf(), value.to_string()));
+        let Some(value) = arguments.get(*key) else {
+            continue;
+        };
+        if let Some(single) = value.as_str() {
+            candidates.push((working_dir.to_path_buf(), single.to_string()));
+        } else if let Some(items) = value.as_array() {
+            for item in items.iter().filter_map(|v| v.as_str()) {
+                candidates.push((working_dir.to_path_buf(), item.to_string()));
+            }
         }
     }
     for key in COMMAND_ARG_KEYS {
