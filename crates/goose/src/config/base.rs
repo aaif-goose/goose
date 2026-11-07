@@ -933,6 +933,22 @@ impl Config {
             .and_then(|v| Ok(serde_json::from_value(v.clone())?))
     }
 
+    /// Like `get_secret`, but reads storage without the process's secrets cache, so a value
+    /// another process wrote since is seen. Leaves the cache and `generation` untouched.
+    pub fn get_secret_uncached<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<T, ConfigError> {
+        if let Ok(val) = env::var(key.to_uppercase()) {
+            return Ok(serde_json::from_value(Self::parse_env_value(&val)?)?);
+        }
+        let value = self
+            .load_secrets_from_storage()?
+            .remove(key)
+            .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Get secrets. If primary is in env, use env for all keys. Otherwise, use secret storage.
     pub fn get_secrets(
         &self,
@@ -1801,6 +1817,31 @@ mod tests {
 
         first.invalidate_secrets_cache();
         assert_eq!(first.get_secret::<String>("key")?, "updated");
+
+        Ok(())
+    }
+
+    #[test]
+    fn uncached_secret_reads_see_other_writers_without_touching_the_cache(
+    ) -> Result<(), ConfigError> {
+        let directory = TempDir::new().unwrap();
+        let config_path = directory.path().join("config.yaml");
+        let secrets_path = directory.path().join("secrets.yaml");
+        let first = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+        let second = Config::new_with_file_secrets(&config_path, &secrets_path)?;
+
+        first.set_secret("key", &"initial")?;
+        assert_eq!(first.get_secret::<String>("key")?, "initial");
+        let generation = first.generation();
+
+        second.set_secret("key", &"updated")?;
+        assert_eq!(first.get_secret_uncached::<String>("key")?, "updated");
+        assert_eq!(first.get_secret::<String>("key")?, "initial");
+        assert_eq!(first.generation(), generation);
+        assert!(matches!(
+            first.get_secret_uncached::<String>("missing"),
+            Err(ConfigError::NotFound(_))
+        ));
 
         Ok(())
     }
