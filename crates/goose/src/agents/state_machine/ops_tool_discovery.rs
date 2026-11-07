@@ -17,7 +17,7 @@ use tracing_futures::Instrument;
 use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_toolcalling::{
-    advertised_tool_count, pending_advertised_tool_requests, tool_span, ToolDisposition,
+    advertised_tool_names, pending_advertised_tool_requests, tool_span, ToolDisposition,
     EXPIRED_APPROVAL_RESPONSE,
 };
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
@@ -131,12 +131,14 @@ impl ToolDiscoveryOperation {
     }
 
     /// `advertised` is how many tools the inference that called `load_tools`
-    /// sent, when it recorded them.
+    /// sent, when it recorded them. `left_out` is the tools loaded before that
+    /// inference that it didn't send, because the request was full.
     async fn load(
         lease: &ExtensionLease,
         state: &mut ToolDiscoveryState,
         arguments: Option<&JsonObject>,
         advertised: Option<usize>,
+        left_out: &[String],
     ) -> CallToolResult {
         let requested = match parse_arguments::<LoadToolsParams>(arguments) {
             Ok(params) => params.tool_names,
@@ -157,6 +159,7 @@ impl ToolDiscoveryOperation {
             &available,
             &deferrable,
             &state.loaded_tools,
+            left_out,
             advertised,
         );
         state.loaded_tools.extend(newly_loaded);
@@ -279,9 +282,19 @@ impl Operation<Session, GooseEffect> for ToolDiscoveryOperation {
                     } else {
                         let loaded_this_batch =
                             state.loaded_tools.len() - original_state.loaded_tools.len();
-                        let advertised = advertised_tool_count(messages, &request)
-                            .map(|count| count + loaded_this_batch);
-                        Self::load(lease, &mut state, arguments, advertised)
+                        let sent = advertised_tool_names(messages, &request);
+                        let advertised = sent.as_ref().map(|sent| sent.len() + loaded_this_batch);
+                        let left_out: Vec<String> = sent
+                            .map(|sent| {
+                                original_state
+                                    .loaded_tools
+                                    .iter()
+                                    .filter(|name| !sent.contains(name))
+                                    .cloned()
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        Self::load(lease, &mut state, arguments, advertised, &left_out)
                             .instrument(span.clone())
                             .await
                     };

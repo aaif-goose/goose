@@ -108,19 +108,33 @@ pub(crate) fn deferred_tool_named(emitted: &str, deferred: &[Tool]) -> Option<St
     )
 }
 
+/// Why a deferred tool wasn't sent with the response that called it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotSent {
+    NotLoaded,
+    LoadedInSameResponse,
+    /// Loaded, but left out so the request stays within
+    /// [`MAX_ADVERTISED_TOOLS`].
+    LeftOutForLimit,
+}
+
 /// Answers a call to a deferred tool that wasn't sent with the response that
-/// called it. `loaded` means a `load_tools` call in the same response loaded it.
-pub(crate) fn not_loaded_message(tool_name: &str, loaded: bool) -> String {
-    if loaded {
-        format!(
-            "Tool '{tool_name}' did not run because it was loaded in the same response. \
-             Call it again in your next response."
-        )
-    } else {
-        format!(
+/// called it.
+pub(crate) fn not_loaded_message(tool_name: &str, why: NotSent) -> String {
+    match why {
+        NotSent::NotLoaded => format!(
             "Tool '{tool_name}' is not loaded. Call {LOAD_TOOLS_TOOL_NAME} with tool_names \
              [\"{tool_name}\"], then call it in your next response."
-        )
+        ),
+        NotSent::LoadedInSameResponse => format!(
+            "Tool '{tool_name}' did not run because it was loaded in the same response. \
+             Call it again in your next response."
+        ),
+        NotSent::LeftOutForLimit => format!(
+            "Tool '{tool_name}' is loaded but was left out of tools[] because the request \
+             reached the limit of {MAX_ADVERTISED_TOOLS} tools. It will be sent again once \
+             there is room, for example after an extension is turned off or /clear."
+        ),
     }
 }
 
@@ -146,16 +160,19 @@ pub struct LoadOutcome {
 /// Resolves a `load_tools` request against the session's tools.
 ///
 /// `available` is every extension tool the session can call, `deferrable` the
-/// subset sent only when loaded, `loaded` the names loaded so far, and
-/// `advertised` how many tools the next request carries without this load,
-/// operation tools such as `load_tools` included. Returns what to tell the
-/// model and the names to add to the loaded set. A load that would take the
-/// request past [`MAX_ADVERTISED_TOOLS`] loads nothing.
+/// subset sent only when loaded, `loaded` the names loaded so far,
+/// `left_out` the loaded names the calling request left out because it was
+/// full, and `advertised` how many tools the next request carries without this
+/// load, operation tools such as `load_tools` included. Returns what to tell
+/// the model and the names to add to the loaded set. A load that would take
+/// the request past [`MAX_ADVERTISED_TOOLS`] loads nothing, and a left-out
+/// tool is rejected because there is no room to send it.
 pub(crate) fn resolve_load(
     requested: &[String],
     available: &[Tool],
     deferrable: &[Tool],
     loaded: &[String],
+    left_out: &[String],
     advertised: usize,
 ) -> (LoadOutcome, Vec<String>) {
     let deferrable_names: HashSet<&str> = deferrable.iter().map(|tool| &*tool.name).collect();
@@ -184,6 +201,19 @@ pub(crate) fn resolve_load(
             continue;
         }
         for name in matches {
+            if left_out.iter().any(|left_out| left_out == name) {
+                if !outcome
+                    .rejected
+                    .iter()
+                    .any(|rejected| rejected.name == name)
+                {
+                    outcome.rejected.push(Rejected {
+                        name: name.to_string(),
+                        reason: RejectReason::ToolLimit,
+                    });
+                }
+                continue;
+            }
             if deferrable_names.contains(name)
                 && !is_loaded(name)
                 && !newly_loaded.iter().any(|loaded| loaded == name)
@@ -270,6 +300,7 @@ mod tests {
             &available,
             &available,
             &[],
+            &[],
             0,
         );
         assert_eq!(
@@ -290,6 +321,7 @@ mod tests {
             &available,
             &[deferred],
             &names(&["linear__get_issue"]),
+            &[],
             2,
         );
         assert_eq!(outcome.loaded, names(&["shell", "linear__get_issue"]));
@@ -303,6 +335,7 @@ mod tests {
             &names(&["linear__get_issue", "linear__nope", "slack__*"]),
             &available,
             &available,
+            &[],
             &[],
             0,
         );
@@ -335,6 +368,7 @@ mod tests {
             &deferred,
             &deferred,
             &[],
+            &[],
             MAX_ADVERTISED_TOOLS - 1,
         );
         assert!(outcome.loaded.is_empty());
@@ -358,10 +392,38 @@ mod tests {
             &deferred,
             &deferred,
             &[],
+            &[],
             MAX_ADVERTISED_TOOLS - 1,
         );
         assert_eq!(outcome.loaded, names(&["github__create_pr"]));
         assert_eq!(newly, names(&["github__create_pr"]));
+    }
+
+    #[test]
+    fn a_tool_left_out_of_a_full_request_is_not_reported_loaded() {
+        let deferred = vec![
+            tool("github", "github__create_pr"),
+            tool("github", "github__list_prs"),
+        ];
+        let loaded = names(&["github__create_pr", "github__list_prs"]);
+
+        let (outcome, newly) = resolve_load(
+            &names(&["github__*"]),
+            &deferred,
+            &deferred,
+            &loaded,
+            &names(&["github__list_prs"]),
+            MAX_ADVERTISED_TOOLS,
+        );
+        assert_eq!(outcome.loaded, names(&["github__create_pr"]));
+        assert_eq!(
+            outcome.rejected,
+            vec![Rejected {
+                name: "github__list_prs".to_string(),
+                reason: RejectReason::ToolLimit,
+            }]
+        );
+        assert!(newly.is_empty());
     }
 
     #[test]

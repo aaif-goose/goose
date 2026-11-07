@@ -212,6 +212,16 @@ pub(crate) fn prepare_inference_tools(
     // tools go last, in load order, so a load only appends to the tool prefix.
     let load_position = |tool: &Tool| loaded.iter().position(|name| name == &*tool.name);
     tools.sort_by(|a, b| (load_position(a), &a.name).cmp(&(load_position(b), &b.name)));
+    // Loads are checked against the limit when they happen, but a loaded tool
+    // whose extension was off comes back when the extension does. Leave out
+    // the newest loads until the request fits; the rest keep their places.
+    while tools.len() > crate::agents::tool_discovery::MAX_ADVERTISED_TOOLS
+        && tools
+            .last()
+            .is_some_and(|tool| load_position(tool).is_some())
+    {
+        tools.pop();
+    }
     tools
 }
 
@@ -1462,6 +1472,26 @@ mod tests {
 
         assert!(result.is_ok());
     }
+    #[test]
+    fn a_full_request_leaves_out_the_newest_loads() {
+        use crate::agents::tool_discovery::MAX_ADVERTISED_TOOLS;
+        let named = |name: String| {
+            let mut tool = make_tool_with_meta(None);
+            tool.name = name.into();
+            tool
+        };
+        let loaded: Vec<String> = ["ext__c", "ext__a", "ext__b"].map(String::from).to_vec();
+        let eager = (0..MAX_ADVERTISED_TOOLS - 1).map(|n| named(format!("eager_{n:03}")));
+        let tools: Vec<Tool> = eager.chain(loaded.iter().cloned().map(named)).collect();
+
+        let deferring = prepare_inference_tools(tools.clone(), false, &loaded);
+        let not_deferring = prepare_inference_tools(tools, false, &[]);
+
+        assert_eq!(deferring.len(), MAX_ADVERTISED_TOOLS);
+        assert_eq!(deferring.last().unwrap().name, "ext__c");
+        assert_eq!(not_deferring.len(), MAX_ADVERTISED_TOOLS + 2);
+    }
+
     #[cfg(feature = "code-mode")]
     #[test]
     fn code_mode_keeps_first_class_resource_and_final_output_tools() {
