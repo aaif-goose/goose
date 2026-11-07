@@ -115,6 +115,33 @@ impl GoalState {
     }
 }
 
+/// Whether a session lists deferrable extension tools by name instead of
+/// sending their schemas, and which of them the model has loaded.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolDiscoveryState {
+    pub defer_tools: bool,
+    #[serde(default)]
+    pub loaded_tools: Vec<String>,
+}
+
+impl ExtensionState for ToolDiscoveryState {
+    const EXTENSION_NAME: &'static str = "tool_discovery";
+    const VERSION: &'static str = "v0";
+}
+
+impl ToolDiscoveryState {
+    pub fn deferring() -> Self {
+        Self {
+            defer_tools: true,
+            loaded_tools: Vec::new(),
+        }
+    }
+
+    pub fn of(session: &Session) -> Self {
+        Self::from_extension_data(&session.extension_data).unwrap_or_default()
+    }
+}
+
 /// Enabled extensions state implementation for storing which extensions are active
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledExtensionsState {

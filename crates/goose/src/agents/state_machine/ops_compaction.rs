@@ -16,7 +16,7 @@ use crate::context_mgmt::compact_messages;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::Conversation;
 use crate::providers::base::Provider;
-use crate::session::Session;
+use crate::session::{Session, ToolDiscoveryState};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 
@@ -77,7 +77,11 @@ impl CompactionOperation {
         ])
     }
 
-    fn clear(conversation: &Conversation, emit: &Emitter) -> Result<OperationResult<GooseEffect>> {
+    fn clear(
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
         let command = messages_since_kickoff(conversation)?
             .first()
             .cloned()
@@ -88,11 +92,17 @@ impl CompactionOperation {
             .with_visibility(true, false);
         let command = emit.message(command);
         let response = emit.message(response);
-        yielded_with([
-            Conversation::default().into(),
-            command.into(),
-            response.into(),
-        ])
+        let mut effects = vec![Conversation::default().into()];
+        // A cleared conversation starts again from the session's up-front tools.
+        let discovery = ToolDiscoveryState::of(session);
+        if !discovery.loaded_tools.is_empty() {
+            effects.push(GooseEffect::extension_state(&ToolDiscoveryState {
+                loaded_tools: Vec::new(),
+                ..discovery
+            })?);
+        }
+        effects.extend([command.into(), response.into()]);
+        yielded_with(effects)
     }
 }
 
@@ -110,7 +120,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         match command.command {
-            "clear" => return Self::clear(conversation, emit),
+            "clear" => return Self::clear(session, conversation, emit),
             "compact" => {}
             _ => return not_applicable(),
         }

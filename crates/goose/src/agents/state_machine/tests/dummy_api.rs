@@ -37,7 +37,10 @@ enum ApiResponse {
         arguments: String,
         require_advertised: bool,
     },
-    ToolCalls(Vec<ApiToolCall>),
+    ToolCalls {
+        calls: Vec<ApiToolCall>,
+        require_advertised: bool,
+    },
     Mixed {
         reasoning: String,
         text: Option<String>,
@@ -185,6 +188,21 @@ impl ApiCall {
 
     pub(super) fn system_contains(&self, needle: &str) -> bool {
         request_system(&self.body).contains(needle)
+    }
+
+    pub(super) fn system(&self) -> String {
+        request_system(&self.body)
+    }
+
+    pub(super) fn tools(&self) -> &[Value] {
+        self.body["tools"].as_array().map_or(&[], Vec::as_slice)
+    }
+
+    pub(super) fn tool_names(&self) -> Vec<&str> {
+        self.tools()
+            .iter()
+            .filter_map(|tool| tool["function"]["name"].as_str())
+            .collect()
     }
 
     pub(super) fn advertises_tool(&self, name: &str) -> bool {
@@ -362,8 +380,23 @@ impl<'a> ApiRuleBuilder<'a> {
         self,
         calls: [(&str, &str, Value); N],
     ) -> ConfiguredResponse<'a> {
-        self.configured(ApiResponse::ToolCalls(
-            calls
+        self.tool_calls(calls, true)
+    }
+
+    pub(super) fn unadvertised_calls<const N: usize>(
+        self,
+        calls: [(&str, &str, Value); N],
+    ) -> ConfiguredResponse<'a> {
+        self.tool_calls(calls, false)
+    }
+
+    fn tool_calls<const N: usize>(
+        self,
+        calls: [(&str, &str, Value); N],
+        require_advertised: bool,
+    ) -> ConfiguredResponse<'a> {
+        self.configured(ApiResponse::ToolCalls {
+            calls: calls
                 .into_iter()
                 .map(|(id, name, arguments)| ApiToolCall {
                     id: id.to_string(),
@@ -371,7 +404,8 @@ impl<'a> ApiRuleBuilder<'a> {
                     arguments: arguments.to_string(),
                 })
                 .collect(),
-        ))
+            require_advertised,
+        })
     }
 
     pub(super) fn malformed_tool_call(
@@ -569,9 +603,14 @@ impl DummyApiState {
                 let output_tokens = name.chars().count() as i32 + arguments.chars().count() as i32;
                 sse_response(tool_call_events(&meta(output_tokens), &name, &arguments))
             }
-            ApiResponse::ToolCalls(calls) => {
-                for call in &calls {
-                    assert_tool_advertised(&body, &call.name);
+            ApiResponse::ToolCalls {
+                calls,
+                require_advertised,
+            } => {
+                if require_advertised {
+                    for call in &calls {
+                        assert_tool_advertised(&body, &call.name);
+                    }
                 }
                 let output_tokens = calls
                     .iter()
