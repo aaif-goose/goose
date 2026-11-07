@@ -12,7 +12,10 @@ use crate::agents::tool_discovery::{not_loaded_message, LOAD_TOOLS_TOOL_NAME};
 use crate::session::ToolDiscoveryState;
 
 const LOADED_ADD: &str = r#""loaded":["calculator__add"]"#;
+const LOADED_ADD_VALUES: &str = r#""loaded":["calculator__add_values"]"#;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
+const DEFERRED_CALCULATOR_TOOLS: &str = "Deferred tools: calculator__add, calculator__add_values, \
+     calculator__add_with_audience, calculator__divide, calculator__request_value, calculator__subtract";
 
 async fn deferring_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
@@ -37,6 +40,32 @@ async fn load_and_add_four(pipeline: &TestPipeline, api: &DummyApi) -> Result<()
     Ok(())
 }
 
+/// Answers `prompt` with one `load_tools` call, then with `reply`.
+fn load_then_reply(api: &DummyApi, prompt: &str, names: &[&str], reply: &str) {
+    api.on(prompt).reply(reply);
+    api.on(prompt)
+        .call(LOAD_TOOLS_TOOL_NAME, load(names))
+        .times(1);
+}
+
+/// Loads `calculator__add_values`, then `calculator__add`, which sorts first.
+async fn load_add_values_then_add(pipeline: &TestPipeline, api: &DummyApi) -> Result<()> {
+    api.on("load values")
+        .call(LOAD_TOOLS_TOOL_NAME, load(&[ADD_VALUES]));
+    api.on(LOADED_ADD_VALUES).reply("values loaded");
+    pipeline.run(["load values"]).await?;
+    load_and_add_four(pipeline, api).await?;
+    assert_eq!(
+        pipeline.tool_discovery().await.loaded_tools,
+        [ADD_VALUES, ADD]
+    );
+    Ok(())
+}
+
+fn ends_with_loaded_tools(call: &super::dummy_api::ApiCall, loaded: &[&str]) -> bool {
+    call.tool_names().ends_with(loaded)
+}
+
 #[tokio::test]
 async fn sessions_that_do_not_defer_tools_send_every_tool() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -47,7 +76,8 @@ async fn sessions_that_do_not_defer_tools_send_every_tool() -> Result<()> {
     let call = &api.calls()[0];
     assert!(call.advertises_tool(ADD));
     assert!(!call.advertises_tool(LOAD_TOOLS_TOOL_NAME));
-    assert!(!call.system_contains("Not loaded"));
+    assert!(!call.system_contains("Some tools are deferred"));
+    assert!(!call.system_contains("Deferred tools"));
     Ok(())
 }
 
@@ -60,11 +90,11 @@ async fn a_loaded_tool_is_sent_from_the_next_inference() -> Result<()> {
     let calls = api.calls();
     assert!(calls[0].advertises_tool(LOAD_TOOLS_TOOL_NAME));
     assert!(!calls[0].advertises_tool(ADD));
-    assert!(calls[0].system_contains("Not loaded: calculator__add, calculator__add_values"));
+    assert!(calls[0].system_contains(DEFERRED_CALCULATOR_TOOLS));
     assert!(!calls[0].system_contains(APP_ONLY));
     assert!(calls[1].advertises_tool(ADD));
     assert!(!calls[1].advertises_tool(ADD_VALUES));
-    assert!(!calls[1].system_contains("Not loaded: calculator__add,"));
+    assert_eq!(calls[1].system(), calls[0].system());
     assert_eq!(pipeline.calculator_total(), 4);
     assert_eq!(pipeline.tool_discovery().await.loaded_tools, [ADD]);
     Ok(())
@@ -80,6 +110,48 @@ async fn always_load_tools_are_sent_up_front() -> Result<()> {
     let call = &api.calls()[0];
     assert!(call.advertises_tool(MULTIPLY));
     assert!(!call.system_contains(MULTIPLY));
+    Ok(())
+}
+
+#[tokio::test]
+async fn loads_do_not_change_the_system_prompt() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    load_and_add_four(&pipeline, &api).await?;
+    load_then_reply(&api, "load add again", &[ADD], "already loaded");
+    load_then_reply(&api, "load a typo", &["calculator__nope"], "no such tool");
+    load_then_reply(&api, "load the rest", &["calculator__*"], "all loaded");
+
+    pipeline
+        .run(["load add again", "load a typo", "load the rest"])
+        .await?;
+
+    let calls = api.calls();
+    let first = calls[0].system();
+    assert!(first.contains("Some tools are deferred and omitted from tools[]."));
+    assert!(first.contains(DEFERRED_CALCULATOR_TOOLS));
+    assert!(calls.iter().all(|call| call.system() == first));
+    let last = calls.last().unwrap();
+    assert!(last.advertises_tool("calculator__subtract"));
+    assert!(last.advertises_tool(LOAD_TOOLS_TOOL_NAME));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_load_appends_to_the_tools_already_sent() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+
+    load_add_values_then_add(&pipeline, &api).await?;
+
+    let calls = api.calls();
+    for pair in calls.windows(2) {
+        assert!(pair[1].tools().starts_with(pair[0].tools()));
+    }
+    assert!(!calls[0].advertises_tool(ADD_VALUES));
+    assert!(ends_with_loaded_tools(&calls[1], &[ADD_VALUES]));
+    assert!(ends_with_loaded_tools(
+        calls.last().unwrap(),
+        &[ADD_VALUES, ADD]
+    ));
     Ok(())
 }
 
@@ -122,7 +194,7 @@ async fn unknown_names_are_rejected_without_loading_anything() -> Result<()> {
 #[tokio::test]
 async fn loaded_tools_survive_auto_compaction() -> Result<()> {
     let (pipeline, api) = deferring_pipeline().await?;
-    load_and_add_four(&pipeline, &api).await?;
+    load_add_values_then_add(&pipeline, &api).await?;
 
     pipeline
         .set_total_tokens((pipeline.context_limit() as f64 * 0.81) as i32)
@@ -141,9 +213,15 @@ async fn loaded_tools_survive_auto_compaction() -> Result<()> {
         .find(|call| call.input_contains("add two more") && !call.input_contains(SUMMARIZE_HISTORY))
         .expect("an inference after compaction");
     assert!(!after_compaction.input_contains(LOADED_ADD));
-    assert!(after_compaction.advertises_tool(ADD));
+    assert!(ends_with_loaded_tools(
+        &after_compaction,
+        &[ADD_VALUES, ADD]
+    ));
     assert_eq!(pipeline.calculator_total(), 6);
-    assert_eq!(pipeline.tool_discovery().await.loaded_tools, [ADD]);
+    assert_eq!(
+        pipeline.tool_discovery().await.loaded_tools,
+        [ADD_VALUES, ADD]
+    );
     Ok(())
 }
 
@@ -169,7 +247,7 @@ async fn clear_unloads_tools_but_keeps_deferring() -> Result<()> {
 #[tokio::test]
 async fn loaded_tools_survive_reconstruction() -> Result<()> {
     let (pipeline, api) = deferring_pipeline().await?;
-    load_and_add_four(&pipeline, &api).await?;
+    load_add_values_then_add(&pipeline, &api).await?;
 
     let resumed = pipeline.reconstruct().await?;
     api.on("add one").call(ADD, value(1));
@@ -179,7 +257,10 @@ async fn loaded_tools_survive_reconstruction() -> Result<()> {
         .await?
         .assert_message(-1, Agent, "five");
 
-    assert!(api.calls().last().unwrap().advertises_tool(ADD));
+    assert!(ends_with_loaded_tools(
+        api.calls().last().unwrap(),
+        &[ADD_VALUES, ADD]
+    ));
     Ok(())
 }
 

@@ -124,6 +124,7 @@ impl StateMachineServices {
                 false
             }
         };
+        let loaded = crate::agents::tool_discovery::admission_order(&session, &lease);
         let extension_lease = Arc::new(std::sync::Mutex::new(Some(Arc::new(lease))));
 
         let mut next_messages = session
@@ -156,8 +157,11 @@ impl StateMachineServices {
             self.tool_inspection_manager
                 .apply_tool_annotations(&input.tools);
         }
-        let tools =
-            crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_active);
+        let tools = crate::agents::reply_parts::prepare_inference_tools(
+            input.tools,
+            code_execution_active,
+            &loaded,
+        );
         let prompt = PromptManager::new().build_system_prompt_parts(
             &session,
             input.prompt_parts,

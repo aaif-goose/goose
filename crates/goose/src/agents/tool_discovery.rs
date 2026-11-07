@@ -63,7 +63,17 @@ pub(crate) async fn unloaded_tools(session: &Session, lease: &ExtensionLease) ->
         .collect()
 }
 
-/// Unloaded tool names grouped by the extension that owns them.
+/// The order a deferring session's loaded tools follow the rest in, so a load
+/// appends to the tools sent instead of reordering them. Empty for a session
+/// that doesn't defer tools.
+pub(crate) fn admission_order(session: &Session, lease: &ExtensionLease) -> Vec<String> {
+    if !defers_tools(session, lease) {
+        return Vec::new();
+    }
+    ToolDiscoveryState::of(session).loaded_tools
+}
+
+/// Tool names grouped by the extension that owns them.
 pub(crate) fn names_by_extension(tools: &[Tool]) -> BTreeMap<String, Vec<String>> {
     let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for tool in tools {

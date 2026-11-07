@@ -21,7 +21,9 @@ use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
-use crate::agents::tool_discovery::{names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME};
+use crate::agents::tool_discovery::{
+    deferred_tools, defers_tools, names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME,
+};
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
 };
@@ -717,24 +719,30 @@ pub(super) enum ToolDisposition {
     ParseError(String),
 }
 
+/// Tells a session that defers tools how to load them. It doesn't change as
+/// tools load, so a load doesn't change the system prompt.
+const TOOL_DISCOVERY_NOTE: &str = "Some tools are deferred and omitted from tools[]. \
+Each extension below lists its deferred tools under \"Deferred tools\". \
+Use load_tools to load the ones you need, by exact name or `<extension>__*` for all of an extension's tools. \
+After loading, their full schemas appear in tools[] on your next request.";
+
 /// The extension block, as a header part plus one part per extension. Prompt
 /// extras are joined with a blank line, so this renders the same text as one
 /// combined part while keeping each extension's tokens attributable.
+/// `deferred` is set for a session that defers tools: every deferred tool by
+/// extension, loaded or not.
 fn extension_prompt_parts(
     extensions: &[ExtensionInfo],
-    unloaded: &BTreeMap<String, Vec<String>>,
+    deferred: Option<&BTreeMap<String, Vec<String>>>,
 ) -> Vec<(String, String)> {
     let mut header = "# Extensions\n\n\
          Extensions provide additional tools and context from different data sources and applications.\n\
          You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
          Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
         .to_string();
-    if !unloaded.is_empty() {
-        header.push_str(&format!(
-            "\n\nTo keep your context small, some extension tools are not loaded yet: each extension lists them under \"Not loaded\". \
-             Before calling one, call `{LOAD_TOOLS_TOOL_NAME}` with its exact name, or `<extension>__*` for all of an extension's tools. \
-             A loaded tool stays loaded for the rest of the session and becomes callable in your next response."
-        ));
+    if deferred.is_some() {
+        header.push_str("\n\n");
+        header.push_str(TOOL_DISCOVERY_NOTE);
     }
     let mut parts = vec![("extensions".to_string(), header)];
     for extension in extensions {
@@ -745,8 +753,8 @@ fn extension_prompt_parts(
         if !extension.instructions.is_empty() {
             lines.push(format!("### Instructions\n{}", extension.instructions));
         }
-        if let Some(names) = unloaded.get(&extension.name) {
-            lines.push(format!("Not loaded: {}", names.join(", ")));
+        if let Some(names) = deferred.and_then(|deferred| deferred.get(&extension.name)) {
+            lines.push(format!("Deferred tools: {}", names.join(", ")));
         }
         parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
     }
@@ -847,8 +855,12 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        let unloaded = names_by_extension(&unloaded_tools(session, &lease).await);
-        prompt_parts.extend(extension_prompt_parts(&extensions, &unloaded));
+        let deferred = if defers_tools(session, &lease) {
+            Some(names_by_extension(&deferred_tools(session, &lease).await))
+        } else {
+            None
+        };
+        prompt_parts.extend(extension_prompt_parts(&extensions, deferred.as_ref()));
         Ok(prompt_parts)
     }
 
@@ -1035,7 +1047,7 @@ mod tests {
             ExtensionInfo::new("memory", "", true),
         ];
 
-        let parts = extension_prompt_parts(&extensions, &BTreeMap::new());
+        let parts = extension_prompt_parts(&extensions, None);
 
         let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
         assert_eq!(
@@ -1053,12 +1065,12 @@ mod tests {
     }
 
     #[test]
-    fn extension_prompt_parts_list_tools_that_are_not_loaded() {
+    fn extension_prompt_parts_list_every_deferred_tool() {
         let extensions = vec![
             ExtensionInfo::new("developer", "Shell things.", false),
             ExtensionInfo::new("github", "Work with GitHub.", false),
         ];
-        let unloaded = BTreeMap::from([(
+        let deferred = BTreeMap::from([(
             "github".to_string(),
             vec![
                 "github__create_pr".to_string(),
@@ -1066,14 +1078,25 @@ mod tests {
             ],
         )]);
 
-        let parts = extension_prompt_parts(&extensions, &unloaded);
+        let parts = extension_prompt_parts(&extensions, Some(&deferred));
 
-        assert!(parts[0].1.contains("call `load_tools`"));
+        assert!(parts[0].1.ends_with(TOOL_DISCOVERY_NOTE));
         assert_eq!(
             parts[2].1,
-            "## github\n\n### Instructions\nWork with GitHub.\n\nNot loaded: github__create_pr, github__list_prs"
+            "## github\n\n### Instructions\nWork with GitHub.\n\nDeferred tools: github__create_pr, github__list_prs"
         );
-        assert!(!parts[1].1.contains("Not loaded"));
+        assert!(!parts[1].1.contains("Deferred tools"));
+    }
+
+    #[test]
+    fn the_discovery_note_depends_only_on_deferring() {
+        let extensions = vec![ExtensionInfo::new("developer", "Shell things.", false)];
+
+        let deferring = extension_prompt_parts(&extensions, Some(&BTreeMap::new()));
+        let not_deferring = extension_prompt_parts(&extensions, None);
+
+        assert!(deferring[0].1.ends_with(TOOL_DISCOVERY_NOTE));
+        assert!(!not_deferring[0].1.contains(TOOL_DISCOVERY_NOTE));
     }
 
     #[test]
