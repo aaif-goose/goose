@@ -374,10 +374,12 @@ struct LiveVoiceSettings {
 
 #[cfg(feature = "live-voice")]
 fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettings, &'static str> {
-    let endpoint = config
-        .get_param::<String>(LIVE_VOICE_ENDPOINT_CONFIG_KEY)
-        .ok()
-        .filter(|endpoint| !endpoint.trim().is_empty());
+    // Only an absent or blank endpoint means OpenAI; an unreadable one must not.
+    let endpoint = match config.get_param::<String>(LIVE_VOICE_ENDPOINT_CONFIG_KEY) {
+        Ok(endpoint) => Some(endpoint).filter(|endpoint| !endpoint.trim().is_empty()),
+        Err(crate::config::ConfigError::NotFound(_)) => None,
+        Err(_) => return Err("Live voice endpoint is invalid"),
+    };
     // A custom endpoint only ever receives its own key: OPENAI_API_KEY must not leave for
     // another server, which is also what makes a plain-http endpoint acceptable.
     let api_key_name = if endpoint.is_some() {

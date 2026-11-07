@@ -1253,6 +1253,22 @@ mod settings {
     }
 
     #[test]
+    fn an_unreadable_endpoint_does_not_fall_back_to_openai() {
+        let _env = env_lock::lock_env(ENV);
+        let directory = TempDir::new().unwrap();
+        let config = config(&directory);
+        config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+        config
+            .set_param("GOOSE_LIVE_VOICE_ENDPOINT", vec![ENDPOINT])
+            .unwrap();
+
+        assert_eq!(
+            live_voice_settings(&config),
+            Err("Live voice endpoint is invalid")
+        );
+    }
+
+    #[test]
     fn a_custom_endpoint_uses_its_own_key_and_model() {
         let _env = env_lock::lock_env(ENV);
         let directory = TempDir::new().unwrap();
