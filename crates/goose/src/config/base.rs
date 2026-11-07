@@ -794,6 +794,28 @@ impl Config {
         }
     }
 
+    /// Like `get_param`, but an unreadable config file or a non-Unicode environment value is
+    /// an error rather than a missing key.
+    pub(crate) fn get_param_strict<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+    ) -> Result<T, ConfigError> {
+        let env_key = key.to_uppercase();
+        match env::var(&env_key) {
+            Ok(value) => Ok(serde_json::from_value(Self::parse_env_value(&value)?)?),
+            Err(env::VarError::NotPresent) => {
+                let value = self
+                    .load_strict()?
+                    .remove(key)
+                    .ok_or_else(|| ConfigError::NotFound(key.to_string()))?;
+                Ok(serde_yaml::from_value(value)?)
+            }
+            Err(env::VarError::NotUnicode(_)) => Err(ConfigError::DeserializeError(format!(
+                "{env_key} contains non-Unicode data"
+            ))),
+        }
+    }
+
     pub(crate) fn get_param_source_values<T: for<'de> Deserialize<'de>>(
         &self,
         key: &str,
@@ -1293,29 +1315,10 @@ config_value!(GOOSE_SEARCH_PATHS, Vec<String>);
 config_value!(GOOSE_MODE, GooseMode);
 impl Config {
     pub(crate) fn resolve_goose_mode(&self) -> Result<GooseMode, ConfigError> {
-        match self.get_goose_mode_strict() {
+        match self.get_param_strict("GOOSE_MODE") {
             Ok(mode) => Ok(mode),
             Err(ConfigError::NotFound(_)) => Ok(GooseMode::Auto),
             Err(error) => Err(error),
-        }
-    }
-
-    pub(crate) fn get_goose_mode_strict(&self) -> Result<GooseMode, ConfigError> {
-        match env::var("GOOSE_MODE") {
-            Ok(value) => {
-                let value = Self::parse_env_value(&value)?;
-                Ok(serde_json::from_value(value)?)
-            }
-            Err(env::VarError::NotPresent) => {
-                let values = self.load_strict()?;
-                let value = values
-                    .get("GOOSE_MODE")
-                    .ok_or_else(|| ConfigError::NotFound("GOOSE_MODE".to_string()))?;
-                Ok(serde_yaml::from_value(value.clone())?)
-            }
-            Err(env::VarError::NotUnicode(_)) => Err(ConfigError::DeserializeError(
-                "GOOSE_MODE contains non-Unicode data".to_string(),
-            )),
         }
     }
 }

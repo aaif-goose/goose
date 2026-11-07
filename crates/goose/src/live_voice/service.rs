@@ -374,8 +374,9 @@ struct LiveVoiceSettings {
 
 #[cfg(feature = "live-voice")]
 fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettings, &'static str> {
-    // Only an absent or blank endpoint means OpenAI; an unreadable one must not.
-    let endpoint = match config.get_param::<String>(LIVE_VOICE_ENDPOINT_CONFIG_KEY) {
+    // Only an absent or blank endpoint means OpenAI; an unreadable one, or an unreadable
+    // config file that might hold it, must not.
+    let endpoint = match config.get_param_strict::<String>(LIVE_VOICE_ENDPOINT_CONFIG_KEY) {
         Ok(endpoint) => Some(endpoint).filter(|endpoint| !endpoint.trim().is_empty()),
         Err(crate::config::ConfigError::NotFound(_)) => None,
         Err(_) => return Err("Live voice endpoint is invalid"),

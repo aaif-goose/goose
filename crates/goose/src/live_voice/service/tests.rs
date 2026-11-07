@@ -1260,12 +1260,36 @@ mod settings {
     #[test]
     fn an_unreadable_endpoint_does_not_fall_back_to_openai() {
         let _env = env_lock::lock_env(ENV);
+        for contents in [
+            format!("GOOSE_LIVE_VOICE_ENDPOINT: [{ENDPOINT}]\n"),
+            format!("GOOSE_LIVE_VOICE_ENDPOINT: {ENDPOINT}: [\n"),
+        ] {
+            let directory = TempDir::new().unwrap();
+            let config = config(&directory);
+            config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+            std::fs::write(directory.path().join("config.yaml"), &contents).unwrap();
+
+            assert_eq!(
+                live_voice_settings(&config),
+                Err("Live voice endpoint is invalid"),
+                "{contents}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_unicode_endpoint_variable_does_not_fall_back_to_openai() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let _env = env_lock::lock_env(ENV);
         let directory = TempDir::new().unwrap();
         let config = config(&directory);
         config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
-        config
-            .set_param("GOOSE_LIVE_VOICE_ENDPOINT", vec![ENDPOINT])
-            .unwrap();
+        std::env::set_var(
+            "GOOSE_LIVE_VOICE_ENDPOINT",
+            std::ffi::OsStr::from_bytes(b"\xff\xfe"),
+        );
 
         assert_eq!(
             live_voice_settings(&config),
