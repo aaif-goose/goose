@@ -190,6 +190,21 @@ impl ApiCall {
         request_system(&self.body).contains(needle)
     }
 
+    pub(super) fn system(&self) -> String {
+        request_system(&self.body)
+    }
+
+    pub(super) fn tools(&self) -> &[Value] {
+        self.body["tools"].as_array().map_or(&[], Vec::as_slice)
+    }
+
+    pub(super) fn tool_names(&self) -> Vec<&str> {
+        self.tools()
+            .iter()
+            .filter_map(|tool| tool["function"]["name"].as_str())
+            .collect()
+    }
+
     pub(super) fn advertises_tool(&self, name: &str) -> bool {
         self.body["tools"]
             .as_array()

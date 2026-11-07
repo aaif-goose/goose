@@ -80,17 +80,16 @@ fn discovery_tools() -> Result<Vec<Tool>> {
         discovery_tool(
             SEARCH_TOOLS_TOOL_NAME,
             "Search tools",
-            "Search the extension tools that are sent only once loaded, by name and description. \
-             Returns the best matches with a short description and whether each is loaded. \
-             Load the ones you need with load_tools.",
+            "Search the deferred tools, which are omitted from tools[] until loaded, by name \
+             and description. Returns the best matches with a short description and whether \
+             each is loaded. Load the ones you need with load_tools.",
             schema_for!(SearchToolsParams),
         )?,
         discovery_tool(
             LOAD_TOOLS_TOOL_NAME,
             "Load tools",
-            "Load extension tools that are not loaded yet: the ones listed under \"Not loaded\" \
-             in your system instructions, or found with search_tools. A loaded tool becomes callable in your next response, so don't call it in the \
-             same response that loads it.",
+            "Load deferred tools found with search_tools. A loaded tool's schema appears in \
+             tools[] on your next request, so don't call it in the same response that loads it.",
             schema_for!(LoadToolsParams),
         )?,
     ])

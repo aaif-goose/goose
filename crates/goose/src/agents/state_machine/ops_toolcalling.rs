@@ -1,6 +1,6 @@
 //! Exposes extension capabilities and executes requests that belong to them.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
@@ -22,7 +22,7 @@ use crate::agents::state_machine::{
     GooseEffect, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::tool_discovery::{
-    names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME,
+    defers_tools, unloaded_tools, LOAD_TOOLS_TOOL_NAME, SEARCH_TOOLS_TOOL_NAME, TOOL_DISCOVERY_NOTE,
 };
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
@@ -723,22 +723,15 @@ pub(super) enum ToolDisposition {
 /// The extension block, as a header part plus one part per extension. Prompt
 /// extras are joined with a blank line, so this renders the same text as one
 /// combined part while keeping each extension's tokens attributable.
-fn extension_prompt_parts(
-    extensions: &[ExtensionInfo],
-    unloaded: &BTreeMap<String, Vec<String>>,
-) -> Vec<(String, String)> {
+fn extension_prompt_parts(extensions: &[ExtensionInfo], defers: bool) -> Vec<(String, String)> {
     let mut header = "# Extensions\n\n\
          Extensions provide additional tools and context from different data sources and applications.\n\
          You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
          Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
         .to_string();
-    if !unloaded.is_empty() {
-        header.push_str(&format!(
-            "\n\nTo keep your context small, some extension tools are not loaded yet: each extension lists them under \"Not loaded\". \
-             Before calling one, call `{LOAD_TOOLS_TOOL_NAME}` with its exact name, or `<extension>__*` for all of an extension's tools. \
-             If no listed name fits what you need, call `{SEARCH_TOOLS_TOOL_NAME}` with a few words describing it. \
-             A loaded tool stays loaded for the rest of the session and becomes callable in your next response."
-        ));
+    if defers {
+        header.push_str("\n\n");
+        header.push_str(TOOL_DISCOVERY_NOTE);
     }
     let mut parts = vec![("extensions".to_string(), header)];
     for extension in extensions {
@@ -748,9 +741,6 @@ fn extension_prompt_parts(
         }
         if !extension.instructions.is_empty() {
             lines.push(format!("### Instructions\n{}", extension.instructions));
-        }
-        if let Some(names) = unloaded.get(&extension.name) {
-            lines.push(format!("Not loaded: {}", names.join(", ")));
         }
         parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
     }
@@ -851,8 +841,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        let unloaded = names_by_extension(&unloaded_tools(session, &lease).await);
-        prompt_parts.extend(extension_prompt_parts(&extensions, &unloaded));
+        prompt_parts.extend(extension_prompt_parts(
+            &extensions,
+            defers_tools(session, &lease),
+        ));
         Ok(prompt_parts)
     }
 
@@ -1039,7 +1031,7 @@ mod tests {
             ExtensionInfo::new("memory", "", true),
         ];
 
-        let parts = extension_prompt_parts(&extensions, &BTreeMap::new());
+        let parts = extension_prompt_parts(&extensions, false);
 
         let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
         assert_eq!(
@@ -1057,28 +1049,18 @@ mod tests {
     }
 
     #[test]
-    fn extension_prompt_parts_list_tools_that_are_not_loaded() {
+    fn the_discovery_note_depends_only_on_deferring() {
         let extensions = vec![
             ExtensionInfo::new("developer", "Shell things.", false),
             ExtensionInfo::new("github", "Work with GitHub.", false),
         ];
-        let unloaded = BTreeMap::from([(
-            "github".to_string(),
-            vec![
-                "github__create_pr".to_string(),
-                "github__list_prs".to_string(),
-            ],
-        )]);
 
-        let parts = extension_prompt_parts(&extensions, &unloaded);
+        let deferring = extension_prompt_parts(&extensions, true);
+        let not_deferring = extension_prompt_parts(&extensions, false);
 
-        assert!(parts[0].1.contains("call `load_tools`"));
-        assert!(parts[0].1.contains("call `search_tools`"));
-        assert_eq!(
-            parts[2].1,
-            "## github\n\n### Instructions\nWork with GitHub.\n\nNot loaded: github__create_pr, github__list_prs"
-        );
-        assert!(!parts[1].1.contains("Not loaded"));
+        assert!(deferring[0].1.ends_with(TOOL_DISCOVERY_NOTE));
+        assert!(!not_deferring[0].1.contains(TOOL_DISCOVERY_NOTE));
+        assert_eq!(deferring[1..], not_deferring[1..]);
     }
 
     #[test]

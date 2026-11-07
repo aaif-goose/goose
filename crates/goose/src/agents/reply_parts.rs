@@ -181,9 +181,12 @@ fn is_mergeable_assistant_chunk(message: &Message) -> bool {
         })
 }
 
+/// `loaded` is a deferring session's loaded tools in the order they were
+/// loaded; see [`crate::agents::tool_discovery::admission_order`].
 pub(crate) fn prepare_inference_tools(
     mut tools: Vec<Tool>,
     code_execution_active: bool,
+    loaded: &[String],
 ) -> Vec<Tool> {
     #[cfg(feature = "code-mode")]
     if code_execution_active {
@@ -205,8 +208,10 @@ pub(crate) fn prepare_inference_tools(
     // Tools with `_meta.ui.visibility` that doesn't include "model" are app-only.
     tools.retain(is_tool_visible_to_model);
 
-    // Stable tool ordering is important for multi session prompt caching.
-    tools.sort_by(|a, b| a.name.cmp(&b.name));
+    // Stable tool ordering is important for multi session prompt caching. Loaded
+    // tools go last, in load order, so a load only appends to the tool prefix.
+    let load_position = |tool: &Tool| loaded.iter().position(|name| name == &*tool.name);
+    tools.sort_by(|a, b| (load_position(a), &a.name).cmp(&(load_position(b), &b.name)));
     tools
 }
 
@@ -1487,6 +1492,7 @@ mod tests {
                 extension_final_output,
             ],
             true,
+            &[],
         );
         let names = filtered
             .iter()

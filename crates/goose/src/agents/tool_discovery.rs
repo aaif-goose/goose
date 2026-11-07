@@ -6,7 +6,7 @@
 
 pub(crate) mod search;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 use rmcp::model::Tool;
 use serde::Serialize;
@@ -20,6 +20,12 @@ use crate::session::{Session, ToolDiscoveryState};
 pub const ALWAYS_LOAD_META_KEY: &str = "goose/alwaysLoad";
 pub const LOAD_TOOLS_TOOL_NAME: &str = "load_tools";
 pub const SEARCH_TOOLS_TOOL_NAME: &str = "search_tools";
+/// Tells a session that defers tools how to find and load them. It doesn't
+/// change as tools load or as the model searches, so neither changes the
+/// system prompt.
+pub const TOOL_DISCOVERY_NOTE: &str = "Some tools are deferred and omitted from tools[]. \
+Use search_tools to discover them, then load_tools to load the ones you need. \
+After loading, their full schemas appear in tools[] on your next request.";
 const ALL_TOOLS_SUFFIX: &str = "__*";
 /// OpenAI rejects requests with more tools than this, so a load never takes a
 /// session past it.
@@ -66,21 +72,14 @@ pub(crate) async fn unloaded_tools(session: &Session, lease: &ExtensionLease) ->
         .collect()
 }
 
-/// Unloaded tool names grouped by the extension that owns them.
-pub(crate) fn names_by_extension(tools: &[Tool]) -> BTreeMap<String, Vec<String>> {
-    let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for tool in tools {
-        if let Some(owner) = get_tool_owner(tool) {
-            grouped
-                .entry(owner)
-                .or_default()
-                .push(tool.name.to_string());
-        }
+/// The order a deferring session's loaded tools follow the rest in, so a load
+/// appends to the tools sent instead of reordering them. Empty for a session
+/// that doesn't defer tools.
+pub(crate) fn admission_order(session: &Session, lease: &ExtensionLease) -> Vec<String> {
+    if !defers_tools(session, lease) {
+        return Vec::new();
     }
-    for names in grouped.values_mut() {
-        names.sort();
-    }
-    grouped
+    ToolDiscoveryState::of(session).loaded_tools
 }
 
 /// The tools a deferring session sends only once loaded, loaded or not.
