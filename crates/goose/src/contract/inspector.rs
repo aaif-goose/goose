@@ -60,12 +60,20 @@ fn extract_path_candidates(arguments: &serde_json::Map<String, serde_json::Value
     }
     for key in COMMAND_ARG_KEYS {
         if let Some(command) = arguments.get(*key).and_then(|v| v.as_str()) {
-            for token in shell_words::split(command).unwrap_or_default() {
-                if token.starts_with('-') {
+            let tokens = shell_words::split(command).unwrap_or_default();
+            for (i, token) in tokens.iter().enumerate() {
+                if matches!(token.as_str(), "cd" | "pushd" | "chdir") {
+                    if let Some(target) = tokens.get(i + 1) {
+                        if !target.starts_with('-') {
+                            candidates.push(target.clone());
+                        }
+                    }
                     continue;
                 }
-                if token.contains('/') || token.contains('\\') || token.contains('.') {
-                    candidates.push(token);
+                if !token.starts_with('-')
+                    && (token.contains('/') || token.contains('\\') || token.contains('.'))
+                {
+                    candidates.push(token.clone());
                 }
             }
         }
@@ -188,6 +196,15 @@ mod tests {
         assert!(candidates.contains(&"src/.env".to_string()));
         assert!(candidates.contains(&"secrets/api.key".to_string()));
         assert!(!candidates.iter().any(|c| c == "cargo"));
+    }
+
+    #[test]
+    fn test_extract_path_candidates_cd_target() {
+        let args = object!({
+            "command": "cd secrets && cat key"
+        });
+        let candidates = extract_path_candidates(&args);
+        assert!(candidates.contains(&"secrets".to_string()));
     }
 
     #[test]

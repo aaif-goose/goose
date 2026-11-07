@@ -70,7 +70,7 @@ impl AgentContract {
                     };
                 }
             }
-            if Some(dir) == git_root {
+            if Some(dir) == git_root || git_root.is_none() {
                 break;
             }
             match dir.parent() {
@@ -91,11 +91,22 @@ impl AgentContract {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
 
+        let root = root.canonicalize().unwrap_or(root);
+
         let mut builder = GitignoreBuilder::new(&root);
+        let mut dir_prefixes = Vec::new();
         for pattern in &contract.forbidden_paths {
             builder
                 .add_line(None, pattern)
                 .with_context(|| format!("invalid forbidden_paths pattern {:?}", pattern))?;
+            if let Some(prefix) = pattern.strip_suffix("/**") {
+                dir_prefixes.push(prefix.to_string());
+            }
+        }
+        for prefix in &dir_prefixes {
+            builder
+                .add_line(None, prefix)
+                .with_context(|| format!("invalid forbidden_paths pattern {:?}", prefix))?;
         }
         let path_overrides = builder.build()?;
 
@@ -162,6 +173,41 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
+/// Canonicalize the deepest existing ancestor so paths through symlinks
+/// (e.g. `alias -> secrets`) resolve to their real location before matching.
+fn resolve_symlinks(path: &Path) -> PathBuf {
+    let mut existing = path.to_path_buf();
+    let mut remainder = Vec::new();
+    while !existing.exists() {
+        match existing.file_name() {
+            Some(name) => {
+                remainder.push(name.to_os_string());
+                existing.pop();
+            }
+            None => return path.to_path_buf(),
+        }
+    }
+    let mut out = existing.canonicalize().unwrap_or(existing);
+    for part in remainder.iter().rev() {
+        out.push(part);
+    }
+    out
+}
+
+fn strip_file_scheme(candidate: &str) -> &str {
+    let Some(rest) = candidate.strip_prefix("file://") else {
+        return candidate;
+    };
+    if rest.len() >= 3
+        && rest.as_bytes()[1].is_ascii_alphabetic()
+        && rest.as_bytes()[2] == b':'
+    {
+        rest.strip_prefix('/').unwrap_or(rest)
+    } else {
+        rest
+    }
+}
+
 fn matched_pattern(matcher: &Gitignore, path: &Path) -> Option<String> {
     match matcher.matched_path_or_any_parents(path, path.is_dir()) {
         Match::Ignore(glob) => Some(glob.original().to_string()),
@@ -173,12 +219,13 @@ impl LoadedContract {
     /// Resolve `candidate` (relative to the session working dir) and return the
     /// forbidden pattern it matches, if any.
     pub fn forbidden_match(&self, working_dir: &Path, candidate: &str) -> Option<String> {
+        let candidate = strip_file_scheme(candidate);
         let raw = Path::new(candidate);
-        let resolved = normalize(&if raw.is_absolute() {
+        let resolved = resolve_symlinks(&normalize(&if raw.is_absolute() {
             raw.to_path_buf()
         } else {
             working_dir.join(raw)
-        });
+        }));
 
         if resolved.starts_with(&self.root) {
             return matched_pattern(&self.path_overrides, &resolved);
@@ -255,7 +302,7 @@ instructions: Always run verify before finishing.
         fs::create_dir_all(&subdir).unwrap();
 
         let loaded = AgentContract::discover(&subdir).unwrap();
-        assert_eq!(loaded.root, dir.path());
+        assert_eq!(loaded.root, dir.path().canonicalize().unwrap());
     }
 
     #[test]
@@ -300,6 +347,64 @@ instructions: Always run verify before finishing.
             Some("src/generated/**".to_string())
         );
         assert!(loaded.forbidden_match(wd, "src/main.rs").is_none());
+    }
+
+    #[test]
+    fn test_discover_without_git_root_checks_start_dir_only() {
+        let dir = TempDir::new().unwrap();
+        write_contract(dir.path());
+        let subdir = dir.path().join("sub");
+        fs::create_dir(&subdir).unwrap();
+
+        assert!(AgentContract::discover(dir.path()).is_some());
+        assert!(AgentContract::discover(&subdir).is_none());
+    }
+
+    #[test]
+    fn test_forbidden_match_dir_prefix_and_cd() {
+        let dir = TempDir::new().unwrap();
+        write_contract(dir.path());
+        let loaded = AgentContract::discover(dir.path()).unwrap();
+        let wd = dir.path();
+
+        // `x/**` also forbids `x` itself, so `cd secrets` is denied
+        assert_eq!(
+            loaded.forbidden_match(wd, "secrets"),
+            Some("secrets".to_string())
+        );
+        assert_eq!(
+            loaded.forbidden_match(wd, "src/generated"),
+            Some("src/generated".to_string())
+        );
+    }
+
+    #[test]
+    fn test_forbidden_match_file_url() {
+        let dir = TempDir::new().unwrap();
+        write_contract(dir.path());
+        let loaded = AgentContract::discover(dir.path()).unwrap();
+        let wd = dir.path();
+
+        let file_url = format!("file://{}", wd.join("secrets/photo.png").display());
+        assert!(loaded.forbidden_match(wd, &file_url).is_some());
+    }
+
+    #[test]
+    fn test_forbidden_match_symlink() {
+        let dir = TempDir::new().unwrap();
+        write_contract(dir.path());
+        let secrets = dir.path().join("secrets");
+        fs::create_dir(&secrets).unwrap();
+        let alias = dir.path().join("alias");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&secrets, &alias).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(&secrets, &alias).is_err() {
+            return; // no symlink privilege on this machine
+        }
+
+        let loaded = AgentContract::discover(dir.path()).unwrap();
+        assert!(loaded.forbidden_match(dir.path(), "alias/token").is_some());
     }
 
     #[test]
