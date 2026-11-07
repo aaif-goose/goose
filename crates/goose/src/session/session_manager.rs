@@ -2261,7 +2261,7 @@ impl SessionStorage {
         .await?;
 
         if !response_ids.is_empty() {
-            Self::drop_resolved_advertised_tools(&mut *tx, session_id, &response_ids).await?;
+            Self::drop_resolved_advertised_tools(&mut tx, session_id, &response_ids).await?;
         }
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
