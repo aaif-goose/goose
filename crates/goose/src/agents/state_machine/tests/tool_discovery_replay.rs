@@ -1,5 +1,5 @@
-//! Replays paths from the TLA+ model in .agents/skills/verify-tool-discovery
-//! against the real pipeline, one test step per model action.
+//! Tool budget paths through the real pipeline: extensions changing between
+//! loads, and several load_tools calls in one response.
 
 use std::sync::Arc;
 
@@ -68,11 +68,11 @@ fn load_call(name: &str) -> CallToolRequestParams {
         .with_arguments(json!({ "tool_names": [name] }).as_object().unwrap().clone())
 }
 
-/// Finding, TLC path for EveryRequestFits: a tool loaded before its extension
-/// was turned off comes back loaded when the extension returns, and no budget
-/// check runs then. The budget accepted the last load when the next request
-/// would carry 13 tools; the request after the extension returns carries 15.
-/// At MAX_ADVERTISED_TOOLS = 13 that request is past the limit.
+/// Known gap: a tool loaded before its extension was turned off comes back
+/// loaded when the extension returns, and no budget check runs then. The
+/// budget accepted the last load when the next request would carry 13 tools;
+/// the request after the extension returns carries 15. At
+/// MAX_ADVERTISED_TOOLS = 13 that request is past the limit.
 #[tokio::test]
 async fn replay_an_extension_returning_with_loads_skips_the_budget() -> Result<()> {
     let (pipeline, api) = deferring_pipeline().await?;
@@ -97,8 +97,7 @@ async fn replay_an_extension_returning_with_loads_skips_the_budget() -> Result<(
     Ok(())
 }
 
-/// TLC path for NoLoadPushesPastLimit on the `no-batch-count` mutant: two
-/// load_tools calls in one response from a request that carried
+/// Two load_tools calls in one response from a request that carried
 /// MAX_ADVERTISED_TOOLS - 1 tools. Only the first fits.
 #[tokio::test]
 async fn replay_two_loads_in_one_response_share_the_budget() -> Result<()> {
