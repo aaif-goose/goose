@@ -3705,7 +3705,7 @@
     "defaultMessage": "ML 모델을 사용하여 채팅에서 잠재적인 프롬프트 인젝션을 감지합니다."
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "값이 높을수록 더 엄격합니다(0.01 = 매우 관대함, 1.0 = 가장 엄격)."
+    "defaultMessage": "값이 낮을수록 더 엄격합니다(0.01 = 가장 엄격, 1.0 = 매우 관대함)."
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "명령 인젝션 감지는 WARP에 연결했을 때 가장 잘 작동합니다. 분류 서비스에 연결하려면 WARP가 필요합니다."

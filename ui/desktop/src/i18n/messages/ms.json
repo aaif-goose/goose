@@ -3705,7 +3705,7 @@
     "defaultMessage": "Gunakan model ML untuk mengesan potensi suntikan gesaan dalam sembang anda"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Nilai yang lebih tinggi adalah lebih ketat (0.01 = sangat longgar, 1.0 = paling ketat)"
+    "defaultMessage": "Nilai yang lebih rendah adalah lebih ketat (0.01 = paling ketat, 1.0 = sangat longgar)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Pengesanan suntikan arahan berfungsi paling baik apabila disambungkan ke WARP (diperlukan untuk mencapai perkhidmatan pengelasan)."
