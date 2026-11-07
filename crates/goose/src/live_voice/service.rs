@@ -23,7 +23,14 @@ const LIVE_VOICE_ENABLED_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENABLED";
 #[cfg(feature = "live-voice")]
 const LIVE_VOICE_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE";
 #[cfg(feature = "live-voice")]
+const LIVE_VOICE_ENDPOINT_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENDPOINT";
+#[cfg(feature = "live-voice")]
+const LIVE_VOICE_MODEL_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_MODEL";
+#[cfg(feature = "live-voice")]
+const LIVE_VOICE_API_KEY_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_API_KEY";
+#[cfg(feature = "live-voice")]
 const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
+
 #[cfg(feature = "live-voice")]
 const LIVE_SESSION_INSTRUCTIONS: &str = concat!(
     "You are Goose's live voice interface. Keep the conversation natural and concise.\n",
@@ -357,27 +364,71 @@ fn configured_live_voice_enabled() -> bool {
 }
 
 #[cfg(feature = "live-voice")]
+#[derive(Debug, PartialEq)]
+struct LiveVoiceSettings {
+    api_key: String,
+    endpoint: Option<String>,
+    model: Option<String>,
+    voice: String,
+}
+
+#[cfg(feature = "live-voice")]
+fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettings, &'static str> {
+    let endpoint = config
+        .get_param::<String>(LIVE_VOICE_ENDPOINT_CONFIG_KEY)
+        .ok()
+        .filter(|endpoint| !endpoint.trim().is_empty());
+    // A custom endpoint only ever receives its own key: OPENAI_API_KEY must not leave for
+    // another server, which is also what makes a plain-http endpoint acceptable.
+    let api_key_name = if endpoint.is_some() {
+        LIVE_VOICE_API_KEY_CONFIG_KEY
+    } else {
+        "OPENAI_API_KEY"
+    };
+    // Read past the secrets cache: another process may have saved the key since.
+    let api_key = config
+        .get_secret_uncached::<String>(api_key_name)
+        .map_err(|_| "Live voice provider is not configured")?;
+    let model = config
+        .get_param::<String>(LIVE_VOICE_MODEL_CONFIG_KEY)
+        .ok()
+        .filter(|model| !model.trim().is_empty());
+    let voice = config
+        .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
+        .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
+    Ok(LiveVoiceSettings {
+        api_key,
+        endpoint,
+        model,
+        voice,
+    })
+}
+
+#[cfg(feature = "live-voice")]
 fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     if !configured_live_voice_enabled() {
         return Err("Live voice is disabled");
     }
 
     let config = crate::config::Config::global();
-    let api_key = config
-        .get_secret::<String>("OPENAI_API_KEY")
-        .map_err(|_| "Live voice provider is not configured")?;
-    let voice = config
-        .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
-        .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
+    let settings = live_voice_settings(config)?;
     let tls_config = crate::config::tls::provider_tls_config_from_config(config)
         .map_err(|_| "Live voice TLS configuration is invalid")?;
-    let provider = OpenAiLiveVoiceProvider::new(
-        api_key,
-        voice,
+    let mut provider = OpenAiLiveVoiceProvider::new(
+        settings.api_key,
+        settings.voice,
         LIVE_SESSION_INSTRUCTIONS.into(),
         DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
     )
     .map_err(|_| "Live voice provider is not configured")?;
+    if let Some(model) = settings.model {
+        provider = provider.with_model(model);
+    }
+    if let Some(endpoint) = settings.endpoint {
+        provider = provider
+            .with_endpoint(&endpoint)
+            .map_err(|_| "Live voice endpoint is invalid")?;
+    }
     let provider = match tls_config {
         Some(tls_config) => provider.with_tls_config(tls_config),
         None => provider,

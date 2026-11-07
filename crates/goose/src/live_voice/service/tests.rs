@@ -1187,3 +1187,114 @@ fn stale_cleanup_cannot_remove_a_later_call() {
     ));
     assert!(active_runs.is_active("main-session"));
 }
+
+#[cfg(feature = "live-voice")]
+mod settings {
+    use super::super::live_voice_settings;
+    use crate::config::Config;
+    use tempfile::TempDir;
+
+    const ENV: [(&str, Option<&str>); 5] = [
+        ("OPENAI_API_KEY", None),
+        ("GOOSE_LIVE_VOICE_ENDPOINT", None),
+        ("GOOSE_LIVE_VOICE_MODEL", None),
+        ("GOOSE_LIVE_VOICE_API_KEY", None),
+        ("GOOSE_LIVE_VOICE", None),
+    ];
+    const ENDPOINT: &str = "http://192.0.2.10:8080/v1/live/sessions";
+
+    fn config(directory: &TempDir) -> Config {
+        Config::new_with_file_secrets(
+            directory.path().join("config.yaml"),
+            directory.path().join("secrets.yaml"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn without_an_endpoint_the_openai_key_and_defaults_are_used() {
+        let _env = env_lock::lock_env(ENV);
+        for endpoint in [None, Some(""), Some("  ")] {
+            let directory = TempDir::new().unwrap();
+            let config = config(&directory);
+            config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+            config
+                .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"voice-key")
+                .unwrap();
+            if let Some(endpoint) = endpoint {
+                config
+                    .set_param("GOOSE_LIVE_VOICE_ENDPOINT", endpoint)
+                    .unwrap();
+            }
+
+            let settings = live_voice_settings(&config).unwrap();
+
+            assert_eq!(settings.api_key, "openai-key");
+            assert_eq!(settings.endpoint, None);
+            assert_eq!(settings.model, None);
+            assert_eq!(settings.voice, "marin");
+        }
+    }
+
+    #[test]
+    fn a_custom_endpoint_never_receives_the_openai_key() {
+        let _env = env_lock::lock_env(ENV);
+        let directory = TempDir::new().unwrap();
+        let config = config(&directory);
+        config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+        config
+            .set_param("GOOSE_LIVE_VOICE_ENDPOINT", ENDPOINT)
+            .unwrap();
+
+        assert_eq!(
+            live_voice_settings(&config),
+            Err("Live voice provider is not configured")
+        );
+    }
+
+    #[test]
+    fn a_custom_endpoint_uses_its_own_key_and_model() {
+        let _env = env_lock::lock_env(ENV);
+        let directory = TempDir::new().unwrap();
+        let config = config(&directory);
+        config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+        config
+            .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"voice-key")
+            .unwrap();
+        config
+            .set_param("GOOSE_LIVE_VOICE_ENDPOINT", ENDPOINT)
+            .unwrap();
+        config
+            .set_param("GOOSE_LIVE_VOICE_MODEL", "custom-live-model")
+            .unwrap();
+
+        let settings = live_voice_settings(&config).unwrap();
+
+        assert_eq!(settings.api_key, "voice-key");
+        assert_eq!(settings.endpoint.as_deref(), Some(ENDPOINT));
+        assert_eq!(settings.model.as_deref(), Some("custom-live-model"));
+    }
+
+    #[test]
+    fn each_start_reads_a_key_another_process_saved() {
+        let _env = env_lock::lock_env(ENV);
+        let directory = TempDir::new().unwrap();
+        let agent = config(&directory);
+        let setup = config(&directory);
+        agent
+            .set_param("GOOSE_LIVE_VOICE_ENDPOINT", ENDPOINT)
+            .unwrap();
+        agent
+            .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"old-key")
+            .unwrap();
+        assert_eq!(live_voice_settings(&agent).unwrap().api_key, "old-key");
+        let generation = agent.generation();
+
+        setup
+            .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"new-key")
+            .unwrap();
+
+        assert_eq!(live_voice_settings(&agent).unwrap().api_key, "new-key");
+        assert_eq!(agent.generation(), generation);
+    }
+}
