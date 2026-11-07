@@ -167,7 +167,7 @@ fn load_hints_from_directory(
     }
 }
 
-fn find_git_root(start_dir: &Path) -> Option<&Path> {
+pub(crate) fn find_git_root(start_dir: &Path) -> Option<&Path> {
     let mut check_dir = start_dir;
 
     loop {
@@ -220,6 +220,17 @@ pub fn build_gitignore(cwd: &Path) -> Gitignore {
         let gitignore_path = dir.join(".gitignore");
         if gitignore_path.is_file() {
             builder.add(&gitignore_path);
+        }
+    }
+    if let Some(loaded) = crate::contract::AgentContract::discover(cwd) {
+        for pattern in &loaded.contract.context.ignore {
+            if let Err(e) = builder.add_line(None, pattern) {
+                tracing::warn!(
+                    "ignoring invalid agent.yaml context.ignore pattern {:?}: {}",
+                    pattern,
+                    e
+                );
+            }
         }
     }
     builder.build().unwrap_or_else(|_| {

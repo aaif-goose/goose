@@ -91,7 +91,16 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
         let hints_filenames = get_context_filenames();
         let ignore_patterns = build_gitignore(working_dir);
 
-        let hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+        let mut hints = load_hint_files(working_dir, &hints_filenames, &ignore_patterns);
+
+        if let Some(loaded) = crate::contract::AgentContract::discover(working_dir) {
+            if let Some(section) = loaded.contract.prompt_section() {
+                if !hints.is_empty() {
+                    hints.push_str("\n\n");
+                }
+                hints.push_str(&section);
+            }
+        }
 
         if !hints.is_empty() {
             self.hints = Some(hints);

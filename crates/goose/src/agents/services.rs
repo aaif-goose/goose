@@ -28,6 +28,7 @@ use crate::agents::types::{
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionManager;
 use crate::config::{Config, GooseMode};
+use crate::contract::ContractInspector;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -558,6 +559,10 @@ impl StateMachineServices {
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
         tool_inspection_manager.add_inspector(Box::new(EgressInspector::new()));
+
+        // Add contract inspector (enforces agent.yaml forbidden rules)
+        tool_inspection_manager
+            .add_inspector(Box::new(ContractInspector::new(session_manager.clone())));
 
         // Add adversary inspector (LLM-based review, enabled by ~/.config/goose/adversary.md)
         tool_inspection_manager.add_inspector(Box::new(AdversaryInspector::new(
