@@ -103,9 +103,9 @@ fn parse_arguments<T: DeserializeOwned>(arguments: Option<&JsonObject>) -> Resul
 }
 
 /// Slots for the tools operations add to a request (`load_skill`,
-/// `load_tools`, a recipe's `final_output`) when the request's own count
-/// wasn't recorded.
-const RESERVED_OPERATION_TOOLS: usize = 3;
+/// `search_tools`, `load_tools`, a recipe's `final_output`) when the
+/// request's own count wasn't recorded.
+const RESERVED_OPERATION_TOOLS: usize = 4;
 
 pub struct ToolDiscoveryOperation {
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -319,5 +319,19 @@ impl Operation<Session, GooseEffect> for ToolDiscoveryOperation {
         }
         effects.push(emit.message(response).into());
         applied(effects)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_fallback_budget_reserves_a_slot_for_every_operation_tool() {
+        let load_skill_and_final_output = 2;
+        assert_eq!(
+            RESERVED_OPERATION_TOOLS,
+            discovery_tools().unwrap().len() + load_skill_and_final_output
+        );
     }
 }
