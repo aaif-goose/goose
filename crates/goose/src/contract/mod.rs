@@ -198,10 +198,7 @@ fn strip_file_scheme(candidate: &str) -> &str {
     let Some(rest) = candidate.strip_prefix("file://") else {
         return candidate;
     };
-    if rest.len() >= 3
-        && rest.as_bytes()[1].is_ascii_alphabetic()
-        && rest.as_bytes()[2] == b':'
-    {
+    if rest.len() >= 3 && rest.as_bytes()[1].is_ascii_alphabetic() && rest.as_bytes()[2] == b':' {
         rest.strip_prefix('/').unwrap_or(rest)
     } else {
         rest
