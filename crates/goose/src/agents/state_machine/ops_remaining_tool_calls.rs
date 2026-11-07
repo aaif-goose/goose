@@ -12,17 +12,19 @@ use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
-    ToolDisposition,
+    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, requesting_message,
+    tool_span, ToolDisposition,
 };
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::agents::tool_discovery::{deferred_tool_named, deferred_tools, not_loaded_message};
+use crate::agents::tool_discovery::{
+    deferred_tool_named, deferred_tools, not_loaded_message, NotSent, LOAD_TOOLS_TOOL_NAME,
+};
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, ToolResponse};
+use crate::conversation::message::{Message, ToolRequest, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
 use crate::session::{Session, ToolDiscoveryState};
@@ -60,6 +62,20 @@ impl RemainingToolCallsOperation {
             None => Vec::new(),
         }
     }
+}
+
+/// Whether the response that made `request` also called `load_tools`.
+fn loads_in_same_response(messages: &[Message], request: &ToolRequest) -> bool {
+    requesting_message(messages, request).is_some_and(|message| {
+        message.content.iter().any(|content| {
+            content.as_tool_request().is_some_and(|other| {
+                other
+                    .tool_call
+                    .as_ref()
+                    .is_ok_and(|call| call.name == LOAD_TOOLS_TOOL_NAME)
+            })
+        })
+    })
 }
 
 #[async_trait]
@@ -118,10 +134,16 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                 ToolDisposition::Execute if not_loaded.is_some() => {
                     span.record("error.type", "tool_not_loaded");
                     let name = not_loaded.as_deref().unwrap_or(tool_name);
-                    let loaded = loaded.iter().any(|loaded| loaded == name);
+                    let why = if !loaded.iter().any(|loaded| loaded == name) {
+                        NotSent::NotLoaded
+                    } else if loads_in_same_response(messages, &request) {
+                        NotSent::LoadedInSameResponse
+                    } else {
+                        NotSent::LeftOutForLimit
+                    };
                     (
                         Ok(CallToolResult::error(vec![ContentBlock::text(
-                            not_loaded_message(name, loaded),
+                            not_loaded_message(name, why),
                         )])),
                         true,
                     )

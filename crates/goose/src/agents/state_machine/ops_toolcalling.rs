@@ -594,7 +594,10 @@ pub(super) fn call_will_not_run(
         || final_output_called_with_other_tools(session, messages, request))
 }
 
-fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Option<&'a Message> {
+pub(super) fn requesting_message<'a>(
+    messages: &'a [Message],
+    request: &ToolRequest,
+) -> Option<&'a Message> {
     messages.iter().find(|message| {
         message.role == Role::Assistant
             && message.content.iter().any(|content| {
@@ -605,14 +608,22 @@ fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Opt
     })
 }
 
-/// How many tools the inference that made `request` advertised, when it
-/// recorded them.
-pub(super) fn advertised_tool_count(messages: &[Message], request: &ToolRequest) -> Option<usize> {
+/// The tools the inference that made `request` advertised, when it recorded
+/// them.
+pub(super) fn advertised_tool_names(
+    messages: &[Message],
+    request: &ToolRequest,
+) -> Option<Vec<String>> {
     requesting_message(messages, request)?
         .metadata
         .operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE)
         .and_then(serde_json::Value::as_array)
-        .map(Vec::len)
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool.as_str().map(str::to_string))
+                .collect()
+        })
 }
 
 pub(super) fn request_was_advertised(messages: &[Message], request: &ToolRequest) -> bool {

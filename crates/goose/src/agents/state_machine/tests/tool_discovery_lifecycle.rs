@@ -8,7 +8,7 @@ use super::dummy_api::DummyApi;
 use super::pipeline::MessageKind::Agent;
 use super::pipeline::TestPipeline;
 use super::test_pipeline;
-use crate::agents::tool_discovery::{not_loaded_message, LOAD_TOOLS_TOOL_NAME};
+use crate::agents::tool_discovery::{not_loaded_message, NotSent, LOAD_TOOLS_TOOL_NAME};
 use crate::session::ToolDiscoveryState;
 
 const LOADED_ADD: &str = r#""loaded":["calculator__add"]"#;
@@ -162,7 +162,8 @@ async fn a_tool_called_in_the_batch_that_loads_it_is_not_run() -> Result<()> {
         ("load", LOAD_TOOLS_TOOL_NAME, load(&[ADD])),
         ("early", ADD, value(4)),
     ]);
-    api.on(not_loaded_message(ADD, true)).call(ADD, value(4));
+    api.on(not_loaded_message(ADD, NotSent::LoadedInSameResponse))
+        .call(ADD, value(4));
     api.on("result: 4").reply("added four");
 
     pipeline
@@ -268,7 +269,7 @@ async fn loaded_tools_survive_reconstruction() -> Result<()> {
 async fn calling_a_tool_before_loading_it_explains_how_to_load_it() -> Result<()> {
     let (pipeline, api) = deferring_pipeline().await?;
     api.on("add four").unadvertised_call(ADD, value(4));
-    api.on(not_loaded_message(ADD, false))
+    api.on(not_loaded_message(ADD, NotSent::NotLoaded))
         .call(LOAD_TOOLS_TOOL_NAME, load(&[ADD]));
     api.on(LOADED_ADD).call(ADD, value(4));
     api.on("result: 4").reply("added four");
@@ -287,7 +288,7 @@ async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<(
     let (pipeline, api) = deferring_pipeline().await?;
     api.on("add four")
         .unadvertised_call("calculator.add", value(4));
-    api.on(not_loaded_message(ADD, false))
+    api.on(not_loaded_message(ADD, NotSent::NotLoaded))
         .call(LOAD_TOOLS_TOOL_NAME, load(&[ADD]));
     api.on(LOADED_ADD).call(ADD, value(4));
     api.on("result: 4").reply("added four");
@@ -298,5 +299,50 @@ async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<(
         .assert_message(-1, Agent, "added four");
 
     assert_eq!(pipeline.calculator_total(), 4);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
+    use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
+    use crate::conversation::message::{InferenceMetadata, Message};
+    use rmcp::model::CallToolRequestParams;
+
+    let (pipeline, api) = test_pipeline().await?;
+    pipeline
+        .set_tool_discovery(ToolDiscoveryState {
+            defer_tools: true,
+            loaded_tools: vec![ADD.to_string()],
+        })
+        .await;
+    api.on("kickoff").reply("ready");
+    pipeline.run(["kickoff"]).await?;
+
+    let mut request = Message::assistant()
+        .with_tool_request(
+            "left-out",
+            Ok(CallToolRequestParams::new(ADD)
+                .with_arguments(value(4).as_object().unwrap().clone())),
+        )
+        .with_inference(InferenceMetadata {
+            provider: "openai".to_string(),
+            requested_model: "test-model".to_string(),
+            resolved_model: None,
+            provider_session_id: None,
+        });
+    request.metadata.set_operation_note(
+        LLM_OPERATION_NAME,
+        ADVERTISED_TOOLS_NOTE,
+        json!([LOAD_TOOLS_TOOL_NAME]),
+    );
+    pipeline.seed([request]).await?;
+    api.on(not_loaded_message(ADD, NotSent::LeftOutForLimit))
+        .reply("no room");
+
+    pipeline
+        .resume()
+        .await?
+        .assert_message(-1, Agent, "no room");
+    assert_eq!(pipeline.calculator_total(), 0);
     Ok(())
 }
