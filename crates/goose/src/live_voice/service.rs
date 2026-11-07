@@ -411,8 +411,15 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
     if !configured_live_voice_enabled() {
         return Err("Live voice is disabled");
     }
+    Ok(Arc::new(live_voice_provider(
+        crate::config::Config::global(),
+    )?))
+}
 
-    let config = crate::config::Config::global();
+#[cfg(feature = "live-voice")]
+fn live_voice_provider(
+    config: &crate::config::Config,
+) -> Result<OpenAiLiveVoiceProvider, &'static str> {
     let settings = live_voice_settings(config)?;
     let tls_config = crate::config::tls::provider_tls_config_from_config(config)
         .map_err(|_| "Live voice TLS configuration is invalid")?;
@@ -431,11 +438,10 @@ fn configured_live_voice() -> Result<Arc<dyn LiveVoiceProvider>, &'static str> {
             .with_endpoint(&endpoint)
             .map_err(|_| "Live voice endpoint is invalid")?;
     }
-    let provider = match tls_config {
+    Ok(match tls_config {
         Some(tls_config) => provider.with_tls_config(tls_config),
         None => provider,
-    };
-    Ok(Arc::new(provider))
+    })
 }
 
 #[cfg(not(feature = "live-voice"))]

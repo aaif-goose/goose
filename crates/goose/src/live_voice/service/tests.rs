@@ -1190,9 +1190,14 @@ fn stale_cleanup_cannot_remove_a_later_call() {
 
 #[cfg(feature = "live-voice")]
 mod settings {
-    use super::super::live_voice_settings;
+    use super::super::{live_voice_provider, live_voice_settings};
     use crate::config::Config;
+    use goose_providers::live_voice_provider::{LiveVoiceProvider, WebRtcOffer};
     use tempfile::TempDir;
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     const ENV: [(&str, Option<&str>); 5] = [
         ("OPENAI_API_KEY", None),
@@ -1289,6 +1294,44 @@ mod settings {
         assert_eq!(settings.api_key, "voice-key");
         assert_eq!(settings.endpoint.as_deref(), Some(ENDPOINT));
         assert_eq!(settings.model.as_deref(), Some("custom-live-model"));
+    }
+
+    #[tokio::test]
+    async fn a_custom_endpoint_receives_its_key_and_model() {
+        let _env = env_lock::lock_env(ENV);
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/live/sessions"))
+            .and(header("authorization", "Bearer voice-key"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let directory = TempDir::new().unwrap();
+        let config = config(&directory);
+        config.set_secret("OPENAI_API_KEY", &"openai-key").unwrap();
+        config
+            .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"voice-key")
+            .unwrap();
+        config
+            .set_param(
+                "GOOSE_LIVE_VOICE_ENDPOINT",
+                format!("{}/v1/live/sessions", server.uri()),
+            )
+            .unwrap();
+        config
+            .set_param("GOOSE_LIVE_VOICE_MODEL", "custom-live-model")
+            .unwrap();
+
+        let start = live_voice_provider(&config)
+            .unwrap()
+            .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![])
+            .await;
+
+        assert!(start.is_err());
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["session"]["model"], "custom-live-model");
     }
 
     #[test]
