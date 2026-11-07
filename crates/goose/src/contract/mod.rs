@@ -173,10 +173,30 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// Canonicalize the deepest existing ancestor so paths through symlinks
-/// (e.g. `alias -> secrets`) resolve to their real location before matching.
+/// Resolve every symlink component — including dangling links, which
+/// `Path::exists()` misses — then canonicalize the deepest existing ancestor
+/// so paths like `alias/token` (with `alias -> secrets`) match `secrets/**`.
 fn resolve_symlinks(path: &Path) -> PathBuf {
-    let mut existing = path.to_path_buf();
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        resolved.push(component.as_os_str());
+        let is_link = resolved
+            .symlink_metadata()
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_link {
+            if let Ok(target) = std::fs::read_link(&resolved) {
+                resolved.pop();
+                resolved = normalize(&if target.is_absolute() {
+                    target
+                } else {
+                    resolved.join(&target)
+                });
+            }
+        }
+    }
+
+    let mut existing = resolved.clone();
     let mut remainder = Vec::new();
     while !existing.exists() {
         match existing.file_name() {
@@ -184,7 +204,7 @@ fn resolve_symlinks(path: &Path) -> PathBuf {
                 remainder.push(name.to_os_string());
                 existing.pop();
             }
-            None => return path.to_path_buf(),
+            None => return resolved,
         }
     }
     let mut out = existing.canonicalize().unwrap_or(existing);
@@ -195,9 +215,13 @@ fn resolve_symlinks(path: &Path) -> PathBuf {
 }
 
 fn strip_file_scheme(candidate: &str) -> std::borrow::Cow<'_, str> {
-    let Some(rest) = candidate.strip_prefix("file://") else {
+    let Some(prefix) = candidate.get(..7) else {
         return std::borrow::Cow::Borrowed(candidate);
     };
+    if !prefix.eq_ignore_ascii_case("file://") {
+        return std::borrow::Cow::Borrowed(candidate);
+    }
+    let rest = candidate.get(7..).unwrap_or("");
     let rest = urlencoding::decode(rest).unwrap_or(std::borrow::Cow::Borrowed(rest));
     if rest.len() >= 3 && rest.as_bytes()[1].is_ascii_alphabetic() && rest.as_bytes()[2] == b':' {
         match rest.strip_prefix('/') {
@@ -410,6 +434,16 @@ instructions: Always run verify before finishing.
 
         let loaded = AgentContract::discover(dir.path()).unwrap();
         assert!(loaded.forbidden_match(dir.path(), "alias/token").is_some());
+
+        // dangling link whose target does not exist yet still resolves
+        let dangling = dir.path().join("dangling");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(secrets.join("new-key"), &dangling).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file(secrets.join("new-key"), &dangling).is_err() {
+            return;
+        }
+        assert!(loaded.forbidden_match(dir.path(), "dangling").is_some());
     }
 
     #[test]

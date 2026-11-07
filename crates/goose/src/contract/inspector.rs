@@ -51,6 +51,27 @@ impl ContractInspector {
     }
 }
 
+/// Expand the shell forms that appear literally in tool arguments and would
+/// otherwise reach the filesystem uninspected: `$PWD`/`$(pwd)`/`${PWD}` and
+/// a leading `~`. Other substitution forms (`$VAR`, `$(cmd)`, backticks)
+/// cannot be resolved here.
+fn expand_shell_token(token: &str, shell_cwd: &Path) -> String {
+    let mut expanded = token.to_string();
+    for form in ["$(pwd)", "${PWD}", "$PWD"] {
+        expanded = expanded.replace(form, &shell_cwd.display().to_string());
+    }
+    if expanded == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return home.display().to_string();
+        }
+    } else if let Some(rest) = expanded.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return format!("{}/{}", home.display(), rest);
+        }
+    }
+    expanded
+}
+
 /// Returns `(base_dir, token)` pairs: path-ish args resolve against the
 /// session working dir, while tokens inside shell commands resolve against a
 /// cwd tracked across `cd`/`pushd`/`chdir` within that command string.
@@ -69,11 +90,13 @@ fn extract_path_candidates(
             let tokens = shell_words::split(command).unwrap_or_default();
             let mut shell_cwd = working_dir.to_path_buf();
             for (i, token) in tokens.iter().enumerate() {
+                let token = expand_shell_token(token, &shell_cwd);
                 if matches!(token.as_str(), "cd" | "pushd" | "chdir") {
                     if let Some(target) = tokens.get(i + 1) {
+                        let target = expand_shell_token(target, &shell_cwd);
                         if !target.starts_with('-') {
                             candidates.push((shell_cwd.clone(), target.clone()));
-                            shell_cwd = if Path::new(target).is_absolute() {
+                            shell_cwd = if Path::new(&target).is_absolute() {
                                 PathBuf::from(target)
                             } else {
                                 shell_cwd.join(target)
@@ -85,7 +108,7 @@ fn extract_path_candidates(
                 if !token.starts_with('-')
                     && (token.contains('/') || token.contains('\\') || token.contains('.'))
                 {
-                    candidates.push((shell_cwd.clone(), token.clone()));
+                    candidates.push((shell_cwd.clone(), token));
                 }
             }
         }
