@@ -804,6 +804,16 @@
       "required": false
     }
   ]
+},
+{
+  "id": "quizlink",
+  "name": "QuizLink",
+  "description": "Turn any topic or your notes into quizzes, flashcards, crosswords and study courses",
+  "command": "npx -y mcp-remote https://mcp.quizlink.net/stream",
+  "link": "https://quizlink.net/mcp.html",
+  "installation_notes": "Hosted remote server; requires Node.js for mcp-remote. Sign in with OAuth to save courses.",
+  "is_builtin": false,
+  "endorsed": false,
+  "environmentVariables": []
 }
-
 ]
