@@ -2,7 +2,9 @@ use crate::agents::Container;
 use crate::config::paths::Paths;
 use crate::config::ExtensionConfig;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
+use crate::conversation::message::{
+    Message, MessageContent, MessageMetadata, MessageUsage, TokenState,
+};
 use crate::conversation::Conversation;
 use crate::providers::base::CostSource;
 use crate::providers::base::Provider;
@@ -23,7 +25,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -2219,7 +2221,14 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let metadata_json = serde_json::to_string(&message.metadata)?;
+        let response_ids: HashSet<String> = message
+            .get_tool_response_ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let metadata_json = serde_json::to_string(
+            &super::durable_tool_metadata::metadata_for_storage(message, &response_ids),
+        )?;
         // Messages are read back ordered by (created_timestamp, id), so one built
         // before the messages it is appended after would sort ahead of them —
         // operations do that whenever they prepare a reply and fill it in while a
@@ -2251,6 +2260,10 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
+        if !response_ids.is_empty() {
+            Self::drop_resolved_advertised_tools(&mut tx, session_id, &response_ids).await?;
+        }
+
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
             .execute(&mut *tx)
@@ -2258,6 +2271,104 @@ impl SessionStorage {
 
         tx.commit().await?;
         Ok(())
+    }
+
+    async fn drop_resolved_advertised_tools(
+        tx: &mut sqlx::sqlite::SqliteConnection,
+        session_id: &str,
+        response_ids: &HashSet<String>,
+    ) -> Result<()> {
+        let ids = response_ids.iter().map(String::as_str).collect::<Vec<_>>();
+        let mut sql = String::from(
+            "SELECT message_id, metadata_json, content_json FROM messages \
+             WHERE session_id = ? AND role = 'assistant' AND message_id IS NOT NULL AND (",
+        );
+        for index in 0..ids.len() {
+            if index > 0 {
+                sql.push_str(" OR ");
+            }
+            sql.push_str("instr(content_json, ?) > 0");
+        }
+        sql.push(')');
+
+        let mut query =
+            sqlx::query_as::<_, (String, String, String)>(AssertSqlSafe(sql)).bind(session_id);
+        for id in &ids {
+            query = query.bind(format!("\"{id}\""));
+        }
+        let rows = query.fetch_all(&mut *tx).await?;
+
+        for (message_id, metadata_json, content_json) in rows {
+            let Ok(content) = serde_json::from_str::<Vec<MessageContent>>(&content_json) else {
+                continue;
+            };
+            let local_ids = content
+                .iter()
+                .filter_map(|content| {
+                    let MessageContent::ToolRequest(request) = content else {
+                        return None;
+                    };
+                    if request.was_executed_externally() {
+                        return None;
+                    }
+                    Some(request.id.as_str())
+                })
+                .collect::<Vec<_>>();
+            if local_ids.is_empty() || !local_ids.iter().any(|id| response_ids.contains(*id)) {
+                continue;
+            }
+            let mut resolved = true;
+            for id in &local_ids {
+                if response_ids.contains(*id) {
+                    continue;
+                }
+                if !Self::tool_response_stored(tx, session_id, id).await? {
+                    resolved = false;
+                    break;
+                }
+            }
+            if !resolved {
+                continue;
+            }
+            let Ok(mut metadata) = serde_json::from_str::<MessageMetadata>(&metadata_json) else {
+                continue;
+            };
+            super::durable_tool_metadata::clear_advertised_tools(&mut metadata);
+            sqlx::query(
+                "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
+            )
+            .bind(serde_json::to_string(&metadata)?)
+            .bind(session_id)
+            .bind(message_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn tool_response_stored(
+        tx: &mut sqlx::sqlite::SqliteConnection,
+        session_id: &str,
+        tool_id: &str,
+    ) -> Result<bool> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT content_json FROM messages WHERE session_id = ? AND instr(content_json, ?) > 0",
+        )
+        .bind(session_id)
+        .bind(format!("\"{tool_id}\""))
+        .fetch_all(&mut *tx)
+        .await?;
+        for content_json in rows {
+            let Ok(content) = serde_json::from_str::<Vec<MessageContent>>(&content_json) else {
+                continue;
+            };
+            if content.iter().any(|block| {
+                matches!(block, MessageContent::ToolResponse(response) if response.id == tool_id)
+            }) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     async fn replace_conversation_inner(
@@ -2272,8 +2383,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
+        let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
         for message in conversation.messages() {
-            let metadata_json = serde_json::to_string(&message.metadata)?;
+            let metadata_json = serde_json::to_string(
+                &super::durable_tool_metadata::metadata_for_storage(message, &answered),
+            )?;
 
             let message_id = message
                 .id
@@ -2316,6 +2430,7 @@ impl SessionStorage {
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
 
         for message in conversation.messages() {
             let message_id = message
@@ -2334,6 +2449,9 @@ impl SessionStorage {
                     .and_then(|json| serde_json::from_str::<MessageMetadata>(&json).ok())
                     .unwrap_or_default();
                 metadata.agent_visible = message.metadata.agent_visible;
+                if !super::durable_tool_metadata::retains_advertised_tools(message, &answered) {
+                    super::durable_tool_metadata::clear_advertised_tools(&mut metadata);
+                }
                 sqlx::query(
                     "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
                 )
@@ -2351,7 +2469,9 @@ impl SessionStorage {
                 .bind(role_to_string(&message.role))
                 .bind(serde_json::to_string(&message.content)?)
                 .bind(message.created)
-                .bind(serde_json::to_string(&message.metadata)?)
+                .bind(serde_json::to_string(
+                    &super::durable_tool_metadata::metadata_for_storage(message, &answered),
+                )?)
                 .execute(&mut *tx)
                 .await?;
             }
@@ -3117,11 +3237,11 @@ fn merge_tool_meta(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::{Message, MessageContent};
+    use crate::conversation::message::{InferenceMetadata, Message, MessageContent};
     use crate::providers::base::MessageStream;
     use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
     use goose_providers::errors::ProviderError;
-    use rmcp::model::Tool;
+    use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
     use tempfile::TempDir;
     use test_case::test_case;
 
@@ -5832,5 +5952,165 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    fn large_advertised_tools() -> serde_json::Value {
+        serde_json::Value::Array(
+            (0..200)
+                .map(|index| serde_json::Value::String(format!("extension__tool_{index:03}")))
+                .collect(),
+        )
+    }
+
+    fn assistant_with_advertised_tools(text: &str, tools: &serde_json::Value) -> Message {
+        let mut message = Message::assistant()
+            .with_text(text)
+            .with_inference(InferenceMetadata {
+                provider: "test".to_string(),
+                requested_model: "test-model".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            });
+        message
+            .metadata
+            .set_operation_note("llm", "advertised_tools", tools.clone());
+        message
+            .metadata
+            .set_operation_note("retry", "nudged", serde_json::json!(true));
+        message
+    }
+
+    fn advertised_tools_bytes(message: &Message) -> usize {
+        message
+            .metadata
+            .operation_note("llm", "advertised_tools")
+            .map(|value| value.to_string().len())
+            .unwrap_or(0)
+    }
+
+    async fn persisted_messages(sm: &SessionManager, session_id: &str) -> Vec<Message> {
+        sm.get_session(session_id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap()
+            .messages()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_are_not_repeated_on_completed_assistant_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+
+        for turn in 0..4 {
+            sm.add_message(
+                &session_id,
+                &assistant_with_advertised_tools(&format!("turn {turn}"), &tools),
+            )
+            .await
+            .unwrap();
+        }
+
+        let messages = persisted_messages(&sm, &session_id).await;
+        let stored: usize = messages.iter().map(advertised_tools_bytes).sum();
+        assert!(
+            stored < one_copy,
+            "advertised_tools grew with each turn: stored {stored} bytes across 4 messages, one copy is {one_copy}"
+        );
+        assert!(messages.iter().all(|message| {
+            message.metadata.inference.is_some()
+                && message.metadata.operation_note("retry", "nudged").is_some()
+        }));
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_stay_only_while_a_tool_request_is_unanswered() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+        let mut request = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "call-1",
+            Ok(CallToolRequestParams::new("extension__tool_000")
+                .with_arguments(serde_json::Map::new())),
+        );
+        request
+            .content
+            .retain(|content| content.as_tool_request().is_some());
+
+        sm.add_message(&session_id, &request).await.unwrap();
+
+        let pending = persisted_messages(&sm, &session_id).await;
+        assert_eq!(
+            pending.iter().map(advertised_tools_bytes).sum::<usize>(),
+            one_copy
+        );
+
+        sm.add_message(
+            &session_id,
+            &Message::user().with_tool_response(
+                "call-1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let resolved = persisted_messages(&sm, &session_id).await;
+        assert_eq!(
+            resolved.iter().map(advertised_tools_bytes).sum::<usize>(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_conversation_drops_resolved_advertised_tools() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+        let resolved = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "done",
+            Ok(CallToolRequestParams::new("extension__tool_001")
+                .with_arguments(serde_json::Map::new())),
+        );
+        let mut pending = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "open",
+            Ok(CallToolRequestParams::new("extension__tool_002")
+                .with_arguments(serde_json::Map::new())),
+        );
+        pending
+            .content
+            .retain(|content| content.as_tool_request().is_some());
+        let conversation = Conversation::new_unvalidated([
+            assistant_with_advertised_tools("finished text", &tools),
+            resolved,
+            Message::user().with_tool_response(
+                "done",
+                Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+            ),
+            pending,
+        ]);
+
+        sm.replace_conversation(&session_id, &conversation)
+            .await
+            .unwrap();
+
+        let messages = persisted_messages(&sm, &session_id).await;
+        let stored: usize = messages.iter().map(advertised_tools_bytes).sum();
+        assert_eq!(stored, one_copy);
+        assert!(messages.iter().any(|message| {
+            message.get_tool_request_ids().contains("open")
+                && advertised_tools_bytes(message) == one_copy
+        }));
+        assert!(messages.iter().all(|message| {
+            !message.get_tool_request_ids().contains("done") || advertised_tools_bytes(message) == 0
+        }));
     }
 }
