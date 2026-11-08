@@ -99,6 +99,7 @@ pub use agent_requests::agent_request_schemas;
 mod agent_mentions;
 use crate::agents::{ActiveRunRegistry, StartRunError};
 mod apps;
+mod client_extensions;
 mod config;
 mod context_report;
 mod custom_dispatch;
@@ -632,6 +633,11 @@ fn initial_session_extensions(
     } else {
         for extension in get_enabled_extensions_with_config(config) {
             push_or_replace_extension(&mut extensions, extension);
+        }
+        let provides = crate::plugins::enabled_plugin_provides(Some(project_root));
+        if !provides.is_empty() {
+            let caps: Vec<String> = provides.into_keys().collect();
+            std::env::set_var("GOOSE_AVAILABLE_CAPABILITIES", caps.join(","));
         }
         for extension in crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(project_root))
         {
