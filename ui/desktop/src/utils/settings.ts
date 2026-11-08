@@ -50,7 +50,7 @@ export interface Settings {
   keyboardShortcuts: KeyboardShortcuts;
 
   // UI preferences (migrated from localStorage)
-  theme: 'dark' | 'light' | 'aura';
+  theme: string;
   useSystemTheme: boolean;
   language: LanguageSetting;
   responseStyle: string;

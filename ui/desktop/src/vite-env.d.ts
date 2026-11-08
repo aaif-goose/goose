@@ -48,6 +48,10 @@ declare module '*.md?raw' {
 declare global {
   interface Window {
     isCreatingRecipe?: boolean;
+    GooseUI?: {
+      React: typeof import('react');
+      ReactDOM: typeof import('react-dom/client');
+    };
   }
 
   interface WindowEventMap {
