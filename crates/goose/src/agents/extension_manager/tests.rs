@@ -74,7 +74,7 @@ impl SkillClient {
     fn new() -> Self {
         let mut extensions = rmcp::model::ExtensionCapabilities::new();
         extensions.insert(
-            crate::skills::mcp::SKILLS_EXTENSION_ID.to_string(),
+            rmcp::model::SKILLS_EXTENSION_ID.to_string(),
             JsonObject::new(),
         );
         let mut capabilities = rmcp::model::ServerCapabilities::default();
@@ -90,17 +90,16 @@ impl SkillClient {
         }
     }
 
-    fn manifest(&self) -> serde_json::Value {
+    fn manifest(&self) -> rmcp::model::Skill {
         let uri = "skill://acme/billing/SKILL.md";
-        serde_json::json!({
-            "uri": uri,
-            "frontmatter": { "name": "billing", "description": "Billing workflow" },
-            "resources": [{
-                "uri": uri,
-                "digest": crate::skills::mcp::sha256_digest(self.markdown.as_bytes()),
-                "size": self.markdown.len()
-            }]
-        })
+        rmcp::model::Skill::new(
+            uri,
+            rmcp::model::SkillFrontmatter::new("billing", "Billing workflow"),
+            rmcp::model::SkillResources::Files(vec![rmcp::model::SkillResource::from_bytes(
+                uri,
+                self.markdown.as_bytes(),
+            )]),
+        )
     }
 }
 
@@ -129,31 +128,30 @@ impl McpClientTrait for SkillClient {
         Ok(CallToolResult::success(vec![]))
     }
 
-    async fn send_custom(
+    async fn list_skills(
         &self,
         _session_id: &str,
-        method: &str,
-        _params: Option<serde_json::Value>,
+        _cursor: Option<String>,
         _cancellation_token: CancellationToken,
-    ) -> Result<serde_json::Value, Error> {
-        match method {
-            crate::skills::mcp::SKILLS_LIST_METHOD => {
-                self.list_calls.fetch_add(1, Ordering::SeqCst);
-                Ok(serde_json::json!({
-                    "resultType": "complete",
-                    "skills": [self.manifest()],
-                    "ttlMs": 300000,
-                    "cacheScope": "private"
-                }))
-            }
-            crate::skills::mcp::SKILLS_GET_METHOD => Ok(serde_json::json!({
-                "resultType": "complete",
-                "skill": self.manifest(),
-                "ttlMs": 300000,
-                "cacheScope": "private"
-            })),
-            _ => Err(Error::UnexpectedResponse),
-        }
+    ) -> Result<rmcp::model::ListSkillsResult, Error> {
+        self.list_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(rmcp::model::ListSkillsResult {
+            result_type: Some(rmcp::model::ResultType::COMPLETE),
+            meta: None,
+            next_cursor: None,
+            ttl_ms: Some(300_000),
+            cache_scope: Some(rmcp::model::CacheScope::Private),
+            skills: vec![self.manifest()],
+        })
+    }
+
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<rmcp::model::GetSkillResult, Error> {
+        Ok(rmcp::model::GetSkillResult::new(self.manifest()).with_ttl_ms(300_000))
     }
 
     async fn read_resource(

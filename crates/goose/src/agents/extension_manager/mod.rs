@@ -326,19 +326,11 @@ impl Extension {
         let mut seen_cursors = HashSet::new();
         let mut expires_at: Option<Instant> = None;
         loop {
-            let params = cursor
-                .as_ref()
-                .map(|cursor| serde_json::json!({ "cursor": cursor }));
             let raw = self
                 .client
-                .send_custom(
-                    scope_id,
-                    crate::skills::mcp::SKILLS_LIST_METHOD,
-                    params,
-                    cancel.clone(),
-                )
+                .list_skills(scope_id, cursor.clone(), cancel.clone())
                 .await?;
-            let page = crate::skills::mcp::parse_skills_list(&raw, &self.config.name())
+            let page = crate::skills::mcp::parse_skills_list(raw, &self.config.name())
                 .map_err(|_| ServiceError::UnexpectedResponse)?;
             let now = Instant::now();
             let page_expiry = now

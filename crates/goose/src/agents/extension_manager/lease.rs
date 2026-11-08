@@ -628,14 +628,9 @@ impl ExtensionLease {
                 reason: format!("extension '{extension_name}' does not advertise MCP skills"),
             });
         }
-        let page = extension
+        let got = extension
             .client
-            .send_custom(
-                &self.scope_id,
-                crate::skills::mcp::SKILLS_GET_METHOD,
-                Some(serde_json::json!({ "uri": uri })),
-                CancellationToken::new(),
-            )
+            .get_skill(&self.scope_id, uri, CancellationToken::new())
             .await
             .map_err(|error| match error {
                 ServiceError::McpError(error) if error.code == ErrorCode::INVALID_PARAMS => {
@@ -648,14 +643,14 @@ impl ExtensionLease {
                     reason: other.to_string(),
                 },
             })?;
-        let got = crate::skills::mcp::parse_skills_get(&page, extension_name)?;
-        if got.skill.uri != uri {
+        let skill = crate::skills::mcp::parse_skills_get(got, extension_name)?;
+        if skill.uri != uri {
             return Err(crate::skills::mcp::SkillLoadError::InvalidEntry {
-                uri: got.skill.uri,
+                uri: skill.uri,
                 reason: "skills/get returned a different skill URI".to_string(),
             });
         }
-        Ok(got.skill)
+        Ok(skill)
     }
 
     pub async fn read_skill_resource(

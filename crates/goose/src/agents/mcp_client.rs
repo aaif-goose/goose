@@ -12,11 +12,12 @@ use rmcp::model::{
 use rmcp::{
     model::{
         CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientConfig, ClientRequest, CustomRequest, GetPromptRequestParams, GetPromptResult,
-        Implementation, InitializeRequestParams, InitializeResult, ListPromptsResult,
-        ListResourcesResult, ListToolsResult, Notification, PaginatedRequestParams,
-        ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, Request, RequestId,
-        RequestOptionalParam, ServerNotification, ServerResult,
+        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, GetSkillRequest,
+        GetSkillRequestParams, GetSkillResult, Implementation, InitializeRequestParams,
+        InitializeResult, ListPromptsResult, ListResourcesResult, ListSkillsResult,
+        ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
+        ServerNotification, ServerResult,
     },
     service::{
         ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
@@ -137,28 +138,29 @@ pub trait McpClientTrait: Send + Sync {
         mpsc::channel(1).1
     }
 
-    /// Send a method this rmcp release does not model yet. Used for SEP-2640
-    /// `skills/list` and `skills/get` until those client types are released.
-    async fn send_custom(
+    async fn list_skills(
         &self,
         _session_id: &str,
-        _method: &str,
-        _params: Option<Value>,
+        _cursor: Option<String>,
         _cancel_token: CancellationToken,
-    ) -> Result<Value, Error> {
+    ) -> Result<ListSkillsResult, Error> {
         Err(Error::TransportClosed)
     }
 
+    async fn get_skill(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancel_token: CancellationToken,
+    ) -> Result<GetSkillResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    /// Skill files are served over `resources/read`, so a server that declares
+    /// the skills extension without resources cannot serve any skill.
     fn supports_skills(&self) -> bool {
         self.get_info().is_some_and(|info| {
-            info.capabilities.resources.is_some()
-                && info
-                    .capabilities
-                    .extensions
-                    .as_ref()
-                    .is_some_and(|extensions| {
-                        extensions.contains_key(crate::skills::mcp::SKILLS_EXTENSION_ID)
-                    })
+            info.capabilities.resources.is_some() && info.capabilities.supports_skills()
         })
     }
 
@@ -915,24 +917,48 @@ impl McpClientTrait for McpClient {
         rx
     }
 
-    async fn send_custom(
+    async fn list_skills(
         &self,
         session_id: &str,
-        method: &str,
-        params: Option<Value>,
+        cursor: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Result<Value, Error> {
+    ) -> Result<ListSkillsResult, Error> {
         let result = self
             .send_request_with_context(
                 session_id,
                 None,
                 None,
-                ClientRequest::CustomRequest(CustomRequest::new(method, params)),
+                ClientRequest::ListSkillsRequest(RequestOptionalParam::with_param(
+                    PaginatedRequestParams::default().with_cursor(cursor),
+                )),
                 cancel_token,
             )
             .await?;
         match result {
-            ServerResult::CustomResult(custom) => Ok(custom.0),
+            ServerResult::ListSkillsResult(result) => Ok(result),
+            _ => Err(ServiceError::UnexpectedResponse),
+        }
+    }
+
+    async fn get_skill(
+        &self,
+        session_id: &str,
+        uri: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<GetSkillResult, Error> {
+        let result = self
+            .send_request_with_context(
+                session_id,
+                None,
+                None,
+                ClientRequest::GetSkillRequest(GetSkillRequest::new(GetSkillRequestParams::new(
+                    uri,
+                ))),
+                cancel_token,
+            )
+            .await?;
+        match result {
+            ServerResult::GetSkillResult(result) => Ok(result),
             _ => Err(ServiceError::UnexpectedResponse),
         }
     }
@@ -1064,14 +1090,23 @@ fn inject_session_context_into_request(
             );
             ClientRequest::GetPromptRequest(req)
         }
-        ClientRequest::CustomRequest(mut req) => {
+        ClientRequest::ListSkillsRequest(mut req) => {
             req.extensions = inject_session_context_into_extensions(
                 req.extensions,
                 session_id,
                 working_dir,
                 tool_call_request_id,
             );
-            ClientRequest::CustomRequest(req)
+            ClientRequest::ListSkillsRequest(req)
+        }
+        ClientRequest::GetSkillRequest(mut req) => {
+            req.extensions = inject_session_context_into_extensions(
+                req.extensions,
+                session_id,
+                working_dir,
+                tool_call_request_id,
+            );
+            ClientRequest::GetSkillRequest(req)
         }
         other => other,
     }

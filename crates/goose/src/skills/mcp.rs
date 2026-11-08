@@ -10,14 +10,12 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use base64::Engine;
 use goose_sdk_types::custom_requests::{SourceEntry, SourceType};
-use rmcp::model::{CacheScope, ResourceContents, ResultType};
-use serde::Deserialize;
+use rmcp::model::{
+    is_sha256_digest, sha256_digest, GetSkillResult, ListSkillsResult, ResourceContents, Skill,
+    SkillResource,
+};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
-pub const SKILLS_EXTENSION_ID: &str = "io.modelcontextprotocol/skills";
-pub const SKILLS_LIST_METHOD: &str = "skills/list";
-pub const SKILLS_GET_METHOD: &str = "skills/get";
 pub const MAX_RESOURCES_PER_SKILL: usize = 512;
 pub const MAX_TOTAL_SIZE_PER_SKILL: u64 = 16 * 1024 * 1024;
 pub const MCP_SKILL_CONTEXT_MARKER: &str = "# Untrusted MCP Skill";
@@ -82,19 +80,9 @@ pub fn held_skill_key(session_id: &str, extension_name: &str, uri: &str) -> Held
     )
 }
 
-const DIGEST_PREFIX: &str = "sha256:";
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillFile {
-    pub uri: String,
-    pub digest: String,
-    pub size: u64,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum SkillResources {
-    Files(Vec<SkillFile>),
+    Files(Vec<SkillResource>),
     Dynamic,
 }
 
@@ -187,67 +175,12 @@ impl std::fmt::Display for SkillLoadError {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WireSkillEntry {
-    uri: String,
-    frontmatter: Map<String, Value>,
-    resources: Value,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WireSkillsList {
-    result_type: ResultType,
-    skills: Vec<Value>,
-    ttl_ms: u64,
-    cache_scope: CacheScope,
-    #[serde(default)]
-    next_cursor: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WireSkillsGet {
-    result_type: ResultType,
-    skill: WireSkillEntry,
-    ttl_ms: u64,
-    cache_scope: CacheScope,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkillsPage {
     pub skills: Vec<SkillRecord>,
     pub rejected: Vec<SkillLoadError>,
     pub next_cursor: Option<String>,
     pub ttl_ms: u64,
-    pub cache_scope: CacheScope,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GotSkill {
-    pub skill: SkillRecord,
-    pub ttl_ms: u64,
-    pub cache_scope: CacheScope,
-}
-
-pub fn sha256_digest(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut hex = String::with_capacity(DIGEST_PREFIX.len() + digest.len() * 2);
-    hex.push_str(DIGEST_PREFIX);
-    for byte in digest {
-        hex.push_str(&format!("{byte:02x}"));
-    }
-    hex
-}
-
-fn valid_digest(digest: &str) -> bool {
-    digest.strip_prefix(DIGEST_PREFIX).is_some_and(|hex| {
-        hex.len() == 64
-            && hex
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    })
 }
 
 fn skill_uri_name(uri: &str) -> Option<String> {
@@ -311,18 +244,20 @@ fn resource_is_within_skill(skill_uri: &str, resource_uri: &str) -> bool {
 }
 
 fn parse_resources(
-    value: Value,
+    resources: rmcp::model::SkillResources,
     name: &str,
     skill_uri: &str,
 ) -> Result<SkillResources, SkillLoadError> {
-    if value.as_str() == Some("dynamic") {
-        return Ok(SkillResources::Dynamic);
-    }
-    let files: Vec<SkillFile> =
-        serde_json::from_value(value).map_err(|_| SkillLoadError::InvalidEntry {
-            uri: skill_uri.to_string(),
-            reason: "resources must be a complete array or the string dynamic".to_string(),
-        })?;
+    let files = match resources {
+        rmcp::model::SkillResources::Files(files) => files,
+        rmcp::model::SkillResources::Dynamic => return Ok(SkillResources::Dynamic),
+        _ => {
+            return Err(SkillLoadError::InvalidEntry {
+                uri: skill_uri.to_string(),
+                reason: "resources must be a complete array or the string dynamic".to_string(),
+            })
+        }
+    };
     if files.len() > MAX_RESOURCES_PER_SKILL {
         return Err(SkillLoadError::LimitExceeded {
             name: name.to_string(),
@@ -336,7 +271,7 @@ fn parse_resources(
     let mut total_size = 0_u64;
     let mut contains_skill = false;
     for file in &files {
-        if !resource_is_within_skill(skill_uri, &file.uri) || !valid_digest(&file.digest) {
+        if !resource_is_within_skill(skill_uri, &file.uri) || !is_sha256_digest(&file.digest) {
             return Err(SkillLoadError::InvalidEntry {
                 uri: skill_uri.to_string(),
                 reason: format!("invalid resource {}", file.uri),
@@ -372,30 +307,32 @@ fn parse_resources(
     Ok(SkillResources::Files(files))
 }
 
-fn record_from_entry(
-    entry: WireSkillEntry,
-    extension_name: &str,
-) -> Result<SkillRecord, SkillLoadError> {
-    let name = entry
-        .frontmatter
-        .get("name")
-        .and_then(Value::as_str)
-        .filter(|name| !name.is_empty())
-        .ok_or_else(|| SkillLoadError::InvalidEntry {
-            uri: entry.uri.clone(),
+fn record_from_entry(entry: Skill, extension_name: &str) -> Result<SkillRecord, SkillLoadError> {
+    let frontmatter = match serde_json::to_value(&entry.frontmatter) {
+        Ok(Value::Object(frontmatter)) => frontmatter,
+        _ => {
+            return Err(SkillLoadError::InvalidEntry {
+                uri: entry.uri,
+                reason: "frontmatter must be an object".to_string(),
+            })
+        }
+    };
+    let name = entry.frontmatter.name;
+    if name.is_empty() {
+        return Err(SkillLoadError::InvalidEntry {
+            uri: entry.uri,
             reason: "frontmatter.name is required".to_string(),
-        })?
-        .to_string();
-    let raw_description = entry
-        .frontmatter
-        .get("description")
-        .and_then(Value::as_str)
-        .filter(|description| !description.is_empty())
-        .ok_or_else(|| SkillLoadError::InvalidEntry {
-            uri: entry.uri.clone(),
+        });
+    }
+    if entry.frontmatter.description.is_empty() {
+        return Err(SkillLoadError::InvalidEntry {
+            uri: entry.uri,
             reason: "frontmatter.description is required".to_string(),
-        })?;
-    let description = raw_description
+        });
+    }
+    let description = entry
+        .frontmatter
+        .description
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -425,71 +362,53 @@ fn record_from_entry(
         uri: entry.uri,
         name,
         description,
-        frontmatter: entry.frontmatter,
+        frontmatter,
         extension_name: extension_name.to_string(),
         resources,
     })
 }
 
-pub fn parse_skills_list(
-    value: &Value,
+fn ensure_complete(
+    result_type: Option<&rmcp::model::ResultType>,
     extension_name: &str,
-) -> Result<SkillsPage, SkillLoadError> {
-    let page: WireSkillsList =
-        serde_json::from_value(value.clone()).map_err(|_| SkillLoadError::InvalidEntry {
-            uri: extension_name.to_string(),
-            reason: "invalid skills/list result".to_string(),
-        })?;
-    if page.result_type != ResultType::COMPLETE {
+    method: &str,
+) -> Result<(), SkillLoadError> {
+    if result_type.is_some_and(|result_type| !result_type.is_complete()) {
         return Err(SkillLoadError::InvalidEntry {
             uri: extension_name.to_string(),
-            reason: "skills/list resultType must be complete".to_string(),
+            reason: format!("{method} resultType must be complete"),
         });
     }
-    let mut records = Vec::with_capacity(page.skills.len());
+    Ok(())
+}
+
+pub fn parse_skills_list(
+    page: ListSkillsResult,
+    extension_name: &str,
+) -> Result<SkillsPage, SkillLoadError> {
+    ensure_complete(page.result_type.as_ref(), extension_name, "skills/list")?;
+    let mut skills = Vec::with_capacity(page.skills.len());
     let mut rejected = Vec::new();
     for entry in page.skills {
-        let entry = match serde_json::from_value::<WireSkillEntry>(entry) {
-            Ok(entry) => entry,
-            Err(error) => {
-                rejected.push(SkillLoadError::InvalidEntry {
-                    uri: extension_name.to_string(),
-                    reason: format!("invalid skill entry: {error}"),
-                });
-                continue;
-            }
-        };
         match record_from_entry(entry, extension_name) {
-            Ok(record) => records.push(record),
+            Ok(record) => skills.push(record),
             Err(error) => rejected.push(error),
         }
     }
     Ok(SkillsPage {
-        skills: records,
+        skills,
         rejected,
         next_cursor: page.next_cursor,
-        ttl_ms: page.ttl_ms,
-        cache_scope: page.cache_scope,
+        ttl_ms: page.ttl_ms.unwrap_or(0),
     })
 }
 
-pub fn parse_skills_get(value: &Value, extension_name: &str) -> Result<GotSkill, SkillLoadError> {
-    let got: WireSkillsGet =
-        serde_json::from_value(value.clone()).map_err(|_| SkillLoadError::InvalidEntry {
-            uri: extension_name.to_string(),
-            reason: "invalid skills/get result".to_string(),
-        })?;
-    if got.result_type != ResultType::COMPLETE {
-        return Err(SkillLoadError::InvalidEntry {
-            uri: extension_name.to_string(),
-            reason: "skills/get resultType must be complete".to_string(),
-        });
-    }
-    Ok(GotSkill {
-        skill: record_from_entry(got.skill, extension_name)?,
-        ttl_ms: got.ttl_ms,
-        cache_scope: got.cache_scope,
-    })
+pub fn parse_skills_get(
+    got: GetSkillResult,
+    extension_name: &str,
+) -> Result<SkillRecord, SkillLoadError> {
+    ensure_complete(got.result_type.as_ref(), extension_name, "skills/get")?;
+    record_from_entry(got.skill, extension_name)
 }
 
 pub fn qualified_skill_name(extension_name: &str, name: &str) -> String {
@@ -620,7 +539,10 @@ pub fn ensure_loadable(skill: &SkillRecord) -> Result<(), SkillLoadError> {
     }
 }
 
-pub fn listed_file<'a>(skill: &'a SkillRecord, uri: &str) -> Result<&'a SkillFile, SkillLoadError> {
+pub fn listed_file<'a>(
+    skill: &'a SkillRecord,
+    uri: &str,
+) -> Result<&'a SkillResource, SkillLoadError> {
     let SkillResources::Files(files) = &skill.resources else {
         return Err(SkillLoadError::DynamicSkill {
             name: skill.name.clone(),
@@ -799,6 +721,10 @@ pub fn origin_tagged_context(extension_name: &str, uri: &str, rendered: &str) ->
 mod tests {
     use super::*;
 
+    fn list(payload: &Value) -> ListSkillsResult {
+        serde_json::from_value(payload.clone()).unwrap()
+    }
+
     fn digest(text: &str) -> String {
         sha256_digest(text.as_bytes())
     }
@@ -831,7 +757,7 @@ mod tests {
     #[test]
     fn every_mcp_skill_uses_the_extension_name() {
         let (payload, extension) = payload("billing", "customer-a");
-        let page = parse_skills_list(&payload, &extension).unwrap();
+        let page = parse_skills_list(list(&payload), &extension).unwrap();
         let merged = merge_skill_entries(Vec::new(), page.skills);
         assert_eq!(merged[0].name, "customer-a::billing");
         assert_eq!(merged[0].source_type, SourceType::McpSkill);
@@ -856,7 +782,7 @@ mod tests {
             "ttlMs": 1,
             "cacheScope": "private"
         });
-        let page = parse_skills_list(&payload, "acme").unwrap();
+        let page = parse_skills_list(list(&payload), "acme").unwrap();
         let names: Vec<String> = merge_skill_entries(Vec::new(), page.skills)
             .into_iter()
             .map(|skill| skill.name)
@@ -870,16 +796,15 @@ mod tests {
     fn invalid_list_entry_is_reported_without_hiding_valid_siblings() {
         let (valid, _) = payload("billing", "stripe");
         let valid_entry = valid["skills"][0].clone();
+        let mut renamed_entry = valid_entry.clone();
+        renamed_entry["frontmatter"]["name"] = Value::String("refunds".to_string());
         let payload = serde_json::json!({
             "resultType": "complete",
-            "skills": [
-                { "frontmatter": { "name": "broken", "description": "Broken" } },
-                valid_entry
-            ],
+            "skills": [renamed_entry, valid_entry],
             "ttlMs": 1,
             "cacheScope": "private"
         });
-        let page = parse_skills_list(&payload, "stripe").unwrap();
+        let page = parse_skills_list(list(&payload), "stripe").unwrap();
         assert_eq!(page.skills.len(), 1);
         assert_eq!(page.rejected.len(), 1);
     }
@@ -901,7 +826,7 @@ mod tests {
             "ttlMs": 1,
             "cacheScope": "private"
         });
-        let skill = parse_skills_list(&payload, "stripe")
+        let skill = parse_skills_list(list(&payload), "stripe")
             .unwrap()
             .skills
             .remove(0);
@@ -910,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn resources_are_required_and_complete() {
+    fn resources_are_required() {
         let payload = serde_json::json!({
             "resultType": "complete",
             "skills": [{
@@ -920,15 +845,20 @@ mod tests {
             "ttlMs": 1,
             "cacheScope": "private"
         });
-        let page = parse_skills_list(&payload, "stripe").unwrap();
-        assert!(page.skills.is_empty());
-        assert_eq!(page.rejected.len(), 1);
+        assert!(serde_json::from_value::<ListSkillsResult>(payload).is_err());
+    }
+
+    #[test]
+    fn incomplete_listing_is_rejected() {
+        let (mut payload, extension) = payload("billing", "stripe");
+        payload["resultType"] = Value::String("input_required".to_string());
+        assert!(parse_skills_list(list(&payload), &extension).is_err());
     }
 
     #[test]
     fn size_digest_and_frontmatter_are_verified() {
         let (payload, extension) = payload("billing", "stripe");
-        let skill = parse_skills_list(&payload, &extension)
+        let skill = parse_skills_list(list(&payload), &extension)
             .unwrap()
             .skills
             .remove(0);
@@ -963,7 +893,7 @@ mod tests {
             "ttlMs": 1,
             "cacheScope": "private"
         });
-        let skill = parse_skills_list(&payload, "stripe")
+        let skill = parse_skills_list(list(&payload), "stripe")
             .unwrap()
             .skills
             .remove(0);
@@ -1021,11 +951,7 @@ mod tests {
             .unwrap()
             .clone(),
             extension_name: "server".to_string(),
-            resources: SkillResources::Files(vec![SkillFile {
-                uri: uri.to_string(),
-                digest: sha256_digest(&bytes),
-                size: bytes.len() as u64,
-            }]),
+            resources: SkillResources::Files(vec![SkillResource::from_bytes(uri, &bytes)]),
         };
         let content =
             ResourceContents::blob(base64::engine::general_purpose::STANDARD.encode(bytes), uri);
@@ -1052,7 +978,7 @@ mod tests {
     #[test]
     fn held_skill_remains_discoverable_after_listing_disappears() {
         let (payload, extension) = payload("billing", "stripe");
-        let skill = parse_skills_list(&payload, &extension)
+        let skill = parse_skills_list(list(&payload), &extension)
             .unwrap()
             .skills
             .remove(0);
@@ -1098,7 +1024,10 @@ mod tests {
             "cacheScope": "private"
         });
         assert_eq!(
-            parse_skills_list(&payload, "server").unwrap().skills.len(),
+            parse_skills_list(list(&payload), "server")
+                .unwrap()
+                .skills
+                .len(),
             1
         );
     }
