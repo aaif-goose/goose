@@ -107,7 +107,7 @@ impl AcpConnection {
             let [MessageContent::Text(text)] = message.content.as_slice() else {
                 return;
             };
-            let chunk = content_chunk_for_message(
+            let chunk = live_transcript_chunk(
                 &message,
                 ContentBlock::Text(TextContent::new(text.text.clone())),
             );
