@@ -1,0 +1,22 @@
+{
+  "id": "slack-tools",
+  "name": "Slack Tools",
+  "version": "0.1.0",
+  "description": "Send messages, list channels, and read Slack conversations",
+  "engines": { "goose": ">=1.0.0" },
+  "binary": "slack-tools",
+  "mcp": { "tools": true, "resources": false, "prompts": false },
+  "provides": ["slack.v1"],
+  "config": {
+    "token": {
+      "type": "string",
+      "description": "Slack Bot or User OAuth token (xoxb-... or xoxp-...)"
+    },
+    "default_channel": {
+      "type": "string",
+      "description": "Default channel ID or name to use when none is specified",
+      "default": "general"
+    }
+  },
+  "permissions": ["net:fetch"]
+}

@@ -1,0 +1,21 @@
+[package]
+name = "linear-tools"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[[bin]]
+name = "linear-tools"
+path = "src/main.rs"
+
+[dependencies]
+goose-plugin = { path = "../../../crates/goose-plugin" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+rmcp = { version = "3", default-features = false, features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+reqwest = { version = "0.12", features = ["json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
