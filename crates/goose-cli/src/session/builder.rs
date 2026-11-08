@@ -589,6 +589,11 @@ async fn collect_extension_configs(
         .collect();
     if !session_config.no_profile && !session_config.resume && recipe_extensions.is_none() {
         let project_root = std::env::current_dir().ok();
+        let provides = goose::plugins::enabled_plugin_provides(project_root.as_deref());
+        if !provides.is_empty() {
+            let caps: Vec<String> = provides.into_keys().collect();
+            std::env::set_var("GOOSE_AVAILABLE_CAPABILITIES", caps.join(","));
+        }
         all.extend(
             goose::plugins::mcp_servers::enabled_plugin_mcp_servers(project_root.as_deref())
                 .into_iter()
