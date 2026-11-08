@@ -95,6 +95,7 @@ fn spawn_start(
             .start_interaction(
                 reservation,
                 WebRtcOffer::new(offer.into()).unwrap(),
+                Some("start instructions".into()),
                 session_manager,
                 ignore_transcript_publisher(),
                 ignore_main_agent(),
@@ -148,6 +149,7 @@ async fn establish_interaction_with(
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 start_manager,
                 transcript_publisher,
                 main_agent,
@@ -296,6 +298,7 @@ async fn a_start_reserves_the_session_until_it_finishes() {
     );
     let pending = starts.recv().await.unwrap();
 
+    assert_eq!(pending.instructions.as_deref(), Some("start instructions"));
     assert_eq!(
         pending.input_messages,
         vec![LiveVoiceInputMessage {
@@ -337,6 +340,7 @@ async fn a_cancelled_reservation_does_not_contact_the_provider() {
         .start_interaction(
             reservation,
             WebRtcOffer::new("offer".into()).unwrap(),
+            None,
             manager,
             ignore_transcript_publisher(),
             ignore_main_agent(),
@@ -778,6 +782,7 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 start_manager,
                 transcript_publisher,
                 main_agent,
@@ -1082,6 +1087,7 @@ async fn provider_terminal_publishes_completion_after_release() {
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 manager,
                 ignore_transcript_publisher(),
                 ignore_main_agent(),
@@ -1351,7 +1357,7 @@ mod settings {
 
         let start = live_voice_provider(&config)
             .unwrap()
-            .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![])
+            .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![], None)
             .await;
 
         assert!(start.is_err());
@@ -1363,12 +1369,27 @@ mod settings {
     #[tokio::test]
     async fn added_instructions_follow_goose_instructions() {
         let _env = env_lock::lock_env(ENV);
-        for (added, expected) in [
-            (None, LIVE_SESSION_INSTRUCTIONS.to_owned()),
-            (Some(" \n "), LIVE_SESSION_INSTRUCTIONS.to_owned()),
+        for (added, per_start, expected) in [
+            (None, None, LIVE_SESSION_INSTRUCTIONS.to_owned()),
+            (
+                Some(" \n "),
+                Some(" "),
+                LIVE_SESSION_INSTRUCTIONS.to_owned(),
+            ),
             (
                 Some("  You are Billy.\n"),
+                None,
                 format!("{LIVE_SESSION_INSTRUCTIONS}\n\nYou are Billy."),
+            ),
+            (
+                None,
+                Some(" Billy likes tea.\n"),
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nBilly likes tea."),
+            ),
+            (
+                Some("You are Billy."),
+                Some(" Billy likes tea.\n"),
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nYou are Billy.\n\nBilly likes tea."),
             ),
         ] {
             let server = MockServer::start().await;
@@ -1395,13 +1416,20 @@ mod settings {
 
             let start = live_voice_provider(&config)
                 .unwrap()
-                .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![])
+                .start(
+                    WebRtcOffer::new("offer-sdp".into()).unwrap(),
+                    vec![],
+                    per_start.map(String::from),
+                )
                 .await;
 
             assert!(start.is_err());
             let requests = server.received_requests().await.unwrap();
             let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-            assert_eq!(body["session"]["instructions"], expected, "{added:?}");
+            assert_eq!(
+                body["session"]["instructions"], expected,
+                "{added:?} {per_start:?}"
+            );
         }
     }
 

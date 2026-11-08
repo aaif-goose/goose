@@ -4,8 +4,8 @@ use crate::{
     api_client::TlsConfig,
     live::{LiveSessionEndReason, LiveSessionEvent},
     live_voice_provider::{
-        DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage, LiveVoiceProvider,
-        ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
+        append_instructions, DelegationUpdate, DelegationUpdateDelivery, LiveVoiceInputMessage,
+        LiveVoiceProvider, ProviderConnection, ProviderConnectionEvent, WebRtcAnswer, WebRtcOffer,
     },
     openai_live::{
         ConnectedOpenAiLiveSession, OpenAiLiveClient, OpenAiLiveContext, OpenAiLiveContextChannel,
@@ -79,10 +79,11 @@ impl LiveVoiceProvider for OpenAiLiveVoiceProvider {
         &self,
         offer: WebRtcOffer,
         input_messages: Vec<LiveVoiceInputMessage>,
+        instructions: Option<String>,
     ) -> Result<(WebRtcAnswer, Box<dyn ProviderConnection>)> {
         let config = OpenAiLiveSessionConfig {
             model: self.model.clone(),
-            instructions: self.instructions.clone(),
+            instructions: append_instructions(&self.instructions, instructions.as_deref()),
             voice: Some(self.voice.clone()),
             input_messages: input_messages
                 .into_iter()

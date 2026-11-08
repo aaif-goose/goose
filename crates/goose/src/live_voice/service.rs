@@ -5,6 +5,8 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
+#[cfg(feature = "live-voice")]
+use goose_providers::live_voice_provider::append_instructions;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
 pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
 #[cfg(feature = "live-voice")]
@@ -272,6 +274,7 @@ impl LiveVoiceService {
         &self,
         interaction_guard: LiveVoiceInteractionGuard,
         offer: WebRtcOffer,
+        instructions: Option<String>,
         session_manager: Arc<SessionManager>,
         transcript_publisher: LiveVoiceTranscriptPublisher,
         main_agent: LiveMainAgent,
@@ -289,7 +292,7 @@ impl LiveVoiceService {
             return Err(LiveVoiceError::Unavailable);
         }
         let (answer, provider_connection) = provider
-            .start(offer, input_messages)
+            .start(offer, input_messages, instructions)
             .await
             .map_err(|_| LiveVoiceError::StartFailed)?;
 
@@ -404,9 +407,7 @@ fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettin
         .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
     let instructions = config
         .get_param::<String>(LIVE_VOICE_INSTRUCTIONS_CONFIG_KEY)
-        .ok()
-        .map(|instructions| instructions.trim().to_owned())
-        .filter(|instructions| !instructions.is_empty());
+        .ok();
     Ok(LiveVoiceSettings {
         api_key,
         endpoint,
@@ -433,15 +434,11 @@ fn live_voice_provider(
     let settings = live_voice_settings(config)?;
     let tls_config = crate::config::tls::provider_tls_config_from_config(config)
         .map_err(|_| "Live voice TLS configuration is invalid")?;
-    // Added to goose's own instructions, never in place of them.
-    let instructions = match settings.instructions {
-        Some(added) => format!("{LIVE_SESSION_INSTRUCTIONS}\n\n{added}"),
-        None => LIVE_SESSION_INSTRUCTIONS.into(),
-    };
     let mut provider = OpenAiLiveVoiceProvider::new(
         settings.api_key,
         settings.voice,
-        instructions,
+        // Added to goose's own instructions, never in place of them.
+        append_instructions(LIVE_SESSION_INSTRUCTIONS, settings.instructions.as_deref()),
         DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
     )
     .map_err(|_| "Live voice provider is not configured")?;

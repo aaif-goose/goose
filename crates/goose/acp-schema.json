@@ -1353,6 +1353,13 @@
         "offerSdp": {
           "type": "string"
         },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Added after goose's live voice instructions, including any configured\nones, for this interaction only. Blank text adds nothing."
+        },
         "_meta": {
           "type": [
             "object",
@@ -1365,7 +1372,7 @@
         "sessionId",
         "offerSdp"
       ],
-      "description": "Get a diagnostic report for a session.",
+      "description": "Start a live voice interaction for a session.",
       "x-side": "agent",
       "x-method": "_goose/unstable/session/live-voice/start"
     },
