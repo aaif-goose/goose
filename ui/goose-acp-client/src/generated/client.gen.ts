@@ -15,6 +15,23 @@ import type {
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
+  ClientExtensionsInstallRequest_unstable,
+  ClientExtensionsInstallResponse_unstable,
+  ClientExtensionsListRequest_unstable,
+  ClientExtensionsListResponse_unstable,
+  ClientExtensionsNetFetchRequest_unstable,
+  ClientExtensionsNetFetchResponse_unstable,
+  ClientExtensionsReadMainRequest_unstable,
+  ClientExtensionsReadMainResponse_unstable,
+  ClientExtensionsSetEnabledRequest_unstable,
+  ClientExtensionsStorageDeleteRequest_unstable,
+  ClientExtensionsStorageDeleteResponse_unstable,
+  ClientExtensionsStorageGetRequest_unstable,
+  ClientExtensionsStorageGetResponse_unstable,
+  ClientExtensionsStorageKeysRequest_unstable,
+  ClientExtensionsStorageKeysResponse_unstable,
+  ClientExtensionsStorageSetRequest_unstable,
+  ClientExtensionsUninstallRequest_unstable,
   ConfigReadAllRequest_unstable,
   ConfigReadAllResponse_unstable,
   ConfigReadRequest_unstable,
@@ -196,6 +213,13 @@ import {
   zAppsImportResponse_unstable,
   zAppsListResponse_unstable,
   zCanonicalModelInfoResponse_unstable,
+  zClientExtensionsInstallResponse_unstable,
+  zClientExtensionsListResponse_unstable,
+  zClientExtensionsNetFetchResponse_unstable,
+  zClientExtensionsReadMainResponse_unstable,
+  zClientExtensionsStorageDeleteResponse_unstable,
+  zClientExtensionsStorageGetResponse_unstable,
+  zClientExtensionsStorageKeysResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
   zContextReportResponse_unstable,
@@ -843,6 +867,123 @@ export class GooseExtClient {
     return zDefaultsReadResponse_unstable.parse(
       raw,
     ) as DefaultsReadResponse_unstable;
+  }
+
+  async clientExtensionsList_unstable(
+    params: ClientExtensionsListRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/list",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsInstall_unstable(
+    params: ClientExtensionsInstallRequest_unstable,
+  ): Promise<ClientExtensionsInstallResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/install",
+      params,
+    );
+    return zClientExtensionsInstallResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsInstallResponse_unstable;
+  }
+
+  async clientExtensionsSetEnabled_unstable(
+    params: ClientExtensionsSetEnabledRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/set_enabled",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsUninstall_unstable(
+    params: ClientExtensionsUninstallRequest_unstable,
+  ): Promise<ClientExtensionsListResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/uninstall",
+      params,
+    );
+    return zClientExtensionsListResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsListResponse_unstable;
+  }
+
+  async clientExtensionsReadMain_unstable(
+    params: ClientExtensionsReadMainRequest_unstable,
+  ): Promise<ClientExtensionsReadMainResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/read_main",
+      params,
+    );
+    return zClientExtensionsReadMainResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsReadMainResponse_unstable;
+  }
+
+  async clientExtensionsStorageGet_unstable(
+    params: ClientExtensionsStorageGetRequest_unstable,
+  ): Promise<ClientExtensionsStorageGetResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/storage/get",
+      params,
+    );
+    return zClientExtensionsStorageGetResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsStorageGetResponse_unstable;
+  }
+
+  async clientExtensionsStorageSet_unstable(
+    params: ClientExtensionsStorageSetRequest_unstable,
+  ): Promise<void> {
+    await this.conn.request(
+      "_goose/unstable/client_extensions/storage/set",
+      params,
+    );
+  }
+
+  async clientExtensionsStorageDelete_unstable(
+    params: ClientExtensionsStorageDeleteRequest_unstable,
+  ): Promise<ClientExtensionsStorageDeleteResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/storage/delete",
+      params,
+    );
+    return zClientExtensionsStorageDeleteResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsStorageDeleteResponse_unstable;
+  }
+
+  async clientExtensionsStorageKeys_unstable(
+    params: ClientExtensionsStorageKeysRequest_unstable,
+  ): Promise<ClientExtensionsStorageKeysResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/storage/keys",
+      params,
+    );
+    return zClientExtensionsStorageKeysResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsStorageKeysResponse_unstable;
+  }
+
+  async clientExtensionsNetFetch_unstable(
+    params: ClientExtensionsNetFetchRequest_unstable,
+  ): Promise<ClientExtensionsNetFetchResponse_unstable> {
+    const raw = await this.conn.request(
+      "_goose/unstable/client_extensions/net/fetch",
+      params,
+    );
+    return zClientExtensionsNetFetchResponse_unstable.parse(
+      raw,
+    ) as ClientExtensionsNetFetchResponse_unstable;
   }
 
   async onboardingImportScan_unstable(
