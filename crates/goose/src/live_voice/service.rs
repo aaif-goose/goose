@@ -29,6 +29,8 @@ const LIVE_VOICE_MODEL_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_MODEL";
 #[cfg(feature = "live-voice")]
 const LIVE_VOICE_API_KEY_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_API_KEY";
 #[cfg(feature = "live-voice")]
+const LIVE_VOICE_INSTRUCTIONS_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_INSTRUCTIONS";
+#[cfg(feature = "live-voice")]
 const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
 
 #[cfg(feature = "live-voice")]
@@ -370,6 +372,7 @@ struct LiveVoiceSettings {
     endpoint: Option<String>,
     model: Option<String>,
     voice: String,
+    instructions: Option<String>,
 }
 
 #[cfg(feature = "live-voice")]
@@ -399,11 +402,17 @@ fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettin
     let voice = config
         .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
         .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
+    let instructions = config
+        .get_param::<String>(LIVE_VOICE_INSTRUCTIONS_CONFIG_KEY)
+        .ok()
+        .map(|instructions| instructions.trim().to_owned())
+        .filter(|instructions| !instructions.is_empty());
     Ok(LiveVoiceSettings {
         api_key,
         endpoint,
         model,
         voice,
+        instructions,
     })
 }
 
@@ -424,10 +433,15 @@ fn live_voice_provider(
     let settings = live_voice_settings(config)?;
     let tls_config = crate::config::tls::provider_tls_config_from_config(config)
         .map_err(|_| "Live voice TLS configuration is invalid")?;
+    // Added to goose's own instructions, never in place of them.
+    let instructions = match settings.instructions {
+        Some(added) => format!("{LIVE_SESSION_INSTRUCTIONS}\n\n{added}"),
+        None => LIVE_SESSION_INSTRUCTIONS.into(),
+    };
     let mut provider = OpenAiLiveVoiceProvider::new(
         settings.api_key,
         settings.voice,
-        LIVE_SESSION_INSTRUCTIONS.into(),
+        instructions,
         DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
     )
     .map_err(|_| "Live voice provider is not configured")?;

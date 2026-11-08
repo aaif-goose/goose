@@ -1190,7 +1190,7 @@ fn stale_cleanup_cannot_remove_a_later_call() {
 
 #[cfg(feature = "live-voice")]
 mod settings {
-    use super::super::{live_voice_provider, live_voice_settings};
+    use super::super::{live_voice_provider, live_voice_settings, LIVE_SESSION_INSTRUCTIONS};
     use crate::config::Config;
     use goose_providers::live_voice_provider::{LiveVoiceProvider, WebRtcOffer};
     use tempfile::TempDir;
@@ -1199,12 +1199,13 @@ mod settings {
         Mock, MockServer, ResponseTemplate,
     };
 
-    const ENV: [(&str, Option<&str>); 5] = [
+    const ENV: [(&str, Option<&str>); 6] = [
         ("OPENAI_API_KEY", None),
         ("GOOSE_LIVE_VOICE_ENDPOINT", None),
         ("GOOSE_LIVE_VOICE_MODEL", None),
         ("GOOSE_LIVE_VOICE_API_KEY", None),
         ("GOOSE_LIVE_VOICE", None),
+        ("GOOSE_LIVE_VOICE_INSTRUCTIONS", None),
     ];
     const ENDPOINT: &str = "http://192.0.2.10:8080/v1/live/sessions";
 
@@ -1238,6 +1239,7 @@ mod settings {
             assert_eq!(settings.endpoint, None);
             assert_eq!(settings.model, None);
             assert_eq!(settings.voice, "marin");
+            assert_eq!(settings.instructions, None);
         }
     }
 
@@ -1356,6 +1358,51 @@ mod settings {
         let requests = server.received_requests().await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(body["session"]["model"], "custom-live-model");
+    }
+
+    #[tokio::test]
+    async fn added_instructions_follow_goose_instructions() {
+        let _env = env_lock::lock_env(ENV);
+        for (added, expected) in [
+            (None, LIVE_SESSION_INSTRUCTIONS.to_owned()),
+            (Some(" \n "), LIVE_SESSION_INSTRUCTIONS.to_owned()),
+            (
+                Some("  You are Billy.\n"),
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nYou are Billy."),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(503))
+                .mount(&server)
+                .await;
+            let directory = TempDir::new().unwrap();
+            let config = config(&directory);
+            config
+                .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"voice-key")
+                .unwrap();
+            config
+                .set_param(
+                    "GOOSE_LIVE_VOICE_ENDPOINT",
+                    format!("{}/v1/live/sessions", server.uri()),
+                )
+                .unwrap();
+            if let Some(added) = added {
+                config
+                    .set_param("GOOSE_LIVE_VOICE_INSTRUCTIONS", added)
+                    .unwrap();
+            }
+
+            let start = live_voice_provider(&config)
+                .unwrap()
+                .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![])
+                .await;
+
+            assert!(start.is_err());
+            let requests = server.received_requests().await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(body["session"]["instructions"], expected, "{added:?}");
+        }
     }
 
     #[test]
