@@ -51,6 +51,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_CACHE_TTL` | Anthropic prompt-cache TTL; `1h` keeps the cached prefix alive across idle gaps at a higher cache-write rate. Headless runs always use `5m` | "5m", "1h" | "5m" | No |
 | `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
+| `GOOSE_DEFER_TOOLS` | List extension tool names up front and load their schemas on demand | true/false | false | No |
 | `GOOSE_TOOLSHIM` | Enable tool interpretation | true/false | false | No |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |
 | `GOOSE_INPUT_LIMIT` | Override input token limit for Ollama (maps to `num_ctx`) | Positive integer | Model default | No |
@@ -73,6 +74,14 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_TELEMETRY_ENABLED` | Enable [anonymous usage data](/docs/guides/usage-data) collection | true/false | false | No |
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
+
+## Deferred tool schemas
+
+Set `GOOSE_DEFER_TOOLS: true` in `config.yaml` to list MCP extension tool names in the system prompt while loading their full schemas only when needed. The model calls `load_tools` with exact tool names or an extension wildcard such as `github__*`, then uses the loaded tools in its next response. The environment variable `GOOSE_DEFER_TOOLS` overrides the YAML setting.
+
+Platform tools and tools marked with `_meta["goose/alwaysLoad"]: true` remain available up front. App-only tools remain hidden. Code mode uses its own catalog and disables deferred discovery.
+
+Successful loads remain available after compaction and session resume because they are recorded in the conversation. Clearing the conversation unloads them. New subagent conversations begin with no loaded tools and use the same configuration. `load_tools` follows the ordinary tool permission and hook rules; loading schemas does not grant permission to execute the tools.
 
 ## Example Configuration
 

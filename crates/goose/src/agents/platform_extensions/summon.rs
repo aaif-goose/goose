@@ -11,7 +11,7 @@ use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::local_recipes::load_local_recipe_file;
 use crate::recipe::{Recipe, RecipeParameter, Response, Settings, RECIPE_FILE_EXTENSIONS};
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
-use crate::session::{Session, SessionType, ToolDiscoveryState};
+use crate::session::{Session, SessionType};
 use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
 use anyhow::Result;
@@ -976,13 +976,6 @@ impl SummonClient {
         EnabledExtensionsState::new(subagent_config.extensions)
             .to_extension_data(&mut extension_data)
             .map_err(|e| format!("Failed to save delegate extensions: {e}"))?;
-        // The delegate inherits the parent's extensions, so it defers their
-        // tools too. It starts with none loaded.
-        if ToolDiscoveryState::of(parent).defer_tools {
-            ToolDiscoveryState::deferring()
-                .to_extension_data(&mut extension_data)
-                .map_err(|e| format!("Failed to save delegate tool discovery: {e}"))?;
-        }
 
         let child = self
             .create_subagent_session(
@@ -1639,20 +1632,12 @@ mod tests {
             )
             .await
             .unwrap();
-        let mut parent_data = ExtensionData::default();
-        ToolDiscoveryState {
-            defer_tools: true,
-            loaded_tools: vec!["github__create_pr".to_string()],
-        }
-        .to_extension_data(&mut parent_data)
-        .unwrap();
         manager
             .update(&parent.id)
             .provider_name("openai")
             .model_config(
                 goose_providers::model::ModelConfig::new("test-model").with_cache_ttl("1h"),
             )
-            .extension_data(parent_data)
             .apply()
             .await
             .unwrap();
@@ -1699,10 +1684,6 @@ mod tests {
         assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
         assert_eq!(child.working_dir, child_dir.canonicalize().unwrap());
         assert_eq!(child.provider_name.as_deref(), Some("openai"));
-        assert_eq!(
-            ToolDiscoveryState::of(&child),
-            ToolDiscoveryState::deferring()
-        );
         assert_eq!(
             child.model_config.as_ref().unwrap().model_name,
             "test-model"

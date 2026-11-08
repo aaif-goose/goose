@@ -1,6 +1,6 @@
 //! Exposes extension capabilities and executes requests that belong to them.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
@@ -20,9 +20,6 @@ use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
     GooseEffect, Operation, OperationResult, SlashCommand,
-};
-use crate::agents::tool_discovery::{
-    deferred_tools, defers_tools, names_by_extension, unloaded_tools, LOAD_TOOLS_TOOL_NAME,
 };
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
@@ -276,7 +273,7 @@ impl ToolExecutionOperation {
         self.batch.lock().unwrap().take()
     }
 
-    async fn lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
+    pub(super) async fn lease(&self, session: &Session) -> Result<Arc<ExtensionLease>> {
         let lease = self
             .lease
             .lock()
@@ -594,7 +591,10 @@ pub(super) fn call_will_not_run(
         || final_output_called_with_other_tools(session, messages, request))
 }
 
-fn requesting_message<'a>(messages: &'a [Message], request: &ToolRequest) -> Option<&'a Message> {
+pub(super) fn requesting_message<'a>(
+    messages: &'a [Message],
+    request: &ToolRequest,
+) -> Option<&'a Message> {
     messages.iter().find(|message| {
         message.role == Role::Assistant
             && message.content.iter().any(|content| {
@@ -662,7 +662,7 @@ pub(super) fn approval_expired(
         .map(|tool_call| tool_call.name.as_ref())
     {
         Ok(FINAL_OUTPUT_TOOL_NAME) => false,
-        Ok(LOAD_SKILL_TOOL_NAME | LOAD_TOOLS_TOOL_NAME) => true,
+        Ok(LOAD_SKILL_TOOL_NAME) => true,
         _ => {
             let pending = pending_advertised_tool_requests(messages);
             !requests_can_resolve_a_lease(
@@ -674,7 +674,6 @@ pub(super) fn approval_expired(
                             && !request.tool_call.as_ref().is_ok_and(|tool_call| {
                                 tool_call.name == FINAL_OUTPUT_TOOL_NAME
                                     || tool_call.name == LOAD_SKILL_TOOL_NAME
-                                    || tool_call.name == LOAD_TOOLS_TOOL_NAME
                             })
                     })
                     .map(|(request, _)| request),
@@ -727,32 +726,18 @@ pub(super) enum ToolDisposition {
     ParseError(String),
 }
 
-/// Tells a session that defers tools how to load them. It doesn't change as
-/// tools load, so a load doesn't change the system prompt.
-const TOOL_DISCOVERY_NOTE: &str = "Some tools are deferred and omitted from tools[]. \
-Each extension below lists its deferred tools under \"Deferred tools\". \
-Use load_tools to load the ones you need, by exact name or `<extension>__*` for all of an extension's tools. \
-After loading, their full schemas appear in tools[] on your next request.";
-
 /// The extension block, as a header part plus one part per extension. Prompt
 /// extras are joined with a blank line, so this renders the same text as one
 /// combined part while keeping each extension's tokens attributable.
-/// `deferred` is set for a session that defers tools: every deferred tool by
-/// extension, loaded or not.
-fn extension_prompt_parts(
-    extensions: &[ExtensionInfo],
-    deferred: Option<&BTreeMap<String, Vec<String>>>,
-) -> Vec<(String, String)> {
-    let mut header = "# Extensions\n\n\
+fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)> {
+    let mut parts = vec![(
+        "extensions".to_string(),
+        "# Extensions\n\n\
          Extensions provide additional tools and context from different data sources and applications.\n\
          You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
          Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
-        .to_string();
-    if deferred.is_some() {
-        header.push_str("\n\n");
-        header.push_str(TOOL_DISCOVERY_NOTE);
-    }
-    let mut parts = vec![("extensions".to_string(), header)];
+            .to_string(),
+    )];
     for extension in extensions {
         let mut lines = vec![format!("## {}", extension.name)];
         if extension.has_resources {
@@ -760,9 +745,6 @@ fn extension_prompt_parts(
         }
         if !extension.instructions.is_empty() {
             lines.push(format!("### Instructions\n{}", extension.instructions));
-        }
-        if let Some(names) = deferred.and_then(|deferred| deferred.get(&extension.name)) {
-            lines.push(format!("Deferred tools: {}", names.join(", ")));
         }
         parts.push((format!("extension:{}", extension.name), lines.join("\n\n")));
     }
@@ -810,15 +792,11 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let lease = self.lease(session).await?;
-        let unloaded: HashSet<String> = unloaded_tools(session, &lease)
-            .await
-            .into_iter()
-            .map(|tool| tool.name.to_string())
-            .collect();
-        let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
-        tools.retain(|tool| !unloaded.contains(tool.name.as_ref()));
-        Ok(tools)
+        Ok(self
+            .lease(session)
+            .await?
+            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await)
     }
 
     async fn moim_parts(
@@ -863,12 +841,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        let deferred = if defers_tools(session, &lease) {
-            Some(names_by_extension(&deferred_tools(session, &lease).await))
-        } else {
-            None
-        };
-        prompt_parts.extend(extension_prompt_parts(&extensions, deferred.as_ref()));
+        prompt_parts.extend(extension_prompt_parts(&extensions));
         Ok(prompt_parts)
     }
 
@@ -1055,7 +1028,7 @@ mod tests {
             ExtensionInfo::new("memory", "", true),
         ];
 
-        let parts = extension_prompt_parts(&extensions, None);
+        let parts = extension_prompt_parts(&extensions);
 
         let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
         assert_eq!(
@@ -1070,41 +1043,6 @@ mod tests {
         assert!(rendered.ends_with(
             "## developer\n\n### Instructions\nShell things.\n\n## memory\n\nmemory supports resources."
         ));
-    }
-
-    #[test]
-    fn extension_prompt_parts_list_every_deferred_tool() {
-        let extensions = vec![
-            ExtensionInfo::new("developer", "Shell things.", false),
-            ExtensionInfo::new("github", "Work with GitHub.", false),
-        ];
-        let deferred = BTreeMap::from([(
-            "github".to_string(),
-            vec![
-                "github__create_pr".to_string(),
-                "github__list_prs".to_string(),
-            ],
-        )]);
-
-        let parts = extension_prompt_parts(&extensions, Some(&deferred));
-
-        assert!(parts[0].1.ends_with(TOOL_DISCOVERY_NOTE));
-        assert_eq!(
-            parts[2].1,
-            "## github\n\n### Instructions\nWork with GitHub.\n\nDeferred tools: github__create_pr, github__list_prs"
-        );
-        assert!(!parts[1].1.contains("Deferred tools"));
-    }
-
-    #[test]
-    fn the_discovery_note_depends_only_on_deferring() {
-        let extensions = vec![ExtensionInfo::new("developer", "Shell things.", false)];
-
-        let deferring = extension_prompt_parts(&extensions, Some(&BTreeMap::new()));
-        let not_deferring = extension_prompt_parts(&extensions, None);
-
-        assert!(deferring[0].1.ends_with(TOOL_DISCOVERY_NOTE));
-        assert!(!not_deferring[0].1.contains(TOOL_DISCOVERY_NOTE));
     }
 
     #[test]

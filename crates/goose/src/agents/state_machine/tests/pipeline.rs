@@ -24,7 +24,7 @@ use crate::hooks::HookManager;
 use crate::permission::Permission;
 use crate::providers::base::Provider;
 use crate::session::extension_data::EnabledExtensionsState;
-use crate::session::{GoalState, Session, SessionManager, SessionType, ToolDiscoveryState};
+use crate::session::{GoalState, Session, SessionManager, SessionType};
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
 
@@ -391,15 +391,21 @@ impl TestPipeline {
             .unwrap();
     }
 
-    pub(super) async fn set_tool_discovery(&self, state: ToolDiscoveryState) {
-        self.session_manager
-            .set_extension_state(&self.session_id, &state)
-            .await
-            .unwrap();
+    pub(super) fn with_deferred_tools(mut self) -> Self {
+        assert!(self.services.get().is_none());
+        self.turn_settings.defer_tools = true;
+        self
     }
 
-    pub(super) async fn tool_discovery(&self) -> ToolDiscoveryState {
-        ToolDiscoveryState::of(&self.session().await.unwrap())
+    pub(super) async fn loaded_tools(&self) -> Vec<String> {
+        super::super::ops_tool_discovery::loaded_tools(
+            self.session()
+                .await
+                .unwrap()
+                .conversation
+                .unwrap()
+                .messages(),
+        )
     }
 
     pub(super) async fn session(&self) -> Result<Session> {
@@ -922,6 +928,7 @@ async fn build_test_pipeline(
             on_failure_timeout: std::time::Duration::from_secs(1),
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
+            defer_tools: false,
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,

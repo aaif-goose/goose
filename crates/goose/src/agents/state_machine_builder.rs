@@ -37,6 +37,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) compaction_threshold: f64,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
+    pub(crate) defer_tools: bool,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -100,6 +101,7 @@ pub(crate) fn build_state_machine(
         compaction_threshold,
         tool_call_cutoff,
         tool_pair_summarization,
+        defer_tools,
         session_manager,
         extension_manager,
         extension_lease,
@@ -121,6 +123,21 @@ pub(crate) fn build_state_machine(
         hook_manager.clone(),
         Arc::clone(&extension_lease),
     ));
+    let execution = ToolExecutionOperation::new(
+        Arc::clone(&extension_manager),
+        hook_manager.clone(),
+        Arc::clone(&post_tool_call_hook),
+        Arc::clone(&extension_lease),
+    );
+    let tool_operation: Arc<dyn Operation<Session, GooseEffect>> = if defer_tools {
+        Arc::new(ToolDiscoveryOperation::new(
+            execution,
+            Arc::clone(&extension_lease),
+            Arc::clone(&post_tool_call_hook),
+        ))
+    } else {
+        Arc::new(execution)
+    };
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
@@ -133,25 +150,15 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(ToolDiscoveryOperation::new(
-            Arc::clone(&extension_lease),
-            Arc::clone(&post_tool_call_hook),
-        )),
         Arc::new(RecipeOperation::new(
             provider.clone(),
             Arc::clone(&extension_manager),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&extension_manager),
-            hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
-            Arc::clone(&extension_lease),
-        )),
+        tool_operation,
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,
-            Arc::clone(&extension_lease),
         )),
         Arc::new(UnhandledToolCallsOperation::new()),
         Arc::new(

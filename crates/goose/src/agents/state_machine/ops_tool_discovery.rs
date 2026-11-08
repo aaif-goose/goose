@@ -1,5 +1,6 @@
-//! Offers `load_tools` to sessions that defer tools and records what it loads.
+//! Wraps extension execution with conversation-derived progressive tool discovery.
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::{anyhow, Result};
@@ -8,26 +9,36 @@ use goose_agent::post_tool_call_hook::PostToolCallHook;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tracing_futures::Instrument;
 
-use crate::agents::extension_manager::ExtensionLease;
+use super::ops_toolcalling::{
+    advertised_tool_names, pending_tool_requests, request_was_advertised, requesting_message,
+    tool_span, ToolDisposition, ToolExecutionOperation, EXPIRED_APPROVAL_RESPONSE,
+};
+use super::post_tool_hook::run_post_tool_call_hook;
+use super::tool_discovery::{
+    always_loads, deferred_tool_named, names_by_extension, not_loaded_message, resolve_load,
+    select_tools, NotSent, LOAD_TOOLS_TOOL_NAME,
+};
+use super::{
+    applied, messages_since_kickoff, Emitter, GooseEffect, InferenceInput, Operation,
+    OperationResult, SlashCommand,
+};
+use crate::agents::extension_manager::{get_tool_owner, ExtensionLease};
 use crate::agents::reply_parts::is_tool_visible_to_model;
-use crate::agents::state_machine::ops_toolcalling::{
-    advertised_tool_names, pending_advertised_tool_requests, tool_span, ToolDisposition,
-    EXPIRED_APPROVAL_RESPONSE,
-};
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
-use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, Emitter, GooseEffect, Operation,
-    OperationResult,
-};
-use crate::agents::tool_discovery::{defers_tools, resolve_load, LOAD_TOOLS_TOOL_NAME};
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
-use crate::session::{Session, ToolDiscoveryState};
+use crate::session::Session;
+
+const OPERATION_NAME: &str = "tool_discovery";
+const LOADED_TOOLS_NOTE: &str = "loaded_tools";
+const TOOL_DISCOVERY_NOTE: &str = "Some tools are deferred and omitted from tools[]. \
+Each extension below lists its deferred tools under \"Deferred tools\". \
+Use load_tools to load the ones you need, by exact name or `<extension>__*` for all of an extension's tools. \
+After loading, their full schemas appear in tools[] on your next request.";
 
 #[derive(Deserialize, JsonSchema)]
 struct LoadToolsParams {
@@ -43,9 +54,8 @@ fn load_tools_tool() -> Result<Tool> {
         .ok_or_else(|| anyhow!("load_tools schema is not an object"))?;
     Ok(Tool::new(
         LOAD_TOOLS_TOOL_NAME,
-        "Load extension tools that are listed as not loaded in your system instructions. \
-         A loaded tool becomes callable in your next response, so don't call it in the \
-         same response that loads it.",
+        "Load extension tools listed in your system instructions. Their full schemas become \
+         callable in your next response; do not call a tool in the same response that loads it.",
         schema,
     )
     .annotate(ToolAnnotations::from_raw(
@@ -57,29 +67,69 @@ fn load_tools_tool() -> Result<Tool> {
     )))
 }
 
-fn parse_tool_names(arguments: Option<&JsonObject>) -> Result<Vec<String>, String> {
-    let arguments = arguments.ok_or_else(|| "Missing arguments".to_string())?;
-    serde_json::from_value::<LoadToolsParams>(Value::Object(arguments.clone()))
-        .map(|params| params.tool_names)
-        .map_err(|error| format!("Invalid arguments: {error}"))
+pub(super) fn loaded_tools(messages: &[Message]) -> Vec<String> {
+    let mut loaded = Vec::new();
+    for message in messages {
+        if let Some(names) = message
+            .metadata
+            .operation_note(OPERATION_NAME, LOADED_TOOLS_NOTE)
+            .and_then(Value::as_array)
+        {
+            for name in names.iter().filter_map(Value::as_str) {
+                if !loaded.iter().any(|loaded| loaded == name) {
+                    loaded.push(name.to_string());
+                }
+            }
+        }
+    }
+    loaded
 }
 
-/// Slots for the tools operations add to a request (`load_skill`,
-/// `load_tools`, a recipe's `final_output`) when the request's own count
-/// wasn't recorded.
-const RESERVED_OPERATION_TOOLS: usize = 3;
+fn enabled(lease: &ExtensionLease) -> bool {
+    #[cfg(feature = "code-mode")]
+    {
+        !lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
+    }
+    #[cfg(not(feature = "code-mode"))]
+    {
+        let _ = lease;
+        true
+    }
+}
+
+async fn deferred_tools(lease: &ExtensionLease) -> Vec<Tool> {
+    let extensions: HashSet<String> = lease
+        .configs()
+        .into_iter()
+        .filter(|config| !config.is_platform())
+        .map(|config| config.key())
+        .collect();
+    lease
+        .tools_excluding(crate::skills::EXTENSION_NAME)
+        .await
+        .into_iter()
+        .filter(|tool| {
+            is_tool_visible_to_model(tool)
+                && !always_loads(tool)
+                && get_tool_owner(tool).is_some_and(|owner| extensions.contains(&owner))
+        })
+        .collect()
+}
 
 pub struct ToolDiscoveryOperation {
+    execution: ToolExecutionOperation,
     extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
 }
 
 impl ToolDiscoveryOperation {
     pub fn new(
+        execution: ToolExecutionOperation,
         extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
     ) -> Self {
         Self {
+            execution,
             extension_lease,
             post_tool_call_hook,
         }
@@ -93,39 +143,47 @@ impl ToolDiscoveryOperation {
             .filter(|lease| lease.scope_id() == session.id.as_str())
     }
 
-    /// `advertised` is how many tools the inference that called `load_tools`
-    /// sent, when it recorded them. `left_out` is the tools loaded before that
-    /// inference that it didn't send, because the request was full.
     async fn load(
         lease: &ExtensionLease,
-        state: &mut ToolDiscoveryState,
+        loaded: &mut Vec<String>,
         arguments: Option<&JsonObject>,
-        advertised: Option<usize>,
-        left_out: &[String],
+        sent: &[String],
+        loaded_at_request: &[String],
     ) -> CallToolResult {
-        let requested = match parse_tool_names(arguments) {
+        let requested = arguments
+            .ok_or_else(|| "Missing arguments".to_string())
+            .and_then(|arguments| {
+                serde_json::from_value::<LoadToolsParams>(Value::Object(arguments.clone()))
+                    .map(|params| params.tool_names)
+                    .map_err(|error| format!("Invalid arguments: {error}"))
+            });
+        let requested = match requested {
             Ok(requested) => requested,
             Err(error) => return CallToolResult::error(vec![ContentBlock::text(error)]),
         };
         let mut available = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
         available.retain(is_tool_visible_to_model);
-        let deferrable = lease.deferrable_tools().await;
-        let advertised = advertised.unwrap_or_else(|| {
-            let still_deferred = deferrable
-                .iter()
-                .filter(|tool| !state.loaded_tools.iter().any(|name| name == &*tool.name))
-                .count();
-            available.len() - still_deferred + RESERVED_OPERATION_TOOLS
-        });
+        let deferred = deferred_tools(lease).await;
+        // Include loads completed since this inference, even if an approval pause
+        // split its tool calls across separate runs of the operation.
+        let admitted_since_request = loaded
+            .iter()
+            .filter(|name| !loaded_at_request.contains(name) && !sent.contains(name))
+            .count();
+        let left_out: Vec<String> = loaded_at_request
+            .iter()
+            .filter(|name| !sent.contains(name))
+            .cloned()
+            .collect();
         let (outcome, newly_loaded) = resolve_load(
             &requested,
             &available,
-            &deferrable,
-            &state.loaded_tools,
-            left_out,
-            advertised,
+            &deferred,
+            loaded,
+            &left_out,
+            sent.len() + admitted_since_request,
         );
-        state.loaded_tools.extend(newly_loaded);
+        loaded.extend(newly_loaded);
         let text = serde_json::to_string(&outcome).expect("load outcome serializes");
         if outcome.loaded.is_empty() {
             CallToolResult::error(vec![ContentBlock::text(text)])
@@ -138,18 +196,88 @@ impl ToolDiscoveryOperation {
 #[async_trait]
 impl Operation<Session, GooseEffect> for ToolDiscoveryOperation {
     fn name(&self) -> &'static str {
-        "tool_discovery"
+        OPERATION_NAME
+    }
+
+    async fn finalize_cancellation(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Vec<GooseEffect> {
+        self.execution
+            .finalize_cancellation(session, conversation, emit)
+            .await
+    }
+
+    async fn run_command(
+        &self,
+        command: &SlashCommand<'_>,
+        session: &Session,
+        conversation: &Conversation,
+        emit: &Emitter,
+    ) -> Result<OperationResult<GooseEffect>> {
+        self.execution
+            .run_command(command, session, conversation, emit)
+            .await
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        let defers = self
-            .session_lease(session)
-            .is_some_and(|lease| defers_tools(session, &lease));
-        Ok(if defers {
-            vec![load_tools_tool()?]
-        } else {
-            Vec::new()
-        })
+        let mut tools = self.execution.inference_tools(session).await?;
+        if enabled(self.execution.lease(session).await?.as_ref()) {
+            tools.push(load_tools_tool()?);
+        }
+        Ok(tools)
+    }
+
+    async fn prompt_parts(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+    ) -> Result<Vec<(String, String)>> {
+        let mut parts = self.execution.prompt_parts(session, conversation).await?;
+        let lease = self.execution.lease(session).await?;
+        if !enabled(&lease) {
+            return Ok(parts);
+        }
+        let deferred = deferred_tools(&lease).await;
+        let grouped = names_by_extension(&deferred);
+        for (key, part) in &mut parts {
+            if key == "extensions" {
+                part.push_str("\n\n");
+                part.push_str(TOOL_DISCOVERY_NOTE);
+            } else if let Some(names) = key
+                .strip_prefix("extension:")
+                .and_then(|name| grouped.get(name))
+            {
+                part.push_str(&format!("\n\nDeferred tools: {}", names.join(", ")));
+            }
+        }
+        Ok(parts)
+    }
+
+    async fn moim_parts(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+    ) -> Result<Vec<String>> {
+        self.execution.moim_parts(session, conversation).await
+    }
+
+    async fn finalize_inference_input(
+        &self,
+        session: &Session,
+        conversation: &Conversation,
+        input: &mut InferenceInput,
+    ) -> Result<()> {
+        let lease = self.execution.lease(session).await?;
+        if !enabled(&lease) {
+            return Ok(());
+        }
+        let deferred = deferred_tools(&lease).await;
+        let loaded = loaded_tools(conversation.messages());
+        select_tools(&mut input.tools, &deferred, &loaded);
+        Ok(())
     }
 
     async fn run(
@@ -159,98 +287,123 @@ impl Operation<Session, GooseEffect> for ToolDiscoveryOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
         let messages = messages_since_kickoff(conversation)?;
-        let pending: Vec<_> = pending_advertised_tool_requests(messages)
-            .into_iter()
-            .filter(|(request, _)| {
-                request
-                    .tool_call
-                    .as_ref()
-                    .is_ok_and(|tool_call| tool_call.name.as_ref() == LOAD_TOOLS_TOOL_NAME)
-            })
-            .collect();
-        if pending.is_empty() {
-            return not_applicable();
-        }
-
         let lease = self.session_lease(session);
-        let original_state = ToolDiscoveryState::of(session);
-        let mut state = original_state.clone();
+        let deferred = match lease.as_deref().filter(|lease| enabled(lease)) {
+            Some(lease) => deferred_tools(lease).await,
+            None => Vec::new(),
+        };
+        let original_loaded = loaded_tools(conversation.messages());
+        let mut loaded = original_loaded.clone();
         let mut response = Message::user();
+        let mut pending = pending_tool_requests(messages);
+        pending.sort_by_key(|(request, _)| {
+            !request
+                .tool_call
+                .as_ref()
+                .is_ok_and(|call| call.name == LOAD_TOOLS_TOOL_NAME)
+        });
         for (request, disposition) in pending {
-            let result = match (disposition, lease.as_deref()) {
-                (ToolDisposition::ParseError(error), _) => {
+            let Ok(call) = &request.tool_call else {
+                continue;
+            };
+            let advertised = request_was_advertised(messages, &request);
+            let is_load = advertised && call.name == LOAD_TOOLS_TOOL_NAME;
+            let not_sent = (!advertised)
+                .then(|| deferred_tool_named(&call.name, &deferred))
+                .flatten();
+            if !is_load && not_sent.is_none() {
+                continue;
+            }
+            let requesting = requesting_message(conversation.messages(), &request);
+            let request_index = conversation
+                .messages()
+                .iter()
+                .position(|message| {
+                    requesting.is_some_and(|requesting| std::ptr::eq(message, requesting))
+                })
+                .unwrap_or(conversation.messages().len());
+            let loaded_at_request = loaded_tools(&conversation.messages()[..request_index]);
+            let span = tool_span(&call.name, &request.id, &session.id);
+            let result = match disposition {
+                ToolDisposition::ParseError(error) => {
                     CallToolResult::error(vec![ContentBlock::text(format!(
-                        "The tool call could not be parsed: {error}. Correct the arguments and try again."
+                        "Invalid arguments: {error}"
                     ))])
                 }
-                (ToolDisposition::Execute, _) if session.goose_mode == GooseMode::Chat => {
+                ToolDisposition::Execute if not_sent.is_some() => {
+                    let name = not_sent.as_ref().unwrap();
+                    let why = if loaded_at_request.contains(name) {
+                        NotSent::LeftOutForLimit
+                    } else if loaded.contains(name) {
+                        NotSent::LoadedInSameResponse
+                    } else {
+                        NotSent::NotLoaded
+                    };
+                    CallToolResult::error(vec![ContentBlock::text(not_loaded_message(name, why))])
+                }
+                ToolDisposition::Execute if session.goose_mode == GooseMode::Chat => {
                     CallToolResult::success(vec![ContentBlock::text(
                         CHAT_MODE_TOOL_SKIPPED_RESPONSE,
                     )])
                 }
-                (ToolDisposition::Execute, None) => {
-                    CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
-                }
-                (ToolDisposition::Execute, Some(lease)) => {
-                    let tool_call = request.tool_call.as_ref().map_err(|error| {
-                        anyhow!("load_tools tool call could not be parsed: {error}")
-                    })?;
-                    let span = tool_span(&tool_call.name, &request.id, &session.id);
-                    let loaded_this_batch =
-                        state.loaded_tools.len() - original_state.loaded_tools.len();
-                    let sent = advertised_tool_names(messages, &request);
-                    let advertised = sent.as_ref().map(|sent| sent.len() + loaded_this_batch);
-                    let left_out: Vec<String> = sent
-                        .map(|sent| {
-                            original_state
-                                .loaded_tools
-                                .iter()
-                                .filter(|name| !sent.contains(name))
-                                .cloned()
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let result = Self::load(
-                        lease,
-                        &mut state,
-                        tool_call.arguments.as_ref(),
-                        advertised,
-                        &left_out,
-                    )
-                    .instrument(span.clone())
-                    .await;
-                    if result.is_error == Some(true) {
-                        span.record("error.type", "tool_error");
+                ToolDisposition::Execute => {
+                    match (
+                        lease.as_deref().filter(|lease| enabled(lease)),
+                        advertised_tool_names(messages, &request),
+                    ) {
+                        (Some(lease), Some(sent)) => {
+                            let result = Self::load(
+                                lease,
+                                &mut loaded,
+                                call.arguments.as_ref(),
+                                &sent,
+                                &loaded_at_request,
+                            )
+                            .instrument(span.clone())
+                            .await;
+                            run_post_tool_call_hook(
+                                self.post_tool_call_hook.as_ref(),
+                                session,
+                                conversation,
+                                &request,
+                                &ToolResponse {
+                                    id: request.id.clone(),
+                                    tool_result: Ok(result.clone()),
+                                    metadata: request.metadata.clone(),
+                                },
+                            )
+                            .instrument(span.clone())
+                            .await;
+                            result
+                        }
+                        (None, _) => CallToolResult::error(vec![ContentBlock::text(
+                            EXPIRED_APPROVAL_RESPONSE,
+                        )]),
+                        (_, None) => CallToolResult::error(vec![ContentBlock::text(
+                            "Load tools from a model response with an advertised tool catalog.",
+                        )]),
                     }
-                    let tool_response = ToolResponse {
-                        id: request.id.clone(),
-                        tool_result: Ok(result.clone()),
-                        metadata: request.metadata.clone(),
-                    };
-                    run_post_tool_call_hook(
-                        self.post_tool_call_hook.as_ref(),
-                        session,
-                        conversation,
-                        &request,
-                        &tool_response,
-                    )
-                    .instrument(span)
-                    .await;
-                    result
                 }
             };
+            if result.is_error == Some(true) {
+                span.record("error.type", "tool_error");
+            }
             response.add_tool_response_with_metadata(
                 request.id,
                 Ok(result),
                 request.metadata.as_ref(),
             );
         }
-
-        let mut effects = Vec::new();
-        if state != original_state {
-            effects.push(GooseEffect::extension_state(&state)?);
+        if response.content.is_empty() {
+            return self.execution.run(session, conversation, emit).await;
         }
-        effects.push(emit.message(response).into());
-        applied(effects)
+        if loaded.len() > original_loaded.len() {
+            self.set_message_meta(
+                &mut response,
+                LOADED_TOOLS_NOTE,
+                json!(&loaded[original_loaded.len()..]),
+            );
+        }
+        applied([emit.message(response).into()])
     }
 }

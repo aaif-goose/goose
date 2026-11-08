@@ -270,6 +270,16 @@ impl Default for ExtensionConfig {
 }
 
 impl ExtensionConfig {
+    pub(crate) fn is_platform(&self) -> bool {
+        match self {
+            Self::Platform { .. } => true,
+            Self::Builtin { name, .. } => {
+                PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+            }
+            _ => false,
+        }
+    }
+
     pub fn streamable_http<S: Into<String>, T: Into<u64>>(
         name: S,
         uri: S,

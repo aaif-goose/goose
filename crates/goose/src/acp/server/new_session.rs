@@ -5,7 +5,7 @@ use crate::config::{Config, GooseMode};
 use crate::model_config::resolve_provider_and_model_config;
 use crate::providers::get_from_registry;
 use crate::recipe::Recipe;
-use crate::session::{ExtensionData, ExtensionState, Session, SessionType, ToolDiscoveryState};
+use crate::session::{ExtensionData, Session, SessionType};
 
 use super::AcpConnection;
 use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
@@ -34,8 +34,6 @@ struct NewSessionMetaFields {
     client_title: Option<String>,
     /// Client-owned labels that `session/list` can filter on via an index.
     tags: Vec<(String, String)>,
-    /// Lists deferrable extension tools by name until the model loads them.
-    defer_tools: bool,
 }
 
 impl AcpConnection {
@@ -155,18 +153,13 @@ impl AcpConnection {
 
         let goose_extensions = meta_goose_extensions(args.meta.as_ref())?;
         let recipe_extensions = rendered.as_ref().and_then(|r| r.extensions.as_deref());
-        let mut extension_data = self.build_enabled_extensions_data(
+        let extension_data = self.build_enabled_extensions_data(
             config,
             session,
             args.mcp_servers,
             goose_extensions,
             recipe_extensions,
         )?;
-        if meta.defer_tools {
-            ToolDiscoveryState::deferring()
-                .to_extension_data(&mut extension_data)
-                .internal_err_ctx("Failed to record tool discovery state")?;
-        }
 
         self.apply_initial_session_config(
             &session.id,
@@ -295,7 +288,6 @@ fn new_session_meta_fields(
         // "New Chat" fallback.
         client_title: session_title.filter(|_| recipe_title(recipe).is_none()),
         tags: meta_tags(meta)?,
-        defer_tools: meta_bool(meta, "deferTools")?,
     })
 }
 

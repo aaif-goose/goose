@@ -1,74 +1,47 @@
 //! Answers tool requests that no other operation handled.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
+use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData};
 use tracing_futures::Instrument;
 
-use crate::agents::extension_manager::ExtensionLease;
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
-    advertised_tool_names, emit_extended_pre_hooks, pending_tool_requests, request_was_advertised,
-    tool_span, ToolDisposition,
+    emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
+    ToolDisposition,
 };
 use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
     applied, messages_since_kickoff, not_applicable, Emitter, Operation, OperationResult,
 };
-use crate::agents::tool_discovery::{
-    deferred_tool_named, deferred_tools, not_loaded_message, NotSent, MAX_ADVERTISED_TOOLS,
-};
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::config::GooseMode;
-use crate::conversation::message::{Message, ToolRequest, ToolResponse};
+use crate::conversation::message::{Message, ToolResponse};
 use crate::conversation::Conversation;
 use crate::hooks::HookManager;
-use crate::session::{Session, ToolDiscoveryState};
+use crate::session::Session;
 
 pub(crate) const UNCLAIMED_TOOL_ERROR: &str = "goose.unclaimed_tool";
 
 pub struct RemainingToolCallsOperation {
     hook_manager: HookManager,
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-    extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
 }
 
 impl RemainingToolCallsOperation {
     pub fn new(
         hook_manager: HookManager,
         post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-        extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     ) -> Self {
         Self {
             hook_manager,
             post_tool_call_hook,
-            extension_lease,
         }
     }
-
-    async fn deferred_tools(&self, session: &Session) -> Vec<Tool> {
-        let lease = self
-            .extension_lease
-            .lock()
-            .expect("extension lease unavailable")
-            .clone()
-            .filter(|lease| lease.scope_id() == session.id.as_str());
-        match lease {
-            Some(lease) => deferred_tools(session, &lease).await,
-            None => Vec::new(),
-        }
-    }
-}
-
-/// Whether the request that made `request` carried the most tools a request
-/// may. A full request loads nothing new, so a loaded tool it didn't send was
-/// left out for the limit, not loaded in the same response.
-fn request_was_full(messages: &[Message], request: &ToolRequest) -> bool {
-    advertised_tool_names(messages, request).is_some_and(|sent| sent.len() >= MAX_ADVERTISED_TOOLS)
 }
 
 #[async_trait]
@@ -104,8 +77,6 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
             return not_applicable();
         }
 
-        let deferred = self.deferred_tools(session).await;
-        let loaded = ToolDiscoveryState::of(session).loaded_tools;
         let mut response = Message::user();
         for (request, disposition) in pending {
             let tool_name = request
@@ -114,9 +85,6 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                 .map(|tool_call| tool_call.name.as_ref())
                 .unwrap_or("unknown");
             let span = tool_span(tool_name, &request.id, &session.id);
-            let not_loaded = (!request_was_advertised(messages, &request))
-                .then(|| deferred_tool_named(tool_name, &deferred))
-                .flatten();
             let (result, unclaimed) = match disposition {
                 ToolDisposition::ParseError(error) => (
                     Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -124,23 +92,6 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                     ))])),
                     false,
                 ),
-                ToolDisposition::Execute if not_loaded.is_some() => {
-                    span.record("error.type", "tool_not_loaded");
-                    let name = not_loaded.as_deref().unwrap_or(tool_name);
-                    let why = if !loaded.iter().any(|loaded| loaded == name) {
-                        NotSent::NotLoaded
-                    } else if request_was_full(messages, &request) {
-                        NotSent::LeftOutForLimit
-                    } else {
-                        NotSent::LoadedInSameResponse
-                    };
-                    (
-                        Ok(CallToolResult::error(vec![ContentBlock::text(
-                            not_loaded_message(name, why),
-                        )])),
-                        true,
-                    )
-                }
                 ToolDisposition::Execute if !request_was_advertised(messages, &request) => {
                     span.record("error.type", "tool_not_available");
                     (
@@ -271,7 +222,7 @@ mod tests {
     ) -> Result<OperationResult<GooseEffect>> {
         let (tx, _rx) = mpsc::unbounded_channel();
         let emit = Emitter::new(tx, CancellationToken::new());
-        RemainingToolCallsOperation::new(HookManager::default(), hook, Arc::default())
+        RemainingToolCallsOperation::new(HookManager::default(), hook)
             .run(session, &Conversation::new_unvalidated(messages), &emit)
             .await
     }

@@ -614,3 +614,76 @@ async fn calls_the_post_tool_call_hook_after_each_call_and_keeps_results_if_it_f
             .all(|id| ids.contains(id)));
     }
 }
+
+struct FinalizeCatalog;
+
+#[async_trait]
+impl Operation<TestSession> for FinalizeCatalog {
+    fn name(&self) -> &'static str {
+        "finalize_catalog"
+    }
+
+    async fn finalize_inference_input(
+        &self,
+        _session: &TestSession,
+        _conversation: &Conversation,
+        input: &mut InferenceInput,
+    ) -> Result<()> {
+        assert_eq!(
+            input
+                .tools
+                .iter()
+                .map(|tool| tool.name.as_ref())
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
+        input.tools.retain(|tool| tool.name != "b");
+        input.tools.reverse();
+        Ok(())
+    }
+}
+
+struct ContributeCatalog;
+
+#[async_trait]
+impl Operation<TestSession> for ContributeCatalog {
+    fn name(&self) -> &'static str {
+        "contribute_catalog"
+    }
+
+    async fn inference_tools(&self, _session: &TestSession) -> Result<Vec<Tool>> {
+        Ok(["c", "a", "b"]
+            .map(|name| Tool::new(name, "", serde_json::Map::new()))
+            .to_vec())
+    }
+}
+
+#[tokio::test]
+async fn finalizers_see_all_contributions_and_previews_match_inference() -> Result<()> {
+    let session = TestSession {
+        conversation: Conversation::default(),
+    };
+    let machine: StateMachine<'_, TestSession> = StateMachine::new(
+        vec![
+            Step::Operation(Arc::new(FinalizeCatalog)),
+            Step::Operation(Arc::new(ContributeCatalog)),
+        ],
+        CancellationToken::new(),
+    );
+    let preview = machine
+        .collect_prompt_contributions(&session, &session.conversation)
+        .await?;
+    let inference = machine
+        .collect_inference_input(&session, &session.conversation)
+        .await?;
+    assert_eq!(preview.tools, inference.tools);
+    assert_eq!(
+        inference
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["c", "a"]
+    );
+    Ok(())
+}

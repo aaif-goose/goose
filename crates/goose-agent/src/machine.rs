@@ -131,6 +131,21 @@ where
                 .prompt_parts
                 .extend(operation.prompt_parts(session, conversation).await?);
         }
+        // Establish a stable baseline before operations transform the combined input.
+        input.tools.sort_by(|a, b| a.name.cmp(&b.name));
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            operation
+                .finalize_inference_input(session, conversation, &mut input)
+                .await?;
+        }
+        tool_names.clear();
+        for tool in &input.tools {
+            anyhow::ensure!(
+                tool_names.insert(tool.name.to_string()),
+                "inference input contains duplicate tool '{}'",
+                tool.name
+            );
+        }
         Ok(input)
     }
 

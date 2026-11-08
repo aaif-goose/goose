@@ -34,7 +34,7 @@ use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::ext_manager::{
     EXTENSION_NAME as EXTENSION_MANAGER_NAME, LIST_RESOURCES_TOOL_NAME, READ_RESOURCE_TOOL_NAME,
 };
-use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
+use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::agents::tool_execution::{ToolCallContext, ToolCallNotificationEmitter, ToolCallResult};
 use crate::config::extensions::name_to_key;
 use crate::conversation::message::Message;
@@ -293,23 +293,6 @@ impl ExtensionLease {
             .entries
             .iter()
             .filter(|entry| entry.extension.key != key)
-            .map(|entry| entry.tool.clone())
-            .collect()
-    }
-
-    /// Tools a session that defers tools sends only once they are loaded: the
-    /// model-visible tools of MCP extensions that don't set `goose/alwaysLoad`.
-    /// goose's own platform tools are always sent.
-    pub async fn deferrable_tools(&self) -> Vec<Tool> {
-        self.tool_catalog()
-            .await
-            .entries
-            .iter()
-            .filter(|entry| {
-                !entry.extension.is_platform()
-                    && is_tool_visible_to_model(&entry.tool)
-                    && !crate::agents::tool_discovery::always_loads(&entry.tool)
-            })
             .map(|entry| entry.tool.clone())
             .collect()
     }

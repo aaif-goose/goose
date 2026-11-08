@@ -126,6 +126,18 @@ pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend +
         Ok(Vec::new())
     }
 
+    /// Transform the combined contributions after all operations have supplied
+    /// their tools and prompt parts. Implementations must remain deterministic
+    /// and side-effect free so previews and inference use the same input.
+    async fn finalize_inference_input(
+        &self,
+        _session: &S,
+        _conversation: &Conversation,
+        _input: &mut InferenceInput,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     async fn prompt_parts(
         &self,
         _session: &S,

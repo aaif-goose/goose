@@ -8,8 +8,9 @@ use super::dummy_api::DummyApi;
 use super::pipeline::MessageKind::Agent;
 use super::pipeline::TestPipeline;
 use super::test_pipeline;
-use crate::agents::tool_discovery::{not_loaded_message, NotSent, LOAD_TOOLS_TOOL_NAME};
-use crate::session::ToolDiscoveryState;
+use crate::agents::state_machine::tool_discovery::{
+    not_loaded_message, NotSent, LOAD_TOOLS_TOOL_NAME,
+};
 
 const LOADED_ADD: &str = r#""loaded":["calculator__add"]"#;
 const LOADED_ADD_VALUES: &str = r#""loaded":["calculator__add_values"]"#;
@@ -19,10 +20,7 @@ const DEFERRED_CALCULATOR_TOOLS: &str = "Deferred tools: calculator__add, calcul
 
 async fn deferring_pipeline() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
-    pipeline
-        .set_tool_discovery(ToolDiscoveryState::deferring())
-        .await;
-    Ok((pipeline, api))
+    Ok((pipeline.with_deferred_tools(), api))
 }
 
 fn load(names: &[&str]) -> serde_json::Value {
@@ -55,10 +53,7 @@ async fn load_add_values_then_add(pipeline: &TestPipeline, api: &DummyApi) -> Re
     api.on(LOADED_ADD_VALUES).reply("values loaded");
     pipeline.run(["load values"]).await?;
     load_and_add_four(pipeline, api).await?;
-    assert_eq!(
-        pipeline.tool_discovery().await.loaded_tools,
-        [ADD_VALUES, ADD]
-    );
+    assert_eq!(pipeline.loaded_tools().await, [ADD_VALUES, ADD]);
     Ok(())
 }
 
@@ -96,7 +91,7 @@ async fn a_loaded_tool_is_sent_from_the_next_inference() -> Result<()> {
     assert!(!calls[1].advertises_tool(ADD_VALUES));
     assert_eq!(calls[1].system(), calls[0].system());
     assert_eq!(pipeline.calculator_total(), 4);
-    assert_eq!(pipeline.tool_discovery().await.loaded_tools, [ADD]);
+    assert_eq!(pipeline.loaded_tools().await, [ADD]);
     Ok(())
 }
 
@@ -188,7 +183,7 @@ async fn unknown_names_are_rejected_without_loading_anything() -> Result<()> {
         .await?
         .assert_message(-1, Agent, "no such tool");
 
-    assert!(pipeline.tool_discovery().await.loaded_tools.is_empty());
+    assert!(pipeline.loaded_tools().await.is_empty());
     Ok(())
 }
 
@@ -219,10 +214,7 @@ async fn loaded_tools_survive_auto_compaction() -> Result<()> {
         &[ADD_VALUES, ADD]
     ));
     assert_eq!(pipeline.calculator_total(), 6);
-    assert_eq!(
-        pipeline.tool_discovery().await.loaded_tools,
-        [ADD_VALUES, ADD]
-    );
+    assert_eq!(pipeline.loaded_tools().await, [ADD_VALUES, ADD]);
     Ok(())
 }
 
@@ -233,10 +225,7 @@ async fn clear_unloads_tools_but_keeps_deferring() -> Result<()> {
 
     pipeline.run(["/clear"]).await?;
 
-    assert_eq!(
-        pipeline.tool_discovery().await,
-        ToolDiscoveryState::deferring()
-    );
+    assert!(pipeline.loaded_tools().await.is_empty());
     api.on("hello again").reply("hi");
     pipeline.run(["hello again"]).await?;
     let call = api.calls().pop().unwrap();
@@ -309,19 +298,13 @@ async fn a_mangled_call_to_a_deferred_tool_explains_how_to_load_it() -> Result<(
 #[tokio::test]
 async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
     use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
-    use crate::agents::tool_discovery::MAX_ADVERTISED_TOOLS;
+    use crate::agents::state_machine::tool_discovery::MAX_ADVERTISED_TOOLS;
     use crate::conversation::message::{InferenceMetadata, Message};
     use rmcp::model::CallToolRequestParams;
 
-    let (pipeline, api) = test_pipeline().await?;
-    pipeline
-        .set_tool_discovery(ToolDiscoveryState {
-            defer_tools: true,
-            loaded_tools: vec![ADD.to_string()],
-        })
-        .await;
-    api.on("kickoff").reply("ready");
-    pipeline.run(["kickoff"]).await?;
+    let (pipeline, api) = deferring_pipeline().await?;
+    load_then_reply(&api, "load add", &[ADD], "loaded");
+    pipeline.run(["load add"]).await?;
 
     let sent: Vec<String> = std::iter::once(LOAD_TOOLS_TOOL_NAME.to_string())
         .chain((1..MAX_ADVERTISED_TOOLS).map(|n| format!("tool_{n:03}")))
@@ -359,5 +342,138 @@ async fn a_loaded_tool_left_out_of_a_full_request_says_so() -> Result<()> {
     assert!(last.input_contains(r#""reason":"tool_limit""#));
     assert!(!last.input_contains(&not_loaded_message(ADD, NotSent::LoadedInSameResponse)));
     assert_eq!(pipeline.calculator_total(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn replacing_history_directly_unloads_tools() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    load_and_add_four(&pipeline, &api).await?;
+    pipeline
+        .session_manager
+        .replace_conversation(
+            &pipeline.session_id,
+            &crate::conversation::Conversation::default(),
+        )
+        .await?;
+    api.on("fresh conversation").reply("ready");
+    pipeline.run(["fresh conversation"]).await?;
+    let call = api.calls().pop().unwrap();
+    assert!(call.advertises_tool(LOAD_TOOLS_TOOL_NAME));
+    assert!(!call.advertises_tool(ADD));
+    assert!(pipeline.loaded_tools().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn loading_obeys_explicit_permissions() -> Result<()> {
+    use crate::config::{permission::PermissionLevel, GooseMode};
+    let (pipeline, api) = deferring_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    pipeline.set_permission(LOAD_TOOLS_TOOL_NAME, PermissionLevel::NeverAllow);
+    api.on("load add").call(LOAD_TOOLS_TOOL_NAME, load(&[ADD]));
+    api.on(crate::agents::tool_execution::DECLINED_RESPONSE)
+        .reply("denied");
+    pipeline
+        .run(["load add"])
+        .await?
+        .assert_message(-1, Agent, "denied");
+    assert!(pipeline.loaded_tools().await.is_empty());
+    assert!(!api.calls().last().unwrap().advertises_tool(ADD));
+    Ok(())
+}
+
+#[tokio::test]
+async fn smart_approve_loads_schemas_without_executing_the_tool() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    let pipeline = pipeline
+        .with_goose_mode(crate::config::GooseMode::SmartApprove)
+        .await;
+    load_then_reply(&api, "load add", &[ADD], "loaded");
+    pipeline
+        .run(["load add"])
+        .await?
+        .assert_message(-1, Agent, "loaded");
+    assert_eq!(pipeline.loaded_tools().await, [ADD]);
+    assert_eq!(pipeline.calculator_total(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn loads_reconstruct_after_every_machine_step() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    api.on("add four").call(LOAD_TOOLS_TOOL_NAME, load(&[ADD]));
+    api.on(LOADED_ADD).call(ADD, value(4));
+    api.on("result: 4").reply("added four");
+    let (pipeline, result, _) = pipeline.run_reconstructing_each_step("add four").await?;
+    result.assert_message(-1, Agent, "added four");
+    assert_eq!(pipeline.loaded_tools().await, [ADD]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn approval_pauses_do_not_reset_the_load_budget() -> Result<()> {
+    use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
+    use crate::agents::state_machine::tool_discovery::MAX_ADVERTISED_TOOLS;
+    use crate::config::GooseMode;
+    use crate::conversation::message::{InferenceMetadata, Message};
+    use crate::permission::Permission;
+    use rmcp::model::CallToolRequestParams;
+
+    let (pipeline, api) = deferring_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    api.on("kickoff").reply("ready");
+    pipeline.run(["kickoff"]).await?;
+    let sent: Vec<String> = std::iter::once(LOAD_TOOLS_TOOL_NAME.to_string())
+        .chain((1..MAX_ADVERTISED_TOOLS - 1).map(|n| format!("tool_{n:03}")))
+        .collect();
+    let mut request = Message::assistant().with_inference(InferenceMetadata {
+        provider: "openai".to_string(),
+        requested_model: "test-model".to_string(),
+        resolved_model: None,
+        provider_session_id: None,
+    });
+    for (id, name) in [("first", ADD), ("second", ADD_VALUES)] {
+        request = request.with_tool_request(
+            id,
+            Ok(CallToolRequestParams::new(LOAD_TOOLS_TOOL_NAME)
+                .with_arguments(load(&[name]).as_object().unwrap().clone())),
+        );
+    }
+    request
+        .metadata
+        .set_operation_note(LLM_OPERATION_NAME, ADVERTISED_TOOLS_NOTE, json!(sent));
+    pipeline.seed([request]).await?;
+    pipeline.resume().await?;
+    assert!(pipeline.loaded_tools().await.is_empty());
+    pipeline.confirm("first", Permission::AllowOnce).await?;
+    pipeline.resume().await?;
+    assert_eq!(pipeline.loaded_tools().await, [ADD]);
+    pipeline.confirm("second", Permission::AllowOnce).await?;
+    api.on(r#""reason":"tool_limit""#).reply("full");
+    pipeline.resume().await?.assert_message(-1, Agent, "full");
+    assert_eq!(pipeline.loaded_tools().await, [ADD]);
+    assert_eq!(pipeline.calculator_total(), 0);
+    Ok(())
+}
+
+#[cfg(feature = "code-mode")]
+#[tokio::test]
+async fn code_mode_uses_its_own_catalog_without_losing_prior_loads() -> Result<()> {
+    let (pipeline, api) = deferring_pipeline().await?;
+    load_and_add_four(&pipeline, &api).await?;
+    pipeline.add_extension("code_execution").await?;
+    api.on("using code mode").reply("ready");
+    pipeline.run(["using code mode"]).await?;
+    let call = api.calls().pop().unwrap();
+    assert!(!call.advertises_tool(LOAD_TOOLS_TOOL_NAME));
+    assert!(!call.advertises_tool(ADD));
+    assert!(!call.system_contains("Deferred tools:"));
+    pipeline.remove_extension("code_execution").await?;
+    api.on("ordinary tools again").reply("ready");
+    pipeline.run(["ordinary tools again"]).await?;
+    let call = api.calls().pop().unwrap();
+    assert!(call.advertises_tool(LOAD_TOOLS_TOOL_NAME));
+    assert!(call.advertises_tool(ADD));
     Ok(())
 }

@@ -163,7 +163,7 @@ impl McpClientTrait for CalculatorExtension {
                 Arc::new(schema.clone()),
             )
             .with_meta(rmcp::model::MetaObject(
-                json!({ crate::agents::tool_discovery::ALWAYS_LOAD_META_KEY: true })
+                json!({ crate::agents::state_machine::tool_discovery::ALWAYS_LOAD_META_KEY: true })
                     .as_object()
                     .unwrap()
                     .clone(),

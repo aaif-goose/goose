@@ -37,6 +37,7 @@ pub(crate) use session::run as run_goose;
 pub(crate) use session::session_start_message;
 mod tool_approval;
 mod tool_confirmation;
+mod tool_discovery;
 mod usage;
 
 #[cfg(test)]

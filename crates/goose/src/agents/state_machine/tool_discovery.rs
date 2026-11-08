@@ -1,17 +1,11 @@
-//! Progressive tool discovery. A session that defers tools lists the tools of
-//! its MCP extensions by name instead of sending their schemas, and the model
-//! loads the ones it needs with `load_tools`. A load is recorded in the
-//! session's [`ToolDiscoveryState`], not in the conversation, so compaction
-//! and resume keep it.
-
 use std::collections::{BTreeMap, HashSet};
 
 use rmcp::model::Tool;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name, ExtensionLease};
-use crate::session::{Session, ToolDiscoveryState};
+use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
+use crate::agents::reply_parts::is_tool_visible_to_model;
 
 /// A tool sets `_meta["goose/alwaysLoad"]: true` to be sent up front in a
 /// session that defers tools.
@@ -30,47 +24,25 @@ pub fn always_loads(tool: &Tool) -> bool {
         == Some(true)
 }
 
-/// Code mode already keeps extension schemas out of the request, behind its
-/// own catalog, so tools are not deferred while it is on.
-fn code_mode_enabled(lease: &ExtensionLease) -> bool {
-    #[cfg(feature = "code-mode")]
+pub(super) fn select_tools(tools: &mut Vec<Tool>, deferred: &[Tool], loaded: &[String]) {
+    let names: HashSet<&str> = deferred.iter().map(|tool| tool.name.as_ref()).collect();
+    tools.retain(|tool| {
+        is_tool_visible_to_model(tool)
+            && (!names.contains(tool.name.as_ref())
+                || loaded.iter().any(|name| name == &*tool.name))
+    });
+    let position = |tool: &Tool| {
+        names
+            .contains(tool.name.as_ref())
+            .then(|| loaded.iter().position(|name| name == &*tool.name))
+            .flatten()
+    };
+    tools.sort_by(|a, b| (position(a), &a.name).cmp(&(position(b), &b.name)));
+    while tools.len() > MAX_ADVERTISED_TOOLS
+        && tools.last().is_some_and(|tool| position(tool).is_some())
     {
-        lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
+        tools.pop();
     }
-    #[cfg(not(feature = "code-mode"))]
-    {
-        let _ = lease;
-        false
-    }
-}
-
-pub(crate) fn defers_tools(session: &Session, lease: &ExtensionLease) -> bool {
-    ToolDiscoveryState::of(session).defer_tools && !code_mode_enabled(lease)
-}
-
-/// The tools the model sees only by name: deferrable and not loaded yet.
-/// Empty for a session that doesn't defer tools.
-pub(crate) async fn unloaded_tools(session: &Session, lease: &ExtensionLease) -> Vec<Tool> {
-    if !defers_tools(session, lease) {
-        return Vec::new();
-    }
-    let state = ToolDiscoveryState::of(session);
-    lease
-        .deferrable_tools()
-        .await
-        .into_iter()
-        .filter(|tool| !state.loaded_tools.iter().any(|name| name == &*tool.name))
-        .collect()
-}
-
-/// The order a deferring session's loaded tools follow the rest in, so a load
-/// appends to the tools sent instead of reordering them. Empty for a session
-/// that doesn't defer tools.
-pub(crate) fn admission_order(session: &Session, lease: &ExtensionLease) -> Vec<String> {
-    if !defers_tools(session, lease) {
-        return Vec::new();
-    }
-    ToolDiscoveryState::of(session).loaded_tools
 }
 
 /// Tool names grouped by the extension that owns them.
@@ -88,14 +60,6 @@ pub(crate) fn names_by_extension(tools: &[Tool]) -> BTreeMap<String, Vec<String>
         names.sort();
     }
     grouped
-}
-
-/// The tools a deferring session sends only once loaded, loaded or not.
-pub(crate) async fn deferred_tools(session: &Session, lease: &ExtensionLease) -> Vec<Tool> {
-    if !defers_tools(session, lease) {
-        return Vec::new();
-    }
-    lease.deferrable_tools().await
 }
 
 /// The deferred tool a call names, including the mangled forms some models
@@ -264,6 +228,31 @@ mod tests {
 
     fn names(items: &[&str]) -> Vec<String> {
         items.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn returning_tools_leave_out_the_newest_loads_until_there_is_room() {
+        let loaded = names(&["ext__c", "ext__a", "ext__b"]);
+        let deferred: Vec<Tool> = loaded.iter().map(|name| tool("ext", name)).collect();
+        let mut available: Vec<Tool> = (0..MAX_ADVERTISED_TOOLS - 1)
+            .map(|n| tool("eager", &format!("eager_{n:03}")))
+            .collect();
+        available.extend(deferred.clone());
+        let mut full = available.clone();
+        select_tools(&mut full, &deferred, &loaded);
+        assert_eq!(full.len(), MAX_ADVERTISED_TOOLS);
+        assert_eq!(full.last().unwrap().name, "ext__c");
+        available.remove(0);
+        available.remove(0);
+        select_tools(&mut available, &deferred, &loaded);
+        assert_eq!(available.len(), MAX_ADVERTISED_TOOLS);
+        assert_eq!(
+            available[available.len() - 3..]
+                .iter()
+                .map(|tool| tool.name.as_ref())
+                .collect::<Vec<_>>(),
+            ["ext__c", "ext__a", "ext__b"]
+        );
     }
 
     #[test]

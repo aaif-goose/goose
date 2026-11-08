@@ -298,13 +298,7 @@ impl Extension {
     }
 
     pub(super) fn is_platform(&self) -> bool {
-        match &self.config {
-            ExtensionConfig::Platform { .. } => true,
-            ExtensionConfig::Builtin { name, .. } => {
-                PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
-            }
-            _ => false,
-        }
+        self.config.is_platform()
     }
 
     /// The extension's tools as the model sees them: filtered by
