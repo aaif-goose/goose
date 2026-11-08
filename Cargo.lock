@@ -4507,6 +4507,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "goose-plugin"
+version = "1.58.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "goose-provider-types"
 version = "0.1.0-alpha.13"
 dependencies = [
