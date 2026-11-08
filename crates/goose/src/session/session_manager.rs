@@ -410,13 +410,18 @@ fn message_keyword_clause(keyword_count: usize) -> String {
         .join(" OR ");
 
     let visible = user_visible_message_sql("mq.metadata_json");
+    // Uncorrelated `IN` rather than a correlated `EXISTS`: the SQLite bundled
+    // since v1.47.0 (3.51.x) flattens the correlated form into the outer
+    // `messages` join and re-runs the `json_each` scan once per joined message
+    // row, which makes a keyword search take minutes on a large history.
+    // The uncorrelated form is materialized once and is safe on every
+    // SQLite version between 3.46.0 and 3.54.1.
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages mq
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)
