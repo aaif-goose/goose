@@ -19,7 +19,7 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'builtin';
 } | {
     name: string;
@@ -30,7 +30,7 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'platform';
 } | {
     server: McpServer;
@@ -55,8 +55,18 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'mcp';
+};
+
+/**
+ * Per-connection policy applied only when global tool deferral is enabled.
+ */
+export type ToolDeferralConfig = {
+    /**
+     * Exact server-local tool names whose schemas remain eagerly published.
+     */
+    always_load?: Array<string>;
 };
 
 /**
@@ -1659,7 +1669,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'builtin';
 } | {
     name: string;
@@ -1670,7 +1680,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'platform';
 } | {
     name: string;
@@ -1688,7 +1698,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'stdio';
 } | {
     name: string;
@@ -1720,7 +1730,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
-    always_load_tools?: Array<string> | null;
+    tool_deferral?: ToolDeferralConfig | null;
     type: 'streamable_http';
 };
 

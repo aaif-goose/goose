@@ -1927,7 +1927,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 

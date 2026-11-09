@@ -4272,7 +4272,7 @@ mod tests {
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         vec![
             McpServer::Stdio(
@@ -4298,7 +4298,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         vec![
             McpServer::Http(
@@ -4345,7 +4345,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
         let ordinary_http = ExtensionConfig::StreamableHttp {
             name: "ordinary-http".into(),
@@ -4361,7 +4361,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
 
         let result = extension_configs_to_mcp_servers(&[socket_backed, ordinary_http]);
@@ -4392,7 +4392,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
 
         let servers = extension_configs_to_mcp_servers(&[config]);

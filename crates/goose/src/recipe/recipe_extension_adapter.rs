@@ -25,7 +25,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        always_load_tools: Vec<String>,
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     #[serde(rename = "builtin")]
     Builtin {
@@ -39,7 +39,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        always_load_tools: Vec<String>,
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     #[serde(rename = "platform")]
     Platform {
@@ -53,7 +53,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        always_load_tools: Vec<String>,
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     #[serde(rename = "streamable_http")]
     StreamableHttp {
@@ -81,7 +81,7 @@ enum RecipeExtensionConfigInternal {
         #[serde(default)]
         available_tools: Vec<String>,
         #[serde(default)]
-        always_load_tools: Vec<String>,
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
 }
 
@@ -116,20 +116,20 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
-                always_load_tools
+                tool_deferral
             },
             Builtin {
                 display_name,
                 timeout,
                 bundled,
                 available_tools,
-                always_load_tools
+                tool_deferral
             },
             Platform {
                 display_name,
                 bundled,
                 available_tools,
-                always_load_tools
+                tool_deferral
             },
             StreamableHttp {
                 uri,
@@ -143,7 +143,7 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools,
-                always_load_tools
+                tool_deferral
             }
         )
     }
@@ -196,7 +196,7 @@ mod tests {
                 timeout,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
             } => {
                 assert_eq!(name, "test-builtin");
                 assert_eq!(description, "");
@@ -207,7 +207,7 @@ mod tests {
                     available_tools,
                     &vec!["tool_a".to_string(), "tool_b".to_string()]
                 );
-                assert!(always_load_tools.is_empty());
+                assert!(tool_deferral.is_none());
             }
             other => panic!("unexpected extension variant: {:?}", other),
         }
@@ -235,7 +235,7 @@ mod tests {
                 timeout,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
             } => {
                 assert_eq!(name, "null-description-builtin");
                 assert_eq!(description, "");
@@ -243,7 +243,7 @@ mod tests {
                 assert!(timeout.is_none());
                 assert!(bundled.is_none());
                 assert!(available_tools.is_empty());
-                assert!(always_load_tools.is_empty());
+                assert!(tool_deferral.is_none());
             }
             other => panic!("unexpected extension variant: {:?}", other),
         }

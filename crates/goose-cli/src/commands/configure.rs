@@ -1247,7 +1247,7 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
             bundled: Some(true),
             description,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     };
 
@@ -1300,7 +1300,7 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
     });
 
@@ -1348,7 +1348,7 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             scopes: vec![],
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
     });
 

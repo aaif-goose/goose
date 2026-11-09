@@ -176,8 +176,8 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     /// Built-in extension that is part of the bundled goose MCP server
     #[serde(rename = "builtin")]
@@ -193,8 +193,8 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     /// Platform extensions that have direct access to the agent etc and run in the agent process
     #[serde(rename = "platform")]
@@ -209,8 +209,8 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
     #[serde(rename = "streamable_http")]
     StreamableHttp {
@@ -259,8 +259,8 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_deferral: Option<goose_sdk_types::custom_requests::ToolDeferralConfig>,
     },
 }
 
@@ -273,7 +273,7 @@ impl Default for ExtensionConfig {
             timeout: Some(config::DEFAULT_EXTENSION_TIMEOUT),
             bundled: Some(true),
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 }
@@ -287,7 +287,7 @@ impl ExtensionConfig {
             timeout: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 
@@ -298,7 +298,7 @@ impl ExtensionConfig {
             display_name: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 
@@ -342,18 +342,14 @@ impl ExtensionConfig {
 
     pub fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
         match &mut self {
-            Self::Stdio {
-                always_load_tools, ..
+            Self::Stdio { tool_deferral, .. }
+            | Self::StreamableHttp { tool_deferral, .. }
+            | Self::Builtin { tool_deferral, .. }
+            | Self::Platform { tool_deferral, .. } => {
+                *tool_deferral = Some(goose_sdk_types::custom_requests::ToolDeferralConfig {
+                    always_load: tools,
+                })
             }
-            | Self::StreamableHttp {
-                always_load_tools, ..
-            }
-            | Self::Builtin {
-                always_load_tools, ..
-            }
-            | Self::Platform {
-                always_load_tools, ..
-            } => *always_load_tools = tools,
         }
         self
     }
@@ -378,7 +374,7 @@ impl ExtensionConfig {
             scopes: Vec::new(),
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 
@@ -399,7 +395,7 @@ impl ExtensionConfig {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
     }
 
@@ -419,7 +415,7 @@ impl ExtensionConfig {
                 description,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
                 ..
             } => Self::Stdio {
                 name,
@@ -432,7 +428,7 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
             },
             other => other,
         }
@@ -454,18 +450,13 @@ impl ExtensionConfig {
 
     pub fn always_load_tools(&self) -> &[String] {
         match self {
-            Self::Stdio {
-                always_load_tools, ..
-            }
-            | Self::StreamableHttp {
-                always_load_tools, ..
-            }
-            | Self::Builtin {
-                always_load_tools, ..
-            }
-            | Self::Platform {
-                always_load_tools, ..
-            } => always_load_tools,
+            Self::Stdio { tool_deferral, .. }
+            | Self::StreamableHttp { tool_deferral, .. }
+            | Self::Builtin { tool_deferral, .. }
+            | Self::Platform { tool_deferral, .. } => tool_deferral
+                .as_ref()
+                .map(|policy| policy.always_load.as_slice())
+                .unwrap_or_default(),
         }
     }
 
@@ -501,7 +492,7 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
             } => {
                 let merged = merge_environments(&envs, env_keys.iter(), config).await?;
                 Ok(Self::Stdio {
@@ -515,7 +506,7 @@ impl ExtensionConfig {
                     cwd: cwd.map(|s| substitute_env_vars(&s, &merged)),
                     bundled,
                     available_tools,
-                    always_load_tools,
+                    tool_deferral,
                 })
             }
             Self::StreamableHttp {
@@ -532,7 +523,7 @@ impl ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools,
-                always_load_tools,
+                tool_deferral,
             } => {
                 // Resolve the OAuth client secret alongside env_keys so that
                 // rotating it changes the resolved config, which is what
@@ -563,7 +554,7 @@ impl ExtensionConfig {
                     scopes,
                     bundled,
                     available_tools,
-                    always_load_tools,
+                    tool_deferral,
                 })
             }
             other => Ok(other),
@@ -755,10 +746,10 @@ mod tests {
     }
 
     #[test]
-    fn always_load_tools_roundtrip_and_default() {
+    fn tool_deferral_roundtrip_and_default() {
         let config: ExtensionConfig = serde_json::from_value(serde_json::json!({
             "type": "stdio", "name": "test", "cmd": "test", "args": [],
-            "always_load_tools": ["send", "db.query"]
+            "tool_deferral": {"always_load": ["send", "db.query"]}
         }))
         .unwrap();
         assert_eq!(config.always_load_tools(), ["send", "db.query"]);
@@ -772,7 +763,7 @@ mod tests {
         assert!(default.always_load_tools().is_empty());
         assert!(serde_json::to_value(default)
             .unwrap()
-            .get("always_load_tools")
+            .get("tool_deferral")
             .is_none());
     }
 
@@ -927,7 +918,7 @@ timeout: 300",
             timeout: Some(300),
             bundled: Some(true),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
 
         let yaml = serde_yaml::to_string(&config).unwrap();
@@ -944,7 +935,7 @@ timeout: 300",
             timeout: Some(300),
             bundled: Some(true),
             available_tools: vec!["shell".to_string()],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
 
         let yaml = serde_yaml::to_string(&config).unwrap();
@@ -961,7 +952,7 @@ timeout: 300",
             timeout: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::Builtin {
             name: "developer".into(),
@@ -970,7 +961,7 @@ timeout: 300",
             timeout: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "builtin_unchanged"
     )]
@@ -998,7 +989,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1023,7 +1014,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "header_substitution"
     )]
@@ -1039,7 +1030,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1052,7 +1043,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "env_keys_cleared"
     )]
@@ -1068,7 +1059,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1085,7 +1076,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "env_key_resolved"
     )]
@@ -1109,7 +1100,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1131,7 +1122,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "http_env_key_and_header_substitution"
     )]
@@ -1150,7 +1141,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1170,7 +1161,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "http_env_key_uri_substitution"
     )]
@@ -1190,7 +1181,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1207,7 +1198,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "env_key_skipped_when_already_in_envs"
     )]
@@ -1226,7 +1217,7 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1246,7 +1237,7 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "http_client_id_substitution_and_oauth_fields_preserved"
     )]
@@ -1265,7 +1256,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1285,7 +1276,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         }
         ; "http_client_secret_key_resolved_without_env_keys_entry"
     )]
@@ -1321,7 +1312,7 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
 
         let resolved = config.resolve(&cfg).await.unwrap();
@@ -1350,7 +1341,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
         assert_eq!(
             config.to_string(),
@@ -1374,7 +1365,7 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
+            tool_deferral: None,
         };
         assert_eq!(
             config.to_string(),

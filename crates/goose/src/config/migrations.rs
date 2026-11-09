@@ -92,10 +92,11 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                 })
                 .unwrap_or_default();
 
-            let always_load_tools = existing_entry
-                .as_ref()
-                .map(|entry| entry.config.always_load_tools().to_vec())
-                .unwrap_or_default();
+            let tool_deferral = existing_entry.as_ref().map(|entry| {
+                goose_sdk_types::custom_requests::ToolDeferralConfig {
+                    always_load: entry.config.always_load_tools().to_vec(),
+                }
+            });
 
             // If the extension already exists as type 'builtin', preserve that type
             let is_existing_builtin = existing_entry
@@ -110,7 +111,7 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                     timeout: None,
                     bundled: Some(true),
                     available_tools,
-                    always_load_tools,
+                    tool_deferral,
                 }
             } else {
                 ExtensionConfig::Platform {
@@ -119,7 +120,7 @@ fn migrate_platform_extensions(config: &mut Mapping) -> bool {
                     display_name: Some(def.display_name.to_string()),
                     bundled: Some(true),
                     available_tools,
-                    always_load_tools,
+                    tool_deferral,
                 }
             };
 
@@ -311,7 +312,7 @@ mod tests {
                 display_name: Some("Old Name".to_string()),
                 bundled: Some(true),
                 available_tools: vec!["todo_read".to_string()],
-                always_load_tools: Vec::new(),
+                tool_deferral: None,
             },
             enabled: false,
         };
@@ -357,7 +358,7 @@ mod tests {
                 timeout: Some(30),
                 bundled: Some(true),
                 available_tools: vec!["todo_read".to_string()],
-                always_load_tools: Vec::new(),
+                tool_deferral: None,
             },
             enabled: true,
         };

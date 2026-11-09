@@ -175,7 +175,7 @@ pub enum RecipeExtensionDto {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
+        tool_deferral: Option<crate::custom_requests::ToolDeferralConfig>,
     },
     Platform {
         name: String,
@@ -189,7 +189,7 @@ pub enum RecipeExtensionDto {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
+        tool_deferral: Option<crate::custom_requests::ToolDeferralConfig>,
     },
     Stdio {
         name: String,
@@ -212,7 +212,7 @@ pub enum RecipeExtensionDto {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
+        tool_deferral: Option<crate::custom_requests::ToolDeferralConfig>,
     },
     StreamableHttp {
         name: String,
@@ -244,7 +244,7 @@ pub enum RecipeExtensionDto {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
+        tool_deferral: Option<crate::custom_requests::ToolDeferralConfig>,
     },
 }
 
@@ -257,7 +257,7 @@ impl Default for RecipeExtensionDto {
             timeout: None,
             bundled: None,
             available_tools: None,
-            always_load_tools: None,
+            tool_deferral: None,
         }
     }
 }
