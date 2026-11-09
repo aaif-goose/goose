@@ -448,6 +448,17 @@
     "environmentVariables": []
   },
   {
+    "id": "nabu",
+    "name": "Nabu",
+    "description": "Read-only library of ancient texts: search, passages by citation URN, dictionaries, concordance, Bible verse alignment",
+    "command": "docker run -i --rm ghcr.io/arvicco/nabu-demo:1.0.0",
+    "link": "https://github.com/arvicco/nabu",
+    "installation_notes": "Runs the demo image over Docker (Greek NT, Hebrew Bible with morphology, Vulgate, World English Bible, LSJ and Lewis & Short). A full local library builds from the repository.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": []
+  },
+  {
     "id": "nano-banana-mcp",
     "name": "Nano Banana",
     "description": "AI-powered image generation and editing",
