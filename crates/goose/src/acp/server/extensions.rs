@@ -156,7 +156,7 @@ fn config_to_goose_extension(
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } => GooseExtension::Builtin {
             name: name.clone(),
             description: empty_string_to_none(description),
@@ -164,7 +164,7 @@ fn config_to_goose_extension(
             timeout: *timeout,
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
-            tool_deferral: tool_deferral.clone(),
+            always_load_tools: available_tools_to_wire(always_load_tools),
         },
         ExtensionConfig::Platform {
             name,
@@ -172,14 +172,14 @@ fn config_to_goose_extension(
             display_name,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } => GooseExtension::Platform {
             name: name.clone(),
             description: empty_string_to_none(description),
             display_name: display_name.clone(),
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
-            tool_deferral: tool_deferral.clone(),
+            always_load_tools: available_tools_to_wire(always_load_tools),
         },
         ExtensionConfig::Stdio {
             name,
@@ -190,7 +190,7 @@ fn config_to_goose_extension(
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
             ..
         } => GooseExtension::Mcp {
             server: Box::new(McpServer::Stdio(
@@ -205,7 +205,7 @@ fn config_to_goose_extension(
             scopes: vec![],
             bundled: *bundled,
             available_tools: available_tools_to_wire(available_tools),
-            tool_deferral: tool_deferral.clone(),
+            always_load_tools: available_tools_to_wire(always_load_tools),
         },
         ExtensionConfig::StreamableHttp {
             name,
@@ -220,7 +220,7 @@ fn config_to_goose_extension(
             scopes,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
             ..
         } => {
             let headers = headers
@@ -240,7 +240,7 @@ fn config_to_goose_extension(
                 scopes: scopes.clone(),
                 bundled: *bundled,
                 available_tools: available_tools_to_wire(available_tools),
-                tool_deferral: tool_deferral.clone(),
+                always_load_tools: available_tools_to_wire(always_load_tools),
             }
         }
     };
@@ -264,7 +264,7 @@ fn goose_extension_to_config(
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } => ExtensionConfig::Builtin {
             name,
             description: description.unwrap_or_default(),
@@ -272,7 +272,7 @@ fn goose_extension_to_config(
             timeout,
             bundled,
             available_tools: available_tools.unwrap_or_default(),
-            tool_deferral,
+            always_load_tools: always_load_tools.unwrap_or_default(),
         },
         GooseExtension::Platform {
             name,
@@ -280,14 +280,14 @@ fn goose_extension_to_config(
             display_name,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } => ExtensionConfig::Platform {
             name,
             description: description.unwrap_or_default(),
             display_name,
             bundled,
             available_tools: available_tools.unwrap_or_default(),
-            tool_deferral,
+            always_load_tools: always_load_tools.unwrap_or_default(),
         },
         GooseExtension::Mcp {
             server,
@@ -300,7 +300,7 @@ fn goose_extension_to_config(
             scopes,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } => match *server {
             McpServer::Stdio(stdio) => {
                 if socket.is_some() {
@@ -312,9 +312,9 @@ fn goose_extension_to_config(
                         "OAuth client fields are only supported for streamable_http MCP extensions",
                     ));
                 }
-                let tool_deferral = tool_deferral
-                    .map(|policy| Ok(Some(policy)))
-                    .unwrap_or_else(|| extract_tool_deferral_from_meta(&stdio.meta))
+                let always_load_tools = always_load_tools
+                    .map(Ok)
+                    .unwrap_or_else(|| extract_always_load_tools_from_meta(&stdio.meta))
                     .map_err(|message| {
                         agent_client_protocol::Error::invalid_params().data(message)
                     })?;
@@ -336,13 +336,13 @@ fn goose_extension_to_config(
                     cwd: None,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
-                    tool_deferral,
+                    always_load_tools,
                 }
             }
             McpServer::Http(http) => {
-                let tool_deferral = tool_deferral
-                    .map(|policy| Ok(Some(policy)))
-                    .unwrap_or_else(|| extract_tool_deferral_from_meta(&http.meta))
+                let always_load_tools = always_load_tools
+                    .map(Ok)
+                    .unwrap_or_else(|| extract_always_load_tools_from_meta(&http.meta))
                     .map_err(|message| {
                         agent_client_protocol::Error::invalid_params().data(message)
                     })?;
@@ -364,7 +364,7 @@ fn goose_extension_to_config(
                     scopes,
                     bundled,
                     available_tools: available_tools.unwrap_or_default(),
-                    tool_deferral,
+                    always_load_tools,
                 }
             }
             McpServer::Sse(_) => {
@@ -450,21 +450,21 @@ mod tests {
             timeout: None,
             bundled: None,
             available_tools: Vec::new(),
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         }
     }
 
     #[test]
-    fn mcp_tool_deferral_survive_config_roundtrip() {
+    fn mcp_always_load_tools_survive_config_roundtrip() {
         let extension: GooseExtension = serde_json::from_value(serde_json::json!({
-            "type": "mcp", "server": {"type": "http", "name": "buzz", "url": "http://localhost/mcp", "headers": [], "_meta": {"tool_deferral": {"always_load": ["send"]}}}
+            "type": "mcp", "server": {"type": "http", "name": "buzz", "url": "http://localhost/mcp", "headers": [], "_meta": {"alwaysLoadTools": ["send"]}}
         })).unwrap();
         let config = goose_extension_to_config(extension).unwrap().config;
         assert_eq!(config.always_load_tools(), ["send"]);
         let wire = config_to_goose_extension(&config).unwrap().unwrap();
         assert_eq!(
-            serde_json::to_value(&wire).unwrap()["tool_deferral"],
-            serde_json::json!({"always_load": ["send"]})
+            serde_json::to_value(&wire).unwrap()["always_load_tools"],
+            serde_json::json!(["send"])
         );
         assert_eq!(goose_extension_to_config(wire).unwrap().config, config);
     }
@@ -495,7 +495,7 @@ mod tests {
             timeout: Some(30),
             bundled: Some(true),
             available_tools: vec!["shell".to_string()],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -509,7 +509,7 @@ mod tests {
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = extension
         else {
             panic!("expected builtin extension");
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(timeout, Some(30));
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, Some(vec!["shell".to_string()]));
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -532,7 +532,7 @@ mod tests {
             display_name: Some("Todo".to_string()),
             bundled: Some(true),
             available_tools: vec!["write_todos".to_string()],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -545,7 +545,7 @@ mod tests {
             display_name,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = extension
         else {
             panic!("expected platform extension");
@@ -556,7 +556,7 @@ mod tests {
         assert_eq!(display_name.as_deref(), Some("Todo"));
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, Some(vec!["write_todos".to_string()]));
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -575,7 +575,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec!["run".to_string()],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -593,7 +593,7 @@ mod tests {
             scopes,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = extension
         else {
             panic!("expected mcp extension");
@@ -608,7 +608,7 @@ mod tests {
         assert!(scopes.is_empty());
         assert_eq!(bundled, None);
         assert_eq!(available_tools, Some(vec!["run".to_string()]));
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
 
         let McpServer::Stdio(stdio) = *server else {
             panic!("expected stdio server");
@@ -642,7 +642,7 @@ mod tests {
             scopes: vec!["scope.read".to_string()],
             bundled: None,
             available_tools: vec!["fetch".to_string()],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         };
 
         let extension = config_to_goose_extension(&config)
@@ -660,7 +660,7 @@ mod tests {
             scopes,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = extension
         else {
             panic!("expected mcp extension");
@@ -675,7 +675,7 @@ mod tests {
         assert_eq!(scopes, vec!["scope.read"]);
         assert_eq!(bundled, None);
         assert_eq!(available_tools, Some(vec!["fetch".to_string()]));
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
 
         let McpServer::Http(http) = *server else {
             panic!("expected http server");
@@ -704,7 +704,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(true),
             available_tools: Some(vec!["run".to_string()]),
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
@@ -720,7 +720,7 @@ mod tests {
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
             ..
         } = conversion.config
         else {
@@ -739,7 +739,7 @@ mod tests {
         assert_eq!(timeout, Some(42));
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, vec!["run"]);
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -766,7 +766,7 @@ mod tests {
             scopes: vec![],
             bundled: Some(true),
             available_tools: None,
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
@@ -813,7 +813,7 @@ mod tests {
             scopes: vec!["scope.read".to_string()],
             bundled: Some(true),
             available_tools: Some(vec!["fetch".to_string()]),
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
@@ -833,7 +833,7 @@ mod tests {
             scopes,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = conversion.config
         else {
             panic!("expected streamable http config");
@@ -861,7 +861,7 @@ mod tests {
         assert_eq!(scopes, vec!["scope.read"]);
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, vec!["fetch"]);
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -873,7 +873,7 @@ mod tests {
             timeout: Some(30),
             bundled: Some(true),
             available_tools: Some(vec!["shell".to_string()]),
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         let conversion = goose_extension_to_config(builtin).expect("conversion should succeed");
@@ -886,7 +886,7 @@ mod tests {
             timeout,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = conversion.config
         else {
             panic!("expected builtin config");
@@ -898,7 +898,7 @@ mod tests {
         assert_eq!(timeout, Some(30));
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, vec!["shell"]);
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -909,7 +909,7 @@ mod tests {
             display_name: Some("Todo".to_string()),
             bundled: Some(true),
             available_tools: Some(vec!["write_todos".to_string()]),
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         let conversion = goose_extension_to_config(platform).expect("conversion should succeed");
@@ -921,7 +921,7 @@ mod tests {
             display_name,
             bundled,
             available_tools,
-            tool_deferral,
+            always_load_tools,
         } = conversion.config
         else {
             panic!("expected platform config");
@@ -932,7 +932,7 @@ mod tests {
         assert_eq!(display_name.as_deref(), Some("Todo"));
         assert_eq!(bundled, Some(true));
         assert_eq!(available_tools, vec!["write_todos"]);
-        assert!(tool_deferral.is_none());
+        assert!(always_load_tools.is_empty());
     }
 
     #[test]
@@ -951,7 +951,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: None,
-            tool_deferral: None,
+            always_load_tools: None,
         };
 
         assert!(goose_extension_to_config(extension).is_err());

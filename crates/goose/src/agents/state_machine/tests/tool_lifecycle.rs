@@ -167,7 +167,7 @@ async fn basic_tool_calling() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tool_deferral_remain_eager_after_clear() -> Result<()> {
+async fn always_load_tools_remain_eager_after_clear() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_deferred_tools();
     api.on("multiply now").call(MULTIPLY, value(2));

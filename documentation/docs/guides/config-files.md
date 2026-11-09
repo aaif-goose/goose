@@ -75,16 +75,9 @@ The following settings can be configured at the root level of your config.yaml f
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
 
-With `GOOSE_DEFER_TOOLS: true`, the model calls `enable_tools` to load MCP tool schemas on demand; platform tools remain available immediately. Set `tool_deferral.always_load` on an extension config to keep selected MCP tool schemas available immediately. Entries are exact server-local names (before goose adds an extension prefix); omitted or empty lists defer all MCP tools. The list does not override tool availability, app-only visibility, or execution permissions.
+With `GOOSE_DEFER_TOOLS: true`, the model calls `enable_tools` to load MCP tool schemas on demand; platform tools remain available immediately. Set `always_load_tools` on an extension config to keep selected MCP tool schemas available immediately. Entries are exact server-local names (before goose adds an extension prefix); omitted or empty lists defer all MCP tools. The list does not override tool availability, app-only visibility, or execution permissions.
 
-For ACP `mcpServers` connections, supply the policy block in the connection's `_meta.tool_deferral`. goose's extension configuration API also accepts `tool_deferral` alongside `available_tools`. This block does not enable deferral; it has no effect unless `GOOSE_DEFER_TOOLS` is true.
-
-```yaml
-tool_deferral:
-  always_load:
-    - send
-    - read
-```
+For ACP `mcpServers` connections, supply the same list in the connection's `_meta.alwaysLoadTools`. goose's extension configuration API also accepts `always_load_tools` alongside `available_tools`.
 
 
 ## Example Configuration

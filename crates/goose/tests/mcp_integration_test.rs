@@ -168,7 +168,7 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
-        tool_deferral: None,
+        always_load_tools: Vec::new(),
     }
 }
 
@@ -187,7 +187,7 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
-        tool_deferral: None,
+        always_load_tools: Vec::new(),
     }
 }
 
@@ -902,7 +902,7 @@ async fn test_replayed_session(
         cwd: None,
         bundled: Some(false),
         available_tools: vec![],
-        tool_deferral: None,
+        always_load_tools: Vec::new(),
     };
 
     let temp_dir = tempfile::tempdir().unwrap();

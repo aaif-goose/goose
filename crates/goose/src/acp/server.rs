@@ -452,14 +452,11 @@ fn spawn_session_name_update_notifier(
     tx
 }
 
-fn extract_tool_deferral_from_meta(
-    meta: &Option<Meta>,
-) -> Result<Option<goose_sdk_types::custom_requests::ToolDeferralConfig>, String> {
-    match meta.as_ref().and_then(|meta| meta.get("tool_deferral")) {
+fn extract_always_load_tools_from_meta(meta: &Option<Meta>) -> Result<Vec<String>, String> {
+    match meta.as_ref().and_then(|meta| meta.get("alwaysLoadTools")) {
         Some(value) => serde_json::from_value(value.clone())
-            .map(Some)
-            .map_err(|error| format!("Invalid MCP tool_deferral: {error}")),
-        None => Ok(None),
+            .map_err(|error| format!("Invalid MCP alwaysLoadTools: {error}")),
+        None => Ok(Vec::new()),
     }
 }
 
@@ -526,7 +523,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     match mcp_server {
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
-            let tool_deferral = extract_tool_deferral_from_meta(&stdio.meta)?;
+            let always_load_tools = extract_always_load_tools_from_meta(&stdio.meta)?;
             Ok(ExtensionConfig::Stdio {
                 name: stdio.name,
                 description: String::new(),
@@ -538,12 +535,12 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 cwd: None,
                 bundled: Some(false),
                 available_tools: vec![],
-                tool_deferral,
+                always_load_tools,
             })
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
-            let tool_deferral = extract_tool_deferral_from_meta(&http.meta)?;
+            let always_load_tools = extract_always_load_tools_from_meta(&http.meta)?;
             Ok(ExtensionConfig::StreamableHttp {
                 name: http.name,
                 description: String::new(),
@@ -562,7 +559,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 scopes: vec![],
                 bundled: Some(false),
                 available_tools: vec![],
-                tool_deferral,
+                always_load_tools,
             })
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
@@ -2761,23 +2758,26 @@ mod tests {
     }
 
     #[test]
-    fn mcp_connection_config_accepts_tool_deferral() {
+    fn mcp_connection_config_accepts_always_load_tools() {
         for server in [
-            serde_json::json!({"type": "http", "name": "buzz", "url": "http://localhost/mcp", "headers": [], "_meta": {"tool_deferral": {"always_load": ["send", "read"]}}}),
-            serde_json::json!({"name": "buzz", "command": "buzz", "args": [], "env": [], "_meta": {"tool_deferral": {"always_load": ["send", "read"]}}}),
+            serde_json::json!({"type": "http", "name": "buzz", "url": "http://localhost/mcp", "headers": [], "_meta": {"alwaysLoadTools": ["send", "read"]}}),
+            serde_json::json!({"name": "buzz", "command": "buzz", "args": [], "env": [], "_meta": {"alwaysLoadTools": ["send", "read"]}}),
         ] {
             let server: McpServer = serde_json::from_value(server).unwrap();
             let config = mcp_server_to_extension_config(server).unwrap();
             assert_eq!(config.always_load_tools(), ["send", "read"]);
         }
-        assert!(extract_tool_deferral_from_meta(&None).unwrap().is_none());
+        assert!(extract_always_load_tools_from_meta(&None)
+            .unwrap()
+            .is_empty());
         for value in [
             serde_json::json!("send"),
             serde_json::json!([1]),
             serde_json::Value::Null,
         ] {
-            let meta = serde_json::from_value(serde_json::json!({"tool_deferral": value})).unwrap();
-            assert!(extract_tool_deferral_from_meta(&Some(meta)).is_err());
+            let meta =
+                serde_json::from_value(serde_json::json!({"alwaysLoadTools": value})).unwrap();
+            assert!(extract_always_load_tools_from_meta(&Some(meta)).is_err());
         }
     }
 
@@ -2923,7 +2923,7 @@ extensions:
             timeout: None,
             bundled: None,
             available_tools: None,
-            tool_deferral: None,
+            always_load_tools: None,
         }
     }
 
@@ -3172,7 +3172,7 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         })
     )]
     #[test_case(
@@ -3197,7 +3197,7 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            tool_deferral: None,
+            always_load_tools: Vec::new(),
         })
     )]
     #[test_case(

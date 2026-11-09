@@ -472,14 +472,6 @@ pub struct PromptOperationResponse {
     pub message: String,
 }
 
-/// Per-connection policy applied only when global tool deferral is enabled.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ToolDeferralConfig {
-    /// Exact server-local tool names whose schemas remain eagerly published.
-    #[serde(default)]
-    pub always_load: Vec<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GooseExtension {
@@ -497,7 +489,7 @@ pub enum GooseExtension {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_deferral: Option<ToolDeferralConfig>,
+        always_load_tools: Option<Vec<String>>,
     },
     Platform {
         name: String,
@@ -511,7 +503,7 @@ pub enum GooseExtension {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_deferral: Option<ToolDeferralConfig>,
+        always_load_tools: Option<Vec<String>>,
     },
     Mcp {
         server: Box<McpServer>,
@@ -542,7 +534,7 @@ pub enum GooseExtension {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        tool_deferral: Option<ToolDeferralConfig>,
+        always_load_tools: Option<Vec<String>>,
     },
 }
 
@@ -555,7 +547,7 @@ impl Default for GooseExtension {
             timeout: None,
             bundled: None,
             available_tools: None,
-            tool_deferral: None,
+            always_load_tools: None,
         }
     }
 }

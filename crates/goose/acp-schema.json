@@ -63,15 +63,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -117,15 +116,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -205,15 +203,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -226,20 +223,6 @@
           ]
         }
       ]
-    },
-    "ToolDeferralConfig": {
-      "type": "object",
-      "properties": {
-        "always_load": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Exact server-local tool names whose schemas remain eagerly published.",
-          "default": []
-        }
-      },
-      "description": "Per-connection policy applied only when global tool deferral is enabled."
     },
     "McpServer": {
       "anyOf": [
@@ -4011,15 +3994,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -4065,15 +4047,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -4147,15 +4128,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -4251,15 +4231,14 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
-            "tool_deferral": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/ToolDeferralConfig"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",

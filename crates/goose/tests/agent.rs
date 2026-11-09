@@ -902,7 +902,7 @@ mod tests {
                     display_name: Some("Todo".to_string()),
                     bundled: Some(true),
                     available_tools: vec![],
-                    tool_deferral: None,
+                    always_load_tools: Vec::new(),
                 },
             };
             set_extension(todo_extension_entry);
