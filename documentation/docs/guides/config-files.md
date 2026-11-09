@@ -75,7 +75,7 @@ The following settings can be configured at the root level of your config.yaml f
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
 
-Set `GOOSE_DEFER_TOOLS: true` to list MCP tool names in the system prompt and enable their schemas on demand. The model calls `enable_tools` with exact `tool_names`, then uses them on its next response. Successful enables survive compaction and resume through the stored conversation; clearing history removes them. Platform tools remain eager, and code mode keeps its own catalog. Enabling follows ordinary permissions and does not grant permission to execute a tool. The environment variable overrides the YAML setting.
+With `GOOSE_DEFER_TOOLS: true`, the model calls `enable_tools` to load MCP tool schemas on demand; platform tools remain available immediately.
 
 ## Example Configuration
 

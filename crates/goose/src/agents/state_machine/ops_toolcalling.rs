@@ -13,9 +13,7 @@ use rmcp::model::{
 };
 
 use crate::agents::extension::ExtensionInfo;
-use crate::agents::extension_manager::{
-    get_tool_owner, is_in_process, CallRequest, ExtensionLease, ExtensionManager,
-};
+use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
@@ -84,21 +82,24 @@ fn enabled_tools(conversation: &Conversation) -> HashSet<String> {
                 requests.insert(&request.id);
             }
             MessageContent::ToolResponse(response) if requests.remove(&response.id) => {
-                if let Ok(result) = &response.tool_result {
-                    if result.is_error != Some(true) {
-                        if let Some(names) = result
-                            .structured_content
-                            .as_ref()
-                            .and_then(|value| value["enabled"].as_array())
-                        {
-                            enabled.extend(
-                                names
-                                    .iter()
-                                    .filter_map(|name| name.as_str().map(str::to_string)),
-                            );
-                        }
-                    }
+                let Ok(result) = &response.tool_result else {
+                    continue;
+                };
+                if result.is_error == Some(true) {
+                    continue;
                 }
+                let Some(names) = result
+                    .structured_content
+                    .as_ref()
+                    .and_then(|value| value["enabled"].as_array())
+                else {
+                    continue;
+                };
+                enabled.extend(
+                    names
+                        .iter()
+                        .filter_map(|name| name.as_str().map(str::to_string)),
+                );
             }
             _ => {}
         }
@@ -326,6 +327,7 @@ impl ToolExecutionOperation {
         hook_manager: HookManager,
         post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
+        defer_tools: bool,
     ) -> Self {
         Self {
             extension_manager,
@@ -333,13 +335,8 @@ impl ToolExecutionOperation {
             post_tool_call_hook,
             lease,
             batch: Arc::default(),
-            defer_tools: false,
+            defer_tools,
         }
-    }
-
-    pub fn with_deferred_tools(mut self, defer_tools: bool) -> Self {
-        self.defer_tools = defer_tools;
-        self
     }
 
     fn defers_tools(&self, lease: &ExtensionLease) -> bool {
@@ -352,20 +349,11 @@ impl ToolExecutionOperation {
     }
 
     async fn mcp_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
-        let extensions: HashSet<_> = lease
-            .configs()
-            .into_iter()
-            .filter(|config| !is_in_process(config))
-            .map(|config| config.key())
-            .collect();
         lease
-            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .tools_where(|extension| !extension.is_platform())
             .await
             .into_iter()
-            .filter(|tool| {
-                is_tool_visible_to_model(tool)
-                    && get_tool_owner(tool).is_some_and(|owner| extensions.contains(&owner))
-            })
+            .filter(is_tool_visible_to_model)
             .collect()
     }
 
@@ -836,7 +824,10 @@ pub(super) enum ToolDisposition {
 /// The extension block, as a header part plus one part per extension. Prompt
 /// extras are joined with a blank line, so this renders the same text as one
 /// combined part while keeping each extension's tokens attributable.
-fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)> {
+fn extension_prompt_parts(
+    extensions: &[ExtensionInfo],
+    defer_tools: bool,
+) -> Vec<(String, String)> {
     let mut parts = vec![(
         "extensions".to_string(),
         "# Extensions\n\n\
@@ -845,6 +836,11 @@ fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)>
          Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
             .to_string(),
     )];
+    if !defer_tools {
+        parts[0].1.push_str(
+            " Each of these extensions provides tools that are in your tool specification.",
+        );
+    }
     for extension in extensions {
         let mut lines = vec![format!("## {}", extension.name)];
         if extension.has_resources {
@@ -963,7 +959,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         }
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
-        prompt_parts.extend(extension_prompt_parts(&extensions));
+        prompt_parts.extend(extension_prompt_parts(
+            &extensions,
+            self.defers_tools(&lease),
+        ));
         if self.defers_tools(&lease) {
             let mut names: Vec<_> = self
                 .mcp_tools(&lease)
@@ -1167,7 +1166,7 @@ mod tests {
             ExtensionInfo::new("memory", "", true),
         ];
 
-        let parts = extension_prompt_parts(&extensions);
+        let parts = extension_prompt_parts(&extensions, false);
 
         let keys: Vec<&str> = parts.iter().map(|(key, _)| key.as_str()).collect();
         assert_eq!(

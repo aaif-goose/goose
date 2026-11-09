@@ -178,6 +178,12 @@ async fn provider_turn_executes_only_advertised_registered_tools(defer_tools: bo
 
     let result = pipeline.run(["try the app-only tool"]).await?;
 
+    assert_eq!(
+        api.calls()[0].system_contains(
+            "Each of these extensions provides tools that are in your tool specification."
+        ),
+        !defer_tools,
+    );
     assert!(!api.calls()[0].advertises_tool(APP_ONLY));
     result.assert_message(-2, ToolResponse, "not available");
     result.assert_message(-1, Agent, "app-only blocked");

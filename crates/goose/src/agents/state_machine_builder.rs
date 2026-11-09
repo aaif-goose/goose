@@ -139,15 +139,13 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_manager),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(
-            ToolExecutionOperation::new(
-                Arc::clone(&extension_manager),
-                hook_manager.clone(),
-                Arc::clone(&post_tool_call_hook),
-                Arc::clone(&extension_lease),
-            )
-            .with_deferred_tools(defer_tools),
-        ),
+        Arc::new(ToolExecutionOperation::new(
+            Arc::clone(&extension_manager),
+            hook_manager.clone(),
+            Arc::clone(&post_tool_call_hook),
+            Arc::clone(&extension_lease),
+            defer_tools,
+        )),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,
