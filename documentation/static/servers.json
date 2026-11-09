@@ -313,6 +313,18 @@
     "environmentVariables": []
   },
   {
+    "id": "frcem-mentor",
+    "name": "FRCEM Mentor",
+    "description": "Free FRCEM Final SBA practice questions for emergency medicine doctors, with explanations",
+    "url": "https://www.frcementor.com/mcp",
+    "link": "https://www.frcementor.com/blog/frcem-practice-questions-claude-chatgpt",
+    "installation_notes": "Hosted remote server. No sign-in needed.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "glif",
     "name": "Glif",
     "description": "Generate images, video, and audio with Glif's media-generation agent",
