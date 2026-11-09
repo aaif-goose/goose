@@ -1,8 +1,10 @@
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::spillway::SpillwayConfig;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;
@@ -89,6 +91,35 @@ fn typesafe_provider(config: &Config) -> anyhow::Result<Arc<dyn DecisionProvider
     Ok(Arc::new(TypeSafeProvider::new(client)))
 }
 
+/// Load the SPILLWAY target-admission config when `GOOSE_SPILLWAY_FILE`
+/// points at a JSON config file. Unset means no guard. A set-but-unloadable
+/// file installs a deny-all guard instead of failing open, so a typo'd
+/// config is loud rather than silently ignored. The same config also
+/// controls whether tool results are sanitized.
+fn load_spillway() -> Option<Arc<SpillwayConfig>> {
+    let path = Config::global()
+        .get_param::<String>("GOOSE_SPILLWAY_FILE")
+        .ok()?;
+    match SpillwayConfig::load_from_file(Path::new(&path)) {
+        Ok(config) => {
+            tracing::info!(
+                "spillway config loaded from {path} ({} target rules, {} delegation rules)",
+                config.targets.len(),
+                config.delegations.len()
+            );
+            Some(Arc::new(config))
+        }
+        Err(error) => {
+            tracing::error!(
+                "spillway config file {path} failed to load ({error}); denying all tool calls"
+            );
+            Some(Arc::new(SpillwayConfig::unavailable(format!(
+                "Spillway config file {path} failed to load: {error}. Fix or unset GOOSE_SPILLWAY_FILE."
+            ))))
+        }
+    }
+}
+
 pub(crate) fn build_state_machine(
     config: StateMachineConfig<'_>,
 ) -> StateMachine<'_, Session, GooseEffect> {
@@ -120,14 +151,27 @@ pub(crate) fn build_state_machine(
         hook_manager.clone(),
         Arc::clone(&extension_lease),
     ));
+    let spillway = load_spillway();
+    let mut pre_tool_hook =
+        GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease));
+    if let Some(config) = &spillway {
+        pre_tool_hook = pre_tool_hook.with_spillway(Arc::clone(config));
+    }
+    let mut tool_execution = ToolExecutionOperation::new(
+        Arc::clone(&extension_manager),
+        hook_manager.clone(),
+        Arc::clone(&post_tool_call_hook),
+        Arc::clone(&extension_lease),
+    );
+    if let Some(config) = &spillway {
+        tool_execution = tool_execution.with_spillway_config(Arc::clone(config));
+    }
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
         ),
-        Arc::new(PreToolCallHookOperation::new(Arc::new(
-            GoosePreToolHook::new(hook_manager.clone(), Arc::clone(&extension_lease)),
-        ))),
+        Arc::new(PreToolCallHookOperation::new(Arc::new(pre_tool_hook))),
         Arc::new(SkillOperation::new(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
@@ -137,12 +181,7 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_manager),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&extension_manager),
-            hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
-            Arc::clone(&extension_lease),
-        )),
+        Arc::new(tool_execution),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,

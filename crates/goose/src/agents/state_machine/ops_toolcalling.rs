@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use goose_agent::post_tool_call_hook::PostToolCallHook;
+use goose_agent::spillway::{sanitize_call_tool_result, SpillwayConfig};
 use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
 
@@ -177,14 +178,27 @@ fn recording_result(
     request: &ToolRequest,
     session: Arc<Session>,
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
+    spillway: Option<Arc<SpillwayConfig>>,
 ) -> ToolCallResult {
     let batch = Arc::clone(batch);
     let request = request.clone();
     let tool_call_id = request.id.clone();
     let metadata = request.metadata.clone();
     let future = async move {
-        let result =
+        let mut result =
             crate::agents::large_response_handler::process_tool_response(result.result.await);
+        if let Some(config) = &spillway {
+            if config.sanitize {
+                let removed = sanitize_call_tool_result(&mut result);
+                if !removed.is_empty() {
+                    tracing::warn!(
+                        tool_call_id = %tool_call_id,
+                        removed_spans = removed.len(),
+                        "spillway sanitizer removed instruction-like spans from tool output"
+                    );
+                }
+            }
+        }
         batch
             .lock()
             .unwrap()
@@ -251,6 +265,9 @@ pub struct ToolExecutionOperation {
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
+    /// SPILLWAY config: when set, tool results are sanitized before they
+    /// enter the conversation. `None` preserves the previous behavior.
+    spillway: Option<Arc<SpillwayConfig>>,
 }
 
 impl ToolExecutionOperation {
@@ -266,7 +283,13 @@ impl ToolExecutionOperation {
             post_tool_call_hook,
             lease,
             batch: Arc::default(),
+            spillway: None,
         }
+    }
+
+    pub fn with_spillway_config(mut self, config: Arc<SpillwayConfig>) -> Self {
+        self.spillway = Some(config);
+        self
     }
 
     fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
@@ -345,6 +368,7 @@ impl ToolExecutionOperation {
                 request,
                 Arc::clone(call_session),
                 Arc::clone(&self.post_tool_call_hook),
+                self.spillway.clone(),
             )
         }
         .instrument(span)
