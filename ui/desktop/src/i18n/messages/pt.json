@@ -3705,7 +3705,7 @@
     "defaultMessage": "Usar modelos de ML para detetar potenciais injeções de prompts na sua conversa"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Valores mais altos são mais rigorosos (0,01 = muito tolerante, 1,0 = rigor máximo)"
+    "defaultMessage": "Valores mais baixos são mais rigorosos (0,01 = rigor máximo, 1,0 = muito tolerante)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "A deteção de injeção de comandos funciona melhor quando ligada ao WARP (necessário para aceder ao serviço de classificação)."

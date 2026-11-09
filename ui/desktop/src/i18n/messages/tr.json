@@ -3705,7 +3705,7 @@
     "defaultMessage": "Sohbetinize olası istem eklemeyi tespit etmek için makine öğrenimi modellerini kullanın"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Daha yüksek değerler daha katıdır (0,01 = çok yumuşak, 1,0 = maksimum katı)"
+    "defaultMessage": "Daha düşük değerler daha katıdır (0,01 = maksimum katı, 1,0 = çok yumuşak)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Komut enjeksiyonu algılama, WARP bağlantısı olduğunda en iyi şekilde çalışır (sınıflandırma hizmetine erişmek için gereklidir)."
