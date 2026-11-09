@@ -13,11 +13,11 @@ Do NOT use this skill for:
 - General coding tasks unrelated to goose
 - Running existing recipes (just run them directly)
 
-The docs root for this session is `{{GOOSE_DOCS_ROOT}}`. It may be a local
-filesystem path or an HTTP(S) URL. When it is a local path read files with the
-shell/file tools; when it is not set or is an HTTP(S) URL fetch them from the
-canonical location which is https://goose-docs.ai. Everything below refers to
-this docs root as `<docs-root>`.
+The docs root for this session is `{{GOOSE_DOCS_ROOT}}`. Always read docs from
+this root, whether it is a local filesystem path or an HTTP(S) URL. For local
+paths, read files with the shell/file tools; for HTTP(S) URLs, fetch from that
+URL. The root defaults to https://goose-docs.ai only when `GOOSE_DOCS_ROOT` is
+not configured. Everything below refers to this docs root as `<docs-root>`.
 
 ## Steps (COMPLETE ALL BEFORE RESPONDING)
 1. **Read official docs**
@@ -58,6 +58,6 @@ this docs root as `<docs-root>`.
 
 5. **List documentation links**
    - Only include docs actually used
-   - Always link to the canonical site `https://goose-docs.ai/`, even if you read the docs from a local path. Never expose local filesystem paths.
+   - Always link to the canonical site `https://goose-docs.ai/`, even if you read the docs from a local path or HTTP(S) mirror. Never expose local filesystem paths.
    - Remove `.md` suffix from URLs
    - Example: If you read `docs/guides/sessions/session-management.md`, list it as `https://goose-docs.ai/docs/guides/sessions/session-management`
