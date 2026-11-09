@@ -95,6 +95,7 @@ fn spawn_start(
             .start_interaction(
                 reservation,
                 WebRtcOffer::new(offer.into()).unwrap(),
+                Some("start instructions".into()),
                 session_manager,
                 ignore_transcript_publisher(),
                 ignore_main_agent(),
@@ -148,6 +149,7 @@ async fn establish_interaction_with(
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 start_manager,
                 transcript_publisher,
                 main_agent,
@@ -296,6 +298,7 @@ async fn a_start_reserves_the_session_until_it_finishes() {
     );
     let pending = starts.recv().await.unwrap();
 
+    assert_eq!(pending.instructions.as_deref(), Some("start instructions"));
     assert_eq!(
         pending.input_messages,
         vec![LiveVoiceInputMessage {
@@ -337,6 +340,7 @@ async fn a_cancelled_reservation_does_not_contact_the_provider() {
         .start_interaction(
             reservation,
             WebRtcOffer::new("offer".into()).unwrap(),
+            None,
             manager,
             ignore_transcript_publisher(),
             ignore_main_agent(),
@@ -778,6 +782,7 @@ async fn transcript_is_projected_and_flushed_before_delegation() {
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 start_manager,
                 transcript_publisher,
                 main_agent,
@@ -1082,6 +1087,7 @@ async fn provider_terminal_publishes_completion_after_release() {
             .start_interaction(
                 reservation,
                 WebRtcOffer::new("offer".into()).unwrap(),
+                None,
                 manager,
                 ignore_transcript_publisher(),
                 ignore_main_agent(),
@@ -1190,7 +1196,7 @@ fn stale_cleanup_cannot_remove_a_later_call() {
 
 #[cfg(feature = "live-voice")]
 mod settings {
-    use super::super::{live_voice_provider, live_voice_settings};
+    use super::super::{live_voice_provider, live_voice_settings, LIVE_SESSION_INSTRUCTIONS};
     use crate::config::Config;
     use goose_providers::live_voice_provider::{LiveVoiceProvider, WebRtcOffer};
     use tempfile::TempDir;
@@ -1199,12 +1205,13 @@ mod settings {
         Mock, MockServer, ResponseTemplate,
     };
 
-    const ENV: [(&str, Option<&str>); 5] = [
+    const ENV: [(&str, Option<&str>); 6] = [
         ("OPENAI_API_KEY", None),
         ("GOOSE_LIVE_VOICE_ENDPOINT", None),
         ("GOOSE_LIVE_VOICE_MODEL", None),
         ("GOOSE_LIVE_VOICE_API_KEY", None),
         ("GOOSE_LIVE_VOICE", None),
+        ("GOOSE_LIVE_VOICE_INSTRUCTIONS", None),
     ];
     const ENDPOINT: &str = "http://192.0.2.10:8080/v1/live/sessions";
 
@@ -1238,6 +1245,7 @@ mod settings {
             assert_eq!(settings.endpoint, None);
             assert_eq!(settings.model, None);
             assert_eq!(settings.voice, "marin");
+            assert_eq!(settings.instructions, None);
         }
     }
 
@@ -1349,13 +1357,80 @@ mod settings {
 
         let start = live_voice_provider(&config)
             .unwrap()
-            .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![])
+            .start(WebRtcOffer::new("offer-sdp".into()).unwrap(), vec![], None)
             .await;
 
         assert!(start.is_err());
         let requests = server.received_requests().await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(body["session"]["model"], "custom-live-model");
+    }
+
+    #[tokio::test]
+    async fn added_instructions_follow_goose_instructions() {
+        let _env = env_lock::lock_env(ENV);
+        for (added, per_start, expected) in [
+            (None, None, LIVE_SESSION_INSTRUCTIONS.to_owned()),
+            (
+                Some(" \n "),
+                Some(" "),
+                LIVE_SESSION_INSTRUCTIONS.to_owned(),
+            ),
+            (
+                Some("  You are Billy.\n"),
+                None,
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nYou are Billy."),
+            ),
+            (
+                None,
+                Some(" Billy likes tea.\n"),
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nBilly likes tea."),
+            ),
+            (
+                Some("You are Billy."),
+                Some(" Billy likes tea.\n"),
+                format!("{LIVE_SESSION_INSTRUCTIONS}\n\nYou are Billy.\n\nBilly likes tea."),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(503))
+                .mount(&server)
+                .await;
+            let directory = TempDir::new().unwrap();
+            let config = config(&directory);
+            config
+                .set_secret("GOOSE_LIVE_VOICE_API_KEY", &"voice-key")
+                .unwrap();
+            config
+                .set_param(
+                    "GOOSE_LIVE_VOICE_ENDPOINT",
+                    format!("{}/v1/live/sessions", server.uri()),
+                )
+                .unwrap();
+            if let Some(added) = added {
+                config
+                    .set_param("GOOSE_LIVE_VOICE_INSTRUCTIONS", added)
+                    .unwrap();
+            }
+
+            let start = live_voice_provider(&config)
+                .unwrap()
+                .start(
+                    WebRtcOffer::new("offer-sdp".into()).unwrap(),
+                    vec![],
+                    per_start.map(String::from),
+                )
+                .await;
+
+            assert!(start.is_err());
+            let requests = server.received_requests().await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(
+                body["session"]["instructions"], expected,
+                "{added:?} {per_start:?}"
+            );
+        }
     }
 
     #[test]

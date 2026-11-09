@@ -3717,7 +3717,7 @@
     "defaultMessage": "Sử dụng các mô hình ML để phát hiện việc chèn lời nhắc tiềm ẩn trong cuộc trò chuyện của bạn"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Giá trị cao hơn thì nghiêm ngặt hơn (0.01 = rất khoan dung, 1.0 = nghiêm ngặt tối đa)"
+    "defaultMessage": "Giá trị thấp hơn thì nghiêm ngặt hơn (0.01 = nghiêm ngặt tối đa, 1.0 = rất khoan dung)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Phát hiện chèn lệnh hoạt động tốt nhất khi được kết nối với WARP (bắt buộc để truy cập dịch vụ phân loại)."

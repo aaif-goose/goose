@@ -439,11 +439,12 @@ export const zLiveVoiceAvailabilityResponse_unstable = z.object({
 });
 
 /**
- * Get a diagnostic report for a session.
+ * Start a live voice interaction for a session.
  */
 export const zLiveVoiceStartRequest_unstable = z.object({
     sessionId: z.string(),
     offerSdp: z.string(),
+    instructions: z.string().nullish(),
     _meta: z.record(z.string(), z.unknown()).nullish()
 });
 

@@ -117,6 +117,8 @@ pub struct TurnSettings {
     pub on_failure_timeout: std::time::Duration,
     pub stop_hook_block_cap: u32,
     pub tool_pair_summarization: bool,
+    pub defer_tools: bool,
+    pub always_load_tools: Vec<String>,
     pub compaction_threshold: f64,
     pub compaction_token_limit: usize,
     /// `None` derives it from the context limit.
@@ -147,6 +149,17 @@ impl TurnSettings {
                 .get_param::<u32>("GOOSE_STOP_HOOK_BLOCK_CAP")
                 .unwrap_or(DEFAULT_DENY_LIMIT),
             tool_pair_summarization: crate::context_mgmt::tool_pair_summarization_enabled(),
+            defer_tools: config
+                .get_param::<String>("GOOSE_TOOL_DEFERRAL")
+                .is_ok_and(|value| value == "lookup"),
+            always_load_tools: config
+                .get_param::<String>("GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect(),
             compaction_threshold: config
                 .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
                 .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD),
@@ -763,6 +776,8 @@ impl StateMachineServices {
             compaction_threshold,
             tool_call_cutoff,
             tool_pair_summarization: settings.tool_pair_summarization,
+            defer_tools: settings.defer_tools,
+            always_load_tools: settings.always_load_tools.clone(),
             session_manager: self.session_manager.clone(),
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,

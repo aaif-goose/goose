@@ -412,11 +412,10 @@ fn message_keyword_clause(keyword_count: usize) -> String {
     let visible = user_visible_message_sql("mq.metadata_json");
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages mq
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)

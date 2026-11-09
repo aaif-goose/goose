@@ -19,7 +19,7 @@ const i18n = defineMessages({
   },
   thresholdDescription: {
     id: 'securityToggle.thresholdDescription',
-    defaultMessage: 'Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)',
+    defaultMessage: 'Lower values are more strict (0.01 = maximum strict, 1.0 = very lenient)',
   },
   enableCommandInjection: {
     id: 'securityToggle.enableCommandInjection',

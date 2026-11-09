@@ -76,6 +76,7 @@ impl AcpConnection {
         let start = self.live_voice.start_interaction(
             reservation,
             offer,
+            req.instructions,
             self.services.session_manager.clone(),
             transcript_publisher,
             main_agent,

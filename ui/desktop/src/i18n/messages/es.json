@@ -3717,7 +3717,7 @@
     "defaultMessage": "Usa modelos de ML para detectar posibles inyecciones de prompt en tu chat"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Los valores más altos son más estrictos (0.01 = muy permisivo, 1.0 = máximo estricto)"
+    "defaultMessage": "Los valores más bajos son más estrictos (0.01 = máximo estricto, 1.0 = muy permisivo)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "La detección de inyección de comandos funciona mejor cuando estás conectado a WARP (necesario para llegar al servicio de clasificación)."

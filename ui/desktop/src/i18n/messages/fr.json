@@ -3717,7 +3717,7 @@
     "defaultMessage": "Utiliser des modèles ML pour détecter une injection de prompt potentielle dans votre conversation"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Des valeurs plus élevées sont plus strictes (0,01 = très indulgent, 1,0 = strict maximum)"
+    "defaultMessage": "Des valeurs plus basses sont plus strictes (0,01 = strict maximum, 1,0 = très indulgent)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "La détection d'injection de commandes fonctionne mieux lorsqu'elle est connectée à WARP (requis pour atteindre le service de classification)."

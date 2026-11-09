@@ -268,7 +268,7 @@ pub struct LiveVoiceAvailabilityResponse {
     pub message: String,
 }
 
-/// Get a diagnostic report for a session.
+/// Start a live voice interaction for a session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(
     method = "_goose/unstable/session/live-voice/start",
@@ -278,6 +278,10 @@ pub struct LiveVoiceAvailabilityResponse {
 pub struct LiveVoiceStartRequest {
     pub session_id: String,
     pub offer_sdp: String,
+    /// Added after goose's live voice instructions, including any configured
+    /// ones, for this interaction only. Blank text adds nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
     #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 }

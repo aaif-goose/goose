@@ -696,11 +696,16 @@ export type LiveVoiceAvailabilityResponse_unstable = {
 export type LiveVoiceStatus = 'ready' | 'unavailable';
 
 /**
- * Get a diagnostic report for a session.
+ * Start a live voice interaction for a session.
  */
 export type LiveVoiceStartRequest_unstable = {
     sessionId: string;
     offerSdp: string;
+    /**
+     * Added after goose's live voice instructions, including any configured
+     * ones, for this interaction only. Blank text adds nothing.
+     */
+    instructions?: string | null;
     _meta?: {
         [key: string]: unknown;
     } | null;
