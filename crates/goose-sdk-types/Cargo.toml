@@ -11,8 +11,8 @@ description = "Shared types for the goose Development Kit (GDK)"
 [dependencies]
 agent-client-protocol = { workspace = true }
 agent-client-protocol-schema = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 schemars = { workspace = true, features = ["derive"] }
 
 [package.metadata.cargo-machete]

@@ -63,7 +63,7 @@ impl Provider for MockProvider {
         _model_config: &ModelConfig,
         _system: &str,
         _messages: &[goose::conversation::message::Message],
-        _tools: &[rmcp::model::Tool],
+        _tools: &[goose_provider_types::data::Tool],
     ) -> Result<MessageStream, ProviderError> {
         unimplemented!()
     }

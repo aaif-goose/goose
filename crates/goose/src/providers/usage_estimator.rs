@@ -1,8 +1,8 @@
 use crate::conversation::message::Message;
 use crate::token_counter::create_token_counter;
 use anyhow::Result;
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::ProviderUsage;
-use rmcp::model::Tool;
 
 /// Ensures that ProviderUsage has token counts, estimating them if necessary.
 /// This provides a single place to handle the fallback logic for providers that don't return usage data.

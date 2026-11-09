@@ -1,17 +1,21 @@
 use crate::conversation::token_usage::{CostSource, ProviderUsage};
 use crate::conversation::tool_result_serde;
 use crate::mcp_utils::extract_text_from_resource;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::trace as tracing;
 use crate::utils::sanitize_unicode_tags;
 use base64::Engine;
-use chrono::Utc;
-use rmcp::model::{
+
+#[cfg(feature = "std")]
+use crate::data::PromptMessage;
+use crate::data::{
     CallToolRequestParams, CallToolResult, ContentBlock, ElicitationAction, ImageContent,
-    JsonObject, PromptMessage, ResourceContents, Role, TextContent,
+    JsonObject, ResourceContents, Role, TextContent,
 };
+use alloc::collections::BTreeSet as HashSet;
+use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashSet;
-use std::fmt;
-use uuid::Uuid;
 
 pub enum ToolCallResult<T> {
     Success { value: T },
@@ -81,7 +85,7 @@ where
 /// Provider-specific metadata for tool requests/responses.
 /// Allows providers to store custom data without polluting the core model.
 pub type ProviderMetadata = serde_json::Map<String, serde_json::Value>;
-pub type ToolResult<T> = Result<T, rmcp::model::ErrorData>;
+pub type ToolResult<T> = Result<T, crate::data::ErrorData>;
 
 pub(crate) fn sanitize_tool_result_in_place(tool_result: &mut ToolResult<CallToolResult>) {
     match tool_result {
@@ -111,7 +115,6 @@ pub(crate) fn sanitize_tool_result_in_place(tool_result: &mut ToolResult<CallToo
                                     .encode(sanitized.as_bytes());
                             }
                         }
-                        _ => {}
                     },
                     _ => {}
                 }
@@ -383,7 +386,6 @@ fn content_audience(content: &ContentBlock) -> Option<&Vec<Role>> {
         ContentBlock::Audio(audio) => audio.annotations.as_ref()?.audience.as_ref(),
         ContentBlock::Resource(resource) => resource.annotations.as_ref()?.audience.as_ref(),
         ContentBlock::ResourceLink(resource) => resource.annotations.as_ref()?.audience.as_ref(),
-        _ => None,
     }
 }
 
@@ -731,11 +733,11 @@ impl From<ContentBlock> for MessageContentBlock {
                 MessageContentBlock::text(extract_text_from_resource(&resource.resource))
             }
             ContentBlock::Audio(_) => MessageContentBlock::text("[Audio content: not supported]"),
-            _ => MessageContentBlock::text("[Unsupported content]"),
         }
     }
 }
 
+#[cfg(feature = "std")]
 impl From<PromptMessage> for Message {
     fn from(prompt_message: PromptMessage) -> Self {
         // Create a new message with the appropriate role
@@ -756,7 +758,6 @@ impl From<PromptMessage> for Message {
                 MessageContentBlock::text(extract_text_from_resource(&resource.resource))
             }
             ContentBlock::Audio(_) => MessageContentBlock::text("[Audio content: not supported]"),
-            _ => MessageContentBlock::text("[Unsupported content]"),
         };
 
         message.with_content(content)
@@ -795,7 +796,7 @@ pub struct MessageUsage {
     pub elapsed_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_to_first_token_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub is_compaction: bool,
 }
 
@@ -821,7 +822,7 @@ impl MessageUsage {
 /// than free-form so metadata that is not shaped like notes fails to load
 /// instead of being silently ignored.
 pub type OperationNotes =
-    std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>;
+    alloc::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 /// Metadata for message visibility and model inference details
@@ -834,19 +835,19 @@ pub struct MessageMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inference: Option<InferenceMetadata>,
     /// Whether the provider stopped generating because it reached its output token limit
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub output_token_limit_reached: bool,
     /// Whether this message is a steer injected into an active run. UI-only:
     /// surfaced as `_meta.goose.steer` so clients can mark the steer boundary
     /// without matching user-visible text. Never sent to providers.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub steer: bool,
     /// Whether this message is a per-turn context event appended by the agent.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub turn_context: bool,
     /// Whether this message is the summary that compaction left in place of
     /// the messages it removed.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub compaction_summary: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Box<MessageUsage>>,
@@ -1041,22 +1042,32 @@ impl Message {
     }
 
     /// Create a new user message with the current timestamp
+    #[cfg(feature = "std")]
     pub fn user() -> Self {
+        Self::user_with_host(&crate::runtime::SystemHost)
+    }
+
+    pub fn user_with_host(host: &dyn crate::runtime::HostServices) -> Self {
         Message {
             id: None,
             role: Role::User,
-            created: Utc::now().timestamp(),
+            created: host.unix_timestamp(),
             content: Vec::new(),
             metadata: MessageMetadata::default(),
         }
     }
 
     /// Create a new assistant message with the current timestamp
+    #[cfg(feature = "std")]
     pub fn assistant() -> Self {
+        Self::assistant_with_host(&crate::runtime::SystemHost)
+    }
+
+    pub fn assistant_with_host(host: &dyn crate::runtime::HostServices) -> Self {
         Message {
             id: None,
             role: Role::Assistant,
-            created: Utc::now().timestamp(),
+            created: host.unix_timestamp(),
             content: Vec::new(),
             metadata: MessageMetadata::default(),
         }
@@ -1067,15 +1078,28 @@ impl Message {
         self
     }
 
+    #[cfg(feature = "std")]
     pub fn with_generated_id(self) -> Self {
-        self.with_id(format!("msg_{}", Uuid::new_v4()))
+        self.with_generated_id_with_host(&crate::runtime::SystemHost)
     }
 
+    pub fn with_generated_id_with_host(self, host: &dyn crate::runtime::HostServices) -> Self {
+        self.with_id(format!("msg_{}", host.new_id()))
+    }
+
+    #[cfg(feature = "std")]
     pub fn with_generated_id_if_missing(self) -> Self {
+        self.with_generated_id_if_missing_with_host(&crate::runtime::SystemHost)
+    }
+
+    pub fn with_generated_id_if_missing_with_host(
+        self,
+        host: &dyn crate::runtime::HostServices,
+    ) -> Self {
         if self.id.is_some() {
             self
         } else {
-            self.with_generated_id()
+            self.with_generated_id_with_host(host)
         }
     }
 
@@ -1279,7 +1303,15 @@ impl Message {
             .with_metadata(MessageMetadata::user_only())
     }
 
+    #[cfg(feature = "std")]
     pub fn from_provider_error(err: &crate::errors::ProviderError) -> Self {
+        Self::from_provider_error_with_host(&crate::runtime::SystemHost, err)
+    }
+
+    pub fn from_provider_error_with_host(
+        host: &dyn crate::runtime::HostServices,
+        err: &crate::errors::ProviderError,
+    ) -> Self {
         use crate::errors::ProviderError;
         if let ProviderError::CreditsExhausted { top_up_url, .. } = err {
             let message = if top_up_url.is_some() {
@@ -1287,7 +1319,7 @@ impl Message {
             } else {
                 "Please check your account with your provider to add more credits, then resend your message to continue."
             };
-            return Message::assistant().with_system_notification_with_data(
+            return Message::assistant_with_host(host).with_system_notification_with_data(
                 SystemNotificationType::CreditsExhausted,
                 message,
                 serde_json::json!({ "top_up_url": top_up_url }),
@@ -1317,7 +1349,7 @@ impl Message {
                  Please retry if you think this is a transient or recoverable error."
             ),
         };
-        Message::assistant().with_error(MessageErrorKind::from(err), text)
+        Message::assistant_with_host(host).with_error(MessageErrorKind::from(err), text)
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {
@@ -1466,14 +1498,14 @@ mod tests {
         ActionRequiredData, Message, MessageContentBlock, MessageErrorKind, MessageMetadata,
         ProviderMetadata, SystemNotificationType, ToolResponse,
     };
-    use crate::errors::ProviderError;
-    use base64::Engine;
-    use rmcp::model::{
+    use crate::data::{
         Annotations, CallToolResult, ElicitationAction, ErrorCode, ErrorData, ImageContent,
         ResourceContents, TextContent,
     };
-    use rmcp::model::{CallToolRequestParams, ContentBlock, EmbeddedResource, PromptMessage, Role};
-    use rmcp::object;
+    use crate::data::{CallToolRequestParams, ContentBlock, EmbeddedResource, PromptMessage, Role};
+    use crate::errors::ProviderError;
+    use crate::object;
+    use base64::Engine;
     use serde_json::Value;
 
     #[test]
@@ -1757,7 +1789,7 @@ mod tests {
         );
         let mut result = CallToolResult::success(vec![text, image]);
         result.structured_content = Some(serde_json::json!({"safe": "世界"}));
-        result.meta = Some(rmcp::model::MetaObject(object!({"source": "test"})));
+        result.meta = Some(crate::data::MetaObject(object!({"source": "test"})));
         let expected = result.clone();
 
         let content = MessageContentBlock::tool_response("tool-1", Ok(result));
@@ -1815,7 +1847,7 @@ mod tests {
             "tool123",
             Err(ErrorData {
                 code: ErrorCode::INTERNAL_ERROR,
-                message: std::borrow::Cow::from("Something went wrong".to_string()),
+                message: alloc::borrow::Cow::from("Something went wrong".to_string()),
                 data: None,
             }),
         );

@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use std::{
     error::Error,
     fmt::Display,
@@ -17,7 +19,7 @@ static LOGGER: OnceLock<Arc<dyn RequestLogger>> = OnceLock::new();
 pub struct LoggerAlreadyInstalled;
 
 impl Display for LoggerAlreadyInstalled {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "request logger is already installed")
     }
 }
@@ -43,7 +45,7 @@ pub enum LogError {
 }
 
 impl Display for LogError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             LogError::LoggerError(msg) => write!(f, "{}", msg),
             LogError::SerializeError(error) => write!(f, "serialize error: {}", error),

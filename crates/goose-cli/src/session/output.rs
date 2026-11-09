@@ -13,8 +13,9 @@ use goose::providers::canonical_cost::estimate_model_cost;
 use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
 use goose_providers::conversation::token_usage::Usage;
+use goose_providers::data::{CallToolRequestParams, Role};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
+use rmcp::model::{JsonObject, PromptArgument};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -603,15 +604,15 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
         Ok(result) => {
             for content in &result.content {
                 let annotations = match content {
-                    rmcp::model::ContentBlock::Text(t) => t.annotations.as_ref(),
-                    rmcp::model::ContentBlock::Image(i) => i.annotations.as_ref(),
-                    rmcp::model::ContentBlock::Audio(a) => a.annotations.as_ref(),
-                    rmcp::model::ContentBlock::Resource(r) => r.annotations.as_ref(),
-                    rmcp::model::ContentBlock::ResourceLink(r) => r.annotations.as_ref(),
+                    goose_providers::data::ContentBlock::Text(t) => t.annotations.as_ref(),
+                    goose_providers::data::ContentBlock::Image(i) => i.annotations.as_ref(),
+                    goose_providers::data::ContentBlock::Audio(a) => a.annotations.as_ref(),
+                    goose_providers::data::ContentBlock::Resource(r) => r.annotations.as_ref(),
+                    goose_providers::data::ContentBlock::ResourceLink(r) => r.annotations.as_ref(),
                     _ => None,
                 };
                 if let Some(audience) = annotations.and_then(|a| a.audience.as_ref()) {
-                    if !audience.contains(&rmcp::model::Role::User) {
+                    if !audience.contains(&goose_providers::data::Role::User) {
                         continue;
                     }
                 }

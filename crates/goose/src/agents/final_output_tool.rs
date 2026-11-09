@@ -3,10 +3,10 @@ use crate::agents::tool_execution::ToolCallResult;
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::recipe::Response;
-use indoc::formatdoc;
-use rmcp::model::{
+use goose_provider_types::data::{
     CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, Tool, ToolAnnotations,
 };
+use indoc::formatdoc;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -191,9 +191,11 @@ impl FinalOutputTool {
                 match result {
                     Ok(parsed_value) => {
                         self.final_output = Some(Self::parsed_final_output_string(parsed_value));
-                        ToolCallResult::from(Ok(rmcp::model::CallToolResult::success(vec![
-                            ContentBlock::text(FINAL_OUTPUT_SUCCESS_MESSAGE.to_string()),
-                        ])))
+                        ToolCallResult::from(Ok(
+                            goose_provider_types::data::CallToolResult::success(vec![
+                                ContentBlock::text(FINAL_OUTPUT_SUCCESS_MESSAGE.to_string()),
+                            ]),
+                        ))
                     }
                     Err(error) => ToolCallResult::from(Err(ErrorData {
                         code: ErrorCode::INVALID_PARAMS,
@@ -220,7 +222,7 @@ impl FinalOutputTool {
 mod tests {
     use super::*;
     use crate::recipe::Response;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
     use rmcp::object;
     use serde_json::json;
 

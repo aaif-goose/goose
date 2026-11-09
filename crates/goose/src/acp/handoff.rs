@@ -339,7 +339,9 @@ mod tests {
     use super::*;
     use crate::token_counter::create_token_counter;
     use agent_client_protocol::schema::v1::{ImageContent, TextContent};
-    use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent};
+    use goose_provider_types::data::{
+        CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent,
+    };
 
     fn tool_exchange(id: &str, output: &str) -> Vec<Message> {
         vec![

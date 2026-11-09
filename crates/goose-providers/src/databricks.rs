@@ -30,7 +30,7 @@ use crate::retry::{
     RetryConfig, DEFAULT_BACKOFF_MULTIPLIER, DEFAULT_INITIAL_RETRY_INTERVAL_MS,
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde_json::json;
 
 #[derive(Debug, Clone)]
@@ -591,7 +591,7 @@ impl Provider for DatabricksProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = self
             .session_id_provider
             .as_ref()

@@ -8,7 +8,9 @@
 
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData};
+use goose_provider_types::data::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData,
+};
 use serde_json::Value;
 
 use crate::conversation::message::Message;

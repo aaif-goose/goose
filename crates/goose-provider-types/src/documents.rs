@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use serde_json::{json, Value};
 
 use crate::conversation::message::DocumentContent;

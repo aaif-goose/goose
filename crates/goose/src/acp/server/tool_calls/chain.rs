@@ -127,7 +127,7 @@ impl ToolChainTracker {
 mod tests {
     use super::ToolChainTracker;
     use crate::conversation::message::ToolRequest;
-    use rmcp::model::CallToolRequestParams;
+    use goose_provider_types::data::CallToolRequestParams;
 
     fn request(id: &str) -> ToolRequest {
         ToolRequest {

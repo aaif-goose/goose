@@ -1,7 +1,11 @@
 //! Provider inference operation for the unrolled agent loop.
+use goose_provider_types::trace as tracing;
 
-use std::collections::HashSet;
-use std::sync::{Arc, Mutex, MutexGuard};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::runtime::{Cell as Mutex, Shared as Arc};
+use alloc::collections::BTreeSet as HashSet;
+use goose_provider_types::runtime::CellGuard as MutexGuard;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -10,12 +14,12 @@ use goose_provider_types::base::Provider;
 use goose_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 use goose_provider_types::conversation::{
-    effective_role, fix_conversation, merge_consecutive_messages_for_request, Conversation,
-    EffectiveRole,
+    effective_role, fix_conversation_with_host, merge_consecutive_messages_for_request,
+    Conversation, EffectiveRole,
 };
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
-use tracing_futures::Instrument;
+use tracing::Instrument;
 
 use crate::machine::MachineSession;
 use crate::operation::{
@@ -26,12 +30,15 @@ use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
 
 pub struct PreparedInferenceRequest {
     pub system_prompt: String,
-    pub tools: Vec<rmcp::model::Tool>,
+    pub tools: Vec<goose_provider_types::data::Tool>,
     pub additional_messages: Vec<Message>,
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
     async fn prepare_session(&self, _session: &S) -> Result<Option<S>> {
         Ok(None)
@@ -47,8 +54,11 @@ pub trait InferenceRequestPreparer<S>: MaybeSend + MaybeSync {
 
 pub struct IdentityInferenceRequestPreparer;
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S: MaybeSync> InferenceRequestPreparer<S> for IdentityInferenceRequestPreparer {
     async fn prepare(
         &self,
@@ -143,8 +153,8 @@ fn pending_operation_logs(messages: &[Message]) -> Vec<String> {
 }
 
 fn attach_operation_logs(message: &mut Message, logs: &mut Vec<String>) {
-    if message.role == rmcp::model::Role::Assistant && !logs.is_empty() {
-        message.metadata.operation_logs = std::mem::take(logs);
+    if message.role == goose_provider_types::data::Role::Assistant && !logs.is_empty() {
+        message.metadata.operation_logs = core::mem::take(logs);
     }
 }
 
@@ -247,11 +257,11 @@ struct InferenceOutput {
 }
 
 pub struct InferenceRunner<'a, S, E> {
-    provider: Arc<dyn Provider>,
+    provider: Arc<dyn Provider + 'a>,
     model_config: ModelConfig,
     request_preparer: Arc<dyn InferenceRequestPreparer<S> + 'a>,
     output: Mutex<InferenceOutput>,
-    effect: std::marker::PhantomData<fn() -> E>,
+    effect: core::marker::PhantomData<fn() -> E>,
 }
 
 /// The agent-visible conversation as the provider sees it: tool requests left
@@ -361,13 +371,13 @@ fn inference_span(provider: &dyn Provider, model_config: &ModelConfig) -> tracin
 }
 
 impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
-    pub fn new(provider: Arc<dyn Provider>, model_config: ModelConfig) -> Self {
+    pub fn new(provider: Arc<dyn Provider + 'a>, model_config: ModelConfig) -> Self {
         Self {
             provider,
             model_config,
             request_preparer: Arc::new(IdentityInferenceRequestPreparer),
             output: Mutex::new(InferenceOutput::default()),
-            effect: std::marker::PhantomData,
+            effect: core::marker::PhantomData,
         }
     }
 
@@ -380,11 +390,11 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     }
 
     fn output(&self) -> MutexGuard<'_, InferenceOutput> {
-        self.output.lock().unwrap()
+        self.output.borrow_mut()
     }
 
     fn take_output(&self) -> Vec<E> {
-        let output = std::mem::take(&mut *self.output());
+        let output = core::mem::take(&mut *self.output());
         let mut effects: Vec<E> = output
             .additional_messages
             .into_iter()
@@ -396,7 +406,7 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     }
 
     fn emit_message(&self, message: Message, emit: &Emitter) {
-        let message = message.with_generated_id_if_missing();
+        let message = message.with_generated_id_if_missing_with_host(emit.host());
         self.output().accumulator.push(message.clone());
         emit.message(message);
     }
@@ -409,15 +419,18 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
     ) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
-        let mut message = Message::from_provider_error(err);
+        let mut message = Message::from_provider_error_with_host(emit.host(), err);
         attach_operation_logs(&mut message, operation_logs);
         self.emit_message(message, emit);
         applied(self.take_output())
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S, E> {
     fn name(&self) -> &'static str {
         "llm"
@@ -433,8 +446,11 @@ impl<S: MaybeSync, E: InferenceEffect> Operation<S, E> for InferenceRunner<'_, S
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S, E> {
     fn applies(&self, conversation: &Conversation) -> bool {
         let Ok(turn) = messages_since_kickoff(conversation) else {
@@ -500,7 +516,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
 
             let projected =
                 Conversation::new_unvalidated(messages_for_provider).agent_visible_messages();
-            let (fixed, _) = fix_conversation(Conversation::new_unvalidated(projected));
+            let (fixed, _) = fix_conversation_with_host(emit.host(), Conversation::new_unvalidated(projected));
             let conversation_for_provider = Conversation::new_unvalidated(
                 merge_consecutive_messages_for_request(fixed.messages().clone()),
             );
@@ -590,7 +606,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 );
                 continue;
             }
-            let mut marker = Message::assistant()
+            let mut marker = Message::assistant_with_host(emit.host())
                 .with_text(EMPTY_RESPONSE_MESSAGE)
                 .with_visibility(false, false);
             attach_operation_logs(&mut marker, &mut operation_logs);
@@ -610,7 +626,7 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                         .accumulator
                         .last()
                         .cloned()
-                        .unwrap_or_else(Message::assistant);
+                        .unwrap_or_else(|| Message::assistant_with_host(emit.host()));
                     message.content.clear();
                     message.metadata.user_visible = false;
                     message.metadata.agent_visible = true;

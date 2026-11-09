@@ -1,6 +1,6 @@
 use anyhow::Result;
+use goose_provider_types::data::{CallToolRequestParams, CallToolResult, ContentBlock};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
 use super::dummy_api::ProviderFeatures;

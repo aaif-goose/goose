@@ -1,5 +1,6 @@
 use anyhow::Result;
-use rmcp::model::{Annotations, Role, TextContent};
+use goose_provider_types::data::Role;
+use goose_provider_types::data::{Annotations, TextContent};
 use serde_json::Value;
 
 use super::calculator_extension::{value, ADD};

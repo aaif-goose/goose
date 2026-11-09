@@ -14,8 +14,8 @@ env-lock = { workspace = true }
 opentelemetry = { workspace = true, features = ["trace", "metrics"] }
 rmcp = { workspace = true, features = ["server", "macros", "transport-streamable-http-server", "transport-io", "elicitation"] }
 schemars = { workspace = true }
-serde = { workspace = true }
-serde_json.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [[bin]]

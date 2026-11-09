@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
 

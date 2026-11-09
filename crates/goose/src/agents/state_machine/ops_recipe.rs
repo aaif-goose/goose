@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
+use goose_provider_types::data::{CallToolResult, ContentBlock, ErrorCode, ErrorData, Tool};
 use tracing_futures::Instrument;
 
 use crate::agents::extension_manager::ExtensionManager;
@@ -42,11 +42,11 @@ pub(crate) fn final_output_tool(session: &Session) -> Result<Option<FinalOutputT
 fn assistant_block_bounds(messages: &[Message], message_index: usize) -> (usize, usize) {
     let start = (0..message_index)
         .rev()
-        .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
+        .take_while(|index| messages[*index].role == goose_provider_types::data::Role::Assistant)
         .last()
         .unwrap_or(message_index);
     let end = (message_index + 1..messages.len())
-        .take_while(|index| messages[*index].role == rmcp::model::Role::Assistant)
+        .take_while(|index| messages[*index].role == goose_provider_types::data::Role::Assistant)
         .last()
         .map_or(message_index + 1, |index| index + 1);
     (start, end)

@@ -1,7 +1,11 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use core::time::Duration;
+#[cfg(feature = "std")]
 use reqwest::StatusCode;
-use std::time::Duration;
 use thiserror::Error;
 
+#[cfg(feature = "std")]
 use crate::request_log::LogError;
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -61,7 +65,7 @@ pub enum ProviderError {
 }
 
 impl ProviderError {
-    pub fn stream_decode_error(error: impl std::fmt::Display) -> Self {
+    pub fn stream_decode_error(error: impl core::fmt::Display) -> Self {
         ProviderError::NetworkError(format!("Stream decode error: {error}"))
     }
 
@@ -118,189 +122,194 @@ impl ProviderError {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn is_connect_error(error: &reqwest::Error) -> bool {
-    error.is_connect()
-}
-
-// reqwest's wasm client does not expose is_connect
-#[cfg(target_arch = "wasm32")]
-fn is_connect_error(_error: &reqwest::Error) -> bool {
-    false
-}
-
-fn is_network_error(err: &reqwest::Error) -> bool {
-    is_connect_error(err) || err.is_timeout() || (err.status().is_none() && err.is_request())
-}
-
-fn sanitized_reqwest_url(error: &reqwest::Error) -> Option<String> {
-    let mut url = error.url()?.clone();
-    let _ = url.set_password(None);
-    let _ = url.set_username("");
-    url.set_query(None);
-    url.set_fragment(None);
-    Some(url.to_string())
-}
-
-fn reqwest_error_category(error: &reqwest::Error) -> &'static str {
-    if error.is_builder() {
-        "Request builder error"
-    } else if error.is_redirect() {
-        "Redirect error"
-    } else if error.is_status() {
-        "HTTP status error"
-    } else if error.is_body() {
-        "Request body error"
-    } else if error.is_decode() {
-        "Response decode error"
-    } else {
-        "Request error"
+#[cfg(feature = "std")]
+mod desktop {
+    use super::*;
+    #[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
+    fn is_connect_error(error: &reqwest::Error) -> bool {
+        error.is_connect()
     }
-}
 
-fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
-    if is_network_error(error) {
-        let msg = if error.is_timeout() {
-            "Request timed out — check your network connection and try again.".to_string()
-        } else if is_connect_error(error) {
-            if let Some(url) = error.url() {
-                if let Some(host) = url.host_str() {
-                    let port_info = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
-                    format!(
+    // reqwest's wasm client does not expose is_connect
+    #[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
+    fn is_connect_error(_error: &reqwest::Error) -> bool {
+        false
+    }
+
+    fn is_network_error(err: &reqwest::Error) -> bool {
+        is_connect_error(err) || err.is_timeout() || (err.status().is_none() && err.is_request())
+    }
+
+    fn sanitized_reqwest_url(error: &reqwest::Error) -> Option<String> {
+        let mut url = error.url()?.clone();
+        let _ = url.set_password(None);
+        let _ = url.set_username("");
+        url.set_query(None);
+        url.set_fragment(None);
+        Some(url.to_string())
+    }
+
+    fn reqwest_error_category(error: &reqwest::Error) -> &'static str {
+        if error.is_builder() {
+            "Request builder error"
+        } else if error.is_redirect() {
+            "Redirect error"
+        } else if error.is_status() {
+            "HTTP status error"
+        } else if error.is_body() {
+            "Request body error"
+        } else if error.is_decode() {
+            "Response decode error"
+        } else {
+            "Request error"
+        }
+    }
+
+    fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
+        if is_network_error(error) {
+            let msg = if error.is_timeout() {
+                "Request timed out — check your network connection and try again.".to_string()
+            } else if is_connect_error(error) {
+                if let Some(url) = error.url() {
+                    if let Some(host) = url.host_str() {
+                        let port_info = url.port().map(|p| format!(":{}", p)).unwrap_or_default();
+                        format!(
                         "Could not connect to {}{} — check your network connection and try again.",
                         host, port_info
                     )
+                    } else {
+                        "Could not connect to the provider — check your network connection and try again.".to_string()
+                    }
                 } else {
-                    "Could not connect to the provider — check your network connection and try again.".to_string()
+                    "Could not connect to the provider — check your network connection and try again."
+                    .to_string()
                 }
             } else {
-                "Could not connect to the provider — check your network connection and try again."
-                    .to_string()
-            }
+                "Network error — check your network connection and try again.".to_string()
+            };
+            return ProviderError::NetworkError(msg);
+        }
+
+        let mut details = Vec::new();
+        if let Some(status) = error.status() {
+            details.push(format!("status: {}", status));
+        }
+        if let Some(url) = sanitized_reqwest_url(error) {
+            details.push(format!("url: {url}"));
+        }
+
+        let category = reqwest_error_category(error);
+        let msg = if details.is_empty() {
+            category.to_string()
         } else {
-            "Network error — check your network connection and try again.".to_string()
+            format!("{category} ({})", details.join(", "))
         };
-        return ProviderError::NetworkError(msg);
+        ProviderError::RequestFailed(msg)
     }
 
-    let mut details = Vec::new();
-    if let Some(status) = error.status() {
-        details.push(format!("status: {}", status));
-    }
-    if let Some(url) = sanitized_reqwest_url(error) {
-        details.push(format!("url: {url}"));
-    }
-
-    let category = reqwest_error_category(error);
-    let msg = if details.is_empty() {
-        category.to_string()
-    } else {
-        format!("{category} ({})", details.join(", "))
-    };
-    ProviderError::RequestFailed(msg)
-}
-
-impl From<anyhow::Error> for ProviderError {
-    fn from(error: anyhow::Error) -> Self {
-        if let Some(provider_error) = error
-            .chain()
-            .find_map(|cause| cause.downcast_ref::<ProviderError>())
-        {
-            return provider_error.clone();
+    impl From<anyhow::Error> for ProviderError {
+        fn from(error: anyhow::Error) -> Self {
+            if let Some(provider_error) = error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<ProviderError>())
+            {
+                return provider_error.clone();
+            }
+            if let Some(reqwest_err) = error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<reqwest::Error>())
+            {
+                return provider_error_from_reqwest(reqwest_err);
+            }
+            if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<tokio::time::error::Elapsed>()
+                    .is_some()
+            }) {
+                return ProviderError::NetworkError(
+                    "Request timed out — check your network connection and try again.".to_string(),
+                );
+            }
+            ProviderError::ExecutionError(error.to_string())
         }
-        if let Some(reqwest_err) = error
-            .chain()
-            .find_map(|cause| cause.downcast_ref::<reqwest::Error>())
-        {
-            return provider_error_from_reqwest(reqwest_err);
+    }
+
+    impl From<reqwest::Error> for ProviderError {
+        fn from(error: reqwest::Error) -> Self {
+            provider_error_from_reqwest(&error)
         }
-        if error.chain().any(|cause| {
-            cause
-                .downcast_ref::<tokio::time::error::Elapsed>()
-                .is_some()
-        }) {
-            return ProviderError::NetworkError(
-                "Request timed out — check your network connection and try again.".to_string(),
-            );
+    }
+
+    impl From<LogError> for ProviderError {
+        fn from(value: LogError) -> Self {
+            ProviderError::ExecutionError(value.to_string())
         }
-        ProviderError::ExecutionError(error.to_string())
-    }
-}
-
-impl From<reqwest::Error> for ProviderError {
-    fn from(error: reqwest::Error) -> Self {
-        provider_error_from_reqwest(&error)
-    }
-}
-
-impl From<LogError> for ProviderError {
-    fn from(value: LogError) -> Self {
-        ProviderError::ExecutionError(value.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-
-    #[tokio::test]
-    async fn direct_reqwest_error_redacts_unsupported_scheme_url() {
-        let error = reqwest::Client::new()
-            .get("ftp://url-user:url-password@provider.invalid/chat?api_key=query-secret")
-            .send()
-            .await
-            .unwrap_err();
-
-        assert!(error.to_string().contains("query-secret"));
-        assert!(!is_network_error(&error));
-
-        let message = ProviderError::from(error).to_string();
-        assert!(!message.contains("query-secret"));
-        assert!(!message.contains("url-user"));
-        assert!(!message.contains("url-password"));
-        assert!(message.contains("ftp://provider.invalid/chat"));
     }
 
-    #[tokio::test]
-    async fn anyhow_wrapped_status_error_redacts_url() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 1024];
-            assert!(stream.read(&mut request).unwrap() > 0);
-            stream
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        #[tokio::test]
+        async fn direct_reqwest_error_redacts_unsupported_scheme_url() {
+            let error = reqwest::Client::new()
+                .get("ftp://url-user:url-password@provider.invalid/chat?api_key=query-secret")
+                .send()
+                .await
+                .unwrap_err();
+
+            assert!(error.to_string().contains("query-secret"));
+            assert!(!is_network_error(&error));
+
+            let message = ProviderError::from(error).to_string();
+            assert!(!message.contains("query-secret"));
+            assert!(!message.contains("url-user"));
+            assert!(!message.contains("url-password"));
+            assert!(message.contains("ftp://provider.invalid/chat"));
+        }
+
+        #[tokio::test]
+        async fn anyhow_wrapped_status_error_redacts_url() {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 1024];
+                assert!(stream.read(&mut request).unwrap() > 0);
+                stream
                 .write_all(
                     b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 )
                 .unwrap();
-        });
+            });
 
-        let error = reqwest::Client::new()
-            .get(format!(
-                "http://url-user:url-password@{address}/chat?api_key=query-secret"
-            ))
-            .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap_err();
-        server.join().unwrap();
+            let error = reqwest::Client::new()
+                .get(format!(
+                    "http://url-user:url-password@{address}/chat?api_key=query-secret"
+                ))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap_err();
+            server.join().unwrap();
 
-        assert!(error.to_string().contains("query-secret"));
-        assert_eq!(error.status(), Some(StatusCode::UNAUTHORIZED));
+            assert!(error.to_string().contains("query-secret"));
+            assert_eq!(error.status(), Some(StatusCode::UNAUTHORIZED));
 
-        let message = ProviderError::from(anyhow::Error::new(error)).to_string();
-        assert!(!message.contains("query-secret"));
-        assert!(!message.contains("url-user"));
-        assert!(!message.contains("url-password"));
-        assert!(message.contains("status: 401 Unauthorized"));
-        assert!(message.contains(&format!("http://{address}/chat")));
+            let message = ProviderError::from(anyhow::Error::new(error)).to_string();
+            assert!(!message.contains("query-secret"));
+            assert!(!message.contains("url-user"));
+            assert!(!message.contains("url-password"));
+            assert!(message.contains("status: 401 Unauthorized"));
+            assert!(message.contains(&format!("http://{address}/chat")));
+        }
     }
 }
 
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub enum GoogleErrorCode {
     BadRequest = 400,
@@ -312,6 +321,7 @@ pub enum GoogleErrorCode {
     ServiceUnavailable = 503,
 }
 
+#[cfg(feature = "std")]
 impl GoogleErrorCode {
     pub fn to_status_code(&self) -> StatusCode {
         match self {

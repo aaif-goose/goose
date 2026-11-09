@@ -468,10 +468,10 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
+        use goose_provider_types::data::{CallToolRequestParams, Tool};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
 
@@ -630,10 +630,12 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::{SessionManager, SessionType};
+        use goose_provider_types::data::{
+            CallToolRequestParams, CallToolResult, ContentBlock, Tool,
+        };
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
@@ -984,10 +986,10 @@ mod tests {
         use goose::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
+        use goose_provider_types::data::{CallToolRequestParams, Role, Tool};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::{CallToolRequestParams, Role, Tool};
         use rmcp::object;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1258,10 +1260,10 @@ mod tests {
         use goose::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
+        use goose_provider_types::data::{CallToolRequestParams, Tool};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1627,10 +1629,10 @@ mod tests {
         };
         use goose::session::session_manager::SessionType;
         use goose::session::{GoalState, SessionManager};
+        use goose_provider_types::data::Tool;
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicU32, Ordering};
         use tempfile::TempDir;
@@ -1951,11 +1953,11 @@ mod tests {
             let mut emitted_response_id = None;
             while let Some(event) = reply_stream.next().await {
                 if let AgentEvent::Message(message) = event? {
-                    if message.role == rmcp::model::Role::User
+                    if message.role == goose_provider_types::data::Role::User
                         && message.as_concat_text() == "/goal"
                     {
                         emitted_user_id = message.id;
-                    } else if message.role == rmcp::model::Role::Assistant
+                    } else if message.role == goose_provider_types::data::Role::Assistant
                         && message.as_concat_text().contains("No goal set")
                     {
                         emitted_response_id = message.id;
@@ -1983,7 +1985,8 @@ mod tests {
                 .messages()
                 .iter()
                 .find(|message| {
-                    message.role == rmcp::model::Role::User && message.as_concat_text() == "/goal"
+                    message.role == goose_provider_types::data::Role::User
+                        && message.as_concat_text() == "/goal"
                 })
                 .expect("User message should be stored");
 
@@ -1995,7 +1998,7 @@ mod tests {
                 .messages()
                 .iter()
                 .find(|message| {
-                    message.role == rmcp::model::Role::Assistant
+                    message.role == goose_provider_types::data::Role::Assistant
                         && message.as_concat_text().contains("No goal set")
                 })
                 .expect("Slash command response should be stored");
@@ -2019,10 +2022,10 @@ mod tests {
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
         use goose::session::session_manager::SessionType;
         use goose::session::SessionManager;
+        use goose_provider_types::data::Tool;
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::Arc;
 
@@ -2134,11 +2137,11 @@ mod tests {
         use goose::conversation::message::{Message, MessageContent};
         use goose::providers::base::{stream_from_single_message, MessageStream, Provider};
         use goose::session::{SessionManager, SessionType};
+        use goose_provider_types::data::{CallToolRequestParams, Tool};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
         use goose_test_support::McpFixture;
-        use rmcp::model::{CallToolRequestParams, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -2297,10 +2300,10 @@ mod tests {
             stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
         };
         use goose::session::session_manager::SessionType;
+        use goose_provider_types::data::{CallToolRequestParams, Tool};
         use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
         use goose_providers::errors::ProviderError;
         use goose_providers::model::ModelConfig;
-        use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2365,7 +2368,7 @@ mod tests {
                 _messages: &[Message],
                 _tools: &[Tool],
             ) -> Result<MessageStream, ProviderError> {
-                use rmcp::model::{Annotations, Role, TextContent};
+                use goose_provider_types::data::{Annotations, Role, TextContent};
 
                 let assistant_only = TextContent::new("provider-private-state")
                     .with_annotations(Annotations::default().with_audience(vec![Role::Assistant]));
@@ -2552,7 +2555,8 @@ mod tests {
         }
 
         fn is_empty_assistant(message: &Message) -> bool {
-            message.role == rmcp::model::Role::Assistant && message.content.is_empty()
+            message.role == goose_provider_types::data::Role::Assistant
+                && message.content.is_empty()
         }
 
         #[tokio::test]
@@ -2576,7 +2580,7 @@ mod tests {
                 "assistant-only content must not trigger the empty-turn fallback: {messages:?}"
             );
             assert!(persisted.iter().any(|message| {
-                message.role == rmcp::model::Role::Assistant
+                message.role == goose_provider_types::data::Role::Assistant
                     && message.as_concat_text() == "provider-private-state"
             }));
             let restored = Conversation::new_unvalidated(persisted.clone()).user_visible_messages();
@@ -2630,7 +2634,7 @@ mod tests {
             let mut emitted_steer_id = None;
             while let Some(event) = reply_stream.next().await {
                 if let AgentEvent::Message(message) = event? {
-                    if message.role == rmcp::model::Role::User
+                    if message.role == goose_provider_types::data::Role::User
                         && message.as_concat_text().contains("keep going")
                     {
                         emitted_steer_id = message.id;
@@ -2741,7 +2745,7 @@ mod tests {
             let emitted_final_output = messages
                 .iter()
                 .find(|message| {
-                    message.role == rmcp::model::Role::Assistant
+                    message.role == goose_provider_types::data::Role::Assistant
                         && message.as_concat_text().contains("Final answer")
                 })
                 .expect("final-output result should be emitted");
@@ -2760,7 +2764,7 @@ mod tests {
             let stored_final_output = persisted
                 .iter()
                 .find(|message| {
-                    message.role == rmcp::model::Role::Assistant
+                    message.role == goose_provider_types::data::Role::Assistant
                         && message.as_concat_text().contains("Final answer")
                 })
                 .expect("final-output result should be stored");

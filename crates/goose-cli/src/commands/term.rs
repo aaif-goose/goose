@@ -3,7 +3,7 @@ use chrono;
 use goose::config::Config;
 use goose::conversation::message::{Message, MessageContent, MessageMetadata};
 use goose::session::{SessionManager, SessionType};
-use rmcp::model::Role;
+use goose_providers::data::Role;
 
 use crate::session::{build_session, SessionBuilderConfig};
 

@@ -1,5 +1,5 @@
 use futures::{Stream, StreamExt};
-use rmcp::model::CallToolResult;
+use goose_provider_types::data::CallToolResult;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::agents::container::Container;
 use crate::conversation::message::Message;
-use crate::mcp_utils::ToolResult;
+use goose_provider_types::conversation::message::ToolResult;
 use rmcp::model::ServerNotification;
 
 #[derive(Clone)]
@@ -93,13 +93,15 @@ impl ToolCallContext {
 // ToolCallResult combines the result of a tool call with an optional notification stream that
 // can be used to receive notifications from the tool.
 pub struct ToolCallResult {
-    pub result: Box<dyn Future<Output = ToolResult<rmcp::model::CallToolResult>> + Send + Unpin>,
+    pub result: Box<
+        dyn Future<Output = ToolResult<goose_provider_types::data::CallToolResult>> + Send + Unpin,
+    >,
     pub notification_stream: Option<Box<dyn Stream<Item = ServerNotification> + Send + Unpin>>,
     pub action_required_stream: Option<Box<dyn Stream<Item = Message> + Send + Unpin>>,
 }
 
-impl From<ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
-    fn from(result: ToolResult<rmcp::model::CallToolResult>) -> Self {
+impl From<ToolResult<goose_provider_types::data::CallToolResult>> for ToolCallResult {
+    fn from(result: ToolResult<goose_provider_types::data::CallToolResult>) -> Self {
         Self {
             result: Box::new(futures::future::ready(result)),
             notification_stream: None,
@@ -162,3 +164,13 @@ pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool ca
                                         If needed, adjust the explanation based on user preferences or questions.";
 
 impl StateMachineServices {}
+
+impl From<crate::mcp_utils::ToolResult<rmcp::model::CallToolResult>> for ToolCallResult {
+    fn from(result: crate::mcp_utils::ToolResult<rmcp::model::CallToolResult>) -> Self {
+        Self::from(result.map_err(Into::into).and_then(|value| {
+            value.try_into().map_err(|e: serde_json::Error| {
+                goose_provider_types::data::ErrorData::internal_error(e.to_string(), None)
+            })
+        }))
+    }
+}

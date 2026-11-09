@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use rmcp::model::{CallToolRequestParams, ElicitationAction, ErrorData};
+use goose_provider_types::data::{CallToolRequestParams, ElicitationAction, ErrorData};
 use serde_json::json;
 
 use super::calculator_extension::{
@@ -512,7 +512,7 @@ async fn execution_recovers_from_timeout_cancellation_and_filtered_output() -> R
             Message::user().with_text("persisted unfinished call"),
             Message::assistant().with_tool_request(
                 "unfinished",
-                Ok(rmcp::model::CallToolRequestParams::new(ADD)
+                Ok(goose_provider_types::data::CallToolRequestParams::new(ADD)
                     .with_arguments(value(1).as_object().unwrap().clone())),
             ),
         ])
@@ -628,8 +628,10 @@ async fn stale_orphaned_tool_request_is_not_executed() -> Result<()> {
             &pipeline.session_id,
             &Message::assistant().with_tool_request(
                 "orphan_1",
-                Ok(rmcp::model::CallToolRequestParams::new("shell")
-                    .with_arguments(serde_json::Map::new())),
+                Ok(
+                    goose_provider_types::data::CallToolRequestParams::new("shell")
+                        .with_arguments(serde_json::Map::new()),
+                ),
             ),
         )
         .await?;

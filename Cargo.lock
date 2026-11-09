@@ -4229,6 +4229,7 @@ dependencies = [
  "goose-context-management",
  "goose-download-manager",
  "goose-mcp",
+ "goose-provider-types",
  "goose-providers",
  "goose-sdk-types",
  "goose-test-support",
@@ -4347,8 +4348,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-futures",
- "uuid",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
 ]
@@ -4425,7 +4424,6 @@ dependencies = [
  "goose-provider-types",
  "include_dir",
  "minijinja",
- "rmcp",
  "serde",
  "serde_json",
  "tokio",
@@ -4511,7 +4509,6 @@ name = "goose-provider-types"
 version = "0.1.0-alpha.13"
 dependencies = [
  "anyhow",
- "async-stream",
  "async-trait",
  "base64 0.23.1",
  "chrono",
@@ -4559,7 +4556,6 @@ dependencies = [
  "rcgen",
  "reqwest",
  "reqwest-websocket",
- "rmcp",
  "sec1",
  "serde",
  "serde_json",
@@ -4609,7 +4605,6 @@ dependencies = [
  "goose-context-management",
  "goose-providers",
  "goose-sdk-types",
- "rmcp",
  "serde_json",
  "thiserror 2.0.20",
  "tokio",

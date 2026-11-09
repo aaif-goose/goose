@@ -1,8 +1,10 @@
 use crate::conversation::message::{Message, MessageContentBlock, MessageMetadata};
+use crate::data::{ContentBlock, Role};
 use crate::mcp_utils::extract_text_from_resource;
-use rmcp::model::{ContentBlock, Role};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::collections::BTreeSet as HashSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use thiserror::Error;
 
 pub mod message;
@@ -21,11 +23,22 @@ pub struct InvalidConversation {
 }
 
 impl Conversation {
+    #[cfg(feature = "std")]
     pub fn new<I>(messages: I) -> Result<Self, InvalidConversation>
     where
         I: IntoIterator<Item = Message>,
     {
-        Self::new_unvalidated(messages).validate()
+        Self::new_unvalidated(messages).validate_with_host(&crate::runtime::SystemHost)
+    }
+
+    pub fn new_with_host<I>(
+        host: &dyn crate::runtime::HostServices,
+        messages: I,
+    ) -> Result<Self, InvalidConversation>
+    where
+        I: IntoIterator<Item = Message>,
+    {
+        Self::new_unvalidated(messages).validate_with_host(host)
     }
 
     pub fn new_unvalidated<I>(messages: I) -> Self
@@ -144,7 +157,7 @@ impl Conversation {
         }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, Message> {
+    pub fn iter(&self) -> core::slice::Iter<'_, Message> {
         self.0.iter()
     }
 
@@ -193,8 +206,11 @@ impl Conversation {
             .collect()
     }
 
-    fn validate(self) -> Result<Self, InvalidConversation> {
-        let (_messages, issues) = fix_messages(self.0.clone());
+    fn validate_with_host(
+        self,
+        host: &dyn crate::runtime::HostServices,
+    ) -> Result<Self, InvalidConversation> {
+        let (_messages, issues) = fix_messages_with_host(host, self.0.clone());
         if !issues.is_empty() {
             let reason = issues.join("\n");
             Err(InvalidConversation {
@@ -215,7 +231,7 @@ impl Default for Conversation {
 
 impl IntoIterator for Conversation {
     type Item = Message;
-    type IntoIter = std::vec::IntoIter<Message>;
+    type IntoIter = alloc::vec::IntoIter<Message>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -223,7 +239,7 @@ impl IntoIterator for Conversation {
 }
 impl<'a> IntoIterator for &'a Conversation {
     type Item = &'a Message;
-    type IntoIter = std::slice::Iter<'a, Message>;
+    type IntoIter = core::slice::Iter<'a, Message>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
@@ -232,7 +248,10 @@ impl<'a> IntoIterator for &'a Conversation {
 
 /// Fix a conversation that we're about to send to an LLM. So the first and last
 /// messages should always be from the user.
-pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String>) {
+pub fn fix_conversation_with_host(
+    host: &dyn crate::runtime::HostServices,
+    conversation: Conversation,
+) -> (Conversation, Vec<String>) {
     let all_messages = conversation.messages();
 
     // Create a shadow map: track each message as either Visible or NonVisible with its index
@@ -256,7 +275,7 @@ pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String
         .collect();
 
     // Fix only the agent-visible messages
-    let (fixed_visible, issues) = fix_messages(agent_visible_messages);
+    let (fixed_visible, issues) = fix_messages_with_host(host, agent_visible_messages);
 
     // Reconstruct using shadow map: replace Visible slots with fixed messages
     let final_messages: Vec<Message> = shadow_map
@@ -270,8 +289,11 @@ pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String
     (Conversation::new_unvalidated(final_messages), issues)
 }
 
-fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
-    [
+fn fix_messages_with_host(
+    host: &dyn crate::runtime::HostServices,
+    messages: Vec<Message>,
+) -> (Vec<Message>, Vec<String>) {
+    let result = [
         merge_text_content_items,
         trim_assistant_text_whitespace,
         remove_empty_messages,
@@ -280,7 +302,6 @@ fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
         merge_consecutive_messages,
         dedupe_signed_thinking,
         fix_lead_trail,
-        populate_if_empty,
     ]
     .into_iter()
     .fold(
@@ -290,7 +311,11 @@ fn fix_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
             all_issues.extend(issues);
             (new_msgs, all_issues)
         },
-    )
+    );
+    let (messages, mut issues) = result;
+    let (messages, final_issues) = populate_if_empty_with_host(host, messages);
+    issues.extend(final_issues);
+    (messages, issues)
 }
 
 fn merge_text_content_in_message(mut msg: Message) -> Message {
@@ -632,8 +657,8 @@ pub enum EffectiveRole {
     Tool,
 }
 
-impl std::fmt::Display for EffectiveRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for EffectiveRole {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::User => write!(f, "user"),
             Self::Assistant => write!(f, "assistant"),
@@ -675,12 +700,15 @@ fn fix_lead_trail(mut messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
 
 const PLACEHOLDER_USER_MESSAGE: &str = "Hello";
 
-fn populate_if_empty(mut messages: Vec<Message>) -> (Vec<Message>, Vec<String>) {
+fn populate_if_empty_with_host(
+    host: &dyn crate::runtime::HostServices,
+    mut messages: Vec<Message>,
+) -> (Vec<Message>, Vec<String>) {
     let mut issues = Vec::new();
 
     if messages.is_empty() {
         issues.push("Added placeholder user message to empty conversation".to_string());
-        messages.push(Message::user().with_text(PLACEHOLDER_USER_MESSAGE));
+        messages.push(Message::user_with_host(host).with_text(PLACEHOLDER_USER_MESSAGE));
     }
     (messages, issues)
 }
@@ -717,14 +745,19 @@ pub fn debug_conversation_fix(
     output
 }
 
+#[cfg(feature = "std")]
+pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String>) {
+    fix_conversation_with_host(&crate::runtime::SystemHost, conversation)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::conversation::message::{
         InferenceMetadata, Message, MessageContentBlock, MessageMetadata,
     };
     use crate::conversation::{debug_conversation_fix, fix_conversation, Conversation};
-    use rmcp::model::{CallToolRequestParams, Role};
-    use rmcp::object;
+    use crate::data::{CallToolRequestParams, Role};
+    use crate::object;
 
     macro_rules! assert_has_issues_unordered {
         ($fixed:expr, $issues:expr, $($expected:expr),+ $(,)?) => {
@@ -764,7 +797,7 @@ mod tests {
 
     #[test]
     fn test_valid_conversation() {
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         let all_messages = [
             Message::user().with_text("Can you help me search for something?"),
@@ -777,7 +810,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "search_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("Search results here"),
                 ])),
             ),
@@ -812,7 +845,7 @@ mod tests {
 
     #[test]
     fn test_role_alternation_and_content_placement_issues() {
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         let messages = vec![
             Message::user().with_text("Hello"),
@@ -821,7 +854,7 @@ mod tests {
                 .with_text("Response")
                 .with_tool_response(
                     "orphan_1",
-                    Ok(rmcp::model::CallToolResult::success(vec![
+                    Ok(crate::data::CallToolResult::success(vec![
                         ContentBlock::text("result"),
                     ])),
                 ), // Wrong role
@@ -912,7 +945,7 @@ mod tests {
 
     #[test]
     fn test_orphaned_tools_and_empty_messages() {
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         // This conversation completely collapses. the first user message is invalid
         // then we remove the empty user message and the wrong tool response
@@ -928,7 +961,7 @@ mod tests {
             Message::user(),
             Message::user().with_tool_response(
                 "wrong_id",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("result"),
                 ])),
             ),
@@ -961,7 +994,7 @@ mod tests {
 
     #[test]
     fn test_real_world_consecutive_assistant_messages() {
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         let conversation = Conversation::new_unvalidated(vec![
             Message::user().with_text("run ls in the current directory and then run a word count on the smallest file"),
@@ -975,7 +1008,7 @@ mod tests {
                 .with_tool_request("toolu_bdrk_01KgDYHs4fAodi22NqxRzmwx", Ok(CallToolRequestParams::new("developer__shell").with_arguments(object!({"command": "wc slack.yaml"})))),
 
             Message::user()
-                .with_tool_response("toolu_bdrk_01KgDYHs4fAodi22NqxRzmwx", Ok(rmcp::model::CallToolResult::success(vec![ContentBlock::text("0 0 0 slack.yaml")]))),
+                .with_tool_response("toolu_bdrk_01KgDYHs4fAodi22NqxRzmwx", Ok(crate::data::CallToolResult::success(vec![ContentBlock::text("0 0 0 slack.yaml")]))),
 
             Message::assistant()
                 .with_text("I ran `ls -la` in the current directory and found several files. Looking at the file sizes, I can see that both `slack.yaml` and `subrecipes.yaml` are 0 bytes (the smallest files). I ran a word count on `slack.yaml` which shows: **0 lines**, **0 words**, **0 characters**"),
@@ -995,7 +1028,7 @@ mod tests {
 
     #[test]
     fn test_tool_response_effective_role() {
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         let messages = vec![
             Message::user().with_text("Search for something"),
@@ -1007,7 +1040,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "search_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("search results"),
                 ])),
             ),
@@ -1021,7 +1054,7 @@ mod tests {
     #[test]
     fn test_merge_text_content_items() {
         use crate::conversation::message::MessageContentBlock;
-        use rmcp::model::TextContent;
+        use crate::data::TextContent;
 
         let mut message = Message::assistant().with_text("Hello");
 
@@ -1056,7 +1089,7 @@ mod tests {
     #[test]
     fn test_merge_text_content_items_with_mixed_content() {
         use crate::conversation::message::MessageContentBlock;
-        use rmcp::model::TextContent;
+        use crate::data::TextContent;
 
         let mut image_message = Message::assistant().with_text("Look at");
 
@@ -1094,7 +1127,7 @@ mod tests {
 
     #[test]
     fn test_streamed_text_with_different_audiences_is_not_merged() {
-        use rmcp::model::{Annotations, Role, TextContent};
+        use crate::data::{Annotations, Role, TextContent};
 
         let text = |value: &str, audience| {
             MessageContentBlock::Text(
@@ -1155,7 +1188,7 @@ mod tests {
 
     #[test]
     fn test_user_visible_messages_projects_content_and_drops_hidden_rows() {
-        use rmcp::model::{Annotations, Role, TextContent};
+        use crate::data::{Annotations, Role, TextContent};
 
         let assistant_only = |value: &str| {
             MessageContentBlock::Text(
@@ -1180,7 +1213,7 @@ mod tests {
 
     #[test]
     fn test_agent_visible_messages_projects_content_and_drops_hidden_rows() {
-        use rmcp::model::{Annotations, Role, TextContent};
+        use crate::data::{Annotations, Role, TextContent};
 
         let user_only = |value: &str| {
             MessageContentBlock::Text(
@@ -1479,7 +1512,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "search_1",
-                Ok(rmcp::model::CallToolResult::success(vec![])), // Empty content - this should get a placeholder
+                Ok(crate::data::CallToolResult::success(vec![])), // Empty content - this should get a placeholder
             ),
             Message::user().with_text("Thanks!"),
         ];
@@ -1587,7 +1620,7 @@ mod tests {
     #[test]
     fn test_dedupes_duplicate_signed_thinking_around_tool_call() {
         use crate::conversation::message::MessageContentBlock;
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         // Reproduces the Anthropic 400 scenario: a standalone signed thinking
         // message immediately followed by an assistant message that repeats the
@@ -1604,7 +1637,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "tool_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("done"),
                 ])),
             ),
@@ -1651,7 +1684,7 @@ mod tests {
     #[test]
     fn test_keeps_distinct_signed_thinking_blocks_in_assistant_message() {
         use crate::conversation::message::MessageContentBlock;
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         // Distinct signed thinking blocks (different signatures) must be preserved.
         let messages = vec![
@@ -1665,7 +1698,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "tool_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("done"),
                 ])),
             ),
@@ -1736,7 +1769,7 @@ mod tests {
     #[test]
     fn test_dedupes_signed_thinking_across_split_tool_messages() {
         use crate::conversation::message::MessageContentBlock;
-        use rmcp::model::ContentBlock;
+        use crate::data::ContentBlock;
 
         // The agent splits one provider turn with multiple tool calls into one
         // assistant message per call (interleaved with tool results), each
@@ -1753,7 +1786,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "call_1",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("ok"),
                 ])),
             ),
@@ -1765,7 +1798,7 @@ mod tests {
                 ),
             Message::user().with_tool_response(
                 "call_2",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(crate::data::CallToolResult::success(vec![
                     ContentBlock::text("ok"),
                 ])),
             ),

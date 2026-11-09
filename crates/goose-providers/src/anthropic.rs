@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::io;
 use tokio::pin;
 use tokio_util::io::StreamReader;
@@ -29,7 +28,7 @@ use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
 use crate::http_status::extract_request_id;
 use crate::model::ModelConfig;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
 
@@ -207,7 +206,7 @@ impl AnthropicProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let payload = self.streaming_payload(
             model_config,
             wire_model,
@@ -437,7 +436,7 @@ impl Provider for AnthropicProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         self.stream_for_model(
             model_config,
             &model_config.model_name,
@@ -481,7 +480,10 @@ fn beta_header_value(
     (!features.is_empty()).then(|| features.join(","))
 }
 
-fn apply_declared_request_params(payload: &mut Value, params: &HashMap<String, Value>) {
+fn apply_declared_request_params(
+    payload: &mut Value,
+    params: &std::collections::BTreeMap<String, Value>,
+) {
     let Some(object) = payload.as_object_mut() else {
         return;
     };
@@ -921,7 +923,7 @@ mod tests {
             "max_tokens": 8096,
         });
 
-        let params = HashMap::from([
+        let params = std::collections::BTreeMap::from([
             ("output_config".to_string(), json!({"effort": "low"})),
             ("model".to_string(), json!("hijacked")),
             ("stream".to_string(), json!(false)),

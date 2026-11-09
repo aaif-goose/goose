@@ -12,15 +12,17 @@ use crate::formats::openai::{
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::{is_goose_internal_request_param, ModelConfig};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::trace as tracing;
 use crate::utils::{sanitize_unicode_tags, strip_unicode_tags};
 use anyhow::{anyhow, Error};
-use async_stream::try_stream;
-use chrono;
+
+use crate::data::{object, CallToolRequestParams, ContentBlock, Role, Tool};
+use alloc::collections::BTreeSet as HashSet;
 use futures::Stream;
-use rmcp::model::{object, CallToolRequestParams, ContentBlock, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResponsesApiResponse {
@@ -88,10 +90,7 @@ pub fn reasoning_input_item(
     }))
 }
 
-pub fn is_encrypted_reasoning_error(message: &str) -> bool {
-    let lower = message.to_lowercase();
-    lower.contains("encrypted content") && lower.contains("could not be verified")
-}
+pub use crate::retry::is_encrypted_reasoning_error;
 
 /// Rejected reasoning stays in the session, so callers retry once without any
 /// reasoning items rather than failing every later request.
@@ -609,9 +608,6 @@ fn add_message_items(
                                         ContentBlock::ResourceLink(_) => json!({
                                             "type": "input_text", "text": "[Resource link]"
                                         }),
-                                        _ => json!({
-                                            "type": "input_text", "text": "[Unsupported content]"
-                                        }),
                                     })
                                     .collect::<Vec<Value>>())
                             } else {
@@ -629,7 +625,6 @@ fn add_message_items(
                                         }
                                         ContentBlock::Image(_) =>
                                             "[image omitted: model does not support vision]".into(),
-                                        _ => "[Unsupported content]".into(),
                                     })
                                     .collect::<Vec<String>>()
                                     .join("\n"))
@@ -794,7 +789,7 @@ pub fn create_responses_request_for_model(
                     "type": "function",
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.input_schema,
+                    "parameters": tool.input_schema.as_ref(),
                     "strict": false,
                 })
             })
@@ -963,7 +958,15 @@ fn sanitize_tool_request_id(id: &str, seen_ids: &mut HashSet<String>) -> anyhow:
     Ok(id)
 }
 
+#[cfg(feature = "std")]
 pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Result<Message> {
+    responses_api_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn responses_api_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: &ResponsesApiResponse,
+) -> anyhow::Result<Message> {
     let mut content = Vec::new();
     let mut tool_request_ids = HashSet::new();
 
@@ -1035,7 +1038,7 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
         }
     }
 
-    let mut message = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), content);
+    let mut message = Message::new(Role::Assistant, host.unix_timestamp(), content);
 
     message = message.with_id(response.id.clone());
 
@@ -1131,8 +1134,11 @@ fn process_streaming_output_items(
     Ok(content)
 }
 
-fn output_token_limit_marker(id: Option<String>) -> Message {
-    let mut message = Message::assistant();
+fn output_token_limit_marker_with_host(
+    host: &dyn crate::runtime::HostServices,
+    id: Option<String>,
+) -> Message {
+    let mut message = Message::assistant_with_host(host);
     if let Some(id) = id {
         message = message.with_id(id);
     }
@@ -1160,13 +1166,24 @@ fn sse_field_name(line: &str) -> Option<&str> {
     field_like.then_some(field)
 }
 
+#[cfg(feature = "std")]
 pub fn responses_api_to_streaming_message<S>(
-    mut stream: S,
+    stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
     S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    try_stream! {
+    responses_api_to_streaming_message_with_host(&crate::runtime::SystemHost, stream)
+}
+
+pub fn responses_api_to_streaming_message_with_host<'a, S>(
+    host: &'a dyn crate::runtime::HostServices,
+    mut stream: S,
+) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'a
+where
+    S: Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'a,
+{
+    crate::stream::try_stream(|mut emit| async move {
         use futures::StreamExt;
 
         let mut accumulated_text = String::new();
@@ -1214,8 +1231,8 @@ where
             };
 
             match event {
-                ResponsesStreamEvent::ResponseCreated { response, .. } |
-                ResponsesStreamEvent::ResponseInProgress { response, .. } => {
+                ResponsesStreamEvent::ResponseCreated { response, .. }
+                | ResponsesStreamEvent::ResponseInProgress { response, .. } => {
                     response_id = Some(response.id);
                     model_name = Some(response.model);
                 }
@@ -1229,7 +1246,7 @@ where
                         // Yield incremental text updates for true streaming
                         let mut msg = Message::new(
                             Role::Assistant,
-                            chrono::Utc::now().timestamp(),
+                            host.unix_timestamp(),
                             vec![MessageContentBlock::text(&delta)],
                         );
 
@@ -1238,7 +1255,7 @@ where
                             msg = msg.with_id(id.clone());
                         }
 
-                        yield (Some(msg), None);
+                        emit.send((Some(msg), None)).await;
                     }
                 }
 
@@ -1252,10 +1269,10 @@ where
 
                 ResponsesStreamEvent::ResponseCompleted { response, .. } => {
                     let model = model_name.as_ref().unwrap_or(&response.model);
-                    let usage = response.usage.as_ref().map_or_else(
-                        Usage::default,
-                        ResponseUsage::to_usage,
-                    );
+                    let usage = response
+                        .usage
+                        .as_ref()
+                        .map_or_else(Usage::default, ResponseUsage::to_usage);
                     let mut pu = ProviderUsage::new(model.clone(), usage);
                     pu.finish_reasons = Some(vec![response.status.clone()]);
                     pu.response_id = Some(response.id.clone());
@@ -1271,10 +1288,10 @@ where
 
                 ResponsesStreamEvent::ResponseIncomplete { response, .. } => {
                     let model = model_name.as_ref().unwrap_or(&response.model);
-                    let usage = response.usage.as_ref().map_or_else(
-                        Usage::default,
-                        ResponseUsage::to_usage,
-                    );
+                    let usage = response
+                        .usage
+                        .as_ref()
+                        .map_or_else(Usage::default, ResponseUsage::to_usage);
                     let mut pu = ProviderUsage::new(model.clone(), usage);
                     pu.finish_reasons = Some(vec![response
                         .incomplete_details
@@ -1322,7 +1339,7 @@ where
 
                         let mut msg = Message::new(
                             Role::Assistant,
-                            chrono::Utc::now().timestamp(),
+                            host.unix_timestamp(),
                             vec![MessageContentBlock::text(&delta)],
                         );
 
@@ -1330,7 +1347,7 @@ where
                             msg = msg.with_id(id.clone());
                         }
 
-                        yield (Some(msg), None);
+                        emit.send((Some(msg), None)).await;
                     }
                 }
 
@@ -1362,18 +1379,24 @@ where
         let content = process_streaming_output_items(output_items, is_text_response)?;
 
         if !content.is_empty() {
-            let mut message = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), content);
+            let mut message = Message::new(Role::Assistant, host.unix_timestamp(), content);
             if let Some(id) = response_id {
                 message = message.with_id(id);
             }
             message.metadata.output_token_limit_reached = output_token_limit_reached;
-            yield (Some(message), final_usage);
+            emit.send((Some(message), final_usage)).await;
         } else if output_token_limit_reached {
-            yield (Some(output_token_limit_marker(response_id)), final_usage);
+            emit.send((
+                Some(output_token_limit_marker_with_host(host, response_id)),
+                final_usage,
+            ))
+            .await;
         } else if let Some(usage) = final_usage {
-            yield (None, Some(usage));
+            emit.send((None, Some(usage))).await;
         }
-    }
+
+        Ok::<(), anyhow::Error>(())
+    })
 }
 
 #[cfg(test)]
@@ -1429,10 +1452,10 @@ mod document_tests {
 mod tests {
     use super::*;
     use crate::conversation::message::MessageContentBlock;
+    use crate::data::CallToolRequestParams;
     use crate::model::ModelConfig;
+    use crate::object;
     use futures::StreamExt;
-    use rmcp::model::CallToolRequestParams;
-    use rmcp::object;
 
     #[tokio::test]
     async fn test_responses_stream_ignores_keepalive_event() -> anyhow::Result<()> {
@@ -2268,7 +2291,7 @@ mod tests {
             "vendor-gpt-5-6",
         ] {
             let model_config = ModelConfig::new(model_name).with_merged_request_params(
-                std::collections::HashMap::from([("reasoning_mode".to_string(), json!("pro"))]),
+                alloc::collections::BTreeMap::from([("reasoning_mode".to_string(), json!("pro"))]),
             );
 
             let result =
@@ -2284,7 +2307,7 @@ mod tests {
     fn test_responses_request_forwards_reasoning_mode_without_model_name_gate() {
         for model_name in ["gpt-5.5", "gpt-6-astra", "future-reasoner"] {
             let model_config = ModelConfig::new(model_name).with_merged_request_params(
-                std::collections::HashMap::from([("reasoning_mode".to_string(), json!("pro"))]),
+                alloc::collections::BTreeMap::from([("reasoning_mode".to_string(), json!("pro"))]),
             );
 
             let request = create_responses_request(&model_config, "You are helpful.", &[], &[])
@@ -2298,7 +2321,7 @@ mod tests {
     fn test_responses_request_rejects_invalid_reasoning_mode_value() {
         for value in ["fast", "", "pro "] {
             let model_config = ModelConfig::new("gpt-6-astra").with_merged_request_params(
-                std::collections::HashMap::from([("reasoning_mode".to_string(), json!(value))]),
+                alloc::collections::BTreeMap::from([("reasoning_mode".to_string(), json!(value))]),
             );
             let error = create_responses_request(&model_config, "You are helpful.", &[], &[])
                 .expect_err("only standard or pro are valid reasoning modes");
@@ -2397,8 +2420,10 @@ mod tests {
             ),
         ];
         for (params, expected) in cases {
-            let config = ModelConfig::new("gpt-4o")
-                .with_merged_request_params(serde_json::from_value(params).unwrap());
+            let config = ModelConfig::new("gpt-4o").with_merged_request_params(
+                serde_json::from_value::<alloc::collections::BTreeMap<String, Value>>(params)
+                    .unwrap(),
+            );
             let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
             for (key, value) in expected.as_object().unwrap() {
                 assert_eq!(&payload[key], value, "{key}");
@@ -2412,7 +2437,7 @@ mod tests {
     #[test]
     fn native_text_parameter_must_be_an_object() {
         let config = ModelConfig::new("gpt-4o").with_merged_request_params(
-            std::collections::HashMap::from([("text".to_string(), json!("low"))]),
+            alloc::collections::BTreeMap::from([("text".to_string(), json!("low"))]),
         );
         let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
         assert!(error.to_string().contains("text must be an object"));
@@ -2422,7 +2447,7 @@ mod tests {
     fn native_reasoning_object_takes_precedence_over_aliases_and_thinking_effort() {
         let config = ModelConfig::new("gpt-5.4")
             .with_thinking_effort(crate::thinking::ThinkingEffort::Low)
-            .with_merged_request_params(std::collections::HashMap::from([
+            .with_merged_request_params(alloc::collections::BTreeMap::from([
                 ("reasoning_effort".to_string(), json!("medium")),
                 ("reasoning_mode".to_string(), json!("standard")),
                 (
@@ -2445,7 +2470,7 @@ mod tests {
     fn native_reasoning_object_merges_inferred_effort_without_losing_summary() {
         let config = ModelConfig::new("gpt-5.4")
             .with_thinking_effort(crate::thinking::ThinkingEffort::High)
-            .with_merged_request_params(std::collections::HashMap::from([(
+            .with_merged_request_params(alloc::collections::BTreeMap::from([(
                 "reasoning".to_string(),
                 json!({"summary": "detailed"}),
             )]));
@@ -2456,10 +2481,12 @@ mod tests {
 
     #[test]
     fn native_reasoning_object_is_forwarded_without_inferred_effort() {
-        let config =
-            ModelConfig::new("gpt-4o").with_merged_request_params(std::collections::HashMap::from(
-                [("reasoning".to_string(), json!({"summary": "detailed"}))],
-            ));
+        let config = ModelConfig::new("gpt-4o").with_merged_request_params(
+            alloc::collections::BTreeMap::from([(
+                "reasoning".to_string(),
+                json!({"summary": "detailed"}),
+            )]),
+        );
         let payload = create_responses_request(&config, "system", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"], json!({"summary": "detailed"}));
     }
@@ -2467,7 +2494,7 @@ mod tests {
     #[test]
     fn native_reasoning_parameter_must_be_an_object() {
         let config = ModelConfig::new("gpt-5.4").with_merged_request_params(
-            std::collections::HashMap::from([("reasoning".to_string(), json!("high"))]),
+            alloc::collections::BTreeMap::from([("reasoning".to_string(), json!("high"))]),
         );
         let error = create_responses_request(&config, "system", &[], &[]).unwrap_err();
         assert!(error.to_string().contains("reasoning must be an object"));
@@ -2524,7 +2551,7 @@ mod tests {
             max_tokens: None,
             toolshim: false,
             toolshim_model: None,
-            request_params: Some(std::collections::HashMap::from([(
+            request_params: Some(alloc::collections::BTreeMap::from([(
                 "store".to_string(),
                 serde_json::json!(true),
             )])),
@@ -2584,7 +2611,7 @@ mod tests {
     #[test]
     fn test_tool_response_with_image_serializes_as_typed_array() {
         use crate::conversation::message::Message;
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use crate::data::{CallToolResult, ContentBlock};
 
         let messages = vec![
             Message::user().with_content(MessageContentBlock::tool_response(
@@ -2725,7 +2752,7 @@ mod tests {
     #[test]
     fn test_text_flushed_before_tool_response() {
         use crate::conversation::message::Message;
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use crate::data::{CallToolResult, ContentBlock};
 
         let messages = vec![Message::user().with_text("context").with_content(
             MessageContentBlock::tool_response(
@@ -2761,7 +2788,7 @@ mod tests {
     #[test]
     fn test_tool_response_error_serializes_with_error_prefix() {
         use crate::conversation::message::Message;
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
 
         let messages = vec![
             Message::user().with_content(MessageContentBlock::tool_response(
@@ -2895,7 +2922,7 @@ mod tests {
     #[test]
     fn test_tool_response_image_omitted_when_not_vision() {
         use crate::conversation::message::Message;
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use crate::data::{CallToolResult, ContentBlock};
 
         let messages = vec![
             Message::user().with_content(MessageContentBlock::tool_response(
@@ -3425,7 +3452,7 @@ mod tests {
     #[test]
     fn test_tool_request_error_emits_function_call_output() {
         use crate::conversation::message::Message;
-        use rmcp::model::{ErrorCode, ErrorData};
+        use crate::data::{ErrorCode, ErrorData};
 
         let messages = vec![Message::assistant().with_tool_request(
             "call_err1",
@@ -3464,7 +3491,7 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_reasoning_replays_only_for_its_model() -> anyhow::Result<()> {
         use crate::conversation::message::InferenceMetadata;
-        use rmcp::model::CallToolResult;
+        use crate::data::CallToolResult;
 
         let reasoning_item = json!({
             "type": "reasoning", "id": "rs_1", "summary": [], "encrypted_content": "enc-1"

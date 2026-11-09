@@ -31,6 +31,7 @@ use goose_provider_types::conversation::message::{
     Message, MessageContent, SystemNotificationType,
 };
 use goose_provider_types::conversation::token_usage::{ProviderUsage, Usage};
+use goose_provider_types::data::Tool;
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::images::ImageFormat;
 use goose_provider_types::model::ModelConfig;
@@ -38,7 +39,6 @@ use goose_provider_types::request_log::{start_log, LoggerHandleExt, RequestLogHa
 use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
 use mlx::{MlxBackend, MLX_BACKEND_ID};
 use model::ChatTemplate;
-use rmcp::model::Tool;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -500,8 +500,8 @@ fn build_openai_text_messages_json(
             return None;
         }
         let role = match m.role {
-            rmcp::model::Role::User => "user",
-            rmcp::model::Role::Assistant => "assistant",
+            goose_provider_types::data::Role::User => "user",
+            goose_provider_types::data::Role::Assistant => "assistant",
         };
         Some(json!({"role": role, "content": content}))
     }));
@@ -835,7 +835,7 @@ impl Provider for LocalInferenceProvider {
             "system": &system,
             "messages": messages.iter().map(|m| {
                 serde_json::json!({
-                    "role": match m.role { rmcp::model::Role::User => "user", rmcp::model::Role::Assistant => "assistant" },
+                    "role": match m.role { goose_provider_types::data::Role::User => "user", goose_provider_types::data::Role::Assistant => "assistant" },
                     "content": extract_text_content(m),
                 })
             }).collect::<Vec<_>>(),
@@ -1122,7 +1122,7 @@ mod tests {
                 json!({"functions": ["example__search"]}),
             ),
         ] {
-            let request = rmcp::model::CallToolRequestParams::new(name)
+            let request = goose_provider_types::data::CallToolRequestParams::new(name)
                 .with_arguments(arguments.as_object().unwrap().clone());
             let message = Message::assistant().with_tool_request("discovery", Ok(request));
             assert_eq!(

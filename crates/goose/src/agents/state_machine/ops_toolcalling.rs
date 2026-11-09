@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_agent::tool_call_state::request_executable;
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
+use goose_provider_types::data::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool,
+};
 
 use crate::agents::extension::ExtensionInfo;
 use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
@@ -322,7 +324,17 @@ impl ToolExecutionOperation {
 
             let result = lease
                 .call(
-                    tool_call.clone(),
+                    match tool_call.clone().try_into() {
+                        Ok(call) => call,
+                        Err(error) => {
+                            return ToolCallResult::from(Err::<CallToolResult, _>(
+                                ErrorData::invalid_params(
+                                    format!("Invalid tool call: {error}"),
+                                    None,
+                                ),
+                            ))
+                        }
+                    },
                     CallRequest::new(request_id.clone()).with_container(session.container.clone()),
                     cancellation_token,
                 )
@@ -514,7 +526,9 @@ impl ToolExecutionOperation {
         }
         .into()];
         for (index, prompt_message) in result.messages.into_iter().enumerate() {
-            let message = Message::from(prompt_message);
+            let message = Message::from(goose_provider_types::data::PromptMessage::try_from(
+                prompt_message,
+            )?);
             let expected_role = if index % 2 == 0 {
                 Role::User
             } else {
@@ -771,7 +785,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             .lease(session)
             .await?
             .tools_excluding(crate::skills::EXTENSION_NAME)
-            .await)
+            .await
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?)
     }
 
     async fn moim_parts(
@@ -1057,9 +1074,9 @@ mod tests {
                 "params": { "event_type": "app_updated" }
             }
         });
-        let result = CallToolResult::success(Vec::new()).with_meta(Some(rmcp::model::MetaObject(
-            meta.as_object().unwrap().clone(),
-        )));
+        let result = CallToolResult::success(Vec::new()).with_meta(Some(
+            goose_provider_types::data::MetaObject(meta.as_object().unwrap().clone()),
+        ));
 
         let Some(rmcp::model::ServerNotification::CustomNotification(notification)) =
             platform_notification(&result)

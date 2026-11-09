@@ -10,7 +10,8 @@ use crate::session::{Session, SessionManager};
 fn attach_to_last_assistant(effects: &mut [GooseEffect], usage: &ProviderUsage) {
     let Some(message) = effects.iter_mut().rev().find_map(|effect| match effect {
         GooseEffect::Conversation(ConversationEffect::AppendMessage(message))
-            if message.role == rmcp::model::Role::Assistant && message.error_kind().is_none() =>
+            if message.role == goose_provider_types::data::Role::Assistant
+                && message.error_kind().is_none() =>
         {
             Some(message)
         }

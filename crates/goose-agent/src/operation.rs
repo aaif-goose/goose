@@ -1,27 +1,31 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use crate::runtime::CancellationToken;
+use crate::runtime::{HostServices, Shared};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
 use futures::Stream;
-use std::future::Future;
-use std::pin::Pin;
+#[cfg(feature = "std")]
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 use crate::events::AgentEvent;
 use goose_provider_types::conversation::message::{Message, MessageContent, MessageErrorKind};
 use goose_provider_types::conversation::{effective_role, Conversation, EffectiveRole};
+use goose_provider_types::data::Tool;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
-use rmcp::model::Tool;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
 pub type OperationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")))]
 pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(not(feature = "std"), feature = "local", target_arch = "wasm32"))]
 pub type OperationStream<'a, T> = Pin<Box<dyn Stream<Item = T> + 'a>>;
 
 pub const CLIENT_LOG: &str = "client_log";
@@ -33,7 +37,9 @@ pub struct SlashCommand<'a> {
 
 pub fn messages_since_kickoff(conversation: &Conversation) -> Result<&[Message]> {
     let messages = conversation.messages();
-    let is_kickoff = |msg: &Message| msg.role == rmcp::model::Role::User && !msg.is_tool_response();
+    let is_kickoff = |msg: &Message| {
+        msg.role == goose_provider_types::data::Role::User && !msg.is_tool_response()
+    };
     let start = messages
         .iter()
         .rposition(|msg| is_kickoff(msg) && msg.is_user_visible())
@@ -61,7 +67,7 @@ pub fn assistant_turn_count(messages: &[Message]) -> u32 {
     let mut turns = 0;
     let mut in_assistant_block = false;
     for message in messages.iter().rev() {
-        if message.role == rmcp::model::Role::Assistant {
+        if message.role == goose_provider_types::data::Role::Assistant {
             if !in_assistant_block {
                 turns += 1;
                 in_assistant_block = true;
@@ -75,7 +81,7 @@ pub fn assistant_turn_count(messages: &[Message]) -> u32 {
 
 pub fn ends_turn(messages: &[Message]) -> bool {
     messages.last().is_some_and(|last| {
-        last.role == rmcp::model::Role::Assistant
+        last.role == goose_provider_types::data::Role::Assistant
             && last.error_kind().is_none()
             && !last.content.iter().any(|content| {
                 matches!(
@@ -86,8 +92,11 @@ pub fn ends_turn(messages: &[Message]) -> bool {
     })
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend + MaybeSync {
     fn name(&self) -> &'static str;
 
@@ -155,8 +164,11 @@ pub struct InferenceInput {
     pub moim_parts: Vec<String>,
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(
+    all(feature = "std", not(feature = "local"), not(target_arch = "wasm32")),
+    async_trait
+)]
+#[cfg_attr(any(not(feature = "std"), feature = "local", target_arch = "wasm32"), async_trait(?Send))]
 pub trait Inference<S, E: MaybeSend + 'static = ConversationEffect>: Operation<S, E> {
     /// Whether the next step would reach the provider. The machine asks before
     /// firing the hooks that mark the start of a turn.
@@ -222,7 +234,7 @@ pub fn yielded_with<E>(effects: impl IntoIterator<Item = E>) -> Result<Operation
 }
 
 pub trait MachineEffect {
-    fn ensure_message_ids(&mut self);
+    fn ensure_message_ids(&mut self, host: &dyn HostServices);
 }
 
 pub enum ConversationEffect {
@@ -246,9 +258,9 @@ pub enum ConversationEffect {
 }
 
 impl MachineEffect for ConversationEffect {
-    fn ensure_message_ids(&mut self) {
+    fn ensure_message_ids(&mut self, host: &dyn HostServices) {
         let messages = match self {
-            ConversationEffect::AppendMessage(message) => std::slice::from_mut(message),
+            ConversationEffect::AppendMessage(message) => core::slice::from_mut(message),
             ConversationEffect::ReplaceConversation(conversation) => {
                 conversation.messages_mut().as_mut_slice()
             }
@@ -256,7 +268,7 @@ impl MachineEffect for ConversationEffect {
         };
         for message in messages {
             if message.id.is_none() {
-                message.id = Some(format!("msg_{}", uuid::Uuid::new_v4()));
+                message.id = Some(format!("msg_{}", host.new_id()));
             }
         }
     }
@@ -274,30 +286,50 @@ impl From<Conversation> for ConversationEffect {
     }
 }
 
-pub struct Emitter {
-    tx: mpsc::UnboundedSender<AgentEvent>,
-    cancel: CancellationToken,
+pub trait EventSink: MaybeSend + MaybeSync {
+    fn emit(&self, event: AgentEvent);
 }
-
+#[cfg(feature = "std")]
+impl EventSink for mpsc::UnboundedSender<AgentEvent> {
+    fn emit(&self, event: AgentEvent) {
+        let _ = self.send(event);
+    }
+}
+pub struct Emitter {
+    sink: Shared<dyn EventSink>,
+    cancel: CancellationToken,
+    host: Shared<dyn HostServices>,
+}
 impl Emitter {
+    #[cfg(feature = "std")]
     pub fn new(tx: mpsc::UnboundedSender<AgentEvent>, cancel: CancellationToken) -> Self {
-        Self { tx, cancel }
+        Self::with_host(
+            Shared::new(tx),
+            cancel,
+            Shared::new(goose_provider_types::runtime::SystemHost),
+        )
     }
-
+    pub fn with_host(
+        sink: Shared<dyn EventSink>,
+        cancel: CancellationToken,
+        host: Shared<dyn HostServices>,
+    ) -> Self {
+        Self { sink, cancel, host }
+    }
+    pub fn host(&self) -> &dyn HostServices {
+        self.host.as_ref()
+    }
     pub fn emit(&self, event: AgentEvent) {
-        let _ = self.tx.send(event);
+        self.sink.emit(event);
     }
-
     pub fn message(&self, message: Message) -> Message {
-        let message = message.with_generated_id_if_missing();
+        let message = message.with_generated_id_if_missing_with_host(self.host());
         self.emit(AgentEvent::Message(message.clone()));
         message
     }
-
     pub fn cancel_token(&self) -> &CancellationToken {
         &self.cancel
     }
-
     pub async fn cancelled(&self) {
         self.cancel.cancelled().await
     }

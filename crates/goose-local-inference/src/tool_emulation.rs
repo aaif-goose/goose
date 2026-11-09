@@ -8,7 +8,7 @@
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag};
 
 use goose_provider_types::conversation::message::Message;
-use rmcp::model::{CallToolRequestParams, Tool};
+use goose_provider_types::data::{CallToolRequestParams, Tool};
 use serde_json::json;
 use std::borrow::Cow;
 use uuid::Uuid;

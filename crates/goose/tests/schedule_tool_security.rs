@@ -145,7 +145,9 @@ async fn session_content_only_serializes_agent_visible_conversation() {
     let user_only = |text: &str| {
         MessageContent::Text(
             TextContent::new(text)
-                .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+                .with_annotations(Annotations::default().with_audience(vec![Role::User]))
+                .try_into()
+                .unwrap(),
         )
     };
 

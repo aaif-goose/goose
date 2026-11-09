@@ -74,12 +74,12 @@ fn extract_short_title(text: &str) -> String {
 fn get_initial_user_messages(messages: &Conversation) -> Vec<String> {
     messages
         .iter()
-        .filter(|m| m.role == rmcp::model::Role::User && m.is_user_visible())
+        .filter(|m| m.role == goose_provider_types::data::Role::User && m.is_user_visible())
         .take(MSG_COUNT_FOR_SESSION_NAME_GENERATION)
         .map(|m| {
             m.content
                 .iter()
-                .filter_map(|c| c.filter_for_audience(rmcp::model::Role::User))
+                .filter_map(|c| c.filter_for_audience(goose_provider_types::data::Role::User))
                 .filter_map(|c| c.as_text().map(|s| s.to_string()))
                 .collect::<Vec<_>>()
                 .join("\n")

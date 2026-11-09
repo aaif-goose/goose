@@ -1,6 +1,6 @@
 use crate::config::paths::Paths;
 use fs2::FileExt;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -308,7 +308,7 @@ impl PermissionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::ToolAnnotations;
+    use goose_provider_types::data::ToolAnnotations;
     use rmcp::object;
     use tempfile::TempDir;
 

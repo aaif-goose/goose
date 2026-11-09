@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use anyhow::Result;
-use rmcp::model::ElicitationAction;
+use goose_provider_types::data::ElicitationAction;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -57,7 +57,7 @@ impl Provider for RecordingProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
+        tools: &[goose_provider_types::data::Tool],
     ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
         self.model_configs
             .lock()
@@ -95,7 +95,7 @@ impl Provider for FeatureProvider {
         model_config: &ModelConfig,
         system: &str,
         messages: &[Message],
-        tools: &[rmcp::model::Tool],
+        tools: &[goose_provider_types::data::Tool],
     ) -> Result<crate::providers::base::MessageStream, goose_providers::errors::ProviderError> {
         self.inner
             .stream(model_config, system, messages, tools)
@@ -1170,12 +1170,12 @@ impl TestRun {
         let (message, content) = messages[resolved as usize];
         let content = match (kind, content) {
             (MessageKind::Agent, MessageContent::Text(text))
-                if message.role == rmcp::model::Role::Assistant =>
+                if message.role == goose_provider_types::data::Role::Assistant =>
             {
                 text.text.clone()
             }
             (MessageKind::User, MessageContent::Text(text))
-                if message.role == rmcp::model::Role::User =>
+                if message.role == goose_provider_types::data::Role::User =>
             {
                 text.text.clone()
             }

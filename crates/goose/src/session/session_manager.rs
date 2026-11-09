@@ -15,10 +15,10 @@ use crate::session::session_naming::{
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
+use goose_provider_types::data::Role;
 use goose_providers::conversation::token_usage::Usage;
 use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
-use rmcp::model::Role;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -935,7 +935,9 @@ fn deserialize_session_model_config(
 
         let persisted: AzurePersistedFields = serde_json::from_str(json).ok()?;
         model_config.model_name = persisted.model_name;
-        model_config.request_params = persisted.request_params;
+        model_config.request_params = persisted
+            .request_params
+            .map(|params| params.into_iter().collect());
     }
     Some(model_config)
 }
@@ -3118,9 +3120,9 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
     use crate::providers::base::MessageStream;
+    use goose_provider_types::data::Tool;
     use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
     use goose_providers::errors::ProviderError;
-    use rmcp::model::Tool;
     use tempfile::TempDir;
     use test_case::test_case;
 
@@ -3264,7 +3266,7 @@ mod tests {
             _model_config: &ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
+            _tools: &[goose_provider_types::data::Tool],
         ) -> std::result::Result<MessageStream, goose_providers::errors::ProviderError> {
             unimplemented!("session naming calls complete")
         }
@@ -3295,7 +3297,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             panic!("stateful session naming must not call the provider")
         }
 
@@ -3316,7 +3318,7 @@ mod tests {
             _system: &str,
             _messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             panic!("local session naming must not call the provider")
         }
 
@@ -3521,7 +3523,9 @@ mod tests {
                 .with_id("chatcmpl-recorded")
                 .with_tool_request(
                     "call_0",
-                    Ok(rmcp::model::CallToolRequestParams::new("tool")),
+                    Ok(goose_provider_types::data::CallToolRequestParams::new(
+                        "tool",
+                    )),
                 )
         };
         sm.add_message(&session.id, &tool_call()).await.unwrap();

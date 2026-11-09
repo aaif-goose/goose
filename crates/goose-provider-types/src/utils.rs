@@ -1,3 +1,5 @@
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use unicode_normalization::UnicodeNormalization;
 
 fn is_in_unicode_tag_range(c: char) -> bool {

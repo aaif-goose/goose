@@ -17,4 +17,4 @@ path = "src/bin/capture.rs"
 
 [dependencies]
 clap = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }

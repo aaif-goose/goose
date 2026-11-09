@@ -20,11 +20,11 @@ use crate::config::search_path::SearchPaths;
 use crate::config::{Config, ExtensionConfig, GooseMode};
 use crate::conversation::message::{Message, MessageContent};
 use crate::subprocess::configure_subprocess;
+use goose_provider_types::data::Role;
+use goose_provider_types::data::Tool;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::request_log::{start_log, LoggerHandleExt};
-use rmcp::model::Role;
-use rmcp::model::Tool;
 
 const CODEX_PROVIDER_NAME: &str = "codex";
 pub const CODEX_DEFAULT_MODEL: &str = "gpt-5.2-codex";
@@ -507,7 +507,9 @@ fn prepare_input(
                             .content
                             .iter()
                             .filter_map(|c| match c {
-                                rmcp::model::ContentBlock::Text(t) => Some(t.text.as_str()),
+                                goose_provider_types::data::ContentBlock::Text(t) => {
+                                    Some(t.text.as_str())
+                                }
                                 _ => None,
                             })
                             .collect::<Vec<&str>>()
@@ -686,7 +688,7 @@ impl Provider for CodexProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let goose_mode = {
             let map = self.mode_by_session.read().await;
@@ -943,7 +945,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
 
     #[test]
     fn test_prepare_input_tool_request() {
-        use rmcp::model::CallToolRequestParams;
+        use goose_provider_types::data::CallToolRequestParams;
         let dir = tempfile::tempdir().unwrap();
         let tool_call = Ok(CallToolRequestParams::new("developer__shell")
             .with_arguments(serde_json::from_value(json!({"cmd": "ls"})).unwrap()));
@@ -959,7 +961,7 @@ printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"p
 
     #[test]
     fn test_prepare_input_tool_response() {
-        use rmcp::model::{CallToolResult, ContentBlock};
+        use goose_provider_types::data::{CallToolResult, ContentBlock};
         let dir = tempfile::tempdir().unwrap();
         let result = CallToolResult::success(vec![ContentBlock::text("file1.txt\nfile2.txt")]);
         let messages = vec![Message::new(

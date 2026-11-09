@@ -8,7 +8,8 @@ use crate::agents::AgentEvent;
 use crate::conversation::fix_conversation;
 use crate::conversation::message::{Message, MessageContent, MessageErrorKind};
 use crate::conversation::Conversation;
-use rmcp::model::{Annotations, Role, TextContent};
+use goose_provider_types::data::Role;
+use goose_provider_types::data::{Annotations, TextContent};
 
 #[tokio::test]
 async fn provider_lifecycle() -> Result<()> {

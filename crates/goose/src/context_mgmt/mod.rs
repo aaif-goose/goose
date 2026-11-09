@@ -8,13 +8,13 @@ use crate::providers::base::Provider;
 use crate::providers::base::{stream_from_single_message, MessageStream};
 use crate::{config::Config, token_counter::create_token_counter};
 use anyhow::Result;
+use goose_provider_types::data::Role;
+#[cfg(test)]
+use goose_provider_types::data::{Annotations, ContentBlock, TextContent};
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use indoc::indoc;
-use rmcp::model::Role;
-#[cfg(test)]
-use rmcp::model::{Annotations, ContentBlock, TextContent};
 use tracing::info;
 use tracing::log::warn;
 
@@ -144,7 +144,7 @@ pub async fn compact_messages(
         let found_msg = messages.iter().enumerate().rev().find_map(|(idx, msg)| {
             if !msg.is_agent_visible()
                 || msg.is_turn_context()
-                || !matches!(msg.role, rmcp::model::Role::User)
+                || !matches!(msg.role, goose_provider_types::data::Role::User)
             {
                 return None;
             }
@@ -541,8 +541,8 @@ pub async fn summarize_tool_call(
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use goose_provider_types::data::{CallToolRequestParams, Tool};
     use goose_providers::conversation::token_usage::Usage;
-    use rmcp::model::{CallToolRequestParams, Tool};
 
     #[test]
     fn summaries_written_before_the_flag_are_still_recognized() {
@@ -587,7 +587,7 @@ mod tests {
             Message::user()
                 .with_tool_response(
                     call_id,
-                    Ok(rmcp::model::CallToolResult::success(vec![
+                    Ok(goose_provider_types::data::CallToolResult::success(vec![
                         ContentBlock::text(response_text),
                     ])),
                 )
@@ -641,7 +641,7 @@ mod tests {
             system: &str,
             messages: &[Message],
             _tools: &[Tool],
-        ) -> Result<MessageStream, ProviderError> {
+        ) -> Result<MessageStream<'_>, ProviderError> {
             *self.captured_system.lock().unwrap() = Some(system.to_string());
             // If max_tool_responses is set, fail if we have too many
             if let Some(max) = self.max_tool_responses {
@@ -682,7 +682,7 @@ mod tests {
                 .with_tool_request("tool_0", Ok(CallToolRequestParams::new("read_file"))),
             Message::user().with_tool_response(
                 "tool_0",
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
                     ContentBlock::text("hello, world"),
                 ])),
             ),
@@ -1060,7 +1060,7 @@ mod tests {
                     .with_tool_request("tool_0", Ok(CallToolRequestParams::new("read_file"))),
                 Message::user().with_tool_response(
                     "tool_0",
-                    Ok(rmcp::model::CallToolResult::success(vec![
+                    Ok(goose_provider_types::data::CallToolResult::success(vec![
                         ContentBlock::text("visible result"),
                         ContentBlock::Text(TextContent::new("user-only secret").with_annotations(
                             Annotations::default().with_audience(vec![Role::User]),
@@ -1085,7 +1085,7 @@ mod tests {
                     .with_tool_request("tool_1", Ok(CallToolRequestParams::new("read_file"))),
                 Message::user().with_tool_response(
                     "tool_1",
-                    Ok(rmcp::model::CallToolResult::success(vec![
+                    Ok(goose_provider_types::data::CallToolResult::success(vec![
                         ContentBlock::Text(TextContent::new("user-only secret").with_annotations(
                             Annotations::default().with_audience(vec![Role::User]),
                         )),
@@ -1120,7 +1120,7 @@ mod tests {
             Message::user()
                 .with_tool_response(
                     "tool_0",
-                    Ok(rmcp::model::CallToolResult::success(vec![
+                    Ok(goose_provider_types::data::CallToolResult::success(vec![
                         ContentBlock::text("user-only secret"),
                     ])),
                 )
@@ -1155,7 +1155,7 @@ mod tests {
             ));
             messages.push(Message::user().with_tool_response(
                 format!("tool_{}", i),
-                Ok(rmcp::model::CallToolResult::success(vec![
+                Ok(goose_provider_types::data::CallToolResult::success(vec![
                     ContentBlock::text(format!("response{}", i)),
                 ])),
             ));

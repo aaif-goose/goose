@@ -232,8 +232,8 @@ mod tests {
     use crate::providers::base::{MessageStream, ProviderUsage, Usage};
     use crate::session::{SessionManager, SessionType};
     use async_trait::async_trait;
+    use goose_provider_types::data::{CallToolRequestParams, ErrorData, Tool};
     use goose_providers::errors::ProviderError;
-    use rmcp::model::{CallToolRequestParams, ErrorData, Tool};
     use serde_json::json;
     use std::collections::VecDeque;
     use std::path::PathBuf;

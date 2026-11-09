@@ -1,6 +1,6 @@
 use crate::conversation::message::{Message, MessageContent};
 use chrono::Utc;
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use uuid::Uuid;
 
 #[derive(Default)]

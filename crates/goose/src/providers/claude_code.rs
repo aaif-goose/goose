@@ -2,9 +2,9 @@ use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
+use goose_provider_types::data::{Role, Tool};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
 use goose_providers::errors::ProviderError;
-use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -310,7 +310,9 @@ impl ClaudeCodeProvider {
                                 .content
                                 .iter()
                                 .filter_map(|c| match c {
-                                    rmcp::model::ContentBlock::Text(t) => Some(t.text.as_str()),
+                                    goose_provider_types::data::ContentBlock::Text(t) => {
+                                        Some(t.text.as_str())
+                                    }
                                     _ => None,
                                 })
                                 .collect::<Vec<&str>>()
@@ -752,7 +754,7 @@ impl Provider for ClaudeCodeProvider {
         system: &str,
         messages: &[Message],
         _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = crate::session_context::current_session_id().unwrap_or_default();
         let filtered_system = filter_extensions_from_system_prompt(system);
         let process_arc = Arc::clone(
@@ -1168,14 +1170,14 @@ mod tests {
     )]
     #[test_case(
         vec![Message::new(Role::Assistant, 0, vec![
-            MessageContent::tool_request("call_123", Ok(rmcp::model::CallToolRequestParams::new("developer__shell").with_arguments(serde_json::from_value(json!({"cmd": "ls"})).unwrap())))
+            MessageContent::tool_request("call_123", Ok(goose_provider_types::data::CallToolRequestParams::new("developer__shell").with_arguments(serde_json::from_value(json!({"cmd": "ls"})).unwrap())))
         ])],
         &[json!({"type":"text","text":"Assistant: [tool_use: developer__shell id=call_123]"})]
         ; "tool_request_no_user_fallback"
     )]
     #[test_case(
         vec![Message::new(Role::User, 0, vec![
-            MessageContent::tool_response("call_123", Ok(rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text("file1.txt\nfile2.txt")])))
+            MessageContent::tool_response("call_123", Ok(goose_provider_types::data::CallToolResult::success(vec![goose_provider_types::data::ContentBlock::text("file1.txt\nfile2.txt")])))
         ])],
         &[json!({"type":"text","text":"Human: [tool_result id=call_123] file1.txt\nfile2.txt"})]
         ; "tool_response"
@@ -1449,17 +1451,29 @@ mod tests {
 
     async fn stream_with_canned_stdout(
         canned_lines: &[&str],
-    ) -> (ClaudeCodeProvider, MessageStream, tokio::io::DuplexStream) {
+    ) -> (
+        Arc<ClaudeCodeProvider>,
+        MessageStream<'static>,
+        tokio::io::DuplexStream,
+    ) {
         let canned_stdout = canned_lines.join("\n");
         let (process, stdin_reader) = make_test_process(&canned_stdout);
-        let provider = make_provider();
+        let provider = Arc::new(make_provider());
         let process_arc = Arc::new(tokio::sync::Mutex::new(process));
         provider.cli_process.set(process_arc).unwrap();
 
         let messages = vec![Message::user().with_text("test")];
         let model = ModelConfig::new(CLAUDE_CODE_DEFAULT_MODEL)
             .with_canonical_limits(CLAUDE_CODE_PROVIDER_NAME);
-        let stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+        let stream = goose_provider_types::base::stream_owned(
+            provider.clone(),
+            model,
+            String::new(),
+            messages,
+            vec![],
+        )
+        .await
+        .unwrap();
         (provider, stream, stdin_reader)
     }
 

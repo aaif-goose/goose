@@ -66,11 +66,12 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
-use goose_providers::errors::ProviderError;
-use rmcp::model::{
-    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
+use goose_provider_types::data::Role;
+use goose_provider_types::data::{
+    Annotations as RmcpAnnotations, ImageContent as RmcpImageContent,
     TextContent as RmcpTextContent,
 };
+use goose_providers::errors::ProviderError;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
@@ -1209,7 +1210,7 @@ impl AcpConnection {
         let session_id = session_id.to_string();
         let tx = self.thinking_effort_update_tx.clone();
         tokio::spawn(async move {
-            while updates.changed().await.is_ok() {
+            while futures::StreamExt::next(&mut updates).await.is_some() {
                 if tx.send(session_id.clone()).is_err() {
                     break;
                 }
@@ -2560,7 +2561,7 @@ impl AcpConnection {
                 &resolved_provider_name,
                 model,
                 Some(&current_model_config),
-                request_params,
+                request_params.map(|params| params.into_iter().collect()),
                 context_limit,
             )
             .invalid_params_err_ctx("Invalid model config")?;
@@ -2741,8 +2742,15 @@ mod tests {
 
         fn subscribe_thinking_effort_support(
             &self,
-        ) -> Option<tokio::sync::watch::Receiver<ThinkingEffortSupport>> {
-            Some(self.updates.subscribe())
+        ) -> Option<goose_provider_types::base::CapabilityStream> {
+            Some(Box::pin(futures::stream::unfold(
+                self.updates.subscribe(),
+                |mut updates| async move {
+                    updates.changed().await.ok()?;
+                    let value = updates.borrow_and_update().clone();
+                    Some((value, updates))
+                },
+            )))
         }
 
         async fn stream(
@@ -2750,7 +2758,7 @@ mod tests {
             _model_config: &goose_providers::model::ModelConfig,
             _system: &str,
             _messages: &[Message],
-            _tools: &[rmcp::model::Tool],
+            _tools: &[goose_provider_types::data::Tool],
         ) -> Result<crate::providers::base::MessageStream, ProviderError> {
             Ok(Box::pin(futures::stream::empty()))
         }

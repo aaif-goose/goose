@@ -16,8 +16,10 @@ use agent_client_protocol_schema::v1::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
+use goose_provider_types::data::{
+    CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool,
+};
 use goose_providers::conversation::token_usage::{ProviderUsage, Usage};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
@@ -773,8 +775,17 @@ impl Provider for AcpProvider {
         }
     }
 
-    fn subscribe_thinking_effort_support(&self) -> Option<watch::Receiver<ThinkingEffortSupport>> {
-        Some(self.effort.updates.subscribe())
+    fn subscribe_thinking_effort_support(
+        &self,
+    ) -> Option<goose_provider_types::base::CapabilityStream> {
+        Some(Box::pin(futures::stream::unfold(
+            self.effort.updates.subscribe(),
+            |mut updates| async move {
+                updates.changed().await.ok()?;
+                let value = updates.borrow_and_update().clone();
+                Some((value, updates))
+            },
+        )))
     }
 
     async fn set_thinking_effort(
@@ -843,7 +854,7 @@ impl Provider for AcpProvider {
         _system: &str,
         messages: &[Message],
         _tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let session_id = self.acp_session_id();
 
         self.apply_model_if_changed(&model_config.model_name)
@@ -2010,8 +2021,11 @@ fn acp_audience_to_rmcp(annotations: Option<&AcpAnnotations>) -> Option<Vec<Role
     }
 }
 
-fn acp_annotations_to_rmcp(annotations: Option<&AcpAnnotations>) -> rmcp::model::Annotations {
-    let mut rmcp_annotations = rmcp::model::Annotations::default().with_priority(0.0);
+fn acp_annotations_to_rmcp(
+    annotations: Option<&AcpAnnotations>,
+) -> goose_provider_types::data::Annotations {
+    let mut rmcp_annotations =
+        goose_provider_types::data::Annotations::default().with_priority(0.0);
     if let Some(audience) = acp_audience_to_rmcp(annotations) {
         rmcp_annotations = rmcp_annotations.with_audience(audience);
     }
@@ -2020,14 +2034,14 @@ fn acp_annotations_to_rmcp(annotations: Option<&AcpAnnotations>) -> rmcp::model:
 
 fn acp_text_content_to_rmcp(text: TextContent) -> RmcpContent {
     RmcpContent::Text(
-        rmcp::model::TextContent::new(sanitize_unicode_tags(&text.text))
+        goose_provider_types::data::TextContent::new(sanitize_unicode_tags(&text.text))
             .with_annotations(acp_annotations_to_rmcp(text.annotations.as_ref())),
     )
 }
 
 fn acp_image_content_to_rmcp(image: ImageContent) -> RmcpContent {
     RmcpContent::Image(
-        rmcp::model::ImageContent::new(image.data, image.mime_type)
+        goose_provider_types::data::ImageContent::new(image.data, image.mime_type)
             .with_annotations(acp_annotations_to_rmcp(image.annotations.as_ref())),
     )
 }
@@ -2041,7 +2055,8 @@ fn visible_rmcp_text_with_annotations(
     annotations: Option<&AcpAnnotations>,
 ) -> RmcpContent {
     RmcpContent::Text(
-        rmcp::model::TextContent::new(text).with_annotations(acp_annotations_to_rmcp(annotations)),
+        goose_provider_types::data::TextContent::new(text)
+            .with_annotations(acp_annotations_to_rmcp(annotations)),
     )
 }
 
@@ -2677,7 +2692,7 @@ mod tests {
 
     #[tokio::test]
     async fn messages_to_prompt_excludes_user_only_current_and_handoff_content() {
-        use rmcp::model::{Annotations, TextContent};
+        use goose_provider_types::data::{Annotations, TextContent};
 
         fn user_only_text(text: &str) -> MessageContent {
             MessageContent::Text(
@@ -2713,7 +2728,7 @@ mod tests {
 
     #[tokio::test]
     async fn messages_to_prompt_drops_handoff_when_current_content_is_user_only() {
-        use rmcp::model::{Annotations, TextContent};
+        use goose_provider_types::data::{Annotations, TextContent};
 
         let current = MessageContent::Text(
             TextContent::new("user-only")
@@ -2730,7 +2745,7 @@ mod tests {
     #[tokio::test]
     async fn stream_skips_user_only_prompt_without_claiming_handoff_context() {
         use futures::StreamExt;
-        use rmcp::model::{Annotations, TextContent};
+        use goose_provider_types::data::{Annotations, TextContent};
 
         let (tx, mut rx) = mpsc::channel(1);
         let (provider, model) = test_provider_with_tx(Some(tx));
@@ -3343,6 +3358,7 @@ mod tests {
             while let Some(item) = stream.next().await {
                 results.push(item);
             }
+            drop(stream);
             (provider, results)
         });
 

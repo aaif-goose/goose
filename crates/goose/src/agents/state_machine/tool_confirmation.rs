@@ -89,7 +89,7 @@ fn active_turn_messages(conversation: &Conversation) -> &[Message] {
     messages
         .iter()
         .rposition(|message| {
-            message.role == rmcp::model::Role::User
+            message.role == goose_provider_types::data::Role::User
                 && message.is_user_visible()
                 && !message.is_tool_response()
         })

@@ -1,12 +1,14 @@
-use crate::formats::openai::{
+use crate::model_names::{
     extract_reasoning_effort, is_openai_responses_model, is_xai_reasoning_model,
     supports_xai_reasoning_effort,
 };
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::thinking::ThinkingEffort;
+use alloc::collections::BTreeMap as HashMap;
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 pub const DEFAULT_CONTEXT_LIMIT: usize = 128_000;
 
@@ -218,7 +220,10 @@ impl ModelConfig {
         self
     }
 
-    pub fn with_merged_request_params(mut self, params: HashMap<String, Value>) -> Self {
+    pub fn with_merged_request_params(
+        mut self,
+        params: impl IntoIterator<Item = (String, Value)>,
+    ) -> Self {
         match self.request_params.as_mut() {
             Some(existing) => {
                 for (k, v) in params {
@@ -226,7 +231,7 @@ impl ModelConfig {
                 }
             }
             None => {
-                self.request_params = Some(params);
+                self.request_params = Some(params.into_iter().collect());
             }
         }
         self

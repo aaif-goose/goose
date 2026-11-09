@@ -20,7 +20,6 @@ vulkan = ["local-inference", "goose-local-inference/vulkan"]
 mlx = ["local-inference", "goose-local-inference/mlx"]
 rustls-tls = [
     "reqwest/rustls",
-    "rmcp/reqwest",
 ]
 live-websocket = ["dep:reqwest-websocket"]
 native-tls = [
@@ -28,20 +27,18 @@ native-tls = [
     "dep:pkcs8",
     "dep:sec1",
     "reqwest/native-tls",
-    "rmcp/reqwest-native-tls",
 ]
 
 [dependencies]
-anyhow = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
 async-stream = { workspace = true }
 chrono = { workspace = true }
-futures = { workspace = true }
-goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false }
+futures = { workspace = true, features = ["std"] }
+goose-provider-types = { version = "0.1.0-alpha.13", path = "../goose-provider-types", default-features = false, features = ["formats", "mcp-interop", "std"] }
 goose-local-inference = { version = "0.1.0-alpha.13", path = "../goose-local-inference", default-features = false, optional = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
-rmcp = { workspace = true, features = ["server", "macros"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
@@ -50,7 +47,7 @@ tokio-util = { workspace = true, features = ["compat", "io", "codec"] }
 url = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
-base64 = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 pem = { version = "4.0.0", default-features = false, features = ["std"], optional = true }
 pkcs8 = { version = "0.11", default-features = false, features = ["alloc", "std"], optional = true }
 sec1 = { version = "0.8", default-features = false, features = ["der", "std"], optional = true }

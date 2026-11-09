@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use rmcp::model::Role;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, ErrorData, GetPromptResult, Implementation,
-    InitializeResult, JsonObject, ListPromptsResult, ListToolsResult, Prompt, PromptMessage, Role,
+    InitializeResult, JsonObject, ListPromptsResult, ListToolsResult, Prompt, PromptMessage,
     ServerCapabilities, ServerNotification, Tool,
 };
 use schemars::{schema_for, JsonSchema};

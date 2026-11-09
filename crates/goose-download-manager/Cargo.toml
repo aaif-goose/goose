@@ -12,9 +12,9 @@ description.workspace = true
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
+anyhow = { workspace = true, features = ["std"] }
 once_cell = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
-serde = { workspace = true }
+serde = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "io-util", "time"] }
 tracing = { workspace = true }

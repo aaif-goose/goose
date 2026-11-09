@@ -2,6 +2,8 @@ use super::message::{
     ToolChainSummary, ToolNameParts, ToolRequest, TOOL_META_CHAIN_SUMMARY_KEY,
     TOOL_META_EXTERNAL_DISPATCH_KEY, TOOL_META_PROVIDER_INDEX_KEY, TOOL_META_TITLE_KEY,
 };
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 
 impl<'a> From<&'a str> for ToolNameParts<'a> {
     fn from(name: &'a str) -> Self {
@@ -100,7 +102,7 @@ impl ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::CallToolRequestParams;
+    use crate::data::CallToolRequestParams;
 
     fn make_tool_request(meta: Option<serde_json::Value>) -> ToolRequest {
         ToolRequest {
@@ -113,7 +115,7 @@ mod tests {
 
     mod tool_name_parts {
         use super::*;
-        use rmcp::model::ErrorData;
+        use crate::data::ErrorData;
 
         fn make_named_tool_request(name: &str) -> ToolRequest {
             ToolRequest {

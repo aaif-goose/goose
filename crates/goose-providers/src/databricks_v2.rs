@@ -35,7 +35,7 @@ use crate::retry::{
     DEFAULT_MAX_RETRIES, DEFAULT_MAX_RETRY_INTERVAL_MS,
 };
 use crate::thinking::ThinkingEffort;
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 
 const DATABRICKS_V2_PROVIDER_NAME: &str = "databricks_v2";
 const DATABRICKS_V2_DEFAULT_GATEWAY_PATH: &str = "ai-gateway";
@@ -362,7 +362,7 @@ impl DatabricksV2Provider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let mut payload =
             openai_responses::create_responses_request(model_config, system, messages, tools)?;
         payload["stream"] = Value::Bool(true);
@@ -393,7 +393,7 @@ impl DatabricksV2Provider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let is_model_service = Self::is_model_service_fqn(&model_config.model_name);
         let mut format_config = model_config.clone();
         if is_model_service {
@@ -479,7 +479,7 @@ impl DatabricksV2Provider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'static>, ProviderError> {
         let mut payload = anthropic::create_request(
             ANTHROPIC_PROVIDER_NAME,
             model_config,
@@ -566,7 +566,7 @@ impl Provider for DatabricksV2Provider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         match Self::route_for_model(&model_config.model_name) {
             DatabricksV2Route::OpenAiResponses => {
                 self.stream_openai_responses(model_config, system, messages, tools)

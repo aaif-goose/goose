@@ -16,8 +16,8 @@ use anyhow::{Error, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use goose_provider_types::data::Tool;
 use reqwest::{Response, StatusCode};
-use rmcp::model::Tool;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -486,7 +486,7 @@ impl Provider for OllamaProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<MessageStream, ProviderError> {
+    ) -> Result<MessageStream<'_>, ProviderError> {
         let mut effective_model_config = model_config.clone();
         if let Some(capabilities) = self.model_capabilities(&model_config.model_name).await {
             effective_model_config.supports_vision = Some(capabilities.vision);
@@ -626,7 +626,7 @@ fn stream_ollama(
     response: Response,
     chunk_timeout: u64,
     mut log: Option<Box<dyn RequestLogHandle>>,
-) -> Result<MessageStream, ProviderError> {
+) -> Result<MessageStream<'static>, ProviderError> {
     let stream = response.bytes_stream().map_err(std::io::Error::other);
 
     Ok(Box::pin(try_stream! {

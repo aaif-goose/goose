@@ -2,7 +2,7 @@ use goose::config::GooseMode;
 use goose::conversation::message::{Message, MessageContent, ToolRequest};
 use goose::security::adversary_inspector::AdversaryInspector;
 use goose::tool_inspection::ToolInspector;
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 use rmcp::object;
 use std::sync::Arc;
 
@@ -72,7 +72,7 @@ async fn test_adversary_enabled_default_tools() {
     assert!(inspector.is_enabled());
 
     let messages = vec![Message::new(
-        rmcp::model::Role::User,
+        goose_provider_types::data::Role::User,
         chrono::Utc::now().timestamp(),
         vec![MessageContent::text("build the project")],
     )];
@@ -135,7 +135,7 @@ async fn test_adversary_custom_tool_filter() {
     assert!(inspector.is_enabled());
 
     let messages = vec![Message::new(
-        rmcp::model::Role::User,
+        goose_provider_types::data::Role::User,
         chrono::Utc::now().timestamp(),
         vec![MessageContent::text("do something")],
     )];

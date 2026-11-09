@@ -10,7 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeResult,
-    JsonObject, ListToolsResult, Role, ServerCapabilities, Tool as McpTool, ToolAnnotations,
+    JsonObject, ListToolsResult, ServerCapabilities, Tool as McpTool, ToolAnnotations,
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -232,18 +232,19 @@ fn dispatch_tool(
     })
 }
 
-fn callback_result_to_value(result: &CallToolResult) -> Value {
+fn callback_result_to_value(result: &goose_provider_types::data::CallToolResult) -> Value {
     let text = result
         .content
         .iter()
         .filter_map(|content| match content {
-            ContentBlock::Text(text)
+            goose_provider_types::data::ContentBlock::Text(text)
                 if text
                     .annotations
                     .as_ref()
                     .and_then(|annotations| annotations.audience.as_ref())
                     .is_none_or(|audiences| {
-                        audiences.is_empty() || audiences.contains(&Role::Assistant)
+                        audiences.is_empty()
+                            || audiences.contains(&goose_provider_types::data::Role::Assistant)
                     }) =>
             {
                 Some(text.text.clone())
@@ -331,10 +332,16 @@ impl McpClientTrait for CodeExecutionClient {
 
 #[cfg(test)]
 mod tests {
+    fn callback_result_to_value(result: &rmcp::model::CallToolResult) -> serde_json::Value {
+        super::callback_result_to_value(&result.clone().try_into().unwrap())
+    }
+
     use super::*;
     use crate::agents::extension::ExtensionConfig;
     use crate::agents::extension_manager::ExtensionManager;
-    use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
+    use rmcp::model::{
+        Annotations, EmbeddedResource, MetaObject, ResourceContents, Role, TextContent,
+    };
 
     #[test]
     fn callback_result_ignores_hidden_structured_content_and_meta() {

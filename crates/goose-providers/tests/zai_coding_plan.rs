@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use goose_provider_types::data::{CallToolResult, ContentBlock, Tool};
 use goose_providers::{
     base::Provider,
     conversation::message::{Message, MessageContentBlock},
@@ -7,7 +8,6 @@ use goose_providers::{
     openai::from_declarative_config,
     zai_coding_plan,
 };
-use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use serde_json::{json, Value};
 use std::{convert::Infallible, sync::Arc, time::Duration};
 use wiremock::{

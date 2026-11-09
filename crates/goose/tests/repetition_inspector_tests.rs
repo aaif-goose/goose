@@ -1,5 +1,5 @@
 use goose::tool_monitor::RepetitionInspector;
-use rmcp::model::CallToolRequestParams;
+use goose_provider_types::data::CallToolRequestParams;
 use rmcp::object;
 
 // This test targets RepetitionInspector::check_tool_call

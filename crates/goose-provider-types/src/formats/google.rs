@@ -1,4 +1,7 @@
 use crate::conversation::token_usage::{ProviderUsage, Usage};
+use crate::data::{
+    object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, ResourceContents, Role, Tool,
+};
 use crate::documents::{
     document_media_type_is_supported, unsupported_document_text, UNSUPPORTED_MEDIA_TYPE_REASON,
 };
@@ -7,18 +10,17 @@ use crate::formats::openai::{is_valid_function_name, sanitize_function_name};
 use crate::maybe_send::MaybeSend;
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::thinking::ThinkingEffort;
+use crate::trace as tracing;
+use alloc::borrow::Cow;
 use anyhow::Result;
-use rmcp::model::{
-    object, CallToolRequestParams, ContentBlock, ErrorCode, ErrorData, ResourceContents, Role, Tool,
-};
 use serde::Serialize;
-use std::borrow::Cow;
-use uuid::Uuid;
 
 use crate::conversation::message::{Message, MessageContentBlock, ProviderMetadata};
+use alloc::collections::BTreeMap as HashMap;
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
 
 pub const THOUGHT_SIGNATURE_KEY: &str = "thoughtSignature";
 const SYNTHETIC_THOUGHT_SIGNATURE: &str = "skip_thought_signature_validator";
@@ -291,14 +293,18 @@ pub fn format_tools(tools: &[Tool]) -> Vec<Value> {
                 .and_then(|v| v.as_object())
                 .is_some_and(|p| !p.is_empty())
             {
-                parameters.insert("parametersJsonSchema".to_string(), json!(tool.input_schema));
+                parameters.insert(
+                    "parametersJsonSchema".to_string(),
+                    json!(tool.input_schema.as_ref()),
+                );
             }
             json!(parameters)
         })
         .collect()
 }
 
-fn process_response_part_impl(
+fn process_response_part_impl_with_host(
+    host: &dyn crate::runtime::HostServices,
     part: &Value,
     last_signature: &mut Option<String>,
 ) -> Option<MessageContentBlock> {
@@ -339,7 +345,7 @@ fn process_response_part_impl(
             .get("id")
             .and_then(Value::as_str)
             .map(str::to_string)
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| host.new_id());
         let name = function_call["name"].as_str().unwrap_or_default();
 
         if !is_valid_function_name(name) {
@@ -376,9 +382,17 @@ fn process_response_part_impl(
     }
 }
 
+#[cfg(feature = "std")]
 pub fn response_to_message(response: Value) -> Result<Message> {
+    response_to_message_with_host(&crate::runtime::SystemHost, response)
+}
+
+pub fn response_to_message_with_host(
+    host: &dyn crate::runtime::HostServices,
+    response: Value,
+) -> Result<Message> {
     let role = Role::Assistant;
-    let created = chrono::Utc::now().timestamp();
+    let created = host.unix_timestamp();
 
     let parts = response
         .get("candidates")
@@ -396,7 +410,9 @@ pub fn response_to_message(response: Value) -> Result<Message> {
     let mut last_signature: Option<String> = None;
 
     for part in parts {
-        if let Some(msg_content) = process_response_part_impl(part, &mut last_signature) {
+        if let Some(msg_content) =
+            process_response_part_impl_with_host(host, part, &mut last_signature)
+        {
             content.push(msg_content);
         }
     }
@@ -451,19 +467,29 @@ pub fn get_usage(data: &Value) -> Result<Usage> {
     }
 }
 
+#[cfg(feature = "std")]
 pub fn response_to_streaming_message<S>(
-    mut stream: S,
+    stream: S,
 ) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
 where
     S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'static,
 {
-    use async_stream::try_stream;
+    response_to_streaming_message_with_host(&crate::runtime::SystemHost, stream)
+}
+
+pub fn response_to_streaming_message_with_host<'a, S>(
+    host: &'a dyn crate::runtime::HostServices,
+    mut stream: S,
+) -> impl futures::Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'a
+where
+    S: futures::Stream<Item = anyhow::Result<String>> + Unpin + MaybeSend + 'a,
+{
     use futures::StreamExt;
 
-    try_stream! {
+    crate::stream::try_stream(|mut emit| async move {
         let mut final_usage: Option<ProviderUsage> = None;
         let mut last_signature: Option<String> = None;
-        let stream_id = Uuid::new_v4().to_string();
+        let stream_id = host.new_id();
         let mut incomplete_data: Option<String> = None;
         let mut last_finish_reason: Option<String> = None;
         let mut last_response_id: Option<String> = None;
@@ -477,7 +503,10 @@ where
 
             let data_part = if line.starts_with("data: ") {
                 line.strip_prefix("data: ").unwrap()
-            } else if line.starts_with("event:") || line.starts_with("id:") || line.starts_with("retry:") {
+            } else if line.starts_with("event:")
+                || line.starts_with("id:")
+                || line.starts_with("retry:")
+            {
                 continue;
             } else if incomplete_data.is_some() {
                 &line
@@ -535,7 +564,8 @@ where
 
             if let Ok(usage) = get_usage(&chunk) {
                 if usage.input_tokens.is_some() || usage.output_tokens.is_some() {
-                    let model = chunk.get("modelVersion")
+                    let model = chunk
+                        .get("modelVersion")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
                         .to_string();
@@ -565,13 +595,13 @@ where
 
             if let Some(parts) = parts {
                 for part in parts {
-                    if let Some(content) = process_response_part_impl(part, &mut last_signature) {
-                        let message = Message::new(
-                            Role::Assistant,
-                            chrono::Utc::now().timestamp(),
-                            vec![content],
-                        ).with_id(stream_id.clone());
-                        yield (Some(message), None);
+                    if let Some(content) =
+                        process_response_part_impl_with_host(host, part, &mut last_signature)
+                    {
+                        let message =
+                            Message::new(Role::Assistant, host.unix_timestamp(), vec![content])
+                                .with_id(stream_id.clone());
+                        emit.send((Some(message), None)).await;
                     }
                 }
             }
@@ -582,9 +612,11 @@ where
                 usage.finish_reasons = Some(vec![reason]);
             }
             usage.response_id = last_response_id;
-            yield (None, Some(usage));
+            emit.send((None, Some(usage))).await;
         }
-    }
+
+        Ok::<(), anyhow::Error>(())
+    })
 }
 
 #[derive(Serialize)]
@@ -795,10 +827,10 @@ fn create_request_impl(
 mod tests {
     use super::*;
     use crate::conversation::message::Message;
-    use rmcp::model::{CallToolRequestParams, CallToolResult};
-    use rmcp::{model::ContentBlock, object};
+    use crate::data::{CallToolRequestParams, CallToolResult};
+    use crate::{data::ContentBlock, object};
+    use alloc::collections::BTreeMap as HashMap;
     use serde_json::json;
-    use std::collections::HashMap;
 
     fn set_up_text_message(text: &str, role: Role) -> Message {
         Message::new(role, 0, vec![MessageContentBlock::text(text.to_string())])
@@ -917,7 +949,7 @@ mod tests {
 
     #[test]
     fn test_message_to_google_spec_image_message() {
-        use rmcp::model::ImageContent;
+        use crate::data::ImageContent;
 
         let image = ImageContent::new("base64encodeddata", "image/png");
         let messages = vec![Message::new(
@@ -1498,7 +1530,7 @@ mod tests {
             .map(|l| Ok(l.to_string()))
             .collect();
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
 
         let mut text_parts = Vec::new();
         let mut message_ids: Vec<Option<String>> = Vec::new();
@@ -1542,7 +1574,7 @@ mod tests {
                 .to_string(),
         )];
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
         let mut final_usage = None;
 
         while let Some(result) = message_stream.next().await {
@@ -1566,7 +1598,7 @@ mod tests {
             .map(|l| Ok(l.to_string()))
             .collect();
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
 
         let mut tool_calls = Vec::new();
 
@@ -1592,7 +1624,7 @@ mod tests {
             let lines: Vec<Result<String, anyhow::Error>> =
                 raw.lines().map(|l| Ok(l.to_string())).collect();
             let stream = Box::pin(futures::stream::iter(lines));
-            let mut msg_stream = std::pin::pin!(response_to_streaming_message(stream));
+            let mut msg_stream = core::pin::pin!(response_to_streaming_message(stream));
             let mut text = String::new();
             let mut thinking = 0usize;
             while let Some(Ok((message, _))) = msg_stream.next().await {
@@ -1671,7 +1703,7 @@ mod tests {
         let lines: Vec<Result<String, anyhow::Error>> =
             error_stream.lines().map(|l| Ok(l.to_string())).collect();
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
 
         let result = message_stream.next().await;
         assert!(result.is_some());
@@ -1696,7 +1728,7 @@ data: [DONE]"#;
         let lines: Vec<Result<String, anyhow::Error>> =
             sse_stream.lines().map(|l| Ok(l.to_string())).collect();
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
 
         let mut text_parts = Vec::new();
 
@@ -1729,7 +1761,7 @@ data: [DONE]"#;
             .map(|l| Ok(l.to_string()))
             .collect();
         let stream = Box::pin(futures::stream::iter(lines));
-        let mut message_stream = std::pin::pin!(response_to_streaming_message(stream));
+        let mut message_stream = core::pin::pin!(response_to_streaming_message(stream));
 
         let mut text_parts = Vec::new();
 
@@ -1800,7 +1832,7 @@ data: [DONE]"#;
         use crate::model::ModelConfig;
 
         // Test 1: Gemini 3 model with low thinking effort
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("low"));
         let mut config = ModelConfig::new("gemini-3-pro");
         config.request_params = Some(params);
@@ -1828,7 +1860,7 @@ data: [DONE]"#;
         ));
 
         // Test 2: Gemini 3 model with high thinking effort
-        let mut params = std::collections::HashMap::new();
+        let mut params = alloc::collections::BTreeMap::new();
         params.insert("thinking_effort".to_string(), serde_json::json!("high"));
         let mut config = ModelConfig::new("Gemini-3-Flash");
         config.request_params = Some(params);

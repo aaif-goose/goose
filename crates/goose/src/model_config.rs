@@ -4,13 +4,13 @@ use crate::providers::base::Provider;
 use crate::providers::get_from_registry;
 use crate::recipe::Settings;
 use anyhow::{anyhow, Result};
+use goose_provider_types::data::Tool;
 use goose_providers::conversation::token_usage::ProviderUsage;
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
 use goose_providers::thinking::ThinkingEffort;
-use rmcp::model::Tool;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub fn model_config_from_user_config(
     provider_name: &str,
@@ -63,7 +63,7 @@ pub fn model_config_from_user_config_with_session_settings(
     provider_name: &str,
     model_name: impl AsRef<str>,
     previous: Option<&ModelConfig>,
-    request_params: Option<HashMap<String, Value>>,
+    request_params: Option<BTreeMap<String, Value>>,
     _context_limit: Option<usize>,
 ) -> Result<ModelConfig> {
     let config = Config::global();
@@ -153,7 +153,7 @@ pub async fn complete_one_shot(
 fn apply_openai_request_params(mut model: ModelConfig) -> ModelConfig {
     let config = Config::global();
     if let Some(store) = config.get_openai_store() {
-        model = model.with_merged_request_params(HashMap::from([(
+        model = model.with_merged_request_params(BTreeMap::from([(
             "store".to_string(),
             serde_json::json!(store),
         )]));

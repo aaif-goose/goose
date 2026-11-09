@@ -316,7 +316,12 @@ impl ProviderFixture {
             .extension_manager
             .current_lease(&self.session_id)
             .await?;
-        let tools = lease.tools().await;
+        let tools = lease
+            .tools()
+            .await
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<std::result::Result<Vec<goose_provider_types::data::Tool>, _>>()?;
         let info = lease.instructions().await;
         let system = PromptManager::new()
             .builder()
@@ -366,7 +371,11 @@ impl ProviderFixture {
             .extension_manager
             .current_lease(&ctx.session_id)
             .await?
-            .call(params, CallRequest::from(&ctx), CancellationToken::new())
+            .call(
+                params.try_into()?,
+                CallRequest::from(&ctx),
+                CancellationToken::new(),
+            )
             .await
             .unwrap()
             .result

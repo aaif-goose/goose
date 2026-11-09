@@ -2,7 +2,7 @@ use crate::conversation::message::{Message, MessageContent, ProviderMetadata};
 use crate::formats::openai;
 use crate::model::ModelConfig;
 use crate::thinking::ThinkingEffort;
-use rmcp::model::Role;
+use goose_provider_types::data::Role;
 use serde_json::{json, Value};
 
 pub const REASONING_DETAILS_KEY: &str = "reasoning_details";
@@ -218,7 +218,7 @@ mod tests {
         let mut model_config = ModelConfig::new("openai/gpt-5");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("max"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
 
         apply_reasoning_config(&mut payload, &model_config);
 
@@ -237,7 +237,7 @@ mod tests {
         let mut model_config = ModelConfig::new("openai/gpt-5");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
 
         apply_reasoning_config(&mut payload, &model_config);
 
@@ -254,7 +254,7 @@ mod tests {
         let mut model_config = ModelConfig::new("x-ai/grok-4");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
         model_config.reasoning = Some(true);
 
         apply_reasoning_config(&mut payload, &model_config);
@@ -271,7 +271,7 @@ mod tests {
         let mut model_config = ModelConfig::new("anthropic/claude-sonnet-4");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
 
         apply_reasoning_config(&mut payload, &model_config);
 
@@ -287,7 +287,7 @@ mod tests {
         let mut model_config = ModelConfig::new("openai/gpt-4o");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("high"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
         model_config.reasoning = Some(false);
 
         apply_reasoning_config(&mut payload, &model_config);
@@ -305,7 +305,7 @@ mod tests {
         let mut model_config = ModelConfig::new("openai/gpt-5");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
         model_config.reasoning = Some(true);
 
         let sent_disable = apply_reasoning_config(&mut payload, &model_config);
@@ -325,7 +325,7 @@ mod tests {
             ModelConfig::new("moonshotai/kimi-k3").with_canonical_limits("openrouter");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
 
         let sent_disable = apply_reasoning_config(&mut payload, &model_config);
 
@@ -344,7 +344,7 @@ mod tests {
         let mut model_config = ModelConfig::new("openai/gpt-5.1-chat");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
         model_config.reasoning = Some(false);
 
         apply_reasoning_config(&mut payload, &model_config);
@@ -363,7 +363,7 @@ mod tests {
         let mut model_config = ModelConfig::new("x-ai/grok-4");
         let mut params = HashMap::new();
         params.insert("thinking_effort".to_string(), json!("off"));
-        model_config.request_params = Some(params);
+        model_config.request_params = Some(params.into_iter().collect());
         model_config.reasoning = Some(true);
 
         let sent_disable = apply_reasoning_config(&mut payload, &model_config);

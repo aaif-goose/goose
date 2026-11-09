@@ -2,7 +2,7 @@ use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, ToolNameParts, ToolRequest, ToolResponse,
 };
 use crate::utils::safe_truncate;
-use rmcp::model::{ContentBlock, ResourceContents, Role};
+use goose_provider_types::data::{ContentBlock, ResourceContents, Role};
 use serde_json::Value;
 
 const MAX_STRING_LENGTH_MD_EXPORT: usize = 4096; // Generous limit for export
@@ -513,7 +513,9 @@ mod tests {
     use super::*;
     use crate::conversation::message::{Message, ToolRequest, ToolResponse};
     use crate::conversation::Conversation;
-    use rmcp::model::{Annotations, CallToolRequestParams, ContentBlock, TextContent};
+    use goose_provider_types::data::{
+        Annotations, CallToolRequestParams, ContentBlock, TextContent,
+    };
     use rmcp::object;
     use serde_json::json;
 
@@ -692,7 +694,7 @@ mod tests {
         let tool_response = ToolResponse {
             metadata: None,
             id: "test-id".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -709,7 +711,7 @@ mod tests {
         let tool_response = ToolResponse {
             metadata: None,
             id: "test-id".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -808,7 +810,7 @@ if __name__ == "__main__":
         let tool_response = ToolResponse {
             metadata: None,
             id: "shell-cat".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -844,7 +846,7 @@ if __name__ == "__main__":
         let tool_response = ToolResponse {
             metadata: None,
             id: "git-status".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -888,7 +890,7 @@ warning: unused variable `x`
         let tool_response = ToolResponse {
             metadata: None,
             id: "cargo-build".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -930,7 +932,7 @@ warning: unused variable `x`
         let tool_response = ToolResponse {
             metadata: None,
             id: "curl-api".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -961,7 +963,7 @@ warning: unused variable `x`
         let tool_response = ToolResponse {
             metadata: None,
             id: "editor-write".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -999,7 +1001,7 @@ Command failed with exit code 2"#;
         let tool_response = ToolResponse {
             metadata: None,
             id: "shell-error".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1035,7 +1037,7 @@ Command failed with exit code 2"#;
         let tool_response = ToolResponse {
             metadata: None,
             id: "script-exec".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1077,7 +1079,7 @@ drwx------   3 user  staff    96 Dec  6 16:20 com.apple.launchd.abc
         let tool_response = ToolResponse {
             metadata: None,
             id: "multi-cmd".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1115,7 +1117,7 @@ src/middleware.rs:12:async fn auth_middleware(req: Request, next: Next) -> Resul
         let tool_response = ToolResponse {
             metadata: None,
             id: "grep-search".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1150,7 +1152,7 @@ src/middleware.rs:12:async fn auth_middleware(req: Request, next: Next) -> Resul
         let tool_response = ToolResponse {
             metadata: None,
             id: "json-test".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1186,7 +1188,7 @@ found 0 vulnerabilities"#;
         let tool_response = ToolResponse {
             metadata: None,
             id: "npm-install".to_string(),
-            tool_result: Ok(rmcp::model::CallToolResult::success(vec![
+            tool_result: Ok(goose_provider_types::data::CallToolResult::success(vec![
                 ContentBlock::text(text_content.text),
             ])),
         };
@@ -1215,7 +1217,7 @@ found 0 vulnerabilities"#;
         );
         let conversation = Conversation::new_unvalidated([Message::user().with_tool_response(
             "tool-1",
-            Ok(rmcp::model::CallToolResult::success(vec![
+            Ok(goose_provider_types::data::CallToolResult::success(vec![
                 user_output,
                 assistant_output,
                 ContentBlock::text("shared output"),

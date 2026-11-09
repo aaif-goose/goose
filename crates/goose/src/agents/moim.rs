@@ -170,7 +170,9 @@ mod tests {
     use crate::agents::mcp_client::McpClientTrait;
     use crate::agents::tool_execution::ToolCallContext;
     use crate::config::ExtensionConfig;
-    use rmcp::model::{CallToolResult, InitializeResult, JsonObject, ListToolsResult};
+    use rmcp::model::CallToolResult;
+
+    use rmcp::model::{InitializeResult, JsonObject, ListToolsResult};
     use rmcp::ServiceError;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
@@ -249,7 +251,7 @@ mod tests {
             .await
             .expect("turn context should be produced");
 
-        assert_eq!(message.role, rmcp::model::Role::User);
+        assert_eq!(message.role, goose_provider_types::data::Role::User);
         assert!(message.is_agent_visible());
         assert!(!message.is_user_visible());
         assert!(message.is_turn_context());

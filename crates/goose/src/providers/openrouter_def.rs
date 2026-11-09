@@ -6,7 +6,7 @@ use goose_providers::{
     openrouter::OpenRouterProvider,
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     config::{Config, ConfigError, ExtensionConfig},
@@ -66,7 +66,7 @@ async fn from_env(tls_config: Option<TlsConfig>) -> Result<OpenRouterProvider> {
     ))
 }
 
-fn configured_openrouter_parameters(config: &Config) -> Result<Option<HashMap<String, Value>>> {
+fn configured_openrouter_parameters(config: &Config) -> Result<Option<BTreeMap<String, Value>>> {
     match config.get_param::<Value>(OPENROUTER_PARAMETERS_CONFIG_KEY) {
         Ok(raw) => parse_openrouter_parameters(raw).map(Some),
         Err(ConfigError::NotFound(_)) => Ok(None),
@@ -74,7 +74,7 @@ fn configured_openrouter_parameters(config: &Config) -> Result<Option<HashMap<St
     }
 }
 
-fn parse_openrouter_parameters(raw: Value) -> Result<HashMap<String, Value>> {
+fn parse_openrouter_parameters(raw: Value) -> Result<BTreeMap<String, Value>> {
     match raw {
         Value::Object(params) => Ok(params.into_iter().collect()),
         Value::String(raw_json) => match serde_json::from_str::<Value>(&raw_json)? {

@@ -3,8 +3,8 @@ mod fake_live_voice_provider;
 use super::super::interaction::{LiveMainAgent, DELEGATION_INSTRUCTION, PROVIDER_CLEANUP_TIMEOUT};
 use super::*;
 use fake_live_voice_provider::{provider_channel, FakeConnectionDriver};
+use goose_provider_types::data::Role;
 use goose_providers::{live_voice_provider::ProviderConnectionEvent, model::ModelConfig};
-use rmcp::model::Role;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 

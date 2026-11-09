@@ -1,8 +1,10 @@
 use crate::conversation::message::ToolResult;
-use rmcp::model::{CallToolRequestParams, ErrorCode, ErrorData, JsonObject};
+use crate::data::{CallToolRequestParams, ErrorCode, ErrorData, JsonObject};
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
+use alloc::borrow::Cow;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::borrow::Cow;
 
 pub fn serialize<T, S>(value: &ToolResult<T>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -116,7 +118,7 @@ where
 pub mod call_tool_result {
     use super::*;
     use crate::conversation::message::sanitize_tool_result_in_place;
-    use rmcp::model::{CallToolResult, ContentBlock};
+    use crate::data::{CallToolResult, ContentBlock};
 
     pub fn serialize<S>(
         value: &ToolResult<CallToolResult>,

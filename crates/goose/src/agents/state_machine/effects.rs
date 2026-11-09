@@ -32,13 +32,13 @@ impl GooseEffect {
 }
 
 impl MachineEffect for GooseEffect {
-    fn ensure_message_ids(&mut self) {
+    fn ensure_message_ids(&mut self, host: &dyn goose_provider_types::runtime::HostServices) {
         match self {
-            GooseEffect::Conversation(effect) => effect.ensure_message_ids(),
+            GooseEffect::Conversation(effect) => effect.ensure_message_ids(host),
             GooseEffect::CompactConversation { conversation, .. } => {
                 for message in conversation.messages_mut() {
                     if message.id.is_none() {
-                        message.id = Some(format!("msg_{}", uuid::Uuid::new_v4()));
+                        message.id = Some(format!("msg_{}", host.new_id()));
                     }
                 }
             }

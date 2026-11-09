@@ -1,4 +1,4 @@
-use rmcp::model::Tool;
+use goose_provider_types::data::Tool;
 use std::any::Any;
 
 use crate::model::ModelSettings;

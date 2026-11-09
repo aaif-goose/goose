@@ -1,6 +1,8 @@
+use crate::data::ResourceContents;
+#[cfg(not(feature = "std"))]
+use crate::prelude::*;
 use crate::utils::sanitize_unicode_tags;
 use base64::Engine;
-use rmcp::model::ResourceContents;
 
 pub fn extract_text_from_resource(resource: &ResourceContents) -> String {
     match resource {
@@ -23,7 +25,6 @@ pub fn extract_text_from_resource(resource: &ResourceContents) -> String {
             }
             Err(_) => sanitize_unicode_tags(blob),
         },
-        _ => String::new(),
     }
 }
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::mcp_utils::ToolResult;
 use chrono::Utc;
-use rmcp::model::{Annotations, ContentBlock, ErrorCode, ErrorData, Role, TextContent};
+use rmcp::model::{Annotations, ContentBlock, ErrorCode, ErrorData, TextContent};
 
 use crate::conversation::Conversation;
 use crate::recipe::validate_recipe::{recipe_file_format, validate_recipe_for_scheduling};
@@ -520,7 +520,9 @@ impl ScheduleTool {
                 "Session '{}' Content:\n\nSession:\n{}",
                 session_id, metadata_json
             ))
-            .with_annotations(Annotations::default().with_audience(vec![Role::Assistant])),
+            .with_annotations(
+                Annotations::default().with_audience(vec![rmcp::model::Role::Assistant]),
+            ),
         )])
     }
 }
