@@ -17,15 +17,28 @@ use crate::conversation::Conversation;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
 
+#[test_case::test_case(false; "eager")]
+#[test_case::test_case(true; "deferred")]
 #[tokio::test]
-async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
+async fn proactive_and_manual_compaction_continue_with_replaced_usage(
+    defer_tools: bool,
+) -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    api.on("fill the context").reply("filled");
+    let pipeline = pipeline.with_deferred_tools(defer_tools);
+    if defer_tools {
+        api.on("fill the context")
+            .call("enable_tools", serde_json::json!({"tool_names": [ADD]}))
+            .times(1);
+        api.on(r#""enabled":["calculator__add"]"#).reply("filled");
+    } else {
+        api.on("fill the context").reply("filled");
+    }
     api.on("check the budget").reply("budget checked");
     api.on(SUMMARIZE_HISTORY).reply("summary");
     api.on("Your context was compacted")
         .reply("continued after compaction");
-    api.on("after manual compaction").reply("still working");
+    api.on("after manual compaction").call(ADD, value(1));
+    api.on("result: 1").reply("still working");
 
     let half_full = format!(
         "fill the context {}",
@@ -77,6 +90,8 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
 
     let continued = pipeline.run(["after manual compaction"]).await?;
     continued.assert_message(-1, Agent, "still working");
+    assert_eq!(pipeline.calculator_total(), 1);
+    assert!(!api.calls().last().unwrap().input_contains(r#""enabled""#));
 
     pipeline.set_total_tokens(100).await;
     let cleared = pipeline.run(["/clear"]).await?;
@@ -90,6 +105,12 @@ async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Resul
         .iter()
         .all(|message| message.is_user_visible() && !message.is_agent_visible()));
     assert_eq!(cleared.session.usage.total_tokens, Some(0));
+    api.on("fresh conversation").reply("ready");
+    pipeline.run(["fresh conversation"]).await?;
+    assert_eq!(
+        api.calls().last().unwrap().advertises_tool(ADD),
+        !defer_tools
+    );
 
     let (pipeline, _api) = test_pipeline().await?;
     pipeline.set_total_tokens(100).await;

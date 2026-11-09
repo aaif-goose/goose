@@ -13,7 +13,6 @@ mod calculator_extension;
 mod cancellation;
 mod compaction_lifecycle;
 mod context_relevance;
-mod deferred_tools;
 mod dummy_api;
 mod hooks_lifecycle;
 mod pipeline;
