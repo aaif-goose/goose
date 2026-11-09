@@ -445,7 +445,14 @@ mod tests {
         manager
             .add_test_client(
                 &session.id,
-                ExtensionConfig::builtin("pending", String::new()),
+                ExtensionConfig::Builtin {
+                    name: "pending".into(),
+                    description: String::new(),
+                    display_name: None,
+                    timeout: None,
+                    bundled: None,
+                    available_tools: vec![],
+                },
                 Arc::new(PendingClient {
                     started: started.clone(),
                     released: released.clone(),
@@ -559,7 +566,14 @@ mod tests {
         manager
             .install_test_client(
                 "test-session",
-                ExtensionConfig::builtin("visibility", "Visibility test tools"),
+                ExtensionConfig::Builtin {
+                    name: "visibility".to_string(),
+                    description: "Visibility test tools".to_string(),
+                    display_name: None,
+                    timeout: None,
+                    bundled: None,
+                    available_tools: vec![],
+                },
                 Arc::new(VisibilityClient),
                 None,
             )
@@ -596,7 +610,13 @@ mod tests {
         manager
             .enable(
                 &session.id,
-                ExtensionConfig::platform(super::super::summon::EXTENSION_NAME, String::new()),
+                ExtensionConfig::Platform {
+                    name: super::super::summon::EXTENSION_NAME.to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
             )
             .await
             .unwrap();
@@ -630,7 +650,13 @@ mod tests {
         manager
             .enable(
                 &session.id,
-                ExtensionConfig::platform("extensionmanager", String::new()),
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    description: String::new(),
+                    display_name: None,
+                    bundled: None,
+                    available_tools: Vec::new(),
+                },
             )
             .await
             .unwrap();
@@ -706,7 +732,14 @@ mod tests {
         manager
             .add_test_client(
                 &session.id,
-                ExtensionConfig::builtin("visibility", String::new()),
+                ExtensionConfig::Builtin {
+                    name: "visibility".into(),
+                    description: String::new(),
+                    display_name: None,
+                    timeout: None,
+                    bundled: None,
+                    available_tools: vec![],
+                },
                 Arc::new(VisibilityClient),
                 None,
             )

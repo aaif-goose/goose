@@ -212,7 +212,13 @@ mod tests {
     }
 
     fn moim_extension() -> ExtensionConfig {
-        ExtensionConfig::platform("todo", String::new())
+        ExtensionConfig::Platform {
+            name: "todo".to_string(),
+            description: String::new(),
+            display_name: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        }
     }
 
     async fn session_and_manager() -> (String, Arc<ExtensionManager>, tempfile::TempDir) {

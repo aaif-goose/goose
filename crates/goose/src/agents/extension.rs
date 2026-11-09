@@ -176,8 +176,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
     },
     /// Built-in extension that is part of the bundled goose MCP server
     #[serde(rename = "builtin")]
@@ -193,8 +191,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
     },
     /// Platform extensions that have direct access to the agent etc and run in the agent process
     #[serde(rename = "platform")]
@@ -209,8 +205,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
     },
     #[serde(rename = "streamable_http")]
     StreamableHttp {
@@ -259,8 +253,6 @@ pub enum ExtensionConfig {
         #[serde(default)]
         #[serde(skip_serializing_if = "Vec::is_empty")]
         available_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        always_load_tools: Vec<String>,
     },
 }
 
@@ -273,91 +265,11 @@ impl Default for ExtensionConfig {
             timeout: Some(config::DEFAULT_EXTENSION_TIMEOUT),
             bundled: Some(true),
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         }
     }
 }
 
 impl ExtensionConfig {
-    pub fn builtin(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self::Builtin {
-            name: name.into(),
-            description: description.into(),
-            display_name: None,
-            timeout: None,
-            bundled: None,
-            available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
-        }
-    }
-
-    pub fn platform(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self::Platform {
-            name: name.into(),
-            description: description.into(),
-            display_name: None,
-            bundled: None,
-            available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
-        }
-    }
-
-    pub fn with_display_name(mut self, name: impl Into<String>) -> Self {
-        match &mut self {
-            Self::Builtin { display_name, .. } | Self::Platform { display_name, .. } => {
-                *display_name = Some(name.into());
-            }
-            _ => {}
-        }
-        self
-    }
-
-    pub fn with_bundled(mut self, value: bool) -> Self {
-        match &mut self {
-            Self::Stdio { bundled, .. }
-            | Self::StreamableHttp { bundled, .. }
-            | Self::Builtin { bundled, .. }
-            | Self::Platform { bundled, .. } => *bundled = Some(value),
-        }
-        self
-    }
-
-    pub fn with_available_tools(mut self, tools: Vec<String>) -> Self {
-        match &mut self {
-            Self::Stdio {
-                available_tools, ..
-            }
-            | Self::StreamableHttp {
-                available_tools, ..
-            }
-            | Self::Builtin {
-                available_tools, ..
-            }
-            | Self::Platform {
-                available_tools, ..
-            } => *available_tools = tools,
-        }
-        self
-    }
-
-    pub fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
-        match &mut self {
-            Self::Stdio {
-                always_load_tools, ..
-            }
-            | Self::StreamableHttp {
-                always_load_tools, ..
-            }
-            | Self::Builtin {
-                always_load_tools, ..
-            }
-            | Self::Platform {
-                always_load_tools, ..
-            } => *always_load_tools = tools,
-        }
-        self
-    }
-
     pub fn streamable_http<S: Into<String>, T: Into<u64>>(
         name: S,
         uri: S,
@@ -378,7 +290,6 @@ impl ExtensionConfig {
             scopes: Vec::new(),
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         }
     }
 
@@ -399,7 +310,6 @@ impl ExtensionConfig {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         }
     }
 
@@ -419,7 +329,6 @@ impl ExtensionConfig {
                 description,
                 bundled,
                 available_tools,
-                always_load_tools,
                 ..
             } => Self::Stdio {
                 name,
@@ -432,7 +341,6 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
-                always_load_tools,
             },
             other => other,
         }
@@ -450,23 +358,6 @@ impl ExtensionConfig {
             Self::Platform { name, .. } => name,
         }
         .to_string()
-    }
-
-    pub fn always_load_tools(&self) -> &[String] {
-        match self {
-            Self::Stdio {
-                always_load_tools, ..
-            }
-            | Self::StreamableHttp {
-                always_load_tools, ..
-            }
-            | Self::Builtin {
-                always_load_tools, ..
-            }
-            | Self::Platform {
-                always_load_tools, ..
-            } => always_load_tools,
-        }
     }
 
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
@@ -501,7 +392,6 @@ impl ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
-                always_load_tools,
             } => {
                 let merged = merge_environments(&envs, env_keys.iter(), config).await?;
                 Ok(Self::Stdio {
@@ -515,7 +405,6 @@ impl ExtensionConfig {
                     cwd: cwd.map(|s| substitute_env_vars(&s, &merged)),
                     bundled,
                     available_tools,
-                    always_load_tools,
                 })
             }
             Self::StreamableHttp {
@@ -532,7 +421,6 @@ impl ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools,
-                always_load_tools,
             } => {
                 // Resolve the OAuth client secret alongside env_keys so that
                 // rotating it changes the resolved config, which is what
@@ -563,7 +451,6 @@ impl ExtensionConfig {
                     scopes,
                     bundled,
                     available_tools,
-                    always_load_tools,
                 })
             }
             other => Ok(other),
@@ -720,63 +607,6 @@ mod tests {
     use test_case::test_case;
 
     #[test]
-    fn constructors_preserve_default_and_explicit_tool_policies() {
-        let builtin = ExtensionConfig::builtin("test", "Test");
-        assert!(matches!(
-            &builtin,
-            ExtensionConfig::Builtin {
-                timeout: None,
-                display_name: None,
-                bundled: None,
-                ..
-            }
-        ));
-        let platform = ExtensionConfig::platform("test", "Test");
-        for config in [
-            builtin,
-            platform,
-            ExtensionConfig::stdio("test", "test", "Test", 30_u64),
-            ExtensionConfig::streamable_http("test", "http://localhost/mcp", "Test", 30_u64),
-        ] {
-            assert!(config.always_load_tools().is_empty());
-            assert!(config.is_tool_available("other"));
-            let config = config
-                .with_bundled(true)
-                .with_available_tools(vec!["send".to_string()])
-                .with_always_load_tools(vec!["send".to_string()]);
-            assert_eq!(config.always_load_tools(), ["send"]);
-            assert!(config.is_tool_available("send"));
-            assert!(!config.is_tool_available("other"));
-        }
-        assert!(matches!(
-            ExtensionConfig::platform("test", "Test").with_display_name("Test"),
-            ExtensionConfig::Platform { display_name: Some(name), .. } if name == "Test"
-        ));
-    }
-
-    #[test]
-    fn always_load_tools_roundtrip_and_default() {
-        let config: ExtensionConfig = serde_json::from_value(serde_json::json!({
-            "type": "stdio", "name": "test", "cmd": "test", "args": [],
-            "always_load_tools": ["send", "db.query"]
-        }))
-        .unwrap();
-        assert_eq!(config.always_load_tools(), ["send", "db.query"]);
-        let restored: ExtensionConfig =
-            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
-        assert_eq!(restored, config);
-        let default: ExtensionConfig = serde_json::from_value(serde_json::json!({
-            "type": "stdio", "name": "test", "cmd": "test", "args": []
-        }))
-        .unwrap();
-        assert!(default.always_load_tools().is_empty());
-        assert!(serde_json::to_value(default)
-            .unwrap()
-            .get("always_load_tools")
-            .is_none());
-    }
-
-    #[test]
     fn test_deserialize_missing_description() {
         let config: ExtensionConfig = serde_yaml::from_str(
             "enabled: true
@@ -927,7 +757,6 @@ timeout: 300",
             timeout: Some(300),
             bundled: Some(true),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         };
 
         let yaml = serde_yaml::to_string(&config).unwrap();
@@ -944,7 +773,6 @@ timeout: 300",
             timeout: Some(300),
             bundled: Some(true),
             available_tools: vec!["shell".to_string()],
-            always_load_tools: Vec::new(),
         };
 
         let yaml = serde_yaml::to_string(&config).unwrap();
@@ -961,7 +789,6 @@ timeout: 300",
             timeout: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::Builtin {
             name: "developer".into(),
@@ -970,7 +797,6 @@ timeout: 300",
             timeout: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "builtin_unchanged"
     )]
@@ -998,7 +824,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1023,7 +848,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "header_substitution"
     )]
@@ -1039,7 +863,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1052,7 +875,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "env_keys_cleared"
     )]
@@ -1068,7 +890,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1085,7 +906,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "env_key_resolved"
     )]
@@ -1109,7 +929,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1131,7 +950,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "http_env_key_and_header_substitution"
     )]
@@ -1150,7 +968,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1170,7 +987,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "http_env_key_uri_substitution"
     )]
@@ -1190,7 +1006,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::Stdio {
             name: "test".into(),
@@ -1207,7 +1022,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "env_key_skipped_when_already_in_envs"
     )]
@@ -1226,7 +1040,6 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1246,7 +1059,6 @@ timeout: 300",
             scopes: vec!["scope.read".into()],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "http_client_id_substitution_and_oauth_fields_preserved"
     )]
@@ -1265,7 +1077,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         },
         ExtensionConfig::StreamableHttp {
             name: "test".into(),
@@ -1285,7 +1096,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
         ; "http_client_secret_key_resolved_without_env_keys_entry"
     )]
@@ -1321,7 +1131,6 @@ timeout: 300",
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         };
 
         let resolved = config.resolve(&cfg).await.unwrap();
@@ -1350,7 +1159,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         };
         assert_eq!(
             config.to_string(),
@@ -1374,7 +1182,6 @@ timeout: 300",
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         };
         assert_eq!(
             config.to_string(),

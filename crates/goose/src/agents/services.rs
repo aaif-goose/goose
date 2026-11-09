@@ -1466,7 +1466,14 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            let extension = ExtensionConfig::builtin(fixture, String::new());
+            let extension = ExtensionConfig::Builtin {
+                name: fixture.to_string(),
+                display_name: None,
+                description: String::new(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            };
             let mut extension_data = session.extension_data.clone();
             EnabledExtensionsState::new(vec![extension])
                 .to_extension_data(&mut extension_data)

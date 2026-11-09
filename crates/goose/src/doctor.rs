@@ -301,11 +301,13 @@ mod tests {
             .unwrap();
         assert!(require_developer_extension(&session).is_some());
 
-        EnabledExtensionsState::new(vec![ExtensionConfig::platform(
-            developer::EXTENSION_NAME,
-            "Developer tools",
-        )
-        .with_display_name("Developer")])
+        EnabledExtensionsState::new(vec![ExtensionConfig::Platform {
+            name: developer::EXTENSION_NAME.to_string(),
+            description: "Developer tools".to_string(),
+            display_name: Some("Developer".to_string()),
+            bundled: None,
+            available_tools: vec![],
+        }])
         .to_extension_data(&mut session.extension_data)
         .unwrap();
         assert!(require_developer_extension(&session).is_none());

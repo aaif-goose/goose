@@ -1235,9 +1235,13 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
         .unwrap_or_else(|| (extension.clone(), extension.clone()));
 
     let config = if PLATFORM_EXTENSIONS.contains_key(extension.as_str()) {
-        ExtensionConfig::platform(extension.clone(), description)
-            .with_display_name(display_name)
-            .with_bundled(true)
+        ExtensionConfig::Platform {
+            name: extension.clone(),
+            description,
+            display_name: Some(display_name),
+            bundled: Some(true),
+            available_tools: Vec::new(),
+        }
     } else {
         let timeout = prompt_extension_timeout()?;
         ExtensionConfig::Builtin {
@@ -1247,7 +1251,6 @@ fn configure_builtin_extension() -> anyhow::Result<()> {
             bundled: Some(true),
             description,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         }
     };
 
@@ -1300,7 +1303,6 @@ fn configure_stdio_extension() -> anyhow::Result<()> {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         },
     });
 
@@ -1348,7 +1350,6 @@ fn configure_streamable_http_extension() -> anyhow::Result<()> {
             scopes: vec![],
             bundled: None,
             available_tools: Vec::new(),
-            always_load_tools: Vec::new(),
         },
     });
 
@@ -2036,9 +2037,13 @@ pub async fn handle_openrouter_auth() -> anyhow::Result<()> {
                     if !has_developer {
                         set_extension(ExtensionEntry {
                             enabled: true,
-                            config: ExtensionConfig::platform("developer", "Developer extension")
-                                .with_display_name(goose::config::DEFAULT_DISPLAY_NAME)
-                                .with_bundled(true),
+                            config: ExtensionConfig::Platform {
+                                name: "developer".to_string(),
+                                description: "Developer extension".to_string(),
+                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                bundled: Some(true),
+                                available_tools: Vec::new(),
+                            },
                         });
                         println!("✓ Developer extension enabled");
                     }
@@ -2101,9 +2106,13 @@ pub async fn handle_tetrate_auth() -> anyhow::Result<()> {
                     if !has_developer {
                         set_extension(ExtensionEntry {
                             enabled: true,
-                            config: ExtensionConfig::platform("developer", "Developer extension")
-                                .with_display_name(goose::config::DEFAULT_DISPLAY_NAME)
-                                .with_bundled(true),
+                            config: ExtensionConfig::Platform {
+                                name: "developer".to_string(),
+                                description: "Developer extension".to_string(),
+                                display_name: Some(goose::config::DEFAULT_DISPLAY_NAME.to_string()),
+                                bundled: Some(true),
+                                available_tools: Vec::new(),
+                            },
                         });
                         println!("✓ Developer extension enabled");
                     }

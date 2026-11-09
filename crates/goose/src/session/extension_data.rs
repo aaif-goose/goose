@@ -184,7 +184,14 @@ mod tests {
     }
 
     fn test_extension() -> ExtensionConfig {
-        ExtensionConfig::builtin("developer", "dev")
+        ExtensionConfig::Builtin {
+            name: "developer".into(),
+            description: "dev".into(),
+            display_name: None,
+            timeout: None,
+            bundled: None,
+            available_tools: vec![],
+        }
     }
 
     fn extension_data_with(extensions: Vec<ExtensionConfig>) -> ExtensionData {
@@ -291,8 +298,21 @@ mod tests {
     fn test_enabled_extensions_state_filters_unavailable_platform() {
         let mut extension_data = ExtensionData::new();
         let state = EnabledExtensionsState::new(vec![
-            ExtensionConfig::platform("definitely_not_real_platform_extension", "unknown"),
-            ExtensionConfig::builtin("developer", "").with_display_name("Developer"),
+            ExtensionConfig::Platform {
+                name: "definitely_not_real_platform_extension".to_string(),
+                description: "unknown".to_string(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+            ExtensionConfig::Builtin {
+                name: "developer".to_string(),
+                description: "".to_string(),
+                display_name: Some("Developer".to_string()),
+                timeout: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
         ]);
 
         state.to_extension_data(&mut extension_data).unwrap();

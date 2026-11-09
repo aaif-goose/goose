@@ -1832,9 +1832,14 @@ mod tests {
     }
 
     fn builtin_config(name: &str, available_tools: Vec<String>) -> ExtensionConfig {
-        ExtensionConfig::builtin(name, "built-in")
-            .with_display_name(name)
-            .with_available_tools(available_tools)
+        ExtensionConfig::Builtin {
+            name: name.to_string(),
+            display_name: Some(name.to_string()),
+            description: "built-in".to_string(),
+            timeout: None,
+            bundled: None,
+            available_tools,
+        }
     }
 
     #[tokio::test]
@@ -1927,7 +1932,6 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         }
     }
 
@@ -2147,7 +2151,13 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let todo = ExtensionConfig::platform("todo", String::new());
+        let todo = ExtensionConfig::Platform {
+            name: "todo".to_string(),
+            display_name: None,
+            description: String::new(),
+            bundled: None,
+            available_tools: vec![],
+        };
         let session = session_selecting(
             &manager,
             temp_dir.path(),
@@ -2216,7 +2226,13 @@ mod tests {
         let manager = Arc::new(ExtensionManager::with_data_dir(
             temp_dir.path().to_path_buf(),
         ));
-        let developer = ExtensionConfig::platform("developer", "developer");
+        let developer = ExtensionConfig::Platform {
+            name: "developer".to_string(),
+            display_name: None,
+            description: "developer".to_string(),
+            bundled: None,
+            available_tools: vec![],
+        };
         let session = session_selecting(
             &manager,
             temp_dir.path(),
@@ -2388,7 +2404,13 @@ mod tests {
         extension_manager
             .enable(
                 &session.id,
-                ExtensionConfig::platform("extensionmanager", String::new()),
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
             )
             .await
             .unwrap();
@@ -2452,7 +2474,13 @@ mod tests {
         extension_manager
             .enable(
                 &session.id,
-                ExtensionConfig::platform("extensionmanager", String::new()),
+                ExtensionConfig::Platform {
+                    name: "extensionmanager".to_string(),
+                    display_name: None,
+                    description: String::new(),
+                    bundled: None,
+                    available_tools: vec![],
+                },
             )
             .await
             .unwrap();

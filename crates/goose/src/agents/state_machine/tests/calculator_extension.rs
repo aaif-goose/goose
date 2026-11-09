@@ -21,7 +21,6 @@ pub(super) const ADD: &str = "calculator__add";
 pub(super) const APP_ONLY: &str = "calculator__app_only";
 pub(super) const ADD_VALUES: &str = "calculator__add_values";
 pub(super) const ADD_WITH_AUDIENCE: &str = "calculator__add_with_audience";
-pub(super) const MULTIPLY: &str = "calculator__multiply";
 pub(super) const DIVIDE: &str = "calculator__divide";
 pub(super) const REQUEST_VALUE: &str = "calculator__request_value";
 const EXECUTION_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);

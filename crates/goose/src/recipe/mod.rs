@@ -239,7 +239,13 @@ impl Recipe {
             .is_some_and(|exts| exts.iter().any(|e| e.name() == "analyze"));
 
         if has_builtin_developer && !has_analyze {
-            let analyze = ExtensionConfig::platform("analyze", String::new());
+            let analyze = ExtensionConfig::Platform {
+                name: "analyze".to_string(),
+                description: String::new(),
+                display_name: None,
+                bundled: None,
+                available_tools: vec![],
+            };
             if let Some(exts) = &mut self.extensions {
                 exts.push(analyze);
             }
@@ -250,7 +256,13 @@ impl Recipe {
         if self.sub_recipes.is_none() {
             return;
         }
-        let summon = ExtensionConfig::platform("summon", String::new());
+        let summon = ExtensionConfig::Platform {
+            name: "summon".to_string(),
+            description: String::new(),
+            display_name: None,
+            bundled: None,
+            available_tools: vec![],
+        };
         match &mut self.extensions {
             Some(exts) if !exts.iter().any(|e| e.name() == "summon") => exts.push(summon),
             None => self.extensions = Some(vec![summon]),

@@ -452,14 +452,6 @@ fn spawn_session_name_update_notifier(
     tx
 }
 
-fn extract_always_load_tools_from_meta(meta: &Option<Meta>) -> Result<Vec<String>, String> {
-    match meta.as_ref().and_then(|meta| meta.get("alwaysLoadTools")) {
-        Some(value) => serde_json::from_value(value.clone())
-            .map_err(|error| format!("Invalid MCP alwaysLoadTools: {error}")),
-        None => Ok(Vec::new()),
-    }
-}
-
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
     meta.as_ref()
         .and_then(|m| m.get("timeout"))
@@ -523,7 +515,6 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
     match mcp_server {
         McpServer::Stdio(stdio) => {
             let timeout = extract_timeout_from_meta(&stdio.meta);
-            let always_load_tools = extract_always_load_tools_from_meta(&stdio.meta)?;
             Ok(ExtensionConfig::Stdio {
                 name: stdio.name,
                 description: String::new(),
@@ -535,12 +526,10 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 cwd: None,
                 bundled: Some(false),
                 available_tools: vec![],
-                always_load_tools,
             })
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
-            let always_load_tools = extract_always_load_tools_from_meta(&http.meta)?;
             Ok(ExtensionConfig::StreamableHttp {
                 name: http.name,
                 description: String::new(),
@@ -559,7 +548,6 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
                 scopes: vec![],
                 bundled: Some(false),
                 available_tools: vec![],
-                always_load_tools,
             })
         }
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
@@ -734,11 +722,22 @@ fn annotated_prompt_text(text: &str, annotations: Option<&Annotations>) -> RmcpT
 
 fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
     if let Some(def) = PLATFORM_EXTENSIONS.get(name) {
-        ExtensionConfig::platform(def.name, def.description)
-            .with_display_name(def.display_name)
-            .with_bundled(true)
+        ExtensionConfig::Platform {
+            name: def.name.into(),
+            description: def.description.into(),
+            display_name: Some(def.display_name.into()),
+            bundled: Some(true),
+            available_tools: vec![],
+        }
     } else {
-        ExtensionConfig::builtin(name, name).with_bundled(true)
+        ExtensionConfig::Builtin {
+            name: name.into(),
+            display_name: None,
+            timeout: None,
+            bundled: Some(true),
+            description: name.into(),
+            available_tools: vec![],
+        }
     }
 }
 
@@ -2758,30 +2757,6 @@ mod tests {
     }
 
     #[test]
-    fn mcp_connection_config_accepts_always_load_tools() {
-        for server in [
-            serde_json::json!({"type": "http", "name": "buzz", "url": "http://localhost/mcp", "headers": [], "_meta": {"alwaysLoadTools": ["send", "read"]}}),
-            serde_json::json!({"name": "buzz", "command": "buzz", "args": [], "env": [], "_meta": {"alwaysLoadTools": ["send", "read"]}}),
-        ] {
-            let server: McpServer = serde_json::from_value(server).unwrap();
-            let config = mcp_server_to_extension_config(server).unwrap();
-            assert_eq!(config.always_load_tools(), ["send", "read"]);
-        }
-        assert!(extract_always_load_tools_from_meta(&None)
-            .unwrap()
-            .is_empty());
-        for value in [
-            serde_json::json!("send"),
-            serde_json::json!([1]),
-            serde_json::Value::Null,
-        ] {
-            let meta =
-                serde_json::from_value(serde_json::json!({"alwaysLoadTools": value})).unwrap();
-            assert!(extract_always_load_tools_from_meta(&Some(meta)).is_err());
-        }
-    }
-
-    #[test]
     fn effective_session_cwd_prefers_host_cwd_over_client_path() {
         let cwd = effective_session_cwd(
             Some(Path::new("/host/share")),
@@ -2923,7 +2898,6 @@ extensions:
             timeout: None,
             bundled: None,
             available_tools: None,
-            always_load_tools: None,
         }
     }
 
@@ -3172,7 +3146,6 @@ extensions:
             cwd: None,
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         })
     )]
     #[test_case(
@@ -3197,7 +3170,6 @@ extensions:
             scopes: vec![],
             bundled: Some(false),
             available_tools: vec![],
-            always_load_tools: Vec::new(),
         })
     )]
     #[test_case(

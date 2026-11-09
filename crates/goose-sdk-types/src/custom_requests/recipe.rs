@@ -174,8 +174,6 @@ pub enum RecipeExtensionDto {
         /// Tool allowlist for this extension. Omit this field to allow all tools.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
     },
     Platform {
         name: String,
@@ -188,8 +186,6 @@ pub enum RecipeExtensionDto {
         /// Tool allowlist for this extension. Omit this field to allow all tools.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
     },
     Stdio {
         name: String,
@@ -211,8 +207,6 @@ pub enum RecipeExtensionDto {
         /// Tool allowlist for this extension. Omit this field to allow all tools.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
     },
     StreamableHttp {
         name: String,
@@ -243,8 +237,6 @@ pub enum RecipeExtensionDto {
         /// Tool allowlist for this extension. Omit this field to allow all tools.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        always_load_tools: Option<Vec<String>>,
     },
 }
 
@@ -257,7 +249,6 @@ impl Default for RecipeExtensionDto {
             timeout: None,
             bundled: None,
             available_tools: None,
-            always_load_tools: None,
         }
     }
 }

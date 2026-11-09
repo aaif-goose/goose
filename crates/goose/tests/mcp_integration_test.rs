@@ -168,7 +168,6 @@ fn stdio_fixture(name: &str, mode: Option<&str>, available_tools: &[&str]) -> Ex
         cwd: None,
         bundled: Some(false),
         available_tools: available_tools.iter().map(|s| s.to_string()).collect(),
-        always_load_tools: Vec::new(),
     }
 }
 
@@ -187,14 +186,17 @@ fn http_fixture(name: &str, uri: &str) -> ExtensionConfig {
         scopes: vec![],
         bundled: Some(false),
         available_tools: vec![],
-        always_load_tools: Vec::new(),
     }
 }
 
 fn platform(name: &str) -> ExtensionConfig {
-    ExtensionConfig::platform(name, name)
-        .with_display_name(name)
-        .with_bundled(true)
+    ExtensionConfig::Platform {
+        name: name.to_string(),
+        description: name.to_string(),
+        display_name: Some(name.to_string()),
+        bundled: Some(true),
+        available_tools: vec![],
+    }
 }
 
 fn write_skill(workspace: &std::path::Path, marker: &str) {
@@ -902,7 +904,6 @@ async fn test_replayed_session(
         cwd: None,
         bundled: Some(false),
         available_tools: vec![],
-        always_load_tools: Vec::new(),
     };
 
     let temp_dir = tempfile::tempdir().unwrap();

@@ -5,7 +5,7 @@ use rmcp::model::{CallToolRequestParams, ElicitationAction, ErrorData};
 use serde_json::json;
 
 use super::calculator_extension::{
-    delayed_value, value, ADD, ADD_WITH_AUDIENCE, APP_ONLY, DIVIDE, MULTIPLY, REQUEST_VALUE,
+    delayed_value, value, ADD, ADD_WITH_AUDIENCE, APP_ONLY, DIVIDE, REQUEST_VALUE,
 };
 use super::dummy_api::DummyApi;
 use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
@@ -163,28 +163,6 @@ async fn basic_tool_calling() -> Result<()> {
     result.assert_message(7, Agent, "The total is 5");
     result.assert_message(-1, Agent, "hi there!");
     assert_eq!(api.call_count(), 5);
-    Ok(())
-}
-
-#[tokio::test]
-async fn always_load_tools_remain_eager_after_clear() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_deferred_tools();
-    api.on("multiply now").call(MULTIPLY, value(2));
-    api.on("result: 0").reply("done");
-
-    pipeline.run(["multiply now"]).await?;
-    pipeline.run(["/clear"]).await?;
-    pipeline.run(["multiply now"]).await?;
-
-    for call in api.calls() {
-        assert!(call.advertises_tool(MULTIPLY));
-        assert!(!call.system_contains(MULTIPLY));
-        assert!(!call.advertises_tool(ADD));
-        assert!(call.system_contains(ADD));
-        assert!(!call.advertises_tool(APP_ONLY));
-        assert!(!call.system_contains(APP_ONLY));
-    }
     Ok(())
 }
 
