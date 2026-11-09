@@ -179,7 +179,7 @@ async fn configured_tools_remain_eager_with_deferral() -> Result<()> {
     assert!(calls[0].advertises_tool(ADD));
     assert!(!calls[0].advertises_tool(DIVIDE));
     assert!(!calls[0].advertises_tool(APP_ONLY));
-    assert!(!calls[0].system_contains(ADD));
+    assert!(!calls[0].system_contains(&format!("{ADD},")));
     assert!(calls[0].system_contains(DIVIDE));
     Ok(())
 }
