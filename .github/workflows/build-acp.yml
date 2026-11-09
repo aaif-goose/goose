@@ -86,7 +86,7 @@ jobs:
           cargo build -p goose --bin goose-acp \
             --profile lean \
             --no-default-features \
-            --features rustls-tls,system-keyring,online-model-meta \
+            --features rustls-tls,system-keyring,online-model-meta,live-voice \
             --target "$TARGET"
 
       - name: Verify macOS system library dependencies

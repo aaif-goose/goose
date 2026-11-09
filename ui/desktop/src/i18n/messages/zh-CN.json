@@ -3705,7 +3705,7 @@
     "defaultMessage": "使用机器学习模型检测聊天中潜在的提示注入"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "值越高越严格（0.01 = 非常宽松，1.0 = 最严格）"
+    "defaultMessage": "值越低越严格（0.01 = 最严格，1.0 = 非常宽松）"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "连接到 WARP 时，命令注入检测效果最佳（访问分类服务需要 WARP）。"
