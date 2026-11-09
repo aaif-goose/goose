@@ -37,6 +37,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
     pub(crate) defer_tools: bool,
+    pub(crate) always_load_tools: Vec<String>,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -101,6 +102,7 @@ pub(crate) fn build_state_machine(
         tool_call_cutoff,
         tool_pair_summarization,
         defer_tools,
+        always_load_tools,
         session_manager,
         extension_manager,
         extension_lease,
@@ -145,6 +147,7 @@ pub(crate) fn build_state_machine(
             Arc::clone(&post_tool_call_hook),
             Arc::clone(&extension_lease),
             defer_tools,
+            always_load_tools,
         )),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),

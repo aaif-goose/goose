@@ -318,6 +318,7 @@ pub struct ToolExecutionOperation {
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
+    always_load_tools: HashSet<String>,
 }
 
 impl ToolExecutionOperation {
@@ -327,6 +328,7 @@ impl ToolExecutionOperation {
         post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         defer_tools: bool,
+        always_load_tools: Vec<String>,
     ) -> Self {
         Self {
             extension_manager,
@@ -335,6 +337,7 @@ impl ToolExecutionOperation {
             lease,
             batch: Arc::default(),
             defer_tools,
+            always_load_tools: always_load_tools.into_iter().collect(),
         }
     }
 
@@ -901,6 +904,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 .mcp_tools(&lease)
                 .await
                 .into_iter()
+                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
                 .map(|tool| tool.name.to_string())
                 .collect();
             let enabled = session
@@ -967,6 +971,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                 .mcp_tools(&lease)
                 .await
                 .into_iter()
+                .filter(|tool| !self.always_load_tools.contains(tool.name.as_ref()))
                 .map(|tool| tool.name.to_string())
                 .collect();
             names.sort();

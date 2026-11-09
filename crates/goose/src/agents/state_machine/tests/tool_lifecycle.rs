@@ -167,6 +167,24 @@ async fn basic_tool_calling() -> Result<()> {
 }
 
 #[tokio::test]
+async fn configured_tools_remain_eager_with_deferral() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_deferred_tools()
+        .with_always_load_tools(vec![ADD.to_string(), APP_ONLY.to_string()]);
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    pipeline.run(["add one"]).await?;
+    let calls = api.calls();
+    assert!(calls[0].advertises_tool(ADD));
+    assert!(!calls[0].advertises_tool(DIVIDE));
+    assert!(!calls[0].advertises_tool(APP_ONLY));
+    assert!(!calls[0].system_contains(ADD));
+    assert!(calls[0].system_contains(DIVIDE));
+    Ok(())
+}
+
+#[tokio::test]
 async fn deferred_tools_follow_the_conversation_lifecycle() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_deferred_tools();

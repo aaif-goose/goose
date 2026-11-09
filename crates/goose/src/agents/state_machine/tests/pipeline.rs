@@ -270,6 +270,12 @@ impl TestPipeline {
         self
     }
 
+    pub(super) fn with_always_load_tools(mut self, tools: Vec<String>) -> Self {
+        assert!(!self.services.initialized());
+        self.turn_settings.always_load_tools = tools;
+        self
+    }
+
     pub(super) fn with_deferred_tools(mut self) -> Self {
         assert!(!self.services.initialized());
         self.turn_settings.defer_tools = true;
@@ -918,6 +924,7 @@ async fn build_test_pipeline(
             stop_hook_block_cap: 3,
             tool_pair_summarization: true,
             defer_tools: false,
+            always_load_tools: Vec::new(),
             compaction_threshold: COMPACTION_THRESHOLD,
             compaction_token_limit: usize::MAX,
             tool_call_cutoff: None,
