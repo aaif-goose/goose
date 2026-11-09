@@ -327,9 +327,21 @@ pub async fn handle_session_export(
         })?;
         println!("Session exported to {}", output_path.display());
     } else {
-        println!("{}", output);
+        // Write through the same broken-pipe-tolerant path as `session list`:
+        // `println!` panics when stdout is closed early (e.g. `| head`), which
+        // is a normal way to read a long export.
+        let stdout = io::stdout();
+        let mut out = stdout.lock();
+        write_export_to_stdout(&mut out, &output)?;
     }
 
+    Ok(())
+}
+
+/// Write an exported session to stdout, treating a closed pipe as a normal
+/// end of output rather than an error.
+fn write_export_to_stdout<W: Write>(out: &mut W, output: &str) -> Result<()> {
+    write_line_or_broken_pipe_ok(out, output)?;
     Ok(())
 }
 
@@ -488,6 +500,45 @@ pub async fn prompt_interactive_session_selection(
         Ok(session.id.clone())
     } else {
         Err(anyhow::anyhow!("Invalid selection"))
+    }
+}
+
+#[cfg(test)]
+mod session_export_output_tests {
+    use super::*;
+    use std::io;
+
+    /// A writer that always reports a closed pipe, as stdout does when the
+    /// reader (`head`) has already exited.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn closed_pipe_is_not_an_error() {
+        let mut out = ClosedPipe;
+        assert!(write_export_to_stdout(&mut out, "payload").is_ok());
+    }
+
+    #[test]
+    fn a_writable_sink_reports_the_line_as_written() {
+        let mut out = io::sink();
+        assert!(write_export_to_stdout(&mut out, "payload").is_ok());
+    }
+
+    #[test]
+    fn the_exported_payload_is_written_verbatim() {
+        let mut out: Vec<u8> = Vec::new();
+        write_export_to_stdout(&mut out, "<html>session</html>").unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "<html>session</html>\n");
     }
 }
 
