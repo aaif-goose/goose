@@ -16,9 +16,9 @@ Do NOT use this skill for:
 The docs root for this session is `{{GOOSE_DOCS_ROOT}}`. Always read docs from
 this root, whether it is a local filesystem path or an HTTP(S) URL. For local
 paths, read files with the shell/file tools; for HTTP(S) URLs, fetch from that
-URL. Never fetch docs from https://goose-docs.ai unless it is the docs root
-above; use it only for links in your answer. Everything below refers to this
-docs root as `<docs-root>`.
+URL. If the docs root above is not https://goose-docs.ai, never fetch docs from
+https://goose-docs.ai; use it only for links in your answer. Everything below
+refers to this docs root as `<docs-root>`.
 
 ## Steps (COMPLETE ALL BEFORE RESPONDING)
 1. **Read official docs**
