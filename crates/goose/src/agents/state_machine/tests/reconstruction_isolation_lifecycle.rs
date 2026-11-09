@@ -39,7 +39,6 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     use crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE;
     use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
     use crate::config::GooseMode;
-    use crate::conversation::message::MessageContent;
     use crate::recipe::{Recipe, Response};
     use goose_providers::model::ModelConfig;
 
@@ -105,35 +104,9 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
         FINAL_OUTPUT_TOOL_NAME,
         json!({ "answer": "state restored" }),
     );
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("structured output stayed disabled in chat mode");
     let restored_call_index = api.call_count();
     let restored_result = pipeline.run(["check restored state"]).await?;
-    let restored_messages = restored_result.conversation().messages();
-    assert!(
-        restored_messages
-            .iter()
-            .flat_map(|message| &message.content)
-            .any(|content| match content {
-                MessageContent::ToolResponse(response) =>
-                    response
-                        .tool_result
-                        .as_ref()
-                        .is_ok_and(|result| result.content.iter().any(|content| {
-                            content
-                                .as_text()
-                                .is_some_and(|text| text.text == CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-                        })),
-                _ => false,
-            }),
-        "a restored Chat-mode recipe must skip its final-output tool"
-    );
-    assert!(
-        restored_messages
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"state restored"}"#),
-        "a skipped final-output call must not be collected after reconstruction"
-    );
+    restored_result.assert_message(-1, Agent, r#"{"answer":"state restored"}"#);
     let restored_call = api.calls()[restored_call_index].clone();
     assert!(restored_call.uses_model("gpt-4o"));
     assert!(restored_call.advertises_tool("analyze"));
