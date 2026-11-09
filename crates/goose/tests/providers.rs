@@ -235,14 +235,8 @@ impl ProviderFixture {
 
         let mcp_extension =
             ExtensionConfig::streamable_http("mcp-fixture", &mcp.url, "MCP fixture", 30_u64);
-        let developer_extension = ExtensionConfig::Builtin {
-            name: "developer".to_string(),
-            description: String::new(),
-            display_name: Some("Developer".to_string()),
-            timeout: None,
-            bundled: None,
-            available_tools: vec![],
-        };
+        let developer_extension =
+            ExtensionConfig::builtin("developer", String::new()).with_display_name("Developer");
 
         let provider = create(
             &config.name.to_lowercase(),

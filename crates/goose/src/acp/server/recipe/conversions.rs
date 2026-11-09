@@ -291,6 +291,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 timeout,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Builtin {
                 name,
                 description: description.unwrap_or_default(),
@@ -298,6 +299,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 timeout,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                always_load_tools: always_load_tools.unwrap_or_default(),
             },
             RecipeExtensionDto::Platform {
                 name,
@@ -305,12 +307,14 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 display_name,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Platform {
                 name,
                 description: description.unwrap_or_default(),
                 display_name,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                always_load_tools: always_load_tools.unwrap_or_default(),
             },
             RecipeExtensionDto::Stdio {
                 name,
@@ -323,6 +327,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Stdio {
                 name,
                 description: description.unwrap_or_default(),
@@ -334,6 +339,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 cwd,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                always_load_tools: always_load_tools.unwrap_or_default(),
             },
             RecipeExtensionDto::StreamableHttp {
                 name,
@@ -349,6 +355,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::StreamableHttp {
                 name,
                 description: description.unwrap_or_default(),
@@ -363,6 +370,7 @@ impl TryFrom<RecipeExtensionDto> for ExtensionConfig {
                 scopes,
                 bundled,
                 available_tools: available_tools.unwrap_or_default(),
+                always_load_tools: always_load_tools.unwrap_or_default(),
             },
         })
     }
@@ -380,6 +388,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 timeout,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Builtin {
                 name,
                 description: Some(description),
@@ -387,6 +396,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 timeout,
                 bundled,
                 available_tools: available_tools_to_wire(available_tools),
+                always_load_tools: available_tools_to_wire(always_load_tools),
             },
             ExtensionConfig::Platform {
                 name,
@@ -394,12 +404,14 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 display_name,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Platform {
                 name,
                 description: Some(description),
                 display_name,
                 bundled,
                 available_tools: available_tools_to_wire(available_tools),
+                always_load_tools: available_tools_to_wire(always_load_tools),
             },
             ExtensionConfig::Stdio {
                 name,
@@ -412,6 +424,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 cwd,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::Stdio {
                 name,
                 description: Some(description),
@@ -423,6 +436,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 cwd,
                 bundled,
                 available_tools: available_tools_to_wire(available_tools),
+                always_load_tools: available_tools_to_wire(always_load_tools),
             },
             ExtensionConfig::StreamableHttp {
                 name,
@@ -438,6 +452,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 scopes,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => Self::StreamableHttp {
                 name,
                 description: Some(description),
@@ -452,6 +467,7 @@ impl TryFrom<ExtensionConfig> for RecipeExtensionDto {
                 scopes,
                 bundled,
                 available_tools: available_tools_to_wire(available_tools),
+                always_load_tools: available_tools_to_wire(always_load_tools),
             },
         })
     }
@@ -506,6 +522,7 @@ mod tests {
                     timeout: Some(300),
                     bundled: Some(true),
                     available_tools: Some(vec!["shell".to_string()]),
+                    always_load_tools: None,
                 },
                 RecipeExtensionDto::Stdio {
                     name: "local".to_string(),
@@ -518,6 +535,7 @@ mod tests {
                     cwd: Some("/tmp".to_string()),
                     bundled: None,
                     available_tools: Some(vec!["run".to_string()]),
+                    always_load_tools: None,
                 },
                 RecipeExtensionDto::StreamableHttp {
                     name: "remote".to_string(),
@@ -533,6 +551,7 @@ mod tests {
                     scopes: vec![],
                     bundled: Some(false),
                     available_tools: Some(vec!["fetch".to_string()]),
+                    always_load_tools: None,
                 },
             ]),
             settings: Some(RecipeSettingsDto {
@@ -587,9 +606,12 @@ mod tests {
         assert_eq!(recipe.extensions.as_ref().unwrap().len(), 3);
         match &recipe.extensions.as_ref().unwrap()[0] {
             ExtensionConfig::Builtin {
-                available_tools, ..
+                available_tools,
+                always_load_tools,
+                ..
             } => {
                 assert_eq!(available_tools, &vec!["shell".to_string()]);
+                assert!(always_load_tools.is_empty());
             }
             extension => panic!("expected builtin extension, got {extension:?}"),
         }
@@ -597,10 +619,12 @@ mod tests {
             ExtensionConfig::Stdio {
                 envs,
                 available_tools,
+                always_load_tools,
                 ..
             } => {
                 assert_eq!(envs.get_env()["LOCAL_MODE"], "true");
                 assert_eq!(available_tools, &vec!["run".to_string()]);
+                assert!(always_load_tools.is_empty());
             }
             extension => panic!("expected stdio extension, got {extension:?}"),
         }
@@ -608,10 +632,12 @@ mod tests {
             ExtensionConfig::StreamableHttp {
                 envs,
                 available_tools,
+                always_load_tools,
                 ..
             } => {
                 assert_eq!(envs.get_env()["REMOTE_MODE"], "true");
                 assert_eq!(available_tools, &vec!["fetch".to_string()]);
+                assert!(always_load_tools.is_empty());
             }
             extension => panic!("expected streamable_http extension, got {extension:?}"),
         }

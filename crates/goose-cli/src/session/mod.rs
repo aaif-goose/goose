@@ -387,6 +387,7 @@ impl CliSession {
             cwd: None,
             bundled: None,
             available_tools: Vec::new(),
+            always_load_tools: Vec::new(),
         })
     }
 
@@ -426,6 +427,7 @@ impl CliSession {
             scopes: vec![],
             bundled: None,
             available_tools: Vec::new(),
+            always_load_tools: Vec::new(),
         }
     }
 
@@ -436,22 +438,9 @@ impl CliSession {
             .map(|name| {
                 let extension_name = name.trim();
                 if PLATFORM_EXTENSIONS.contains_key(extension_name) {
-                    ExtensionConfig::Platform {
-                        name: extension_name.to_string(),
-                        description: extension_name.to_string(),
-                        display_name: None,
-                        bundled: None,
-                        available_tools: Vec::new(),
-                    }
+                    ExtensionConfig::platform(extension_name, extension_name)
                 } else {
-                    ExtensionConfig::Builtin {
-                        name: extension_name.to_string(),
-                        display_name: None,
-                        timeout: None,
-                        bundled: None,
-                        description: extension_name.to_string(),
-                        available_tools: Vec::new(),
-                    }
+                    ExtensionConfig::builtin(extension_name, extension_name)
                 }
             })
             .collect()
@@ -2938,6 +2927,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "name_from_cmd_basename"
     )]
@@ -2954,6 +2944,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "env_prefix_name_from_cmd"
     )]
@@ -2970,6 +2961,7 @@ mod tests {
             cwd: None,
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "quoted_path_with_spaces"
     )]
@@ -3147,6 +3139,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "name_from_host"
     )]
@@ -3166,6 +3159,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "port_and_path"
     )]
@@ -3185,6 +3179,7 @@ mod tests {
             scopes: vec![],
             bundled: None,
             available_tools: vec![],
+            always_load_tools: Vec::new(),
         }
         ; "different_port_and_path"
     )]

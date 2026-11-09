@@ -63,6 +63,15 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
             "type": {
               "type": "string",
               "const": "builtin"
@@ -106,6 +115,15 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
+            },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -184,6 +202,15 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
+            },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -3967,6 +3994,15 @@
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
             },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
             "type": {
               "type": "string",
               "const": "builtin"
@@ -4010,6 +4046,15 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
+            },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -4082,6 +4127,15 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
+            },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",
@@ -4176,6 +4230,15 @@
                 "type": "string"
               },
               "description": "Tool allowlist for this extension. Omit this field to allow all tools."
+            },
+            "always_load_tools": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
             },
             "type": {
               "type": "string",

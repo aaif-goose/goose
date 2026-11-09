@@ -139,13 +139,11 @@ async fn enable_developer(services: &Arc<StateMachineServices>, session_id: &str
         .extension_manager
         .enable(
             session_id,
-            ExtensionConfig::Platform {
-                name: crate::agents::platform_extensions::developer::EXTENSION_NAME.to_string(),
-                description: "Developer tools".to_string(),
-                display_name: Some("Developer".to_string()),
-                bundled: None,
-                available_tools: Vec::new(),
-            },
+            ExtensionConfig::platform(
+                crate::agents::platform_extensions::developer::EXTENSION_NAME,
+                "Developer tools",
+            )
+            .with_display_name("Developer"),
         )
         .await?;
     Ok(())
@@ -1025,13 +1023,7 @@ async fn a_subagent_runs_the_parents_hooks_and_is_released_when_it_finishes() ->
         .extension_manager
         .enable(
             &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
+            ExtensionConfig::platform("summon", "Delegate work"),
         )
         .await?;
 
@@ -1112,13 +1104,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         .extension_manager
         .enable(
             &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
+            ExtensionConfig::platform("summon", "Delegate work"),
         )
         .await?;
 
@@ -1201,21 +1187,8 @@ async fn a_subagents_elicitation_is_answered_by_the_parents_client() -> Result<(
     ]);
     crate::builtin_extension::register_builtin_extension("asks_a_name", serve_elicit_fixture);
     for config in [
-        ExtensionConfig::Builtin {
-            name: "asks_a_name".to_string(),
-            display_name: None,
-            description: "Asks for a name".to_string(),
-            timeout: None,
-            bundled: None,
-            available_tools: Vec::new(),
-        },
-        ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: Vec::new(),
-        },
+        ExtensionConfig::builtin("asks_a_name", "Asks for a name"),
+        ExtensionConfig::platform("summon", "Delegate work"),
     ] {
         services
             .extension_manager
@@ -1299,13 +1272,7 @@ async fn concurrent_subagents_get_their_own_answers_for_the_same_tool_call_id() 
         .extension_manager
         .enable(
             &session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
+            ExtensionConfig::platform("summon", "Delegate work"),
         )
         .await?;
 
@@ -1496,13 +1463,7 @@ async fn enable_summon(services: &Arc<StateMachineServices>, session_id: &str) -
         .extension_manager
         .enable(
             session_id,
-            ExtensionConfig::Platform {
-                name: "summon".to_string(),
-                description: "Delegate work".to_string(),
-                display_name: None,
-                bundled: None,
-                available_tools: Vec::new(),
-            },
+            ExtensionConfig::platform("summon", "Delegate work"),
         )
         .await?;
     Ok(())

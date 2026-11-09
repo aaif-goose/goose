@@ -19,6 +19,7 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'builtin';
 } | {
     name: string;
@@ -29,6 +30,7 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'platform';
 } | {
     server: McpServer;
@@ -53,6 +55,7 @@ export type GooseExtension = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'mcp';
 };
 
@@ -1656,6 +1659,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'builtin';
 } | {
     name: string;
@@ -1666,6 +1670,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'platform';
 } | {
     name: string;
@@ -1683,6 +1688,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'stdio';
 } | {
     name: string;
@@ -1714,6 +1720,7 @@ export type RecipeExtensionDto = {
      * Tool allowlist for this extension. Omit this field to allow all tools.
      */
     available_tools?: Array<string> | null;
+    always_load_tools?: Array<string> | null;
     type: 'streamable_http';
 };
 

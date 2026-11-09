@@ -349,11 +349,25 @@ impl ToolExecutionOperation {
 
     async fn mcp_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
         lease
-            .tools_where(|extension| !extension.is_platform())
+            .tools_where(|extension, _, _| !extension.is_platform())
             .await
             .into_iter()
             .filter(is_tool_visible_to_model)
             .collect()
+    }
+
+    async fn deferred_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
+        lease
+            .tools_where(|extension, tool, server_name| {
+                !extension.is_platform()
+                    && is_tool_visible_to_model(tool)
+                    && !extension
+                        .config
+                        .always_load_tools()
+                        .iter()
+                        .any(|name| name == server_name)
+            })
+            .await
     }
 
     async fn enable_tools(
@@ -898,7 +912,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
         if self.defers_tools(&lease) {
             let deferred: HashSet<_> = self
-                .mcp_tools(&lease)
+                .deferred_tools(&lease)
                 .await
                 .into_iter()
                 .map(|tool| tool.name.to_string())
@@ -964,7 +978,7 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         ));
         if self.defers_tools(&lease) {
             let mut names: Vec<_> = self
-                .mcp_tools(&lease)
+                .deferred_tools(&lease)
                 .await
                 .into_iter()
                 .map(|tool| tool.name.to_string())

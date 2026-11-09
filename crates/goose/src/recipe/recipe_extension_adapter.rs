@@ -24,6 +24,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        always_load_tools: Vec<String>,
     },
     #[serde(rename = "builtin")]
     Builtin {
@@ -36,6 +38,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        always_load_tools: Vec<String>,
     },
     #[serde(rename = "platform")]
     Platform {
@@ -48,6 +52,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        always_load_tools: Vec<String>,
     },
     #[serde(rename = "streamable_http")]
     StreamableHttp {
@@ -74,6 +80,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        always_load_tools: Vec<String>,
     },
 }
 
@@ -107,18 +115,21 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 timeout,
                 cwd,
                 bundled,
-                available_tools
+                available_tools,
+                always_load_tools
             },
             Builtin {
                 display_name,
                 timeout,
                 bundled,
-                available_tools
+                available_tools,
+                always_load_tools
             },
             Platform {
                 display_name,
                 bundled,
-                available_tools
+                available_tools,
+                always_load_tools
             },
             StreamableHttp {
                 uri,
@@ -131,7 +142,8 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 client_secret_key,
                 scopes,
                 bundled,
-                available_tools
+                available_tools,
+                always_load_tools
             }
         )
     }
@@ -184,6 +196,7 @@ mod tests {
                 timeout,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => {
                 assert_eq!(name, "test-builtin");
                 assert_eq!(description, "");
@@ -194,6 +207,7 @@ mod tests {
                     available_tools,
                     &vec!["tool_a".to_string(), "tool_b".to_string()]
                 );
+                assert!(always_load_tools.is_empty());
             }
             other => panic!("unexpected extension variant: {:?}", other),
         }
@@ -221,6 +235,7 @@ mod tests {
                 timeout,
                 bundled,
                 available_tools,
+                always_load_tools,
             } => {
                 assert_eq!(name, "null-description-builtin");
                 assert_eq!(description, "");
@@ -228,6 +243,7 @@ mod tests {
                 assert!(timeout.is_none());
                 assert!(bundled.is_none());
                 assert!(available_tools.is_empty());
+                assert!(always_load_tools.is_empty());
             }
             other => panic!("unexpected extension variant: {:?}", other),
         }

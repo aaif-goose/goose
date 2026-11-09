@@ -143,13 +143,12 @@ mod tests {
                 .extension_manager
                 .enable(
                     &session.id,
-                    ExtensionConfig::Platform {
-                        name: SCHEDULER_EXTENSION_NAME.to_string(),
-                        description: "Create and manage scheduled recipe execution".to_string(),
-                        display_name: Some("Scheduler".to_string()),
-                        bundled: Some(true),
-                        available_tools: vec![],
-                    },
+                    ExtensionConfig::platform(
+                        SCHEDULER_EXTENSION_NAME,
+                        "Create and manage scheduled recipe execution",
+                    )
+                    .with_display_name("Scheduler")
+                    .with_bundled(true),
                 )
                 .await
                 .unwrap();
@@ -903,6 +902,7 @@ mod tests {
                     display_name: Some("Todo".to_string()),
                     bundled: Some(true),
                     available_tools: vec![],
+                    always_load_tools: Vec::new(),
                 },
             };
             set_extension(todo_extension_entry);
@@ -932,13 +932,9 @@ mod tests {
             let session_id = session.id;
 
             // Now add the extension manager platform extension
-            let ext_config = ExtensionConfig::Platform {
-                name: "extensionmanager".to_string(),
-                description: "Extension Manager".to_string(),
-                display_name: Some("Extension Manager".to_string()),
-                bundled: Some(true),
-                available_tools: vec![],
-            };
+            let ext_config = ExtensionConfig::platform("extensionmanager", "Extension Manager")
+                .with_display_name("Extension Manager")
+                .with_bundled(true);
 
             services
                 .extension_manager

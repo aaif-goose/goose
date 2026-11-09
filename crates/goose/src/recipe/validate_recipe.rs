@@ -120,9 +120,8 @@ fn schema_field(node: SchemaNode, field: &str) -> Option<SchemaNode> {
             "type" | "name" | "description" | "cmd" | "timeout" | "cwd" | "bundled"
             | "display_name" | "uri" | "socket" | "client_id" | "client_secret_key"
             | "instructions" | "code" => Some(SchemaNode::Scalar),
-            "args" | "env_keys" | "available_tools" | "scopes" | "dependencies" => {
-                Some(SchemaNode::StringList)
-            }
+            "args" | "env_keys" | "available_tools" | "always_load_tools" | "scopes"
+            | "dependencies" => Some(SchemaNode::StringList),
             "envs" | "headers" | "tools" => Some(SchemaNode::Opaque),
             _ => None,
         },

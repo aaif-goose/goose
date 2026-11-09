@@ -169,13 +169,7 @@ async fn recipe_delegation_respects_mode_and_child_turn_limit() -> Result<()> {
         .title("Chat recipe")
         .description("Chat recipe")
         .prompt("Try to delegate")
-        .extensions(vec![ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        }])
+        .extensions(vec![ExtensionConfig::platform("summon", "Delegate work")])
         .build()
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;
@@ -216,13 +210,7 @@ settings:
         .title("Delegating recipe")
         .description("Delegates bounded work")
         .prompt("Delegate the bounded child")
-        .extensions(vec![ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        }])
+        .extensions(vec![ExtensionConfig::platform("summon", "Delegate work")])
         .sub_recipes(vec![SubRecipe {
             name: "bounded".to_string(),
             path: child_path.to_string_lossy().into_owned(),
@@ -286,13 +274,7 @@ async fn final_output_beside_delegate_is_not_shown_before_the_subagent_runs() ->
                 "required": ["result"]
             })),
         })
-        .extensions(vec![ExtensionConfig::Platform {
-            name: "summon".to_string(),
-            description: "Delegate work".to_string(),
-            display_name: None,
-            bundled: None,
-            available_tools: vec![],
-        }])
+        .extensions(vec![ExtensionConfig::platform("summon", "Delegate work")])
         .build()
         .expect("valid recipe");
     pipeline.set_recipe(recipe).await?;

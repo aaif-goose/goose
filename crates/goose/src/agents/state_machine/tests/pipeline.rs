@@ -633,16 +633,7 @@ impl TestPipeline {
         self.services()
             .await
             .extension_manager
-            .enable(
-                &self.session_id,
-                ExtensionConfig::Platform {
-                    name: name.to_string(),
-                    description: name.to_string(),
-                    display_name: None,
-                    bundled: None,
-                    available_tools: vec![],
-                },
-            )
+            .enable(&self.session_id, ExtensionConfig::platform(name, name))
             .await
             .map_err(anyhow::Error::from)
     }
@@ -1004,24 +995,12 @@ fn default_extensions() -> Vec<ExtensionConfig> {
 /// Builtin rather than platform: a session's selection keeps only platform
 /// extensions goose ships.
 pub(super) fn calculator_extension() -> ExtensionConfig {
-    ExtensionConfig::Builtin {
-        name: "calculator".to_string(),
-        description: "Stateful test calculator".to_string(),
-        display_name: None,
-        timeout: None,
-        bundled: None,
-        available_tools: vec![],
-    }
+    ExtensionConfig::builtin("calculator", "Stateful test calculator")
+        .with_always_load_tools(vec!["multiply".to_string(), "app_only".to_string()])
 }
 
 fn platform_extension(name: &str, description: &str) -> ExtensionConfig {
-    ExtensionConfig::Platform {
-        name: name.to_string(),
-        description: description.to_string(),
-        display_name: None,
-        bundled: None,
-        available_tools: vec![],
-    }
+    ExtensionConfig::platform(name, description)
 }
 
 pub(super) struct TestRun {

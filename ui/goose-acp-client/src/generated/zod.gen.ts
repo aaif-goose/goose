@@ -75,6 +75,7 @@ export const zGooseExtension = z.union([
         timeout: z.int().gte(0).nullish(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('builtin')
     }),
     z.object({
@@ -83,6 +84,7 @@ export const zGooseExtension = z.union([
         display_name: z.string().nullish(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('platform')
     }),
     z.object({
@@ -96,6 +98,7 @@ export const zGooseExtension = z.union([
         scopes: z.array(z.string()).optional(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('mcp')
     })
 ]);
@@ -1263,6 +1266,7 @@ export const zRecipeExtensionDto = z.union([
         timeout: z.int().gte(0).nullish(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('builtin')
     }),
     z.object({
@@ -1271,6 +1275,7 @@ export const zRecipeExtensionDto = z.union([
         display_name: z.string().nullish(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('platform')
     }),
     z.object({
@@ -1284,6 +1289,7 @@ export const zRecipeExtensionDto = z.union([
         cwd: z.string().nullish(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('stdio')
     }),
     z.object({
@@ -1300,6 +1306,7 @@ export const zRecipeExtensionDto = z.union([
         scopes: z.array(z.string()).optional(),
         bundled: z.boolean().nullish(),
         available_tools: z.array(z.string()).nullish(),
+        always_load_tools: z.array(z.string()).nullish(),
         type: z.literal('streamable_http')
     })
 ]);
