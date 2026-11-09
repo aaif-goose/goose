@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Cartelle recenti"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Il risultato strutturato non è stato raccolto"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Il risultato strutturato è stato rifiutato"
   },

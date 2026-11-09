@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Message } from '../types/message';
 import GooseMessage from './GooseMessage';
+import type { ToolRenderState } from './messageRowContext';
 
 describe('GooseMessage', () => {
   it('renders operation details for a thinking-only message', async () => {
@@ -35,7 +36,7 @@ describe('GooseMessage', () => {
     expect(screen.getByLabelText('ops_auto_effort: thinking high')).toBeInTheDocument();
   });
 
-  it('renders a recipe final output call as a plain line with its usage', () => {
+  function renderFinalOutputTurn(response: ToolRenderState['response']) {
     const message: Message = {
       id: 'assistant-1',
       content: [
@@ -62,24 +63,7 @@ describe('GooseMessage', () => {
         sessionId="session"
         message={message}
         hideTimestamp={false}
-        toolStates={[
-          {
-            requestId: 'final-1',
-            response: {
-              type: 'toolResponse',
-              id: 'final-1',
-              toolResult: {
-                status: 'success',
-                value: {
-                  content: [{ type: 'text', text: 'Final output successfully collected.' }],
-                  isError: false,
-                },
-              },
-            },
-            confirmation: undefined,
-            isPending: false,
-          },
-        ]}
+        toolStates={[{ requestId: 'final-1', response, confirmation: undefined, isPending: false }]}
         toolNotifications={[undefined]}
         toolConfirmationShownInline={false}
         append={vi.fn()}
@@ -87,9 +71,40 @@ describe('GooseMessage', () => {
       />,
       { wrapper: IntlTestWrapper }
     );
+  }
+
+  it('renders a recipe final output call as a plain line with its usage', () => {
+    renderFinalOutputTurn({
+      type: 'toolResponse',
+      id: 'final-1',
+      toolResult: {
+        status: 'success',
+        value: {
+          content: [{ type: 'text', text: 'Final output successfully collected.' }],
+          isError: false,
+        },
+      },
+    });
 
     expect(screen.getByText('Returned structured result')).toBeInTheDocument();
     expect(screen.queryByText(/final output/i)).not.toBeInTheDocument();
     expect(screen.getByText('1.5k tok')).toBeInTheDocument();
+  });
+
+  it('reports a rejected final output result', () => {
+    renderFinalOutputTurn({
+      type: 'toolResponse',
+      id: 'final-1',
+      toolResult: { status: 'error', error: 'Output does not match the schema' },
+    });
+
+    expect(screen.getByText('Structured result was rejected')).toBeInTheDocument();
+  });
+
+  it('does not report success for a stopped final output call without a result', () => {
+    renderFinalOutputTurn(undefined);
+
+    expect(screen.getByText("Structured result wasn't collected")).toBeInTheDocument();
+    expect(screen.queryByText('Returned structured result')).not.toBeInTheDocument();
   });
 });

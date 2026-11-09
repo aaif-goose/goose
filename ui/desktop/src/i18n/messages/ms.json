@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terkini"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Hasil berstruktur tidak dikumpulkan"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Hasil berstruktur telah ditolak"
   },

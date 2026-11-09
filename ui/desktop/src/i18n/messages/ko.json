@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "최근 디렉터리"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "구조화된 결과를 수집하지 못했습니다"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "구조화된 결과가 거부되었습니다"
   },

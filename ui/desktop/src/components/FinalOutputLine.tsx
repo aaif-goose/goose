@@ -17,6 +17,10 @@ const i18n = defineMessages({
     id: 'finalOutputLine.rejected',
     defaultMessage: 'Structured result was rejected',
   },
+  notCollected: {
+    id: 'finalOutputLine.notCollected',
+    defaultMessage: "Structured result wasn't collected",
+  },
 });
 
 export function isFinalOutputToolRequest(toolRequest: ToolRequest): boolean {
@@ -38,9 +42,11 @@ export default function FinalOutputLine({ toolResponse, isStreaming }: FinalOutp
 
   const [Icon, label] = isPending
     ? [Loader2, i18n.returning]
-    : isRejected
-      ? [X, i18n.rejected]
-      : [null, i18n.returned];
+    : !toolResponse
+      ? [null, i18n.notCollected]
+      : isRejected
+        ? [X, i18n.rejected]
+        : [null, i18n.returned];
 
   return (
     <div className="flex items-center gap-1.5 text-sm text-text-secondary">

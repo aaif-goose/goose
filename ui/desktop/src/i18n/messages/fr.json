@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Répertoires récents"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Le résultat structuré n'a pas été collecté"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Le résultat structuré a été rejeté"
   },

@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近的目录"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "未收集到结构化结果"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "结构化结果被拒绝"
   },

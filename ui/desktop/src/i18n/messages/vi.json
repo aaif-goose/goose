@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Chưa thu thập được kết quả có cấu trúc"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Kết quả có cấu trúc đã bị từ chối"
   },

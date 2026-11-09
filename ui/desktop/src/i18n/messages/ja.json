@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近のディレクトリ"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "構造化された結果は取得されませんでした"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "構造化された結果が拒否されました"
   },

@@ -932,6 +932,9 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Недавние каталоги"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Структурированный результат не получен"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Структурированный результат отклонён"
   },

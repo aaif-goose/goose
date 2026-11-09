@@ -1319,6 +1319,9 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "finalOutputLine.notCollected": {
+    "defaultMessage": "Structured result wasn't collected"
+  },
   "finalOutputLine.rejected": {
     "defaultMessage": "Structured result was rejected"
   },
