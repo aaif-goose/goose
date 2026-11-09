@@ -5,6 +5,8 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
 use crate::session::SessionManager;
 use crate::token_counter::TokenCounter;
+#[cfg(feature = "live-voice")]
+use goose_providers::live_voice_provider::append_instructions;
 use goose_providers::live_voice_provider::{LiveVoiceInputMessage, LiveVoiceProvider};
 pub(crate) use goose_providers::live_voice_provider::{WebRtcAnswer, WebRtcOffer};
 #[cfg(feature = "live-voice")]
@@ -28,6 +30,8 @@ const LIVE_VOICE_ENDPOINT_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_ENDPOINT";
 const LIVE_VOICE_MODEL_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_MODEL";
 #[cfg(feature = "live-voice")]
 const LIVE_VOICE_API_KEY_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_API_KEY";
+#[cfg(feature = "live-voice")]
+const LIVE_VOICE_INSTRUCTIONS_CONFIG_KEY: &str = "GOOSE_LIVE_VOICE_INSTRUCTIONS";
 #[cfg(feature = "live-voice")]
 const DEFAULT_OPENAI_LIVE_VOICE: &str = "marin";
 
@@ -270,6 +274,7 @@ impl LiveVoiceService {
         &self,
         interaction_guard: LiveVoiceInteractionGuard,
         offer: WebRtcOffer,
+        instructions: Option<String>,
         session_manager: Arc<SessionManager>,
         transcript_publisher: LiveVoiceTranscriptPublisher,
         main_agent: LiveMainAgent,
@@ -287,7 +292,7 @@ impl LiveVoiceService {
             return Err(LiveVoiceError::Unavailable);
         }
         let (answer, provider_connection) = provider
-            .start(offer, input_messages)
+            .start(offer, input_messages, instructions)
             .await
             .map_err(|_| LiveVoiceError::StartFailed)?;
 
@@ -370,6 +375,7 @@ struct LiveVoiceSettings {
     endpoint: Option<String>,
     model: Option<String>,
     voice: String,
+    instructions: Option<String>,
 }
 
 #[cfg(feature = "live-voice")]
@@ -399,11 +405,15 @@ fn live_voice_settings(config: &crate::config::Config) -> Result<LiveVoiceSettin
     let voice = config
         .get_param::<String>(LIVE_VOICE_CONFIG_KEY)
         .unwrap_or_else(|_| DEFAULT_OPENAI_LIVE_VOICE.into());
+    let instructions = config
+        .get_param::<String>(LIVE_VOICE_INSTRUCTIONS_CONFIG_KEY)
+        .ok();
     Ok(LiveVoiceSettings {
         api_key,
         endpoint,
         model,
         voice,
+        instructions,
     })
 }
 
@@ -427,7 +437,8 @@ fn live_voice_provider(
     let mut provider = OpenAiLiveVoiceProvider::new(
         settings.api_key,
         settings.voice,
-        LIVE_SESSION_INSTRUCTIONS.into(),
+        // Added to goose's own instructions, never in place of them.
+        append_instructions(LIVE_SESSION_INSTRUCTIONS, settings.instructions.as_deref()),
         DELEGATION_DELIVERY_FAILURE_INSTRUCTIONS.into(),
     )
     .map_err(|_| "Live voice provider is not configured")?;
