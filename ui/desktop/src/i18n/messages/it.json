@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Cartelle recenti"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Il risultato strutturato è stato rifiutato"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Risultato strutturato restituito"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Restituzione del risultato strutturato…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Impossibile passare a {branch}"
   },

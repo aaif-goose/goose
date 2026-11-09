@@ -623,49 +623,66 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
-      it('hides the recipe final output tool call and its result', () => {
-        const adapter = createAcpSessionNotificationAdapter();
+      it('keeps the recipe final output turn so its usage attaches to it', () => {
+        const adapter = createAcpSessionNotificationAdapter([
+          {
+            id: 'assistant-0',
+            role: 'assistant',
+            created: 1,
+            content: [{ type: 'text', text: 'earlier answer' }],
+            metadata: { userVisible: true, agentVisible: true },
+          },
+        ]);
 
-        expect(
-          adapter.apply(
-            acpUpdate({
-              sessionUpdate: 'tool_call',
-              toolCallId: 'final-1',
-              title: 'Final output',
-              status: 'pending',
-              rawInput: { answer: 'done' },
-              _meta: {
-                goose: {
-                  messageId: 'assistant-1',
-                  toolCall: { extensionName: 'recipe', toolName: 'recipe__final_output' },
-                },
-              },
-            })
-          )
-        ).toEqual([]);
-        expect(
-          adapter.apply(
-            acpUpdate({
-              sessionUpdate: 'tool_call_update',
-              toolCallId: 'final-1',
-              status: 'completed',
-              rawOutput: 'Final output successfully collected.',
-            })
-          )
-        ).toEqual([]);
         adapter.apply(
           acpUpdate({
-            ...DEFAULT_TOOL_CALL,
-            _meta: { goose: { toolCall: { toolName: 'read_file' } } },
+            sessionUpdate: 'tool_call',
+            toolCallId: 'final-1',
+            title: 'Final output',
+            status: 'pending',
+            rawInput: { answer: 'done' },
+            _meta: {
+              goose: {
+                messageId: 'assistant-1',
+                toolCall: { extensionName: 'recipe', toolName: 'recipe__final_output' },
+              },
+            },
           })
         );
-        adapter.apply(agentText('{"answer":"done"}'));
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'final-1',
+            status: 'completed',
+            rawOutput: 'Final output successfully collected.',
+          })
+        );
+        adapter.applyGoose(
+          gooseUpdate({
+            sessionUpdate: 'message_usage',
+            messageId: 'assistant-1',
+            usage: { inputTokens: 1200, outputTokens: 85, totalTokens: 1285 },
+          })
+        );
 
         const messages = adapter.getMessages();
-        expect(messages.flatMap((message) => message.content.map((content) => content.type))).toEqual(
-          ['toolRequest', 'text']
-        );
-        expect(firstContent(messages[0])).toMatchObject({ type: 'toolRequest', id: 'tool-1' });
+        const finalOutputTurn = messages.find((message) => message.id === 'assistant-1');
+        expect(finalOutputTurn?.content).toEqual([
+          expect.objectContaining({
+            type: 'toolRequest',
+            id: 'final-1',
+            toolCall: {
+              status: 'success',
+              value: { name: 'recipe__final_output', arguments: { answer: 'done' } },
+            },
+          }),
+        ]);
+        expect(finalOutputTurn?.metadata.usage).toMatchObject({
+          inputTokens: 1200,
+          outputTokens: 85,
+          totalTokens: 1285,
+        });
+        expect(messages[0].metadata.usage).toBeUndefined();
       });
 
       it('preserves failed tool responses as results with error status', () => {

@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Direktori terkini"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Hasil berstruktur telah ditolak"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Hasil berstruktur dikembalikan"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Mengembalikan hasil berstruktur…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Gagal beralih ke {branch}"
   },

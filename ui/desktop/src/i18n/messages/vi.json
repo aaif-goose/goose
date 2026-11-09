@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Thư mục gần đây"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Kết quả có cấu trúc đã bị từ chối"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Đã trả về kết quả có cấu trúc"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Đang trả về kết quả có cấu trúc…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Không thể chuyển sang {branch}"
   },

@@ -1319,6 +1319,15 @@
   "externalBackendSection.workingDirPlaceholder": {
     "defaultMessage": "/home/goose/workspace"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Structured result was rejected"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Returned structured result"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Returning structured result…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Failed to switch to {branch}"
   },

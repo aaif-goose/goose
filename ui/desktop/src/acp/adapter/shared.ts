@@ -19,7 +19,6 @@ export interface AdapterState {
   messages: Message[];
   localSteerTextByMessageId: Map<string, string>;
   toolCallStatesById: Map<string, ToolCallState>;
-  hiddenToolCallIds: Set<string>;
 }
 
 export type ToolCallState = Omit<ToolCallUpdate, '_meta'>;

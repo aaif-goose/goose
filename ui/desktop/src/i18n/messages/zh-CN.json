@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近的目录"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "结构化结果被拒绝"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "已返回结构化结果"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "正在返回结构化结果…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "无法切换到 {branch}"
   },

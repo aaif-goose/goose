@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Недавние каталоги"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "Структурированный результат отклонён"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Структурированный результат возвращён"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Возвращается структурированный результат…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Не удалось переключиться на {branch}"
   },

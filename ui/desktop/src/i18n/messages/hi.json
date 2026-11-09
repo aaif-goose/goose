@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "हाल की निर्देशिकाएँ"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "संरचित परिणाम अस्वीकार कर दिया गया"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "संरचित परिणाम लौटाया गया"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "संरचित परिणाम लौटाया जा रहा है…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "{branch} पर स्विच नहीं किया जा सका"
   },

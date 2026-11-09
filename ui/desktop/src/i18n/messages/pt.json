@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "Diretórios recentes"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "O resultado estruturado foi rejeitado"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "Resultado estruturado retornado"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "Retornando resultado estruturado…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "Falha ao mudar para {branch}"
   },

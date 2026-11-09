@@ -932,6 +932,15 @@
   "dirSwitcher.recentDirectories": {
     "defaultMessage": "最近的目錄"
   },
+  "finalOutputLine.rejected": {
+    "defaultMessage": "結構化結果遭到拒絕"
+  },
+  "finalOutputLine.returned": {
+    "defaultMessage": "已傳回結構化結果"
+  },
+  "finalOutputLine.returning": {
+    "defaultMessage": "正在傳回結構化結果…"
+  },
   "gitBranchIndicator.failedToSwitch": {
     "defaultMessage": "無法切換至 {branch}"
   },
