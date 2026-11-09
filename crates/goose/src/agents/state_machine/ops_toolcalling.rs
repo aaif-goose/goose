@@ -66,7 +66,6 @@ fn enable_tools_tool() -> Result<Tool> {
 fn enabled_tools(conversation: &Conversation) -> HashSet<String> {
     let mut requests = HashSet::new();
     let mut enabled = HashSet::new();
-    // Hidden messages still contain the successful results after compaction.
     for content in conversation
         .messages()
         .iter()
