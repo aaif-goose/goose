@@ -8,11 +8,16 @@ use async_trait::async_trait;
 use futures::{FutureExt, StreamExt};
 use goose_agent::post_tool_call_hook::PostToolCallHook;
 use goose_agent::tool_call_state::request_executable;
-use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
+};
 
 use crate::agents::extension::ExtensionInfo;
-use crate::agents::extension_manager::{CallRequest, ExtensionLease, ExtensionManager};
+use crate::agents::extension_manager::{
+    get_tool_owner, is_in_process, CallRequest, ExtensionLease, ExtensionManager,
+};
 use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
+use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_recipe::final_output_called_with_other_tools;
 use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
@@ -39,6 +44,67 @@ pub(super) const EXPIRED_APPROVAL_RESPONSE: &str =
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio_util::sync::CancellationToken;
 use tracing_futures::Instrument;
+
+const ENABLE_TOOLS: &str = "enable_tools";
+
+#[derive(serde::Deserialize, schemars::JsonSchema)]
+struct EnableToolsParams {
+    /// Exact MCP tool names to make available on the next response.
+    tool_names: Vec<String>,
+}
+
+fn enable_tools_tool() -> Result<Tool> {
+    let schema: rmcp::model::JsonObject = serde_json::from_value(serde_json::to_value(
+        schemars::schema_for!(EnableToolsParams),
+    )?)?;
+    Ok(Tool::new(
+        ENABLE_TOOLS,
+        "Enable MCP tools listed in the system instructions. Call them in your next response.",
+        schema,
+    )
+    .annotate(ToolAnnotations::new().read_only(true)))
+}
+
+fn enabled_tools(conversation: &Conversation) -> HashSet<String> {
+    let mut requests = HashSet::new();
+    let mut enabled = HashSet::new();
+    // Hidden messages still contain the successful results after compaction.
+    for content in conversation
+        .messages()
+        .iter()
+        .flat_map(|message| &message.content)
+    {
+        match content {
+            MessageContent::ToolRequest(request)
+                if request
+                    .tool_call
+                    .as_ref()
+                    .is_ok_and(|call| call.name == ENABLE_TOOLS) =>
+            {
+                requests.insert(&request.id);
+            }
+            MessageContent::ToolResponse(response) if requests.remove(&response.id) => {
+                if let Ok(result) = &response.tool_result {
+                    if result.is_error != Some(true) {
+                        if let Some(names) = result
+                            .structured_content
+                            .as_ref()
+                            .and_then(|value| value["enabled"].as_array())
+                        {
+                            enabled.extend(
+                                names
+                                    .iter()
+                                    .filter_map(|name| name.as_str().map(str::to_string)),
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    enabled
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum ToolCategory {
@@ -251,6 +317,7 @@ pub struct ToolExecutionOperation {
     post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
+    defer_tools: bool,
 }
 
 impl ToolExecutionOperation {
@@ -266,7 +333,67 @@ impl ToolExecutionOperation {
             post_tool_call_hook,
             lease,
             batch: Arc::default(),
+            defer_tools: false,
         }
+    }
+
+    pub fn with_deferred_tools(mut self, defer_tools: bool) -> Self {
+        self.defer_tools = defer_tools;
+        self
+    }
+
+    fn defers_tools(&self, lease: &ExtensionLease) -> bool {
+        #[cfg(feature = "code-mode")]
+        if lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
+            return false;
+        }
+        let _ = lease;
+        self.defer_tools
+    }
+
+    async fn mcp_tools(&self, lease: &ExtensionLease) -> Vec<Tool> {
+        let extensions: HashSet<_> = lease
+            .configs()
+            .into_iter()
+            .filter(|config| !is_in_process(config))
+            .map(|config| config.key())
+            .collect();
+        lease
+            .tools_excluding(crate::skills::EXTENSION_NAME)
+            .await
+            .into_iter()
+            .filter(|tool| {
+                is_tool_visible_to_model(tool)
+                    && get_tool_owner(tool).is_some_and(|owner| extensions.contains(&owner))
+            })
+            .collect()
+    }
+
+    async fn enable_tools(
+        &self,
+        lease: &ExtensionLease,
+        call: &CallToolRequestParams,
+    ) -> CallToolResult {
+        let params = serde_json::from_value::<EnableToolsParams>(serde_json::Value::Object(
+            call.arguments.clone().unwrap_or_default(),
+        ));
+        let params = match params {
+            Ok(params) => params,
+            Err(error) => {
+                return CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+            }
+        };
+        let tools = self.mcp_tools(lease).await;
+        if let Some(name) = params
+            .tool_names
+            .iter()
+            .find(|name| !tools.iter().any(|tool| tool.name == name.as_str()))
+        {
+            return CallToolResult::error(vec![ContentBlock::text(format!(
+                "Unknown MCP tool: {name}"
+            ))]);
+        }
+        CallToolResult::structured(serde_json::json!({"enabled": params.tool_names}))
     }
 
     fn take_batch(&self) -> (Vec<Message>, Option<Message>) {
@@ -320,21 +447,26 @@ impl ToolExecutionOperation {
             )
             .await;
 
-            let result = lease
-                .call(
-                    tool_call.clone(),
-                    CallRequest::new(request_id.clone()).with_container(session.container.clone()),
-                    cancellation_token,
-                )
-                .await;
-            let result = result.unwrap_or_else(|error| {
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error(
-                    "tool_execution_failed",
-                    &format!("{}: {}", tool_call.name, error),
-                );
-                ToolCallResult::from(Err(error))
-            });
+            let result = if self.defers_tools(&lease) && tool_call.name == ENABLE_TOOLS {
+                ToolCallResult::from(Ok(self.enable_tools(&lease, &tool_call).await))
+            } else {
+                let result = lease
+                    .call(
+                        tool_call.clone(),
+                        CallRequest::new(request_id.clone())
+                            .with_container(session.container.clone()),
+                        cancellation_token,
+                    )
+                    .await;
+                result.unwrap_or_else(|error| {
+                    #[cfg(feature = "telemetry")]
+                    crate::posthog::emit_error(
+                        "tool_execution_failed",
+                        &format!("{}: {}", tool_call.name, error),
+                    );
+                    ToolCallResult::from(Err(error))
+                })
+            };
             let result = self
                 .extension_manager
                 .applying_mutation(result, &session.id);
@@ -710,7 +842,7 @@ fn extension_prompt_parts(extensions: &[ExtensionInfo]) -> Vec<(String, String)>
         "# Extensions\n\n\
          Extensions provide additional tools and context from different data sources and applications.\n\
          You can dynamically enable or disable extensions as needed to help complete tasks.\n\n\
-         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below. Each of these extensions provides tools that are in your tool specification."
+         Because you dynamically load extensions, your conversation history may refer to interactions with extensions that are not currently active. The currently active extensions are below."
             .to_string(),
     )];
     for extension in extensions {
@@ -767,11 +899,26 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
     }
 
     async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
-        Ok(self
-            .lease(session)
-            .await?
-            .tools_excluding(crate::skills::EXTENSION_NAME)
-            .await)
+        let lease = self.lease(session).await?;
+        let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
+        if self.defers_tools(&lease) {
+            let deferred: HashSet<_> = self
+                .mcp_tools(&lease)
+                .await
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect();
+            let enabled = session
+                .conversation
+                .as_ref()
+                .map(enabled_tools)
+                .unwrap_or_default();
+            tools.retain(|tool| {
+                !deferred.contains(tool.name.as_ref()) || enabled.contains(tool.name.as_ref())
+            });
+            tools.push(enable_tools_tool()?);
+        }
+        Ok(tools)
     }
 
     async fn moim_parts(
@@ -817,6 +964,20 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         // HashMap order shuffles across restarts and would bust the prompt cache.
         extensions.sort_by(|a, b| a.name.cmp(&b.name));
         prompt_parts.extend(extension_prompt_parts(&extensions));
+        if self.defers_tools(&lease) {
+            let mut names: Vec<_> = self
+                .mcp_tools(&lease)
+                .await
+                .into_iter()
+                .map(|tool| tool.name.to_string())
+                .collect();
+            names.sort();
+            prompt_parts.push(("mcp_tools".to_string(), format!(
+                "MCP tools available to enable: {}. Call enable_tools with exact tool_names before using them. \
+                 Their schemas become available on your next response. Enabling does not execute a tool.",
+                names.join(", ")
+            )));
+        }
         Ok(prompt_parts)
     }
 
@@ -874,12 +1035,15 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
             return applied([response.into()]);
         };
 
-        let known_tools: HashSet<_> = lease
+        let mut known_tools: HashSet<_> = lease
             .tools_excluding(crate::skills::EXTENSION_NAME)
             .await
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect();
+        if self.defers_tools(&lease) {
+            known_tools.insert(ENABLE_TOOLS.to_string());
+        }
         pending.retain(|(request, _)| {
             request
                 .tool_call

@@ -51,6 +51,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_CACHE_TTL` | Anthropic prompt-cache TTL; `1h` keeps the cached prefix alive across idle gaps at a higher cache-write rate. Headless runs always use `5m` | "5m", "1h" | "5m" | No |
 | `GOOSE_MODE` | [Tool execution behavior](/docs/guides/managing-tools/goose-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOOSE_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
+| `GOOSE_DEFER_TOOLS` | Publish MCP tool names up front; enable schemas on demand with `enable_tools` | true/false | false | No |
 | `GOOSE_TOOLSHIM` | Enable tool interpretation | true/false | false | No |
 | `GOOSE_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |
 | `GOOSE_INPUT_LIMIT` | Override input token limit for Ollama (maps to `num_ctx`) | Positive integer | Model default | No |
@@ -73,6 +74,8 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOOSE_TELEMETRY_ENABLED` | Enable [anonymous usage data](/docs/guides/usage-data) collection | true/false | false | No |
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
+
+Set `GOOSE_DEFER_TOOLS: true` to list MCP tool names in the system prompt and enable their schemas on demand. The model calls `enable_tools` with exact `tool_names`, then uses them on its next response. Successful enables survive compaction and resume through the stored conversation; clearing history removes them. Platform tools remain eager, and code mode keeps its own catalog. Enabling follows ordinary permissions and does not grant permission to execute a tool. The environment variable overrides the YAML setting.
 
 ## Example Configuration
 

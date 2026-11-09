@@ -36,6 +36,7 @@ pub(crate) struct StateMachineConfig<'a> {
     pub(crate) compaction_threshold: f64,
     pub(crate) tool_call_cutoff: usize,
     pub(crate) tool_pair_summarization: bool,
+    pub(crate) defer_tools: bool,
     pub(crate) session_manager: Arc<SessionManager>,
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
@@ -99,6 +100,7 @@ pub(crate) fn build_state_machine(
         compaction_threshold,
         tool_call_cutoff,
         tool_pair_summarization,
+        defer_tools,
         session_manager,
         extension_manager,
         extension_lease,
@@ -137,12 +139,15 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_manager),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(ToolExecutionOperation::new(
-            Arc::clone(&extension_manager),
-            hook_manager.clone(),
-            Arc::clone(&post_tool_call_hook),
-            Arc::clone(&extension_lease),
-        )),
+        Arc::new(
+            ToolExecutionOperation::new(
+                Arc::clone(&extension_manager),
+                hook_manager.clone(),
+                Arc::clone(&post_tool_call_hook),
+                Arc::clone(&extension_lease),
+            )
+            .with_deferred_tools(defer_tools),
+        ),
         Arc::new(RemainingToolCallsOperation::new(
             hook_manager.clone(),
             post_tool_call_hook,

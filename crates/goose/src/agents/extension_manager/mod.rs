@@ -640,7 +640,7 @@ fn insert_trusted_tool_update_meta(
     result.meta = Some(MetaObject(meta_map));
 }
 
-fn is_in_process(config: &ExtensionConfig) -> bool {
+pub(crate) fn is_in_process(config: &ExtensionConfig) -> bool {
     matches!(
         config,
         ExtensionConfig::Platform { name, .. } | ExtensionConfig::Builtin { name, .. }
