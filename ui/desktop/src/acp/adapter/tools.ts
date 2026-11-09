@@ -22,7 +22,14 @@ import {
   type ToolCallState,
 } from './shared';
 
+const FINAL_OUTPUT_TOOL_NAME = 'recipe__final_output';
+
 export function applyToolCall(state: AdapterState, update: ToolCall): AcpChatStateChange[] {
+  if (toolIdentity(update).toolName === FINAL_OUTPUT_TOOL_NAME) {
+    state.hiddenToolCallIds.add(update.toolCallId);
+    return [];
+  }
+
   updateToolCallState(state, update);
 
   const gooseMeta = getGooseMessageMeta(update);
@@ -61,6 +68,10 @@ export function applyToolCallUpdate(
   state: AdapterState,
   update: ToolCallUpdate
 ): AcpChatStateChange[] {
+  if (state.hiddenToolCallIds.has(update.toolCallId)) {
+    return [];
+  }
+
   const toolCallState = updateToolCallState(state, update);
   const isFinished = toolCallState.status === 'completed' || toolCallState.status === 'failed';
 

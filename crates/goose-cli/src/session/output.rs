@@ -2,6 +2,7 @@ use crate::session::builder::ExtensionFailure;
 use anstream::{adapter::strip_str, eprintln, println};
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, StyledObject, Term};
+use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use goose::agents::platform_extensions::todo::TODO_WRITE_TOOL_NAME_COMPLETE;
 use goose::config::Config;
 use goose::conversation::message::{
@@ -17,10 +18,11 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
 use serde_json::Value;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt::Display;
 use std::io::{Error, IsTerminal, Write};
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use super::streaming_buffer::MarkdownBuffer;
@@ -300,6 +302,22 @@ pub fn set_thinking_message(s: &String) {
     }
 }
 
+static HIDDEN_TOOL_CALL_IDS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn is_final_output_request(req: &ToolRequest) -> bool {
+    req.tool_call
+        .as_ref()
+        .is_ok_and(|call| call.name == FINAL_OUTPUT_TOOL_NAME)
+}
+
+fn hide_tool_call(id: &str) {
+    HIDDEN_TOOL_CALL_IDS.lock().unwrap().insert(id.to_string());
+}
+
+fn is_hidden_tool_call(id: &str) -> bool {
+    HIDDEN_TOOL_CALL_IDS.lock().unwrap().contains(id)
+}
+
 pub fn render_message(message: &Message, debug: bool) {
     if !message.is_user_visible() {
         return;
@@ -324,6 +342,10 @@ pub fn render_message(message: &Message, debug: bool) {
                 }
             },
             MessageContent::Text(text) => print_markdown(&text.text, theme),
+            MessageContent::ToolRequest(req) if is_final_output_request(req) => {
+                hide_tool_call(&req.id)
+            }
+            MessageContent::ToolResponse(resp) if is_hidden_tool_call(&resp.id) => {}
             MessageContent::ToolRequest(req) => render_tool_request(req, theme, debug),
             MessageContent::ToolResponse(resp) => render_tool_response(resp, debug),
             MessageContent::Image(image) => {
@@ -394,6 +416,10 @@ pub fn render_message_streaming(
                     print_markdown(&safe_content, theme);
                 }
             }
+            MessageContent::ToolRequest(req) if is_final_output_request(req) => {
+                hide_tool_call(&req.id)
+            }
+            MessageContent::ToolResponse(resp) if is_hidden_tool_call(&resp.id) => {}
             MessageContent::ToolRequest(req) => {
                 flush_markdown_buffer(buffer, theme);
                 render_tool_request(req, theme, debug);
@@ -1738,6 +1764,21 @@ mod tests {
     use serde_json::json;
     use std::env;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn final_output_tool_calls_are_hidden() {
+        let message = Message::assistant()
+            .with_tool_request(
+                "final-1",
+                Ok(CallToolRequestParams::new(FINAL_OUTPUT_TOOL_NAME)),
+            )
+            .with_tool_request("shell-1", Ok(CallToolRequestParams::new("shell")));
+
+        render_message(&message, false);
+
+        assert!(is_hidden_tool_call("final-1"));
+        assert!(!is_hidden_tool_call("shell-1"));
+    }
 
     #[test]
     fn recent_lines_accumulate_across_updates() {

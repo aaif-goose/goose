@@ -5,10 +5,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
-use rmcp::model::{CallToolResult, ContentBlock, ErrorCode, ErrorData};
+use rmcp::model::{CallToolResult, ContentBlock};
 use tracing_futures::Instrument;
 
-use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use crate::agents::state_machine::effects::GooseEffect;
 use crate::agents::state_machine::ops_toolcalling::{
     emit_extended_pre_hooks, pending_tool_requests, request_was_advertised, tool_span,
@@ -56,23 +55,8 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
         conversation: &Conversation,
         emit: &Emitter,
     ) -> Result<OperationResult<GooseEffect>> {
-        let active_final_output = session
-            .recipe
-            .as_ref()
-            .is_some_and(|recipe| recipe.response.is_some());
         let messages = messages_since_kickoff(conversation)?;
-        let pending: Vec<_> = pending_tool_requests(messages)
-            .into_iter()
-            .filter(|(request, _)| {
-                // Reserve for RecipeOperation the final-output calls it will execute.
-                !(active_final_output
-                    && request_was_advertised(messages, request)
-                    && request
-                        .tool_call
-                        .as_ref()
-                        .is_ok_and(|tool_call| tool_call.name == FINAL_OUTPUT_TOOL_NAME))
-            })
-            .collect();
+        let pending = pending_tool_requests(messages);
         if pending.is_empty() {
             return not_applicable();
         }
@@ -122,28 +106,10 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                             )
                             .instrument(span.clone())
                             .await;
-                            let (output, unclaimed) = if tool_call.name == FINAL_OUTPUT_TOOL_NAME
-                                && !active_final_output
-                            {
-                                span.record("error.type", "final_output_not_defined");
-                                (
-                                    Err(ErrorData::new(
-                                        ErrorCode::INTERNAL_ERROR,
-                                        "Final output tool not defined".to_string(),
-                                        None,
-                                    )),
-                                    false,
-                                )
-                            } else {
-                                span.record("error.type", "tool_not_available");
-                                (
-                                    Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                                        "Tool '{}' is not available.",
-                                        tool_call.name
-                                    ))])),
-                                    true,
-                                )
-                            };
+                            span.record("error.type", "tool_not_available");
+                            let output = Ok(CallToolResult::error(vec![ContentBlock::text(
+                                format!("Tool '{}' is not available.", tool_call.name),
+                            )]));
                             let tool_response = ToolResponse {
                                 id: request.id.clone(),
                                 tool_result: output.clone(),
@@ -158,7 +124,7 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
                             )
                             .instrument(span.clone())
                             .await;
-                            (output, unclaimed)
+                            (output, true)
                         }
                         Err(error) => (
                             Ok(CallToolResult::error(vec![ContentBlock::text(format!(
@@ -186,8 +152,8 @@ impl Operation<Session, GooseEffect> for RemainingToolCallsOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
     use crate::conversation::message::ToolRequest;
-    use crate::recipe::{Recipe, Response};
     use goose_agent::tool_call_state::EXECUTABLE_KEY;
     use rmcp::model::CallToolRequestParams;
     use std::sync::Mutex;
@@ -293,34 +259,6 @@ mod tests {
 
         assert!(matches!(
             run(&Session::default(), messages).await?,
-            OperationResult::NotApplicable
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn a_final_output_call_is_left_to_the_recipe_step() -> Result<()> {
-        let session = Session {
-            recipe: Some(
-                Recipe::builder()
-                    .title("recipe")
-                    .description("recipe")
-                    .instructions("answer")
-                    .response(Response {
-                        json_schema: Some(serde_json::json!({ "type": "object" })),
-                    })
-                    .build()
-                    .unwrap(),
-            ),
-            ..Session::default()
-        };
-        let messages = vec![
-            Message::user().with_text("go"),
-            executable_calls(&[("final", FINAL_OUTPUT_TOOL_NAME)]),
-        ];
-
-        assert!(matches!(
-            run(&session, messages).await?,
             OperationResult::NotApplicable
         ));
         Ok(())

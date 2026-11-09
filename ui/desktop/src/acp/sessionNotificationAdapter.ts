@@ -43,6 +43,7 @@ export function createAcpSessionNotificationAdapter(
     messages: initialMessages.map(cloneMessage),
     localSteerTextByMessageId: new Map(localSteerTextByMessageId),
     toolCallStatesById: new Map(),
+    hiddenToolCallIds: new Set(),
   };
 
   return {

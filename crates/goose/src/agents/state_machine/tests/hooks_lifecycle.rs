@@ -6,7 +6,6 @@ use super::calculator_extension::{value, ADD};
 use super::pipeline::{test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MAX_TURNS};
 use crate::agents::final_output_tool::{FINAL_OUTPUT_NOT_ALONE_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::state_machine::ops_remaining_tool_calls::UNCLAIMED_TOOL_ERROR;
-use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent, SystemNotificationType};
@@ -597,7 +596,7 @@ async fn pre_tool_use_result_reports_unevaluated_when_the_only_hook_exits_withou
 }
 
 /// Builds a recipe whose structured response forces the model through
-/// `recipe__final_output`, which `RecipeOperation` executes itself rather than
+/// `recipe__final_output`, which `FinalOutputOperation` executes itself rather than
 /// handing to `ToolExecutionOperation`.
 fn final_output_recipe() -> crate::recipe::Recipe {
     crate::recipe::Recipe::builder()
@@ -616,7 +615,7 @@ fn final_output_recipe() -> crate::recipe::Recipe {
 }
 
 #[tokio::test]
-async fn recipe_final_output_emits_tool_hooks_with_one_tool_call_id() -> Result<()> {
+async fn recipe_final_output_runs_no_tool_hooks() -> Result<()> {
     let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_hook_manager(env.hook_manager());
@@ -626,44 +625,14 @@ async fn recipe_final_output_emits_tool_hooks_with_one_tool_call_id() -> Result<
         serde_json::json!({ "answer": "done" }),
     );
 
-    pipeline.run(["produce the answer"]).await?;
+    let result = pipeline.run(["produce the answer"]).await?;
 
-    let pres = env.payloads("pre.log");
-    let results = env.payloads("result.log");
-    let posts = env.payloads("post.log");
-    assert_eq!(
-        pres.len(),
-        1,
-        "PreToolUse must fire for recipe final output"
-    );
-    assert_eq!(
-        results.len(),
-        1,
-        "PreToolUseResult must fire for recipe final output"
-    );
-    assert_eq!(
-        posts.len(),
-        1,
-        "PostToolUse must fire for a successful recipe final output"
-    );
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    assert!(env.payloads("pre.log").is_empty());
+    assert!(env.payloads("result.log").is_empty());
+    assert!(env.payloads("post.log").is_empty());
     assert!(env.payloads("postfail.log").is_empty());
-    assert_eq!(pres[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert_eq!(results[0]["event"], "PreToolUseResult");
-    assert_eq!(results[0]["decision"], "allow");
-    assert_eq!(posts[0]["event"], "PostToolUse");
-    assert_eq!(posts[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-    assert!(pres[0]["tool_call_id"]
-        .as_str()
-        .is_some_and(|id| !id.is_empty()));
-    assert_eq!(
-        pres[0]["tool_call_id"], results[0]["tool_call_id"],
-        "PreToolUse and PreToolUseResult must carry the same tool_call_id"
-    );
-    assert_eq!(
-        posts[0]["tool_call_id"], pres[0]["tool_call_id"],
-        "the post event must carry the same tool_call_id as the pre events"
-    );
     Ok(())
 }
 
@@ -704,13 +673,10 @@ async fn final_output_beside_another_call_is_rejected_until_called_alone() -> Re
         .collect();
     assert!(!pre_hooked.contains(&"early-output".to_string()));
     assert!(pre_hooked.contains(&"side-effect".to_string()));
-    assert_eq!(
-        env.payloads("pre.log")
-            .iter()
-            .filter(|payload| payload["tool_name"] == FINAL_OUTPUT_TOOL_NAME)
-            .count(),
-        1
-    );
+    assert!(env
+        .payloads("pre.log")
+        .iter()
+        .all(|payload| payload["tool_name"] != FINAL_OUTPUT_TOOL_NAME));
     Ok(())
 }
 
@@ -760,59 +726,26 @@ async fn rejected_final_output_after_a_stop_hook_block_does_not_reshow_the_block
     Ok(())
 }
 
-/// recipe final-output parity: a denying hook stops the call. The final-output
-/// tool never runs, so the recipe never reports a successful structured answer,
-/// and no post event fires — the same shape a denied ordinary tool call has.
 #[tokio::test]
-async fn recipe_final_output_denied_by_hook_does_not_execute() -> Result<()> {
+async fn recipe_final_output_ignores_a_denying_hook() -> Result<()> {
     let env = RecordingHookEnv::new(&[
         ("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT),
         ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
     ]);
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_max_turns(2);
+    let pipeline = pipeline.with_hook_manager(env.hook_manager());
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("produce the answer").call(
         FINAL_OUTPUT_TOOL_NAME,
         serde_json::json!({ "answer": "done" }),
     );
-    api.on("denied by policy hook").reply("understood");
 
     let result = pipeline.run(["produce the answer"]).await?;
 
-    let results = env.payloads("result.log");
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["decision"], "deny");
-    assert_eq!(results[0]["blocked_by"], "test-plugin");
-    assert_eq!(results[0]["tool_name"], FINAL_OUTPUT_TOOL_NAME);
-
-    assert!(
-        env.payloads("post.log").is_empty(),
-        "PostToolUse must not fire for a denied final-output call"
-    );
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "PostToolUseFailure must not fire for a denied final-output call"
-    );
-
-    let produced_answer = result
-        .conversation()
-        .messages()
-        .iter()
-        .any(|message| message.as_concat_text().contains("\"answer\""));
-    assert!(
-        !produced_answer,
-        "a denied final-output call must not execute the tool"
-    );
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    assert!(env.payloads("pre.log").is_empty());
+    assert!(env.payloads("result.log").is_empty());
     Ok(())
 }
 
@@ -1111,57 +1044,23 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn chat_mode_does_not_collect_skipped_recipe_final_output_or_run_hooks() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", RECORD_PRE_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-        ("PostToolUse", "", "post.sh", RECORD_POST_SCRIPT),
-        (
-            "PostToolUseFailure",
-            "",
-            "postfail.sh",
-            RECORD_POST_FAILURE_SCRIPT,
-        ),
-    ]);
+async fn chat_mode_accepts_recipe_final_output_without_hooks() -> Result<()> {
+    let env = recording_lifecycle_env();
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline
         .with_hook_manager(env.hook_manager())
         .with_goose_mode(GooseMode::Chat)
-        .await
-        .with_max_turns(2);
+        .await;
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("produce the answer").call(
         FINAL_OUTPUT_TOOL_NAME,
         serde_json::json!({ "answer": "done" }),
     );
-    api.on(CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-        .reply("continued without the final output tool");
 
     let result = pipeline.run(["produce the answer"]).await?;
 
-    let messages = result.conversation().messages();
-    let emitted_chat_skip = messages
-        .iter()
-        .flat_map(|message| &message.content)
-        .any(|content| match content {
-            MessageContent::ToolResponse(response) => {
-                response.tool_result.as_ref().is_ok_and(|result| {
-                    result.content.iter().any(|content| {
-                        content
-                            .as_text()
-                            .is_some_and(|text| text.text == CHAT_MODE_TOOL_SKIPPED_RESPONSE)
-                    })
-                })
-            }
-            _ => false,
-        });
-    assert!(emitted_chat_skip, "Chat mode must emit its skip response");
-    assert!(
-        messages
-            .iter()
-            .all(|message| message.as_concat_text() != r#"{"answer":"done"}"#),
-        "a skipped final-output call must not be collected"
-    );
+    assert_eq!(api.call_count(), 1);
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
     assert!(env.payloads("pre.log").is_empty());
     assert!(env.payloads("result.log").is_empty());
     assert!(env.payloads("post.log").is_empty());
@@ -1286,66 +1185,45 @@ fn recording_lifecycle_env() -> RecordingHookEnv {
     ])
 }
 
-/// A final-output call refused by permission is answered like any other declined
-/// tool. RecipeOperation matches on Execute alone, so before the fix nothing
-/// answered this request at all.
 #[tokio::test]
-async fn recipe_final_output_denied_by_permission_receives_declined_response() -> Result<()> {
-    let env = recording_lifecycle_env();
+async fn recipe_final_output_ignores_never_allow_permission() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Approve)
-        .await;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
     pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::NeverAllow);
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("finish now").call(
         FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "denied" }),
+        serde_json::json!({ "answer": "done" }),
     );
-    api.on("declined to run this tool").reply("understood");
 
     let result = pipeline.run(["finish now"]).await?;
-    let messages = result.conversation().messages();
-    assert_tool_transcript_bijection(messages);
 
-    let declined = messages
+    assert_eq!(api.call_count(), 1);
+    assert_tool_transcript_bijection(result.conversation().messages());
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
+    Ok(())
+}
+
+#[tokio::test]
+async fn approve_mode_accepts_recipe_final_output_without_asking() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    pipeline.set_recipe(final_output_recipe()).await?;
+    api.on("finish now").call(
+        FINAL_OUTPUT_TOOL_NAME,
+        serde_json::json!({ "answer": "done" }),
+    );
+
+    let result = pipeline.run(["finish now"]).await?;
+
+    assert_eq!(api.call_count(), 1);
+    assert!(result
+        .conversation()
+        .messages()
         .iter()
         .flat_map(|message| &message.content)
-        .filter(|content| match content {
-            MessageContent::ToolResponse(response) => {
-                response.tool_result.as_ref().is_ok_and(|result| {
-                    result.content.iter().any(|block| {
-                        block
-                            .as_text()
-                            .is_some_and(|text| text.text == DECLINED_RESPONSE)
-                    })
-                })
-            }
-            _ => false,
-        })
-        .count();
-    assert_eq!(
-        declined, 1,
-        "the declined call must get one DECLINED_RESPONSE"
-    );
-
-    assert!(
-        env.payloads("pre.log").is_empty(),
-        "no PreToolUse on decline"
-    );
-    assert!(
-        env.payloads("result.log").is_empty(),
-        "no PreToolUseResult on decline"
-    );
-    assert!(
-        env.payloads("post.log").is_empty(),
-        "no PostToolUse on decline"
-    );
-    assert!(
-        env.payloads("postfail.log").is_empty(),
-        "no PostToolUseFailure on decline"
-    );
+        .all(|content| !matches!(content, MessageContent::ActionRequired(_))));
+    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
     Ok(())
 }
 

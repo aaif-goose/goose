@@ -1166,14 +1166,7 @@ async fn a_subagent_asks_the_parents_client_for_approval_in_the_parents_mode() -
         }
     }
 
-    assert_eq!(
-        approved_tools,
-        vec![
-            "delegate",
-            "shell",
-            crate::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME,
-        ]
-    );
+    assert_eq!(approved_tools, vec!["delegate", "shell"]);
     assert!(texts.concat().ends_with("the subagent printed it"));
     Ok(())
 }

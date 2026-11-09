@@ -1227,10 +1227,10 @@ impl TestRun {
 }
 
 const TOOL_OPERATIONS: [&str; 7] = [
+    "final_output",
     "tool_approval",
     "pre_tool_call_hook",
     "skills",
-    "recipe",
     "tool_execution",
     "remaining_tool_calls",
     "unhandled_tool_calls",

@@ -145,11 +145,12 @@ your application.
 
 | Operation                     | Purpose                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `FinalOutputOperation`        | Offer the structured final output tool to the model and collect the answer.                       |
 | `ToolApprovalOperation`       | Inspect pending tool requests and record whether they can execute or need approval.               |
 | `ToolExecutionOperation`      | Execute eligible extension tool calls, including tool hooks and streamed output.                  |
 | `RemainingToolCallsOperation` | Answer declined, invalid, or unhandled calls, and yield while approval is pending.                |
 | `SkillOperation`              | Discover and load skills, contribute their context, and handle skill commands.                    |
-| `RecipeOperation`             | Apply recipe instructions and tools, handle recipe commands, and collect structured final output. |
+| `RecipeOperation`             | Apply recipe instructions and handle recipe commands.                                             |
 | `SteerOperation`              | Incorporate queued user guidance between model and tool turns.                                    |
 | `BangShellOperation`          | Turn a user message beginning with `!` into a direct shell tool request.                          |
 | `CompactionOperation`         | Compact conversation history automatically or through a command.                                  |

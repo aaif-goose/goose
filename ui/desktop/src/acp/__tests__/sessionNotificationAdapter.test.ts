@@ -623,6 +623,51 @@ describe('createAcpSessionNotificationAdapter', () => {
         });
       });
 
+      it('hides the recipe final output tool call and its result', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+
+        expect(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'tool_call',
+              toolCallId: 'final-1',
+              title: 'Final output',
+              status: 'pending',
+              rawInput: { answer: 'done' },
+              _meta: {
+                goose: {
+                  messageId: 'assistant-1',
+                  toolCall: { extensionName: 'recipe', toolName: 'recipe__final_output' },
+                },
+              },
+            })
+          )
+        ).toEqual([]);
+        expect(
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'tool_call_update',
+              toolCallId: 'final-1',
+              status: 'completed',
+              rawOutput: 'Final output successfully collected.',
+            })
+          )
+        ).toEqual([]);
+        adapter.apply(
+          acpUpdate({
+            ...DEFAULT_TOOL_CALL,
+            _meta: { goose: { toolCall: { toolName: 'read_file' } } },
+          })
+        );
+        adapter.apply(agentText('{"answer":"done"}'));
+
+        const messages = adapter.getMessages();
+        expect(messages.flatMap((message) => message.content.map((content) => content.type))).toEqual(
+          ['toolRequest', 'text']
+        );
+        expect(firstContent(messages[0])).toMatchObject({ type: 'toolRequest', id: 'tool-1' });
+      });
+
       it('preserves failed tool responses as results with error status', () => {
         const adapter = createAcpSessionNotificationAdapter();
 
