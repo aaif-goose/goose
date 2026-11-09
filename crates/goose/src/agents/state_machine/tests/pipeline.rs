@@ -270,9 +270,9 @@ impl TestPipeline {
         self
     }
 
-    pub(super) fn with_deferred_tools(mut self, defer_tools: bool) -> Self {
+    pub(super) fn with_deferred_tools(mut self) -> Self {
         assert!(!self.services.initialized());
-        self.turn_settings.defer_tools = defer_tools;
+        self.turn_settings.defer_tools = true;
         self
     }
 

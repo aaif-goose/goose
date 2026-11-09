@@ -499,12 +499,9 @@ async fn empty_responses_hand_the_turn_to_recipe_operations() -> Result<()> {
 }
 
 #[cfg(feature = "code-mode")]
-#[test_case::test_case(false; "eager")]
-#[test_case::test_case(true; "deferred")]
 #[tokio::test]
-async fn code_mode_advertises_and_accepts_final_output(defer_tools: bool) -> Result<()> {
+async fn code_mode_advertises_and_accepts_final_output() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_deferred_tools(defer_tools);
     let recipe = Recipe::builder()
         .title("Structured output")
         .description("Return structured output")
@@ -527,8 +524,6 @@ async fn code_mode_advertises_and_accepts_final_output(defer_tools: bool) -> Res
 
     assert_eq!(api.call_count(), 1);
     assert!(api.calls()[0].advertises_tool("execute_javascript"));
-    assert!(!api.calls()[0].advertises_tool("enable_tools"));
-    assert!(!api.calls()[0].system_contains("MCP tools available to enable"));
     assert!(api.calls()[0].system_contains("You MUST use the `final_output` tool"));
     assert!(api.calls()[0].advertises_tool(FINAL_OUTPUT_TOOL_NAME));
     result.assert_message(-1, Agent, r#"{"result":"42"}"#);

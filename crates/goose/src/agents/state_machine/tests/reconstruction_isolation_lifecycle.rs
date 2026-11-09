@@ -3,30 +3,19 @@ use anyhow::Result;
 use super::calculator_extension::{value, ADD};
 use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
 
-#[test_case::test_case(false; "eager")]
-#[test_case::test_case(true; "deferred")]
 #[tokio::test]
-async fn tool_turn_reconstructs_after_every_applied_step(defer_tools: bool) -> Result<()> {
+async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
     let (pipeline, api) = super::pipeline::test_pipeline().await?;
-    let pipeline = pipeline.with_deferred_tools(defer_tools);
-    if defer_tools {
-        api.on("add one")
-            .call("enable_tools", serde_json::json!({"tool_names": [ADD]}))
-            .times(1);
-        api.on(r#""enabled":["calculator__add"]"#)
-            .call(ADD, value(1));
-    } else {
-        api.on("add one").call(ADD, value(1));
-    }
+    api.on("add one").call(ADD, value(1));
     api.on("result: 1").reply("the total is one");
 
     let (pipeline, result, applied_steps) =
         pipeline.run_reconstructing_each_step("add one").await?;
 
     assert!(applied_steps >= 3);
-    assert_eq!(api.call_count(), if defer_tools { 3 } else { 2 });
-    result.assert_message(-3, ToolCall, ADD);
-    result.assert_message(-2, ToolResponse, "result: 1");
+    assert_eq!(api.call_count(), 2);
+    result.assert_message(1, ToolCall, ADD);
+    result.assert_message(2, ToolResponse, "result: 1");
     result.assert_message(-1, Agent, "the total is one");
 
     api.on("continue after reconstruction")

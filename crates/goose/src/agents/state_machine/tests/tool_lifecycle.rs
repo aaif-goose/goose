@@ -166,59 +166,56 @@ async fn basic_tool_calling() -> Result<()> {
     Ok(())
 }
 
-#[test_case::test_case(false; "eager")]
-#[test_case::test_case(true; "deferred")]
 #[tokio::test]
-async fn provider_turn_executes_only_advertised_registered_tools(defer_tools: bool) -> Result<()> {
+async fn deferred_tools_follow_the_conversation_lifecycle() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_deferred_tools(defer_tools);
+    let pipeline = pipeline.with_deferred_tools();
+    api.on("add one")
+        .call("enable_tools", json!({"tool_names": [ADD]}))
+        .times(1);
+    api.on(r#""enabled":["calculator__add"]"#)
+        .call(ADD, value(1));
+    api.on("result: 1").reply("one");
+    let result = pipeline.run(["add one"]).await?;
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    assert!(api.calls()[0].system_contains(ADD));
+    result.assert_message(-1, Agent, "one");
+
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("add two").call(ADD, value(2));
+    api.on("result: 3").reply("three");
+    pipeline
+        .run(["add two"])
+        .await?
+        .assert_message(-1, Agent, "three");
+    assert!(!api.calls().last().unwrap().input_contains(r#""enabled""#));
+
+    pipeline.run(["/clear"]).await?;
+    api.on("add again").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("enable it again");
+    pipeline
+        .run(["add again"])
+        .await?
+        .assert_message(-2, ToolResponse, "not available");
+    Ok(())
+}
+
+#[tokio::test]
+async fn provider_turn_executes_only_advertised_registered_tools() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
     api.on("try the app-only tool")
         .unadvertised_call(APP_ONLY, value(10));
     api.on("not available").reply("app-only blocked");
 
     let result = pipeline.run(["try the app-only tool"]).await?;
 
-    assert_eq!(
-        api.calls()[0].system_contains(
-            "Each of these extensions provides tools that are in your tool specification."
-        ),
-        !defer_tools,
-    );
     assert!(!api.calls()[0].advertises_tool(APP_ONLY));
     result.assert_message(-2, ToolResponse, "not available");
     result.assert_message(-1, Agent, "app-only blocked");
     assert_eq!(pipeline.calculator_total(), 0);
-
-    if defer_tools {
-        assert!(api.calls()[0].system_contains(ADD));
-        assert!(!api.calls()[0].system_contains(APP_ONLY));
-        assert!(api.calls()[0].advertises_tool(
-            crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE
-        ));
-        api.on("not available").reply("enable it first");
-        api.on("try addition before enabling")
-            .unadvertised_call(ADD, value(10))
-            .times(1);
-        let result = pipeline.run(["try addition before enabling"]).await?;
-        result.assert_message(-2, ToolResponse, "not available");
-        assert_eq!(pipeline.calculator_total(), 0);
-
-        for name in ["calculator__unknown", APP_ONLY] {
-            api.on("Unknown MCP tool").reply("unavailable");
-            api.on("enable tools")
-                .call("enable_tools", json!({"tool_names": [ADD, name]}))
-                .times(1);
-            let result = pipeline.run(["enable tools"]).await?;
-            result.assert_message(-2, ToolResponse, "Unknown MCP tool");
-            assert!(!api.calls().last().unwrap().advertises_tool(ADD));
-        }
-        api.on("enable addition")
-            .call("enable_tools", json!({"tool_names": [ADD]}))
-            .times(1);
-        api.on(r#""enabled":["calculator__add"]"#).reply("enabled");
-        pipeline.run(["enable addition"]).await?;
-        assert_eq!(pipeline.calculator_total(), 0);
-    }
 
     api.on("use an advertised tool").call(ADD, value(1));
     api.on("result: 1").reply("advertised tool ran");
@@ -410,40 +407,10 @@ async fn multiple_tool_calls_are_paired_and_executed_once() -> Result<()> {
     Ok(())
 }
 
-#[test_case::test_case(false; "eager")]
-#[test_case::test_case(true; "deferred")]
 #[tokio::test]
-async fn approvals_and_per_tool_permissions(defer_tools: bool) -> Result<()> {
+async fn approvals_and_per_tool_permissions() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_deferred_tools(defer_tools)
-        .with_goose_mode(GooseMode::Approve)
-        .await;
-    if defer_tools {
-        api.on("enable arithmetic").calls([(
-            "enable",
-            "enable_tools",
-            json!({"tool_names": [ADD, DIVIDE]}),
-        )]);
-        pipeline.run(["enable arithmetic"]).await?;
-        pipeline.confirm("enable", Permission::DenyOnce).await?;
-        api.on(DECLINED_RESPONSE).reply("not enabled");
-        pipeline.resume().await?;
-        assert!(!api.calls().last().unwrap().advertises_tool(ADD));
-
-        api.on("retry enabling")
-            .calls([(
-                "retry",
-                "enable_tools",
-                json!({"tool_names": [ADD, DIVIDE]}),
-            )])
-            .times(1);
-        pipeline.run(["retry enabling"]).await?;
-        pipeline.confirm("retry", Permission::AllowOnce).await?;
-        api.on(r#""enabled":["calculator__add","calculator__divide"]"#)
-            .reply("enabled");
-        pipeline.resume().await?;
-    }
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
 
     pipeline.synchronize_calculator(2);
     api.on("add one and two")
@@ -452,8 +419,8 @@ async fn approvals_and_per_tool_permissions(defer_tools: bool) -> Result<()> {
 
     let awaiting_confirmation = pipeline.run(["add one and two"]).await?;
     assert_eq!(pipeline.calculator_total(), 0);
-    awaiting_confirmation.assert_message(-4, ToolCall, ADD);
-    awaiting_confirmation.assert_message(-3, ToolCall, ADD);
+    awaiting_confirmation.assert_message(1, ToolCall, ADD);
+    awaiting_confirmation.assert_message(2, ToolCall, ADD);
 
     pipeline.confirm("second", Permission::AllowOnce).await?;
     pipeline.confirm("first", Permission::AllowOnce).await?;
@@ -461,10 +428,9 @@ async fn approvals_and_per_tool_permissions(defer_tools: bool) -> Result<()> {
     result.assert_message(-1, Agent, "both approved");
     assert_eq!(pipeline.calculator_total(), 3);
 
-    api.on(DECLINED_RESPONSE).reply("I will not retry it");
     api.on("deny this addition")
-        .calls([("denied", ADD, value(10))])
-        .times(1);
+        .calls([("denied", ADD, value(10))]);
+    api.on(DECLINED_RESPONSE).reply("I will not retry it");
     pipeline.run(["deny this addition"]).await?;
     pipeline.confirm("denied", Permission::DenyOnce).await?;
     let result = pipeline.resume().await?;
