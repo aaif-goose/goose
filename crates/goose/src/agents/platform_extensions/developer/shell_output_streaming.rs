@@ -68,11 +68,6 @@ impl ShellOutputBatcher {
             return false;
         }
 
-        let text = if ends_line {
-            text.strip_suffix('\r').unwrap_or(text)
-        } else {
-            text
-        };
         let output_bytes = text.len() + usize::from(ends_line);
         if self.live_output_bytes + output_bytes > SHELL_LIVE_OUTPUT_LIMIT_BYTES {
             self.flush();
@@ -164,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn first_line_emits_immediately_and_normalizes_crlf() {
+    fn first_line_emits_immediately() {
         let (sender, mut receiver) = mpsc::channel(4);
         let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
 
-        assert!(batcher.push_segment(false, "hello\r", true));
+        assert!(batcher.push_segment(false, "hello", true));
 
         let params = receive_params(&mut receiver);
         assert_eq!(params.sequence, 1);
