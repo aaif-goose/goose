@@ -460,7 +460,7 @@
     "env": [
       "CROSSMODEL_API_KEY"
     ],
-    "model_count": 68
+    "model_count": 72
   },
   {
     "id": "crusoe",
@@ -571,7 +571,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 385
+    "model_count": 383
   },
   {
     "id": "empiriolabs",
@@ -913,7 +913,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 375
+    "model_count": 376
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1001,7 +1001,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 201
+    "model_count": 203
   },
   {
     "id": "llmgateway-providers",
@@ -1012,7 +1012,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 437
+    "model_count": 448
   },
   {
     "id": "llmtech",
@@ -1122,7 +1122,7 @@
     "env": [
       "META_MODEL_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "minimax",
@@ -1320,7 +1320,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 634
+    "model_count": 632
   },
   {
     "id": "nearai",
@@ -1453,7 +1453,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 137
+    "model_count": 138
   },
   {
     "id": "opencode-go",

@@ -59692,6 +59692,45 @@
     }
   },
   {
+    "id": "crossmodel/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "crossmodel/anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (latest)",
     "family": "claude-haiku",
@@ -60829,6 +60868,43 @@
     }
   },
   {
+    "id": "crossmodel/moonshot/kimi-k3.1-pro",
+    "name": "Kimi K3.1 Pro",
+    "family": "kimi-k3",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-10-23",
+    "last_updated": "2026-10-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.2,
+      "cache_write": 2.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
+    }
+  },
+  {
     "id": "crossmodel/openai/gpt-4o-mini",
     "name": "GPT-4o mini",
     "family": "gpt-mini",
@@ -61418,6 +61494,55 @@
     }
   },
   {
+    "id": "crossmodel/openai/gpt-6.1-terra",
+    "name": "GPT-6.1 Terra",
+    "family": "gpt-terra",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06-01",
+    "release_date": "2026-10-26",
+    "last_updated": "2026-10-26",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 1.0,
+      "output": 5.0,
+      "cache_read": 0.05,
+      "cache_write": 1.25,
+      "tiers": [
+        {
+          "above_input_tokens": 272000,
+          "input": 2.0,
+          "output": 7.5,
+          "cache_read": 0.1,
+          "cache_write": 2.5
+        }
+      ]
+    },
+    "limit": {
+      "context": 1050000,
+      "output": 128000
+    }
+  },
+  {
     "id": "crossmodel/qwen/qwen3.6-flash",
     "name": "Qwen3.6 Flash",
     "family": "qwen3.6",
@@ -61765,6 +61890,41 @@
     "limit": {
       "context": 262144,
       "output": 131072
+    }
+  },
+  {
+    "id": "crossmodel/tencent/hy4",
+    "name": "Hy4",
+    "family": "Hy",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-04",
+    "last_updated": "2026-11-04",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.96,
+      "output": 2.88,
+      "cache_read": 0.048,
+      "cache_write": 0.96
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
     }
   },
   {
@@ -70851,7 +71011,7 @@
   },
   {
     "id": "edenai/anthropic/claude-fable",
-    "name": "Claude Fable Latest (Claude Fable 5.1)",
+    "name": "Claude Fable Latest (Claude Fable 5.2)",
     "family": "claude-fable",
     "attachment": true,
     "reasoning": true,
@@ -70865,8 +71025,8 @@
     "tool_call": true,
     "temperature": false,
     "knowledge": "2026-06",
-    "release_date": "2026-09-01",
-    "last_updated": "2026-09-01",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
     "modalities": {
       "input": [
         "text",
@@ -70879,10 +71039,10 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 10.0,
-      "output": 50.0,
-      "cache_read": 0.25,
-      "cache_write": 12.5
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -75797,9 +75957,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.156702,
-      "output": 0.391755,
-      "cache_read": 0.044772
+      "input": 0.156996,
+      "output": 0.39249,
+      "cache_read": 0.044856
     },
     "limit": {
       "context": 1000000,
@@ -75834,9 +75994,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.246246,
-      "output": 1.231229,
-      "cache_read": 0.012312
+      "input": 0.246708,
+      "output": 1.233541,
+      "cache_read": 0.012335
     },
     "limit": {
       "context": 1000000,
@@ -75869,8 +76029,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.22386,
-      "output": 0.78351
+      "input": 0.22428,
+      "output": 0.78498
     },
     "limit": {
       "context": 128000,
@@ -75898,8 +76058,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.231229,
-      "output": 1.231229
+      "input": 1.233541,
+      "output": 1.233541
     },
     "limit": {
       "context": 128000,
@@ -75926,8 +76086,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.007369,
-      "output": 3.022108
+      "input": 1.009261,
+      "output": 3.027782
     },
     "limit": {
       "context": 250000,
@@ -76117,8 +76277,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.33579,
-      "output": 0.44772
+      "input": 0.33642,
+      "output": 0.44856
     },
     "limit": {
       "context": 100000,
@@ -76146,8 +76306,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.167895,
-      "output": 0.89544
+      "input": 0.16821,
+      "output": 0.89712
     },
     "limit": {
       "context": 128000,
@@ -76175,8 +76335,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.727545,
-      "output": 0.727545
+      "input": 0.72891,
+      "output": 0.72891
     },
     "limit": {
       "context": 128000,
@@ -76209,8 +76369,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.167895,
-      "output": 0.727545
+      "input": 0.16821,
+      "output": 0.72891
     },
     "limit": {
       "context": 128000,
@@ -77902,42 +78062,6 @@
     }
   },
   {
-    "id": "edenai/nebius/deepseek-ai/DeepSeek-V4-Flash",
-    "name": "DeepSeek V4 Flash 0731 (Nebius)",
-    "family": "deepseek-flash",
-    "attachment": false,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "none",
-      "low",
-      "high",
-      "max"
-    ],
-    "tool_call": true,
-    "temperature": true,
-    "knowledge": "2025-05",
-    "release_date": "2026-07-31",
-    "last_updated": "2026-07-31",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.14,
-      "output": 0.28,
-      "cache_read": 0.14
-    },
-    "limit": {
-      "context": 1048576,
-      "output": 384000
-    }
-  },
-  {
     "id": "edenai/nebius/deepseek-ai/DeepSeek-V4-Pro",
     "name": "DeepSeek V4 Pro 0813 (Nebius)",
     "family": "deepseek-thinking",
@@ -77974,7 +78098,7 @@
   },
   {
     "id": "edenai/nebius/deepseek-ai/DeepSeek-V4.1-Flash",
-    "name": "DeepSeek V4.1 Flash (Nebius)",
+    "name": "DeepSeek V4.1 Flash 1017 (Nebius)",
     "family": "deepseek-flash",
     "attachment": true,
     "reasoning": true,
@@ -77987,8 +78111,8 @@
     "tool_call": true,
     "temperature": true,
     "knowledge": "2025-05",
-    "release_date": "2026-09-10",
-    "last_updated": "2026-09-10",
+    "release_date": "2026-10-17",
+    "last_updated": "2026-10-17",
     "modalities": {
       "input": [
         "text",
@@ -80127,9 +80251,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.44772,
-      "output": 0.89544,
-      "cache_read": 0.089544
+      "input": 0.44856,
+      "output": 0.89712,
+      "cache_read": 0.089712
     },
     "limit": {
       "context": 256000,
@@ -80229,8 +80353,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.167895,
-      "output": 0.67158
+      "input": 0.16821,
+      "output": 0.67284
     },
     "limit": {
       "context": 128000,
@@ -80258,8 +80382,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.007369,
-      "output": 1.007369
+      "input": 1.009261,
+      "output": 1.009261
     },
     "limit": {
       "context": 128000,
@@ -80286,8 +80410,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.839475,
-      "output": 2.518424
+      "input": 0.84105,
+      "output": 2.523151
     },
     "limit": {
       "context": 250000,
@@ -107844,9 +107968,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.7995,
+      "input": 0.799,
       "output": 3.75,
-      "cache_read": 0.156,
+      "cache_read": 0.2092,
       "cache_write": 0.0
     },
     "limit": {
@@ -107912,7 +108036,7 @@
     "cost": {
       "input": 1.4,
       "output": 4.4,
-      "cache_read": 0.19,
+      "cache_read": 0.21,
       "cache_write": 0.0
     },
     "limit": {
@@ -117726,9 +117850,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.04,
-      "output": 0.15,
-      "cache_read": 0.01
+      "input": 0.034,
+      "output": 0.103,
+      "cache_read": 0.017
     },
     "limit": {
       "context": 256000,
@@ -118593,9 +118717,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1875,
-      "output": 0.6525,
-      "cache_read": 0.05
+      "input": 0.35,
+      "output": 1.0,
+      "cache_read": 0.17
     },
     "limit": {
       "context": 524288,
@@ -118974,8 +119098,8 @@
       "cache_read": 0.15
     },
     "limit": {
-      "context": 1048576,
-      "output": 131072
+      "context": 1000000,
+      "output": 262144
     }
   },
   {
@@ -120170,6 +120294,40 @@
       "input": 0.075,
       "output": 0.25,
       "cache_read": 0.015
+    },
+    "limit": {
+      "context": 262144,
+      "output": 235929
+    }
+  },
+  {
+    "id": "kilo/nex-agi/nex-n2.6",
+    "name": "Nex AGI: Nex-N2.6",
+    "family": "agi",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.5,
+      "cache_read": 0.03
     },
     "limit": {
       "context": 262144,
@@ -125007,9 +125165,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.132,
-      "output": 0.528,
-      "cache_read": 0.033
+      "input": 0.0825,
+      "output": 0.33,
+      "cache_read": 0.020625
     },
     "limit": {
       "context": 262144,
@@ -125110,9 +125268,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.834,
-      "output": 2.501,
-      "cache_read": 0.042
+      "input": 0.7506,
+      "output": 2.2509,
+      "cache_read": 0.0378
     },
     "limit": {
       "context": 1048576,
@@ -126402,8 +126560,8 @@
       "cache_read": 0.03
     },
     "limit": {
-      "context": 1048575,
-      "output": 943717
+      "context": 1048576,
+      "output": 131072
     }
   },
   {
@@ -126918,7 +127076,7 @@
     "open_weights": false,
     "cost": {
       "input": 0.1824,
-      "output": 10.5572,
+      "output": 9.3388,
       "cache_read": 0.18
     },
     "limit": {
@@ -127250,8 +127408,8 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0335,
-      "output": 0.083,
+      "input": 0.0399,
+      "output": 0.0784,
       "cache_read": 0.03
     },
     "limit": {
@@ -133028,6 +133186,45 @@
     }
   },
   {
+    "id": "llmgateway-providers/canopywave/deepseek-v4-flash",
+    "name": "deepseek-v4-flash-0731 (CanopyWave)",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-07-31",
+    "last_updated": "2026-07-31",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.44,
+      "output": 1.32,
+      "cache_read": 0.04
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
     "id": "llmgateway-providers/canopywave/glm-5.2",
     "name": "GLM-5.2 (CanopyWave)",
     "family": "glm",
@@ -133781,6 +133978,7 @@
     "reasoning_efforts": [
       "none",
       "low",
+      "medium",
       "high",
       "max"
     ],
@@ -133799,9 +133997,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.08,
+      "input": 0.09,
       "output": 0.18,
-      "cache_read": 0.016
+      "cache_read": 0.018
     },
     "limit": {
       "context": 1000000,
@@ -135764,6 +135962,36 @@
     }
   },
   {
+    "id": "llmgateway-providers/inference.net/deepseek-v4-flash",
+    "name": "DeepSeek V4 Flash (Inference.net)",
+    "family": "deepseek-flash",
+    "attachment": false,
+    "reasoning": false,
+    "tool_call": true,
+    "temperature": true,
+    "knowledge": "2025-05",
+    "release_date": "2026-04-24",
+    "last_updated": "2026-04-24",
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.23,
+      "output": 0.62,
+      "cache_read": 0.0028
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 384000
+    }
+  },
+  {
     "id": "llmgateway-providers/inference.net/deepseek-v4.1-flash",
     "name": "DeepSeek V4.1 Flash 1017 (Inference.net)",
     "family": "deepseek-flash",
@@ -136127,6 +136355,47 @@
     "limit": {
       "context": 1048576,
       "output": 1048576
+    }
+  },
+  {
+    "id": "llmgateway-providers/meta/muse-ember-1.0",
+    "name": "Muse Ember 1.0 (Meta)",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 524288
     }
   },
   {
@@ -140355,6 +140624,46 @@
     "limit": {
       "context": 1048576,
       "output": 1048576
+    }
+  },
+  {
+    "id": "llmgateway-providers/runware/kimi-k3.1-pro",
+    "name": "Kimi K3.1 Pro (runware)",
+    "family": "kimi-k3",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-10-23",
+    "last_updated": "2026-10-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.2
+    },
+    "limit": {
+      "context": 950000,
+      "output": 131072
     }
   },
   {
@@ -148823,6 +149132,47 @@
     "limit": {
       "context": 262144,
       "output": 256000
+    }
+  },
+  {
+    "id": "llmgateway/muse-ember-1.0",
+    "name": "Muse Ember 1.0",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 524288
     }
   },
   {
@@ -160238,6 +160588,55 @@
     }
   },
   {
+    "id": "meta/muse-ember-1.0",
+    "name": "Muse Ember",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004,
+      "tiers": [
+        {
+          "above_input_tokens": 200000,
+          "input": 0.3,
+          "output": 1.5,
+          "cache_read": 0.012
+        }
+      ]
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 524288
+    }
+  },
+  {
     "id": "meta/muse-spark-1.1",
     "name": "Muse Spark 1.1",
     "family": "muse",
@@ -167790,66 +168189,6 @@
     }
   },
   {
-    "id": "nano-gpt/TEE/qwen2.5-vl-72b-instruct",
-    "name": "Qwen2.5 VL 72B TEE",
-    "family": "qwen",
-    "attachment": true,
-    "reasoning": false,
-    "tool_call": false,
-    "temperature": true,
-    "knowledge": "2024-04",
-    "release_date": "2025-01-26",
-    "last_updated": "2025-01-26",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.7,
-      "output": 0.7,
-      "cache_read": 0.35
-    },
-    "limit": {
-      "context": 65536,
-      "output": 8192
-    }
-  },
-  {
-    "id": "nano-gpt/TEE/qwen3.5-397b-a17b",
-    "name": "Qwen3.5 397B A17B TEE",
-    "family": "qwen",
-    "attachment": false,
-    "reasoning": false,
-    "tool_call": false,
-    "temperature": true,
-    "release_date": "2026-02-15",
-    "last_updated": "2026-02-15",
-    "modalities": {
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.55,
-      "output": 3.5,
-      "cache_read": 0.225
-    },
-    "limit": {
-      "context": 262144,
-      "output": 65536
-    }
-  },
-  {
     "id": "nano-gpt/TEE/qwen3.6-27b",
     "name": "Qwen3.6 27B TEE",
     "family": "qwen",
@@ -167989,7 +168328,7 @@
       "cache_read": 0.155
     },
     "limit": {
-      "context": 32000,
+      "context": 32768,
       "output": 16384
     }
   },
@@ -168127,7 +168466,7 @@
       "cache_read": 0.06
     },
     "limit": {
-      "context": 131072,
+      "context": 65536,
       "output": 32768
     }
   },
@@ -168865,8 +169204,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 2.006,
-      "output": 2.992,
+      "input": 2.65,
+      "output": 5.3,
       "cache_read": 1.003
     },
     "limit": {
@@ -168993,6 +169332,46 @@
     }
   },
   {
+    "id": "nano-gpt/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 10.0,
+      "output": 50.0,
+      "cache_read": 0.25,
+      "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "nano-gpt/anthropic/claude-haiku",
     "name": "Claude Haiku Latest",
     "family": "claude-haiku",
@@ -169064,7 +169443,8 @@
     "cost": {
       "input": 1.0,
       "output": 5.0,
-      "cache_read": 0.1
+      "cache_read": 0.1,
+      "cache_write": 1.25
     },
     "limit": {
       "context": 200000,
@@ -169096,7 +169476,8 @@
     "cost": {
       "input": 1.0,
       "output": 5.0,
-      "cache_read": 0.1
+      "cache_read": 0.1,
+      "cache_write": 1.25
     },
     "limit": {
       "context": 200000,
@@ -169215,7 +169596,8 @@
     "cost": {
       "input": 15.0,
       "output": 75.0,
-      "cache_read": 1.5
+      "cache_read": 1.5,
+      "cache_write": 18.75
     },
     "limit": {
       "context": 200000,
@@ -169247,7 +169629,8 @@
     "cost": {
       "input": 15.0,
       "output": 75.0,
-      "cache_read": 1.5
+      "cache_read": 1.5,
+      "cache_write": 18.75
     },
     "limit": {
       "context": 200000,
@@ -169279,7 +169662,8 @@
     "cost": {
       "input": 15.0,
       "output": 75.0,
-      "cache_read": 1.5
+      "cache_read": 1.5,
+      "cache_write": 18.75
     },
     "limit": {
       "context": 200000,
@@ -169311,7 +169695,8 @@
     "cost": {
       "input": 15.0,
       "output": 75.0,
-      "cache_read": 1.5
+      "cache_read": 1.5,
+      "cache_write": 18.75
     },
     "limit": {
       "context": 200000,
@@ -169343,7 +169728,8 @@
     "cost": {
       "input": 15.0,
       "output": 75.0,
-      "cache_read": 1.5
+      "cache_read": 1.5,
+      "cache_write": 18.75
     },
     "limit": {
       "context": 200000,
@@ -169382,7 +169768,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 200000,
@@ -169421,7 +169808,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 200000,
@@ -169460,7 +169848,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169499,7 +169888,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169531,7 +169921,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169563,7 +169954,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169595,7 +169987,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169634,7 +170027,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169673,7 +170067,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169712,7 +170107,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169751,7 +170147,8 @@
     "cost": {
       "input": 5.0,
       "output": 25.0,
-      "cache_read": 0.5
+      "cache_read": 0.5,
+      "cache_write": 6.25
     },
     "limit": {
       "context": 1000000,
@@ -169908,7 +170305,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.75
     },
     "limit": {
       "context": 200000,
@@ -169947,7 +170345,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.75
     },
     "limit": {
       "context": 200000,
@@ -169986,7 +170385,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.75
     },
     "limit": {
       "context": 1000000,
@@ -170025,7 +170425,8 @@
     "cost": {
       "input": 3.0,
       "output": 15.0,
-      "cache_read": 0.3
+      "cache_read": 0.3,
+      "cache_write": 3.75
     },
     "limit": {
       "context": 1000000,
@@ -171399,76 +171800,6 @@
     "limit": {
       "context": 1048576,
       "output": 384000
-    }
-  },
-  {
-    "id": "nano-gpt/deepseek/deepseek-v4.1-flash-0910-uncensored",
-    "name": "DeepSeek V4.1 Flash 0910 Uncensored",
-    "family": "deepseek",
-    "attachment": true,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "none",
-      "low",
-      "high",
-      "max"
-    ],
-    "tool_call": true,
-    "release_date": "2026-10-27",
-    "last_updated": "2026-10-27",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.33,
-      "output": 1.32,
-      "cache_read": 0.00825
-    },
-    "limit": {
-      "context": 524288,
-      "output": 32768
-    }
-  },
-  {
-    "id": "nano-gpt/deepseek/deepseek-v4.1-flash-0910-uncensored:thinking",
-    "name": "DeepSeek V4.1 Flash 0910 Uncensored Thinking",
-    "family": "deepseek",
-    "attachment": true,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "none",
-      "low",
-      "high",
-      "max"
-    ],
-    "tool_call": true,
-    "release_date": "2026-10-27",
-    "last_updated": "2026-10-27",
-    "modalities": {
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": true,
-    "cost": {
-      "input": 0.33,
-      "output": 1.32,
-      "cache_read": 0.00825
-    },
-    "limit": {
-      "context": 524288,
-      "output": 32768
     }
   },
   {
@@ -173845,9 +174176,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.034,
-      "output": 0.102,
-      "cache_read": 0.017
+      "input": 0.029,
+      "output": 0.088,
+      "cache_read": 0.015
     },
     "limit": {
       "context": 262144,
@@ -173905,9 +174236,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.034,
-      "output": 0.102,
-      "cache_read": 0.017
+      "input": 0.029,
+      "output": 0.088,
+      "cache_read": 0.015
     },
     "limit": {
       "context": 262144,
@@ -175218,8 +175549,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1875,
-      "output": 0.6525,
+      "input": 0.15,
+      "output": 0.6,
       "cache_read": 0.05
     },
     "limit": {
@@ -176886,9 +177217,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.39,
-      "output": 1.8,
-      "cache_read": 0.039
+      "input": 0.3895,
+      "output": 1.64,
+      "cache_read": 0.0656
     },
     "limit": {
       "context": 262144,
@@ -176917,9 +177248,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.39,
-      "output": 1.8,
-      "cache_read": 0.039
+      "input": 0.3895,
+      "output": 1.64,
+      "cache_read": 0.0656
     },
     "limit": {
       "context": 262144,
@@ -177321,6 +177652,39 @@
       "input": 0.075,
       "output": 0.25,
       "cache_read": 0.015
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
+    "id": "nano-gpt/nex-agi/nex-n2.6",
+    "name": "Nex N2.6",
+    "family": "agi",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.15,
+      "output": 0.5,
+      "cache_read": 0.03
     },
     "limit": {
       "context": 262144,
@@ -180505,8 +180869,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0875,
-      "output": 0.35,
+      "input": 0.09,
+      "output": 0.55,
       "cache_read": 0.0175
     },
     "limit": {
@@ -180534,8 +180898,8 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0875,
-      "output": 0.35,
+      "input": 0.09,
+      "output": 0.55,
       "cache_read": 0.0175
     },
     "limit": {
@@ -181345,7 +181709,8 @@
     "cost": {
       "input": 0.4,
       "output": 2.4,
-      "cache_read": 0.04
+      "cache_read": 0.04,
+      "cache_write": 0.5
     },
     "limit": {
       "context": 983616,
@@ -181377,7 +181742,8 @@
     "cost": {
       "input": 0.4,
       "output": 2.4,
-      "cache_read": 0.04
+      "cache_read": 0.04,
+      "cache_write": 0.5
     },
     "limit": {
       "context": 983616,
@@ -183199,9 +183565,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.7506,
-      "output": 2.2509,
-      "cache_read": 0.0378
+      "input": 0.834,
+      "output": 2.501,
+      "cache_read": 0.042
     },
     "limit": {
       "context": 1048576,
@@ -184557,9 +184923,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.0,
-      "output": 3.0,
-      "cache_read": 0.5
+      "input": 0.55,
+      "output": 2.2,
+      "cache_read": 0.11
     },
     "limit": {
       "context": 204800,
@@ -184585,9 +184951,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 1.0,
-      "output": 3.0,
-      "cache_read": 0.5
+      "input": 0.55,
+      "output": 2.2,
+      "cache_read": 0.11
     },
     "limit": {
       "context": 204800,
@@ -184739,9 +185105,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.5,
-      "output": 2.0,
-      "cache_read": 0.1
+      "input": 0.55,
+      "output": 2.2,
+      "cache_read": 0.11
     },
     "limit": {
       "context": 200000,
@@ -184769,9 +185135,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.5,
-      "output": 2.0,
-      "cache_read": 0.1
+      "input": 0.55,
+      "output": 2.2,
+      "cache_read": 0.11
     },
     "limit": {
       "context": 256000,
@@ -184803,9 +185169,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.5,
-      "output": 2.0,
-      "cache_read": 0.1
+      "input": 0.55,
+      "output": 2.2,
+      "cache_read": 0.11
     },
     "limit": {
       "context": 200000,
@@ -207105,6 +207471,44 @@
     }
   },
   {
+    "id": "opencode/gemini-4-carbon",
+    "name": "Gemini 4 Carbon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.1
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 65536
+    }
+  },
+  {
     "id": "opencode/glm-4.6",
     "name": "GLM-4.6",
     "family": "glm",
@@ -209759,7 +210163,16 @@
       "input": 0.1,
       "output": 0.5,
       "cache_read": 0.004,
-      "cache_write": 0.0
+      "cache_write": 0.0,
+      "tiers": [
+        {
+          "above_input_tokens": 200000,
+          "input": 0.3,
+          "output": 1.5,
+          "cache_read": 0.012,
+          "cache_write": 0.0
+        }
+      ]
     },
     "limit": {
       "context": 1048576,
@@ -212461,9 +212874,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.051,
-      "output": 0.567,
-      "cache_read": 0.018
+      "input": 0.3,
+      "output": 1.2,
+      "cache_read": 0.006
     },
     "limit": {
       "context": 1048576,
@@ -213372,6 +213785,45 @@
         "video",
         "audio",
         "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.1,
+      "cache_write": 0.1875
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
+    }
+  },
+  {
+    "id": "openrouter/google/gemini-4-carbon",
+    "name": "Gemini 4 Carbon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
+    "modalities": {
+      "input": [
+        "audio",
+        "pdf",
+        "image",
+        "text",
+        "video"
       ],
       "output": [
         "text"
@@ -214783,7 +215235,7 @@
     },
     "limit": {
       "context": 1048576,
-      "output": 131072
+      "output": 262144
     }
   },
   {
@@ -215947,6 +216399,40 @@
       "input": 0.075,
       "output": 0.25,
       "cache_read": 0.015
+    },
+    "limit": {
+      "context": 262144,
+      "output": 235929
+    }
+  },
+  {
+    "id": "openrouter/nex-agi/nex-n2.6",
+    "name": "Nex-N2.6",
+    "family": "agi",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.12,
+      "output": 0.4,
+      "cache_read": 0.024
     },
     "limit": {
       "context": 262144,
@@ -220041,7 +220527,7 @@
       "cache_read": 0.0375
     },
     "limit": {
-      "context": 1024000,
+      "context": 1048575,
       "output": 235929
     }
   },
@@ -220903,9 +221389,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.132,
-      "output": 0.528,
-      "cache_read": 0.033
+      "input": 0.0825,
+      "output": 0.33,
+      "cache_read": 0.020625
     },
     "limit": {
       "context": 262144,
@@ -221006,9 +221492,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.834,
-      "output": 2.501,
-      "cache_read": 0.042
+      "input": 0.7506,
+      "output": 2.2509,
+      "cache_read": 0.0378
     },
     "limit": {
       "context": 1048576,
@@ -222225,9 +222711,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.006,
+      "input": 0.007,
       "output": 6.8,
-      "cache_read": 0.005
+      "cache_read": 0.006
     },
     "limit": {
       "context": 1048576,
@@ -222295,13 +222781,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.15,
-      "output": 0.5,
+      "input": 0.0399,
+      "output": 0.0784,
       "cache_read": 0.03
     },
     "limit": {
       "context": 1048576,
-      "output": 943717
+      "output": 131072
     }
   },
   {
@@ -222831,7 +223317,7 @@
     "open_weights": false,
     "cost": {
       "input": 0.1824,
-      "output": 10.5572,
+      "output": 9.3388,
       "cache_read": 0.18
     },
     "limit": {
@@ -223212,8 +223698,8 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.0335,
-      "output": 0.083,
+      "input": 0.0399,
+      "output": 0.0784,
       "cache_read": 0.03
     },
     "limit": {
@@ -237744,7 +238230,7 @@
     },
     "limit": {
       "context": 131072,
-      "output": 32768
+      "output": 115200
     }
   },
   {
@@ -280065,6 +280551,41 @@
     "knowledge": "2026-03",
     "release_date": "2026-10-13",
     "last_updated": "2026-10-13",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.1
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 1000000
+    }
+  },
+  {
+    "id": "vercel/google/gemini-4-carbon",
+    "name": "Gemini 4 Carbon",
+    "family": "gemini",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "tool_call": true,
+    "release_date": "2026-11-10",
+    "last_updated": "2026-11-10",
     "modalities": {
       "input": [
         "text",
