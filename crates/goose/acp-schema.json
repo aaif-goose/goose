@@ -1806,6 +1806,12 @@
         "enabled": {
           "type": "boolean",
           "default": false
+        },
+        "configKey": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

@@ -592,6 +592,8 @@ pub struct AddConfigExtensionRequest {
     pub extension: GooseExtension,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_key: Option<String>,
 }
 
 /// Remove a persisted extension from the user's global goose config.

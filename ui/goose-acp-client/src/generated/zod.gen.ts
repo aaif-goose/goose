@@ -599,7 +599,8 @@ export const zGetConfigExtensionsResponse_unstable = z.object({
  */
 export const zAddConfigExtensionRequest_unstable = z.object({
     extension: zGooseExtension,
-    enabled: z.boolean().optional().default(false)
+    enabled: z.boolean().optional().default(false),
+    configKey: z.string().nullish()
 });
 
 /**
