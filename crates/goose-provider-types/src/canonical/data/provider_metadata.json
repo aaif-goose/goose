@@ -360,7 +360,7 @@
     "env": [
       "CHUTES_API_KEY"
     ],
-    "model_count": 18
+    "model_count": 19
   },
   {
     "id": "clarifai",
@@ -571,7 +571,7 @@
     "env": [
       "EDENAI_API_KEY"
     ],
-    "model_count": 384
+    "model_count": 385
   },
   {
     "id": "empiriolabs",
@@ -913,7 +913,7 @@
     "env": [
       "KILO_API_KEY"
     ],
-    "model_count": 373
+    "model_count": 375
   },
   {
     "id": "kimi-code-plan-cn",
@@ -1001,7 +1001,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 199
+    "model_count": 201
   },
   {
     "id": "llmgateway-providers",
@@ -1012,7 +1012,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 434
+    "model_count": 437
   },
   {
     "id": "llmtech",
@@ -1122,7 +1122,7 @@
     "env": [
       "META_MODEL_API_KEY"
     ],
-    "model_count": 6
+    "model_count": 7
   },
   {
     "id": "minimax",
@@ -1320,7 +1320,7 @@
     "env": [
       "NANO_GPT_API_KEY"
     ],
-    "model_count": 634
+    "model_count": 635
   },
   {
     "id": "nearai",
@@ -1453,7 +1453,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 135
+    "model_count": 137
   },
   {
     "id": "opencode-go",
