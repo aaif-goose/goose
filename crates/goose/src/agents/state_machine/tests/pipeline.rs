@@ -346,7 +346,7 @@ impl TestPipeline {
         self
     }
 
-    pub(super) async fn set_total_tokens(&self, tokens: i32) {
+    pub(super) async fn set_total_tokens(&self, tokens: i64) {
         use goose_providers::conversation::token_usage::Usage;
         self.session_manager
             .update(&self.session_id)

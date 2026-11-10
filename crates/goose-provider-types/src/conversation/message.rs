@@ -778,15 +778,15 @@ pub struct InferenceMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct MessageUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_tokens: Option<i32>,
+    pub output_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_tokens: Option<i32>,
+    pub total_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_read_tokens: Option<i32>,
+    pub cache_read_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_write_tokens: Option<i32>,
+    pub cache_write_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1393,20 +1393,20 @@ impl Message {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenState {
-    pub input_tokens: i32,
-    pub output_tokens: i32,
-    pub total_tokens: i32,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     #[serde(default)]
-    pub cache_read_tokens: i32,
+    pub cache_read_tokens: i64,
     #[serde(default)]
-    pub cache_write_tokens: i32,
-    pub accumulated_input_tokens: i32,
-    pub accumulated_output_tokens: i32,
-    pub accumulated_total_tokens: i32,
+    pub cache_write_tokens: i64,
+    pub accumulated_input_tokens: i64,
+    pub accumulated_output_tokens: i64,
+    pub accumulated_total_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_read_tokens: i32,
+    pub accumulated_cache_read_tokens: i64,
     #[serde(default)]
-    pub accumulated_cache_write_tokens: i32,
+    pub accumulated_cache_write_tokens: i64,
     pub accumulated_cost: Option<f64>,
 }
 

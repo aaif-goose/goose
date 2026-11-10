@@ -552,12 +552,12 @@ fn merge_params(
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Usage {
-    pub input_tokens: Option<i32>,
-    pub output_tokens: Option<i32>,
-    pub total_tokens: Option<i32>,
-    pub cache_read_input_tokens: Option<i32>,
-    pub cache_creation_input_tokens: Option<i32>,
-    pub reasoning_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub cache_read_input_tokens: Option<i64>,
+    pub cache_creation_input_tokens: Option<i64>,
+    pub reasoning_tokens: Option<i64>,
     pub model: String,
     /// The model vendor's own id for this call: Anthropic sends `request-id`, OpenAI `x-request-id`.
     pub request_id: Option<String>,
@@ -1241,11 +1241,11 @@ impl From<CompactionTemplates> for goose_context_management::Templates {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct CompactionSummary {
     pub text: String,
-    pub input_tokens: Option<i32>,
-    pub output_tokens: Option<i32>,
-    pub total_tokens: Option<i32>,
-    pub cache_read_input_tokens: Option<i32>,
-    pub cache_creation_input_tokens: Option<i32>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub total_tokens: Option<i64>,
+    pub cache_read_input_tokens: Option<i64>,
+    pub cache_creation_input_tokens: Option<i64>,
 }
 
 #[uniffi::export]
@@ -1903,8 +1903,8 @@ mod tests {
     }
 
     fn provider_usage_with_cache(
-        cache_read: Option<i32>,
-        cache_write: Option<i32>,
+        cache_read: Option<i64>,
+        cache_write: Option<i64>,
     ) -> ProviderUsage {
         use goose_providers::conversation::token_usage::Usage as GooseUsage;
 

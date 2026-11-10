@@ -101,7 +101,7 @@ async fn ensure_usage_tokens(
 ) {
     if usage.usage.input_tokens.is_none() {
         let count = estimator.count_chat_tokens(system_prompt, request).await;
-        usage.usage.input_tokens = Some(count as i32);
+        usage.usage.input_tokens = Some(count as i64);
     }
     if usage.usage.output_tokens.is_none() {
         let text = response
@@ -111,7 +111,7 @@ async fn ensure_usage_tokens(
             .collect::<Vec<_>>()
             .join(" ");
         let count = estimator.count_text_tokens(&text).await;
-        usage.usage.output_tokens = Some(count as i32);
+        usage.usage.output_tokens = Some(count as i64);
     }
     if let (Some(input), Some(output)) = (usage.usage.input_tokens, usage.usage.output_tokens) {
         usage.usage.total_tokens = Some(input + output);

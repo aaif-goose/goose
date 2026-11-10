@@ -1057,8 +1057,8 @@ mod tests {
     #[test_case(json!({}), None, None ; "empty_usage")]
     fn test_extract_usage_tokens(
         usage_json: Value,
-        expected_input: Option<i32>,
-        expected_output: Option<i32>,
+        expected_input: Option<i64>,
+        expected_output: Option<i64>,
     ) {
         let usage = extract_usage_tokens(&usage_json);
         assert_eq!(usage.input_tokens, expected_input);

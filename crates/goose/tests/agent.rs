@@ -2027,8 +2027,8 @@ mod tests {
         use std::sync::Arc;
 
         struct FixedUsageProvider {
-            input_tokens: i32,
-            output_tokens: i32,
+            input_tokens: i64,
+            output_tokens: i64,
         }
 
         #[async_trait]

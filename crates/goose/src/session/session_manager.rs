@@ -2903,10 +2903,9 @@ impl SessionStorage {
             }
         }
 
-        let opt = |v: i64| Some(i32::try_from(v).unwrap_or(i32::MAX));
         Ok(SessionUsageTotals {
-            accumulated_usage: Usage::new(opt(input), opt(output), opt(total))
-                .with_cache_tokens(opt(cache_read), opt(cache_write)),
+            accumulated_usage: Usage::new(Some(input), Some(output), Some(total))
+                .with_cache_tokens(Some(cache_read), Some(cache_write)),
             accumulated_cost: cost,
         })
     }
@@ -4523,6 +4522,57 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    #[tokio::test]
+    async fn test_session_token_totals_beyond_i32_round_trip() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = create_session_for_list_with_message(
+            &sm,
+            "/tmp/session-list",
+            "Long running Postgres migration",
+        )
+        .await;
+        let over_i32 = i64::from(i32::MAX) + 3_061;
+        sqlx::query(
+            "UPDATE sessions SET accumulated_total_tokens = ?, accumulated_cache_read_tokens = ? \
+             WHERE id = ?",
+        )
+        .bind(over_i32)
+        .bind(over_i32)
+        .bind(&id)
+        .execute(sm.storage.pool().await.unwrap())
+        .await
+        .unwrap();
+
+        let session = sm.get_session(&id, true).await.unwrap();
+        assert_eq!(session.accumulated_usage.total_tokens, Some(over_i32));
+        assert_eq!(
+            session.accumulated_usage.cache_read_input_tokens,
+            Some(over_i32)
+        );
+
+        let types = [SessionType::User];
+        let page = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    keyword: Some("postgres"),
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.sessions.len(), 1);
+        assert_eq!(
+            page.sessions[0].accumulated_usage.total_tokens,
+            Some(over_i32)
+        );
+    }
+
     fn tags(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs
             .iter()
@@ -5075,14 +5125,14 @@ mod tests {
 
                 sm.update(&session.id)
                     .user_provided_name(format!("Updated session {}", i))
-                    .usage(Usage::new(None, None, Some(100 * i)))
+                    .usage(Usage::new(None, None, Some(100 * i64::from(i))))
                     .apply()
                     .await
                     .unwrap();
 
                 let updated = sm.get_session(&session.id, true).await.unwrap();
                 assert_eq!(updated.message_count, 2);
-                assert_eq!(updated.usage.total_tokens, Some(100 * i));
+                assert_eq!(updated.usage.total_tokens, Some(100 * i64::from(i)));
 
                 session.id
             });
@@ -5636,7 +5686,7 @@ mod tests {
         assert_eq!(loaded.accumulated_usage, accumulated_usage);
     }
 
-    fn message_usage(input: i32, output: i32, cost: f64, is_compaction: bool) -> MessageUsage {
+    fn message_usage(input: i64, output: i64, cost: f64, is_compaction: bool) -> MessageUsage {
         MessageUsage {
             input_tokens: Some(input),
             output_tokens: Some(output),
