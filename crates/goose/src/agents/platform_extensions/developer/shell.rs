@@ -4,7 +4,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::Stream;
@@ -12,7 +12,6 @@ use rmcp::model::{Annotations, CallToolResult, ContentBlock, TextContent};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::sync::Semaphore;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -169,6 +168,8 @@ const OUTPUT_PREVIEW_BYTES: usize = 10_000;
 
 const OUTPUT_SLOTS: usize = 8;
 const DEFAULT_CAPTURE_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+/// Large enough that the biggest possible record always fits in half the budget.
+const MIN_CAPTURE_LIMIT_BYTES: usize = 1024;
 const MAX_SEGMENT_BYTES: usize = 64 * 1024;
 /// Counted against the capture limit so output made of many tiny lines is bounded too.
 const RECORD_OVERHEAD_BYTES: usize = 32;
@@ -480,7 +481,8 @@ impl ExecutionOutput {
 }
 
 #[derive(Default)]
-struct DrainOutput {
+struct CaptureBuffer {
+    half_budget: usize,
     head: Vec<CaptureRecord>,
     tail: VecDeque<CaptureRecord>,
     head_cost: usize,
@@ -489,71 +491,35 @@ struct DrainOutput {
     dropped_stderr_bytes: usize,
 }
 
-impl DrainOutput {
-    fn record_dropped(&mut self, record: &CaptureRecord) {
-        let dropped = if record.is_stderr {
-            &mut self.dropped_stderr_bytes
-        } else {
-            &mut self.dropped_stdout_bytes
-        };
-        *dropped += record.output_bytes();
+impl CaptureBuffer {
+    fn new(capture_limit: usize) -> Self {
+        Self {
+            half_budget: capture_limit / 2,
+            ..Self::default()
+        }
     }
-}
 
-struct QueuedRecord {
-    record: CaptureRecord,
-    cost: usize,
-}
-
-/// Unbounded queue whose total queued cost is limited by a byte semaphore, so a
-/// fast producer cannot get arbitrarily far ahead of the drain task.
-struct CaptureSender {
-    tx: tokio::sync::mpsc::UnboundedSender<QueuedRecord>,
-    semaphore: Arc<Semaphore>,
-    max_cost: usize,
-}
-
-struct CaptureReceiver {
-    rx: tokio::sync::mpsc::UnboundedReceiver<QueuedRecord>,
-    semaphore: Arc<Semaphore>,
-}
-
-fn capture_channel(budget_bytes: usize) -> (CaptureSender, CaptureReceiver) {
-    let max_cost = budget_bytes.clamp(1, Semaphore::MAX_PERMITS.min(u32::MAX as usize));
-    let semaphore = Arc::new(Semaphore::new(max_cost));
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    (
-        CaptureSender {
-            tx,
-            semaphore: semaphore.clone(),
-            max_cost,
-        },
-        CaptureReceiver { rx, semaphore },
-    )
-}
-
-impl CaptureSender {
-    async fn send(&self, record: CaptureRecord) {
-        let cost = record.budget_cost().min(self.max_cost);
-        let Ok(permit) = self.semaphore.acquire_many(cost as u32).await else {
+    fn push(&mut self, record: CaptureRecord) {
+        let cost = record.budget_cost();
+        if self.tail.is_empty() && self.head_cost + cost <= self.half_budget {
+            self.head_cost += cost;
+            self.head.push(record);
             return;
-        };
-        permit.forget();
-        let _ = self.tx.send(QueuedRecord { record, cost });
-    }
-}
-
-impl CaptureReceiver {
-    async fn recv(&mut self) -> Option<CaptureRecord> {
-        let queued = self.rx.recv().await?;
-        self.semaphore.add_permits(queued.cost);
-        Some(queued.record)
-    }
-}
-
-impl Drop for CaptureReceiver {
-    fn drop(&mut self) {
-        self.semaphore.close();
+        }
+        while self.tail_cost + cost > self.half_budget {
+            let Some(evicted) = self.tail.pop_front() else {
+                break;
+            };
+            self.tail_cost -= evicted.budget_cost();
+            let dropped = if evicted.is_stderr {
+                &mut self.dropped_stderr_bytes
+            } else {
+                &mut self.dropped_stdout_bytes
+            };
+            *dropped += evicted.output_bytes();
+        }
+        self.tail_cost += cost;
+        self.tail.push_back(record);
     }
 }
 
@@ -562,6 +528,7 @@ fn capture_limit_bytes() -> usize {
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(DEFAULT_CAPTURE_LIMIT_BYTES)
+        .max(MIN_CAPTURE_LIMIT_BYTES)
 }
 
 /// Each invalid byte decodes to a 3-byte replacement character, so a segment must
@@ -577,33 +544,6 @@ fn resolve_shell_timeout(timeout_secs: Option<u64>) -> u64 {
             .get_goose_default_extension_timeout()
             .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
     })
-}
-
-async fn drain_with_budget(mut rx: CaptureReceiver, budget: usize) -> DrainOutput {
-    let half = budget / 2;
-    let mut out = DrainOutput::default();
-    let mut head_full = false;
-
-    while let Some(record) = rx.recv().await {
-        let cost = record.budget_cost();
-
-        if !head_full && out.head_cost + cost <= half {
-            out.head_cost += cost;
-            out.head.push(record);
-        } else {
-            head_full = true;
-            while !out.tail.is_empty() && out.tail_cost + cost > half {
-                if let Some(evicted) = out.tail.pop_front() {
-                    out.tail_cost -= evicted.budget_cost();
-                    out.record_dropped(&evicted);
-                }
-            }
-            out.tail_cost += cost;
-            out.tail.push_back(record);
-        }
-    }
-
-    out
 }
 
 async fn run_command(
@@ -654,12 +594,11 @@ async fn run_command(
         .take()
         .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
-    let (tx, rx) = capture_channel(capture_limit);
-    let drain_task = tokio::spawn(drain_with_budget(rx, capture_limit));
+    let capture = Arc::new(Mutex::new(CaptureBuffer::new(capture_limit)));
     let output_task = AbortOnDropHandle::new(tokio::spawn(collect_tagged_lines(
         child_stdout,
         child_stderr,
-        tx,
+        capture.clone(),
         notification_emitter,
         max_segment_bytes(capture_limit),
     )));
@@ -709,16 +648,16 @@ async fn run_command(
         }
     };
 
-    let drain = drain_task.await.unwrap_or_default();
-    let head_record_count = drain.head.len();
-    let mut records = drain.head;
-    records.extend(drain.tail);
+    let captured = std::mem::take(&mut *capture.lock().unwrap());
+    let head_record_count = captured.head.len();
+    let mut records = captured.head;
+    records.extend(captured.tail);
 
     Ok(ExecutionOutput {
         records,
         head_record_count,
-        dropped_stdout_bytes: drain.dropped_stdout_bytes,
-        dropped_stderr_bytes: drain.dropped_stderr_bytes,
+        dropped_stdout_bytes: captured.dropped_stdout_bytes,
+        dropped_stderr_bytes: captured.dropped_stderr_bytes,
         exit_code,
         timed_out,
         output_truncated,
@@ -932,8 +871,12 @@ fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
     0
 }
 
-fn take_complete_utf8(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
-    let cut = pending.len() - incomplete_utf8_suffix_len(pending);
+/// A trailing `\r` stays pending so a CRLF split across segments is still seen as one line ending.
+fn take_splittable_prefix(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let mut cut = pending.len() - incomplete_utf8_suffix_len(pending);
+    if cut > 0 && pending[cut - 1] == b'\r' {
+        cut -= 1;
+    }
     if cut == 0 {
         return None;
     }
@@ -964,7 +907,7 @@ fn bounded_segments<R: AsyncRead + Unpin + Send + 'static>(
                         } else {
                             pending.push(byte);
                             if pending.len() >= max_segment {
-                                if let Some(bytes) = take_complete_utf8(&mut pending) {
+                                if let Some(bytes) = take_splittable_prefix(&mut pending) {
                                     yield Ok(RawSegment { bytes, ends_line: false });
                                 }
                             }
@@ -979,7 +922,7 @@ fn bounded_segments<R: AsyncRead + Unpin + Send + 'static>(
 async fn collect_tagged_lines(
     stdout: tokio::process::ChildStdout,
     stderr: tokio::process::ChildStderr,
-    tx: CaptureSender,
+    capture: Arc<Mutex<CaptureBuffer>>,
     notification_emitter: Option<ToolCallNotificationEmitter>,
     max_segment: usize,
 ) -> Result<(), std::io::Error> {
@@ -1019,7 +962,7 @@ async fn collect_tagged_lines(
                         flush_interval.reset();
                     }
                 }
-                tx.send(record).await;
+                capture.lock().unwrap().push(record);
             }
             _ = flush_interval.tick(), if output_batcher.is_some() => {
                 if let Some(output_batcher) = output_batcher.as_mut() {
@@ -1147,7 +1090,7 @@ fn save_full_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::ContentBlock;
+    use rmcp::model::{ContentBlock, ServerNotification};
 
     fn extract_text(result: &CallToolResult) -> &str {
         match &result.content[0] {
@@ -1324,27 +1267,23 @@ mod tests {
     }
 
     async fn capture_stdout(input: Vec<u8>, capture_limit: usize) -> (String, usize) {
-        let (tx, rx) = capture_channel(capture_limit);
-        let drain = tokio::spawn(drain_with_budget(rx, capture_limit));
+        let mut buffer = CaptureBuffer::new(capture_limit);
         let mut segments = bounded_segments(
             std::io::Cursor::new(input),
             max_segment_bytes(capture_limit),
         );
         while let Some(segment) = segments.next().await {
             let segment = segment.unwrap();
-            tx.send(CaptureRecord {
+            buffer.push(CaptureRecord {
                 is_stderr: false,
                 text: String::from_utf8_lossy(&segment.bytes).into_owned(),
                 ends_line: segment.ends_line,
-            })
-            .await;
+            });
         }
-        drop(tx);
-        let out = drain.await.unwrap();
-        let dropped = out.dropped_stdout_bytes;
-        let head_count = out.head.len();
-        let mut records = out.head;
-        records.extend(out.tail);
+        let dropped = buffer.dropped_stdout_bytes;
+        let head_count = buffer.head.len();
+        let mut records = buffer.head;
+        records.extend(buffer.tail);
         (split_records(&records, head_count, dropped, 0).0, dropped)
     }
 
@@ -1358,24 +1297,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_utf8_segments_decode_within_half_the_capture_limit() {
-        let capture_limit = 1000;
-        let segments: Vec<_> = bounded_segments(
-            std::io::Cursor::new(vec![0xFF; 10_000]),
-            max_segment_bytes(capture_limit),
-        )
-        .map(|segment| segment.unwrap())
-        .collect()
-        .await;
+    async fn segments_of_invalid_utf8_decode_within_half_the_capture_limit() {
+        for capture_limit in [MIN_CAPTURE_LIMIT_BYTES, 1500, 4096] {
+            let segments: Vec<_> = bounded_segments(
+                std::io::Cursor::new(vec![0xFF; 10_000]),
+                max_segment_bytes(capture_limit),
+            )
+            .map(|segment| segment.unwrap())
+            .collect()
+            .await;
 
-        assert!(segments.len() > 1);
-        for segment in segments {
-            let record = CaptureRecord {
-                is_stderr: false,
-                text: String::from_utf8_lossy(&segment.bytes).into_owned(),
-                ends_line: segment.ends_line,
-            };
-            assert!(record.budget_cost() <= capture_limit / 2);
+            assert!(segments.len() > 1);
+            for segment in segments {
+                let record = CaptureRecord {
+                    is_stderr: false,
+                    text: String::from_utf8_lossy(&segment.bytes).into_owned(),
+                    ends_line: segment.ends_line,
+                };
+                assert!(record.budget_cost() <= capture_limit / 2);
+            }
         }
     }
 
@@ -1441,42 +1381,55 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn drain_charges_per_record_overhead_and_tracks_dropped_per_stream() {
-        let (tx, rx) = capture_channel(10_000);
-        let drain = tokio::spawn(drain_with_budget(rx, 10 * (RECORD_OVERHEAD_BYTES + 2)));
+    #[test]
+    fn buffer_charges_per_record_overhead_and_tracks_dropped_per_stream() {
+        let mut buffer = CaptureBuffer::new(2 * 10 * (RECORD_OVERHEAD_BYTES + 1));
         for index in 0..100 {
-            tx.send(record(index % 2 == 0, "", true)).await;
+            buffer.push(record(index % 2 == 0, "", true));
         }
-        drop(tx);
-        let out = drain.await.unwrap();
 
-        let retained = out.head.len() + out.tail.len();
-        assert!(retained <= 10, "retained {retained} empty records");
+        let retained = buffer.head.len() + buffer.tail.len();
+        assert!(retained <= 20, "retained {retained} empty records");
         assert_eq!(
-            out.dropped_stdout_bytes + out.dropped_stderr_bytes,
+            buffer.dropped_stdout_bytes + buffer.dropped_stderr_bytes,
             100 - retained
         );
-        assert!(out.dropped_stdout_bytes > 0 && out.dropped_stderr_bytes > 0);
+        assert!(buffer.dropped_stdout_bytes > 0 && buffer.dropped_stderr_bytes > 0);
+    }
+
+    #[test]
+    fn capture_limit_below_the_minimum_is_raised() {
+        for value in ["0", "1", "1023"] {
+            let _env = env_lock::lock_env([("GOOSE_SHELL_CAPTURE_LIMIT_BYTES", Some(value))]);
+            assert_eq!(capture_limit_bytes(), MIN_CAPTURE_LIMIT_BYTES);
+        }
     }
 
     #[tokio::test]
-    async fn capture_channel_blocks_producers_until_the_receiver_catches_up() {
-        let (tx, mut rx) = capture_channel(3 * (RECORD_OVERHEAD_BYTES + 1));
-        for _ in 0..3 {
-            tx.send(record(false, "", false)).await;
+    async fn crlf_split_across_segments_is_normalized_in_live_output() {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+        let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
+        let mut segments = bounded_segments(std::io::Cursor::new(b"abc\r\ndef\n".to_vec()), 4);
+        while let Some(segment) = segments.next().await {
+            let segment = segment.unwrap();
+            batcher.push_segment(
+                false,
+                &String::from_utf8(segment.bytes).unwrap(),
+                segment.ends_line,
+            );
         }
-        let blocked = tokio::time::timeout(
-            Duration::from_millis(100),
-            tx.send(record(false, "", false)),
-        )
-        .await;
-        assert!(blocked.is_err(), "queue must be bounded by bytes");
+        batcher.flush();
 
-        rx.recv().await.unwrap();
-        tokio::time::timeout(Duration::from_secs(1), tx.send(record(false, "", false)))
-            .await
-            .expect("send should proceed once capacity is released");
+        let mut output = String::new();
+        while let Ok(ServerNotification::CustomNotification(notification)) = receiver.try_recv() {
+            for chunk in parse_shell_output_notification(&notification)
+                .unwrap()
+                .chunks
+            {
+                output.push_str(&chunk.output);
+            }
+        }
+        assert_eq!(output, "abc\ndef\n");
     }
 
     #[cfg(not(windows))]

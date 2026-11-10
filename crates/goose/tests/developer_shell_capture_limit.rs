@@ -50,7 +50,7 @@ async fn capture_limit_preserves_head_and_tail_of_mixed_streams() {
 #[tokio::test]
 async fn capture_limit_bounds_output_without_newlines() {
     let (result, output) = run_with_capture_limit(
-        1000,
+        1024,
         "python3 -c \"import sys; sys.stdout.buffer.write(b'S' + b'x' * 999998 + b'E')\"",
     )
     .await;
@@ -58,7 +58,7 @@ async fn capture_limit_bounds_output_without_newlines() {
     assert_eq!(result.is_error, Some(false));
     assert!(text(&result).contains("[Capture limit"));
     assert!(output.capture_dropped_bytes > 900_000);
-    assert!(output.stdout.len() <= 1000);
+    assert!(output.stdout.len() <= 1024);
     assert!(output.stdout.starts_with('S'));
     assert!(output.stdout.ends_with('E'));
     assert_eq!(
@@ -66,4 +66,14 @@ async fn capture_limit_bounds_output_without_newlines() {
         1,
         "only the head/tail gap may introduce a line break"
     );
+}
+
+#[tokio::test]
+async fn tiny_capture_limit_is_raised_so_small_output_is_kept_whole() {
+    for limit in [0, 1] {
+        let (_, output) = run_with_capture_limit(limit, "printf AB").await;
+
+        assert_eq!(output.stdout, "AB");
+        assert_eq!(output.capture_dropped_bytes, 0);
+    }
 }
