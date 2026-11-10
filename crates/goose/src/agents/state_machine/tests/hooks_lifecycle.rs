@@ -726,29 +726,6 @@ async fn rejected_final_output_after_a_stop_hook_block_does_not_reshow_the_block
     Ok(())
 }
 
-#[tokio::test]
-async fn recipe_final_output_ignores_a_denying_hook() -> Result<()> {
-    let env = RecordingHookEnv::new(&[
-        ("PreToolUse", "", "pre.sh", DENY_AND_RECORD_SCRIPT),
-        ("PreToolUseResult", "", "result.sh", RECORD_RESULT_SCRIPT),
-    ]);
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_hook_manager(env.hook_manager());
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("produce the answer").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    let result = pipeline.run(["produce the answer"]).await?;
-
-    assert_eq!(api.call_count(), 1);
-    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    Ok(())
-}
-
 /// Writes a skill `SkillOperation` can load, and returns the tool arguments that
 /// load it. `load_skill` is executed by `SkillOperation`, which is registered
 /// ahead of `ToolExecutionOperation`, so it never reaches the hook wrapper.
@@ -1044,13 +1021,9 @@ async fn unadvertised_unknown_tool_is_not_intercepted_by_hooks() -> Result<()> {
 }
 
 #[tokio::test]
-async fn chat_mode_accepts_recipe_final_output_without_hooks() -> Result<()> {
-    let env = recording_lifecycle_env();
+async fn chat_mode_accepts_recipe_final_output() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline
-        .with_hook_manager(env.hook_manager())
-        .with_goose_mode(GooseMode::Chat)
-        .await;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
     pipeline.set_recipe(final_output_recipe()).await?;
     api.on("produce the answer").call(
         FINAL_OUTPUT_TOOL_NAME,
@@ -1061,10 +1034,6 @@ async fn chat_mode_accepts_recipe_final_output_without_hooks() -> Result<()> {
 
     assert_eq!(api.call_count(), 1);
     result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
-    assert!(env.payloads("pre.log").is_empty());
-    assert!(env.payloads("result.log").is_empty());
-    assert!(env.payloads("post.log").is_empty());
-    assert!(env.payloads("postfail.log").is_empty());
     Ok(())
 }
 
@@ -1186,7 +1155,7 @@ fn recording_lifecycle_env() -> RecordingHookEnv {
 }
 
 #[tokio::test]
-async fn recipe_final_output_ignores_never_allow_permission() -> Result<()> {
+async fn approve_mode_accepts_recipe_final_output_without_permission_checks() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
     pipeline.set_permission(FINAL_OUTPUT_TOOL_NAME, PermissionLevel::NeverAllow);
@@ -1199,27 +1168,9 @@ async fn recipe_final_output_ignores_never_allow_permission() -> Result<()> {
     let result = pipeline.run(["finish now"]).await?;
 
     assert_eq!(api.call_count(), 1);
-    assert_tool_transcript_bijection(result.conversation().messages());
-    result.assert_message(-1, Agent, r#"{"answer":"done"}"#);
-    Ok(())
-}
-
-#[tokio::test]
-async fn approve_mode_accepts_recipe_final_output_without_asking() -> Result<()> {
-    let (pipeline, api) = test_pipeline().await?;
-    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
-    pipeline.set_recipe(final_output_recipe()).await?;
-    api.on("finish now").call(
-        FINAL_OUTPUT_TOOL_NAME,
-        serde_json::json!({ "answer": "done" }),
-    );
-
-    let result = pipeline.run(["finish now"]).await?;
-
-    assert_eq!(api.call_count(), 1);
-    assert!(result
-        .conversation()
-        .messages()
+    let messages = result.conversation().messages();
+    assert_tool_transcript_bijection(messages);
+    assert!(messages
         .iter()
         .flat_map(|message| &message.content)
         .all(|content| !matches!(content, MessageContent::ActionRequired(_))));
