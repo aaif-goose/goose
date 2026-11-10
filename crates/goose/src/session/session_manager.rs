@@ -29,11 +29,21 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 17;
+pub const CURRENT_SCHEMA_VERSION: i32 = 18;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
 const SESSION_COUNT_BATCH_SIZE: usize = 900;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionCreationError {
+    #[error("session ID already exists: {id}")]
+    AlreadyExists {
+        id: String,
+        #[source]
+        source: sqlx::Error,
+    },
+}
 
 #[derive(
     Debug,
@@ -366,6 +376,7 @@ pub(crate) struct SessionListFilters<'a> {
     pub(crate) types: Option<&'a [SessionType]>,
     pub(crate) working_dir: Option<&'a Path>,
     pub(crate) keyword: Option<&'a str>,
+    pub(crate) tags: &'a [(String, String)],
     pub(crate) only_sessions_with_messages: bool,
 }
 
@@ -401,11 +412,10 @@ fn message_keyword_clause(keyword_count: usize) -> String {
     let visible = user_visible_message_sql("mq.metadata_json");
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages mq
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)
@@ -457,7 +467,20 @@ impl SessionManager {
         goose_mode: GooseMode,
     ) -> Result<Session> {
         self.storage
-            .create_session(working_dir, name, session_type, goose_mode)
+            .create_session(None, working_dir, name, session_type, goose_mode)
+            .await
+    }
+
+    pub async fn create_session_with_id(
+        &self,
+        id: &str,
+        working_dir: PathBuf,
+        name: String,
+        session_type: SessionType,
+        goose_mode: GooseMode,
+    ) -> Result<Session> {
+        self.storage
+            .create_session(Some(id), working_dir, name, session_type, goose_mode)
             .await
     }
 
@@ -528,6 +551,14 @@ impl SessionManager {
         query: SessionListPageQuery<'_>,
     ) -> Result<SessionListPage> {
         self.storage.list_sessions_paged(query).await
+    }
+
+    pub async fn set_session_tags(
+        &self,
+        session_id: &str,
+        tags: &[(String, String)],
+    ) -> Result<()> {
+        self.storage.set_session_tags(session_id, tags).await
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
@@ -812,8 +843,7 @@ impl SessionManager {
 }
 
 pub struct SessionStorage {
-    pool: Pool<Sqlite>,
-    initialized: tokio::sync::OnceCell<()>,
+    pool: tokio::sync::OnceCell<Pool<Sqlite>>,
     session_dir: PathBuf,
     action_required: Arc<crate::action_required_manager::ActionRequiredManager>,
 }
@@ -1049,7 +1079,7 @@ async fn insert_usage_ledger_row(
 }
 
 impl SessionStorage {
-    fn create_pool(path: &Path) -> Pool<Sqlite> {
+    fn create_pool(path: &Path, pool_options: SqlitePoolOptions) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("Failed to create session database directory");
             #[cfg(unix)]
@@ -1067,42 +1097,43 @@ impl SessionStorage {
             .busy_timeout(std::time::Duration::from_secs(30))
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
-        SqlitePoolOptions::new().connect_lazy_with(options)
+        pool_options.connect_lazy_with(options)
     }
 
     pub fn new(data_dir: PathBuf) -> Self {
         let session_dir = data_dir.join(SESSIONS_FOLDER);
-        let db_path = session_dir.join(DB_NAME);
         Self {
-            pool: Self::create_pool(&db_path),
-            initialized: tokio::sync::OnceCell::new(),
+            pool: tokio::sync::OnceCell::new(),
             session_dir,
             action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
-        self.initialized
+        self.pool
             .get_or_try_init(|| async {
+                let db_path = self.session_dir.join(DB_NAME);
+                // Bootstrap connections must never enter the application pool with
+                // schema metadata cached before migrations finished.
+                let bootstrap = Self::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
                 let schema_exists = sqlx::query_scalar::<_, bool>(
                     r#"SELECT EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version')"#,
                 )
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(false);
+                .fetch_one(&bootstrap)
+                .await?;
 
                 if schema_exists {
-                    Self::run_migrations(&self.pool).await?;
+                    Self::run_migrations(&bootstrap).await?;
                 } else {
-                    Self::create_schema(&self.pool).await?;
-                    if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
+                    Self::create_schema(&bootstrap).await?;
+                    if let Err(e) = Self::import_legacy(&bootstrap, &self.session_dir).await {
                         warn!("Failed to import some legacy sessions: {}", e);
                     }
                 }
-                Ok::<(), anyhow::Error>(())
+                bootstrap.close().await;
+                Ok::<_, anyhow::Error>(Self::create_pool(&db_path, SqlitePoolOptions::new()))
             })
-            .await?;
-        Ok(&self.pool)
+            .await
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
@@ -1246,6 +1277,7 @@ impl SessionStorage {
         )
         .execute(&mut *tx)
         .await?;
+        Self::create_session_tags_table(&mut tx).await?;
 
         // Create the inventory tables inside the same transaction so that a
         // second SessionStorage opening the same DB file never observes a
@@ -1747,6 +1779,9 @@ impl SessionStorage {
                     }
                 }
             }
+            18 => {
+                Self::create_session_tags_table(tx).await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -1755,26 +1790,84 @@ impl SessionStorage {
         Ok(())
     }
 
+    async fn create_session_tags_table(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_tags (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (session_id, key)
+            )
+        "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_tags_key_value ON session_tags(key, value, session_id)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn set_session_tags(&self, session_id: &str, tags: &[(String, String)]) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        for (key, value) in tags {
+            sqlx::query(
+                "INSERT INTO session_tags (session_id, key, value) VALUES (?, ?, ?) ON CONFLICT(session_id, key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(session_id)
+            .bind(key)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn create_session(
         &self,
+        id: Option<&str>,
         working_dir: PathBuf,
         name: String,
         session_type: SessionType,
         goose_mode: GooseMode,
     ) -> Result<Session> {
+        if let Some(id) = id {
+            anyhow::ensure!(
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'),
+                "session ID must be 1-128 ASCII letters, digits, underscores, or hyphens"
+            );
+            let bytes = id.as_bytes();
+            anyhow::ensure!(
+                !(bytes.len() >= 19
+                    && bytes[..8].iter().all(u8::is_ascii_digit)
+                    && bytes[9..19].iter().all(u8::is_ascii_digit)),
+                "session ID date-prefixed numeric suffix must be fewer than 10 digits"
+            );
+        }
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        // An explicit projection avoids SQLx's stale column metadata when SQLite
+        // refreshes another pooled connection's pre-migration schema during execution.
         let session = sqlx::query_as(
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
                 VALUES (
-                    ? || '_' || CAST(COALESCE((
+                    COALESCE(?, ? || '_' || CAST(COALESCE((
                         SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
                         FROM sessions
                         WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT),
+                    ), 0) + 1 AS TEXT)),
                     ?,
                     FALSE,
                     ?,
@@ -1782,9 +1875,19 @@ impl SessionStorage {
                     '{}',
                     ?
                 )
-                RETURNING *
+                RETURNING id, working_dir, name, description, user_set_name, session_type,
+                          created_at, updated_at, extension_data,
+                          total_tokens, input_tokens, output_tokens,
+                          cache_read_tokens, cache_write_tokens,
+                          accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+                          accumulated_cache_read_tokens, accumulated_cache_write_tokens,
+                          accumulated_cost, schedule_id, recipe_json, user_recipe_values_json,
+                          provider_name, model_config_json, goose_mode,
+                          archived_at, project_id, parent_session_id,
+                          system_prompt_override, system_prompt_extras_json, container_id
                 "#,
         )
+            .bind(id)
             .bind(&today)
             .bind(&today)
             .bind(&name)
@@ -1792,7 +1895,17 @@ impl SessionStorage {
             .bind(&*working_dir.to_string_lossy())
             .bind(goose_mode.to_string())
             .fetch_one(&mut *tx)
-            .await?;
+            .await
+            .map_err(|error| match (id, &error) {
+                (Some(id), sqlx::Error::Database(db_error)) if db_error.is_unique_violation() => {
+                    SessionCreationError::AlreadyExists {
+                        id: id.to_string(),
+                        source: error,
+                    }
+                    .into()
+                }
+                _ => anyhow::Error::from(error),
+            })?;
 
         tx.commit().await?;
         #[cfg(feature = "telemetry")]
@@ -2271,6 +2384,12 @@ impl SessionStorage {
         if filters.working_dir.is_some() {
             where_clauses.push("s.working_dir = ?".to_string());
         }
+        for _ in filters.tags {
+            where_clauses.push(
+                "s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?)"
+                    .to_string(),
+            );
+        }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
         }
@@ -2318,16 +2437,22 @@ impl SessionStorage {
                    s.provider_name, s.model_config_json, s.goose_mode,
                    s.archived_at, s.project_id, s.parent_session_id,
                    s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
-                   {} as message_count,
-                   MAX({}) as last_message_timestamp,
-                   {} as sort_timestamp
-            FROM sessions s
-            {}
-            {}
-            GROUP BY s.id
-            {}
-            {}
-            {}
+                   page.message_count, page.last_message_timestamp, page.sort_timestamp
+            FROM (
+                SELECT s.id,
+                       {} as message_count,
+                       MAX({}) as last_message_timestamp,
+                       {} as sort_timestamp
+                FROM sessions s
+                {}
+                {}
+                GROUP BY s.id
+                {}
+                {}
+                {}
+            ) page
+            JOIN sessions s ON s.id = page.id
+            ORDER BY page.sort_timestamp DESC, s.id DESC
             "#,
             message_count_sql,
             normalized_message_timestamp,
@@ -2347,6 +2472,9 @@ impl SessionStorage {
         }
         if let Some(working_dir) = filters.working_dir {
             q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+        for (key, value) in filters.tags {
+            q = q.bind(key).bind(value);
         }
         for term in keywords {
             q = q.bind(term);
@@ -2488,6 +2616,11 @@ impl SessionStorage {
             .await?;
 
         sqlx::query("DELETE FROM usage_ledger WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM session_tags WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
@@ -2724,6 +2857,7 @@ impl SessionStorage {
 
         let session = self
             .create_session(
+                None,
                 import.working_dir.clone(),
                 import.name.clone(),
                 session_type_override.unwrap_or(import.session_type),
@@ -2768,6 +2902,7 @@ impl SessionStorage {
 
         let new_session = self
             .create_session(
+                None,
                 original_session.working_dir.clone(),
                 new_name,
                 original_session.session_type,
@@ -3007,7 +3142,7 @@ mod tests {
             fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
             0o700
         );
-        storage.pool.close().await;
+        storage.pool().await.unwrap().close().await;
         drop(storage);
 
         fs::set_permissions(&database_path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -4043,7 +4178,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = session_manager.storage().pool.clone();
+        let pool = session_manager.storage().pool().await.unwrap().clone();
 
         let results = run_lock_upgrade_race(pool.clone(), session.id.clone(), "BEGIN", true).await;
         assert!(
@@ -4318,6 +4453,187 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    fn tags(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    async fn list_ids_with_tags(sm: &SessionManager, filter: &[(String, String)]) -> Vec<String> {
+        let types = [SessionType::User];
+        let mut ids = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    tags: filter,
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_by_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let thread_one =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "first").await;
+        let thread_two =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "second").await;
+        create_session_for_list_with_message(&sm, "/tmp/session-list", "untagged").await;
+        sm.set_session_tags(
+            &thread_one,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t1")]),
+        )
+        .await
+        .unwrap();
+        sm.set_session_tags(
+            &thread_two,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![thread_one.clone()]
+        );
+        let mut channel = vec![thread_one.clone(), thread_two.clone()];
+        channel.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1")])).await,
+            channel
+        );
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")])).await,
+            vec![thread_two.clone()]
+        );
+        assert!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "t1")]))
+                .await
+                .is_empty(),
+            "a value must match under its own key"
+        );
+        assert_eq!(list_ids_with_tags(&sm, &[]).await.len(), 3);
+
+        sm.set_session_tags(&thread_two, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+        let mut retagged = vec![thread_one, thread_two];
+        retagged.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            retagged
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_removes_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "tagged").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        sm.delete_session(&session_id).await.unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_tags")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_session_tag_filter_seeks_tag_index() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN \
+             SELECT s.id FROM sessions s JOIN messages m ON s.id = m.session_id \
+             WHERE s.session_type IN (?) AND s.working_dir = ? \
+               AND s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?) \
+             GROUP BY s.id",
+        )
+        .bind("acp")
+        .bind("/tmp")
+        .bind("buzz.thread")
+        .bind("t1")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_text = plan_rows
+            .iter()
+            .map(|row| row.try_get::<String, _>("detail").unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            plan_text.contains("idx_session_tags_key_value"),
+            "tag filters should seek idx_session_tags_key_value, got: {plan_text}"
+        );
+        assert!(
+            !plan_text.contains("SCAN s"),
+            "tag filters must not scan every session, got: {plan_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_tags_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TABLE session_tags")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 17")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "migrated").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![session_id]
+        );
+    }
+
     #[tokio::test]
     async fn test_session_list_paged_keyword_uses_or_terms() {
         let temp_dir = TempDir::new().unwrap();
@@ -4474,6 +4790,7 @@ mod tests {
             working_dir: Some(Path::new("/tmp/session-list/a")),
             keyword: Some("postgres"),
             only_sessions_with_messages: true,
+            ..Default::default()
         };
         let cursor = sm
             .list_sessions_paged(SessionListPageQuery {
@@ -4508,6 +4825,133 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(ids, expected_ids[1..2]);
         assert!(page.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_caller_supplied_session_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = "ses_rotten-canary-32";
+        let session = sm
+            .create_session_with_id(
+                id,
+                PathBuf::from("/tmp/custom-session"),
+                "Custom session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.id, id);
+
+        sm.add_message(
+            id,
+            &Message {
+                id: None,
+                role: Role::User,
+                created: chrono::Utc::now().timestamp_millis(),
+                content: vec![MessageContent::text("hello world")],
+                metadata: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sm.get_session(id, true).await.unwrap().message_count, 1);
+        assert!(sm.list_sessions().await.unwrap().iter().any(|s| s.id == id));
+
+        let collision = sm
+            .create_session_with_id(
+                id,
+                PathBuf::from("/tmp/other-session"),
+                "Collision".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            collision.downcast_ref::<SessionCreationError>(),
+            Some(SessionCreationError::AlreadyExists { id: existing_id, .. }) if existing_id == id
+        ));
+        assert_eq!(
+            sm.get_session(id, false).await.unwrap().name,
+            "Custom session"
+        );
+
+        let generated = sm
+            .create_session(
+                PathBuf::from("/tmp/generated-session"),
+                "Generated session".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(generated.id, id);
+        assert!(generated
+            .id
+            .starts_with(&chrono::Utc::now().format("%Y%m%d_").to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_caller_supplied_session_id_rejects_invalid_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let oversized_suffix = format!("{}_9223372036854775807", Utc::now().format("%Y%m%d"));
+        let trailing_text = format!("{oversized_suffix}x");
+        let alternate_separator = format!("{}X9223372036854775807", Utc::now().format("%Y%m%d"));
+        for id in [
+            "",
+            "../session",
+            "a b",
+            "a/b",
+            &oversized_suffix,
+            &trailing_text,
+            &alternate_separator,
+        ] {
+            assert!(sm
+                .create_session_with_id(
+                    id,
+                    PathBuf::from("/tmp/custom-session"),
+                    "Invalid".to_string(),
+                    SessionType::User,
+                    GooseMode::default(),
+                )
+                .await
+                .is_err());
+        }
+        assert!(sm.list_sessions().await.unwrap().is_empty());
+
+        assert!(sm
+            .storage
+            .create_session(
+                Some("../direct-storage"),
+                PathBuf::from("/tmp/custom-session"),
+                "Invalid".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .is_err());
+        let first = sm
+            .create_session(
+                PathBuf::from("/tmp/generated-session"),
+                "Generated".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let second = sm
+            .create_session(
+                PathBuf::from("/tmp/generated-session"),
+                "Generated".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(first.id, second.id);
     }
 
     #[tokio::test]
@@ -4846,7 +5290,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = &sm.storage().pool;
+        let pool = sm.storage().pool().await.unwrap();
         sqlx::query("UPDATE sessions SET goose_mode = 'garbage' WHERE id = ?")
             .bind(&session.id)
             .execute(pool)
@@ -4924,6 +5368,126 @@ mod tests {
 
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
+    }
+
+    #[tokio::test]
+    async fn test_application_pool_opens_connections_after_migration() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
+
+        for column in [
+            "system_prompt_override",
+            "system_prompt_extras_json",
+            "container_id",
+        ] {
+            sqlx::query(AssertSqlSafe(format!(
+                "ALTER TABLE sessions DROP COLUMN {column}"
+            )))
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        }
+        sqlx::query("UPDATE schema_version SET version = 16")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sessions (id, working_dir) VALUES ('before_migration', '/tmp')")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        let migration_lock = bootstrap.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let first = storage.pool();
+        tokio::pin!(first);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut first)
+                .await
+                .is_err()
+        );
+        assert!(storage.pool.get().is_none());
+        migration_lock.commit().await.unwrap();
+        bootstrap.close().await;
+
+        let (first, second) = tokio::join!(first, storage.pool());
+        let pool = first.unwrap();
+        assert!(std::ptr::eq(pool, second.unwrap()));
+
+        let mut connections = Vec::new();
+        for _ in 0..pool.options().get_max_connections() {
+            let mut connection = pool.acquire().await.unwrap();
+            // A wildcard deliberately exercises the SQLx stale-metadata failure
+            // independently of the explicit projection used by create_session.
+            let row = sqlx::query("SELECT * FROM sessions WHERE id = 'before_migration'")
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+            for column in [
+                "system_prompt_override",
+                "system_prompt_extras_json",
+                "container_id",
+            ] {
+                assert!(row.try_get::<Option<String>, _>(column).unwrap().is_none());
+            }
+            connections.push(connection);
+        }
+        drop(connections);
+
+        let session = storage
+            .create_session(
+                None,
+                temp_dir.path().to_path_buf(),
+                "After migration".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.name, "After migration");
+        assert!(session.system_prompt_override.is_none());
+        assert!(session.system_prompt_extras.is_empty());
+        assert!(session.container.is_none());
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn test_failed_migration_does_not_publish_application_pool() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
+        sqlx::query("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version VALUES (16)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        assert!(storage.pool().await.is_err());
+        assert!(storage.pool.get().is_none());
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(&bootstrap)
+            .await
+            .unwrap();
+        assert_eq!(version, 16);
+
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
+        bootstrap.close().await;
+        let pool = storage.pool().await.unwrap();
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        pool.close().await;
     }
 
     #[tokio::test]

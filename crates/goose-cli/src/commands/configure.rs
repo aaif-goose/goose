@@ -3,8 +3,8 @@ use cliclack::spinner;
 use console::style;
 use goose::agents::extension::{ToolInfo, PLATFORM_EXTENSIONS};
 use goose::agents::extension_manager::get_parameter_names;
-use goose::agents::Agent;
 use goose::agents::{extension::Envs, ExtensionConfig};
+use goose::agents::{StateMachineServices, StateMachineServicesConfig};
 use goose::config::declarative_providers::{
     create_custom_provider, remove_custom_provider, AuthConfig, CreateCustomProviderParams,
 };
@@ -1785,10 +1785,9 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         .expect("No model configured. Please set model first");
     let model_config = goose::model_config::model_config_from_user_config(&provider_name, &model)?;
 
-    let agent = Agent::new();
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
-    let session = agent
-        .config
+    let session = services
         .session_manager
         .create_session(
             std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
@@ -1800,8 +1799,9 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
 
     let extension_config = get_extension_by_name(&selected_extension_name);
     if let Some(config) = extension_config.as_ref() {
-        agent
-            .add_extension(config.clone(), &session.id)
+        services
+            .extension_manager
+            .enable(&session.id, config.clone())
             .await
             .unwrap_or_else(|_| {
                 println!(
@@ -1819,12 +1819,12 @@ pub async fn configure_tool_permissions_dialog() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    agent
+    services
         .switch_provider(&session.id, &provider_name, model_config)
         .await?;
 
     let permission_manager = PermissionManager::instance();
-    let selected_tools = agent
+    let selected_tools = services
         .list_tools(&session.id, Some(selected_extension_name.clone()))
         .await?
         .into_iter()

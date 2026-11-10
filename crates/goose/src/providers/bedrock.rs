@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::base::{
     model_info_for_provider_model, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
@@ -6,7 +8,7 @@ use super::base::{
 };
 use super::openai_compatible::{handle_status, stream_responses_compat};
 use super::retry::{ProviderRetry, RetryConfig};
-use crate::conversation::message::Message;
+use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::Result;
 use async_stream::try_stream;
@@ -169,6 +171,21 @@ fn find_model_entry(name: &str) -> Option<&'static BedrockModelEntry> {
     BEDROCK_MODEL_TABLE.iter().find(|e| e.name == candidate)
 }
 
+/// Model ID to send to Mantle, or `None` for Converse. Bedrock serves the
+/// closed-weight OpenAI GPT models by bare ID only on Mantle (Converse needs a
+/// `us.`/`global.` inference profile), so those route by ID shape without a
+/// table row. GPT OSS, inference profiles and ARNs stay on Converse.
+fn mantle_model_id(name: &str) -> Option<String> {
+    if let Some(entry) = find_model_entry(name) {
+        return (entry.endpoint == BedrockEndpoint::MantleResponses)
+            .then(|| entry.wire_model_id.to_string());
+    }
+    let (base, _) = extract_reasoning_effort(name.strip_prefix("openai.").unwrap_or(name));
+    base.strip_prefix("gpt-")?
+        .starts_with(|c: char| c.is_ascii_digit())
+        .then(|| format!("openai.{base}"))
+}
+
 pub const BEDROCK_DEFAULT_MAX_RETRIES: usize = 6;
 pub const BEDROCK_DEFAULT_INITIAL_RETRY_INTERVAL_MS: u64 = 2000;
 pub const BEDROCK_DEFAULT_BACKOFF_MULTIPLIER: f64 = 2.0;
@@ -190,6 +207,8 @@ pub struct BedrockProvider {
     http_client: reqwest::Client,
     #[serde(skip)]
     mantle_base_url: Option<String>,
+    #[serde(skip)]
+    documents_unsupported: AtomicBool,
 }
 
 /// Request inputs shared by the `Converse` and `ConverseStream` APIs.
@@ -309,6 +328,7 @@ impl BedrockProvider {
                 ))
                 .build()?,
             mantle_base_url: None,
+            documents_unsupported: AtomicBool::new(false),
         })
     }
 
@@ -447,8 +467,12 @@ impl BedrockProvider {
 
         let mut bedrock_messages: Vec<bedrock::Message> = Vec::new();
         for message in visible_messages {
-            let formatted =
-                to_bedrock_message_with_caching(message, false, Some(&model.model_name))?;
+            let formatted = to_bedrock_message_with_caching(
+                message,
+                false,
+                Some(&model.model_name),
+                self.documents_supported(),
+            )?;
             if formatted.content().is_empty() {
                 continue;
             }
@@ -487,6 +511,26 @@ impl BedrockProvider {
         })
     }
 
+    fn documents_supported(&self) -> bool {
+        !self.documents_unsupported.load(Ordering::Relaxed)
+    }
+
+    async fn send_with_document_fallback<T, Fut>(
+        &self,
+        request: impl Fn() -> Fut,
+    ) -> Result<T, ProviderError>
+    where
+        Fut: Future<Output = Result<T, ProviderError>>,
+    {
+        match request().await {
+            Err(err) if is_documents_unsupported_error(&err) => {
+                self.documents_unsupported.store(true, Ordering::Relaxed);
+                request().await
+            }
+            result => result,
+        }
+    }
+
     async fn converse(
         &self,
         model: &ModelConfig,
@@ -494,7 +538,14 @@ impl BedrockProvider {
         system: &str,
         messages: &[Message],
         tools: &[Tool],
-    ) -> Result<(bedrock::Message, Option<bedrock::TokenUsage>), ProviderError> {
+    ) -> Result<
+        (
+            bedrock::Message,
+            Option<bedrock::TokenUsage>,
+            bedrock::StopReason,
+        ),
+        ProviderError,
+    > {
         let parts = self.build_request_parts(model, system, messages, tools)?;
 
         let mut request = self
@@ -559,7 +610,9 @@ impl BedrockProvider {
             })?;
 
         match response.output {
-            Some(bedrock::ConverseOutput::Message(message)) => Ok((message, response.usage)),
+            Some(bedrock::ConverseOutput::Message(message)) => {
+                Ok((message, response.usage, response.stop_reason))
+            }
             _ => Err(ProviderError::RequestFailed(
                 "No output from Bedrock".to_string(),
             )),
@@ -637,8 +690,12 @@ impl BedrockProvider {
         tools: &[Tool],
         model_name: &str,
     ) -> Result<MessageStream, ProviderError> {
-        let (bedrock_message, bedrock_usage) = self
-            .with_retry(|| self.converse(model, session_id, system, messages, tools))
+        let (bedrock_message, bedrock_usage, stop_reason) = self
+            .with_retry(|| {
+                self.send_with_document_fallback(|| {
+                    self.converse(model, session_id, system, messages, tools)
+                })
+            })
             .await?;
 
         let usage = bedrock_usage
@@ -646,7 +703,25 @@ impl BedrockProvider {
             .map(from_bedrock_usage)
             .unwrap_or_default();
 
-        let message = from_bedrock_message(&bedrock_message)?;
+        let mut message = from_bedrock_message(&bedrock_message)?;
+        message.metadata.output_token_limit_reached = stop_reason == bedrock::StopReason::MaxTokens;
+        if message.metadata.output_token_limit_reached {
+            // Converse can return truncated tool arguments as valid JSON.
+            for content in &mut message.content {
+                if let MessageContent::ToolRequest(request) = content {
+                    if let Ok(call) = &request.tool_call {
+                        request.tool_call = Err(ErrorData::new(
+                            ErrorCode::INVALID_PARAMS,
+                            format!(
+                                "Tool arguments for {} (id {}) were truncated because the model reached its output token limit",
+                                call.name, request.id
+                            ),
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
 
         // Add debug trace with input context
         let debug_payload = serde_json::json!({
@@ -660,7 +735,8 @@ impl BedrockProvider {
             Some(&usage),
         )?;
 
-        let provider_usage = ProviderUsage::new(model_name.to_string(), usage);
+        let provider_usage = ProviderUsage::new(model_name.to_string(), usage)
+            .with_finish_reasons(vec![stop_reason.as_str().to_string()]);
         Ok(super::base::stream_from_single_message(
             message,
             provider_usage,
@@ -976,30 +1052,29 @@ impl Provider for BedrockProvider {
             Some(session_id.as_str())
         };
 
-        if let Some(entry) = find_model_entry(&model_config.model_name) {
-            if entry.endpoint == BedrockEndpoint::MantleResponses {
-                let capability_model_name =
-                    entry.name.strip_prefix("openai.").unwrap_or(entry.name);
-                let mut normalized_config = model_config.clone();
-                normalized_config.model_name = capability_model_name.to_string();
-                let mut payload =
-                    create_responses_request(&normalized_config, system, messages, tools)?;
-                payload["model"] = Value::String(entry.wire_model_id.to_string());
-                payload["stream"] = Value::Bool(true);
-                if entry.name.starts_with("google.gemma-4-") {
-                    payload["parallel_tool_calls"] = Value::Bool(false);
-                }
-                let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
-
-                let response = self
-                    .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
-                    .await
-                    .inspect_err(|e| {
-                        let _ = log.error(e);
-                    })?;
-
-                return stream_responses_compat(response, log);
+        if let Some(wire_model_id) = mantle_model_id(&model_config.model_name) {
+            let capability_model_name = wire_model_id
+                .strip_prefix("openai.")
+                .unwrap_or(&wire_model_id);
+            let mut normalized_config = model_config.clone();
+            normalized_config.model_name = capability_model_name.to_string();
+            let mut payload =
+                create_responses_request(&normalized_config, system, messages, tools)?;
+            payload["model"] = Value::String(wire_model_id.clone());
+            payload["stream"] = Value::Bool(true);
+            if wire_model_id.starts_with("google.gemma-4-") {
+                payload["parallel_tool_calls"] = Value::Bool(false);
             }
+            let mut log = start_log(model_config, &payload).map_err(anyhow::Error::from)?;
+
+            let response = self
+                .with_retry(|| self.post_mantle_streaming(session_id_opt, &payload))
+                .await
+                .inspect_err(|e| {
+                    let _ = log.error(e);
+                })?;
+
+            return stream_responses_compat(response, log);
         }
 
         let model_name = model_config.model_name.clone();
@@ -1023,7 +1098,9 @@ impl Provider for BedrockProvider {
         // the Anthropic provider's behaviour).
         let response = self
             .with_retry(|| {
-                self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                self.send_with_document_fallback(|| {
+                    self.converse_stream(model_config, session_id_opt, system, messages, tools)
+                })
             })
             .await?;
 
@@ -1139,6 +1216,13 @@ impl Provider for BedrockProvider {
     }
 }
 
+fn is_documents_unsupported_error(err: &ProviderError) -> bool {
+    matches!(
+        err,
+        ProviderError::ExecutionError(details) if details.contains("doesn't support documents")
+    )
+}
+
 fn map_converse_stream_error(err: ConverseStreamError) -> ProviderError {
     match err {
         ConverseStreamError::ThrottlingException(throttle_err) => {
@@ -1184,6 +1268,7 @@ mod tests {
 
         (
             BedrockProvider {
+                documents_unsupported: AtomicBool::new(false),
                 client,
                 retry_config: RetryConfig::default(),
                 name: "aws_bedrock".to_string(),
@@ -1205,6 +1290,146 @@ mod tests {
                 request_headers: None,
             },
         )
+    }
+
+    async fn converse_via_mock(
+        stop_reason: &str,
+        content: Value,
+    ) -> Vec<(Option<Message>, Option<ProviderUsage>)> {
+        use futures::StreamExt;
+        use wiremock::matchers::{method, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        let body = serde_json::json!({
+            "output": {"message": {"role": "assistant", "content": content}},
+            "stopReason": stop_reason,
+            "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+            "metrics": {"latencyMs": 12}
+        });
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/model/.+/converse$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let sdk_config = aws_config::SdkConfig::builder()
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new("us-east-1"))
+            .http_client(ReqwestHttpClient::new())
+            .endpoint_url(server.uri())
+            .build();
+        let bedrock_config = aws_sdk_bedrockruntime::Config::new(&sdk_config)
+            .to_builder()
+            .bearer_token(aws_sdk_bedrockruntime::config::Token::new(
+                "test-token",
+                None,
+            ))
+            .auth_scheme_preference([
+                aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+            ])
+            .build();
+        let (mut provider, model) =
+            create_mock_provider_and_model("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        provider.client = Client::from_conf(bedrock_config);
+
+        let messages = vec![Message::user().with_text("hi")];
+        let stream = provider
+            .stream_via_converse(&model, None, "", &messages, &[], &model.model_name)
+            .await
+            .unwrap();
+        stream.map(|item| item.unwrap()).collect().await
+    }
+
+    #[tokio::test]
+    async fn test_converse_max_tokens_marks_output_token_limit() {
+        let items = converse_via_mock(
+            "max_tokens",
+            serde_json::json!([{"text": "partial answer"}]),
+        )
+        .await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert_eq!(message.content[0].as_text(), Some("partial answer"));
+        assert!(message.metadata.output_token_limit_reached);
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["max_tokens".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_converse_end_turn_does_not_mark_output_token_limit() {
+        let items =
+            converse_via_mock("end_turn", serde_json::json!([{"text": "partial answer"}])).await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert_eq!(message.content[0].as_text(), Some("partial answer"));
+        assert!(!message.metadata.output_token_limit_reached);
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["end_turn".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_converse_max_tokens_rejects_truncated_tool_calls() {
+        for input in [
+            serde_json::json!({}),
+            serde_json::json!({"path": "nums.txt"}),
+        ] {
+            let items = converse_via_mock(
+                "max_tokens",
+                serde_json::json!([
+                    {"text": "Writing the file"},
+                    {"toolUse": {"toolUseId": "tooluse_1", "name": "write_file", "input": input}}
+                ]),
+            )
+            .await;
+            let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+            assert!(message.metadata.output_token_limit_reached);
+            assert_eq!(message.content[0].as_text(), Some("Writing the file"));
+            let request = message.content[1].as_tool_request().expect("tool request");
+            assert_eq!(request.id, "tooluse_1");
+            let error = request.tool_call.as_ref().expect_err("truncated tool call");
+            assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+            assert_eq!(error.message, "Tool arguments for write_file (id tooluse_1) were truncated because the model reached its output token limit");
+            let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+            assert_eq!(usage.finish_reasons, Some(vec!["max_tokens".to_string()]));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_converse_tool_use_preserves_complete_tool_call() {
+        let input = serde_json::json!({"path": "nums.txt", "content": "1, 2, 3"});
+        let items = converse_via_mock(
+            "tool_use",
+            serde_json::json!([
+                {"toolUse": {"toolUseId": "tooluse_1", "name": "write_file", "input": input}}
+            ]),
+        )
+        .await;
+        let message = items.iter().find_map(|(m, _)| m.as_ref()).expect("message");
+        assert!(!message.metadata.output_token_limit_reached);
+        let request = message.content[0].as_tool_request().expect("tool request");
+        assert_eq!(request.id, "tooluse_1");
+        let call = request.tool_call.as_ref().expect("complete tool call");
+        assert_eq!(call.name, "write_file");
+        assert_eq!(call.arguments, input.as_object().cloned());
+        let usage = items.iter().find_map(|(_, u)| u.as_ref()).expect("usage");
+        assert_eq!(usage.finish_reasons, Some(vec!["tool_use".to_string()]));
+    }
+
+    #[test]
+    fn documents_unsupported_error_is_detected() {
+        let err = ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"This model doesn't support documents.\") }"
+                .to_string(),
+        );
+        assert!(is_documents_unsupported_error(&err));
+
+        assert!(!is_documents_unsupported_error(&ProviderError::ExecutionError(
+            "Bedrock validation error: ValidationException { message: Some(\"Input is too long.\") }"
+                .to_string(),
+        )));
+        assert!(!is_documents_unsupported_error(
+            &ProviderError::ServerError("doesn't support documents".to_string(),)
+        ));
     }
 
     #[test]
@@ -1451,6 +1676,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.5");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -1515,6 +1741,7 @@ mod tests {
 
         let model = ModelConfig::new("openai.gpt-5.6-terra");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -2047,6 +2274,7 @@ mod tests {
 
         let model = ModelConfig::new("google.gemma-4-31b");
         let provider = BedrockProvider {
+            documents_unsupported: AtomicBool::new(false),
             client: Client::new(&sdk_config),
             retry_config: RetryConfig::default(),
             name: "aws_bedrock".to_string(),
@@ -2110,6 +2338,27 @@ mod tests {
         for model in ["gpt-5.5", "gpt-5.5-high"] {
             let entry = find_model_entry(model).unwrap();
             assert_eq!(entry.endpoint, BedrockEndpoint::MantleResponses);
+        }
+    }
+
+    #[test]
+    fn test_gpt_routes_to_mantle_by_id_shape() {
+        for (model, expected) in [
+            ("openai.gpt-6-sol", Some("openai.gpt-6-sol")),
+            ("openai.gpt-6.1-sol-high", Some("openai.gpt-6.1-sol")),
+            ("gpt-6-astra", Some("openai.gpt-6-astra")),
+            ("openai.gpt-5.6-sol", Some("openai.gpt-5.6-sol")),
+            ("google.gemma-4-31b", Some("google.gemma-4-31b")),
+            ("openai.gpt-oss-120b-1:0", None),
+            ("us.openai.gpt-6-sol", None),
+            ("global.openai.gpt-6-sol", None),
+            (
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6-sol",
+                None,
+            ),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", None),
+        ] {
+            assert_eq!(mantle_model_id(model).as_deref(), expected, "{model}");
         }
     }
 

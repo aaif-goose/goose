@@ -167,6 +167,61 @@ async fn basic_tool_calling() -> Result<()> {
 }
 
 #[tokio::test]
+async fn configured_tools_remain_eager_with_deferral() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline
+        .with_deferred_tools()
+        .with_always_load_tools(vec![ADD.to_string(), APP_ONLY.to_string()]);
+    api.on("add one").call(ADD, value(1));
+    api.on("result: 1").reply("done");
+    pipeline.run(["add one"]).await?;
+    let calls = api.calls();
+    assert!(calls[0].advertises_tool(ADD));
+    assert!(!calls[0].advertises_tool(DIVIDE));
+    assert!(!calls[0].advertises_tool(APP_ONLY));
+    assert!(!calls[0].system_contains(&format!("{ADD},")));
+    assert!(calls[0].system_contains(DIVIDE));
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_tools_follow_the_conversation_lifecycle() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_deferred_tools();
+    api.on("add one")
+        .call("enable_tools", json!({"tool_names": [ADD]}))
+        .times(1);
+    api.on(r#""enabled":["calculator__add"]"#)
+        .call(ADD, value(1));
+    api.on("result: 1").reply("one");
+    let result = pipeline.run(["add one"]).await?;
+    assert!(!api.calls()[0].advertises_tool(ADD));
+    assert!(api.calls()[0].system_contains(ADD));
+    result.assert_message(-1, Agent, "one");
+
+    let pipeline = pipeline.reconstruct().await?;
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("add two").call(ADD, value(2));
+    api.on("result: 3").reply("three");
+    pipeline
+        .run(["add two"])
+        .await?
+        .assert_message(-1, Agent, "three");
+    assert!(!api.calls().last().unwrap().input_contains(r#""enabled""#));
+
+    pipeline.run(["/clear"]).await?;
+    api.on("add again").unadvertised_call(ADD, value(1));
+    api.on("not available").reply("enable it again");
+    pipeline
+        .run(["add again"])
+        .await?
+        .assert_message(-2, ToolResponse, "not available");
+    Ok(())
+}
+
+#[tokio::test]
 async fn provider_turn_executes_only_advertised_registered_tools() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("try the app-only tool")
@@ -421,6 +476,13 @@ async fn approvals_and_per_tool_permissions() -> Result<()> {
     result.assert_message(-1, Agent, "permissions applied");
     assert_eq!(pipeline.calculator_total(), 4);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn security_inspection_requires_approval_in_auto_mode() -> Result<()> {
+    let _env = env_lock::lock_env([("SECURITY_PROMPT_ENABLED_OVERRIDE", Some("true"))]);
+    let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_goose_mode(GooseMode::Auto).await;
     pipeline.add_extension("developer").await?;
     api.on("run a dangerous command").calls([(
@@ -568,17 +630,20 @@ async fn elicitation_accept_decline_and_cancel() -> Result<()> {
 async fn tool_availability_tracks_mode_and_extension_removal() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
 
-    api.on("install the extra extension").call(
-        crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
-        json!({
-            "action": "enable",
-            "extension_name": "analyze"
-        }),
-    );
-    api.on("installed successfully").reply("extension ready");
-    let result = pipeline.run(["install the extra extension"]).await?;
-    result.assert_message(-1, Agent, "extension ready");
-    assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    #[cfg(feature = "tree-sitter")]
+    {
+        api.on("install the extra extension").call(
+            crate::agents::platform_extensions::MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE,
+            json!({
+                "action": "enable",
+                "extension_name": "analyze"
+            }),
+        );
+        api.on("installed successfully").reply("extension ready");
+        let result = pipeline.run(["install the extra extension"]).await?;
+        result.assert_message(-1, Agent, "extension ready");
+        assert!(api.calls().last().unwrap().advertises_tool("analyze"));
+    }
 
     let pipeline = pipeline.with_goose_mode(GooseMode::Chat).await;
     api.on("try the tool").call(ADD, value(1));

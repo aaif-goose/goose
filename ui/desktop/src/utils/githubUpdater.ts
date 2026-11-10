@@ -3,6 +3,7 @@ import { compareVersions } from 'compare-versions';
 import { z } from 'zod';
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import log from './logger';
@@ -170,6 +171,16 @@ async function pathExists(target: string): Promise<boolean> {
   }
 }
 
+// electron-builder's NSIS installer writes its uninstaller beside the executable. A copy it set
+// up updates by running the next installer; replacing its directory would delete the uninstaller.
+export function isInstallerManaged(exePath: string): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+  const uninstaller = `Uninstall ${path.basename(exePath, '.exe')}.exe`;
+  return existsSync(path.join(path.dirname(exePath), uninstaller));
+}
+
 function isSharedDirectory(dir: string): boolean {
   if (dir === path.parse(dir).root) {
     return true;
@@ -242,6 +253,10 @@ export async function resolveInstallTarget(exePath: string): Promise<InstallTarg
   }
 
   const installDir = path.dirname(resolvedExePath);
+
+  if (isInstallerManaged(resolvedExePath)) {
+    throw new Error(`Refusing to auto-update: ${installDir} was set up by the installer`);
+  }
 
   if (!(await isPackagedAppDirectory(installDir))) {
     throw new Error(

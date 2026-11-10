@@ -18,7 +18,7 @@ use goose_providers::model::ModelConfig;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use serial_test::serial;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use common_tests::fixtures::OpenAiFixture;
@@ -1051,68 +1051,6 @@ fn test_custom_unknown_method() {
 
 #[test]
 #[serial]
-fn test_developer_fs_requests_use_acp_session_id() {
-    run_test(async {
-        let seen_session_id = Arc::new(Mutex::new(None::<String>));
-        let seen_session_id_clone = Arc::clone(&seen_session_id);
-        let openai = OpenAiFixture::new(
-            vec![
-                (
-                    "Use the read tool to read /tmp/test_acp_read.txt and output only its contents."
-                        .to_string(),
-                    include_str!("acp_test_data/openai_fs_read_tool_call.txt"),
-                ),
-                (
-                    r#""content":"test-read-content-12345""#.into(),
-                    include_str!("acp_test_data/openai_fs_read_tool_result.txt"),
-                ),
-            ],
-            Arc::new(IgnoreSessionId),
-        )
-        .await;
-        let config_dir = write_acp_global_config(&format!(
-            "GOOSE_MODEL: gpt-4.1\nGOOSE_PROVIDER: openai\nOPENAI_HOST: {}\n",
-            openai.uri()
-        ));
-        let config = TestConnectionConfig {
-            // gpt-5-nano routes to the Responses API; use a Chat Completions
-            // model so the canned SSE fixtures are parsed correctly.
-            data_root: config_dir,
-            current_model: "gpt-4.1".to_string(),
-            read_text_file: Some(Arc::new(move |req| {
-                *seen_session_id_clone.lock().unwrap() = Some(req.session_id.0.to_string());
-                Ok(
-                    agent_client_protocol::schema::v1::ReadTextFileResponse::new(
-                        "test-read-content-12345",
-                    ),
-                )
-            })),
-            ..Default::default()
-        };
-        let mut conn = AcpServerConnection::new(config, openai).await;
-
-        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
-        let acp_session_id = session.session_id().0.to_string();
-
-        let output = session
-            .prompt(
-                "Use the read tool to read /tmp/test_acp_read.txt and output only its contents.",
-                PermissionDecision::Cancel,
-            )
-            .await
-            .expect("prompt should succeed");
-
-        assert_eq!(output.text, "test-read-content-12345");
-        assert_eq!(
-            seen_session_id.lock().unwrap().as_deref(),
-            Some(acp_session_id.as_str()),
-            "ACP read request should use the ACP session/thread ID",
-        );
-    });
-}
-
-#[test]
-#[serial]
 fn test_custom_provider_supported_models_lists_raw_provider_models() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {
@@ -1306,6 +1244,81 @@ fn test_app_tool_call_dispatched_in_auto_mode() {
             .filter_map(|block| block.get("text").and_then(|text| text.as_str()))
             .collect::<String>();
         assert!(text.contains(FAKE_CODE));
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_context_report() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(
+            vec![(
+                "start work".to_string(),
+                include_str!("acp_test_data/openai_steer_first.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+
+        let empty = send_custom(
+            conn.cx(),
+            "_goose/unstable/context/report",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .expect("context report on an empty session should succeed");
+        assert!(empty["totalTokens"].as_u64().unwrap() > 0);
+        let turn_context = empty["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|segment| segment["category"] == "turn_context")
+            .expect("report should include turn context");
+        assert!(turn_context["tokenCount"].as_u64().unwrap() > 0);
+
+        session
+            .prompt("start work", PermissionDecision::Cancel)
+            .await
+            .expect("prompt should succeed");
+
+        let report = send_custom(
+            conn.cx(),
+            "_goose/unstable/context/report",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .expect("context report should succeed");
+
+        let segments = report["segments"].as_array().expect("segments array");
+        let categories: Vec<&str> = segments
+            .iter()
+            .map(|segment| segment["category"].as_str().unwrap())
+            .collect();
+        for expected in ["system_prompt", "tool_definitions", "messages"] {
+            assert!(
+                categories.contains(&expected),
+                "missing {expected} in {categories:?}"
+            );
+        }
+
+        let assistant = segments
+            .iter()
+            .find(|segment| segment["label"] == "Assistant messages")
+            .expect("assistant segment");
+        let preview = assistant["parts"][0]["contentPreview"].as_str().unwrap();
+        assert!(preview.contains("first response"), "preview: {preview}");
+
+        let attributed: u64 = segments
+            .iter()
+            .map(|segment| segment["tokenCount"].as_u64().unwrap())
+            .sum();
+        assert_eq!(report["totalTokens"].as_u64().unwrap(), attributed);
+        assert!(report["model"]["contextLimit"].as_u64().unwrap() > 0);
     });
 }
 

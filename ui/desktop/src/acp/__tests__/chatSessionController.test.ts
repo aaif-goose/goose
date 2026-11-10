@@ -220,6 +220,35 @@ describe('acpChatSessionController.stop', () => {
     );
     expect(acpCancelPrompt).toHaveBeenCalledWith(SESSION_ID);
   });
+
+  it('leaves the chat state alone when stopping during a session load', () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      chatState: ChatState.LoadingConversation,
+    });
+
+    acpChatSessionController.stop(SESSION_ID);
+
+    expect(acpChatSessionActions.setChatState).not.toHaveBeenCalled();
+    expect(acpChatSessionActions.startPromptCancellation).not.toHaveBeenCalled();
+    expect(acpCancelPrompt).not.toHaveBeenCalled();
+  });
+
+  it('cancels a leftover prompt attempt when stopping during a session load', () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt('attempt-1'),
+      chatState: ChatState.LoadingConversation,
+    });
+
+    acpChatSessionController.stop(SESSION_ID);
+
+    expect(acpChatSessionActions.startPromptCancellation).toHaveBeenCalledWith(
+      SESSION_ID,
+      'attempt-1'
+    );
+    expect(acpCancelPrompt).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpChatSessionActions.setChatState).not.toHaveBeenCalled();
+  });
 });
 
 describe('acpChatSessionController.submitMessage', () => {
@@ -267,6 +296,54 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(acpPromptSession).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { code: -32603, message: 'Network error: connection refused' },
+    { code: -32000, message: 'Authentication required' },
+  ])('finishes a failed turn without a submit error ($code)', async ({ code, message }) => {
+    vi.mocked(acpPromptSession).mockRejectedValueOnce({
+      code,
+      message,
+      data: { reason: 'turn_failed' },
+    });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed' });
+  });
+
+  it('finishes a credits failure without a submit error', async () => {
+    vi.mocked(acpChatSessionActions.isCurrentPromptAttempt).mockReturnValue(true);
+    vi.mocked(acpPromptSession).mockRejectedValueOnce({
+      code: -32603,
+      message: 'Out of credits',
+      data: { reason: 'credits_exhausted' },
+    });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(acpChatSessionActions.setMessages).toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed' });
+  });
+
+  it('reports other prompt errors as a submit error', async () => {
+    vi.mocked(acpPromptSession).mockRejectedValueOnce(new Error('Session not found'));
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(onFinish).toHaveBeenCalledWith({ status: 'failed', message: 'Session not found' });
+  });
 });
 
 describe('acpChatSessionController.updateMessage', () => {

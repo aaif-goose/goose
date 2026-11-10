@@ -99,7 +99,6 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ## Rules
 
 - Test: Prefer tests/ folder, e.g. crates/goose/tests/
-- Test: When adding features, update goose-self-test.yaml, rebuild, then run `goose run --recipe goose-self-test.yaml` to validate
 - Error: Use anyhow::Result
 - Provider: Implement Provider trait see providers/base.rs
 - MCP: Extensions in crates/goose-mcp/

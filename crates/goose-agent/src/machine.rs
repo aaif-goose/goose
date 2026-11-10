@@ -11,13 +11,18 @@ use crate::operation::{
     messages_since_kickoff, ConversationEffect, Emitter, Inference, InferenceInput, MachineEffect,
     Operation, OperationResult, RunStatus, StepResult,
 };
-use goose_provider_types::conversation::message::{Message, MessageContent};
+use crate::tool_call_state::tool_calls;
+use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::Conversation;
 use goose_provider_types::maybe_send::{MaybeSend, MaybeSync};
+use goose_provider_types::thinking::ThinkingEffort;
 
 pub trait MachineSession: MaybeSend + MaybeSync {
     fn id(&self) -> &str;
     fn conversation(&self) -> Option<&Conversation>;
+    fn thinking_effort(&self) -> Option<ThinkingEffort> {
+        None
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -66,20 +71,11 @@ fn empty_result<E>(status: RunStatus) -> StepResult<E> {
     }
 }
 
-fn interrupted_response(messages: &[Message]) -> Option<Message> {
-    let answered = messages
-        .iter()
-        .flat_map(Message::get_tool_response_ids)
-        .collect::<HashSet<_>>();
-    let mut request_ids = HashSet::new();
-    let mut response = Message::user();
-    for request in messages
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-    {
-        if request_ids.insert(request.id.as_str()) && !answered.contains(request.id.as_str()) {
-            response.add_tool_response_with_metadata(
+fn interrupted_tool_responses(messages: &[Message]) -> Option<Message> {
+    let mut tool_responses = Message::user();
+    for (request, state) in tool_calls(messages) {
+        if state.is_open() {
+            tool_responses.add_tool_response_with_metadata(
                 request.id.clone(),
                 Ok(rmcp::model::CallToolResult::error(vec![
                     rmcp::model::ContentBlock::text("Tool call was interrupted before completing"),
@@ -88,7 +84,7 @@ fn interrupted_response(messages: &[Message]) -> Option<Message> {
             );
         }
     }
-    (!response.get_tool_response_ids().is_empty()).then_some(response)
+    (!tool_responses.content.is_empty()).then_some(tool_responses)
 }
 
 fn add_tools_to_inference_input(
@@ -118,6 +114,43 @@ where
         }
     }
 
+    /// The tools and prompt contributions every operation adds to the next
+    /// request. Derived from the session and conversation, so this is safe to
+    /// call outside a turn to preview the request.
+    pub async fn collect_prompt_contributions(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+    ) -> Result<InferenceInput> {
+        let mut input = InferenceInput::default();
+        let mut tool_names = HashSet::new();
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            let tools = operation.inference_tools(session).await?;
+            add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
+            input
+                .prompt_parts
+                .extend(operation.prompt_parts(session, conversation).await?);
+        }
+        Ok(input)
+    }
+
+    /// The prompt contributions plus the turn-context parts.
+    pub async fn collect_inference_input(
+        &self,
+        session: &S,
+        conversation: &Conversation,
+    ) -> Result<InferenceInput> {
+        let mut input = self
+            .collect_prompt_contributions(session, conversation)
+            .await?;
+        for operation in self.steps.iter().map(|step| step.operation()) {
+            input
+                .moim_parts
+                .extend(operation.moim_parts(session, conversation).await?);
+        }
+        Ok(input)
+    }
+
     pub async fn step(&self, session: &S, emit: &Emitter) -> Result<StepResult<E>> {
         let conversation = session
             .conversation()
@@ -140,18 +173,7 @@ where
                         if !inference.applies(conversation) {
                             return Ok(OperationResult::NotApplicable);
                         }
-                        let mut input = InferenceInput::default();
-                        let mut tool_names = HashSet::new();
-                        for operation in self.steps.iter().map(|step| step.operation()) {
-                            let tools = operation.inference_tools(session).await?;
-                            add_tools_to_inference_input(&mut input, &mut tool_names, tools)?;
-                            input
-                                .prompt_parts
-                                .extend(operation.prompt_parts(session, conversation).await?);
-                            input
-                                .moim_parts
-                                .extend(operation.moim_parts(session, conversation).await?);
-                        }
+                        let input = self.collect_inference_input(session, conversation).await?;
                         inference.infer(session, conversation, input, emit).await
                     }
                 }
@@ -241,12 +263,12 @@ where
                 .await?;
         }
 
-        let unanswered = session
+        let interrupted = session
             .conversation()
             .and_then(|conversation| messages_since_kickoff(conversation).ok())
-            .and_then(interrupted_response);
-        if let Some(response) = unanswered {
-            let effects = vec![E::from(emit.message(response))];
+            .and_then(interrupted_tool_responses);
+        if let Some(tool_responses) = interrupted {
+            let effects = vec![E::from(emit.message(tool_responses))];
             session = self
                 .save(runtime, session_id, session, effects, emit)
                 .await?;

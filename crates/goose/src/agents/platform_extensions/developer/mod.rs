@@ -1,7 +1,8 @@
-pub mod edit;
+mod edit;
 pub mod image;
 pub mod shell;
 mod shell_output_streaming;
+mod shell_process;
 pub mod tree;
 
 use crate::agents::mcp_client::{Error, McpClientTrait};
@@ -95,7 +96,7 @@ impl DeveloperClient {
             .clone()
     }
 
-    pub fn parse_args<T: serde::de::DeserializeOwned>(
+    fn parse_args<T: serde::de::DeserializeOwned>(
         arguments: Option<JsonObject>,
     ) -> Result<T, String> {
         let value = arguments

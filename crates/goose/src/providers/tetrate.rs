@@ -5,7 +5,6 @@ use super::openai_compatible::{
     stream_openai_compat,
 };
 use super::retry::ProviderRetry;
-use crate::config::signup_tetrate::TETRATE_DEFAULT_MODEL;
 use crate::conversation::message::Message;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,20 +19,17 @@ use rmcp::model::Tool;
 use serde_json::Value;
 
 pub const TETRATE_PROVIDER_NAME: &str = "tetrate";
+pub const TETRATE_DEFAULT_MODEL: &str = "claude-haiku-5-5";
 pub const TETRATE_DOC_URL: &str = "https://router.tetrate.ai";
 pub const TETRATE_BILLING_URL: &str = "https://router.tetrate.ai/billing";
 
 pub const TETRATE_KNOWN_MODELS: &[&str] = &[
-    "claude-opus-4-1",
-    "claude-3-7-sonnet-latest",
-    "claude-sonnet-4-20250514",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gpt-5",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-4.1",
+    TETRATE_DEFAULT_MODEL,
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "gpt-6.1-sol",
+    "gemini-3.5-flash",
+    "xai/grok-4.7",
 ];
 
 #[derive(serde::Serialize)]

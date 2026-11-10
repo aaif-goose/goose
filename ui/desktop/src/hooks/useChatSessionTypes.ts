@@ -23,6 +23,7 @@ export interface UseChatSessionResult {
   ) => Promise<boolean>;
   stopStreaming: () => void;
   retrySessionLoad: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   sessionLoadError?: string;
   tokenState: TokenState;
   notifications: Map<string, NotificationEvent[]>;

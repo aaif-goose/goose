@@ -16,8 +16,9 @@ use tokio_util::sync::CancellationToken;
 use goose::action_required_manager::ElicitationOutcome;
 use goose::agents::extension::{Envs, ExtensionConfig};
 use goose::agents::extension_manager::{
-    CallRequest, ExtensionLease, ExtensionManager, ExtensionManagerCapabilities, ExtensionSet,
+    CallRequest, ClientContext, ExtensionLease, ExtensionManager, ExtensionSet,
 };
+use goose::agents::mcp_client::GooseMcpClientCapabilities;
 use goose::agents::GoosePlatform;
 use goose::config::GooseMode;
 use goose::conversation::message::ActionRequiredData;
@@ -98,12 +99,14 @@ async fn fixture(mcpui: bool, protocol_version: Option<ProtocolVersion>) -> Fixt
         Default::default(),
         session_manager.clone(),
         None,
-        "extension-contract".to_string(),
-        ExtensionManagerCapabilities {
-            mcpui,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version,
+        ClientContext {
+            name: "extension-contract".to_string(),
+            capabilities: GooseMcpClientCapabilities {
+                mcpui,
+                host_info: None,
+                elicitation_handler: None,
+                protocol_version,
+            },
         },
     ));
     Fixture {
@@ -264,6 +267,8 @@ async fn inspect_context(lease: &ExtensionLease, name: &str) -> ContextReport {
     serde_json::from_str(&call_text(lease, name).await).unwrap()
 }
 
+const DOTTED_DB_QUERY: &str = "fixture_http__db_query_9cffee1f";
+
 /// One manager, three transports, one lease: the catalog, mangled-name
 /// recovery, filtering, app scoping, the restart-on-config-change rule, and
 /// what a held lease does and does not see when the registry changes.
@@ -296,11 +301,22 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     let configs = vec![http.clone(), stdio.clone(), todo.clone(), skills.clone()];
     let lease = fx.resolve(&session, &configs).await;
 
-    // The catalog: prefixed per extension, filtered by available_tools.
+    // The catalog: prefixed per extension, filtered by available_tools, and
+    // spelled the way providers accept.
     let names = tool_names(&lease.tools().await);
+    for name in &names {
+        assert!(
+            name.len() <= 64
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+            "{name}"
+        );
+    }
     for expected in [
         "fixture_http__get_code",
-        "fixture_http__db.query",
+        "fixture_http__db_query",
+        DOTTED_DB_QUERY,
         "fixture_stdio__get_code",
         "fixture_stdio__inspect_context",
         "todo__todo_write",
@@ -382,15 +398,22 @@ async fn extension_lifecycle_across_real_transports(stdio_version: ProtocolVersi
     )
     .starts_with("Updated ("));
 
-    // Spellings a model mangles resolve to the same tools; an exact dotted
-    // name is never rewritten.
+    // Spellings a model mangles resolve to the same tools, and a sanitized
+    // name reaches the server under its original name.
     assert_eq!(call_text(&lease, "fixture_stdio.get_code").await, FAKE_CODE);
     assert_eq!(
         call_text(&lease, "functions.fixture_stdio__get_code").await,
         FAKE_CODE
     );
-    assert_eq!(call_text(&lease, "fixture_http__db.query").await, "rows");
-    assert_eq!(call_text(&lease, "fixture_http.db.query").await, "rows");
+    assert_eq!(call_text(&lease, DOTTED_DB_QUERY).await, "rows");
+    assert_eq!(
+        call_text(&lease, "fixture_http__db_query").await,
+        "underscore rows"
+    );
+    assert_eq!(
+        call_text(&lease, "fixture_http.db_query").await,
+        "underscore rows"
+    );
     let unknown = call(&lease, "no_such_tool", None).await.unwrap_err();
     assert_eq!(unknown.code, ErrorCode::RESOURCE_NOT_FOUND);
     assert!(
@@ -891,12 +914,14 @@ async fn test_replayed_session(
         Default::default(),
         session_manager,
         None,
-        GoosePlatform::GooseDesktop.to_string(),
-        ExtensionManagerCapabilities {
-            mcpui: true,
-            host_info: None,
-            elicitation_handler: None,
-            protocol_version: None,
+        ClientContext {
+            name: GoosePlatform::GooseDesktop.to_string(),
+            capabilities: GooseMcpClientCapabilities {
+                mcpui: true,
+                host_info: None,
+                elicitation_handler: None,
+                protocol_version: None,
+            },
         },
     ));
 

@@ -47,6 +47,7 @@ enum ApiResponse {
     OutputLimit,
     ContextLimitError(String),
     ServerError(String),
+    HttpError(u16),
     EmptyServerError,
     ReplyThenServerError {
         reply: String,
@@ -315,6 +316,20 @@ impl<'a> ApiRuleBuilder<'a> {
         gate
     }
 
+    pub(super) fn hold_call(self, name: impl Into<String>, arguments: Value) -> ResponseGate {
+        let gate = ResponseGate::new();
+        self.api.add_gated_rule(
+            self.matcher,
+            ApiResponse::ToolCall {
+                name: name.into(),
+                arguments: arguments.to_string(),
+                require_advertised: true,
+            },
+            gate.clone(),
+        );
+        gate
+    }
+
     pub(super) fn reasoning(self, text: impl Into<String>) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::Mixed {
             reasoning: text.into(),
@@ -377,6 +392,10 @@ impl<'a> ApiRuleBuilder<'a> {
 
     pub(super) fn server_error(self, message: impl Into<String>) -> ConfiguredResponse<'a> {
         self.configured(ApiResponse::ServerError(message.into()))
+    }
+
+    pub(super) fn http_error(self, status: u16) -> ConfiguredResponse<'a> {
+        self.configured(ApiResponse::HttpError(status))
     }
 
     pub(super) fn no_choices(self) -> ConfiguredResponse<'a> {
@@ -590,6 +609,9 @@ impl DummyApiState {
             ),
             ApiResponse::ServerError(message) => {
                 sse_response(format!("data: {}\n\n", api_error(message)))
+            }
+            ApiResponse::HttpError(status) => {
+                ResponseTemplate::new(status).set_body_json(api_error("rejected"))
             }
             ApiResponse::EmptyServerError => ResponseTemplate::new(500),
             ApiResponse::ReplyThenServerError { reply, error } => sse_response(reply_events(

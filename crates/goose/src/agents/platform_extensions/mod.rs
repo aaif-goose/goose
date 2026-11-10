@@ -8,6 +8,8 @@ pub mod chatrecall;
 pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
+#[cfg(feature = "code-mode")]
+mod javascript;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -162,11 +164,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 hidden: false,
                 client_factory: |ctx| {
                     Some(Box::new(
-                        code_execution::CodeExecutionClient::new(
-                            ctx,
-                            code_execution::get_tool_disclosure(),
-                        )
-                        .unwrap(),
+                        code_execution::CodeExecutionClient::new(ctx).unwrap(),
                     ))
                 },
             },

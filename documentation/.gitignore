@@ -8,6 +8,8 @@
 .docusaurus
 .cache-loader
 static/goose-docs-map.md
+static/docs/gdk/sdk/api-reference-*.md
+static/docs/gdk/sdk/*/api-reference-*.md
 static/skills-manifest.json
 static/skills-data-zips/
 

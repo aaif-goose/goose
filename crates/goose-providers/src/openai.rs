@@ -15,8 +15,8 @@ use crate::formats::openai::{
     record_response_metadata, response_to_message, OpenAiFormatOptions,
 };
 use crate::formats::openai_responses::{
-    create_responses_request_for_model, get_responses_usage, responses_api_to_message,
-    ResponsesApiResponse,
+    create_responses_request_for_model, get_responses_usage, is_encrypted_reasoning_error,
+    responses_api_to_message, strip_reasoning_items, ResponsesApiResponse,
 };
 use crate::http_status::{extract_request_id, read_json_response};
 use crate::images::ImageFormat;
@@ -67,6 +67,8 @@ pub const OPEN_AI_DOC_URL: &str = "https://platform.openai.com/docs/models";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
 
 type OpenAiBaseUrlParts = (String, Vec<(String, String)>, bool);
+
+pub type OpenAiSessionIdProvider = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
 /// Ensure a base URL has an explicit scheme.
 ///
@@ -123,7 +125,7 @@ pub fn parse_openai_base_url(raw_url: &str) -> Result<OpenAiBaseUrlParts> {
     Ok((format!("{}{}", authority, path), query_params, false))
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(serde::Serialize)]
 pub struct OpenAiProvider {
     #[serde(skip)]
     api_client: ApiClient,
@@ -139,7 +141,18 @@ pub struct OpenAiProvider {
     preserve_thinking_context: bool,
     native_openai: bool,
     #[serde(skip)]
+    session_id_provider: Option<OpenAiSessionIdProvider>,
+    #[serde(skip)]
     n_ctx_cache: Arc<Mutex<HashMap<String, CachedContextLimit>>>,
+}
+
+impl std::fmt::Debug for OpenAiProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAiProvider")
+            .field("name", &self.name)
+            .field("base_path", &self.base_path)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Builder for [`OpenAiProvider`].
@@ -159,6 +172,7 @@ pub struct OpenAiProviderBuilder {
     dynamic_models: Option<bool>,
     skip_canonical_filtering: bool,
     preserve_thinking_context: bool,
+    session_id_provider: Option<OpenAiSessionIdProvider>,
     native_openai: bool,
 }
 
@@ -176,6 +190,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             native_openai: false,
         }
     }
@@ -248,6 +263,11 @@ impl OpenAiProviderBuilder {
         self
     }
 
+    pub fn session_id_provider(mut self, provider: OpenAiSessionIdProvider) -> Self {
+        self.session_id_provider = Some(provider);
+        self
+    }
+
     pub fn native_openai(mut self, native_openai: bool) -> Self {
         self.native_openai = native_openai;
         self
@@ -266,6 +286,7 @@ impl OpenAiProviderBuilder {
             dynamic_models: self.dynamic_models,
             skip_canonical_filtering: self.skip_canonical_filtering,
             preserve_thinking_context: self.preserve_thinking_context,
+            session_id_provider: self.session_id_provider,
             native_openai: self.native_openai,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -304,32 +325,70 @@ impl OpenAiProvider {
         self.stream_responses_payload(model_config, payload).await
     }
 
+    fn insert_prompt_cache_key(&self, payload: &mut serde_json::Value) {
+        let Some(session_id) = self
+            .session_id_provider
+            .as_ref()
+            .and_then(|provider| provider())
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        payload
+            .as_object_mut()
+            .unwrap()
+            .entry("prompt_cache_key")
+            .or_insert_with(|| serde_json::Value::String(session_id));
+    }
+
+    async fn post_responses(
+        &self,
+        model_config: &ModelConfig,
+        payload: &serde_json::Value,
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.with_retry(|| async {
+            handle_status(
+                self.api_client
+                    .request(&Self::map_base_path(
+                        &self.base_path,
+                        "responses",
+                        OPEN_AI_DEFAULT_RESPONSES_PATH,
+                    ))
+                    .model_headers(model_config)?
+                    .streaming(self.supports_streaming)
+                    .response_post(payload)
+                    .await?,
+            )
+            .await
+        })
+        .await
+    }
+
     async fn stream_responses_payload(
         &self,
         model_config: &ModelConfig,
-        payload: serde_json::Value,
+        mut payload: serde_json::Value,
     ) -> Result<MessageStream, ProviderError> {
+        self.insert_prompt_cache_key(&mut payload);
         let mut log = start_log(model_config, &payload)?;
-        let response = self
-            .with_retry(|| async {
-                handle_status(
-                    self.api_client
-                        .request(&Self::map_base_path(
-                            &self.base_path,
-                            "responses",
-                            OPEN_AI_DEFAULT_RESPONSES_PATH,
-                        ))
-                        .model_headers(model_config)?
-                        .streaming(self.supports_streaming)
-                        .response_post(&payload)
-                        .await?,
-                )
-                .await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
+        let response = match self.post_responses(model_config, &payload).await {
+            Err(ProviderError::RequestFailed(message))
+                if is_encrypted_reasoning_error(&message) =>
+            {
+                tracing::warn!(
+                    error = %message,
+                    "API rejected replayed reasoning; retrying once without it"
+                );
+                let _ = log.error(&message);
+                strip_reasoning_items(&mut payload);
+                log = start_log(model_config, &payload)?;
+                self.post_responses(model_config, &payload).await
+            }
+            other => other,
+        }
+        .inspect_err(|e| {
+            let _ = log.error(e);
+        })?;
         if self.supports_streaming {
             stream_responses_compat(response, log)
         } else {
@@ -380,6 +439,7 @@ impl OpenAiProvider {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -1053,6 +1113,7 @@ mod tests {
             dynamic_models: None,
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -1605,6 +1666,7 @@ mod tests {
             dynamic_models: Some(true),
             skip_canonical_filtering: false,
             preserve_thinking_context: false,
+            session_id_provider: None,
             native_openai: false,
             n_ctx_cache: Arc::new(Mutex::new(HashMap::new())),
         }

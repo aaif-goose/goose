@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Автосжимать при"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Сжать сейчас"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Не удалось сохранить пороговое значение: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Понятно!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose завершил задачу."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Контекстное окно"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Ошибка диктовки"
@@ -1090,6 +1078,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Установить расширение {name}? Команда: {command}"
@@ -2633,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Что мы собираем:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Загрузка сообщений... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, one {# сообщение скрыто} few {# сообщения скрыты} many {# сообщений скрыто} other {# сообщений скрыто}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Модель изменена: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Нажмите Cmd/Ctrl+F, чтобы сразу загрузить все сообщения для поиска"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (запрошенная)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Показать все"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Все промпты сброшены к значениям по умолчанию"
@@ -3708,7 +3705,7 @@
     "defaultMessage": "Использовать ML-модели для обнаружения потенциального prompt injection в чате"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Чем выше значение, тем строже проверка (0.01 = очень мягко, 1.0 = максимально строго)"
+    "defaultMessage": "Чем ниже значение, тем строже проверка (0.01 = максимально строго, 1.0 = очень мягко)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Обнаружение внедрения команд работает лучше всего при подключении к WARP (требуется для доступа к сервису классификации)."
@@ -4133,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Сохранить"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Всегда"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Свёрнуто"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Показывать размышления модели в чате. В режиме «Свёрнуто» блок закрыт, пока вы его не откроете."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Никогда"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Показывать размышления"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Добавить навык"
   },
@@ -4276,6 +4288,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Настройте подрецепт, который можно вызывать как инструмент при выполнении рецепта"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Загрузить последний прогресс"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Прогресс субагента здесь не отображается в реальном времени."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Назад к списку моделей"
@@ -4670,8 +4688,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Перейдите на"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "Использовано {used} из {limit} токенов. Показать содержимое контекстного окна"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Сжать сейчас"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Свободно"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Не удалось загрузить отчёт о контексте."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · контекстное окно {limit} токенов"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Обновить"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Повторить"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Контекстное окно"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Число токенов оценивается токенизатором o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "из {limit} токенов · {percent} контекстного окна"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Инструкции и подсказки"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Сводка сжатия"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Инструкции расширений"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Диалог"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Системный промпт"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Определения инструментов"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Контекст хода"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Автоматически"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Настроено"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "API-ключ TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Введите API-ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Удалить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Сохранить ключ"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Использует Jev для выбора уровня рассуждений для каждого запроса. Текст отправляется в TypeSafe AI; слеш-команды навыков и рецептов включают их развёрнутые локальные инструкции."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Автоматический уровень рассуждений"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Лимит блокировок"
@@ -4738,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Цикл агента"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} хранит собственную историю разговора и получает от goose только последний запрос, поэтому разбирать нечего."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Превышен порог автокомпактизации: разговор будет сжат перед отправкой следующего запроса."
   }
 }

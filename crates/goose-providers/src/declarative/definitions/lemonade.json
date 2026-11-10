@@ -1,0 +1,34 @@
+{
+  "name": "lemonade",
+  "engine": "openai",
+  "display_name": "Lemonade",
+  "description": "Run local models with the Lemonade server",
+  "api_key_env": "LEMONADE_API_KEY",
+  "base_url": "${LEMONADE_HOST}/v1/chat/completions",
+  "env_vars": [
+    {
+      "name": "LEMONADE_HOST",
+      "required": false,
+      "secret": false,
+      "primary": true,
+      "default": "http://localhost:13305",
+      "description": "Base URL of the Lemonade server (default: http://localhost:13305)"
+    }
+  ],
+  "dynamic_models": true,
+  "models": [],
+  "supports_streaming": true,
+  "requires_auth": false,
+  "skip_canonical_filtering": true,
+  "setup": {
+    "category": "model",
+    "setup_method": "config_fields",
+    "group": "additional",
+    "docs_url": "https://lemonade-server.ai/docs/api/openai/",
+    "field_overrides": [{
+      "key": "LEMONADE_HOST",
+      "label": "Host URL",
+      "placeholder": "http://localhost:13305"
+    }]
+  }
+}

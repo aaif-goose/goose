@@ -1,13 +1,4 @@
 {
-  "alertBox.autoCompactAt": {
-    "defaultMessage": "Padatkan otomatis pada"
-  },
-  "alertBox.compactNow": {
-    "defaultMessage": "Padatkan sekarang"
-  },
-  "alertBox.failedToSaveThreshold": {
-    "defaultMessage": "Gagal menyimpan ambang batas: {error}"
-  },
   "announcementModal.gotIt": {
     "defaultMessage": "Mengerti!"
   },
@@ -175,9 +166,6 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Goose telah menyelesaikan tugas."
-  },
-  "chatInput.contextWindow": {
-    "defaultMessage": "Jendela konteks"
   },
   "chatInput.dictationError": {
     "defaultMessage": "Kesalahan Dikte"
@@ -1090,6 +1078,12 @@
   },
   "extensionInstallModal.ok": {
     "defaultMessage": "OK"
+  },
+  "extensionInstallModal.policyErrorMessage": {
+    "defaultMessage": "The extension allowlist policy could not be retrieved. Extension installation is blocked until the policy is available. Contact your administrator to check the GOOSE_ALLOWLIST configuration."
+  },
+  "extensionInstallModal.policyErrorTitle": {
+    "defaultMessage": "Extension Policy Unavailable"
   },
   "extensionInstallModal.trustedMessage": {
     "defaultMessage": "Apakah Anda yakin ingin memasang ekstensi {name}? Perintah: {command}"
@@ -2633,14 +2627,17 @@
   "privacyInfoModal.whatWeCollect": {
     "defaultMessage": "Apa yang kami kumpulkan:"
   },
-  "progressiveMessageList.loadingMessages": {
-    "defaultMessage": "Memuat pesan... ({renderedCount}/{totalCount})"
+  "messageList.hiddenMessages": {
+    "defaultMessage": "{count, plural, other {# pesan disembunyikan}}"
   },
-  "progressiveMessageList.modelChanged": {
+  "messageList.modelChanged": {
     "defaultMessage": "Model diubah: {previousModel} → {currentModel}"
   },
-  "progressiveMessageList.searchHint": {
-    "defaultMessage": "Tekan Cmd/Ctrl+F untuk segera memuat semua pesan untuk pencarian"
+  "messageList.requestedModel": {
+    "defaultMessage": "{model} (diminta)"
+  },
+  "messageList.showAllMessages": {
+    "defaultMessage": "Tampilkan semua"
   },
   "promptsSettings.allPromptsReset": {
     "defaultMessage": "Semua prompt disetel ulang ke default"
@@ -3708,7 +3705,7 @@
     "defaultMessage": "Gunakan model ML untuk mendeteksi potensi injeksi prompt dalam obrolan Anda"
   },
   "securityToggle.thresholdDescription": {
-    "defaultMessage": "Nilai yang lebih tinggi lebih ketat (0,01 = sangat longgar, 1,0 = paling ketat)"
+    "defaultMessage": "Nilai yang lebih rendah lebih ketat (0,01 = paling ketat, 1,0 = sangat longgar)"
   },
   "securityToggle.warpNotice": {
     "defaultMessage": "Deteksi injeksi perintah bekerja paling baik saat terhubung ke WARP (diperlukan untuk menjangkau layanan klasifikasi)."
@@ -4133,6 +4130,21 @@
   "shortcutRecorder.save": {
     "defaultMessage": "Simpan"
   },
+  "showThinkingSetting.always": {
+    "defaultMessage": "Selalu"
+  },
+  "showThinkingSetting.collapsed": {
+    "defaultMessage": "Diciutkan"
+  },
+  "showThinkingSetting.description": {
+    "defaultMessage": "Tampilkan pemikiran model di obrolan. Dengan opsi \"Diciutkan\", pemikiran tetap tertutup sampai Anda membukanya."
+  },
+  "showThinkingSetting.never": {
+    "defaultMessage": "Tidak pernah"
+  },
+  "showThinkingSetting.title": {
+    "defaultMessage": "Tampilkan Pemikiran"
+  },
   "skillsView.addSkill": {
     "defaultMessage": "Tambah Keterampilan"
   },
@@ -4276,6 +4288,12 @@
   },
   "subRecipeModal.subtitle": {
     "defaultMessage": "Konfigurasikan subresep yang dapat dipanggil sebagai alat selama eksekusi resep"
+  },
+  "subagentSessionNotice.loadLatestProgress": {
+    "defaultMessage": "Muat progres terbaru"
+  },
+  "subagentSessionNotice.notice": {
+    "defaultMessage": "Progres subagen tidak ditampilkan secara langsung di sini."
   },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Kembali ke daftar model"
@@ -4670,8 +4688,80 @@
   "providerConfigurationModal.deviceCodeVisit": {
     "defaultMessage": "Kunjungi"
   },
+  "contextWindowIndicator.open": {
+    "defaultMessage": "{used} dari {limit} token terpakai. Tampilkan isi jendela konteks"
+  },
+  "contextXray.compactNow": {
+    "defaultMessage": "Kompaksi sekarang"
+  },
+  "contextXray.free": {
+    "defaultMessage": "Kosong"
+  },
+  "contextXray.loadError": {
+    "defaultMessage": "Tidak dapat memuat laporan konteks."
+  },
+  "contextXray.modelSummary": {
+    "defaultMessage": "{model} · jendela konteks {limit} token"
+  },
+  "contextXray.refresh": {
+    "defaultMessage": "Muat ulang"
+  },
+  "contextXray.retry": {
+    "defaultMessage": "Coba lagi"
+  },
+  "contextXray.title": {
+    "defaultMessage": "Jendela konteks"
+  },
+  "contextXray.tokenizerNote": {
+    "defaultMessage": "Jumlah token diperkirakan dengan tokenizer o200k."
+  },
+  "contextXray.usage": {
+    "defaultMessage": "dari {limit} token · {percent} dari jendela konteks"
+  },
+  "contextXray.category.additionalInstructions": {
+    "defaultMessage": "Instruksi & petunjuk"
+  },
+  "contextXray.category.compactionSummary": {
+    "defaultMessage": "Ringkasan kompaksi"
+  },
+  "contextXray.category.extensionInstructions": {
+    "defaultMessage": "Instruksi ekstensi"
+  },
+  "contextXray.category.messages": {
+    "defaultMessage": "Percakapan"
+  },
+  "contextXray.category.systemPrompt": {
+    "defaultMessage": "Prompt sistem"
+  },
+  "contextXray.category.toolDefinitions": {
+    "defaultMessage": "Definisi alat"
+  },
+  "contextXray.category.turnContext": {
+    "defaultMessage": "Konteks giliran"
+  },
   "settings.agentLoop.operations.auto.placeholder": {
     "defaultMessage": "Otomatis"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.configured": {
+    "defaultMessage": "Terkonfigurasi"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.label": {
+    "defaultMessage": "Kunci API TypeSafe"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.placeholder": {
+    "defaultMessage": "Masukkan kunci API"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.remove": {
+    "defaultMessage": "Hapus kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.apiKey.save": {
+    "defaultMessage": "Simpan kunci"
+  },
+  "settings.agentLoop.operations.autoEffort.description": {
+    "defaultMessage": "Menggunakan Jev untuk memilih tingkat penalaran bagi setiap permintaan. Teks permintaan dikirim ke TypeSafe AI; perintah garis miring skill dan resep menyertakan instruksi lokal yang telah diperluas."
+  },
+  "settings.agentLoop.operations.autoEffort.title": {
+    "defaultMessage": "Tingkat penalaran otomatis"
   },
   "settings.agentLoop.operations.blockLimit.label": {
     "defaultMessage": "Batas pemblokiran"
@@ -4738,5 +4828,11 @@
   },
   "settings.agentLoop.title": {
     "defaultMessage": "Loop agen"
+  },
+  "contextXray.providerManagesContext": {
+    "defaultMessage": "{provider} menyimpan riwayat percakapannya sendiri dan hanya menerima prompt terbaru dari goose, sehingga tidak ada permintaan yang bisa diuraikan."
+  },
+  "contextXray.autoCompactionPending": {
+    "defaultMessage": "Melewati ambang pemadatan otomatis: percakapan dipadatkan sebelum permintaan berikutnya dikirim."
   }
 }

@@ -22,7 +22,7 @@ export PATH="$SCRIPT_DIR/target/debug:$PATH"
 # Set default provider and model if not already set
 # Use fast model for CI to speed up tests
 export GOOSE_PROVIDER="${GOOSE_PROVIDER:-anthropic}"
-export GOOSE_MODEL="${GOOSE_MODEL:-claude-haiku-4-5}"
+export GOOSE_MODEL="${GOOSE_MODEL:-claude-haiku-5-5}"
 
 echo "Using provider: $GOOSE_PROVIDER"
 echo "Using model: $GOOSE_MODEL"

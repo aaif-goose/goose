@@ -154,7 +154,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOSE_PROVIDER: anthropic
-          GOOSE_MODEL: claude-sonnet-4-5-20250929
+          GOOSE_MODEL: claude-sonnet-5-5
           HOME: /tmp/goose-home
           GOOSE_DISABLE_KEYRING: 1
           SKIP_BUILD: 1
@@ -235,7 +235,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GOOSE_PROVIDER: anthropic
-          GOOSE_MODEL: claude-sonnet-4-5-20250929
+          GOOSE_MODEL: claude-sonnet-5-5
           HOME: /tmp/goose-home
           GOOSE_DISABLE_KEYRING: 1
           SKIP_BUILD: 1
