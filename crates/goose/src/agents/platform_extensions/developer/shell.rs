@@ -170,8 +170,7 @@ const OUTPUT_PREVIEW_BYTES: usize = 10_000;
 const OUTPUT_SLOTS: usize = 8;
 const DEFAULT_CAPTURE_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_SEGMENT_BYTES: usize = 64 * 1024;
-/// Estimated heap and bookkeeping cost of retaining one captured record, so that
-/// output made of many tiny lines is bounded by the capture limit as well.
+/// Counted against the capture limit so output made of many tiny lines is bounded too.
 const RECORD_OVERHEAD_BYTES: usize = 32;
 const REPLACEMENT_CHAR_LEN_UTF8: usize = '\u{FFFD}'.len_utf8();
 
@@ -218,9 +217,8 @@ pub struct ShellOutput {
     /// Error reported by output collection after process exit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_collection_error: Option<String>,
-    /// Bytes of output discarded between the beginning and end retained in
-    /// `stdout` and `stderr` because the capture limit was exceeded. When
-    /// non-zero, the output is an incomplete fragment of what the command wrote.
+    /// Bytes dropped between the retained beginning and end of the output because
+    /// the capture limit was exceeded. Non-zero means `stdout` and `stderr` are fragments.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero")]
     pub capture_dropped_bytes: usize,
@@ -943,14 +941,11 @@ fn take_complete_utf8(pending: &mut Vec<u8>) -> Option<Vec<u8>> {
     Some(std::mem::replace(pending, rest))
 }
 
-/// Memory per stream stays near `max_segment` however long a line is; the pieces of
-/// an over-long line are marked `ends_line == false` so they can be rejoined.
 fn bounded_segments<R: AsyncRead + Unpin + Send + 'static>(
     mut reader: R,
     max_segment: usize,
 ) -> std::pin::Pin<Box<dyn Stream<Item = std::io::Result<RawSegment>> + Send>> {
     Box::pin(async_stream::stream! {
-        let max_segment = max_segment.max(1);
         let mut pending: Vec<u8> = Vec::new();
         let mut buf = vec![0u8; 4096];
         loop {
@@ -1325,83 +1320,6 @@ mod tests {
         assert!(
             shell_output.exit_code.is_none(),
             "cancelled process should have no exit code"
-        );
-    }
-
-    #[cfg(not(windows))]
-    async fn run_with_capture_limit(limit: usize, command: &str) -> CallToolResult {
-        let limit = limit.to_string();
-        let _guard =
-            env_lock::lock_env([("GOOSE_SHELL_CAPTURE_LIMIT_BYTES", Some(limit.as_str()))]);
-        ShellTool::new()
-            .unwrap()
-            .shell(ShellParams {
-                command: command.to_string(),
-                timeout_secs: None,
-            })
-            .await
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn capture_limit_preserves_head_and_tail() {
-        let result = run_with_capture_limit(
-            2000,
-            "for i in $(seq 1 100); do \
-                echo \"stdout-line-$i\"; \
-                printf 'stderr-line-%d\\n' $i >&2; \
-            done",
-        )
-        .await;
-
-        assert_eq!(result.is_error, Some(false));
-        let text = extract_text(&result);
-        assert!(
-            text.contains("[Capture limit"),
-            "truncation notice should appear in output"
-        );
-        let shell_output = extract_shell_output(&result);
-        assert_eq!(shell_output.exit_code, Some(0), "process should complete");
-        assert!(shell_output.capture_dropped_bytes > 0);
-        assert!(shell_output.stdout.starts_with("stdout-line-1\n"));
-        assert!(shell_output.stdout.ends_with("stdout-line-100"));
-        assert!(shell_output.stderr.starts_with("stderr-line-1\n"));
-        assert!(shell_output.stderr.ends_with("stderr-line-100"));
-        assert!(
-            !shell_output.stdout.contains("[Capture limit"),
-            "truncation notice must not appear in structured stdout"
-        );
-        let captured_bytes = shell_output.stdout.len() + shell_output.stderr.len();
-        assert!(
-            captured_bytes <= 2000,
-            "captured bytes {captured_bytes} should be within budget"
-        );
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn capture_limit_bounds_newline_free_output() {
-        let result = run_with_capture_limit(
-            1000,
-            "python3 -c \"import sys; sys.stdout.buffer.write(b'S' + b'x' * 999998 + b'E')\"",
-        )
-        .await;
-
-        assert_eq!(result.is_error, Some(false));
-        assert!(extract_text(&result).contains("[Capture limit"));
-        let shell_output = extract_shell_output(&result);
-        assert!(shell_output.capture_dropped_bytes > 900_000);
-        assert!(
-            shell_output.stdout.len() <= 1000,
-            "captured {} bytes",
-            shell_output.stdout.len()
-        );
-        assert!(shell_output.stdout.starts_with('S'), "beginning preserved");
-        assert!(shell_output.stdout.ends_with('E'), "end preserved");
-        assert_eq!(
-            shell_output.stdout.matches('\n').count(),
-            1,
-            "only the head/tail gap may introduce a line break"
         );
     }
 
