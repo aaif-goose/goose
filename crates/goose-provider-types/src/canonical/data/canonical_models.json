@@ -27980,6 +27980,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/anthropic.claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/anthropic.claude-haiku-4.5-20251001-v1:0",
     "name": "Claude Haiku 4.5",
     "family": "claude-haiku",
@@ -29999,6 +30039,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/global.anthropic.claude-fable-5.2",
+    "name": "Claude Fable 5.2 (Global)",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/global.anthropic.claude-haiku-4.5-20251001-v1:0",
     "name": "Claude Haiku 4.5 (Global)",
     "family": "claude-haiku",
@@ -30531,6 +30611,45 @@
     "limit": {
       "context": 1048576,
       "output": 128000
+    }
+  },
+  {
+    "id": "amazon-bedrock/global.moonshotai.kimi-k3.1",
+    "name": "Kimi K3.1 Pro Highspeed (Global)",
+    "family": "kimi-k3",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-10-23",
+    "last_updated": "2026-10-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 4.0,
+      "output": 20.0,
+      "cache_read": 0.2,
+      "cache_write": 5.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
     }
   },
   {
@@ -33705,6 +33824,46 @@
     }
   },
   {
+    "id": "amazon-bedrock/us.anthropic.claude-fable-5.2",
+    "name": "Claude Fable 5.2 (US)",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.8,
+      "output": 44.0,
+      "cache_read": 0.22,
+      "cache_write": 11.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "amazon-bedrock/us.anthropic.claude-haiku-4.5-20251001-v1:0",
     "name": "Claude Haiku 4.5 (US)",
     "family": "claude-haiku",
@@ -34475,6 +34634,45 @@
     "limit": {
       "context": 1048576,
       "output": 128000
+    }
+  },
+  {
+    "id": "amazon-bedrock/us.moonshotai.kimi-k3.1",
+    "name": "Kimi K3.1 Pro Highspeed (US)",
+    "family": "kimi-k3",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "release_date": "2026-10-23",
+    "last_updated": "2026-10-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 4.4,
+      "output": 22.0,
+      "cache_read": 0.22,
+      "cache_write": 5.5
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
     }
   },
   {
@@ -36010,6 +36208,46 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -38481,6 +38719,45 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "azure-cognitive-services/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -41849,6 +42126,45 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "azure/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -47191,6 +47507,36 @@
     }
   },
   {
+    "id": "chutes/Qwen/Qwen3.5-27B-TEE",
+    "name": "Qwen3.5 27B TEE",
+    "family": "qwen",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-02-23",
+    "last_updated": "2026-02-23",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": true,
+    "cost": {
+      "input": 0.2,
+      "output": 1.75,
+      "cache_read": 0.02
+    },
+    "limit": {
+      "context": 262144,
+      "output": 262144
+    }
+  },
+  {
     "id": "chutes/Qwen/Qwen3.5-397B-A17B-TEE",
     "name": "Qwen3.5 397B A17B TEE",
     "family": "qwen",
@@ -47213,7 +47559,7 @@
     "cost": {
       "input": 0.45,
       "output": 3.0,
-      "cache_read": 0.04499999999999999
+      "cache_read": 0.045
     },
     "limit": {
       "context": 262144,
@@ -47243,7 +47589,7 @@
     "cost": {
       "input": 0.25,
       "output": 2.0,
-      "cache_read": 0.024999999999999994
+      "cache_read": 0.025
     },
     "limit": {
       "context": 262144,
@@ -47298,7 +47644,7 @@
     "cost": {
       "input": 0.039,
       "output": 1.25,
-      "cache_read": 0.003899999999999999
+      "cache_read": 0.0039
     },
     "limit": {
       "context": 262144,
@@ -47353,7 +47699,7 @@
     "cost": {
       "input": 1.0,
       "output": 1.0,
-      "cache_read": 0.09999999999999998
+      "cache_read": 0.1
     },
     "limit": {
       "context": 131072,
@@ -47383,7 +47729,7 @@
     "cost": {
       "input": 0.44,
       "output": 1.32,
-      "cache_read": 0.04399999999999999
+      "cache_read": 0.044
     },
     "limit": {
       "context": 1048576,
@@ -47464,7 +47810,7 @@
     "cost": {
       "input": 0.12,
       "output": 0.37,
-      "cache_read": 0.011999999999999997
+      "cache_read": 0.012
     },
     "limit": {
       "context": 131072,
@@ -47496,7 +47842,7 @@
     "cost": {
       "input": 0.39,
       "output": 1.8,
-      "cache_read": 0.03899999999999999
+      "cache_read": 0.039
     },
     "limit": {
       "context": 262144,
@@ -47552,7 +47898,7 @@
     "cost": {
       "input": 1.85,
       "output": 9.5,
-      "cache_read": 0.18499999999999997
+      "cache_read": 0.185
     },
     "limit": {
       "context": 1048576,
@@ -47605,7 +47951,7 @@
     "cost": {
       "input": 0.9,
       "output": 2.9,
-      "cache_read": 0.08999999999999998
+      "cache_read": 0.09
     },
     "limit": {
       "context": 202752,
@@ -47659,7 +48005,7 @@
     "cost": {
       "input": 1.25,
       "output": 3.95,
-      "cache_read": 0.12499999999999997
+      "cache_read": 0.125
     },
     "limit": {
       "context": 1048576,
@@ -70624,6 +70970,46 @@
     }
   },
   {
+    "id": "edenai/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "edenai/anthropic/claude-haiku",
     "name": "Claude Haiku Latest (Claude Haiku 5.5)",
     "family": "claude-haiku",
@@ -80951,8 +81337,7 @@
           "above_input_tokens": 200000,
           "input": 4.0,
           "output": 18.0,
-          "cache_read": 0.4,
-          "cache_write": 0.25
+          "cache_read": 0.4
         }
       ]
     },
@@ -92484,6 +92869,46 @@
     }
   },
   {
+    "id": "google-vertex-anthropic/claude-fable-5.2@default",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "google-vertex-anthropic/claude-fable-5@default",
     "name": "Claude Fable 5",
     "family": "claude-fable",
@@ -93127,6 +93552,46 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "google-vertex/claude-fable-5.2@default",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -95309,7 +95774,7 @@
       ]
     },
     "limit": {
-      "context": 131072,
+      "context": 1048576,
       "output": 65536
     }
   },
@@ -95352,7 +95817,7 @@
       ]
     },
     "limit": {
-      "context": 131072,
+      "context": 1048576,
       "output": 65536
     }
   },
@@ -107379,9 +107844,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.799,
+      "input": 0.7995,
       "output": 3.75,
-      "cache_read": 0.2092,
+      "cache_read": 0.156,
       "cache_write": 0.0
     },
     "limit": {
@@ -114714,6 +115179,46 @@
     }
   },
   {
+    "id": "kilo/anthropic/claude-fable-5.2",
+    "name": "Anthropic: Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "kilo/anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (latest)",
     "family": "claude-haiku",
@@ -117221,13 +117726,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.04,
-      "output": 0.15,
-      "cache_read": 0.01
+      "input": 0.029,
+      "output": 0.087,
+      "cache_read": 0.014
     },
     "limit": {
-      "context": 262144,
-      "output": 235929
+      "context": 256000,
+      "output": 128000
     }
   },
   {
@@ -118062,8 +118567,8 @@
       "output": 0.32
     },
     "limit": {
-      "context": 131072,
-      "output": 32768
+      "context": 128000,
+      "output": 115200
     }
   },
   {
@@ -118088,9 +118593,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.1875,
-      "output": 0.6525,
-      "cache_read": 0.05
+      "input": 0.35,
+      "output": 1.0,
+      "cache_read": 0.17
     },
     "limit": {
       "context": 524288,
@@ -118154,6 +118659,48 @@
     "limit": {
       "context": 163840,
       "output": 16384
+    }
+  },
+  {
+    "id": "kilo/meta/muse-ember",
+    "name": "Meta: Muse Ember",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
     }
   },
   {
@@ -122563,12 +123110,12 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.12,
-      "output": 0.24
+      "input": 0.1,
+      "output": 0.22
     },
     "limit": {
       "context": 40960,
-      "output": 16384
+      "output": 36864
     }
   },
   {
@@ -123894,7 +124441,11 @@
     "id": "kilo/ricursiveai/ripple-65b-preview",
     "name": "Ricursive: Ripple 65B Preview",
     "attachment": false,
-    "reasoning": false,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "none",
+      "high"
+    ],
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-11-04",
@@ -123909,9 +124460,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.2,
-      "output": 0.6,
-      "cache_read": 0.05
+      "input": 0.1,
+      "output": 0.3,
+      "cache_read": 0.025
     },
     "limit": {
       "context": 1048576,
@@ -124175,46 +124726,6 @@
     "limit": {
       "context": 1000000,
       "output": 4000
-    }
-  },
-  {
-    "id": "kilo/stealth/crouton-alpha",
-    "name": "Crouton Alpha",
-    "family": "alpha",
-    "attachment": true,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ],
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-11-03",
-    "last_updated": "2026-11-03",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "video",
-        "pdf",
-        "audio"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.0,
-      "output": 0.0
-    },
-    "limit": {
-      "context": 1048576,
-      "output": 943718
     }
   },
   {
@@ -124496,9 +125007,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0825,
-      "output": 0.33,
-      "cache_read": 0.020625
+      "input": 0.132,
+      "output": 0.528,
+      "cache_read": 0.033
     },
     "limit": {
       "context": 262144,
@@ -124599,9 +125110,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.7506,
-      "output": 2.2509,
-      "cache_read": 0.0378
+      "input": 0.834,
+      "output": 2.501,
+      "cache_read": 0.042
     },
     "limit": {
       "context": 1048576,
@@ -124731,6 +125242,42 @@
     "limit": {
       "context": 524288,
       "output": 471859
+    }
+  },
+  {
+    "id": "kilo/thinkingmachines/inkling-2-small:free",
+    "name": "Thinking Machines: Inkling 2 Small (free)",
+    "family": "ling",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-05",
+    "last_updated": "2026-11-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 131072
     }
   },
   {
@@ -125855,8 +126402,8 @@
       "cache_read": 0.03
     },
     "limit": {
-      "context": 1048576,
-      "output": 131072
+      "context": 1048575,
+      "output": 943717
     }
   },
   {
@@ -126002,7 +126549,7 @@
   },
   {
     "id": "kilo/~anthropic/claude-fable",
-    "name": "Anthropic: Claude Fable Latest ($$$$)",
+    "name": "Anthropic: Claude Fable Latest",
     "family": "claude-fable",
     "attachment": true,
     "reasoning": true,
@@ -126029,10 +126576,10 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 10.0,
-      "output": 50.0,
-      "cache_read": 0.25,
-      "cache_write": 12.5
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -126370,9 +126917,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.1539,
-      "output": 10.1489,
-      "cache_read": 0.15
+      "input": 0.1719,
+      "output": 9.3388,
+      "cache_read": 0.17
     },
     "limit": {
       "context": 1048576,
@@ -128524,6 +129071,46 @@
     }
   },
   {
+    "id": "llmgateway-providers/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2 (Anthropic)",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "llmgateway-providers/anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (Anthropic)",
     "family": "claude-haiku",
@@ -129083,6 +129670,46 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "llmgateway-providers/aws-bedrock/claude-fable-5.2",
+    "name": "Claude Fable 5.2 (AWS Bedrock)",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -132969,6 +133596,42 @@
     "limit": {
       "context": 1048576,
       "output": 384000
+    }
+  },
+  {
+    "id": "llmgateway-providers/consensusprotocol/deepseek-v4.1-flash-uncensored",
+    "name": "DeepSeek V4.1 Flash 1017 Uncensored (HeimdaLLM) (consensusprotocol)",
+    "family": "deepseek",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.18,
+      "output": 0.65,
+      "cache_read": 0.005
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
     }
   },
   {
@@ -142972,6 +143635,46 @@
     }
   },
   {
+    "id": "llmgateway/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "llmgateway/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (latest)",
     "family": "claude-haiku",
@@ -143685,6 +144388,42 @@
     "limit": {
       "context": 1040000,
       "output": 1040000
+    }
+  },
+  {
+    "id": "llmgateway/deepseek-v4.1-flash-uncensored",
+    "name": "DeepSeek V4.1 Flash 1017 Uncensored (HeimdaLLM)",
+    "family": "deepseek",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.18,
+      "output": 0.65,
+      "cache_read": 0.005
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
     }
   },
   {
@@ -153181,6 +153920,39 @@
     }
   },
   {
+    "id": "merge-gateway/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "merge-gateway/anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5 (20251001)",
     "family": "claude-haiku",
@@ -159463,6 +160235,55 @@
     "limit": {
       "context": 1000000,
       "output": 131072
+    }
+  },
+  {
+    "id": "meta/muse-ember-1.0",
+    "name": "Muse Ember",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004,
+      "tiers": [
+        {
+          "above_input_tokens": 200000,
+          "input": 0.3,
+          "output": 1.5,
+          "cache_read": 0.012
+        }
+      ]
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 524288
     }
   },
   {
@@ -168221,6 +169042,46 @@
     }
   },
   {
+    "id": "nano-gpt/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 10.0,
+      "output": 50.0,
+      "cache_read": 0.25,
+      "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "nano-gpt/anthropic/claude-haiku",
     "name": "Claude Haiku Latest",
     "family": "claude-haiku",
@@ -170238,9 +171099,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.65868,
-      "output": 1.97604,
-      "cache_read": 0.020958
+      "input": 0.66,
+      "output": 1.98,
+      "cache_read": 0.022
     },
     "limit": {
       "context": 1048576,
@@ -170548,9 +171409,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.65868,
-      "output": 1.97604,
-      "cache_read": 0.020958
+      "input": 0.66,
+      "output": 1.98,
+      "cache_read": 0.022
     },
     "limit": {
       "context": 1048576,
@@ -173073,9 +173934,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.045,
-      "output": 0.136,
-      "cache_read": 0.023
+      "input": 0.029,
+      "output": 0.086,
+      "cache_read": 0.014
     },
     "limit": {
       "context": 262144,
@@ -173133,9 +173994,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.045,
-      "output": 0.136,
-      "cache_read": 0.023
+      "input": 0.029,
+      "output": 0.086,
+      "cache_read": 0.014
     },
     "limit": {
       "context": 262144,
@@ -176114,9 +176975,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.3895,
-      "output": 1.64,
-      "cache_read": 0.0656
+      "input": 0.39,
+      "output": 1.8,
+      "cache_read": 0.039
     },
     "limit": {
       "context": 262144,
@@ -176145,9 +177006,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.3895,
-      "output": 1.64,
-      "cache_read": 0.0656
+      "input": 0.39,
+      "output": 1.8,
+      "cache_read": 0.039
     },
     "limit": {
       "context": 262144,
@@ -180238,9 +181099,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.25,
-      "output": 2.0,
-      "cache_read": 0.135
+      "input": 0.2,
+      "output": 1.75,
+      "cache_read": 0.02
     },
     "limit": {
       "context": 260096,
@@ -180269,9 +181130,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.25,
-      "output": 2.0,
-      "cache_read": 0.135
+      "input": 0.2,
+      "output": 1.75,
+      "cache_read": 0.02
     },
     "limit": {
       "context": 260096,
@@ -205018,6 +205879,46 @@
     }
   },
   {
+    "id": "opencode/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "opencode/claude-haiku-4.5",
     "name": "Claude Haiku 4.5",
     "family": "claude-haiku",
@@ -206167,9 +207068,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.5,
-      "output": 7.5,
-      "cache_read": 0.15
+      "input": 0.75,
+      "output": 3.75,
+      "cache_read": 0.075
     },
     "limit": {
       "context": 1048576,
@@ -206206,9 +207107,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.5,
-      "output": 7.5,
-      "cache_read": 0.15
+      "input": 0.75,
+      "output": 3.75,
+      "cache_read": 0.075
     },
     "limit": {
       "context": 1048576,
@@ -206244,9 +207145,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 1.5,
-      "output": 7.5,
-      "cache_read": 0.15
+      "input": 0.75,
+      "output": 3.75,
+      "cache_read": 0.075
     },
     "limit": {
       "context": 1048576,
@@ -208914,6 +209815,47 @@
     }
   },
   {
+    "id": "opencode/muse-ember-1.0",
+    "name": "Muse Ember 1.0",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004,
+      "cache_write": 0.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 270000
+    }
+  },
+  {
     "id": "opencode/muse-spark-1.2",
     "name": "Muse Spark 1.2",
     "family": "muse",
@@ -210210,6 +211152,46 @@
       "output": 50.0,
       "cache_read": 0.25,
       "cache_write": 12.5
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "openrouter/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -211531,9 +212513,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.894012,
-      "output": 1.788024,
-      "cache_read": 0.074501
+      "input": 0.95526,
+      "output": 1.91052,
+      "cache_read": 0.079605
     },
     "limit": {
       "context": 1048576,
@@ -212743,13 +213725,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.09,
-      "output": 0.3,
-      "cache_read": 0.05
+      "input": 0.08,
+      "output": 0.1,
+      "cache_read": 0.046
     },
     "limit": {
       "context": 262144,
-      "output": 235929
+      "output": 128000
     }
   },
   {
@@ -213478,13 +214460,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.59,
-      "output": 0.79,
-      "cache_read": 0.295
+      "input": 0.71,
+      "output": 0.71,
+      "cache_read": 0.71
     },
     "limit": {
       "context": 131072,
-      "output": 32768
+      "output": 115200
     }
   },
   {
@@ -213575,6 +214557,48 @@
     "limit": {
       "context": 163840,
       "output": 16384
+    }
+  },
+  {
+    "id": "openrouter/meta/muse-ember",
+    "name": "Muse Ember",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004,
+      "cache_write": 0.125
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 943718
     }
   },
   {
@@ -214039,9 +215063,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.075,
-      "output": 0.3,
-      "cache_read": 0.0075
+      "input": 0.15,
+      "output": 0.6,
+      "cache_read": 0.015
     },
     "limit": {
       "context": 1048576,
@@ -215323,7 +216347,7 @@
     "open_weights": true,
     "cost": {
       "input": 0.15,
-      "output": 0.5,
+      "output": 0.47,
       "cache_read": 0.02
     },
     "limit": {
@@ -218085,12 +219109,12 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.12,
-      "output": 0.24
+      "input": 0.1,
+      "output": 0.22
     },
     "limit": {
       "context": 40960,
-      "output": 16384
+      "output": 36864
     }
   },
   {
@@ -219431,7 +220455,7 @@
     "id": "openrouter/ricursiveai/ripple-65b-preview",
     "name": "Ripple 65B Preview",
     "attachment": false,
-    "reasoning": false,
+    "reasoning": true,
     "tool_call": true,
     "temperature": true,
     "release_date": "2026-11-04",
@@ -219444,7 +220468,7 @@
         "text"
       ]
     },
-    "open_weights": false,
+    "open_weights": true,
     "cost": {
       "input": 0.2,
       "output": 0.6,
@@ -219731,46 +220755,6 @@
     }
   },
   {
-    "id": "openrouter/stealth/crouton-alpha",
-    "name": "Crouton Alpha",
-    "family": "alpha",
-    "attachment": true,
-    "reasoning": true,
-    "reasoning_efforts": [
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ],
-    "tool_call": true,
-    "temperature": true,
-    "release_date": "2026-11-03",
-    "last_updated": "2026-11-03",
-    "modalities": {
-      "input": [
-        "text",
-        "image",
-        "video",
-        "pdf",
-        "audio"
-      ],
-      "output": [
-        "text"
-      ]
-    },
-    "open_weights": false,
-    "cost": {
-      "input": 0.0,
-      "output": 0.0
-    },
-    "limit": {
-      "context": 1048576,
-      "output": 943718
-    }
-  },
-  {
     "id": "openrouter/stepfun/step-3.5-flash",
     "name": "Step 3.5 Flash",
     "family": "step",
@@ -220008,9 +220992,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0825,
-      "output": 0.33,
-      "cache_read": 0.020625
+      "input": 0.132,
+      "output": 0.528,
+      "cache_read": 0.033
     },
     "limit": {
       "context": 262144,
@@ -220111,9 +221095,9 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.7506,
-      "output": 2.2509,
-      "cache_read": 0.0378
+      "input": 0.834,
+      "output": 2.501,
+      "cache_read": 0.042
     },
     "limit": {
       "context": 1048576,
@@ -220243,6 +221227,42 @@
     "limit": {
       "context": 524288,
       "output": 471859
+    }
+  },
+  {
+    "id": "openrouter/thinkingmachines/inkling-2-small:free",
+    "name": "Inkling 2 Small (free)",
+    "family": "ling",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": true,
+    "release_date": "2026-11-05",
+    "last_updated": "2026-11-05",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.0,
+      "output": 0.0
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 131072
     }
   },
   {
@@ -221294,7 +222314,7 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0075,
+      "input": 0.006,
       "output": 6.8,
       "cache_read": 0.005
     },
@@ -221364,13 +222384,13 @@
     },
     "open_weights": true,
     "cost": {
-      "input": 0.0335,
-      "output": 0.083,
+      "input": 0.15,
+      "output": 0.5,
       "cache_read": 0.03
     },
     "limit": {
       "context": 1048576,
-      "output": 131072
+      "output": 943717
     }
   },
   {
@@ -221539,10 +222559,10 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 10.0,
-      "output": 50.0,
-      "cache_read": 0.25,
-      "cache_write": 12.5
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
     },
     "limit": {
       "context": 1000000,
@@ -221899,9 +222919,9 @@
     },
     "open_weights": false,
     "cost": {
-      "input": 0.1539,
-      "output": 10.1489,
-      "cache_read": 0.15
+      "input": 0.1719,
+      "output": 9.3388,
+      "cache_read": 0.17
     },
     "limit": {
       "context": 1048576,
@@ -236813,7 +237833,7 @@
     },
     "limit": {
       "context": 131072,
-      "output": 32768
+      "output": 115200
     }
   },
   {
@@ -270377,6 +271397,45 @@
     }
   },
   {
+    "id": "venice/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "venice/claude-haiku-5.5",
     "name": "Claude Haiku 5.5",
     "family": "claude-haiku",
@@ -276083,6 +277142,86 @@
     }
   },
   {
+    "id": "vercel/anthropic/claude-fable-5.2",
+    "name": "Claude Fable 5.2",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.2,
+      "cache_write": 10.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
+    "id": "vercel/anthropic/claude-fable-5.2-fast",
+    "name": "Claude Fable 5.2 (Fast)",
+    "family": "claude-fable",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "temperature": false,
+    "knowledge": "2026-06",
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 16.0,
+      "output": 80.0,
+      "cache_read": 0.4,
+      "cache_write": 20.0
+    },
+    "limit": {
+      "context": 1000000,
+      "output": 128000
+    }
+  },
+  {
     "id": "vercel/anthropic/claude-haiku-4.5",
     "name": "Claude Haiku 4.5",
     "family": "claude-haiku",
@@ -280238,6 +281377,44 @@
     "limit": {
       "context": 128000,
       "output": 8192
+    }
+  },
+  {
+    "id": "vercel/meta/muse-ember",
+    "name": "Muse Ember",
+    "family": "muse",
+    "attachment": true,
+    "reasoning": true,
+    "reasoning_efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ],
+    "tool_call": true,
+    "release_date": "2026-11-09",
+    "last_updated": "2026-11-09",
+    "modalities": {
+      "input": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "open_weights": false,
+    "cost": {
+      "input": 0.1,
+      "output": 0.5,
+      "cache_read": 0.004
+    },
+    "limit": {
+      "context": 1048576,
+      "output": 1048576
     }
   },
   {
@@ -292236,7 +293413,7 @@
     "open_weights": true,
     "cost": {
       "input": 0.15,
-      "output": 0.5,
+      "output": 0.47,
       "cache_read": 0.02
     },
     "limit": {
