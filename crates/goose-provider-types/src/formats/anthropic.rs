@@ -710,6 +710,23 @@ fn merge_delta_usage(existing: &Usage, delta: &Usage, delta_data: &Value) -> Usa
     }
 }
 
+pub fn error_for_type(error_type: Option<&str>, details: String) -> ProviderError {
+    match error_type {
+        Some("authentication_error" | "permission_error") => ProviderError::Authentication(details),
+        Some("rate_limit_error") => ProviderError::RateLimitExceeded {
+            details,
+            retry_delay: None,
+        },
+        Some("billing_error") => ProviderError::CreditsExhausted {
+            details,
+            top_up_url: None,
+        },
+        Some("request_too_large") => ProviderError::ContextLengthExceeded(details),
+        Some("api_error" | "overloaded_error") => ProviderError::ServerError(details),
+        _ => ProviderError::RequestFailed(details),
+    }
+}
+
 pub fn get_usage(data: &Value) -> Result<Usage> {
     if let Some(usage) = data.get("usage") {
         Ok(usage_from_anthropic_fields(usage))
@@ -1086,18 +1103,10 @@ where
             match event.event_type.as_str() {
                 "error" => {
                     let error = event.data.get("error").unwrap_or(&event.data);
-                    let error_type = error.get("type").and_then(Value::as_str).unwrap_or("unknown_error");
+                    let error_type = error.get("type").and_then(Value::as_str);
                     let message = error.get("message").and_then(Value::as_str).unwrap_or("Anthropic stream error");
-                    let details = format!("{error_type}: {message}");
-                    let error = match error_type {
-                        "overloaded_error" | "api_error" => ProviderError::ServerError(details),
-                        "rate_limit_error" => ProviderError::RateLimitExceeded { details, retry_delay: None },
-                        "authentication_error" | "permission_error" => ProviderError::Authentication(details),
-                        "billing_error" => ProviderError::CreditsExhausted { details, top_up_url: None },
-                        "request_too_large" => ProviderError::ContextLengthExceeded(details),
-                        _ => ProviderError::RequestFailed(details),
-                    };
-                    Err(error)?;
+                    let details = format!("{}: {message}", error_type.unwrap_or("unknown_error"));
+                    Err(error_for_type(error_type, details))?;
                 }
                 EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
