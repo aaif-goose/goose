@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::conversation::message::{Message, MessageContent, MessageMetadata};
 
@@ -24,12 +24,28 @@ pub(super) fn clear_advertised_tools(metadata: &mut MessageMetadata) {
     }
 }
 
-pub(super) fn answered_tool_ids(messages: &[Message]) -> HashSet<String> {
-    messages
-        .iter()
-        .flat_map(|message| message.get_tool_response_ids())
-        .map(str::to_string)
-        .collect()
+pub(super) fn answered_tool_ids(messages: &[Message]) -> Vec<HashSet<String>> {
+    let mut answered = vec![HashSet::new(); messages.len()];
+    let mut pending = HashMap::new();
+    for (index, message) in messages.iter().enumerate() {
+        if message.role == rmcp::model::Role::User
+            && !message.is_tool_response()
+            && !message.metadata.steer
+            && !message.is_turn_context()
+            && (message.is_user_visible() || message.is_agent_visible())
+        {
+            pending.clear();
+        }
+        for id in message.get_tool_request_ids() {
+            pending.insert(id, index);
+        }
+        for id in message.get_tool_response_ids() {
+            if let Some(request_index) = pending.remove(id) {
+                answered[request_index].insert(id.to_string());
+            }
+        }
+    }
+    answered
 }
 
 pub(super) fn retains_advertised_tools(message: &Message, answered: &HashSet<String>) -> bool {

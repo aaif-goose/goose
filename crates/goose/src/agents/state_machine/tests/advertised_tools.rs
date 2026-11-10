@@ -100,6 +100,77 @@ async fn pending_approval_keeps_advertised_tools_until_the_tool_is_resolved() ->
     Ok(())
 }
 
+#[tokio::test]
+async fn reused_id_pending_approval_keeps_advertised_tools_after_copy_and_import() -> Result<()> {
+    use crate::conversation::Conversation;
+    use rmcp::model::{CallToolRequestParams, CallToolResult};
+
+    let (pipeline, api) = test_pipeline().await?;
+    let pipeline = pipeline.with_goose_mode(GooseMode::Approve).await;
+    api.on("add one").calls([("reused-call", ADD, value(1))]);
+    api.on("result: 1").reply("done");
+
+    let awaiting = pipeline.run(["add one"]).await?;
+    let mut prior = tool_request(awaiting.conversation().messages())
+        .message
+        .clone();
+    prior.content.clear();
+    prior = prior.with_tool_request("reused-call", Ok(CallToolRequestParams::new(ADD)));
+    let mut history = vec![
+        prior,
+        Message::user().with_tool_response("reused-call", Ok(CallToolResult::success(vec![]))),
+    ];
+    history.extend_from_slice(awaiting.conversation().messages());
+    for message in &mut history {
+        message.created = 100;
+    }
+    pipeline
+        .session_manager
+        .replace_conversation(
+            &pipeline.session_id,
+            &Conversation::new_unvalidated(history),
+        )
+        .await?;
+    let copied = pipeline
+        .session_manager
+        .copy_session(&pipeline.session_id, "copy".into())
+        .await?;
+    let exported = pipeline.session_manager.export_session(&copied.id).await?;
+    let imported = pipeline
+        .session_manager
+        .import_session(&exported, None)
+        .await?;
+    pipeline
+        .session_manager
+        .replace_conversation(
+            &pipeline.session_id,
+            imported.conversation.as_ref().unwrap(),
+        )
+        .await?;
+
+    let reloaded = pipeline
+        .session_manager
+        .get_session(&pipeline.session_id, true)
+        .await?;
+    let messages = reloaded.conversation.as_ref().unwrap().messages();
+    assert!(advertised_tool_names(&messages[0]).is_none());
+    assert!(request_was_advertised(
+        &messages[2..],
+        tool_request(messages).request
+    ));
+    pipeline
+        .confirm("reused-call", Permission::AllowOnce)
+        .await?;
+    let result = pipeline.resume().await?;
+    result.assert_message(-1, Agent, "done");
+    assert_eq!(pipeline.calculator_total(), 1);
+    assert_eq!(
+        persisted_advertised_tools_bytes(result.conversation().messages()),
+        0
+    );
+    Ok(())
+}
+
 struct PendingToolRequest<'a> {
     message: &'a Message,
     request: &'a crate::conversation::message::ToolRequest,

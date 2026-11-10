@@ -2,9 +2,7 @@ use crate::agents::Container;
 use crate::config::paths::Paths;
 use crate::config::ExtensionConfig;
 use crate::config::GooseMode;
-use crate::conversation::message::{
-    Message, MessageContent, MessageMetadata, MessageUsage, TokenState,
-};
+use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::CostSource;
 use crate::providers::base::Provider;
@@ -2278,97 +2276,43 @@ impl SessionStorage {
         session_id: &str,
         response_ids: &HashSet<String>,
     ) -> Result<()> {
-        let ids = response_ids.iter().map(String::as_str).collect::<Vec<_>>();
-        let mut sql = String::from(
-            "SELECT message_id, metadata_json, content_json FROM messages \
-             WHERE session_id = ? AND role = 'assistant' AND message_id IS NOT NULL AND (",
-        );
-        for index in 0..ids.len() {
-            if index > 0 {
-                sql.push_str(" OR ");
-            }
-            sql.push_str("instr(content_json, ?) > 0");
-        }
-        sql.push(')');
-
-        let mut query =
-            sqlx::query_as::<_, (String, String, String)>(AssertSqlSafe(sql)).bind(session_id);
-        for id in &ids {
-            query = query.bind(format!("\"{id}\""));
-        }
-        let rows = query.fetch_all(&mut *tx).await?;
-
-        for (message_id, metadata_json, content_json) in rows {
-            let Ok(content) = serde_json::from_str::<Vec<MessageContent>>(&content_json) else {
-                continue;
-            };
-            let local_ids = content
-                .iter()
-                .filter_map(|content| {
-                    let MessageContent::ToolRequest(request) = content else {
-                        return None;
-                    };
-                    if request.was_executed_externally() {
-                        return None;
-                    }
-                    Some(request.id.as_str())
-                })
-                .collect::<Vec<_>>();
-            if local_ids.is_empty() || !local_ids.iter().any(|id| response_ids.contains(*id)) {
-                continue;
-            }
-            let mut resolved = true;
-            for id in &local_ids {
-                if response_ids.contains(*id) {
-                    continue;
-                }
-                if !Self::tool_response_stored(tx, session_id, id).await? {
-                    resolved = false;
-                    break;
-                }
-            }
-            if !resolved {
-                continue;
-            }
-            let Ok(mut metadata) = serde_json::from_str::<MessageMetadata>(&metadata_json) else {
-                continue;
-            };
-            super::durable_tool_metadata::clear_advertised_tools(&mut metadata);
-            sqlx::query(
-                "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
-            )
-            .bind(serde_json::to_string(&metadata)?)
-            .bind(session_id)
-            .bind(message_id)
-            .execute(&mut *tx)
-            .await?;
-        }
-        Ok(())
-    }
-
-    async fn tool_response_stored(
-        tx: &mut sqlx::sqlite::SqliteConnection,
-        session_id: &str,
-        tool_id: &str,
-    ) -> Result<bool> {
-        let rows = sqlx::query_scalar::<_, String>(
-            "SELECT content_json FROM messages WHERE session_id = ? AND instr(content_json, ?) > 0",
+        let rows = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
+            "SELECT id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
         )
         .bind(session_id)
-        .bind(format!("\"{tool_id}\""))
         .fetch_all(&mut *tx)
         .await?;
-        for content_json in rows {
-            let Ok(content) = serde_json::from_str::<Vec<MessageContent>>(&content_json) else {
-                continue;
+        let mut messages = Vec::new();
+        let mut row_ids = Vec::new();
+        for (id, role, content_json, metadata_json) in rows {
+            let role = match role.as_str() {
+                "assistant" => Role::Assistant,
+                "user" => Role::User,
+                _ => continue,
             };
-            if content.iter().any(|block| {
-                matches!(block, MessageContent::ToolResponse(response) if response.id == tool_id)
-            }) {
-                return Ok(true);
-            }
+            let mut message = Message::new(role, 0, serde_json::from_str(&content_json)?);
+            message.metadata = metadata_json
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default();
+            messages.push(message);
+            row_ids.push(id);
         }
-        Ok(false)
+        let answered = super::durable_tool_metadata::answered_tool_ids(&messages);
+        for ((message, answered), row_id) in messages.iter().zip(&answered).zip(row_ids) {
+            if !answered.iter().any(|id| response_ids.contains(id)) {
+                continue;
+            }
+            let metadata = super::durable_tool_metadata::metadata_for_storage(message, answered);
+            if metadata == message.metadata {
+                continue;
+            }
+            sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+                .bind(serde_json::to_string(&metadata)?)
+                .bind(row_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(())
     }
 
     async fn replace_conversation_inner(
@@ -2384,9 +2328,9 @@ impl SessionStorage {
             .await?;
 
         let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
-        for message in conversation.messages() {
+        for (message, answered) in conversation.messages().iter().zip(&answered) {
             let metadata_json = serde_json::to_string(
-                &super::durable_tool_metadata::metadata_for_storage(message, &answered),
+                &super::durable_tool_metadata::metadata_for_storage(message, answered),
             )?;
 
             let message_id = message
@@ -2432,34 +2376,34 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
 
-        for message in conversation.messages() {
+        let mut matched_rows = HashMap::new();
+        for (message, answered) in conversation.messages().iter().zip(&answered) {
             let message_id = message
                 .id
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("compacted conversation message has no id"))?;
-            let stored_metadata_json = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT metadata_json FROM messages WHERE session_id = ? AND message_id = ?",
+            let stored_metadata_json = sqlx::query_as::<_, (i64, Option<String>)>(
+                "SELECT id, metadata_json FROM messages WHERE session_id = ? AND message_id = ? AND id > ? ORDER BY id LIMIT 1",
             )
             .bind(session_id)
             .bind(message_id)
+            .bind(matched_rows.get(message_id).copied().unwrap_or(0))
             .fetch_optional(&mut *tx)
             .await?;
-            if let Some(stored_metadata_json) = stored_metadata_json {
+            if let Some((row_id, stored_metadata_json)) = stored_metadata_json {
+                matched_rows.insert(message_id, row_id);
                 let mut metadata = stored_metadata_json
                     .and_then(|json| serde_json::from_str::<MessageMetadata>(&json).ok())
                     .unwrap_or_default();
                 metadata.agent_visible = message.metadata.agent_visible;
-                if !super::durable_tool_metadata::retains_advertised_tools(message, &answered) {
+                if !super::durable_tool_metadata::retains_advertised_tools(message, answered) {
                     super::durable_tool_metadata::clear_advertised_tools(&mut metadata);
                 }
-                sqlx::query(
-                    "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
-                )
-                .bind(serde_json::to_string(&metadata)?)
-                .bind(session_id)
-                .bind(message_id)
-                .execute(&mut *tx)
-                .await?;
+                sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+                    .bind(serde_json::to_string(&metadata)?)
+                    .bind(row_id)
+                    .execute(&mut *tx)
+                    .await?;
             } else {
                 sqlx::query(
                     "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -2470,7 +2414,7 @@ impl SessionStorage {
                 .bind(serde_json::to_string(&message.content)?)
                 .bind(message.created)
                 .bind(serde_json::to_string(
-                    &super::durable_tool_metadata::metadata_for_storage(message, &answered),
+                    &super::durable_tool_metadata::metadata_for_storage(message, answered),
                 )?)
                 .execute(&mut *tx)
                 .await?;
@@ -6112,5 +6056,117 @@ mod tests {
         assert!(messages.iter().all(|message| {
             !message.get_tool_request_ids().contains("done") || advertised_tools_bytes(message) == 0
         }));
+    }
+    fn advertised_request(id: &str, marker: &str) -> Message {
+        let mut message = assistant_with_advertised_tools(marker, &large_advertised_tools())
+            .with_id("reused-assistant")
+            .with_tool_request(id, Ok(CallToolRequestParams::new("extension__tool_000")));
+        message.created = 100;
+        message
+            .metadata
+            .set_operation_note("test", "marker", serde_json::json!(marker));
+        message
+    }
+
+    fn advertised_response(id: &str) -> Message {
+        let mut message = Message::user().with_tool_response(
+            id,
+            Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+        );
+        message.created = 100;
+        message
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_cleanup_updates_only_the_originating_row() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let first = advertised_request("reused-call", "first");
+        sm.add_message(&session_id, &first).await.unwrap();
+        let second = advertised_request("reused-call", "second").with_tool_request(
+            "pending",
+            Ok(CallToolRequestParams::new("extension__tool_001")),
+        );
+        sm.add_message(&session_id, &second).await.unwrap();
+        sm.add_message(&session_id, &advertised_response("reused-call"))
+            .await
+            .unwrap();
+        let messages = persisted_messages(&sm, &session_id).await;
+        assert_eq!(messages[0].metadata, first.metadata);
+        assert_eq!(messages[1].metadata, second.metadata);
+
+        sm.add_message(&session_id, &advertised_response("pending"))
+            .await
+            .unwrap();
+        let messages = persisted_messages(&sm, &session_id).await;
+        assert_eq!(messages[0].metadata, first.metadata);
+        let mut expected = second.metadata;
+        super::super::durable_tool_metadata::clear_advertised_tools(&mut expected);
+        assert_eq!(messages[1].metadata, expected);
+    }
+
+    #[test_case("replace"; "replace")]
+    #[test_case("copy"; "copy")]
+    #[test_case("import"; "import")]
+    #[test_case("compact"; "compact")]
+    #[tokio::test]
+    async fn advertised_tools_reused_ids_keep_pending_turn(operation: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let first = advertised_request("reused-call", "first");
+        let pending = advertised_request("reused-call", "pending").with_tool_request(
+            "other",
+            Ok(CallToolRequestParams::new("extension__tool_001")),
+        );
+        let mut user = Message::user().with_text("next turn").with_id("next-turn");
+        user.created = 100;
+        let mut response = advertised_response("reused-call");
+        response.id = Some("response".to_string());
+        let messages = vec![first, response, user, pending.clone()];
+        for message in &messages {
+            sm.add_message(&session_id, message).await.unwrap();
+        }
+        let conversation = Conversation::new_unvalidated(messages);
+        let target = match operation {
+            "replace" => {
+                sm.replace_conversation(&session_id, &conversation)
+                    .await
+                    .unwrap();
+                session_id.clone()
+            }
+            "copy" => {
+                sm.copy_session(&session_id, "copy".to_string())
+                    .await
+                    .unwrap()
+                    .id
+            }
+            "import" => {
+                let exported = sm.export_session(&session_id).await.unwrap();
+                sm.import_session(&exported, None).await.unwrap().id
+            }
+            "compact" => {
+                sm.storage
+                    .save_compacted_conversation(&session_id, &conversation)
+                    .await
+                    .unwrap();
+                session_id.clone()
+            }
+            _ => unreachable!(),
+        };
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(advertised_tools_bytes(&stored[0]), 0);
+        assert_eq!(stored[3].metadata, pending.metadata);
+        sm.add_message(&target, &advertised_response("other"))
+            .await
+            .unwrap();
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(stored[3].metadata, pending.metadata);
+        sm.add_message(&target, &advertised_response("reused-call"))
+            .await
+            .unwrap();
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(advertised_tools_bytes(&stored[3]), 0);
     }
 }
