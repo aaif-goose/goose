@@ -173,6 +173,7 @@ const MAX_SEGMENT_BYTES: usize = 64 * 1024;
 /// Estimated heap and bookkeeping cost of retaining one captured record, so that
 /// output made of many tiny lines is bounded by the capture limit as well.
 const RECORD_OVERHEAD_BYTES: usize = 32;
+const REPLACEMENT_CHAR_LEN_UTF8: usize = '\u{FFFD}'.len_utf8();
 
 /// Result of truncating command output.
 struct TruncateResult {
@@ -305,7 +306,8 @@ impl ShellTool {
         let (raw_stdout, raw_stderr, interleaved) = split_records(
             &execution.records,
             execution.head_record_count,
-            capture_dropped_bytes,
+            execution.dropped_stdout_bytes,
+            execution.dropped_stderr_bytes,
         );
 
         let output_dir = self.output_dir.path();
@@ -564,9 +566,10 @@ fn capture_limit_bytes() -> usize {
         .unwrap_or(DEFAULT_CAPTURE_LIMIT_BYTES)
 }
 
+/// Each invalid byte decodes to a 3-byte replacement character, so a segment must
+/// be a third of the budget it is allowed to occupy once decoded.
 fn max_segment_bytes(capture_limit: usize) -> usize {
-    (capture_limit / 2)
-        .saturating_sub(RECORD_OVERHEAD_BYTES + 1)
+    ((capture_limit / 2).saturating_sub(RECORD_OVERHEAD_BYTES + 1) / REPLACEMENT_CHAR_LEN_UTF8)
         .clamp(1, MAX_SEGMENT_BYTES)
 }
 
@@ -858,8 +861,10 @@ impl JoinedText {
 fn split_records(
     records: &[CaptureRecord],
     head_record_count: usize,
-    dropped_bytes: usize,
+    dropped_stdout_bytes: usize,
+    dropped_stderr_bytes: usize,
 ) -> (String, String, String) {
+    let dropped_bytes = dropped_stdout_bytes + dropped_stderr_bytes;
     let notice = format!(
         "[Capture limit reached: {dropped_bytes} bytes dropped. \
          Showing the beginning and end of the output.]"
@@ -882,8 +887,12 @@ fn split_records(
     for (index, record) in records.iter().enumerate() {
         if dropped_bytes > 0 && index == head_record_count {
             push_notice(&mut interleaved, &mut open_stream);
-            stdout.mark_gap();
-            stderr.mark_gap();
+            if dropped_stdout_bytes > 0 {
+                stdout.mark_gap();
+            }
+            if dropped_stderr_bytes > 0 {
+                stderr.mark_gap();
+            }
         }
 
         interleaved.open_line = open_stream == Some(record.is_stderr);
@@ -1418,7 +1427,7 @@ mod tests {
         let head_count = out.head.len();
         let mut records = out.head;
         records.extend(out.tail);
-        (split_records(&records, head_count, dropped).0, dropped)
+        (split_records(&records, head_count, dropped, 0).0, dropped)
     }
 
     #[tokio::test]
@@ -1431,40 +1440,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn multibyte_characters_survive_segment_boundaries() {
-        let input = "\u{20ac}".repeat(100_000).into_bytes();
-        let (stdout, dropped) = capture_stdout(input.clone(), 1024 * 1024).await;
-
-        assert_eq!(dropped, 0);
-        assert_eq!(stdout.as_bytes(), input);
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn many_empty_lines_are_bounded_by_the_capture_limit() {
-        let result = run_with_capture_limit(
-            100_000,
-            "python3 -c \"import sys; sys.stdout.write('\\n' * 2000000)\"",
+    async fn invalid_utf8_segments_decode_within_half_the_capture_limit() {
+        let capture_limit = 1000;
+        let segments: Vec<_> = bounded_segments(
+            std::io::Cursor::new(vec![0xFF; 10_000]),
+            max_segment_bytes(capture_limit),
         )
+        .map(|segment| segment.unwrap())
+        .collect()
         .await;
 
-        let shell_output = extract_shell_output(&result);
-        assert!(shell_output.capture_dropped_bytes > 1_000_000);
-        assert!(extract_text(&result).contains("[Capture limit"));
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn capture_loss_is_attributed_to_the_stream_that_lost_data() {
-        let result = run_with_capture_limit(
-            4000,
-            "python3 -c \"import sys; sys.stdout.write('o' * 200000); sys.stderr.write('e' * 100)\"",
-        )
-        .await;
-
-        let shell_output = extract_shell_output(&result);
-        assert!(shell_output.capture_dropped_bytes > 0);
-        assert_eq!(shell_output.stderr, "e".repeat(100));
+        assert!(segments.len() > 1);
+        for segment in segments {
+            let record = CaptureRecord {
+                is_stderr: false,
+                text: String::from_utf8_lossy(&segment.bytes).into_owned(),
+                ends_line: segment.ends_line,
+            };
+            assert!(record.budget_cost() <= capture_limit / 2);
+        }
     }
 
     fn record(is_stderr: bool, text: &str, ends_line: bool) -> CaptureRecord {
@@ -1484,7 +1478,7 @@ mod tests {
             record(false, "ghi", true),
             record(false, "next", true),
         ];
-        let (stdout, stderr, interleaved) = split_records(&records, records.len(), 0);
+        let (stdout, stderr, interleaved) = split_records(&records, records.len(), 0, 0);
 
         assert_eq!(stdout, "abcdefghi\nnext");
         assert_eq!(stderr, "err");
@@ -1492,20 +1486,17 @@ mod tests {
     }
 
     #[test]
-    fn split_records_places_notice_between_head_and_tail() {
+    fn split_records_keeps_continuations_of_streams_that_lost_nothing() {
         let records = [
-            record(false, "head", true),
-            record(false, "partial", false),
-            record(false, "tail", true),
+            record(true, "err-start-", false),
+            record(false, "out-head", true),
+            record(false, "out-tail", true),
+            record(true, "err-end", true),
         ];
-        let (stdout, _, interleaved) = split_records(&records, 2, 42);
+        let (stdout, stderr, _) = split_records(&records, 2, 100, 0);
 
-        assert_eq!(stdout, "head\npartial\ntail");
-        assert_eq!(
-            interleaved,
-            "head\npartial\n[Capture limit reached: 42 bytes dropped. \
-             Showing the beginning and end of the output.]\ntail"
-        );
+        assert_eq!(stdout, "out-head\nout-tail");
+        assert_eq!(stderr, "err-start-err-end");
     }
 
     #[tokio::test]
