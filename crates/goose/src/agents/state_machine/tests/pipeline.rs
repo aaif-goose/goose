@@ -207,6 +207,7 @@ impl TestPipeline {
                 services.runtime.steer_queue(&self.session_id),
             )
             .await
+            .unwrap()
     }
 
     pub(super) async fn with_goose_mode(self, mode: GooseMode) -> Self {
@@ -543,7 +544,7 @@ impl TestPipeline {
             let session = self.session().await?;
             let machine = self.machine(cancel.clone()).await;
             let mut result = machine.step(&session, &emit).await?;
-            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step.as_deref());
             machine
                 .apply(
                     self.session_manager.as_ref(),
@@ -761,7 +762,7 @@ impl TestPipeline {
                     }
                 }
             };
-            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+            assert_only_tool_operations_act_on_open_calls(&session, result.applied_step.as_deref());
             machine
                 .apply(
                     self.session_manager.as_ref(),
@@ -1291,7 +1292,7 @@ pub(super) async fn run_machine(pipeline: &TestPipeline) -> Result<Vec<AgentEven
     loop {
         let session = pipeline.session().await?;
         let mut result = machine.step(&session, &emit).await?;
-        assert_only_tool_operations_act_on_open_calls(&session, result.applied_step);
+        assert_only_tool_operations_act_on_open_calls(&session, result.applied_step.as_deref());
         machine
             .apply(
                 pipeline.session_manager.as_ref(),

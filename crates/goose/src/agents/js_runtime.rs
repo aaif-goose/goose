@@ -14,6 +14,7 @@ use std::{
     collections::{HashSet, VecDeque},
     future::Future,
     io::{self, Write},
+    path::PathBuf,
     pin::Pin,
     rc::Rc,
     sync::Arc,
@@ -23,6 +24,20 @@ use tokio_util::sync::CancellationToken;
 
 pub(super) type ToolFuture = Pin<Box<dyn Future<Output = Result<Value, String>> + Send>>;
 pub(super) type ToolCallback = Arc<dyn Fn(String, Value) -> ToolFuture + Send + Sync>;
+
+struct Evaluation {
+    code: String,
+    path: PathBuf,
+    input: Option<Value>,
+    callback: Option<ToolCallback>,
+}
+
+struct EvaluationResult {
+    #[cfg(any(feature = "code-mode", test))]
+    output: String,
+    #[cfg(feature = "js-operations")]
+    value: Option<Value>,
+}
 
 const INSTRUCTION_LIMIT: usize = 2_000_000;
 static WORKER_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
@@ -63,7 +78,7 @@ impl Write for Output {
 }
 
 struct HostState {
-    callback: ToolCallback,
+    callback: Option<ToolCallback>,
     output: Output,
 }
 
@@ -102,6 +117,12 @@ fn json_value(value: &JsValue, context: &mut Context) -> JsResult<Option<Value>>
                 .into());
         }
         let Some(object) = value.as_object() else {
+            if let Some(number) = value.as_number() {
+                // Boa can represent integral results as doubles; preserve integer fields for serde.
+                if number.fract() == 0.0 && number.abs() <= 9_007_199_254_740_991.0 {
+                    return Ok(Some(Value::from(number as i64)));
+                }
+            }
             return value.to_json(context);
         };
         if !seen.insert(object.clone()) {
@@ -177,6 +198,8 @@ async fn call_tool(
             .get_data::<HostState>()
             .expect("worker host state")
             .callback
+            .as_ref()
+            .expect("tools.call host callback")
             .clone();
         (name, arguments, callback)
     };
@@ -212,10 +235,9 @@ fn console(_: &JsValue, args: &[JsValue], context: &mut Context) -> JsResult<JsV
 }
 
 async fn evaluate(
-    code: &str,
-    callback: ToolCallback,
+    evaluation: Evaluation,
     dispatch: CancellationToken,
-) -> Result<String, String> {
+) -> Result<EvaluationResult, String> {
     let jobs = Rc::new(Jobs::default());
     // Boa exposes its context-wide instruction counter through the fuzz feature.
     // Unlike per-loop limits, it also bounds synchronous promise continuations.
@@ -230,20 +252,30 @@ async fn evaluate(
         .runtime_limits_mut()
         .set_loop_iteration_limit(100_000);
     context.runtime_limits_mut().set_recursion_limit(128);
+    let structured = evaluation.input.is_some();
+    if let Some(input) = evaluation.input {
+        let input = JsValue::from_json(&input, &mut context).map_err(|e| e.to_string())?;
+        context
+            .register_global_property(js_string!("__goose_input"), input, Attribute::READONLY)
+            .map_err(|e| e.to_string())?;
+    }
+    let has_tools = evaluation.callback.is_some();
     context.insert_data(HostState {
-        callback,
+        callback: evaluation.callback,
         output: Output::default(),
     });
-    let tools = ObjectInitializer::new(&mut context)
-        .function(
-            NativeFunction::from_async_fn(call_tool),
-            js_string!("call"),
-            2,
-        )
-        .build();
-    context
-        .register_global_property(js_string!("tools"), tools, Attribute::READONLY)
-        .map_err(|e| e.to_string())?;
+    if has_tools {
+        let tools = ObjectInitializer::new(&mut context)
+            .function(
+                NativeFunction::from_async_fn(call_tool),
+                js_string!("call"),
+                2,
+            )
+            .build();
+        context
+            .register_global_property(js_string!("tools"), tools, Attribute::READONLY)
+            .map_err(|e| e.to_string())?;
+    }
     let mut console_object = ObjectInitializer::new(&mut context);
     for method in ["log", "info", "warn", "error", "debug"] {
         console_object.function(NativeFunction::from_fn_ptr(console), js_string!(method), 0);
@@ -253,13 +285,19 @@ async fn evaluate(
         .register_global_property(js_string!("console"), console_object, Attribute::READONLY)
         .map_err(|e| e.to_string())?;
 
-    let source = format!("{code}\n;run();");
+    let source = format!("{}\n;run();", evaluation.code);
     let script = Script::parse(
-        Source::from_bytes(&source).with_path(std::path::Path::new("code_mode.js")),
+        Source::from_bytes(&source).with_path(&evaluation.path),
         None,
         &mut context,
     )
-    .map_err(|e| format!("JavaScript syntax error: {e}. Define async function run() {{ ... }}."))?;
+    .map_err(|e| {
+        if structured {
+            format!("JavaScript syntax error: {e}")
+        } else {
+            format!("JavaScript syntax error: {e}. Define async function run() {{ ... }}.")
+        }
+    })?;
     let value = script
         .evaluate_async_with_budget(&mut context, 1024)
         .await
@@ -282,7 +320,7 @@ async fn evaluate(
                     Job::PromiseJob(job) => job.call(&mut context.borrow_mut()),
                     Job::GenericJob(job) => job.call(&mut context.borrow_mut()),
                     Job::FinalizationRegistryCleanupJob(_) => Ok(JsValue::undefined()),
-                    _ => return Err("Timers are not available in code mode".into()),
+                    _ => return Err("Timers are not available in the JavaScript runtime".into()),
                 };
                 result.map_err(|e| e.to_string())?;
             }
@@ -311,14 +349,29 @@ async fn evaluate(
                             .expect("worker host state");
                         let mut output = std::mem::take(&mut state.output);
                         context.insert_data(*state);
-                        if let Some(result) = result {
-                            output
-                                .write_all(b"Result: ")
-                                .map_err(|_| OUTPUT_LIMIT_ERROR)?;
-                            serde_json::to_writer(&mut output, &result)
+                        if !structured {
+                            if let Some(result) = &result {
+                                output
+                                    .write_all(b"Result: ")
+                                    .map_err(|_| OUTPUT_LIMIT_ERROR)?;
+                                serde_json::to_writer(&mut output, result)
+                                    .map_err(|_| OUTPUT_LIMIT_ERROR)?;
+                            }
+                        } else if let Some(result) = &result {
+                            // Bound structured results without mixing them with console output.
+                            serde_json::to_writer(&mut output, result)
                                 .map_err(|_| OUTPUT_LIMIT_ERROR)?;
                         }
-                        return String::from_utf8(output.0).map_err(|e| e.to_string());
+                        return Ok(EvaluationResult {
+                            #[cfg(any(feature = "code-mode", test))]
+                            output: if structured {
+                                String::new()
+                            } else {
+                                String::from_utf8(output.0).map_err(|e| e.to_string())?
+                            },
+                            #[cfg(feature = "js-operations")]
+                            value: result,
+                        });
                     }
                 }
             }
@@ -340,6 +393,7 @@ async fn evaluate(
     result
 }
 
+#[cfg(feature = "code-mode")]
 pub(super) async fn execute(
     code: String,
     callback: ToolCallback,
@@ -358,6 +412,7 @@ pub(super) async fn execute(
     .await
 }
 
+#[cfg(any(feature = "code-mode", test))]
 async fn execute_with_slots(
     code: String,
     callback: ToolCallback,
@@ -366,6 +421,53 @@ async fn execute_with_slots(
     dispatch: CancellationToken,
     slots: &'static tokio::sync::Semaphore,
 ) -> Result<String, String> {
+    execute_evaluation(
+        Evaluation {
+            code,
+            path: PathBuf::from("code_mode.js"),
+            input: None,
+            callback: Some(callback),
+        },
+        timeout,
+        cancellation,
+        dispatch,
+        slots,
+    )
+    .await
+    .map(|result| result.output)
+}
+
+#[cfg(feature = "js-operations")]
+pub(super) async fn execute_json(
+    code: String,
+    path: PathBuf,
+    input: Value,
+    timeout: Duration,
+    cancellation: CancellationToken,
+) -> Result<Value, String> {
+    execute_evaluation(
+        Evaluation {
+            code,
+            path,
+            input: Some(input),
+            callback: None,
+        },
+        timeout,
+        cancellation.clone(),
+        cancellation.child_token(),
+        &WORKER_SLOTS,
+    )
+    .await
+    .map(|result| result.value.unwrap_or(Value::Null))
+}
+
+async fn execute_evaluation(
+    evaluation: Evaluation,
+    timeout: Duration,
+    cancellation: CancellationToken,
+    dispatch: CancellationToken,
+    slots: &'static tokio::sync::Semaphore,
+) -> Result<EvaluationResult, String> {
     let cancel_on_drop = dispatch.clone().drop_guard();
     let deadline = tokio::time::Instant::now() + timeout;
     let permit = tokio::select! {
@@ -386,7 +488,7 @@ async fn execute_with_slots(
         let _permit = permit;
         let result = tokio::runtime::Builder::new_current_thread().enable_all().build()
             .map_err(|e| e.to_string()).and_then(|runtime| runtime.block_on(async {
-                let execution = evaluate(&code, callback, worker_dispatch.clone());
+                let execution = evaluate(evaluation, worker_dispatch.clone());
                 tokio::pin!(execution);
                 let result = tokio::select! {
                     biased;
@@ -624,6 +726,15 @@ mod tests {
             CancellationToken::new(),
         )
         .await
+    }
+
+    #[tokio::test]
+    async fn integer_valued_numbers_use_json_integers() {
+        assert_eq!(
+            run("async function run() { return [Math.floor(1793738776.75), -Math.floor(1793738776.75), 1.25, Number.MAX_SAFE_INTEGER]; }")
+                .await.unwrap(),
+            "Result: [1793738776,-1793738776,1.25,9007199254740991]"
+        );
     }
 
     #[tokio::test]

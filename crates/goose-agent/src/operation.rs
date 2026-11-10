@@ -89,7 +89,7 @@ pub fn ends_turn(messages: &[Message]) -> bool {
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait Operation<S, E: MaybeSend + 'static = ConversationEffect>: MaybeSend + MaybeSync {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     /// Note on a message something this operation did, so that a pipeline rebuilt
     /// from the persisted conversation reaches the same conclusion. Notes record
@@ -184,7 +184,7 @@ pub enum RunStatus {
 
 pub struct StepResult<E = ConversationEffect> {
     pub effects: Vec<E>,
-    pub applied_step: Option<&'static str>,
+    pub applied_step: Option<String>,
     pub status: RunStatus,
 }
 
