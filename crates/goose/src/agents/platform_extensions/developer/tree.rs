@@ -225,14 +225,17 @@ fn count_file_lines(path: &Path) -> usize {
     if reader.read_to_end(&mut bytes).is_err() {
         return 0;
     }
+    let hit_cap = bytes.len() as u64 >= LINE_COUNT_MAX_BYTES;
 
     match std::str::from_utf8(&bytes) {
         Ok(content) => content.lines().count(),
         Err(err) => {
             // Match prior `read_to_string` behavior: invalid UTF-8 → 0 lines.
-            // When the byte cap cuts a multi-byte sequence, `error_len` is None;
-            // count lines in the valid prefix instead of treating it as binary.
-            if err.error_len().is_some() {
+            // Only when the read stopped at the byte cap and the cap cut a
+            // multi-byte sequence (`error_len` is None) do we count the valid
+            // prefix. A file that genuinely ends in an incomplete character
+            // below the cap is still invalid UTF-8 and counts as 0.
+            if !hit_cap || err.error_len().is_some() {
                 return 0;
             }
             match std::str::from_utf8(&bytes[..err.valid_up_to()]) {
@@ -346,6 +349,37 @@ mod tests {
         let path = dir.path().join("bin.dat");
         fs::write(&path, [0xff, 0xfe, 0xfd, b'\n']).unwrap();
         assert_eq!(count_file_lines(&path), 0);
+    }
+
+    #[test]
+    fn count_file_lines_incomplete_utf8_below_cap_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("truncated.txt");
+        fs::write(&path, b"a\n\xc3").unwrap();
+        assert_eq!(count_file_lines(&path), 0);
+    }
+
+    #[test]
+    fn count_file_lines_cap_splitting_multibyte_counts_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("split.txt");
+        let cap = LINE_COUNT_MAX_BYTES as usize;
+        // Fill up to one byte before the cap with "x\n" lines, then place a
+        // two-byte character so the cap cuts it in half.
+        let mut data = Vec::with_capacity(cap + 2);
+        while data.len() + 2 <= cap - 1 {
+            data.extend_from_slice(b"x\n");
+        }
+        while data.len() < cap - 1 {
+            data.push(b'x');
+        }
+        let expected = data
+            .split(|b| *b == b'\n')
+            .filter(|l| !l.is_empty())
+            .count();
+        data.extend_from_slice("é\n".as_bytes());
+        fs::write(&path, &data).unwrap();
+        assert_eq!(count_file_lines(&path), expected);
     }
 
     #[test]
