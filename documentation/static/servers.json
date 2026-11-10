@@ -189,6 +189,18 @@
     "environmentVariables": []
   },
   {
+    "id": "crakseo-seo",
+    "name": "CrakSEO SEO Tools",
+    "description": "Keyword research, search volume, live Google SERPs, rank checks, backlinks, site audits, local SEO and AI search visibility",
+    "url": "https://crakseo.com/mcp/seo",
+    "link": "https://docs.crakseo.com/mcp-servers/seo",
+    "installation_notes": "Remote server. Goose opens a CrakSEO sign-in (OAuth) on first connect; an API key from https://crakseo.com/app/api/keys sent as an Authorization: Bearer header also works. Data tools spend prepaid API credits.",
+    "is_builtin": false,
+    "endorsed": false,
+    "environmentVariables": [],
+    "type": "streamable-http"
+  },
+  {
     "id": "datahub-mcp",
     "name": "DataHub",
     "description": "Data discovery and metadata platform for exploring datasets, lineage, and queries",
