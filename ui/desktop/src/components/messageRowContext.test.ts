@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Message, MessageContent } from '../types/message';
-import { deriveMessageRowContexts } from './messageRowContext';
+import {
+  deriveMessageRowContexts,
+  type InferenceModel,
+  inferenceModel,
+  isModelChange,
+} from './messageRowContext';
 
 const visibleMetadata: Message['metadata'] = { agentVisible: true, userVisible: true };
 
@@ -27,6 +32,14 @@ function message(
           }
         : {}),
     },
+  };
+}
+
+function messageWithRequestedModel(id: string, requestedModel: string): Message {
+  const base = message(id, 'assistant', [{ type: 'text', text: id }]);
+  return {
+    ...base,
+    metadata: { ...base.metadata, inference: { provider: 'test', requestedModel } },
   };
 }
 
@@ -131,8 +144,88 @@ describe('deriveMessageRowContexts', () => {
 
     const contexts = deriveMessageRowContexts(messages);
 
-    expect(contexts[0].previousResolvedModel).toBeNull();
-    expect(contexts[1].previousResolvedModel).toBeNull();
-    expect(contexts[2].previousResolvedModel).toBe('model-a');
+    expect(contexts[0].previousModel).toBeNull();
+    expect(contexts[1].previousModel).toBeNull();
+    expect(contexts[2].previousModel).toEqual({
+      id: 'model-a',
+      requestedModel: 'model-a',
+      confirmed: true,
+    });
+  });
+
+  it('falls back to the requested model when the provider does not report a resolved one', () => {
+    const messages = [
+      messageWithRequestedModel('model-a', 'model-a'),
+      message('user', 'user', [{ type: 'text', text: 'Switch model' }]),
+      messageWithRequestedModel('model-b', 'model-b'),
+    ];
+
+    const contexts = deriveMessageRowContexts(messages);
+
+    expect(contexts[2].previousModel).toEqual({
+      id: 'model-a',
+      requestedModel: 'model-a',
+      confirmed: false,
+    });
+    expect(inferenceModel(messages[2])).toEqual({
+      id: 'model-b',
+      requestedModel: 'model-b',
+      confirmed: false,
+    });
+  });
+
+  it('keeps the last resolved model across a reply without one', () => {
+    const resolvedReply = (id: string, resolvedModel: string): Message => {
+      const base = messageWithRequestedModel(id, 'model-a');
+      return {
+        ...base,
+        metadata: {
+          ...base.metadata,
+          inference: { provider: 'test', requestedModel: 'model-a', resolvedModel },
+        },
+      };
+    };
+    const messages = [
+      resolvedReply('first', 'model-a-1'),
+      message('user-1', 'user', [{ type: 'text', text: 'Continue' }]),
+      messageWithRequestedModel('second', 'model-a'),
+      message('user-2', 'user', [{ type: 'text', text: 'Continue' }]),
+      resolvedReply('third', 'model-a-2'),
+    ];
+
+    const contexts = deriveMessageRowContexts(messages);
+
+    const firstModel = { id: 'model-a-1', requestedModel: 'model-a', confirmed: true };
+    expect(contexts[2].previousModel).toEqual(firstModel);
+    expect(contexts[4].previousModel).toEqual(firstModel);
+  });
+});
+
+describe('isModelChange', () => {
+  const resolved = (requestedModel: string, id: string): InferenceModel => ({
+    id,
+    requestedModel,
+    confirmed: true,
+  });
+  const requested = (requestedModel: string): InferenceModel => ({
+    id: requestedModel,
+    requestedModel,
+    confirmed: false,
+  });
+
+  it('compares resolved models when both replies report one', () => {
+    expect(isModelChange(resolved('model-a', 'model-a-1'), resolved('model-a', 'model-a-2'))).toBe(
+      true
+    );
+    expect(isModelChange(resolved('model-a', 'model-a-1'), resolved('model-b', 'model-a-1'))).toBe(
+      false
+    );
+  });
+
+  it('compares requested models when a reply has no resolved model', () => {
+    expect(isModelChange(resolved('model-a', 'model-a-1'), requested('model-a'))).toBe(false);
+    expect(isModelChange(requested('model-a'), resolved('model-a', 'model-a-1'))).toBe(false);
+    expect(isModelChange(resolved('model-a', 'model-a-1'), requested('model-b'))).toBe(true);
+    expect(isModelChange(requested('model-a'), requested('model-b'))).toBe(true);
   });
 });

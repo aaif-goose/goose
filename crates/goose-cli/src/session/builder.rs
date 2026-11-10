@@ -1,17 +1,19 @@
 use crate::cli::StreamableHttpOptions;
 
 use super::output;
-use super::{derive_extension_name_from_command, split_extension_name_prefix, CliSession};
+use super::{
+    derive_extension_name_from_command, session_provider, split_extension_name_prefix, CliSession,
+};
 use console::style;
-use goose::agents::{Agent, Container, ExtensionError};
+use goose::agents::final_output_tool::FinalOutputTool;
+use goose::agents::{Container, ExtensionError, StateMachineServices, StateMachineServicesConfig};
 use goose::config::extensions::name_to_key;
 use goose::config::resolve_extensions_for_new_session;
 use goose::config::{Config, ExtensionConfig, GooseMode};
 use goose::model_config::model_config_from_user_config;
-use goose::providers::create;
 use goose::recipe::Recipe;
 use goose::session::session_manager::SessionType;
-use goose::session::EnabledExtensionsState;
+use goose::session::{EnabledExtensionsState, SessionManager};
 use rustyline::EditMode;
 use std::collections::{HashMap, HashSet};
 use std::process;
@@ -228,32 +230,28 @@ impl Default for SessionBuilderConfig {
 }
 
 pub struct ExtensionFailure {
-    pub label: Option<String>,
+    pub label: String,
     pub error: anyhow::Error,
 }
 
 async fn load_extensions(
-    agent: Arc<Agent>,
-    extensions: Vec<ExtensionConfig>,
+    services: Arc<StateMachineServices>,
     session_id: &str,
-) -> Vec<ExtensionFailure> {
-    let results = match agent.add_extensions_bulk(extensions, session_id).await {
-        Ok(results) => results,
-        Err(error) => {
-            tracing::error!("failed to load extensions: {}", error);
-            return vec![ExtensionFailure { label: None, error }];
-        }
-    };
-
-    results
+) -> anyhow::Result<Vec<ExtensionFailure>> {
+    Ok(services
+        .extension_manager
+        .current_lease(session_id)
+        .await?
+        .start()
+        .await
         .into_iter()
         .filter_map(|r| {
             r.error.map(|error| ExtensionFailure {
-                label: Some(r.name),
+                label: r.name,
                 error: anyhow::anyhow!(error),
             })
         })
-        .collect()
+        .collect())
 }
 
 struct ResolvedProviderConfig {
@@ -448,7 +446,7 @@ async fn resolve_provider_and_model(
 
 async fn resolve_session_id(
     session_config: &SessionBuilderConfig,
-    session_manager: &goose::session::session_manager::SessionManager,
+    session_manager: &SessionManager,
     goose_mode: GooseMode,
 ) -> String {
     if session_config.no_session {
@@ -498,9 +496,12 @@ async fn resolve_session_id(
     }
 }
 
-async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
-    let session = agent
-        .config
+async fn handle_resumed_session_workdir(
+    services: &StateMachineServices,
+    session_id: &str,
+    interactive: bool,
+) {
+    let session = services
         .session_manager
         .get_session(session_id, false)
         .await
@@ -561,19 +562,15 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
 }
 
 async fn collect_extension_configs(
-    agent: &Agent,
+    services: &StateMachineServices,
     session_config: &SessionBuilderConfig,
     recipe: Option<&Recipe>,
     session_id: &str,
 ) -> Result<Vec<ExtensionConfig>, ExtensionError> {
     let recipe_extensions = recipe.and_then(|r| r.extensions.as_deref());
     let configured_extensions: Vec<ExtensionConfig> = if session_config.resume {
-        EnabledExtensionsState::for_session(
-            &agent.config.session_manager,
-            session_id,
-            Config::global(),
-        )
-        .await
+        EnabledExtensionsState::for_session(&services.session_manager, session_id, Config::global())
+            .await
     } else if session_config.no_profile {
         Vec::new()
     } else {
@@ -618,15 +615,15 @@ async fn collect_extension_configs(
 }
 
 async fn configure_session_prompts(
-    session: &CliSession,
+    session_manager: &SessionManager,
+    session_id: &str,
     config: &Config,
     session_config: &SessionBuilderConfig,
-) {
+) -> anyhow::Result<()> {
     if let Some(ref additional_prompt) = session_config.additional_system_prompt {
-        session
-            .agent
-            .extend_system_prompt("additional".to_string(), additional_prompt.clone())
-            .await;
+        session_manager
+            .set_system_prompt_extra(session_id, "additional", Some(additional_prompt.clone()))
+            .await?;
     }
 
     let system_prompt_file: Option<String> = config.get_param("GOOSE_SYSTEM_PROMPT_FILE_PATH").ok();
@@ -638,22 +635,39 @@ async fn configure_session_prompts(
             ));
             process::exit(1);
         });
-        session.agent.override_system_prompt(override_prompt).await;
+        session_manager
+            .update(session_id)
+            .system_prompt_override(Some(override_prompt))
+            .apply()
+            .await?;
     }
+    Ok(())
 }
 
 pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
+    match try_build_session(session_config).await {
+        Ok(session) => session,
+        Err(error) => {
+            output::render_error(&format!(
+                "Error {}.\n\
+                Please check your system keychain and run 'goose configure' again.\n\
+                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
+                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
+                error
+            ));
+            process::exit(1);
+        }
+    }
+}
+
+pub async fn try_build_session(session_config: SessionBuilderConfig) -> anyhow::Result<CliSession> {
     #[cfg(feature = "telemetry")]
     goose::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();
-    let agent: Agent = Agent::new();
+    let services = StateMachineServices::with_config(StateMachineServicesConfig::cli());
 
-    if session_config.container.is_some() {
-        agent.set_container(session_config.container.clone()).await;
-    }
-
-    let session_manager = agent.config.session_manager.clone();
+    let session_manager = services.session_manager.clone();
 
     let (saved_provider, saved_model_config) = if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
@@ -678,32 +692,58 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let recipe = session_config.recipe.as_ref();
 
-    agent
-        .apply_recipe_components(recipe.and_then(|r| r.response.clone()), true)
-        .await
-        .unwrap_or_else(|error| {
-            output::render_error(&format!("Invalid recipe response: {error}"));
-            process::exit(1);
-        });
+    if let Some(Err(error)) = recipe
+        .and_then(|r| r.response.clone())
+        .map(FinalOutputTool::try_new)
+    {
+        output::render_error(&format!("Invalid recipe response: {error}"));
+        process::exit(1);
+    }
 
-    let session_id =
-        resolve_session_id(&session_config, &session_manager, agent.config.goose_mode).await;
+    let session_id = resolve_session_id(
+        &session_config,
+        &session_manager,
+        config.get_goose_mode().unwrap_or_default(),
+    )
+    .await;
+
+    if session_config.container.is_some() {
+        session_manager
+            .update(&session_id)
+            .container(session_config.container.clone())
+            .apply()
+            .await
+            .unwrap_or_else(|e| {
+                output::render_error(&format!("Failed to set session container: {}", e));
+                process::exit(1);
+            });
+    }
 
     if session_config.resume {
-        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
+        handle_resumed_session_workdir(&services, &session_id, session_config.interactive).await;
     }
 
     let extensions_for_provider =
-        match collect_extension_configs(&agent, &session_config, recipe, &session_id).await {
+        match collect_extension_configs(&services, &session_config, recipe, &session_id).await {
             Ok(exts) => exts,
             Err(e) => {
                 output::render_error(&format!("Failed to collect extensions: {}", e));
                 process::exit(1);
             }
         };
+    if let Err(e) = services
+        .session_manager
+        .update_enabled_extensions(&session_id, |selected| {
+            *selected = extensions_for_provider.clone()
+        })
+        .await
+    {
+        output::render_error(&format!("Failed to save session extensions: {}", e));
+        process::exit(1);
+    }
 
     let (new_provider, effective_provider_name, effective_model_name, effective_model_config) =
-        match create(&resolved.provider_name, extensions_for_provider.clone()).await {
+        match session_provider(&services, &session_id, &resolved.provider_name).await {
             Ok(provider) => (
                 provider,
                 resolved.provider_name.clone(),
@@ -744,7 +784,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                 if !session_config.interactive {
                     fallback_model_config = fallback_model_config.with_cache_ttl_clamped();
                 }
-                match create(&fallback_provider, extensions_for_provider.clone()).await {
+                match session_provider(&services, &session_id, &fallback_provider).await {
                     Ok(provider) => (
                         provider,
                         fallback_provider,
@@ -752,26 +792,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model_config,
                     ),
                     Err(e2) => {
-                        output::render_error(&format!(
-                        "Error {}.\n\
-                        Please check your system keychain and run 'goose configure' again.\n\
-                        If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                        For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                        e2
-                    ));
-                        process::exit(1);
+                        return Err(e2);
                     }
                 }
             }
             Err(e) => {
-                output::render_error(&format!(
-                "Error {}.\n\
-                Please check your system keychain and run 'goose configure' again.\n\
-                If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
-                For more info, see: https://goose-docs.ai/docs/troubleshooting/#keychainkeyring-errors",
-                e
-            ));
-                process::exit(1);
+                return Err(e);
             }
         };
     tracing::info!("🤖 Using model: {}", effective_model_name);
@@ -789,16 +815,20 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         process::exit(1);
     });
 
-    agent
-        .update_provider(new_provider, effective_model_config, &session_id)
+    services
+        .switch_provider(
+            &session_id,
+            &effective_provider_name,
+            effective_model_config,
+        )
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to initialize agent: {}", e));
             process::exit(1);
         });
 
-    agent
-        .update_goose_mode(agent.config.goose_mode, &session_id)
+    services
+        .update_goose_mode(config.get_goose_mode().unwrap_or_default(), &session_id)
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to set session mode: {}", e));
@@ -822,20 +852,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     // Extensions are loaded after session creation because we may change
     // directory when resuming.
-    let agent_ptr = Arc::new(agent);
-    let loading_handle = match agent_ptr
-        .persist_extension_configs(&session_id, extensions_for_provider.clone())
-        .await
-    {
-        Ok(()) => AbortOnDropHandle::new(tokio::spawn({
-            let agent = agent_ptr.clone();
-            let sid = session_id.clone();
-            async move { load_extensions(agent, extensions_for_provider, &sid).await }
-        })),
-        Err(error) => AbortOnDropHandle::new(tokio::spawn(async move {
-            vec![ExtensionFailure { label: None, error }]
-        })),
-    };
+    let agent_ptr = services;
+    let loading_handle = AbortOnDropHandle::new(tokio::spawn({
+        let services = agent_ptr.clone();
+        let sid = session_id.clone();
+        async move { load_extensions(services, &sid).await }
+    }));
 
     let edit_mode = config
         .get_param::<String>("EDIT_MODE")
@@ -851,6 +873,13 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let debug_mode = session_config.debug || config.get_param("GOOSE_DEBUG").unwrap_or(false);
 
+    configure_session_prompts(&session_manager, &session_id, config, &session_config)
+        .await
+        .unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to configure session prompts: {}", e));
+            process::exit(1);
+        });
+
     let session = CliSession::new(
         agent_ptr,
         session_id.clone(),
@@ -858,15 +887,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session_config.scheduled_job_id.clone(),
         session_config.max_turns,
         edit_mode,
-        recipe.and_then(|r| r.retry.clone()),
         session_config.output_format.clone(),
         session_config.stats,
         session_config.interactive,
         Some(loading_handle),
     )
     .await;
-
-    configure_session_prompts(&session, config, &session_config).await;
 
     if !session_config.quiet {
         output::display_session_info(
@@ -876,10 +902,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             &Some(session_id),
         );
     }
-    session
+    Ok(session)
 }
 
-fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
+pub fn is_provider_unavailable_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string();
     msg.contains("is not set")
         || msg.contains("not configured")

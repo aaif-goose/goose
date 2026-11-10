@@ -10,6 +10,7 @@ pub mod azure_foundry;
 pub mod databricks;
 pub mod databricks_auth;
 pub mod databricks_v2;
+pub mod decision;
 pub mod google;
 pub use goose_provider_types::{
     base, cache_semantics, canonical, context_limit, conversation, documents, errors, formats,
@@ -32,6 +33,7 @@ pub mod openai_live;
 pub mod openai_live_voice_provider;
 pub mod openrouter;
 pub mod openrouter_format;
+pub mod typesafe;
 
 pub use declarative::declarative_providers::*;
 

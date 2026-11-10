@@ -7,6 +7,9 @@ authors:
 ---
 ![blog banner](/img/blog/tool-descriptions-banner.png)
 
+:::note
+This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and goose no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
+:::
 
 The first question I had when I heard about MCP sampling was:
 
@@ -22,7 +25,7 @@ But something still felt off.
 
 The tools still weren’t really *thinking*. They were fetching data, returning text, and leaving all the heavy reasoning to my LLM. That’s when I realized the issue wasn’t my descriptions. It was how the system actually worked under the hood.
 
-That’s where [MCP sampling](https://goose-docs.ai/docs/guides/mcp-sampling/) came in.
+That’s where MCP sampling came in.
 Not as a magic feature, but as a different way of structuring how tools and the LLM actually collaborate.
 
 ## What actually changed my understanding
@@ -67,8 +70,6 @@ Good tool descriptions still matter. This isn’t a replacement for them.
 But on their own, they won’t get you to truly agentic behavior. Descriptions shape behavior at the surface. Sampling changes how the reasoning itself is structured.
 
 That distinction was the missing piece for me. And once I could actually see the flow, everything else started to make more sense.
-
-If this helped make things click, I’d recommend trying the [Council of Mine extension](https://goose-docs.ai/docs/mcp/council-of-mine-mcp) for yourself. It’s one of the clearest ways to see MCP sampling in action.
 
 <head>
   <meta property="og:title" content="Why Tool Descriptions Aren’t Enough" />

@@ -19,7 +19,9 @@ describe('ExtensionItem', () => {
   it('reflects the toggle as OFF immediately when disabling, before the async toggle resolves', async () => {
     // onToggle stays pending so we observe the in-flight (optimistic) state
     const onToggle = vi.fn(() => new Promise<void>(() => {}));
-    renderWithIntl(<ExtensionItem extension={makeExtension(true)} onToggle={onToggle} />);
+    renderWithIntl(
+      <ExtensionItem extension={makeExtension(true)} onToggle={onToggle} onConfigure={vi.fn()} />
+    );
 
     const toggle = screen.getByRole('switch');
     expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -33,7 +35,9 @@ describe('ExtensionItem', () => {
 
   it('reflects the toggle as ON immediately when enabling, before the async toggle resolves', async () => {
     const onToggle = vi.fn(() => new Promise<void>(() => {}));
-    renderWithIntl(<ExtensionItem extension={makeExtension(false)} onToggle={onToggle} />);
+    renderWithIntl(
+      <ExtensionItem extension={makeExtension(false)} onToggle={onToggle} onConfigure={vi.fn()} />
+    );
 
     const toggle = screen.getByRole('switch');
     expect(toggle).toHaveAttribute('aria-checked', 'false');

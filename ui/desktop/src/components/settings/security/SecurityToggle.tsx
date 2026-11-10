@@ -19,7 +19,7 @@ const i18n = defineMessages({
   },
   thresholdDescription: {
     id: 'securityToggle.thresholdDescription',
-    defaultMessage: 'Higher values are more strict (0.01 = very lenient, 1.0 = maximum strict)',
+    defaultMessage: 'Lower values are more strict (0.01 = maximum strict, 1.0 = very lenient)',
   },
   enableCommandInjection: {
     id: 'securityToggle.enableCommandInjection',
@@ -80,7 +80,8 @@ const i18n = defineMessages({
   },
   mlEndpointDescription: {
     id: 'securityToggle.mlEndpointDescription',
-    defaultMessage: 'Enter the full URL for your ML classification service (including model identifier)',
+    defaultMessage:
+      'Enter the full URL for your ML classification service (including model identifier)',
   },
   mlTokenDescription: {
     id: 'securityToggle.mlTokenDescription',
@@ -110,10 +111,10 @@ interface ClassifierEndpointInputsProps {
   disabled: boolean;
   endpointPlaceholder: string;
   tokenPlaceholder: string;
-  endpointLabel?: string;
-  endpointDescription?: string;
-  tokenLabel?: string;
-  tokenDescription?: string;
+  endpointLabel: string;
+  endpointDescription: string;
+  tokenLabel: string;
+  tokenDescription: string;
 }
 
 const ClassifierEndpointInputs = ({
@@ -185,13 +186,11 @@ export const SecurityToggle = () => {
   const { config, upsert } = useConfig();
 
   const promptEnabledOverride = window.appConfig?.get('SECURITY_PROMPT_ENABLED_OVERRIDE') as
-    | string
-    | undefined;
+    string | undefined;
   const commandClassifierOverride = window.appConfig?.get(
     'SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE'
   ) as string | undefined;
-  const isPromptOverridden =
-    promptEnabledOverride === 'true' || promptEnabledOverride === 'false';
+  const isPromptOverridden = promptEnabledOverride === 'true' || promptEnabledOverride === 'false';
   const isCommandClassifierOverridden =
     commandClassifierOverride === 'true' || commandClassifierOverride === 'false';
   const promptOverrideValue = promptEnabledOverride === 'true';

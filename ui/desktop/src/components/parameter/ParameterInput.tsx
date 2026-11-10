@@ -86,18 +86,18 @@ const i18n = defineMessages({
 interface ParameterInputProps {
   parameter: Parameter;
   onChange: (name: string, updatedParameter: Partial<Parameter>) => void;
-  onDelete?: (parameterKey: string) => void;
-  isUnused?: boolean;
-  isExpanded?: boolean;
-  onToggleExpanded?: (parameterKey: string) => void;
+  onDelete: (parameterKey: string) => void;
+  isUnused: boolean;
+  isExpanded: boolean;
+  onToggleExpanded: (parameterKey: string) => void;
 }
 
 const ParameterInput: React.FC<ParameterInputProps> = ({
   parameter,
   onChange,
   onDelete,
-  isUnused = false,
-  isExpanded = true,
+  isUnused,
+  isExpanded,
   onToggleExpanded,
 }) => {
   const intl = useIntl();
@@ -106,7 +106,7 @@ const ParameterInput: React.FC<ParameterInputProps> = ({
 
   const handleToggleExpanded = (e: React.MouseEvent) => {
     // Only toggle if we're not clicking on the delete button
-    if (onToggleExpanded && !(e.target as HTMLElement).closest('button')) {
+    if (!(e.target as HTMLElement).closest('button')) {
       onToggleExpanded(key);
     }
   };
@@ -115,26 +115,24 @@ const ParameterInput: React.FC<ParameterInputProps> = ({
     <div className="parameter-input my-4 border rounded-lg bg-background-secondary shadow-sm relative">
       {/* Collapsed header - always visible */}
       <div
-        className={`flex items-center justify-between p-4 ${onToggleExpanded ? 'cursor-pointer hover:bg-background-primary/50' : ''} transition-colors`}
+        className="flex items-center justify-between p-4 cursor-pointer hover:bg-background-primary/50 transition-colors"
         onClick={handleToggleExpanded}
       >
         <div className="flex items-center gap-2 flex-1">
-          {onToggleExpanded && (
-            <button
-              type="button"
-              className="p-1 hover:bg-background-primary rounded transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleExpanded(key);
-              }}
-            >
-              {isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-text-secondary" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-text-secondary" />
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            className="p-1 hover:bg-background-primary rounded transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpanded(key);
+            }}
+          >
+            {isExpanded ? (
+              <ChevronDown className="w-4 h-4 text-text-secondary" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-text-secondary" />
+            )}
+          </button>
 
           <div className="flex items-center gap-2">
             <span className="text-md font-bold text-text-primary">
@@ -146,25 +144,25 @@ const ParameterInput: React.FC<ParameterInputProps> = ({
                 title={intl.formatMessage(i18n.unusedWarningTitle)}
               >
                 <AlertTriangle className="w-4 h-4 text-orange-500" />
-                <span className="text-xs text-orange-500 font-normal">{intl.formatMessage(i18n.unused)}</span>
+                <span className="text-xs text-orange-500 font-normal">
+                  {intl.formatMessage(i18n.unused)}
+                </span>
               </div>
             )}
           </div>
         </div>
 
-        {onDelete && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(key);
-            }}
-            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-            title={intl.formatMessage(i18n.deleteParameter, { key })}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(key);
+          }}
+          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+          title={intl.formatMessage(i18n.deleteParameter, { key })}
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Expandable content - only shown when expanded */}

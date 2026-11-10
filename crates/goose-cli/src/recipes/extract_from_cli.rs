@@ -52,7 +52,7 @@ pub fn extract_recipe_info_from_cli(
 
     let input_config = InputConfig {
         contents: recipe.prompt.clone().filter(|s| !s.trim().is_empty()),
-        additional_system_prompt: recipe.instructions.clone(),
+        additional_system_prompt: None,
     };
 
     Ok((input_config, recipe))
@@ -94,7 +94,7 @@ mod tests {
 
         assert_eq!(input_config.contents, Some("test_prompt".to_string()));
         assert_eq!(
-            input_config.additional_system_prompt,
+            recipe.instructions,
             Some("test_instructions my_value".to_string())
         );
         assert!(recipe
@@ -162,7 +162,7 @@ mod tests {
 
         assert_eq!(input_config.contents, Some("test_prompt".to_string()));
         assert_eq!(
-            input_config.additional_system_prompt,
+            recipe.instructions,
             Some("test_instructions my_value".to_string())
         );
         assert!(recipe

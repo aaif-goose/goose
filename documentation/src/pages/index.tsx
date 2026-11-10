@@ -17,8 +17,9 @@ function HeroSection() {
           <GooseLogo />
         </div>
         <p className={styles.heroSubtitle}>
-          Your native open source AI agent. Desktop app, CLI, and API — for code,
-          workflows, and everything in between.
+          Your open source AI agent. Use goose on desktop or in the terminal, or
+          build agents into your own applications with the{" "}
+          <Link to="/docs/gdk/">goose Development Kit (GDK)</Link>.
         </p>
         <div className={styles.heroActions}>
           <Link
@@ -36,12 +37,12 @@ function HeroSection() {
         </div>
         <div className={styles.heroStats}>
           <div className={styles.stat}>
-            <span className={styles.statNumber}>45k+</span>
+            <span className={styles.statNumber}>55k+</span>
             <span className={styles.statLabel}>GitHub stars</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
-            <span className={styles.statNumber}>500+</span>
+            <span className={styles.statNumber}>600+</span>
             <span className={styles.statLabel}>Contributors</span>
           </div>
           <div className={styles.statDivider} />
@@ -110,19 +111,14 @@ function FeaturesSection() {
             }
           />
           <FeatureCard
-            icon="🔌"
-            title="Extensible"
+            icon="🛠️"
+            title="goose Development Kit (GDK)"
             description={
               <p>
-                Connect to 70+ extensions — databases, APIs, browsers, GitHub,
-                Google Drive, and more — via the{" "}
-                <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">
-                  Model Context Protocol
-                </a>{" "}
-                open standard. Add{" "}
-                <Link to="/docs/guides/context-engineering/using-skills">skills</Link>,
-                {" "}or{" "}
-                <Link to="/docs/tutorials/custom-extensions">build your own extension</Link>.
+                Build agents that run across native apps, servers, and the
+                browser, and resume from saved state. Use the runtime components
+                behind goose, with control over models, tools, and agent
+                behavior. <Link to="/docs/gdk/">Explore GDK</Link>.
               </p>
             }
           />
@@ -222,7 +218,7 @@ function StandardsSection() {
               an ACP server — connect from Zed, JetBrains, or VS Code — and can
               use ACP agents like Claude Code and Codex as providers.
             </p>
-            <Link to="/docs/gdk/acp">goose as ACP server →</Link>
+            <Link to="/docs/guides/zed">Set up goose in Zed →</Link>
           </div>
           <div className={styles.standardCard}>
             <h3>Agentic AI Foundation</h3>
@@ -352,7 +348,7 @@ function VideoSection() {
 
 export default function Home(): ReactNode {
   return (
-    <Layout description="Your native open source AI agent. Desktop app, CLI, and API — for code, workflows, and everything in between.">
+    <Layout description="Your open source AI agent. Use goose on desktop or in the terminal, or build agents into your own applications with the goose Development Kit (GDK).">
       <HeroSection />
       <main>
         <FeaturesSection />

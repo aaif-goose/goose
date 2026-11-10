@@ -5,19 +5,27 @@ use crate::config::permission::PermissionLevel;
 use goose_sdk_types::custom_requests::{ToolListItem, ToolPermissionLevel};
 use rmcp::model::CallToolRequestParams;
 
-impl GooseAcpAgent {
+impl AcpConnection {
     pub(super) async fn on_get_tools(
         &self,
         req: GetToolsRequest,
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let goose_mode = agent.goose_mode().await;
+        self.open_session(&req.session_id).await?;
+        let goose_mode = self
+            .services
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to read goose mode")?
+            .goose_mode;
         let permission_manager = self.permission_manager();
 
-        let mut tools: Vec<ToolListItem> = agent
+        let mut tools: Vec<ToolListItem> = self
+            .services
             .list_tools(session_id, req.extension_name)
             .await
+            .internal_err()?
             .into_iter()
             .map(|tool| {
                 let permission = permission_manager
@@ -62,10 +70,12 @@ impl GooseAcpAgent {
         req: GooseToolCallRequest,
     ) -> Result<GooseToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        let tools = agent
+        self.open_session(&req.session_id).await?;
+        let tools = self
+            .services
             .list_tools(session_id, Some(req.extension_name.clone()))
-            .await;
+            .await
+            .internal_err()?;
 
         let Some(tool) = tools.iter().find(|tool| {
             *tool.name == req.name && is_tool_owned_by_extension(tool, &req.extension_name)
@@ -95,12 +105,8 @@ impl GooseAcpAgent {
             params
         };
 
-        if agent.goose_mode().await != GooseMode::Auto {
-            return Err(agent_client_protocol::Error::invalid_params()
-                .data("app tool calls require auto mode"));
-        }
-
         let session = self
+            .services
             .session_manager
             .get_session(session_id, false)
             .await
@@ -108,24 +114,32 @@ impl GooseAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        if session.goose_mode != GooseMode::Auto {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("app tool calls require auto mode"));
+        }
 
-        let ctx = crate::agents::ToolCallContext::new(
-            session_id.clone(),
-            Some(session.working_dir),
-            None,
-        );
-        let tool_result = agent
+        let container = session.container;
+        let tool_result = self
+            .services
             .extension_manager
-            .dispatch_app_tool_call(
-                &ctx,
+            .current_lease(session_id)
+            .await
+            .internal_err()?
+            .call_for_app(
                 tool_call,
                 &req.extension_name,
+                crate::agents::extension_manager::CallRequest::default()
+                    .with_container(container.clone()),
                 CancellationToken::new(),
             )
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
 
-        let result = tool_result
+        let result = self
+            .services
+            .extension_manager
+            .applying_mutation(tool_result, session_id)
             .result
             .await
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;

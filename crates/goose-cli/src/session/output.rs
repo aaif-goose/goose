@@ -239,36 +239,22 @@ pub fn show_extensions_ready() {
 
 pub fn show_extension_failures(failures: &[ExtensionFailure]) {
     for failure in failures {
-        match failure.label.as_deref() {
-            None => {
-                eprintln!(
-                    "{}",
-                    style(format!(
-                        "  ⚠ Failed to start extensions ({})",
-                        failure.error
-                    ))
-                    .yellow()
-                );
-            }
-            Some(label) => {
-                eprintln!(
-                    "{}",
-                    style(format!(
-                        "  ⚠ Failed to start extension '{}' ({}), continuing without it",
-                        label, failure.error
-                    ))
-                    .yellow()
-                );
-                eprintln!(
-                    "{}",
-                    style(format!(
-                        "    Hint: ask goose to help debug the '{}' extension",
-                        label
-                    ))
-                    .dim()
-                );
-            }
-        }
+        eprintln!(
+            "{}",
+            style(format!(
+                "  ⚠ Failed to start extension '{}' ({}), continuing without it",
+                failure.label, failure.error
+            ))
+            .yellow()
+        );
+        eprintln!(
+            "{}",
+            style(format!(
+                "    Hint: ask goose to help debug the '{}' extension",
+                failure.label
+            ))
+            .dim()
+        );
     }
 }
 
@@ -555,11 +541,17 @@ pub fn goose_mode_message(text: &str) {
     println!("\n{} {}", accent("mode:"), text);
 }
 
+/// Any value of the environment variable turns thinking output on, which is what the
+/// documentation promises; the configured boolean is read only when it is not set.
+fn thinking_enabled(config: &Config) -> bool {
+    std::env::var_os("GOOSE_CLI_SHOW_THINKING").is_some()
+        || config
+            .get_param::<bool>("GOOSE_CLI_SHOW_THINKING")
+            .unwrap_or(false)
+}
+
 fn should_show_thinking() -> bool {
-    Config::global()
-        .get_param::<bool>("GOOSE_CLI_SHOW_THINKING")
-        .unwrap_or(false)
-        && std::io::stdout().is_terminal()
+    thinking_enabled(Config::global()) && std::io::stdout().is_terminal()
 }
 
 fn render_thinking(text: &str, theme: Theme) {
@@ -591,7 +583,9 @@ fn render_tool_request(req: &ToolRequest, theme: Theme, debug: bool) {
         Ok(call) => match call.name.to_string().as_str() {
             name if is_shell_tool_name(name) => render_shell_request(call, debug),
             name if is_file_tool_name(name) => render_text_editor_request(call, debug),
-            "execute_typescript" | "execute_code" => render_execute_code_request(call, debug),
+            "execute_javascript" | "execute_typescript" | "execute_code" => {
+                render_execute_code_request(call, debug)
+            }
             "delegate" => render_delegate_request(call, debug),
             "subagent" => render_delegate_request(call, debug),
             TODO_WRITE_TOOL_NAME_COMPLETE => render_todo_request(call, debug),
@@ -628,9 +622,10 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
                     .unwrap_or(DEFAULT_MIN_PRIORITY);
 
                 let priority = annotations.and_then(|a| a.priority);
-                if priority.is_some_and(|priority| priority < min_priority)
-                    || (priority.is_none() && !debug)
-                {
+                // Tools without a priority annotation default to 0.0 (the same
+                // as DEFAULT_MIN_PRIORITY), so they are shown at the default
+                // threshold and only hidden when the user raises it.
+                if priority.unwrap_or(0.0) < min_priority {
                     continue;
                 }
 
@@ -1040,13 +1035,19 @@ pub fn render_subagent_tool_call(
     arguments: Option<&JsonObject>,
     debug: bool,
 ) {
-    if tool_name == "code_execution__execute_typescript" {
+    if matches!(
+        tool_name,
+        "execute_javascript"
+            | "code_execution__execute_javascript"
+            | "execute_typescript"
+            | "code_execution__execute_typescript"
+    ) {
         let tool_graph = arguments
             .and_then(|args| args.get("tool_graph"))
             .and_then(Value::as_array)
             .filter(|arr| !arr.is_empty());
         if let Some(tool_graph) = tool_graph {
-            return render_subagent_tool_graph(subagent_id, tool_graph);
+            return render_subagent_tool_graph(subagent_id, tool_name, tool_graph);
         }
     }
     let tool_header = format!(
@@ -1060,7 +1061,7 @@ pub fn render_subagent_tool_call(
     println!();
 }
 
-fn render_subagent_tool_graph(subagent_id: &str, tool_graph: &[Value]) {
+fn render_subagent_tool_graph(subagent_id: &str, tool_name: &str, tool_graph: &[Value]) {
     let short_id = subagent_id.rsplit('_').next().unwrap_or(subagent_id);
     let count = tool_graph.len();
     let plural = if count == 1 { "" } else { "s" };
@@ -1069,7 +1070,7 @@ fn render_subagent_tool_graph(subagent_id: &str, tool_graph: &[Value]) {
         "  {} {} {} {} tool call{}",
         style("▸").dim(),
         style(format!("[subagent:{}]", short_id)).dim(),
-        style("execute_typescript").dim(),
+        style(ToolNameParts::from(tool_name).tool_name).dim(),
         style(count).dim(),
         plural,
     );
@@ -1736,6 +1737,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::env;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn recent_lines_accumulate_across_updates() {
@@ -1776,9 +1778,9 @@ mod tests {
     #[test]
     fn tool_confirmation_shows_execute_code_and_graph() {
         let arguments = json!({
-            "code": "await developer.shell({ command: \"cat ~/.ssh/id_rsa\" });",
+            "code": "async function run() { return await tools.call(\"shell\", { command: \"cat ~/.ssh/id_rsa\" }); }",
             "tool_graph": [{
-                "tool": "developer/read",
+                "tool": "text_editor",
                 "description": "read package manifest",
                 "depends_on": []
             }]
@@ -1787,9 +1789,9 @@ mod tests {
         .unwrap()
         .clone();
 
-        let rendered = format_tool_confirmation("execute_typescript", &arguments);
+        let rendered = format_tool_confirmation("execute_javascript", &arguments);
 
-        assert!(rendered.contains("execute_typescript"));
+        assert!(rendered.contains("execute_javascript"));
         assert!(rendered.contains("read package manifest"));
         assert!(rendered.contains("cat ~/.ssh/id_rsa"));
     }
@@ -1949,6 +1951,10 @@ mod tests {
             "[subagent:42] shell | developer"
         );
         assert_eq!(
+            format_subagent_tool_call_message("subagent_42", "code_execution__execute_javascript"),
+            "[subagent:42] execute_javascript | Code Mode"
+        );
+        assert_eq!(
             format_subagent_tool_call_message("subagent_42", "code_execution__execute_typescript"),
             "[subagent:42] execute_typescript | Code Mode"
         );
@@ -2045,5 +2051,51 @@ mod tests {
             json!({"top_up_url": "https://router.tetrate.ai/billing"}),
         );
         assert_eq!(get_credits_top_up_url(&message), None);
+    }
+
+    fn config_with(contents: &str) -> (Config, NamedTempFile, NamedTempFile) {
+        let config_file = NamedTempFile::new().unwrap();
+        let secrets_file = NamedTempFile::new().unwrap();
+        std::fs::write(config_file.path(), contents).unwrap();
+        let config =
+            Config::new_with_file_secrets(config_file.path(), secrets_file.path()).unwrap();
+        (config, config_file, secrets_file)
+    }
+
+    #[test]
+    fn any_environment_value_shows_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some("1"))]);
+        let (config, _config_file, _secrets_file) = config_with("");
+
+        assert!(thinking_enabled(&config));
+    }
+
+    #[test]
+    fn empty_environment_value_shows_thinking() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some(""))]);
+        let (config, _config_file, _secrets_file) = config_with("");
+
+        assert!(thinking_enabled(&config));
+    }
+
+    #[test]
+    fn configured_value_is_used_when_the_variable_is_unset() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", None::<&str>)]);
+
+        let (enabled, _c1, _s1) = config_with("GOOSE_CLI_SHOW_THINKING: true\n");
+        assert!(thinking_enabled(&enabled));
+
+        let (disabled, _c2, _s2) = config_with("GOOSE_CLI_SHOW_THINKING: false\n");
+        assert!(!thinking_enabled(&disabled));
+
+        let (unset, _c3, _s3) = config_with("");
+        assert!(!thinking_enabled(&unset));
+    }
+
+    #[test]
+    fn thinking_output_needs_a_terminal() {
+        let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some("1"))]);
+
+        assert_eq!(should_show_thinking(), std::io::stdout().is_terminal());
     }
 }

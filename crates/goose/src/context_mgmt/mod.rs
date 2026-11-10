@@ -15,14 +15,42 @@ use indoc::indoc;
 use rmcp::model::Role;
 #[cfg(test)]
 use rmcp::model::{Annotations, ContentBlock, TextContent};
-use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tracing::info;
 use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
+/// Starts compaction with headroom below OpenAI's long-context price tier
+/// (above 272k input tokens). This is not a maximum request size.
+pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
+
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
+
+/// The configured threshold, lowered so compaction starts by the token limit.
+pub fn auto_compact_threshold(context_limit: usize) -> f64 {
+    let config = Config::global();
+    capped_compaction_threshold(
+        config
+            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
+        config
+            .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+            .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
+        context_limit,
+    )
+}
+
+/// `threshold` of the context, but never more than `token_limit` tokens.
+pub fn capped_compaction_threshold(
+    threshold: f64,
+    token_limit: usize,
+    context_limit: usize,
+) -> f64 {
+    if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
+        return threshold;
+    }
+    threshold.min(token_limit as f64 / context_limit as f64)
+}
 
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
     Config::global()
@@ -44,6 +72,25 @@ const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
     "Your context was compacted at the user's request. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
 Just continue the conversation naturally based on the summarized context.";
+
+/// Summaries persisted before the `compaction_summary` flag existed are known
+/// by the continuation text compaction merges into them. Conversation repair
+/// may have concatenated it onto the summary text, so match the tail.
+pub fn is_compaction_summary(message: &Message) -> bool {
+    message.is_compaction_summary()
+        || (message.is_agent_visible()
+            && !message.metadata.user_visible
+            && message.content.iter().any(|content| match content {
+                MessageContent::Text(text) => [
+                    CONVERSATION_CONTINUATION_TEXT,
+                    TOOL_LOOP_CONTINUATION_TEXT,
+                    MANUAL_COMPACT_CONTINUATION_TEXT,
+                ]
+                .iter()
+                .any(|continuation| text.text.ends_with(continuation)),
+                _ => false,
+            }))
+}
 
 pub struct CompactionResult {
     pub conversation: Conversation,
@@ -145,7 +192,8 @@ pub async fn compact_messages(
         final_messages.push(updated_msg);
     }
 
-    let summary_msg = summary_message.with_metadata(MessageMetadata::agent_only());
+    let summary_msg =
+        summary_message.with_metadata(MessageMetadata::agent_only().with_compaction_summary());
 
     let mut continuation_messages = vec![summary_msg];
 
@@ -191,7 +239,7 @@ pub async fn compact_messages(
     }
 
     let conversation = Conversation::new_unvalidated(final_messages);
-    let retained_context_tokens = match count_context_tokens(&conversation).await {
+    let retained_context_tokens = match count_context_tokens(conversation.messages()).await {
         Ok(tokens) => tokens,
         Err(error) => {
             warn!("Failed to count retained context tokens, using billable output tokens: {error}");
@@ -206,17 +254,16 @@ pub async fn compact_messages(
     })
 }
 
-/// Estimate the tokens of the agent-visible conversation, counted the same way
+/// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
-pub(crate) async fn count_context_tokens(conversation: &Conversation) -> Result<i32> {
+pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
     let counter = create_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
-    let total: usize = conversation
-        .messages()
+    let total: usize = messages
         .iter()
         .filter(|message| message.is_agent_visible())
-        .map(|message| counter.count_chat_tokens("", std::slice::from_ref(message), &[]))
+        .map(|message| counter.count_message_tokens(message))
         .sum();
     Ok(total.try_into()?)
 }
@@ -254,13 +301,13 @@ pub async fn check_if_compaction_needed(
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
-            let token_counts: Vec<_> = messages
+            let estimated: usize = messages
                 .iter()
-                .filter(|m| m.is_agent_visible())
-                .map(|msg| token_counter.count_chat_tokens("", std::slice::from_ref(msg), &[]))
-                .collect();
+                .filter(|message| message.is_agent_visible())
+                .map(|message| token_counter.count_message_tokens(message))
+                .sum();
 
-            (token_counts.iter().sum(), "estimated")
+            (estimated, "estimated")
         }
     };
 
@@ -490,111 +537,39 @@ pub async fn summarize_tool_call(
     Ok(response.with_generated_id())
 }
 
-pub fn maybe_summarize_tool_pairs(
-    provider: Arc<dyn Provider>,
-    model_config: ModelConfig,
-    session_id: String,
-    conversation: Conversation,
-    cutoff: usize,
-    protect_last_n: usize,
-) -> Option<JoinHandle<Vec<(Message, String)>>> {
-    if !tool_pair_summarization_enabled() || provider.manages_own_context() {
-        return None;
-    }
-
-    let tool_ids = tool_ids_to_summarize(&conversation, cutoff, protect_last_n);
-    if tool_ids.is_empty() {
-        return None;
-    }
-
-    // A request/response message can contain multiple parallel tool calls.
-    // Summarization formats whole messages, so sibling IDs in the same pair
-    // must be compacted as one group or we'd issue duplicate summary calls.
-    let mut seen_message_pairs = std::collections::HashSet::new();
-    let mut grouped_tool_ids = Vec::new();
-    for tool_id in tool_ids {
-        let pair = match agent_visible_tool_pair(&conversation, &tool_id) {
-            Ok(pair) => pair,
-            Err(error) => {
-                warn!("Failed to identify tool pair for summarization: {}", error);
-                continue;
-            }
-        };
-        if pair.len() != 2 {
-            warn!(
-                "Expected a tool request/response pair for '{}', found {} messages",
-                tool_id,
-                pair.len()
-            );
-            continue;
-        }
-
-        let request_ids: std::collections::HashSet<&str> = pair
-            .iter()
-            .flat_map(|message| message.get_tool_request_ids())
-            .collect();
-        let response_ids: std::collections::HashSet<&str> = pair
-            .iter()
-            .flat_map(|message| message.get_tool_response_ids())
-            .collect();
-        if request_ids != response_ids {
-            warn!(
-                "Tool pair for '{}' has siblings answered elsewhere; skipping",
-                tool_id
-            );
-            continue;
-        }
-
-        let mut message_ids = pair
-            .iter()
-            .filter_map(|message| message.id.clone())
-            .collect::<Vec<_>>();
-        if message_ids.len() != 2 {
-            warn!(
-                "Expected two persisted messages for tool pair '{}', found {}",
-                tool_id,
-                message_ids.len()
-            );
-            continue;
-        }
-        message_ids.sort_unstable();
-        if seen_message_pairs.insert(message_ids) {
-            grouped_tool_ids.push(tool_id);
-        }
-    }
-
-    if grouped_tool_ids.is_empty() {
-        return None;
-    }
-
-    Some(tokio::spawn(async move {
-        let mut results = Vec::new();
-        for tool_id in grouped_tool_ids {
-            match summarize_tool_call(
-                provider.as_ref(),
-                &model_config,
-                &session_id,
-                &conversation,
-                &tool_id,
-            )
-            .await
-            {
-                Ok(summary) => results.push((summary, tool_id)),
-                Err(e) => {
-                    warn!("Failed to summarize tool pair: {}", e);
-                }
-            }
-        }
-        results
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use async_trait::async_trait;
     use goose_providers::conversation::token_usage::Usage;
     use rmcp::model::{CallToolRequestParams, Tool};
+
+    #[test]
+    fn summaries_written_before_the_flag_are_still_recognized() {
+        let legacy = Message::assistant()
+            .with_text("# Conversation Summary\nWe were adding a test.")
+            .with_text(CONVERSATION_CONTINUATION_TEXT)
+            .with_metadata(MessageMetadata::agent_only());
+        let ordinary = Message::assistant()
+            .with_text("Continuing.")
+            .with_metadata(MessageMetadata::agent_only());
+        let quoted = Message::assistant().with_text(CONVERSATION_CONTINUATION_TEXT);
+
+        assert!(is_compaction_summary(&legacy));
+        assert!(!is_compaction_summary(&ordinary));
+        assert!(!is_compaction_summary(&quoted));
+
+        // The report repairs the conversation first, which concatenates the
+        // summary's text blocks.
+        let (repaired, _) =
+            crate::conversation::fix_conversation(Conversation::new_unvalidated(vec![
+                Message::user().with_text("hi"),
+                legacy,
+                Message::user().with_text("next"),
+            ]));
+        assert_eq!(repaired.messages()[1].content.len(), 1);
+        assert!(is_compaction_summary(&repaired.messages()[1]));
+    }
 
     fn create_tool_pair(
         call_id: &str,
@@ -625,7 +600,6 @@ mod tests {
         config: ModelConfig,
         max_tool_responses: Option<usize>,
         captured_system: std::sync::Mutex<Option<String>>,
-        calls: std::sync::atomic::AtomicUsize,
     }
 
     impl MockProvider {
@@ -646,17 +620,12 @@ mod tests {
                 },
                 max_tool_responses: None,
                 captured_system: std::sync::Mutex::new(None),
-                calls: std::sync::atomic::AtomicUsize::new(0),
             }
         }
 
         fn with_max_tool_responses(mut self, max: usize) -> Self {
             self.max_tool_responses = Some(max);
             self
-        }
-
-        fn call_count(&self) -> usize {
-            self.calls.load(std::sync::atomic::Ordering::Relaxed)
         }
     }
 
@@ -673,8 +642,6 @@ mod tests {
             messages: &[Message],
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
-            self.calls
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             *self.captured_system.lock().unwrap() = Some(system.to_string());
             // If max_tool_responses is set, fail if we have too many
             if let Some(max) = self.max_tool_responses {
@@ -1171,58 +1138,6 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("No agent-visible tool pair"));
-    }
-
-    #[tokio::test]
-    async fn parallel_tool_calls_share_one_summary_request() {
-        let _guard = env_lock::lock_env([("GOOSE_TOOL_PAIR_SUMMARIZATION", Some("true"))]);
-        let provider = Arc::new(MockProvider::new(
-            Message::assistant().with_text("summary"),
-            1000,
-        ));
-        let mut messages = vec![Message::user().with_text("start")];
-        for index in 0..7 {
-            let first_id = format!("tool_{index}a");
-            let second_id = format!("tool_{index}b");
-            messages.push(
-                Message::assistant()
-                    .with_tool_request(&first_id, Ok(CallToolRequestParams::new("read_file")))
-                    .with_tool_request(&second_id, Ok(CallToolRequestParams::new("read_file")))
-                    .with_id(format!("request_{index}")),
-            );
-            messages.push(
-                Message::user()
-                    .with_tool_response(
-                        &first_id,
-                        Ok(rmcp::model::CallToolResult::success(vec![
-                            ContentBlock::text("first result"),
-                        ])),
-                    )
-                    .with_tool_response(
-                        &second_id,
-                        Ok(rmcp::model::CallToolResult::success(vec![
-                            ContentBlock::text("second result"),
-                        ])),
-                    )
-                    .with_id(format!("response_{index}")),
-            );
-        }
-
-        let conversation = Conversation::new_unvalidated(messages);
-        let summaries = maybe_summarize_tool_pairs(
-            provider.clone(),
-            provider.config.clone(),
-            "test-session-id".to_string(),
-            conversation,
-            2,
-            0,
-        )
-        .unwrap()
-        .await
-        .unwrap();
-
-        assert_eq!(summaries.len(), 5);
-        assert_eq!(provider.call_count(), 5);
     }
 
     #[tokio::test]

@@ -2,16 +2,13 @@
 #![allow(unused_attributes)]
 
 use agent_client_protocol::schema::v1::{
-    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
-    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
-    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse, ToolCallContent,
-    ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
-    WriteTextFileResponse,
+    ListSessionsResponse, McpServer, SessionModeState, SessionUpdate, ToolCallContent,
+    ToolCallStatus, ToolKind,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use fs_err as fs;
-use goose::acp::server::{serve, AcpProviderFactory, GooseAcpAgent, GooseAcpAgentOptions};
+use goose::acp::server::{serve, AcpConnection, AcpConnectionOptions, AcpProviderFactory};
 pub use goose::acp::{map_permission_response, PermissionDecision};
 use goose::agents::GoosePlatform;
 use goose::builtin_extension::register_builtin_extensions;
@@ -29,6 +26,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use wiremock::matchers::{method, path};
@@ -194,6 +192,11 @@ impl SchedulerTrait for FixtureScheduler {
     }
 }
 
+fn http_error_response(response: &str) -> Option<(u16, &str)> {
+    let (status, body) = response.strip_prefix("status:")?.split_once(' ')?;
+    Some((status.parse().ok()?, body))
+}
+
 fn write_global_test_config(config_path: &Path, openai_base_url: &str) {
     let contents = fs::read_to_string(config_path).unwrap();
     let mut config: serde_yaml::Mapping = serde_yaml::from_str(&contents).unwrap();
@@ -221,6 +224,14 @@ impl OpenAiFixture {
     pub async fn new(
         exchanges: Vec<(String, &'static str)>,
         expected_session_id: Arc<dyn ExpectedSessionId>,
+    ) -> Self {
+        Self::with_response_delay(exchanges, expected_session_id, Duration::ZERO).await
+    }
+
+    pub async fn with_response_delay(
+        exchanges: Vec<(String, &'static str)>,
+        expected_session_id: Arc<dyn ExpectedSessionId>,
+        delay: Duration,
     ) -> Self {
         let mock_server = MockServer::start().await;
         let queue = Arc::new(Mutex::new(VecDeque::from(exchanges.clone())));
@@ -260,9 +271,15 @@ impl OpenAiFixture {
                     let (expected_body, response) = q.front().cloned().unwrap_or_default();
                     if !expected_body.is_empty() && body.contains(&expected_body) {
                         q.pop_front();
+                        if let Some((status, error)) = http_error_response(response) {
+                            return ResponseTemplate::new(status)
+                                .insert_header("content-type", "application/json")
+                                .set_body_string(error);
+                        }
                         return ResponseTemplate::new(200)
                             .insert_header("content-type", "text/event-stream")
-                            .set_body_string(response);
+                            .set_body_string(response)
+                            .set_delay(delay);
                     }
                     drop(q);
 
@@ -330,13 +347,19 @@ impl DuplexTransport {
 /// the client transport plus the server handle.
 #[allow(dead_code)]
 pub async fn serve_agent_in_process(
-    agent: Arc<GooseAcpAgent>,
+    connection: Arc<AcpConnection>,
 ) -> (DuplexTransport, JoinHandle<()>) {
     let (client_read, server_write) = tokio::io::duplex(64 * 1024);
     let (server_read, client_write) = tokio::io::duplex(64 * 1024);
 
     let handle = tokio::spawn(async move {
-        if let Err(e) = serve(agent, server_read.compat(), server_write.compat_write()).await {
+        if let Err(e) = serve(
+            connection,
+            server_read.compat(),
+            server_write.compat_write(),
+        )
+        .await
+        {
             tracing::error!("ACP server error: {e}");
         }
     });
@@ -372,48 +395,49 @@ pub async fn spawn_acp_server_in_process(
     write_global_test_config(&config_path, openai_base_url);
     let provider_factory = provider_factory.unwrap_or_else(|| {
         let base_url = openai_base_url.to_string();
-        Arc::new(
-            move |_provider_name, _extensions, _working_dir, _use_default_model| {
-                let base_url = base_url.clone();
-                Box::pin(async move {
-                    let api_client = ApiClient::new_with_tls(
-                        base_url,
-                        ApiAuthMethod::BearerToken("test-key".to_string()),
-                        None,
-                    )
-                    .unwrap();
-                    let provider: Arc<dyn Provider> = Arc::new(OpenAiProvider::new(api_client));
-                    Ok(provider)
-                })
-            },
-        )
+        Arc::new(move |_provider_name| {
+            let base_url = base_url.clone();
+            Box::pin(async move {
+                let api_client = ApiClient::new_with_tls(
+                    base_url,
+                    ApiAuthMethod::BearerToken("test-key".to_string()),
+                    None,
+                )
+                .unwrap();
+                let provider: Arc<dyn Provider> = Arc::new(OpenAiProvider::new(api_client));
+                Ok(provider)
+            })
+        })
     });
 
-    let active_runs = Arc::new(goose::acp::server::ActiveRunRegistry::default());
+    let mut services_config = goose::acp::server::acp_services_config(
+        Arc::new(goose::session::SessionManager::new(data_root.to_path_buf())),
+        data_root.to_path_buf(),
+        disable_session_naming,
+        GoosePlatform::GooseCli,
+    );
+    services_config.scheduler_service = Some(Arc::new(FixtureScheduler::new()));
+    let services = goose::agents::StateMachineServices::with_config(services_config);
     let live_voice = Arc::new(goose::acp::server::LiveVoiceService::from_config(
-        active_runs.clone(),
+        services.runtime.runs.clone(),
     ));
-    let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
+    let connection = AcpConnection::new(AcpConnectionOptions {
         provider_factory,
         builtin_selection: goose::acp::server::AcpBuiltinSelection {
             explicit: builtins.to_vec(),
             ..Default::default()
         },
-        data_dir: data_root.to_path_buf(),
         config_dir: data_root.to_path_buf(),
-        disable_session_naming,
-        goose_platform: GoosePlatform::GooseCli,
+        services,
         additional_source_roots: Vec::new(),
         session_cwd: None,
-        scheduler: Some(Arc::new(FixtureScheduler::new())),
-        active_runs,
         live_voice,
     })
     .await
     .unwrap();
-    let agent = Arc::new(agent);
-    let permission_manager = agent.permission_manager();
-    let (transport, handle) = serve_agent_in_process(agent).await;
+    let connection = Arc::new(connection);
+    let permission_manager = connection.permission_manager();
+    let (transport, handle) = serve_agent_in_process(connection).await;
 
     (transport, handle, permission_manager)
 }
@@ -517,190 +541,6 @@ pub fn assert_notifications(actual: &[Notification], expected: &[Notification]) 
     assert_eq!(actual, expected);
 }
 
-type ReadTextFileHandler =
-    Arc<dyn Fn(&ReadTextFileRequest) -> Result<ReadTextFileResponse, String> + Send + Sync>;
-type WriteTextFileHandler =
-    Arc<dyn Fn(&WriteTextFileRequest) -> Result<WriteTextFileResponse, String> + Send + Sync>;
-
-#[derive(Clone)]
-pub struct FsFixture {
-    calls: Arc<Mutex<Vec<Result<(), String>>>>,
-}
-
-impl FsFixture {
-    pub fn new() -> Self {
-        Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn read_handler(&self, expected_path: &str, content: &str) -> ReadTextFileHandler {
-        let calls = self.calls.clone();
-        let expected_path = expected_path.to_string();
-        let content = content.to_string();
-        Arc::new(move |req: &ReadTextFileRequest| {
-            let path = req.path.to_str().unwrap_or("");
-            if path != expected_path {
-                let err = format!("expected path {expected_path}, got {path}");
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            calls.lock().unwrap().push(Ok(()));
-            Ok(ReadTextFileResponse::new(&content))
-        })
-    }
-
-    pub fn write_handler(
-        &self,
-        expected_path: &str,
-        expected_content: &str,
-    ) -> WriteTextFileHandler {
-        let calls = self.calls.clone();
-        let expected_path = expected_path.to_string();
-        let expected_content = expected_content.to_string();
-        Arc::new(move |req: &WriteTextFileRequest| {
-            let path = req.path.to_str().unwrap_or("");
-            if path != expected_path {
-                let err = format!("expected path {expected_path}, got {path}");
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            if req.content != expected_content {
-                let err = format!("expected content {expected_content}, got {}", req.content);
-                calls.lock().unwrap().push(Err(err.clone()));
-                return Err(err);
-            }
-            calls.lock().unwrap().push(Ok(()));
-            Ok(WriteTextFileResponse::new())
-        })
-    }
-
-    pub fn assert_called(&self) {
-        let calls = self.calls.lock().unwrap();
-        assert!(!calls.is_empty(), "fs handler was never called");
-        let errors: Vec<_> = calls.iter().filter_map(|c| c.as_ref().err()).collect();
-        assert!(errors.is_empty(), "fs handler errors: {errors:?}");
-    }
-}
-
-/// Expected terminal calls. Each variant carries (expected_input, return_value) data,
-/// like OpenAiFixture's (pattern, response) pairs.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum TerminalCall {
-    Create(String, String),      // (command, terminal_id)
-    WaitForExit(String, u32),    // (terminal_id, exit_code)
-    Output(String, String, u32), // (terminal_id, text, exit_code)
-    Release(String),             // terminal_id
-    Kill(String),                // terminal_id
-}
-
-impl TerminalCall {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Create(..) => "create",
-            Self::WaitForExit(..) => "wait_for_exit",
-            Self::Output(..) => "output",
-            Self::Release(_) => "release",
-            Self::Kill(_) => "kill",
-        }
-    }
-}
-
-pub struct TerminalFixture {
-    queue: Arc<Mutex<VecDeque<TerminalCall>>>,
-    errors: Arc<Mutex<Vec<String>>>,
-}
-
-impl TerminalFixture {
-    pub fn new(calls: Vec<TerminalCall>) -> Arc<Self> {
-        Arc::new(Self {
-            queue: Arc::new(Mutex::new(VecDeque::from(calls))),
-            errors: Arc::new(Mutex::new(Vec::new())),
-        })
-    }
-
-    fn pop(&self, expected: &str) -> Option<TerminalCall> {
-        let Some(call) = self.queue.lock().unwrap().pop_front() else {
-            self.record_error(format!("unexpected {expected}: queue empty"));
-            return None;
-        };
-        if call.name() != expected {
-            self.record_error(format!("expected {expected}, got {}", call.name()));
-            return None;
-        }
-        Some(call)
-    }
-
-    fn record_error(&self, msg: String) {
-        self.errors.lock().unwrap().push(msg);
-    }
-
-    fn validate_terminal_id(&self, method: &str, expected: &str, actual: &TerminalId) {
-        if expected != actual.0.as_ref() {
-            self.record_error(format!(
-                "{method}: expected terminal_id {expected}, got {actual}"
-            ));
-        }
-    }
-
-    pub fn on_create(&self, command: &str) -> CreateTerminalResponse {
-        if let Some(TerminalCall::Create(expect_command, terminal_id)) = self.pop("create") {
-            if command != expect_command {
-                self.record_error(format!(
-                    "create: expected command {expect_command}, got {command}"
-                ));
-            }
-            CreateTerminalResponse::new(TerminalId::new(terminal_id))
-        } else {
-            CreateTerminalResponse::new(TerminalId::new("error"))
-        }
-    }
-
-    pub fn on_wait_for_exit(&self, terminal_id: &TerminalId) -> WaitForTerminalExitResponse {
-        if let Some(TerminalCall::WaitForExit(expected_id, exit_code)) = self.pop("wait_for_exit") {
-            self.validate_terminal_id("wait_for_exit", &expected_id, terminal_id);
-            WaitForTerminalExitResponse::new(TerminalExitStatus::new().exit_code(exit_code))
-        } else {
-            WaitForTerminalExitResponse::new(TerminalExitStatus::new().exit_code(1))
-        }
-    }
-
-    pub fn on_output(&self, terminal_id: &TerminalId) -> TerminalOutputResponse {
-        if let Some(TerminalCall::Output(expected_id, text, exit_code)) = self.pop("output") {
-            self.validate_terminal_id("output", &expected_id, terminal_id);
-            TerminalOutputResponse::new(text, false)
-                .exit_status(TerminalExitStatus::new().exit_code(exit_code))
-        } else {
-            TerminalOutputResponse::new("", false)
-        }
-    }
-
-    pub fn on_release(&self, terminal_id: &TerminalId) -> ReleaseTerminalResponse {
-        if let Some(TerminalCall::Release(expected_id)) = self.pop("release") {
-            self.validate_terminal_id("release", &expected_id, terminal_id);
-        }
-        ReleaseTerminalResponse::new()
-    }
-
-    pub fn on_kill(&self, terminal_id: &TerminalId) -> KillTerminalResponse {
-        if let Some(TerminalCall::Kill(expected_id)) = self.pop("kill") {
-            self.validate_terminal_id("kill", &expected_id, terminal_id);
-        }
-        KillTerminalResponse::new()
-    }
-
-    pub fn assert_called(&self) {
-        let errors = self.errors.lock().unwrap();
-        assert!(errors.is_empty(), "terminal fixture errors: {errors:?}");
-        let queue = self.queue.lock().unwrap();
-        assert!(
-            queue.is_empty(),
-            "terminal fixture has unconsumed calls: {queue:?}"
-        );
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelStateFixture {
     pub current_model_id: String,
@@ -721,9 +561,6 @@ pub struct TestConnectionConfig {
     pub cwd: Option<tempfile::TempDir>,
     pub data_root: PathBuf,
     pub provider_factory: Option<AcpProviderFactory>,
-    pub read_text_file: Option<ReadTextFileHandler>,
-    pub write_text_file: Option<WriteTextFileHandler>,
-    pub terminal: Option<Arc<TerminalFixture>>,
     // The model the server-side provider starts with. Defaults to TEST_MODEL.
     pub current_model: String,
     pub disable_session_naming: bool,
@@ -738,9 +575,6 @@ impl Default for TestConnectionConfig {
             cwd: None,
             data_root: PathBuf::new(),
             provider_factory: None,
-            read_text_file: None,
-            write_text_file: None,
-            terminal: None,
             current_model: TEST_MODEL.to_string(),
             disable_session_naming: true,
         }

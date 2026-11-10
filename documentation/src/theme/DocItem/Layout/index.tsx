@@ -452,15 +452,15 @@ function PageActionsMenu(): ReactNode {
   );
 }
 
-// Hook to determine if we should show the copy button
 function useShouldShowCopyButton(): boolean {
   const {metadata} = useDoc();
 
-  // Show copy button only on actual content pages (not category/index pages)
-  // A content page should have a source file (.md file)
+  if (metadata.id.startsWith('gdk/')) {
+    return false;
+  }
+
   const hasSource = metadata?.source && metadata.source.includes('.md');
   
-  // Don't show on category pages (they typically have /category/ in the permalink)
   const isNotCategoryPage = !metadata?.permalink?.includes('/category/');
   
   return hasSource && isNotCategoryPage;

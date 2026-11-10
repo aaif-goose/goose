@@ -349,7 +349,9 @@ impl ClaudeCodeProvider {
     /// Returns true when the control protocol is enabled.
     fn apply_permission_flags(cmd: &mut Command) -> Result<bool, ProviderError> {
         let config = Config::global();
-        let goose_mode = config.get_goose_mode().unwrap_or(GooseMode::Auto);
+        let goose_mode = config
+            .resolve_goose_mode()
+            .map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
 
         match goose_mode {
             GooseMode::Auto => {
@@ -640,6 +642,8 @@ impl goose_providers::base::ProviderDescriptor for ClaudeCodeProvider {
 
 impl ProviderDef for ClaudeCodeProvider {
     type Provider = Self;
+    const SESSION_BOUND: bool = true;
+    const RUNS_OWN_TOOL_LOOP: bool = true;
 
     fn from_env(
         extensions: Vec<ExtensionConfig>,

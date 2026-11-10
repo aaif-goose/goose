@@ -17,17 +17,49 @@ export interface ToolRenderState {
   isPending: boolean;
 }
 
+export interface InferenceModel {
+  id: string;
+  requestedModel: string;
+  /** False when the provider did not report which model served the message. */
+  confirmed: boolean;
+}
+
 export interface MessageRowContext {
   hideTimestamp: boolean;
   isInToolCallChain: boolean;
-  previousResolvedModel: string | null;
+  previousModel: InferenceModel | null;
   toolStates: readonly ToolRenderState[];
   toolConfirmationShownInline: boolean;
 }
 
-function resolvedModel(message: Message): string | null {
+export function inferenceModel(message: Message): InferenceModel | null {
   if (message.role !== 'assistant' || !message.metadata.userVisible) return null;
-  return message.metadata.inference?.resolvedModel ?? null;
+  const inference = message.metadata.inference;
+  if (!inference) return null;
+  return {
+    id: inference.resolvedModel || inference.requestedModel,
+    requestedModel: inference.requestedModel,
+    confirmed: Boolean(inference.resolvedModel),
+  };
+}
+
+// A provider can report the resolved model for one reply and not for the next (for example,
+// when its metadata lookup fails), so only two resolved models can be compared with each other.
+export function isModelChange(previous: InferenceModel, current: InferenceModel): boolean {
+  return previous.confirmed && current.confirmed
+    ? previous.id !== current.id
+    : previous.requestedModel !== current.requestedModel;
+}
+
+// A reply without a resolved model keeps the last resolved model of the same requested model,
+// so a later resolved model is still compared with it.
+function keepsPreviousModel(previous: InferenceModel | null, current: InferenceModel): boolean {
+  return (
+    previous !== null &&
+    previous.confirmed &&
+    !current.confirmed &&
+    previous.requestedModel === current.requestedModel
+  );
 }
 
 export function deriveMessageRowContexts(messages: Message[]): MessageRowContext[] {
@@ -87,12 +119,14 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
     }
   }
 
-  let previousResolvedModel: string | null = null;
+  let previousModel: InferenceModel | null = null;
 
   return messages.map((message, messageIndex) => {
-    const currentResolvedModel = resolvedModel(message);
-    const rowPreviousResolvedModel = currentResolvedModel ? previousResolvedModel : null;
-    if (currentResolvedModel) previousResolvedModel = currentResolvedModel;
+    const currentModel = inferenceModel(message);
+    const rowPreviousModel = currentModel ? previousModel : null;
+    if (currentModel && !keepsPreviousModel(previousModel, currentModel)) {
+      previousModel = currentModel;
+    }
 
     const toolConfirmation = getToolConfirmationContent(message);
     const confirmationData = getAnyToolConfirmationData(message);
@@ -100,7 +134,7 @@ export function deriveMessageRowContexts(messages: Message[]): MessageRowContext
     return {
       hideTimestamp: hiddenTimestampIndices.has(messageIndex),
       isInToolCallChain: chainedMessageIndices.has(messageIndex),
-      previousResolvedModel: rowPreviousResolvedModel,
+      previousModel: rowPreviousModel,
       toolStates: toolStatesByMessageIndex[messageIndex],
       toolConfirmationShownInline: Boolean(
         toolConfirmation && confirmationData && toolRequestIds.has(confirmationData.id)

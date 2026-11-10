@@ -22,7 +22,7 @@ const [gooseSessionUpdate, providerDeviceCode] = GOOSE_EXT_NOTIFICATIONS;
 const [gooseRecipeParamsRequest] = GOOSE_EXT_AGENT_REQUESTS;
 
 export type GooseAcpCallbacks = Required<
-  Pick<Client, 'requestPermission' | 'sessionUpdate' | 'unstable_createElicitation'>
+  Pick<Client, 'requestPermission' | 'sessionUpdate' | 'createElicitation'>
 > & {
   unstable_sessionRecipeRequestParams: (
     request: RequestRecipeParams_unstable
@@ -50,7 +50,7 @@ export function connectGooseAcpClient(
       callbacks.sessionUpdate(context.params)
     )
     .onRequest(methods.client.elicitation.create, (context) =>
-      callbacks.unstable_createElicitation(context.params)
+      callbacks.createElicitation(context.params)
     )
     .onRequest(gooseRecipeParamsRequest.method, zRequestRecipeParams_unstable, (context) =>
       callbacks.unstable_sessionRecipeRequestParams(context.params)

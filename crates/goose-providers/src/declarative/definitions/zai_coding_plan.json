@@ -1,0 +1,31 @@
+{
+  "name": "zai_coding_plan",
+  "engine": "openai",
+  "display_name": "Z.AI Coding Plan",
+  "description": "GLM models through the Z.AI Coding Plan with streaming tool calls",
+  "api_key_env": "ZAI_CODING_PLAN_API_KEY",
+  "base_url": "https://api.z.ai/api/coding/paas/v4",
+  "model_doc_link": "https://docs.z.ai/devpack/overview",
+  "preserves_thinking": true,
+  "dynamic_models": true,
+  "models": [
+    {
+      "name": "glm-5.3",
+      "context_limit": 1000000,
+      "reasoning": true
+    },
+    {
+      "name": "glm-5.3-flash",
+      "context_limit": 1000000,
+      "reasoning": true
+    }
+  ],
+  "supports_streaming": true,
+  "setup": {
+    "category": "model",
+    "setup_method": "single_api_key",
+    "group": "additional",
+    "docs_url": "https://docs.z.ai/devpack/overview",
+    "aliases": ["z.ai coding plan", "glm coding plan"]
+  }
+}

@@ -1,10 +1,10 @@
-pub mod edit;
+mod edit;
 pub mod image;
 pub mod shell;
 mod shell_output_streaming;
+mod shell_process;
 pub mod tree;
 
-use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use anyhow::Result;
@@ -74,14 +74,14 @@ fn developer_instructions() -> &'static str {
 }
 
 impl DeveloperClient {
-    pub fn new(context: PlatformExtensionContext) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(EXTENSION_NAME, "1.0.0").with_title("Developer"))
             .with_instructions(developer_instructions());
 
         Ok(Self {
             info,
-            shell_tool: Arc::new(ShellTool::new(context.use_login_shell_path)?),
+            shell_tool: Arc::new(ShellTool::new()?),
             edit_tools: Arc::new(EditTools::new()),
             tree_tool: Arc::new(TreeTool::new()),
             image_tool: Arc::new(ImageTool::new()),
@@ -96,7 +96,7 @@ impl DeveloperClient {
             .clone()
     }
 
-    pub fn parse_args<T: serde::de::DeserializeOwned>(
+    fn parse_args<T: serde::de::DeserializeOwned>(
         arguments: Option<JsonObject>,
     ) -> Result<T, String> {
         let value = arguments
@@ -264,7 +264,6 @@ impl McpClientTrait for DeveloperClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionManager;
     use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;
@@ -291,16 +290,6 @@ mod tests {
         assert_eq!(annotations.open_world_hint, Some(true));
     }
 
-    fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {
-        PlatformExtensionContext {
-            extension_manager: None,
-            session_manager: Arc::new(SessionManager::new(data_dir)),
-            scheduler: None,
-            session: None,
-            use_login_shell_path: false,
-        }
-    }
-
     fn first_text(result: &CallToolResult) -> &str {
         match &result.content[0] {
             ContentBlock::Text(text) => &text.text,
@@ -311,7 +300,7 @@ mod tests {
     #[tokio::test]
     async fn developer_client_uses_working_dir_for_file_tools() {
         let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
 
@@ -357,8 +346,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn developer_client_passes_session_id_to_shell_tool() {
-        let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let ctx = ToolCallContext::new("session-789".to_owned(), None, None);
 
         let result = client
@@ -381,7 +369,7 @@ mod tests {
     #[tokio::test]
     async fn developer_client_uses_working_dir_for_shell_tool() {
         let temp = tempfile::tempdir().unwrap();
-        let client = DeveloperClient::new(test_context(temp.path().join("sessions"))).unwrap();
+        let client = DeveloperClient::new().unwrap();
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).unwrap();
 

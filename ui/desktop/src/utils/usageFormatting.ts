@@ -11,6 +11,13 @@ export function formatTokenCount(n: number): string {
   return `${text}${suffix}`;
 }
 
+export function formatPercent(part: number, total: number): string {
+  if (total <= 0) return '0%';
+  const rounded = Math.round((part / total) * 100);
+  if (part > 0 && rounded === 0) return '<1%';
+  return `${rounded}%`;
+}
+
 /** Adaptive precision so small per-message costs stay meaningful: `$1.24`, `$0.012`, `$0.0004`. */
 export function formatCost(cost: number): string {
   if (cost === 0) {

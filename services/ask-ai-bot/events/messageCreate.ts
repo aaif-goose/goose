@@ -1,24 +1,49 @@
+import type { ModelMessage } from "ai";
 import {
   ChannelType,
   Client,
   Events,
   Message,
   type OmitPartialGroupDMChannel,
+  type ThreadChannel,
 } from "discord.js";
 import { answerQuestion } from "../utils/ai";
-import { buildServerContext } from "../utils/discord/server-context";
-import { logger } from "../utils/logger";
+import { inThreadOrder } from "../utils/discord/thread-memory";
+import { messageContent } from "../utils/discord/message-content";
+import { redactSecrets } from "../utils/redact-secrets";
+import { errorDetails, logger } from "../utils/logger";
 
-const followUpInstructions = {
-  embeds: [
-    {
-      title: "Want to ask a follow-up?",
-      description:
-        "Reply to one of my messages or @mention me in this thread so I know to answer.",
-      color: 0x6a9f58,
-    },
-  ],
-};
+async function conversationHistory(
+  thread: ThreadChannel,
+  before: string,
+  botId: string,
+): Promise<ModelMessage[]> {
+  const [starter, recent] = await Promise.all([
+    thread.fetchStarterMessage().catch(() => null),
+    thread.messages.fetch({ before, limit: 12 }),
+  ]);
+  const messages = [...recent.values()].filter(
+    (item) => item.id !== starter?.id,
+  );
+  messages.sort(
+    (a, b) =>
+      a.createdTimestamp - b.createdTimestamp ||
+      (BigInt(a.id) < BigInt(b.id) ? -1 : 1),
+  );
+  if (starter && BigInt(starter.id) < BigInt(before)) messages.unshift(starter);
+  return messages
+    .filter(
+      (item) => item.content && (!item.author.bot || item.author.id === botId),
+    )
+    .map((item) => ({
+      role: item.author.id === botId ? "assistant" : "user",
+      content: redactSecrets(
+        item.author.id === botId
+          ? item.content
+          : `${item.author.displayName}: ${item.content}`,
+      ),
+    }));
+}
 
 export default {
   event: Events.MessageCreate,
@@ -26,112 +51,66 @@ export default {
     _client: Client,
     message: OmitPartialGroupDMChannel<Message<boolean>>,
   ) => {
-    if (message.author.bot) return;
-
     const questionChannelId = process.env.QUESTION_CHANNEL_ID;
-    const guild = message.guild;
-    const serverContext = guild ? await buildServerContext(guild) : "";
-
-    // Handle messages in threads
-    if (message.channel.isThread()) {
-      const parentChannelId =
-        message.channel.parent?.id ?? message.channel.parentId;
-
-      if (!questionChannelId) {
-        logger.verbose(
-          "QUESTION_CHANNEL_ID is not configured; ignoring thread message",
+    if (message.author.bot || !questionChannelId) return;
+    const channel = message.channel;
+    if (channel.isThread()) {
+      if (channel.parentId !== questionChannelId) return;
+      await inThreadOrder(channel.id, async () => {
+        const botId = message.client.user!.id;
+        const isMentioned = message.mentions.users.has(botId);
+        const reply = message.reference?.messageId
+          ? await channel.messages
+              .fetch(message.reference.messageId)
+              .catch(() => null)
+          : null;
+        if (!isMentioned && reply?.author.id !== botId) return;
+        await respond(
+          channel,
+          message,
+          await conversationHistory(channel, message.id, botId),
         );
-        return;
-      }
-
-      if (!parentChannelId || parentChannelId !== questionChannelId) {
-        logger.verbose(
-          `Ignoring thread message from ${message.author.username} (thread not in question channel)`,
-        );
-        return;
-      }
-
+      }).catch((error) =>
+        logger.error("Error handling follow-up", {
+          threadId: channel.id,
+          messageId: message.id,
+          error: errorDetails(error),
+        }),
+      );
+    } else if (
+      message.channelId === questionChannelId &&
+      channel.type === ChannelType.GuildText
+    ) {
       try {
-        // Check if the bot was mentioned or replied to
-        const isMentioned = message.mentions.has(message.client.user?.id || "");
-
-        let isReplyToBot = false;
-        if (message.reference?.messageId) {
-          isReplyToBot = await message.channel.messages
-            .fetch(message.reference.messageId)
-            .then((msg) => msg.author.bot)
-            .catch(() => false);
-        }
-
-        if (!isMentioned && !isReplyToBot) {
-          logger.verbose(
-            `Ignoring thread message from ${message.author.username} (not mentioned or replied to)`,
-          );
-          return;
-        }
-
-        await message.channel.sendTyping();
-
-        // Fetch last 10 messages from the thread for context
-        const messages = await message.channel.messages.fetch({ limit: 10 });
-        const sortedMessages = Array.from(messages.values())
-          .reverse()
-          .map((msg) => ({
-            author:
-              msg.author?.displayName || msg.author?.username || "Unknown",
-            content: msg.content,
-            isBot: msg.author.bot,
-          }));
-
-        await answerQuestion({
-          question: message.content,
-          thread: message.channel,
-          userId: message.author.id,
-          messageHistory: sortedMessages,
-          serverContext,
+        const thread = await message.startThread({
+          name: (message.content.trim() || "goose question").slice(0, 100),
+          autoArchiveDuration: 60,
         });
-
-        logger.verbose(
-          `Answered follow-up question for ${message.author.username} in thread`,
-        );
+        await inThreadOrder(thread.id, () => respond(thread, message));
       } catch (error) {
-        logger.error(`Error handling thread message: ${error}`);
-      }
-      return;
-    }
-
-    // Handle initial questions in the question channel
-    if (questionChannelId && message.channelId === questionChannelId) {
-      if (message.channel.type === ChannelType.GuildText) {
-        try {
-          let threadName = message.content.trim();
-          if (threadName.length > 100) {
-            threadName = threadName.substring(0, 97) + "...";
-          }
-
-          const thread = await message.startThread({
-            name: threadName,
-            autoArchiveDuration: 60,
-          });
-
-          // Send status message that will be updated as tools are called
-          const statusMessage = await thread.send("Just a sec...");
-
-          await answerQuestion({
-            question: message.content,
-            thread,
-            userId: message.author.id,
-            statusMessage,
-            serverContext,
-          });
-
-          await thread.send(followUpInstructions);
-
-          logger.verbose(`Answered question for ${message.author.username}`);
-        } catch (error) {
-          logger.error(`Error handling question: ${error}`);
-        }
+        logger.error("Error handling question", {
+          messageId: message.id,
+          error: errorDetails(error),
+        });
       }
     }
   },
 };
+
+async function respond(
+  thread: ThreadChannel,
+  message: Message,
+  messages: ModelMessage[] = [],
+): Promise<void> {
+  await thread.sendTyping();
+  const statusMessage = await thread.send("Looking into it…");
+  try {
+    await answerQuestion({
+      question: await messageContent(message),
+      thread,
+      messages,
+    });
+  } finally {
+    await statusMessage.delete().catch(() => {});
+  }
+}

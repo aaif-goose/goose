@@ -62,7 +62,7 @@ impl Operation<Session, GooseEffect> for MaxTurnsOperation {
         }
 
         let message = Message::assistant().with_text(MAX_TURNS_MESSAGE);
-        let message = emit.message(message).await;
+        let message = emit.message(message);
         yielded_with([message.into()])
     }
 }

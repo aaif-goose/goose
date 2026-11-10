@@ -11,7 +11,7 @@ use futures::StreamExt;
 use goose_providers::{
     anthropic::AnthropicProviderBuilder,
     api_client::{ApiClient, AuthMethod},
-    base::{MessageStream, Provider as GooseProvider},
+    base::{MessageStream, ModelInfo, Provider as GooseProvider},
     conversation::{
         message::{Message, MessageContent as GooseMessageContent},
         token_usage::ProviderUsage,
@@ -19,10 +19,19 @@ use goose_providers::{
     databricks::DatabricksProvider as GooseDatabricksProvider,
     databricks_auth::DatabricksAuth,
     databricks_v2::DatabricksV2Provider as GooseDatabricksV2Provider,
+    decision::{
+        DecisionAnswer as GooseDecisionAnswer, DecisionProvider as GooseDecisionProvider,
+        DecisionQuestion as GooseDecisionQuestion, DecisionRequest as GooseDecisionRequest,
+        NoulCriteria as GooseNoulCriteria,
+    },
     declarative::{DeclarativeProviderConfig, EnvKeyResolver},
     documents::{document_media_type_is_supported, SUPPORTED_DOCUMENT_MEDIA_TYPES},
+    http_status::{parse_request_id_suffix, request_id_message_suffix},
     model::ModelConfig,
-    openai::OpenAiProviderBuilder,
+    openai::{
+        parse_openai_base_url, OpenAiProviderBuilder, OPEN_AI_DEFAULT_BASE_PATH,
+        OPEN_AI_VERSIONLESS_BASE_PATH,
+    },
     utils::sanitize_unicode_tags,
 };
 use rmcp::model::{
@@ -76,11 +85,18 @@ impl From<goose_providers::errors::ProviderError> for GooseError {
             goose_providers::errors::ProviderError::ContextLengthExceeded(message) => {
                 Self::ContextLengthExceeded { details: message }
             }
-            goose_providers::errors::ProviderError::RateLimitExceeded { retry_delay, .. } => {
+            goose_providers::errors::ProviderError::RateLimitExceeded {
+                details,
+                retry_delay,
+            } => {
                 let retry_after_ms = retry_delay.map(|delay| delay.as_millis() as u64);
-                let retry_after_suffix = retry_after_ms
-                    .map(|ms| format!("; retry after {ms}ms"))
-                    .unwrap_or_default();
+                let retry_after_suffix = format!(
+                    "{}{}",
+                    retry_after_ms
+                        .map(|ms| format!("; retry after {ms}ms"))
+                        .unwrap_or_default(),
+                    request_id_message_suffix(parse_request_id_suffix(&details).as_deref()),
+                );
                 Self::RateLimited {
                     retry_after_ms,
                     retry_after_suffix,
@@ -481,9 +497,29 @@ pub struct ProviderModelConfig {
     pub request_headers: Option<HashMap<String, String>>,
 }
 
+/// A model advertised by the provider. Providers without model discovery
+/// return an empty list rather than an error.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ProviderModelInfo {
+    pub name: String,
+    pub context_limit: Option<u64>,
+    pub supports_reasoning: bool,
+}
+
+impl From<ModelInfo> for ProviderModelInfo {
+    fn from(info: ModelInfo) -> Self {
+        Self {
+            name: info.name,
+            context_limit: info.context_limit.map(|limit| limit as u64),
+            supports_reasoning: info.reasoning,
+        }
+    }
+}
+
 impl ProviderModelConfig {
-    fn to_goose_model_config(&self) -> Result<ModelConfig, GooseError> {
+    fn to_goose_model_config(&self, provider_name: &str) -> Result<ModelConfig, GooseError> {
         let mut config = ModelConfig::new(&self.model_name)
+            .with_canonical_vision_support(provider_name)
             .with_temperature(self.temperature)
             .with_max_tokens(self.max_tokens)
             .with_toolshim(self.toolshim)
@@ -523,6 +559,8 @@ pub struct Usage {
     pub cache_creation_input_tokens: Option<i32>,
     pub reasoning_tokens: Option<i32>,
     pub model: String,
+    /// The model vendor's own id for this call: Anthropic sends `request-id`, OpenAI `x-request-id`.
+    pub request_id: Option<String>,
     pub provider_metadata_json: Option<String>,
     /// Provider-specific response fields as a JSON object, present only when the
     /// provider reported fields with no canonical `Usage` equivalent.
@@ -539,6 +577,7 @@ impl Usage {
             cache_creation_input_tokens: usage.usage.cache_write_input_tokens,
             reasoning_tokens: None,
             model: usage.model.clone(),
+            request_id: usage.request_id.clone(),
             provider_metadata_json: Some(serde_json::to_string(usage)?),
             additional_data_json: usage
                 .additional_data
@@ -582,6 +621,8 @@ pub struct GooseStreamError {
     pub kind: GooseStreamErrorKind,
     pub message: String,
     pub retry_after_ms: Option<u64>,
+    /// Recovered from the message text, the only channel `ProviderError` has for it.
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -597,45 +638,47 @@ pub enum GooseStreamErrorKind {
 
 impl From<&GooseError> for GooseStreamError {
     fn from(error: &GooseError) -> Self {
-        match error {
+        let (kind, message, retry_after_ms) = match error {
             GooseError::RateLimited {
                 retry_after_ms,
                 retry_after_suffix,
-            } => Self {
-                kind: GooseStreamErrorKind::RateLimited,
-                message: format!("Rate limit exceeded{retry_after_suffix}"),
-                retry_after_ms: *retry_after_ms,
-            },
-            GooseError::OutputTokenLimitExceeded { details } => Self {
-                kind: GooseStreamErrorKind::OutputTokenLimitExceeded,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
-            GooseError::ContextLengthExceeded { details } => Self {
-                kind: GooseStreamErrorKind::ContextLengthExceeded,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
-            GooseError::Authentication { details } => Self {
-                kind: GooseStreamErrorKind::Authentication,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
-            GooseError::Timeout { details } => Self {
-                kind: GooseStreamErrorKind::Timeout,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
-            GooseError::ProviderUnavailable { details } => Self {
-                kind: GooseStreamErrorKind::ProviderUnavailable,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
-            GooseError::Generic { details } => Self {
-                kind: GooseStreamErrorKind::Generic,
-                message: details.clone(),
-                retry_after_ms: None,
-            },
+            } => (
+                GooseStreamErrorKind::RateLimited,
+                format!("Rate limit exceeded{retry_after_suffix}"),
+                *retry_after_ms,
+            ),
+            GooseError::OutputTokenLimitExceeded { details } => (
+                GooseStreamErrorKind::OutputTokenLimitExceeded,
+                details.clone(),
+                None,
+            ),
+            GooseError::ContextLengthExceeded { details } => (
+                GooseStreamErrorKind::ContextLengthExceeded,
+                details.clone(),
+                None,
+            ),
+            GooseError::Authentication { details } => {
+                (GooseStreamErrorKind::Authentication, details.clone(), None)
+            }
+            GooseError::Timeout { details } => {
+                (GooseStreamErrorKind::Timeout, details.clone(), None)
+            }
+            GooseError::ProviderUnavailable { details } => (
+                GooseStreamErrorKind::ProviderUnavailable,
+                details.clone(),
+                None,
+            ),
+            GooseError::Generic { details } => {
+                (GooseStreamErrorKind::Generic, details.clone(), None)
+            }
+        };
+
+        let request_id = parse_request_id_suffix(&message);
+        Self {
+            kind,
+            message,
+            retry_after_ms,
+            request_id,
         }
     }
 }
@@ -738,6 +781,13 @@ impl ProviderHandle {
         .await
     }
 
+    async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, GooseError> {
+        let provider = Arc::clone(&self.provider);
+        let models =
+            run_on_runtime(async move { provider.fetch_supported_model_info().await }).await??;
+        Ok(models.into_iter().map(ProviderModelInfo::from).collect())
+    }
+
     async fn stream(
         &self,
         model: ProviderModelConfig,
@@ -746,7 +796,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<Arc<ProviderStream>, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config()?;
+        let model = model.to_goose_model_config(self.provider.get_name())?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = Arc::new(RequestObserver::start(RequestDescriptor {
@@ -789,7 +839,7 @@ impl ProviderHandle {
         tools: Vec<ProviderTool>,
     ) -> Result<ProviderCompletion, GooseError> {
         let timeout_ms = model.timeout_ms;
-        let model = model.to_goose_model_config()?;
+        let model = model.to_goose_model_config(self.provider.get_name())?;
         let messages = convert_messages(messages)?;
         let tools = convert_tools(tools)?;
         let observer = RequestObserver::start(RequestDescriptor {
@@ -863,6 +913,185 @@ fn convert_tools(tools: Vec<ProviderTool>) -> Result<Vec<Tool>, GooseError> {
     tools.iter().map(ProviderTool::to_goose_tool).collect()
 }
 
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum DecisionQuestion {
+    Noul {
+        instructions: String,
+        criteria: Option<NoulCriteria>,
+    },
+    Choice {
+        instructions: String,
+        criteria: HashMap<String, String>,
+    },
+    Score {
+        instructions: String,
+        criteria: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct NoulCriteria {
+    pub true_description: String,
+    pub false_description: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DecisionRequest {
+    pub model: String,
+    pub state_json: String,
+    pub questions: HashMap<String, DecisionQuestion>,
+}
+
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum DecisionAnswer {
+    Noul {
+        noul: f64,
+    },
+    Choice {
+        choice: String,
+        confidence: f64,
+        probabilities: HashMap<String, f64>,
+    },
+    Score {
+        score: f64,
+        confidence: f64,
+        legend_json: HashMap<String, String>,
+        probabilities: HashMap<String, f64>,
+    },
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DecisionResponse {
+    pub model: String,
+    pub answers: HashMap<String, DecisionAnswer>,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cost: Option<f64>,
+    pub id: Option<String>,
+    pub provider: Option<String>,
+}
+
+impl TryFrom<DecisionRequest> for GooseDecisionRequest {
+    type Error = GooseError;
+
+    fn try_from(value: DecisionRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            model: value.model,
+            state: serde_json::from_str(&value.state_json)?,
+            questions: value
+                .questions
+                .into_iter()
+                .map(|(name, question)| (name, question.into()))
+                .collect(),
+        })
+    }
+}
+
+impl From<DecisionQuestion> for GooseDecisionQuestion {
+    fn from(value: DecisionQuestion) -> Self {
+        match value {
+            DecisionQuestion::Noul {
+                instructions,
+                criteria,
+            } => Self::Noul {
+                instructions,
+                criteria: criteria.map(|criteria| GooseNoulCriteria {
+                    true_description: criteria.true_description,
+                    false_description: criteria.false_description,
+                }),
+            },
+            DecisionQuestion::Choice {
+                instructions,
+                criteria,
+            } => Self::Choice {
+                instructions,
+                criteria,
+            },
+            DecisionQuestion::Score {
+                instructions,
+                criteria,
+            } => Self::Score {
+                instructions,
+                criteria,
+            },
+        }
+    }
+}
+
+impl From<goose_providers::decision::DecisionResponse> for DecisionResponse {
+    fn from(value: goose_providers::decision::DecisionResponse) -> Self {
+        Self {
+            model: value.model,
+            answers: value
+                .answers
+                .into_iter()
+                .map(|(name, answer)| (name, answer.into()))
+                .collect(),
+            input_tokens: value.usage.input_tokens,
+            output_tokens: value.usage.output_tokens,
+            cost: value.usage.cost,
+            id: value.id,
+            provider: value.provider,
+        }
+    }
+}
+
+impl From<GooseDecisionAnswer> for DecisionAnswer {
+    fn from(value: GooseDecisionAnswer) -> Self {
+        match value {
+            GooseDecisionAnswer::Noul { noul } => Self::Noul { noul },
+            GooseDecisionAnswer::Choice {
+                choice,
+                confidence,
+                probabilities,
+            } => Self::Choice {
+                choice,
+                confidence,
+                probabilities,
+            },
+            GooseDecisionAnswer::Score {
+                score,
+                confidence,
+                legend,
+                probabilities,
+            } => Self::Score {
+                score,
+                confidence,
+                legend_json: legend
+                    .into_iter()
+                    .map(|(level, description)| {
+                        let description = match description {
+                            serde_json::Value::String(text) => text,
+                            other => other.to_string(),
+                        };
+                        (level, description)
+                    })
+                    .collect(),
+                probabilities,
+            },
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct DecisionProvider {
+    provider: Arc<dyn GooseDecisionProvider>,
+}
+
+#[uniffi::export]
+impl DecisionProvider {
+    pub async fn create_decision(
+        &self,
+        request: DecisionRequest,
+    ) -> Result<DecisionResponse, GooseError> {
+        let request = request.try_into()?;
+        let provider = Arc::clone(&self.provider);
+        let response =
+            run_on_runtime(async move { provider.create_decision(&request).await }).await??;
+        Ok(response.into())
+    }
+}
+
 #[derive(uniffi::Object)]
 pub struct Provider {
     handle: ProviderHandle,
@@ -908,6 +1137,10 @@ impl Provider {
 
     pub async fn context_limit(&self, model: ProviderModelConfig) -> Result<u64, GooseError> {
         Ok(self.handle.context_limit(model).await? as u64)
+    }
+
+    pub async fn list_models(&self) -> Result<Vec<ProviderModelInfo>, GooseError> {
+        self.handle.list_models().await
     }
 
     pub async fn stream(
@@ -1030,20 +1263,137 @@ pub fn declarative_provider_from_json(json: String) -> Result<Arc<Provider>, Goo
     Ok(Provider::new(provider))
 }
 
+fn decision_provider(provider: impl GooseDecisionProvider + 'static) -> Arc<DecisionProvider> {
+    Arc::new(DecisionProvider {
+        provider: Arc::new(provider),
+    })
+}
+
+#[uniffi::export]
+pub fn openrouter_decision_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Arc<DecisionProvider>, GooseError> {
+    let client = ApiClient::new_with_tls(
+        base_url.unwrap_or_else(|| "https://openrouter.ai".to_string()),
+        AuthMethod::BearerToken(api_key),
+        None,
+    )?;
+    Ok(decision_provider(
+        goose_providers::openrouter::OpenRouterProvider::new(client, None, None),
+    ))
+}
+
+#[uniffi::export]
+pub fn typesafe_decision_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Arc<DecisionProvider>, GooseError> {
+    let client = ApiClient::new_with_tls(
+        base_url.unwrap_or_else(|| goose_providers::typesafe::TYPESAFE_DEFAULT_HOST.to_string()),
+        AuthMethod::BearerToken(api_key),
+        None,
+    )?;
+    Ok(decision_provider(
+        goose_providers::typesafe::TypeSafeProvider::new(client),
+    ))
+}
+
+#[uniffi::export]
+pub fn openrouter_decision_default_model() -> String {
+    goose_providers::openrouter::OPENROUTER_DECISION_DEFAULT_MODEL.to_string()
+}
+
+#[uniffi::export]
+pub fn typesafe_decision_default_model() -> String {
+    goose_providers::typesafe::TYPESAFE_DEFAULT_MODEL.to_string()
+}
+
 #[uniffi::export]
 pub fn openai_default_model() -> String {
     goose_providers::openai::OPEN_AI_DEFAULT_MODEL.to_string()
 }
 
+/// Simple one-argument wrapper for Rust callers who do not need a custom base URL.
+///
+/// This preserves backward compatibility: existing code calling `openai_provider(api_key)`
+/// can continue to compile after the `base_url` parameter was added.
 #[uniffi::export]
-pub fn openai_provider(api_key: String) -> Result<Arc<Provider>, GooseError> {
-    let api_client = ApiClient::new_with_tls(
-        "https://api.openai.com".to_string(),
-        AuthMethod::BearerToken(api_key),
+pub fn openai_provider_simple(api_key: String) -> Result<Arc<Provider>, GooseError> {
+    openai_provider(api_key, None)
+}
+
+/// Create an OpenAI provider with an optional custom base URL.
+///
+/// Pass `None` for the default `https://api.openai.com`, or a custom host
+/// (e.g. DeepSeek, Kimi) to enable reasoning-context preservation.
+#[uniffi::export(default(base_url = None))]
+pub fn openai_provider(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<Arc<Provider>, GooseError> {
+    let raw = base_url.unwrap_or_else(|| "https://api.openai.com".to_string());
+
+    let (host, query_params, has_v1) = parse_openai_base_url(&raw)?;
+    let is_openai = is_direct_openai_host(&raw);
+
+    let auth = if api_key.is_empty() {
+        AuthMethod::NoAuth
+    } else {
+        AuthMethod::BearerToken(api_key)
+    };
+
+    let mut api_client = ApiClient::with_timeout_and_tls(
+        host,
+        auth,
+        Duration::from_secs(goose_providers::api_client::DEFAULT_PROVIDER_TIMEOUT_SECS),
         None,
     )?;
-    let provider = OpenAiProviderBuilder::new(api_client).build();
+
+    if !query_params.is_empty() {
+        api_client = api_client.with_query(query_params);
+    }
+
+    // Keep custom hosts on Chat Completions: a server may include `/v1`
+    // without supporting Responses.
+    let base_path = if is_openai {
+        if has_v1 {
+            OPEN_AI_DEFAULT_BASE_PATH.to_string()
+        } else {
+            OPEN_AI_VERSIONLESS_BASE_PATH.to_string()
+        }
+    } else {
+        OPEN_AI_VERSIONLESS_BASE_PATH.to_string()
+    };
+
+    let provider = OpenAiProviderBuilder::new(api_client)
+        .base_path(base_path)
+        .native_openai(is_openai)
+        .preserve_thinking_context(!is_openai)
+        .build();
+
     Ok(Provider::new(Box::new(provider)))
+}
+
+/// Determine whether a host is the real OpenAI API (not a custom compatible server).
+///
+/// Extracts the hostname from URLs like `https://api.openai.com` or plain hostnames.
+/// Compares exactly to avoid false positives (e.g. `api.openai.com.local:8000`).
+fn is_direct_openai_host(raw_url: &str) -> bool {
+    // Strip scheme if present to get just the hostname portion.
+    let hostname = raw_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(raw_url)
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+
+    let h = hostname.to_ascii_lowercase();
+    h == "api.openai.com" || h.ends_with(".api.openai.com")
 }
 
 #[uniffi::export]
@@ -1302,6 +1652,8 @@ fn message_to_chunks(message: Message) -> Vec<StreamChunk> {
                             kind: GooseStreamErrorKind::Generic,
                             message: error.to_string(),
                             retry_after_ms: None,
+                            // Local parse failure: no provider response, so no request id.
+                            request_id: None,
                         },
                     }),
                 }
@@ -1338,6 +1690,18 @@ mod tests {
             timeout_ms: None,
             request_headers: None,
         }
+    }
+
+    #[test]
+    fn rate_limit_stream_error_keeps_request_id() {
+        let provider_error = goose_providers::errors::ProviderError::RateLimitExceeded {
+            details: "slow down (provider request id: req_rate)".to_string(),
+            retry_delay: Some(std::time::Duration::from_millis(1500)),
+        };
+        let error = GooseStreamError::from(&GooseError::from(provider_error));
+        assert!(matches!(error.kind, GooseStreamErrorKind::RateLimited));
+        assert_eq!(error.retry_after_ms, Some(1500));
+        assert_eq!(error.request_id.as_deref(), Some("req_rate"));
     }
 
     #[test]
@@ -1384,7 +1748,7 @@ mod tests {
             ..base_model_config()
         };
 
-        assert!(config.to_goose_model_config().is_err());
+        assert!(config.to_goose_model_config("openai").is_err());
     }
 
     #[test]
@@ -1836,5 +2200,117 @@ mod tests {
         }])
         .unwrap();
         assert_eq!(replayed[0].content, message.content);
+    }
+
+    #[test]
+    fn openai_provider_parses_default_url_to_v1_base_path() {
+        let (host, query_params, has_v1) = parse_openai_base_url("https://api.openai.com").unwrap();
+        assert_eq!(host, "https://api.openai.com");
+        assert!(query_params.is_empty());
+        assert!(has_v1); // bare api.openai.com treated as v1-equivalent
+    }
+
+    #[test]
+    fn openai_provider_parses_v1_url_correctly() {
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("https://api.openai.com/v1").unwrap();
+        assert_eq!(host, "https://api.openai.com");
+        assert!(query_params.is_empty());
+        assert!(has_v1);
+    }
+
+    #[test]
+    fn openai_provider_parses_custom_host_with_v1() {
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("http://localhost:8080/v1").unwrap();
+        assert_eq!(host, "http://localhost:8080");
+        assert!(query_params.is_empty());
+        assert!(has_v1);
+    }
+
+    #[test]
+    fn openai_provider_parses_url_with_non_v1_path() {
+        // A custom path (not ending in /v1) is treated as versionless.
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("http://localhost:8080/api").unwrap();
+        assert_eq!(host, "http://localhost:8080/api");
+        assert!(query_params.is_empty());
+        assert!(!has_v1);
+    }
+
+    #[test]
+    fn openai_provider_parses_url_with_query_params() {
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("https://gateway.example.com/v1?api-version=2024-02-01").unwrap();
+        assert_eq!(host, "https://gateway.example.com");
+        assert_eq!(
+            query_params,
+            vec![("api-version".to_string(), "2024-02-01".to_string())]
+        );
+        assert!(has_v1);
+    }
+
+    #[test]
+    fn openai_provider_parses_custom_prefix_path() {
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("https://gateway.example.com/openai/v1").unwrap();
+        assert_eq!(host, "https://gateway.example.com/openai");
+        assert!(query_params.is_empty());
+        assert!(has_v1);
+    }
+
+    #[test]
+    fn openai_provider_parses_non_standard_path_preserves_it() {
+        let (host, query_params, has_v1) =
+            parse_openai_base_url("https://example.com/custom/api").unwrap();
+        assert_eq!(host, "https://example.com/custom/api");
+        assert!(query_params.is_empty());
+        assert!(!has_v1);
+    }
+
+    #[test]
+    fn test_is_direct_openai_host() {
+        // Real OpenAI — should return true.
+        assert!(is_direct_openai_host("https://api.openai.com"));
+        assert!(is_direct_openai_host("api.openai.com"));
+        assert!(is_direct_openai_host(
+            "https://api.openai.com/v1/chat/completions"
+        ));
+
+        // Azure or other OpenAI-subdomains — should return true.
+        assert!(is_direct_openai_host("https://my-openai.api.openai.com"));
+        assert!(is_direct_openai_host(
+            "https://proxy.api.openai.com/custom-path"
+        ));
+
+        // Custom hosts — should return false.
+        assert!(!is_direct_openai_host("https://deepseek.lite.site"));
+        assert!(!is_direct_openai_host("http://localhost:8080/v1"));
+        assert!(!is_direct_openai_host("https://api.openai.com.local:8000")); // false positive trap
+        assert!(!is_direct_openai_host("https://example.com/openai-proxy"));
+    }
+
+    #[test]
+    fn openai_provider_simple_produces_default_base_path() {
+        let provider = openai_provider_simple("sk-test-key".to_string())
+            .expect("should create a default OpenAI provider");
+        // Verify no panic — the provider was constructed successfully
+        // with the default base path (i.e. api.openai.com → preserve_thinking_context false).
+        assert!(provider.name().contains("openai"));
+    }
+
+    #[test]
+    fn openai_provider_custom_host_with_v1_uses_versionless_base_path() {
+        // Regression test for Codex #8 — custom /v1 URL + responses-model (o3, gpt-5) must NOT
+        // route to /v1/responses because the custom server likely doesn't support that endpoint.
+        let provider = openai_provider(
+            "sk-test-key".to_string(),
+            Some("http://localhost:8080/v1".to_string()),
+        )
+        .expect("should create a provider for custom /v1 host");
+
+        // Verify the provider was constructed (no panic means base_path = "chat/completions",
+        // which keeps should_use_responses_api → false, even for o3 models).
+        assert!(provider.name().contains("openai"));
     }
 }

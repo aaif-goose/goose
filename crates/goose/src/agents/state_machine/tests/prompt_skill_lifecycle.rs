@@ -6,8 +6,6 @@ use super::pipeline::{
     test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MessageKind::User,
 };
 #[cfg(feature = "code-mode")]
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
-#[cfg(feature = "code-mode")]
 use crate::config::permission::PermissionLevel;
 #[cfg(feature = "code-mode")]
 use crate::config::GooseMode;
@@ -37,6 +35,15 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
     let calls = api.calls();
     assert!(!calls[calls.len() - 2].system_contains("NESTED_PROJECT_INSTRUCTION"));
     assert!(calls[calls.len() - 1].system_contains("NESTED_PROJECT_INSTRUCTION"));
+
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    pipeline.run(["/compact"]).await?;
+    api.on("after compaction").reply("continuing");
+    pipeline.run(["after compaction"]).await?;
+    let after_compaction = api.calls().pop().unwrap();
+    assert!(after_compaction.system_contains("ROOT_PROJECT_INSTRUCTION"));
+    assert!(!after_compaction.system_contains("NESTED_PROJECT_INSTRUCTION"));
 
     let skill_dir = pipeline.working_dir().join(".agents/skills/review");
     std::fs::create_dir_all(&skill_dir)?;
@@ -89,9 +96,50 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn builtin_commands_win_over_skills_and_recipes() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    for name in ["compact", "clear"] {
+        let skill_dir = pipeline.working_dir().join(".agents/skills").join(name);
+        std::fs::create_dir_all(&skill_dir)?;
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Shadowing skill\n---\nSHADOWING_SKILL_BODY"),
+        )?;
+    }
+    let recipe_path = pipeline.working_dir().join("status.yaml");
+    std::fs::write(
+        &recipe_path,
+        "version: 1.0.0\ntitle: Status\ndescription: Shadowing recipe\nprompt: SHADOWING_RECIPE_PROMPT\n",
+    )?;
+    let mappings = json!([{ "command": "status", "recipe_path": recipe_path }]).to_string();
+    let _guard = env_lock::lock_env([("SLASH_COMMANDS", Some(mappings.as_str()))]);
+
+    let status = pipeline.run(["/status"]).await?;
+    status.assert_message(-1, Agent, "Session status");
+    assert_eq!(api.call_count(), 0);
+
+    api.on("first turn").reply("first reply");
+    pipeline.run(["first turn"]).await?;
+    api.on("Please summarize the conversation history")
+        .reply("summary");
+    let compacted = pipeline.run(["/compact"]).await?;
+    compacted.assert_emitted("Compaction complete");
+
+    let cleared = pipeline.run(["/clear"]).await?;
+    cleared.assert_message(-1, Agent, "Conversation cleared");
+
+    assert!(api.calls().iter().all(|call| {
+        !call.input_contains("SHADOWING_SKILL_BODY")
+            && !call.input_contains("SHADOWING_RECIPE_PROMPT")
+    }));
+
+    Ok(())
+}
+
 #[cfg(feature = "code-mode")]
 #[tokio::test]
-async fn unadvertised_load_skill_is_neither_approved_nor_loaded() -> Result<()> {
+async fn unadvertised_load_skill_is_not_confirmed_or_loaded() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let skill_dir = pipeline.working_dir().join(".agents/skills/private");
     std::fs::create_dir_all(&skill_dir)?;
@@ -119,24 +167,6 @@ async fn unadvertised_load_skill_is_neither_approved_nor_loaded() -> Result<()> 
             .iter()
             .any(|content| matches!(content, MessageContent::ActionRequired(_)))
     }));
-    let request = result
-        .conversation()
-        .messages()
-        .iter()
-        .flat_map(|message| &message.content)
-        .filter_map(MessageContent::as_tool_request)
-        .find(|request| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| tool_call.name == "load_skill")
-        })
-        .expect("load_skill request");
-    assert!(request
-        .tool_meta
-        .as_ref()
-        .and_then(|metadata| metadata.get(TOOL_EXECUTABLE_KEY))
-        .is_none());
 
     Ok(())
 }

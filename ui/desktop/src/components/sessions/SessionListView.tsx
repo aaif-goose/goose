@@ -10,8 +10,6 @@ import {
   Trash2,
   Download,
   Upload,
-  Share2,
-  LoaderCircle,
   ExternalLink,
   Copy,
   ChevronDown,
@@ -31,14 +29,6 @@ import { Skeleton } from '../ui/skeleton';
 import { toast } from 'react-toastify';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -51,7 +41,6 @@ import {
   acpImportSession,
   acpListSessions,
   acpRenameSession,
-  acpShareSessionNostr,
   type SessionListItem,
 } from '../../acp/sessions';
 import type { SessionExportFormat } from '@aaif/goose-acp-client';
@@ -79,17 +68,6 @@ const i18n = defineMessages({
   },
   chatHistory: { id: 'sessions.chatHistory', defaultMessage: 'Chat history' },
   importSession: { id: 'sessions.import', defaultMessage: 'Import Session' },
-  importNostrSession: { id: 'sessions.importNostr', defaultMessage: 'Import Link' },
-  importNostrTitle: { id: 'sessions.importNostr.title', defaultMessage: 'Import Nostr Session' },
-  importNostrDesc: {
-    id: 'sessions.importNostr.description',
-    defaultMessage: 'Paste a Goose Nostr share link to fetch, decrypt, and import the session.',
-  },
-  importNostrPlaceholder: {
-    id: 'sessions.importNostr.placeholder',
-    defaultMessage: 'goose://sessions/nostr?nevent=...&key=...',
-  },
-  importing: { id: 'sessions.importing', defaultMessage: 'Importing...' },
   chatHistoryDesc: {
     id: 'sessions.chatHistoryDesc',
     defaultMessage: 'View and search your past conversations with Goose. {shortcut} to search.',
@@ -137,14 +115,6 @@ const i18n = defineMessages({
     id: 'sessions.toast.exportFailed',
     defaultMessage: 'Failed to export session: {error}',
   },
-  shareNostrSuccess: {
-    id: 'sessions.toast.shareNostr',
-    defaultMessage: 'Encrypted Nostr share link created',
-  },
-  shareNostrFailed: {
-    id: 'sessions.toast.shareNostrFailed',
-    defaultMessage: 'Failed to create Nostr share link: {error}',
-  },
   copied: { id: 'sessions.toast.copied', defaultMessage: 'Copied to clipboard' },
   openInNewWindow: { id: 'sessions.action.openNewWindow', defaultMessage: 'Open in new window' },
   editSessionName: { id: 'sessions.action.editName', defaultMessage: 'Edit session name' },
@@ -153,19 +123,6 @@ const i18n = defineMessages({
   exportSession: { id: 'sessions.action.export', defaultMessage: 'Export session' },
   exportAsJson: { id: 'sessions.action.exportJson', defaultMessage: 'JSON' },
   exportAsMarkdown: { id: 'sessions.action.exportMarkdown', defaultMessage: 'Markdown' },
-  shareNostrSession: {
-    id: 'sessions.action.shareNostr',
-    defaultMessage: 'Share encrypted Nostr link',
-  },
-  shareNostrTitle: {
-    id: 'sessions.shareNostr.title',
-    defaultMessage: 'Encrypted Nostr Share Link',
-  },
-  shareNostrDesc: {
-    id: 'sessions.shareNostr.description',
-    defaultMessage:
-      'Anyone with this link can fetch and decrypt the session. Treat it like a secret.',
-  },
   close: { id: 'sessions.close', defaultMessage: 'Close' },
   scheduledJobs: {
     id: 'sessions.scheduledJobs',
@@ -189,11 +146,10 @@ interface EditSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (sessionId: string, newDescription: string) => Promise<void>;
-  disabled?: boolean;
 }
 
 const EditSessionModal = React.memo<EditSessionModalProps>(
-  ({ session, isOpen, onClose, onSave, disabled = false }) => {
+  ({ session, isOpen, onClose, onSave }) => {
     const intl = useIntl();
     const [description, setDescription] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
@@ -208,7 +164,7 @@ const EditSessionModal = React.memo<EditSessionModalProps>(
     }, [session, isOpen]);
 
     const handleSave = useCallback(async () => {
-      if (!session || disabled) return;
+      if (!session) return;
 
       const trimmedDescription = description.trim();
       if (trimmedDescription === session.name) {
@@ -232,7 +188,7 @@ const EditSessionModal = React.memo<EditSessionModalProps>(
       } finally {
         setIsUpdating(false);
       }
-    }, [session, description, onSave, onClose, disabled, intl]);
+    }, [session, description, onSave, onClose, intl]);
 
     const handleCancel = useCallback(() => {
       if (!isUpdating) {
@@ -276,18 +232,18 @@ const EditSessionModal = React.memo<EditSessionModalProps>(
                 autoFocus
                 maxLength={200}
                 onKeyDown={handleKeyDown}
-                disabled={isUpdating || disabled}
+                disabled={isUpdating}
               />
             </div>
           </div>
 
           <div className="flex justify-end space-x-3 mt-6">
-            <Button onClick={handleCancel} variant="ghost" disabled={isUpdating || disabled}>
+            <Button onClick={handleCancel} variant="ghost" disabled={isUpdating}>
               {intl.formatMessage(i18n.cancel)}
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!description.trim() || isUpdating || disabled}
+              disabled={!description.trim() || isUpdating}
               variant="default"
             >
               {isUpdating ? intl.formatMessage(i18n.saving) : intl.formatMessage(i18n.save)}
@@ -342,14 +298,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
   // Delete confirmation modal state
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<SessionListItem | null>(null);
-
-  const [showImportLinkModal, setShowImportLinkModal] = useState(false);
-  const [nostrImportLink, setNostrImportLink] = useState('');
-  const [isImportingNostr, setIsImportingNostr] = useState(false);
-  const [shareLink, setShareLink] = useState('');
-  const [showShareLinkModal, setShowShareLinkModal] = useState(false);
-  const [sharingSessionId, setSharingSessionId] = useState<string | null>(null);
-  const [nostrEnabled, setNostrEnabled] = useState(true);
 
   const [includeAcpSessions, setIncludeAcpSessions] = useState(
     () => localStorage.getItem(INCLUDE_ACP_SESSIONS_KEY) === 'true'
@@ -491,14 +439,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
       loadGenerationRef.current += 1;
     };
   }, [loadSessions, debouncedSearchTerm, includeAcpSessions]);
-
-  // Hide Nostr sharing when explicitly disabled via env var (restricted/enterprise bundles)
-  useEffect(() => {
-    const config = window.electron.getConfig();
-    if (config.GOOSE_DISABLE_NOSTR_SHARING === true) {
-      setNostrEnabled(false);
-    }
-  }, []);
 
   // Timing logic to prevent flicker between skeleton and content on initial load
   useEffect(() => {
@@ -665,26 +605,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     [intl]
   );
 
-  const handleShareSessionNostr = useCallback(
-    async (session: SessionListItem, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setSharingSessionId(session.id);
-      try {
-        const response = await acpShareSessionNostr(session.id, []);
-        setShareLink(response.deeplink);
-        setShowShareLinkModal(true);
-        toast.success(intl.formatMessage(i18n.shareNostrSuccess));
-      } catch (error) {
-        toast.error(
-          intl.formatMessage(i18n.shareNostrFailed, { error: errorMessage(error, 'Unknown error') })
-        );
-      } finally {
-        setSharingSessionId(null);
-      }
-    },
-    [intl]
-  );
-
   const handleImportClick = useCallback(async () => {
     const native = window.electron?.selectImportSessionFile;
     if (typeof native === 'function') {
@@ -695,7 +615,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
           toast.error(intl.formatMessage(i18n.importFailed, { error: result.error }));
           return;
         }
-        await acpImportSession(result.contents, 'json');
+        await acpImportSession(result.contents);
         toast.success(intl.formatMessage(i18n.importSuccess));
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
         await loadSessions();
@@ -710,36 +630,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     fileInputRef.current?.click();
   }, [intl, loadSessions]);
 
-  const handleImportNostrLink = useCallback(async () => {
-    const deeplink = nostrImportLink.trim();
-    if (!deeplink) return;
-
-    setIsImportingNostr(true);
-    try {
-      await acpImportSession(deeplink, 'nostr');
-      setNostrImportLink('');
-      setShowImportLinkModal(false);
-      toast.success(intl.formatMessage(i18n.importSuccess));
-      window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
-      await loadSessions();
-    } catch (error) {
-      toast.error(
-        intl.formatMessage(i18n.importFailed, { error: errorMessage(error, 'Unknown error') })
-      );
-    } finally {
-      setIsImportingNostr(false);
-    }
-  }, [intl, loadSessions, nostrImportLink]);
-
-  const handleCopyShareLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(shareLink);
-      toast.success(intl.formatMessage(i18n.copied));
-    } catch (error) {
-      toast.error(`Failed to copy: ${errorMessage(error, 'Unknown error')}`);
-    }
-  }, [intl, shareLink]);
-
   const handleImportSession = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -747,7 +637,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
 
       try {
         const json = await file.text();
-        await acpImportSession(json, 'json');
+        await acpImportSession(json);
 
         toast.success(intl.formatMessage(i18n.importSuccess));
         window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
@@ -778,18 +668,14 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
     onDuplicateClick,
     onDeleteClick,
     onExportClick,
-    onShareClick,
     onOpenInNewWindow,
-    isSharing,
   }: {
     session: SessionListItem;
     onEditClick: (session: SessionListItem) => void;
     onDuplicateClick: (session: SessionListItem) => void;
     onDeleteClick: (session: SessionListItem) => void;
     onExportClick: (session: SessionListItem, format: SessionExportFormat) => void;
-    onShareClick: (session: SessionListItem, e: React.MouseEvent) => void;
     onOpenInNewWindow: (session: SessionListItem, e: React.MouseEvent) => void;
-    isSharing: boolean;
   }) {
     const handleEditClick = useCallback(
       (e: React.MouseEvent) => {
@@ -824,13 +710,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
         onExportClick(session, format);
       },
       [onExportClick, session]
-    );
-
-    const handleShareClick = useCallback(
-      (e: React.MouseEvent) => {
-        onShareClick(session, e);
-      },
-      [onShareClick, session]
     );
 
     const handleOpenInNewWindowClick = useCallback(
@@ -925,26 +804,12 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {nostrEnabled && (
-            <button
-              onClick={handleShareClick}
-              disabled={isSharing}
-              className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer disabled:cursor-wait disabled:opacity-60"
-              title={intl.formatMessage(i18n.shareNostrSession)}
-            >
-              {isSharing ? (
-                <LoaderCircle className="w-3 h-3 text-text-secondary animate-spin" />
-              ) : (
-                <Share2 className="w-3 h-3 text-text-secondary hover:text-text-primary" />
-              )}
-            </button>
-          )}
         </div>
       </Card>
     );
   });
 
-  const SessionSkeleton = React.memo(({ variant = 0 }: { variant?: number }) => {
+  const SessionSkeleton = React.memo(({ variant }: { variant: number }) => {
     const titleWidths = ['w-3/4', 'w-2/3', 'w-4/5', 'w-1/2'];
     const pathWidths = ['w-32', 'w-28', 'w-36', 'w-24'];
     const tokenWidths = ['w-12', 'w-10', 'w-14', 'w-8'];
@@ -1032,9 +897,7 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
                   onDuplicateClick={handleDuplicateSession}
                   onDeleteClick={handleDeleteSession}
                   onExportClick={handleExportSession}
-                  onShareClick={handleShareSessionNostr}
                   onOpenInNewWindow={handleOpenInNewWindow}
-                  isSharing={sharingSessionId === session.id}
                 />
               ))}
             </div>
@@ -1045,54 +908,54 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
           visibleGroupsCount >= activeDateGroups.length &&
           memoizedScheduledDateGroups.length > 0 && (
             <div className="space-y-4">
-            <button
-              onClick={() => setIsScheduledExpanded((v) => !v)}
-              aria-expanded={isScheduledExpanded}
-              aria-controls="scheduled-job-sessions"
-              className="sticky top-0 z-10 w-full flex items-center justify-between bg-background-primary/95 backdrop-blur-sm py-2 px-1 rounded-lg hover:bg-background-secondary transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-text-secondary" />
-                <h2 className="text-text-secondary font-medium">
-                  {intl.formatMessage(i18n.scheduledJobs)}
-                </h2>
-                <span className="text-xs text-text-tertiary bg-background-secondary px-2 py-0.5 rounded-full">
-                  {intl.formatMessage(i18n.scheduledJobsCount, { count: scheduledSessions.length })}
-                </span>
-              </div>
-              {isScheduledExpanded ? (
-                <ChevronDown className="w-4 h-4 text-text-secondary" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-text-secondary" />
-              )}
-            </button>
+              <button
+                onClick={() => setIsScheduledExpanded((v) => !v)}
+                aria-expanded={isScheduledExpanded}
+                aria-controls="scheduled-job-sessions"
+                className="sticky top-0 z-10 w-full flex items-center justify-between bg-background-primary/95 backdrop-blur-sm py-2 px-1 rounded-lg hover:bg-background-secondary transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-text-secondary" />
+                  <h2 className="text-text-secondary font-medium">
+                    {intl.formatMessage(i18n.scheduledJobs)}
+                  </h2>
+                  <span className="text-xs text-text-tertiary bg-background-secondary px-2 py-0.5 rounded-full">
+                    {intl.formatMessage(i18n.scheduledJobsCount, {
+                      count: scheduledSessions.length,
+                    })}
+                  </span>
+                </div>
+                {isScheduledExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-text-secondary" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-text-secondary" />
+                )}
+              </button>
 
-            {isScheduledExpanded && (
-              <div id="scheduled-job-sessions" className="space-y-8">
-                {memoizedScheduledDateGroups.map((group) => (
-                  <div key={group.label} className="space-y-4">
-                    <div className="sticky top-0 z-10 bg-background-primary/95 backdrop-blur-sm">
-                      <h2 className="text-text-secondary">{group.label}</h2>
+              {isScheduledExpanded && (
+                <div id="scheduled-job-sessions" className="space-y-8">
+                  {memoizedScheduledDateGroups.map((group) => (
+                    <div key={group.label} className="space-y-4">
+                      <div className="sticky top-0 z-10 bg-background-primary/95 backdrop-blur-sm">
+                        <h2 className="text-text-secondary">{group.label}</h2>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                        {group.sessions.map((session) => (
+                          <SessionItem
+                            key={session.id}
+                            session={session}
+                            onEditClick={handleEditSession}
+                            onDuplicateClick={handleDuplicateSession}
+                            onDeleteClick={handleDeleteSession}
+                            onExportClick={handleExportSession}
+                            onOpenInNewWindow={handleOpenInNewWindow}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-                      {group.sessions.map((session) => (
-                        <SessionItem
-                          key={session.id}
-                          session={session}
-                          onEditClick={handleEditSession}
-                          onDuplicateClick={handleDuplicateSession}
-                          onDeleteClick={handleDeleteSession}
-                          onExportClick={handleExportSession}
-                          onShareClick={handleShareSessionNostr}
-                          onOpenInNewWindow={handleOpenInNewWindow}
-                          isSharing={sharingSessionId === session.id}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1117,17 +980,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
               <div className="flex justify-between items-center mb-1">
                 <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
                 <div className="flex items-center gap-2">
-                  {nostrEnabled && (
-                    <Button
-                      onClick={() => setShowImportLinkModal(true)}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <Share2 className="w-4 h-4" />
-                      {intl.formatMessage(i18n.importNostrSession)}
-                    </Button>
-                  )}
                   <Button
                     onClick={handleImportClick}
                     variant="outline"
@@ -1239,83 +1091,6 @@ const SessionListView: React.FC<SessionListViewProps> = React.memo(({ onSelectSe
         onClose={handleModalClose}
         onSave={handleModalSave}
       />
-
-      <Dialog open={showImportLinkModal} onOpenChange={setShowImportLinkModal}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Share2 className="w-5 h-5" />
-              {intl.formatMessage(i18n.importNostrTitle)}
-            </DialogTitle>
-            <DialogDescription>{intl.formatMessage(i18n.importNostrDesc)}</DialogDescription>
-          </DialogHeader>
-
-          <textarea
-            value={nostrImportLink}
-            onChange={(event) => setNostrImportLink(event.target.value)}
-            placeholder={intl.formatMessage(i18n.importNostrPlaceholder)}
-            className="min-h-28 w-full resize-none rounded-lg border border-border-primary bg-background-primary p-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-border-active"
-            disabled={isImportingNostr}
-          />
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowImportLinkModal(false)}
-              disabled={isImportingNostr}
-            >
-              {intl.formatMessage(i18n.cancel)}
-            </Button>
-            <Button
-              onClick={handleImportNostrLink}
-              disabled={isImportingNostr || !nostrImportLink.trim()}
-            >
-              {isImportingNostr ? (
-                <>
-                  <LoaderCircle className="w-4 h-4 animate-spin" />
-                  {intl.formatMessage(i18n.importing)}
-                </>
-              ) : (
-                intl.formatMessage(i18n.importSession)
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showShareLinkModal} onOpenChange={setShowShareLinkModal}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Share2 className="w-5 h-5" />
-              {intl.formatMessage(i18n.shareNostrTitle)}
-            </DialogTitle>
-            <DialogDescription>{intl.formatMessage(i18n.shareNostrDesc)}</DialogDescription>
-          </DialogHeader>
-
-          <div className="relative rounded-lg border border-border-primary bg-background-secondary p-3 pr-12">
-            <code className="block max-h-36 overflow-y-auto break-all text-sm text-text-primary">
-              {shareLink}
-            </code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-2 top-2"
-              onClick={handleCopyShareLink}
-              disabled={!shareLink}
-            >
-              <Copy className="h-4 w-4" />
-              <span className="sr-only">{intl.formatMessage(i18n.copied)}</span>
-            </Button>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowShareLinkModal(false)}>
-              {intl.formatMessage(i18n.close)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ConfirmationModal
         isOpen={showDeleteConfirmation}
