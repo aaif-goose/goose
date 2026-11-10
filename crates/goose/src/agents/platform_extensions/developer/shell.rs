@@ -300,7 +300,6 @@ impl ShellTool {
             Err(error) => return Self::error_result(&error, None),
         };
 
-        // Derive stdout, stderr, and interleaved display from the single tagged-line buffer
         let capture_dropped_bytes = execution.capture_dropped_bytes();
         let (raw_stdout, raw_stderr, interleaved) = split_records(
             &execution.records,
@@ -365,9 +364,6 @@ impl ShellTool {
         };
         let mut rendered = render_result.text;
 
-        // Collect truncation notices from stdout, stderr, and interleaved output.
-        // These are delivered as a separate Content block so the model sees them as
-        // instructions rather than part of the command's data output.
         let truncation_notices: Vec<String> = [
             &stdout_result.truncation,
             &stderr_result.truncation,
@@ -903,6 +899,9 @@ fn bounded_segments<R: AsyncRead + Unpin + Send + 'static>(
                 Ok(n) => {
                     for &byte in &buf[..n] {
                         if byte == b'\n' {
+                            if pending.last() == Some(&b'\r') {
+                                pending.pop();
+                            }
                             yield Ok(RawSegment { bytes: std::mem::take(&mut pending), ends_line: true });
                         } else {
                             pending.push(byte);
@@ -1379,6 +1378,35 @@ mod tests {
                 ("cd".to_string(), false),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn crlf_split_across_segment_boundary_is_not_left_as_trailing_cr() {
+        let mut input = vec![b'x'; MAX_SEGMENT_BYTES - 1];
+        input.extend_from_slice(b"\r\nafter\n");
+        let segments: Vec<_> = bounded_segments(std::io::Cursor::new(input), MAX_SEGMENT_BYTES)
+            .map(|s| s.unwrap())
+            .collect()
+            .await;
+        let texts: Vec<(String, bool)> = segments
+            .iter()
+            .map(|s| (String::from_utf8(s.bytes.clone()).unwrap(), s.ends_line))
+            .collect();
+
+        for (text, _) in &texts {
+            assert!(!text.ends_with('\r'), "trailing CR in segment: {text:?}");
+        }
+        let all_text: String = texts
+            .iter()
+            .map(|(t, ends_line)| {
+                if *ends_line {
+                    format!("{t}\n")
+                } else {
+                    t.clone()
+                }
+            })
+            .collect();
+        assert!(all_text.contains("after\n"));
     }
 
     #[test]
