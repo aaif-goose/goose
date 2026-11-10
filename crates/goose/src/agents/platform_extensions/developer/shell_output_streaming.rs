@@ -63,13 +63,17 @@ impl ShellOutputBatcher {
         }
     }
 
-    pub(super) fn push_line(&mut self, is_stderr: bool, line: &str) -> bool {
+    pub(super) fn push_segment(&mut self, is_stderr: bool, text: &str, ends_line: bool) -> bool {
         if self.truncated {
             return false;
         }
 
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        let output_bytes = line.len() + 1;
+        let text = if ends_line {
+            text.strip_suffix('\r').unwrap_or(text)
+        } else {
+            text
+        };
+        let output_bytes = text.len() + usize::from(ends_line);
         if self.live_output_bytes + output_bytes > SHELL_LIVE_OUTPUT_LIMIT_BYTES {
             self.flush();
             self.truncated = true;
@@ -90,13 +94,17 @@ impl ShellOutputBatcher {
             .last_mut()
             .filter(|chunk| chunk.stream == stream)
         {
-            chunk.output.push_str(line);
-            chunk.output.push('\n');
+            chunk.output.push_str(text);
+            if ends_line {
+                chunk.output.push('\n');
+            }
         } else {
-            self.chunks.push(ShellOutputNotificationChunk {
-                stream,
-                output: format!("{line}\n"),
-            });
+            let mut output = text.to_string();
+            if ends_line {
+                output.push('\n');
+            }
+            self.chunks
+                .push(ShellOutputNotificationChunk { stream, output });
         }
 
         if !self.emitted_first_line || self.buffered_bytes >= SHELL_LIVE_OUTPUT_BATCH_BYTES {
@@ -160,7 +168,7 @@ mod tests {
         let (sender, mut receiver) = mpsc::channel(4);
         let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
 
-        assert!(batcher.push_line(false, "hello\r"));
+        assert!(batcher.push_segment(false, "hello\r", true));
 
         let params = receive_params(&mut receiver);
         assert_eq!(params.sequence, 1);
@@ -174,12 +182,12 @@ mod tests {
     fn flush_coalesces_consecutive_lines_and_advances_sequence() {
         let (sender, mut receiver) = mpsc::channel(4);
         let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
-        batcher.push_line(false, "first");
+        batcher.push_segment(false, "first", true);
         receive_params(&mut receiver);
 
-        assert!(!batcher.push_line(false, "second"));
-        assert!(!batcher.push_line(false, "third"));
-        assert!(!batcher.push_line(true, "warning"));
+        assert!(!batcher.push_segment(false, "second", true));
+        assert!(!batcher.push_segment(false, "third", true));
+        assert!(!batcher.push_segment(true, "warning", true));
         assert!(batcher.flush());
 
         let params = receive_params(&mut receiver);
@@ -198,16 +206,16 @@ mod tests {
         let mut batcher = ShellOutputBatcher::new(ToolCallNotificationEmitter::new(sender));
         let output_at_limit = "x".repeat(SHELL_LIVE_OUTPUT_LIMIT_BYTES - 1);
 
-        assert!(batcher.push_line(false, &output_at_limit));
+        assert!(batcher.push_segment(false, &output_at_limit, true));
         receive_params(&mut receiver);
-        assert!(batcher.push_line(false, "omitted"));
+        assert!(batcher.push_segment(false, "omitted", true));
 
         let params = receive_params(&mut receiver);
         assert_eq!(params.sequence, 2);
         assert!(params.truncated);
         assert!(params.chunks.is_empty());
 
-        assert!(!batcher.push_line(false, "also omitted"));
+        assert!(!batcher.push_segment(false, "also omitted", true));
         assert!(!batcher.flush());
         assert!(receiver.try_recv().is_err());
     }
