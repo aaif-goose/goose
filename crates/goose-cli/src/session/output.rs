@@ -573,9 +573,14 @@ fn render_thinking_streaming(
             println!("\n{}", style("Thinking:").dim().italic());
             *header_shown = true;
         }
-        print!("{}", style(text).dim());
-        let _ = std::io::stdout().flush();
+        let mut stdout = std::io::stdout();
+        let _ = write_thinking_chunk(&mut stdout, text);
+        let _ = stdout.flush();
     }
+}
+
+fn write_thinking_chunk<W: Write>(out: &mut W, text: &str) -> std::io::Result<()> {
+    write!(out, "{}", style(sanitize_terminal_output(text)).dim())
 }
 
 fn render_tool_request(req: &ToolRequest, theme: Theme, debug: bool) {
@@ -1790,6 +1795,22 @@ mod tests {
             sanitize_terminal_output("# Title\n\n- item\n"),
             "# Title\n\n- item\n"
         );
+    }
+
+    #[test]
+    fn streaming_thinking_chunk_strips_osc52_and_private_modes() {
+        let mut out = Vec::new();
+        write_thinking_chunk(
+            &mut out,
+            "think \x1b]52;c;VEVTVA==\x07 more \x1b[?1049h\x1b[?25l done\n",
+        )
+        .unwrap();
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("]52;"), "{rendered:?}");
+        assert!(!rendered.contains("[?1049h"), "{rendered:?}");
+        assert!(!rendered.contains("[?25l"), "{rendered:?}");
+        assert!(rendered.contains("think "));
+        assert!(rendered.contains(" done\n"));
     }
 
     #[test]
