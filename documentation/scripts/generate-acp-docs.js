@@ -8,7 +8,7 @@ const OUTPUT_FILE = path.join(
   ROOT,
   'documentation',
   'docs',
-  'gdk',
+  'oi-kit',
   'acp',
   'reference.md'
 );

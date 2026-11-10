@@ -5,7 +5,7 @@ import type { Props } from "@theme/BlogPostPage";
 import { GdkBlogContext } from "@site/src/components/GdkNavigation";
 
 export default function BlogPostPage(props: Props): ReactNode {
-  const gdkTag = useBaseUrl("/blog/tags/gdk");
+  const gdkTag = useBaseUrl("/blog/tags/oi-kit");
   const isGdk = props.content.metadata.tags.some(
     (tag) => tag.permalink === gdkTag,
   );

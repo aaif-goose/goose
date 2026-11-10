@@ -30,7 +30,7 @@ the user's `PATH`. The same repository also has distribution hooks for managed
 settings and private resources without putting those resources in the public tree.
 
 This is the application-level route: use the complete goose binary, rather than
-assemble a runtime from individual GDK crates.
+assemble a runtime from individual oi-kit crates.
 
 ## How it works
 
@@ -59,7 +59,7 @@ It also passes `GOOSE_SERVER__SECRET_KEY` and manages the child process lifetime
 The [ACP commands](https://github.com/block/berd/blob/main/src-tauri/src/commands/acp.rs)
 and [SDK](https://github.com/block/berd/tree/main/sdk) show the connection from the
 application side. For the underlying transport, see
-[using goose over ACP](/docs/gdk/acp).
+[using goose over ACP](/docs/oi-kit/acp).
 
 ## Run it yourself
 

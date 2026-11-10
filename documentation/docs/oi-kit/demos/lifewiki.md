@@ -10,7 +10,7 @@ Tell lifewiki something about your life and an agent turns it into a personal
 wiki. Add a later note that contradicts an earlier one, and the agent updates
 the relevant pages while keeping the original notes and their history.
 
-Built with **GDK**: `goose-agent`, `goose-providers`, and optional local inference.
+Built with **oi-kit**: `goose-agent`, `goose-providers`, and optional local inference.
 
 [Source](https://github.com/jamadeo/lifewiki) ·
 [Watch the recording](https://github.com/jamadeo/lifewiki/blob/main/demo/demo.mov)
@@ -35,7 +35,7 @@ application, not just an instruction asking the model to behave.
 3. Commit the wiki changes and processing cursor together.
 4. Answer questions from the resulting wiki with a separate, read-only role.
 
-The application supplies its own operations to GDK's state machine. In
+The application supplies its own operations to oi-kit's state machine. In
 [`src/agent.rs`](https://github.com/jamadeo/lifewiki/blob/main/src/agent.rs),
 the steps put limits, completion, and tool execution ahead of inference:
 
@@ -51,7 +51,7 @@ let steps: Vec<Step<'_, Session, ConversationEffect>> = vec![
 ];
 ```
 
-GDK supplies the execution machinery; lifewiki owns the tools, roles, storage,
+oi-kit supplies the execution machinery; lifewiki owns the tools, roles, storage,
 and rules for finishing a run. See also the
 [tool implementation](https://github.com/jamadeo/lifewiki/blob/main/src/tools.rs)
 and [design notes](https://github.com/jamadeo/lifewiki/blob/main/docs/design.md).

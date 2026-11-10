@@ -23,7 +23,7 @@ test("publishes the linked APIs and preserves versioned snapshots", (t) => {
   );
   const links = [
     ...llms.matchAll(
-      /\]\((\/docs\/gdk\/sdk\/api-reference-(?:python|kotlin)\.md)(?:#([^)]*))?\)/g,
+      /\]\((\/docs\/oi-kit\/sdk\/api-reference-(?:python|kotlin)\.md)(?:#([^)]*))?\)/g,
     ),
   ];
   assert.ok(
@@ -130,20 +130,32 @@ test("renders binding signatures, defaults, error payloads, and field documentat
   assert.ok(kotlin.includes("### `GooseException.RateLimited`"));
 });
 
-test("Markdown exports turn static download links into fetchable paths", async (t) => {
+test("Markdown exports keep canonical and legacy API URLs readable without JavaScript", async (t) => {
   const siteDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "gdk-markdown-export-"),
   );
   t.after(() => fs.rmSync(siteDir, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(siteDir, "docs"));
+  fs.mkdirSync(path.join(siteDir, "docs/oi-kit"), { recursive: true });
   fs.writeFileSync(
-    path.join(siteDir, "docs/reference.mdx"),
-    '---\ntitle: Reference\n---\nimport Api from "./api";\n\n[Python](pathname:///docs/gdk/sdk/api-reference-python.md)\n',
+    path.join(siteDir, "docs/oi-kit/reference.mdx"),
+    '---\ntitle: Reference\n---\nimport Api from "./api";\n\n[Python](pathname:///docs/oi-kit/sdk/api-reference-python.md)\n',
   );
+  generateReferences(data, path.join(siteDir, "build/docs/oi-kit/sdk"));
   const plugin = require("../plugins/markdown-export.cjs")({ siteDir });
   await plugin.postBuild({ outDir: path.join(siteDir, "build") });
   assert.equal(
-    fs.readFileSync(path.join(siteDir, "build/docs/reference.md"), "utf8"),
-    "[Python](/docs/gdk/sdk/api-reference-python.md)",
+    fs.readFileSync(path.join(siteDir, "build/docs/oi-kit/reference.md"), "utf8"),
+    "[Python](/docs/oi-kit/sdk/api-reference-python.md)",
   );
+  const files = fs.readdirSync(path.join(siteDir, "build/docs/oi-kit"), {
+    recursive: true,
+  });
+  for (const file of files) {
+    if (!file.endsWith(".md")) continue;
+    assert.equal(
+      fs.readFileSync(path.join(siteDir, "build/docs/gdk", file), "utf8"),
+      fs.readFileSync(path.join(siteDir, "build/docs/oi-kit", file), "utf8"),
+      `Legacy Markdown differs: ${file}`,
+    );
+  }
 });

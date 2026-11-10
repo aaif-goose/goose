@@ -8,7 +8,7 @@ import ProvidersDiagram from "@site/static/img/gdk/providers.svg";
 
 # Providers
 
-A provider connects your application to a model backend. It translates GDK
+A provider connects your application to a model backend. It translates oi-kit
 messages and tool definitions into the backend's request format, and translates
 the response back into shared message and usage types. The rest of your agent
 does not need to speak each service's wire protocol.
@@ -16,7 +16,7 @@ does not need to speak each service's wire protocol.
 The provider and model are separate choices. A provider knows how to reach a
 service; `ModelConfig` selects a model and request settings. You can use a
 provider directly for a completion, or pass it to an `InferenceRunner` in a
-[state machine](/docs/gdk/concepts/state-machine).
+[state machine](/docs/oi-kit/concepts/state-machine).
 
 <ProvidersDiagram />
 
@@ -65,9 +65,9 @@ let (reply, usage) = provider
 
 This is a model call, not an agent run. Supplying tool schemas lets a model
 request tools; it does not execute them. Tool execution belongs to your
-application or an [operation](/docs/gdk/concepts/operations).
+application or an [operation](/docs/oi-kit/concepts/operations).
 
-## Implementations that ship with GDK
+## Implementations that ship with oi-kit {#implementations-that-ship-with-gdk}
 
 `goose-providers` includes implementations for OpenAI, Anthropic, Google Gemini,
 Azure AI Foundry, Databricks, Snowflake, OpenRouter, Ollama, and OpenAI-compatible
@@ -82,7 +82,7 @@ to the text-completion `Provider` trait.
 
 The [provider reference](https://docs.rs/goose-providers/latest/goose_providers/)
 lists the available modules and feature flags. Credentials and HTTP authentication
-are covered in [Authentication](/docs/gdk/concepts/authentication).
+are covered in [Authentication](/docs/oi-kit/concepts/authentication).
 
 ## Declarative providers
 
@@ -148,9 +148,9 @@ You can call `stream` or `complete`, or use it for agent inference as above.
 Local placement does not guarantee a model fits in memory or supports reliable
 tool calling. The local-inference crate handles chat templates, parsing, model
 residency, and eviction; your application still chooses the model and when to
-use it. [lifewiki](/docs/gdk/demos/lifewiki) is an example with an offline path.
+use it. [lifewiki](/docs/oi-kit/demos/lifewiki) is an example with an offline path.
 
-See the [local-inference reference](/docs/gdk/reference#goose-local-inference)
+See the [local-inference reference](/docs/oi-kit/reference#goose-local-inference)
 for the engine, features, and model-management APIs.
 
 ## Implementing your own provider
@@ -161,7 +161,7 @@ and `stream`; `complete` and several discovery methods have defaults. Depend on
 `goose-provider-types` if you only need that contract, and use the request and
 formatting helpers from `goose-providers` where they fit.
 
-Normalize the backend's output into GDK messages, assemble tool calls before
+Normalize the backend's output into oi-kit messages, assemble tool calls before
 emitting them, preserve usage information, and map failures into `ProviderError`.
 Report capabilities and context limits honestly rather than assuming that a
 successful text response implies support for tools, images, or reasoning.
