@@ -15,6 +15,8 @@ use crate::tool_inspection::{
     get_security_finding_id_from_results, InspectionAction, ToolInspectionManager,
 };
 
+const SECURITY_FINDING_ID_KEY: &str = "goose.security_finding_id";
+
 pub struct GooseToolApproval<'a> {
     tool_inspection_manager: &'a ToolInspectionManager,
 }
@@ -89,18 +91,19 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
                         InspectionAction::RequireApproval(Some(message)) => Some(message.clone()),
                         _ => None,
                     });
+                let mut tool_meta = serde_json::Map::new();
                 if let Some(finding_id) =
                     get_security_finding_id_from_results(&request.id, &inspection_results)
                 {
                     tracing::info!(
-                        monotonic_counter.goose.prompt_injection_user_decisions = 1,
                         security.event_type = "approval_request",
                         security.finding_id = %finding_id,
                         tool.request_id = %request.id,
                         "security finding: approval requested"
                     );
+                    tool_meta.insert(SECURITY_FINDING_ID_KEY.to_string(), finding_id.into());
                 }
-                ApprovalDecision::Ask { prompt }
+                ApprovalDecision::Ask { prompt, tool_meta }
             })
             .collect())
     }
@@ -111,6 +114,26 @@ impl ToolApproval<Session> for GooseToolApproval<'_> {
         request: &ToolRequest,
         permission: &Permission,
     ) -> Result<()> {
+        if let Some(finding_id) = request
+            .tool_meta
+            .as_ref()
+            .and_then(|meta| meta.get(SECURITY_FINDING_ID_KEY))
+            .and_then(serde_json::Value::as_str)
+        {
+            let action = match permission {
+                Permission::AllowOnce | Permission::AlwaysAllow => "ALLOW",
+                _ => "BLOCK",
+            };
+            tracing::info!(
+                monotonic_counter.goose.prompt_injection_user_decisions = 1,
+                security.event_type = "user_decision",
+                security.action = action,
+                security.finding_id = %finding_id,
+                tool.request_id = %request.id,
+                user.decision = ?permission,
+                "security finding: user decision"
+            );
+        }
         let level = match permission {
             Permission::AlwaysAllow => PermissionLevel::AlwaysAllow,
             Permission::AlwaysDeny => PermissionLevel::NeverAllow,
