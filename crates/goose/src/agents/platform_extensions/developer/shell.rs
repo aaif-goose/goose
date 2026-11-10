@@ -478,7 +478,7 @@ impl ExecutionOutput {
 
 #[derive(Default)]
 struct CaptureBuffer {
-    half_budget: usize,
+    limit: usize,
     head: Vec<CaptureRecord>,
     tail: VecDeque<CaptureRecord>,
     head_cost: usize,
@@ -490,19 +490,19 @@ struct CaptureBuffer {
 impl CaptureBuffer {
     fn new(capture_limit: usize) -> Self {
         Self {
-            half_budget: capture_limit / 2,
+            limit: capture_limit,
             ..Self::default()
         }
     }
 
     fn push(&mut self, record: CaptureRecord) {
         let cost = record.budget_cost();
-        if self.tail.is_empty() && self.head_cost + cost <= self.half_budget {
+        if self.tail.is_empty() && self.head_cost + cost <= self.limit / 2 {
             self.head_cost += cost;
             self.head.push(record);
             return;
         }
-        while self.tail_cost + cost > self.half_budget {
+        while self.head_cost + self.tail_cost + cost > self.limit {
             let Some(evicted) = self.tail.pop_front() else {
                 break;
             };
@@ -1423,6 +1423,18 @@ mod tests {
             100 - retained
         );
         assert!(buffer.dropped_stdout_bytes > 0 && buffer.dropped_stderr_bytes > 0);
+    }
+
+    #[test]
+    fn buffer_spends_unused_head_budget_on_the_tail() {
+        let mut buffer = CaptureBuffer::new(MIN_CAPTURE_LIMIT_BYTES);
+        for _ in 0..5 {
+            buffer.push(record(false, &"x".repeat(159), false));
+        }
+        buffer.push(record(false, "xxxxx", false));
+
+        assert_eq!(buffer.dropped_stdout_bytes, 0);
+        assert_eq!(buffer.head.len() + buffer.tail.len(), 6);
     }
 
     #[test]
