@@ -1067,7 +1067,6 @@ where
         }
 
         let mut accumulated_tool_calls: std::collections::HashMap<i32, StreamingToolCall> = std::collections::HashMap::new();
-        // Content after a closed tool block waits with it, preserving block order.
         let mut held = Vec::new();
         let mut final_usage: Option<ProviderUsage> = None;
         let mut message_id: Option<String> = None;
@@ -1087,7 +1086,6 @@ where
 
             let data_part = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")).unwrap_or(&line);
 
-            // An empty data field is a valid SSE keepalive
             if data_part.trim().is_empty() {
                 continue;
             }
@@ -1256,7 +1254,6 @@ where
                                 vec![MessageContentBlock::tool_request_with_provider_index(id, Ok(tool_call), None, index)],
                             );
                             message.id = message_id.clone();
-                            // A closed tool block is not executable until the response succeeds.
                             held.push(message);
                         }
                     }

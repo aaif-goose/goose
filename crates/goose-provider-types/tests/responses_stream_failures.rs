@@ -56,13 +56,11 @@ async fn gateway_overload_without_type_is_not_ignored() {
 
 #[tokio::test]
 async fn official_flat_error_preserves_details() {
-    // OpenAI's ResponseErrorEvent has top-level code/message, not a nested error.
     assert_failure(vec![json!({"type":"error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later.","param":null,"sequence_number":2})], "server_is_overloaded").await;
 }
 
 #[tokio::test]
 async fn official_failed_response_preserves_details() {
-    // OpenAI's ResponseFailedEvent nests the error inside response.
     let mut failed = response("failed");
     failed["error"] = overload();
     assert_failure(
