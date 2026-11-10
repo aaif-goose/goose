@@ -15,6 +15,7 @@ use crate::session::session_naming::{
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
+use futures::TryStreamExt;
 use goose_providers::conversation::token_usage::Usage;
 use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
@@ -2276,15 +2277,14 @@ impl SessionStorage {
         session_id: &str,
         response_ids: &HashSet<String>,
     ) -> Result<()> {
-        let rows = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
-            "SELECT id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
-        )
-        .bind(session_id)
-        .fetch_all(&mut *tx)
-        .await?;
         let mut messages = Vec::new();
         let mut row_ids = Vec::new();
-        for (id, role, content_json, metadata_json) in rows {
+        let mut rows = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
+            "SELECT id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY created_timestamp DESC, id DESC",
+        )
+        .bind(session_id)
+        .fetch(&mut *tx);
+        while let Some((id, role, content_json, metadata_json)) = rows.try_next().await? {
             let role = match role.as_str() {
                 "assistant" => Role::Assistant,
                 "user" => Role::User,
@@ -2294,9 +2294,15 @@ impl SessionStorage {
             message.metadata = metadata_json
                 .and_then(|json| serde_json::from_str(&json).ok())
                 .unwrap_or_default();
+            if super::durable_tool_metadata::starts_turn(&message) {
+                break;
+            }
             messages.push(message);
             row_ids.push(id);
         }
+        drop(rows);
+        messages.reverse();
+        row_ids.reverse();
         let answered = super::durable_tool_metadata::answered_tool_ids(&messages);
         for ((message, answered), row_id) in messages.iter().zip(&answered).zip(row_ids) {
             if !answered.iter().any(|id| response_ids.contains(id)) {
@@ -6104,6 +6110,48 @@ mod tests {
         let mut expected = second.metadata;
         super::super::durable_tool_metadata::clear_advertised_tools(&mut expected);
         assert_eq!(messages[1].metadata, expected);
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_cleanup_stops_before_archived_payloads() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let archived = advertised_response("old").with_id("archived-output");
+        sm.add_message(&session_id, &archived).await.unwrap();
+        let pool = sm.storage.pool().await.unwrap();
+        // A decoding sentinel makes reading archived payloads fail deterministically.
+        sqlx::query(
+            "UPDATE messages SET content_json = 'archived payload must not be decoded' WHERE session_id = ?",
+        )
+        .bind(&session_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let mut kickoff = Message::user().with_text("current turn");
+        kickoff.created = 100;
+        sm.add_message(&session_id, &kickoff).await.unwrap();
+        sm.add_message(&session_id, &advertised_request("current", "pending"))
+            .await
+            .unwrap();
+        sm.add_message(&session_id, &advertised_response("current"))
+            .await
+            .unwrap();
+
+        let metadata_json: String = sqlx::query_scalar(
+            "SELECT metadata_json FROM messages WHERE session_id = ? AND role = 'assistant'",
+        )
+        .bind(&session_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let metadata: MessageMetadata = serde_json::from_str(&metadata_json).unwrap();
+        assert!(metadata.operation_note("llm", "advertised_tools").is_none());
+        assert_eq!(
+            metadata.operation_note("test", "marker"),
+            Some(&serde_json::json!("pending"))
+        );
     }
 
     #[test_case("replace"; "replace")]

@@ -24,16 +24,19 @@ pub(super) fn clear_advertised_tools(metadata: &mut MessageMetadata) {
     }
 }
 
+pub(super) fn starts_turn(message: &Message) -> bool {
+    message.role == rmcp::model::Role::User
+        && !message.is_tool_response()
+        && !message.metadata.steer
+        && !message.is_turn_context()
+        && (message.is_user_visible() || message.is_agent_visible())
+}
+
 pub(super) fn answered_tool_ids(messages: &[Message]) -> Vec<HashSet<String>> {
     let mut answered = vec![HashSet::new(); messages.len()];
     let mut pending = HashMap::new();
     for (index, message) in messages.iter().enumerate() {
-        if message.role == rmcp::model::Role::User
-            && !message.is_tool_response()
-            && !message.metadata.steer
-            && !message.is_turn_context()
-            && (message.is_user_visible() || message.is_agent_visible())
-        {
+        if starts_turn(message) {
             pending.clear();
         }
         for id in message.get_tool_request_ids() {
