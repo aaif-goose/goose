@@ -15,6 +15,7 @@ use goose::acp::server::AcpProviderFactory;
 use goose::providers::base::{MessageStream, Provider};
 use goose_providers::errors::ProviderError;
 use goose_providers::model::ModelConfig;
+use goose_test_support::mcp::ContextReport;
 use goose_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use serial_test::serial;
 use std::path::PathBuf;
@@ -1244,6 +1245,49 @@ fn test_app_tool_call_dispatched_in_auto_mode() {
             .filter_map(|block| block.get("text").and_then(|text| text.as_str()))
             .collect::<String>();
         assert!(text.contains(FAKE_CODE));
+    });
+}
+
+/// `toolCallMeta` on an MCP server passed in `session/new` reaches that
+/// server's tool calls, including calls an app makes directly.
+#[test]
+#[serial]
+fn test_session_mcp_server_tool_call_meta_reaches_app_tool_call() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let mcp = McpFixture::new().await;
+        let a2ui = serde_json::json!({
+            "clientCapabilities": { "v0.9": { "supportedCatalogIds": ["https://example.com/catalog.json"] } }
+        });
+        let server_meta = serde_json::json!({ "toolCallMeta": { "a2ui": a2ui } });
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let config = TestConnectionConfig {
+            mcp_servers: vec![McpServer::Http(
+                McpServerHttp::new("mcp-fixture", &mcp.url)
+                    .meta(server_meta.as_object().unwrap().clone()),
+            )],
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        conn.set_mode(&session_id, "auto").await.unwrap();
+
+        let response = send_custom(
+            conn.cx(),
+            "_goose/unstable/tools/call",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "mcp-fixture",
+                "name": "mcp-fixture__inspect_context"
+            }),
+        )
+        .await
+        .expect("app tool call should dispatch in auto mode");
+        let report: ContextReport =
+            serde_json::from_str(response["content"][0]["text"].as_str().unwrap()).unwrap();
+
+        assert_eq!(report.request_meta.get("a2ui"), Some(&a2ui));
     });
 }
 

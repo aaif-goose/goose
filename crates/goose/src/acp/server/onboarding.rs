@@ -522,6 +522,7 @@ fn apply_claude_desktop_candidate(
                 cwd: None,
                 bundled: None,
                 available_tools: Vec::new(),
+                tool_call_meta: Default::default(),
             },
         };
         target_extensions.insert(key, serde_yaml::to_value(entry)?);

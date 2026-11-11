@@ -161,6 +161,7 @@ fn server_to_extension_config(
         cwd: server.cwd.map(|cwd| expand_plugin_root(&cwd, &root)),
         bundled: Some(false),
         available_tools: Vec::new(),
+        tool_call_meta: Default::default(),
     }
 }
 

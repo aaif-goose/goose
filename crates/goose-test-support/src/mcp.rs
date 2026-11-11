@@ -46,6 +46,7 @@ pub struct ContextReport {
     pub request_working_dir: Option<String>,
     pub request_traceparent: Option<String>,
     pub request_tracestate: Option<String>,
+    pub request_meta: serde_json::Map<String, serde_json::Value>,
     pub roots: Vec<String>,
 }
 
@@ -163,6 +164,7 @@ impl McpFixtureServer {
             request_working_dir: meta_value(WORKING_DIR_META_KEY),
             request_traceparent: meta_value(TRACEPARENT_META_KEY),
             request_tracestate: meta_value(TRACESTATE_META_KEY),
+            request_meta: meta.clone(),
             roots,
         };
         Ok(CallToolResult::success(vec![ContentBlock::text(

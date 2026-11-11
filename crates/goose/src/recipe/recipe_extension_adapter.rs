@@ -1,4 +1,5 @@
 use crate::agents::extension::{Envs, ExtensionConfig};
+use rmcp::model::JsonObject;
 use serde::de::Deserializer;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -24,6 +25,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        tool_call_meta: JsonObject,
     },
     #[serde(rename = "builtin")]
     Builtin {
@@ -74,6 +77,8 @@ enum RecipeExtensionConfigInternal {
         bundled: Option<bool>,
         #[serde(default)]
         available_tools: Vec<String>,
+        #[serde(default)]
+        tool_call_meta: JsonObject,
     },
 }
 
@@ -107,7 +112,8 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 timeout,
                 cwd,
                 bundled,
-                available_tools
+                available_tools,
+                tool_call_meta
             },
             Builtin {
                 display_name,
@@ -131,7 +137,8 @@ impl From<RecipeExtensionConfigInternal> for ExtensionConfig {
                 client_secret_key,
                 scopes,
                 bundled,
-                available_tools
+                available_tools,
+                tool_call_meta
             }
         )
     }
@@ -157,6 +164,37 @@ mod tests {
     struct Wrapper {
         #[serde(deserialize_with = "deserialize_recipe_extensions")]
         extensions: Option<Vec<ExtensionConfig>>,
+    }
+
+    #[test]
+    fn mcp_extensions_keep_tool_call_meta() {
+        let wrapper: Wrapper = serde_json::from_value(json!({
+            "extensions": [
+                {
+                    "type": "stdio",
+                    "name": "orders",
+                    "cmd": "node",
+                    "args": ["orders.mjs"],
+                    "timeout": 60,
+                    "tool_call_meta": { "a2ui": { "version": "v0.9" } },
+                },
+                {
+                    "type": "streamable_http",
+                    "name": "remote",
+                    "uri": "https://example.com/mcp",
+                    "timeout": 60,
+                    "tool_call_meta": { "a2ui": { "version": "v0.9" } },
+                },
+            ]
+        }))
+        .expect("failed to deserialize extensions");
+
+        for extension in wrapper.extensions.expect("expected extensions") {
+            assert_eq!(
+                serde_json::Value::Object(extension.tool_call_meta().unwrap().clone()),
+                json!({ "a2ui": { "version": "v0.9" } })
+            );
+        }
     }
 
     #[test]
