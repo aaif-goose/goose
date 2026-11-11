@@ -9,6 +9,7 @@
     "http-referer": "https://goose-docs.ai",
     "x-title": "goose"
   },
+  "catalog_provider_id": "vercel",
   "dynamic_models": true,
   "models": [
     {
