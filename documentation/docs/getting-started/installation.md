@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+softwareApplication: true
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';

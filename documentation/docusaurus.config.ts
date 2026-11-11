@@ -64,6 +64,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: "./sidebars.ts",
+          showLastUpdateTime: true,
           async sidebarItemsGenerator(args) {
             const generatedItems = await args.defaultSidebarItemsGenerator(args);
             const items =
@@ -446,10 +447,47 @@ const config: Config = {
         enabled: true,
       },
     ],
+    "@stackql/docusaurus-plugin-structured-data",
   ],
   themeConfig: {
     // Replace with your project's social card
     image: "img/home-banner.png",
+    structuredData: {
+      nativeStructuredData: "reuse",
+      // A Markdown page with no dates: it would get an Article dated at build time.
+      excludedRoutes: ["/grants"],
+      techArticleRoutePrefixes: [],
+      techArticleDocsInstances: ["default"],
+      speakable: false,
+      featuredImageDimensions: { width: 1200, height: 630 },
+      organization: {
+        name: "Agentic AI Foundation",
+        alternateName: "AAIF",
+        url: "https://aaif.io/",
+      },
+      website: {
+        name: "goose",
+        potentialAction: [],
+      },
+      webpage: {
+        inLanguage: "en",
+      },
+      softwareSourceCode: {
+        name: "goose",
+        codeRepository: "https://github.com/aaif-goose/goose",
+        programmingLanguage: "Rust",
+        license: "https://www.apache.org/licenses/LICENSE-2.0",
+        runtimePlatform: "macOS, Linux, Windows",
+      },
+      softwareApplication: {
+        name: "goose",
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "macOS, Linux, Windows",
+        license: "https://www.apache.org/licenses/LICENSE-2.0",
+        downloadUrl: "https://goose-docs.ai/docs/getting-started/installation",
+        isAccessibleForFree: true,
+      },
+    },
     colorMode: {
       respectPrefersColorScheme: true,
     },
