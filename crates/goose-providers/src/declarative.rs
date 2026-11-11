@@ -436,6 +436,14 @@ mod tests {
     }
 
     #[test]
+    fn vercel_ai_gateway_json_enables_dynamic_model_discovery() {
+        let config = deserialize_provider_config(crate::vercel_ai_gateway::JSON)
+            .expect("vercel_ai_gateway.json should parse");
+
+        assert_eq!(config.dynamic_models, Some(true));
+    }
+
+    #[test]
     fn setup_metadata_rejects_unknown_fields() {
         let mut definition: serde_json::Value = serde_json::from_str(crate::groq::JSON).unwrap();
         definition["setup"]["description"] = json!("This field would be ignored");
