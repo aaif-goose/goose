@@ -1,5 +1,5 @@
 use super::*;
-use crate::agents::extension::{hold_client_secret, Envs};
+use crate::agents::extension::Envs;
 use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
 use std::collections::HashSet;
@@ -66,7 +66,7 @@ impl AcpConnection {
         &self,
         req: AddConfigExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        let conversion = goose_extension_to_config(req.extension, false)?;
+        let conversion = goose_extension_to_config(req.extension)?;
 
         Config::global()
             .set_secret_values(&conversion.secret_updates)
@@ -244,41 +244,8 @@ struct ConfigExtensionConversion {
     secret_updates: Vec<(String, serde_json::Value)>,
 }
 
-/// Turns a client's HTTP headers into config headers. A header whose `_meta`
-/// marks it `secret` is held in this process's memory and referenced as a
-/// `${KEY}` placeholder, so the session record does not store its value.
-pub(super) fn client_http_headers(
-    headers: Vec<HttpHeader>,
-    env_keys: &mut Vec<String>,
-) -> HashMap<String, String> {
-    headers
-        .into_iter()
-        .map(|header| {
-            if !is_secret_header(&header) {
-                return (header.name, header.value);
-            }
-            let key = hold_client_secret(header.value);
-            let placeholder = format!("${{{key}}}");
-            if !env_keys.contains(&key) {
-                env_keys.push(key);
-            }
-            (header.name, placeholder)
-        })
-        .collect()
-}
-
-fn is_secret_header(header: &HttpHeader) -> bool {
-    header
-        .meta
-        .as_ref()
-        .and_then(|meta| meta.get("secret"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-}
-
 fn goose_extension_to_config(
     extension: GooseExtension,
-    hold_secret_headers: bool,
 ) -> Result<ConfigExtensionConversion, agent_client_protocol::Error> {
     let mut secret_updates = Vec::new();
     let config = match extension {
@@ -352,32 +319,25 @@ fn goose_extension_to_config(
                     available_tools: available_tools.unwrap_or_default(),
                 }
             }
-            McpServer::Http(http) => {
-                let mut env_keys = env_keys;
-                let headers = if hold_secret_headers {
-                    client_http_headers(http.headers, &mut env_keys)
-                } else {
-                    http.headers
-                        .into_iter()
-                        .map(|header| (header.name, header.value))
-                        .collect()
-                };
-                ExtensionConfig::StreamableHttp {
-                    name: http.name,
-                    description: description.unwrap_or_default(),
-                    uri: http.url,
-                    envs: Envs::default(),
-                    env_keys,
-                    headers,
-                    timeout,
-                    socket,
-                    client_id,
-                    client_secret_key,
-                    scopes,
-                    bundled,
-                    available_tools: available_tools.unwrap_or_default(),
-                }
-            }
+            McpServer::Http(http) => ExtensionConfig::StreamableHttp {
+                name: http.name,
+                description: description.unwrap_or_default(),
+                uri: http.url,
+                envs: Envs::default(),
+                env_keys,
+                headers: http
+                    .headers
+                    .into_iter()
+                    .map(|header| (header.name, header.value))
+                    .collect(),
+                timeout,
+                socket,
+                client_id,
+                client_secret_key,
+                scopes,
+                bundled,
+                available_tools: available_tools.unwrap_or_default(),
+            },
             McpServer::Sse(_) => {
                 return Err(agent_client_protocol::Error::invalid_params()
                     .data("SSE is unsupported, migrate to streamable_http"));
@@ -398,7 +358,7 @@ fn goose_extension_to_config(
 fn goose_extension_to_config_without_secrets(
     extension: GooseExtension,
 ) -> Result<ExtensionConfig, agent_client_protocol::Error> {
-    let conversion = goose_extension_to_config(extension, true)?;
+    let conversion = goose_extension_to_config(extension)?;
     if !conversion.secret_updates.is_empty() {
         return Err(agent_client_protocol::Error::invalid_params().data(
             "extension env values must be passed via envKeys referencing stored secrets, not inline env",
@@ -450,7 +410,7 @@ fn available_tools_to_wire(available_tools: &[String]) -> Option<Vec<String>> {
 mod tests {
     use super::*;
     use crate::agents::extension::Envs;
-    use agent_client_protocol::schema::v1::McpServerSse;
+    use agent_client_protocol::schema::v1::{McpServer, McpServerSse};
     use std::collections::HashMap;
 
     fn builtin_config(name: &str) -> ExtensionConfig {
@@ -689,8 +649,7 @@ mod tests {
             available_tools: Some(vec!["run".to_string()]),
         };
 
-        let conversion =
-            goose_extension_to_config(extension, false).expect("conversion should succeed");
+        let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
         let ExtensionConfig::Stdio {
@@ -749,8 +708,7 @@ mod tests {
             available_tools: None,
         };
 
-        let conversion =
-            goose_extension_to_config(extension, false).expect("conversion should succeed");
+        let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
 
         assert_eq!(
             conversion.secret_updates,
@@ -777,59 +735,6 @@ mod tests {
         assert_eq!(env_keys, vec!["SECRET_TOKEN", "OTHER_TOKEN"]);
     }
 
-    fn secret_header_extension(token: &str) -> GooseExtension {
-        let secret = serde_json::Map::from_iter([("secret".into(), serde_json::Value::Bool(true))]);
-        GooseExtension::Mcp {
-            server: Box::new(McpServer::Http(
-                McpServerHttp::new("test-http", "https://example.com/mcp")
-                    .headers(vec![HttpHeader::new("Authorization", token).meta(secret)]),
-            )),
-            env_keys: vec!["API_TOKEN".to_string()],
-            description: None,
-            timeout: None,
-            socket: None,
-            client_id: None,
-            client_secret_key: None,
-            scopes: vec![],
-            bundled: None,
-            available_tools: None,
-        }
-    }
-
-    #[test]
-    fn session_extension_secret_header_is_a_placeholder() {
-        let token = "Bearer session-extension-secret";
-        let configs = goose_extensions_to_configs(vec![secret_header_extension(token)])
-            .expect("conversion should succeed");
-
-        let [ExtensionConfig::StreamableHttp {
-            headers, env_keys, ..
-        }] = configs.as_slice()
-        else {
-            panic!("expected one streamable http config");
-        };
-        let key = &env_keys[1];
-        assert_eq!(env_keys[0], "API_TOKEN");
-        assert_eq!(headers["Authorization"], format!("${{{key}}}"));
-        assert!(!serde_json::to_string(&configs).unwrap().contains(token));
-    }
-
-    #[test]
-    fn config_extension_secret_header_is_kept_inline() {
-        let token = "Bearer config-extension-header";
-        let conversion = goose_extension_to_config(secret_header_extension(token), false)
-            .expect("conversion should succeed");
-
-        let ExtensionConfig::StreamableHttp {
-            headers, env_keys, ..
-        } = conversion.config
-        else {
-            panic!("expected streamable http config");
-        };
-        assert_eq!(headers["Authorization"], token);
-        assert_eq!(env_keys, vec!["API_TOKEN"]);
-    }
-
     #[test]
     fn goose_mcp_streamable_http_extension_converts_to_config_without_literal_envs() {
         let extension = GooseExtension::Mcp {
@@ -849,8 +754,7 @@ mod tests {
             available_tools: Some(vec!["fetch".to_string()]),
         };
 
-        let conversion =
-            goose_extension_to_config(extension, false).expect("conversion should succeed");
+        let conversion = goose_extension_to_config(extension).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
         let ExtensionConfig::StreamableHttp {
@@ -907,8 +811,7 @@ mod tests {
             available_tools: Some(vec!["shell".to_string()]),
         };
 
-        let conversion =
-            goose_extension_to_config(builtin, false).expect("conversion should succeed");
+        let conversion = goose_extension_to_config(builtin).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
         let ExtensionConfig::Builtin {
@@ -941,8 +844,7 @@ mod tests {
             available_tools: Some(vec!["write_todos".to_string()]),
         };
 
-        let conversion =
-            goose_extension_to_config(platform, false).expect("conversion should succeed");
+        let conversion = goose_extension_to_config(platform).expect("conversion should succeed");
         assert!(conversion.secret_updates.is_empty());
 
         let ExtensionConfig::Platform {
@@ -981,6 +883,6 @@ mod tests {
             available_tools: None,
         };
 
-        assert!(goose_extension_to_config(extension, false).is_err());
+        assert!(goose_extension_to_config(extension).is_err());
     }
 }

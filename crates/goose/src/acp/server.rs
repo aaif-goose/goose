@@ -8,7 +8,7 @@ pub(super) use crate::acp::response_builder::{
 };
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
-use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
+use crate::agents::extension::{hold_client_secret, Envs, PLATFORM_EXTENSIONS};
 use crate::agents::extension_manager::ClientContext;
 use crate::agents::mcp_client::GooseMcpHostInfo;
 use crate::agents::state_machine::{
@@ -46,15 +46,16 @@ use agent_client_protocol::schema::v1::{
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, ContentBlock, Cost, CurrentModeUpdate, DeleteSessionRequest,
     DeleteSessionResponse, EmbeddedResourceResource, ForkSessionRequest, ForkSessionResponse,
-    ImageContent, Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
-    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer,
-    Meta, NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
-    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionDeleteCapabilities, SessionId, SessionInfoUpdate,
-    SessionListCapabilities, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallId, ToolCallUpdate, Usage, UsageUpdate,
+    HttpHeader, ImageContent, Implementation, InitializeRequest, InitializeResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    McpCapabilities, McpServer, Meta, NewSessionRequest, NewSessionResponse, PermissionOption,
+    PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
+    SessionCloseCapabilities, SessionConfigOption, SessionDeleteCapabilities, SessionId,
+    SessionInfoUpdate, SessionListCapabilities, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, TextContent, ToolCallId, ToolCallUpdate, Usage,
+    UsageUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::util::MatchDispatchFrom;
@@ -531,7 +532,7 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
             let mut env_keys = vec![];
-            let headers = extensions::client_http_headers(http.headers, &mut env_keys);
+            let headers = client_http_headers(http.headers, &mut env_keys);
             Ok(ExtensionConfig::StreamableHttp {
                 name: http.name,
                 description: String::new(),
@@ -551,6 +552,28 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
         McpServer::Sse(_) => Err("SSE is unsupported, migrate to streamable_http".to_string()),
         _ => Err("Unknown MCP server type".to_string()),
     }
+}
+
+/// Turns the HTTP headers an ACP client sent with an MCP server into config
+/// headers. ACP requires a client to send its MCP servers again when it loads a
+/// session, so goose need not remember any header: each value is held in this
+/// process's memory and referenced as a `${KEY}` placeholder, and the session
+/// record never stores it.
+fn client_http_headers(
+    headers: Vec<HttpHeader>,
+    env_keys: &mut Vec<String>,
+) -> HashMap<String, String> {
+    headers
+        .into_iter()
+        .map(|header| {
+            let key = hold_client_secret(header.value);
+            let placeholder = format!("${{{key}}}");
+            if !env_keys.contains(&key) {
+                env_keys.push(key);
+            }
+            (header.name, placeholder)
+        })
+        .collect()
 }
 
 fn mcp_server_configs(
@@ -2684,9 +2707,9 @@ mod tests {
     use super::*;
     use crate::session::session_manager::SessionType;
     use agent_client_protocol::schema::v1::{
-        EmbeddedResource, EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse,
-        McpServerStdio, PermissionOptionId, ResourceLink, Role as AcpRole,
-        SelectedPermissionOutcome, TextResourceContents,
+        EmbeddedResource, EnvVariable, McpServer, McpServerHttp, McpServerSse, McpServerStdio,
+        PermissionOptionId, ResourceLink, Role as AcpRole, SelectedPermissionOutcome,
+        TextResourceContents,
     };
     use goose_providers::conversation::token_usage::Usage as TokenUsage;
     use goose_providers::thinking::{
@@ -3149,7 +3172,6 @@ extensions:
     #[test_case(
         McpServer::Http(
             McpServerHttp::new("github", "https://api.githubcopilot.com/mcp/")
-                .headers(vec![HttpHeader::new("Authorization", "Bearer ghp_xxxxxxxxxxxx")])
         ),
         Ok(ExtensionConfig::StreamableHttp {
             name: "github".into(),
@@ -3157,10 +3179,7 @@ extensions:
             uri: "https://api.githubcopilot.com/mcp/".into(),
             envs: Envs::default(),
             env_keys: vec![],
-            headers: HashMap::from([(
-                "Authorization".into(),
-                "Bearer ghp_xxxxxxxxxxxx".into()
-            )]),
+            headers: HashMap::new(),
             timeout: None,
             socket: None,
             client_id: None,
@@ -3182,13 +3201,12 @@ extensions:
     }
 
     #[tokio::test]
-    async fn secret_mcp_header_is_held_in_memory() {
+    async fn mcp_headers_are_held_in_memory() {
         let token = "Bearer unit-test-secret-header";
-        let secret = serde_json::Map::from_iter([("secret".into(), serde_json::Value::Bool(true))]);
         let server = McpServer::Http(
             McpServerHttp::new("github", "https://example.com/mcp").headers(vec![
-                HttpHeader::new("Authorization", token).meta(secret),
-                HttpHeader::new("X-Trace", "visible"),
+                HttpHeader::new("Authorization", token),
+                HttpHeader::new("X-Trace", "trace-value"),
             ]),
         );
 
@@ -3200,12 +3218,13 @@ extensions:
         else {
             panic!("expected streamable http config");
         };
-        let [key] = env_keys.as_slice() else {
-            panic!("expected one env key, got {env_keys:?}");
-        };
-        assert_eq!(headers["Authorization"], format!("${{{key}}}"));
-        assert_eq!(headers["X-Trace"], "visible");
-        assert!(!serde_json::to_string(&config).unwrap().contains(token));
+        assert_eq!(env_keys.len(), 2);
+        for (name, key) in [("Authorization", &env_keys[0]), ("X-Trace", &env_keys[1])] {
+            assert_eq!(headers[name], format!("${{{key}}}"));
+        }
+        let stored = serde_json::to_string(&config).unwrap();
+        assert!(!stored.contains(token));
+        assert!(!stored.contains("trace-value"));
 
         let dir = tempfile::tempdir().unwrap();
         let cfg = Config::new_with_file_secrets(
@@ -3218,6 +3237,7 @@ extensions:
             panic!("expected streamable http config");
         };
         assert_eq!(headers["Authorization"], token);
+        assert_eq!(headers["X-Trace"], "trace-value");
     }
 
     fn new_resource_link(content: &str) -> anyhow::Result<(ResourceLink, NamedTempFile)> {

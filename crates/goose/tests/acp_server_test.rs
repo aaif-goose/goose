@@ -1678,7 +1678,7 @@ fn test_manual_compaction_refusal_fails_without_replacing_context() {
 }
 
 #[test]
-fn test_secret_mcp_header_is_sent_but_not_stored() {
+fn test_mcp_header_is_sent_but_not_stored() {
     run_test(async {
         let token = "Bearer secret-header-test-token";
         let mcp = McpFixture::requiring_header("authorization", token).await;
@@ -1698,15 +1698,11 @@ fn test_secret_mcp_header_is_sent_but_not_stored() {
         )
         .await;
         let data_root = tempfile::tempdir().unwrap();
-        let secret = serde_json::Map::from_iter([("secret".into(), serde_json::Value::Bool(true))]);
         let config = TestConnectionConfig {
             data_root: data_root.path().to_path_buf(),
             mcp_servers: vec![McpServer::Http(
-                McpServerHttp::new("mcp-fixture", &mcp.url).headers(vec![HttpHeader::new(
-                    "Authorization",
-                    token,
-                )
-                .meta(secret)]),
+                McpServerHttp::new("mcp-fixture", &mcp.url)
+                    .headers(vec![HttpHeader::new("Authorization", token)]),
             )],
             ..Default::default()
         };
