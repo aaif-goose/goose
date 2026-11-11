@@ -1335,7 +1335,6 @@ impl Message {
         })
     }
 
-    /// Returns the first error content block in the message.
     pub fn error(&self) -> Option<&ErrorContent> {
         self.content.iter().find_map(MessageContentBlock::as_error)
     }

@@ -1,5 +1,3 @@
-//! Limits autonomous assistant turns using persisted conversation history.
-
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::{Message, MessageErrorKind};
@@ -13,14 +11,8 @@ use crate::operation::{
 
 const OPERATION_NAME: &str = "max_turns";
 
-/// The error shown when the autonomous turn budget is exhausted.
 pub const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 
-/// Yields when the conversation has used its autonomous turn budget.
-///
-/// Place this operation after tool handling and normal completion, before inference.
-/// Turns are consecutive assistant-message blocks since the latest kickoff, so
-/// counting follows the persisted history rather than individual provider calls.
 pub struct MaxTurnsOperation {
     max_turns: u32,
 }
@@ -36,7 +28,6 @@ fn turn_budget_part(turns_taken: u32, max_turns: u32) -> Option<String> {
 }
 
 impl MaxTurnsOperation {
-    /// A zero limit yields before inference.
     pub fn new(max_turns: u32) -> Self {
         Self { max_turns }
     }
