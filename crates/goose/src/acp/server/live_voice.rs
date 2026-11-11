@@ -303,7 +303,11 @@ impl AcpConnection {
                         let text = projected_message
                             .content
                             .iter()
-                            .filter_map(MessageContent::as_text)
+                            .filter_map(|content| match content {
+                                MessageContent::Text(text) => Some(text.text.as_str()),
+                                MessageContent::Error(error) => Some(error.message.as_str()),
+                                _ => None,
+                            })
                             .collect::<String>();
                         if !text.trim().is_empty() {
                             if outcome_message_id.is_some()

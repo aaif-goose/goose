@@ -1,4 +1,5 @@
 use anyhow::Result;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 
 #[cfg(feature = "scheduler")]
@@ -237,8 +238,8 @@ settings:
         .call("delegate", json!({ "source": "bounded" }));
     api.on("Keep taking actions")
         .unadvertised_call("keep_working", json!({}));
-    api.on("failed: max turns reached")
-        .reply("child stopped on time");
+    let failure = format!("failed: {MAX_TURNS_MESSAGE}");
+    api.on(&failure).reply("child stopped on time");
 
     let result = pipeline.run(["Delegate the bounded child"]).await?;
     assert_eq!(api.call_count(), 3);
@@ -253,9 +254,7 @@ settings:
         .find(|message| {
             message.is_agent_visible()
                 && !message.is_user_visible()
-                && message
-                    .as_concat_text()
-                    .contains("failed: max turns reached")
+                && message.as_concat_text().contains(&failure)
         })
         .expect("child turn-limit failure is delivered to the parent LLM");
     assert_eq!(delivery.role, rmcp::model::Role::User);
