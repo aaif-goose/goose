@@ -1,3 +1,5 @@
+//! Ends the turn when the agent has used its autonomous turn budget.
+
 use anyhow::Result;
 use async_trait::async_trait;
 use goose_provider_types::conversation::message::{Message, MessageErrorKind};
