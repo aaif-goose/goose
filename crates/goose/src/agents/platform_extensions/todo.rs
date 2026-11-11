@@ -1,5 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::session::extension_data;
 use crate::session::extension_data::ExtensionState;
@@ -121,7 +121,7 @@ impl TodoClient {
 }
 
 #[async_trait]
-impl McpClientTrait for TodoClient {
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for TodoClient {
     async fn list_tools(
         &self,
         _session_id: &str,

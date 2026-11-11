@@ -10,24 +10,17 @@ use rmcp::model::{
 };
 use rmcp::{
     model::{
-        CallToolRequestParams, CallToolResult, CancelledNotificationParam, ClientCapabilities,
-        ClientConfig, ClientRequest, GetPromptRequestParams, GetPromptResult, Implementation,
-        InitializeRequestParams, InitializeResult, ListPromptsResult, ListResourcesResult,
-        ListToolsResult, Notification, PaginatedRequestParams, ProtocolVersion,
-        ReadResourceRequestParams, ReadResourceResult, Request, RequestId, RequestOptionalParam,
-        ServerNotification, ServerResult,
+        ClientCapabilities, ClientConfig, ClientRequest, Implementation, InitializeRequestParams,
+        InitializeResult, Notification, ProtocolVersion, ServerNotification, ServerResult,
     },
-    service::{
-        ClientInitializeError, ClientLifecycleMode, ClientServiceExt, PeerRequestOptions,
-        RequestContext, RequestHandle, RunningService, ServiceRole,
-    },
+    service::{ClientInitializeError, ClientLifecycleMode, RequestContext},
     transport::IntoTransport,
-    ClientHandler, ErrorData, Peer, RoleClient, ServiceError,
+    ClientHandler, ErrorData, RoleClient, ServiceError,
 };
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
@@ -69,75 +62,6 @@ pub struct GooseMcpHostInfo {
 impl GooseMcpHostInfo {
     pub fn mcpui_enabled(&self) -> bool {
         self.extensions.contains_key(MCP_APPS_UI_EXTENSION_ID)
-    }
-}
-
-#[async_trait::async_trait]
-pub trait McpClientTrait: Send + Sync {
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        next_cursor: Option<String>,
-        cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error>;
-
-    async fn call_tool(
-        &self,
-        ctx: &ToolCallContext,
-        name: &str,
-        arguments: Option<JsonObject>,
-        cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, Error>;
-
-    fn get_info(&self) -> Option<&InitializeResult>;
-
-    async fn get_instructions(&self, _session_id: &str, _working_dir: &Path) -> Option<String> {
-        self.get_info().and_then(|info| info.instructions.clone())
-    }
-
-    async fn list_resources(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListResourcesResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn read_resource(
-        &self,
-        _session_id: &str,
-        _uri: &str,
-        _cancel_token: CancellationToken,
-    ) -> Result<ReadResourceResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn list_prompts(
-        &self,
-        _session_id: &str,
-        _next_cursor: Option<String>,
-        _cancel_token: CancellationToken,
-    ) -> Result<ListPromptsResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn get_prompt(
-        &self,
-        _session_id: &str,
-        _name: &str,
-        _arguments: Value,
-        _cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, Error> {
-        Err(Error::TransportClosed)
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
-        mpsc::channel(1).1
-    }
-
-    async fn get_moim(&self, _session_id: &str, _tools: &[rmcp::model::Tool]) -> Option<String> {
-        None
     }
 }
 
@@ -496,7 +420,7 @@ pub(crate) struct ConnectContext {
 
 /// The MCP client is the interface for MCP operations.
 pub struct McpClient {
-    client: Mutex<Arc<RunningService<RoleClient, GooseClient>>>,
+    client: goose_agent::mcp::TransportClient<GooseClient>,
     notification_subscribers: Arc<Mutex<Vec<mpsc::Sender<ServerNotification>>>>,
     server_info: Option<InitializeResult>,
     timeout: std::time::Duration,
@@ -532,43 +456,36 @@ impl McpClient {
             action_required,
             tools_version,
         );
-        let client: rmcp::service::RunningService<rmcp::RoleClient, GooseClient> =
-            if let Some(protocol_version) = capabilities.protocol_version {
-                let lifecycle = if protocol_version >= ProtocolVersion::STANDARD_HEADERS {
-                    ClientLifecycleMode::Discover {
-                        preferred_versions: vec![protocol_version],
-                    }
-                } else {
-                    ClientLifecycleMode::Initialize
-                };
-                client.serve_with_lifecycle(transport, lifecycle).await?
+        let lifecycle = if let Some(protocol_version) = capabilities.protocol_version {
+            if protocol_version >= ProtocolVersion::STANDARD_HEADERS {
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![protocol_version],
+                }
             } else {
-                client
-                    .serve_with_lifecycle(
-                        transport,
-                        ClientLifecycleMode::Auto {
-                            preferred_versions: vec![
-                                ProtocolVersion::V_2026_07_28,
-                                ProtocolVersion::V_2025_11_25,
-                            ],
-                            legacy_version: Some(ProtocolVersion::V_2025_11_25),
-                        },
-                    )
-                    .await?
-            };
-        let server_info = client.peer_info().map(|info| {
-            let mut initialize_result = InitializeResult::new(info.capabilities.clone())
-                .with_protocol_version(info.protocol_version.clone());
-            if let Some(server_info) = &info.server_info {
-                initialize_result = initialize_result.with_server_info(server_info.clone());
+                ClientLifecycleMode::Initialize
             }
-            initialize_result.instructions = info.instructions.clone();
-            initialize_result.meta = info.meta.clone();
-            initialize_result
-        });
+        } else {
+            ClientLifecycleMode::Auto {
+                preferred_versions: vec![
+                    ProtocolVersion::V_2026_07_28,
+                    ProtocolVersion::V_2025_11_25,
+                ],
+                legacy_version: Some(ProtocolVersion::V_2025_11_25),
+            }
+        };
+        let (notifications, _) = tokio::sync::broadcast::channel(64);
+        let client = goose_agent::mcp::TransportClient::connect_handler(
+            transport,
+            client,
+            timeout,
+            Some(lifecycle),
+            notifications,
+        )
+        .await?;
+        let server_info = client.server_info().cloned();
 
         Ok(Self {
-            client: Mutex::new(Arc::new(client)),
+            client,
             notification_subscribers,
             server_info,
             timeout,
@@ -600,288 +517,115 @@ impl McpClient {
         // unregisters the active tool call on drop, covering cancellation and
         // dropped reply streams as well as normal completion.
         let (handle, _active_tool_call_guard) = {
-            let client = self.client.lock().await;
+            let client = self.client.service();
             client.service().set_session_id(session_id).await;
             let guard = active_tool_call.map(|tool_call_request_id| {
                 client
                     .service()
                     .register_active_tool_call(session_id, tool_call_request_id)
             });
-            let handle = client
-                .send_cancellable_request(request, PeerRequestOptions::no_options())
-                .await?;
-            (handle, guard)
+            (request, guard)
         };
 
-        await_response(handle, self.timeout, &cancel_token).await
+        self.client.request(handle, cancel_token).await
     }
-}
-
-async fn await_response(
-    handle: RequestHandle<RoleClient>,
-    timeout: Duration,
-    cancel_token: &CancellationToken,
-) -> Result<<RoleClient as ServiceRole>::PeerResp, ServiceError> {
-    let receiver = handle.rx;
-    let peer = handle.peer;
-    let request_id = handle.id;
-    tokio::select! {
-        result = receiver => {
-            result.map_err(|_e| ServiceError::TransportClosed)?
-        }
-        _ = tokio::time::sleep(timeout) => {
-            send_cancel_message(&peer, request_id, Some("timed out".to_owned())).await?;
-            Err(ServiceError::Timeout{timeout})
-        }
-        _ = cancel_token.cancelled() => {
-            send_cancel_message(&peer, request_id, Some("operation cancelled".to_owned())).await?;
-            Err(ServiceError::Cancelled { reason: None })
-        }
-    }
-}
-
-async fn send_cancel_message(
-    peer: &Peer<RoleClient>,
-    request_id: RequestId,
-    reason: Option<String>,
-) -> Result<(), ServiceError> {
-    peer.send_notification(
-        Notification::new(CancelledNotificationParam::new(Some(request_id), reason)).into(),
-    )
-    .await
 }
 
 #[async_trait::async_trait]
-impl McpClientTrait for McpClient {
-    fn get_info(&self) -> Option<&InitializeResult> {
+impl goose_agent::mcp::RequestSender<ToolCallContext> for McpClient {
+    fn scope<'a>(&self, context: &'a ToolCallContext) -> &'a str {
+        &context.session_id
+    }
+    fn info(&self) -> Option<&InitializeResult> {
         self.server_info.as_ref()
     }
-
-    async fn list_resources(
+    async fn send(
         &self,
         session_id: &str,
-        cursor: Option<String>,
+        context: Option<&ToolCallContext>,
+        request: ClientRequest,
         cancel_token: CancellationToken,
-    ) -> Result<ListResourcesResult, Error> {
-        let res = self
-            .send_request_with_context(
-                session_id,
-                None,
-                None,
-                ClientRequest::ListResourcesRequest(RequestOptionalParam::with_param(
-                    PaginatedRequestParams::default().with_cursor(cursor),
-                )),
-                cancel_token,
-            )
-            .await?;
-
-        match res {
-            ServerResult::ListResourcesResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
-    }
-
-    async fn read_resource(
-        &self,
-        session_id: &str,
-        uri: &str,
-        cancel_token: CancellationToken,
-    ) -> Result<ReadResourceResult, Error> {
-        let params = ReadResourceRequestParams::new(uri.to_string());
-        let client = self.client.lock().await.clone();
-        if client
+    ) -> Result<ServerResult, Error> {
+        let client = self.client.service().clone();
+        let modern = client
             .peer_info()
-            .is_some_and(|info| info.protocol_version == ProtocolVersion::V_2026_07_28)
-        {
+            .is_some_and(|info| info.protocol_version == ProtocolVersion::V_2026_07_28);
+        if modern {
             client.service().set_session_id(session_id).await;
-            return tokio::select! {
-                result = client.read_resource(params) => result,
-                _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
-                _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
-            };
-        }
-        drop(client);
-
-        let res = self
-            .send_request_with_context(
-                session_id,
-                None,
-                None,
-                ClientRequest::ReadResourceRequest(Request::new(params)),
-                cancel_token,
-            )
-            .await?;
-
-        match res {
-            ServerResult::ReadResourceResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
-    }
-
-    async fn list_tools(
-        &self,
-        session_id: &str,
-        cursor: Option<String>,
-        cancel_token: CancellationToken,
-    ) -> Result<ListToolsResult, Error> {
-        let res = self
-            .send_request_with_context(
-                session_id,
-                None,
-                None,
-                ClientRequest::ListToolsRequest(RequestOptionalParam::with_param(
-                    PaginatedRequestParams::default().with_cursor(cursor),
-                )),
-                cancel_token,
-            )
-            .await?;
-
-        match res {
-            ServerResult::ListToolsResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
-    }
-
-    async fn call_tool(
-        &self,
-        ctx: &ToolCallContext,
-        name: &str,
-        arguments: Option<JsonObject>,
-        cancel_token: CancellationToken,
-    ) -> Result<CallToolResult, Error> {
-        let mut params = CallToolRequestParams::new(name.to_string());
-        if let Some(args) = arguments {
-            params = params.with_arguments(args);
-        }
-        let protocol_version = {
-            let client = self.client.lock().await;
-            client.peer_info().map(|info| info.protocol_version.clone())
-        };
-        if protocol_version.as_ref() == Some(&ProtocolVersion::V_2026_07_28) {
-            let extensions =
-                inject_trace_context_into_extensions(inject_session_context_into_extensions(
-                    Extensions::new(),
-                    Some(&ctx.session_id),
-                    ctx.working_dir_str(),
-                    ctx.tool_call_request_id.as_deref(),
-                ));
-            if let Some(meta) = extensions.get::<MetaObject>() {
-                params.meta.get_or_insert_default().0 .0.extend(
-                    meta.0
-                        .iter()
-                        .map(|(key, value)| (key.clone(), value.clone())),
-                );
+            match &request {
+                ClientRequest::ReadResourceRequest(request) => {
+                    return tokio::select! {
+                        result = client.read_resource(request.params.clone()) => result.map(ServerResult::ReadResourceResult),
+                        _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
+                        _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
+                    }
+                }
+                ClientRequest::GetPromptRequest(request) => {
+                    return tokio::select! {
+                        result = client.get_prompt(request.params.clone()) => result.map(ServerResult::GetPromptResult),
+                        _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
+                        _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
+                    }
+                }
+                ClientRequest::CallToolRequest(request) => {
+                    let ctx = context.expect("tool calls have call context");
+                    let mut params = request.params.clone();
+                    let protocol_version = {
+                        let client = self.client.service();
+                        client.peer_info().map(|info| info.protocol_version.clone())
+                    };
+                    if protocol_version.as_ref() == Some(&ProtocolVersion::V_2026_07_28) {
+                        let extensions = inject_trace_context_into_extensions(
+                            inject_session_context_into_extensions(
+                                Extensions::new(),
+                                Some(&ctx.session_id),
+                                ctx.working_dir_str(),
+                                ctx.tool_call_request_id.as_deref(),
+                            ),
+                        );
+                        if let Some(meta) = extensions.get::<MetaObject>() {
+                            params.meta.get_or_insert_default().0 .0.extend(
+                                meta.0
+                                    .iter()
+                                    .map(|(key, value)| (key.clone(), value.clone())),
+                            );
+                        }
+                        let client = self.client.service().clone();
+                        client.service().set_session_id(&ctx.session_id).await;
+                        let _active_tool_call_guard = ctx
+                            .tool_call_request_id
+                            .as_deref()
+                            .filter(|id| !id.is_empty())
+                            .map(|tool_call_request_id| {
+                                client.service().register_active_tool_call(
+                                    &ctx.session_id,
+                                    tool_call_request_id,
+                                )
+                            });
+                        return tokio::select! {
+                            result = client.call_tool(params) => result.map(ServerResult::CallToolResult),
+                            _ = tokio::time::sleep(self.timeout) => {
+                                Err(ServiceError::Timeout { timeout: self.timeout })
+                            }
+                            _ = cancel_token.cancelled() => {
+                                Err(ServiceError::Cancelled { reason: None })
+                            }
+                        };
+                    }
+                }
+                _ => {}
             }
-            let client = self.client.lock().await.clone();
-            client.service().set_session_id(&ctx.session_id).await;
-            let _active_tool_call_guard = ctx
-                .tool_call_request_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .map(|tool_call_request_id| {
-                    client
-                        .service()
-                        .register_active_tool_call(&ctx.session_id, tool_call_request_id)
-                });
-            return tokio::select! {
-                result = client.call_tool(params) => result,
-                _ = tokio::time::sleep(self.timeout) => {
-                    Err(ServiceError::Timeout { timeout: self.timeout })
-                }
-                _ = cancel_token.cancelled() => {
-                    Err(ServiceError::Cancelled { reason: None })
-                }
-            };
         }
-
-        let request = ClientRequest::CallToolRequest(Request::new(params));
-
-        let result = self
-            .send_request_with_context(
-                &ctx.session_id,
-                ctx.working_dir_str(),
-                ctx.tool_call_request_id.as_deref(),
-                request,
-                cancel_token,
-            )
-            .await;
-
-        match result? {
-            ServerResult::CallToolResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
+        self.send_request_with_context(
+            session_id,
+            context.and_then(ToolCallContext::working_dir_str),
+            context.and_then(|ctx| ctx.tool_call_request_id.as_deref()),
+            request,
+            cancel_token,
+        )
+        .await
     }
-
-    async fn list_prompts(
-        &self,
-        session_id: &str,
-        cursor: Option<String>,
-        cancel_token: CancellationToken,
-    ) -> Result<ListPromptsResult, Error> {
-        let res = self
-            .send_request_with_context(
-                session_id,
-                None,
-                None,
-                ClientRequest::ListPromptsRequest(RequestOptionalParam::with_param(
-                    PaginatedRequestParams::default().with_cursor(cursor),
-                )),
-                cancel_token,
-            )
-            .await?;
-
-        match res {
-            ServerResult::ListPromptsResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
-    }
-
-    async fn get_prompt(
-        &self,
-        session_id: &str,
-        name: &str,
-        arguments: Value,
-        cancel_token: CancellationToken,
-    ) -> Result<GetPromptResult, Error> {
-        let arguments = match arguments {
-            Value::Object(map) => Some(map),
-            _ => None,
-        };
-        let mut params = GetPromptRequestParams::new(name.to_string());
-        if let Some(args) = arguments {
-            params = params.with_arguments(args);
-        }
-        let client = self.client.lock().await.clone();
-        if client
-            .peer_info()
-            .is_some_and(|info| info.protocol_version == ProtocolVersion::V_2026_07_28)
-        {
-            client.service().set_session_id(session_id).await;
-            return tokio::select! {
-                result = client.get_prompt(params) => result,
-                _ = tokio::time::sleep(self.timeout) => Err(ServiceError::Timeout { timeout: self.timeout }),
-                _ = cancel_token.cancelled() => Err(ServiceError::Cancelled { reason: None }),
-            };
-        }
-        drop(client);
-
-        let res = self
-            .send_request_with_context(
-                session_id,
-                None,
-                None,
-                ClientRequest::GetPromptRequest(Request::new(params)),
-                cancel_token,
-            )
-            .await?;
-
-        match res {
-            ServerResult::GetPromptResult(result) => Ok(result),
-            _ => Err(ServiceError::UnexpectedResponse),
-        }
-    }
-
-    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
+    async fn notifications(&self) -> mpsc::Receiver<ServerNotification> {
         let (tx, rx) = mpsc::channel(16);
         self.notification_subscribers.lock().await.push(tx);
         rx
@@ -1021,6 +765,10 @@ fn inject_session_context_into_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmcp::model::{
+        CallToolRequestParams, GetPromptRequestParams, PaginatedRequestParams,
+        ReadResourceRequestParams, Request, RequestOptionalParam,
+    };
 
     use crate::agents::GoosePlatform;
     use serde_json::json;

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use futures::{FutureExt, StreamExt};
-use goose_agent::post_tool_call_hook::PostToolCallHook;
+use futures::StreamExt;
+use goose_agent::mcp::McpHost;
 use goose_agent::tool_call_state::request_executable;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Role, Tool, ToolAnnotations,
@@ -19,19 +19,16 @@ use crate::agents::reply_parts::is_tool_visible_to_model;
 use crate::agents::state_machine::ops_llm::{ADVERTISED_TOOLS_NOTE, LLM_OPERATION_NAME};
 use crate::agents::state_machine::ops_recipe::final_output_called_with_other_tools;
 use crate::agents::state_machine::ops_skills::LOAD_SKILL_TOOL_NAME;
-use crate::agents::state_machine::post_tool_hook::run_post_tool_call_hook;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    GooseEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, yielded_with, ConversationEffect, Emitter, OperationResult,
+    SlashCommand,
 };
 use crate::agents::tool_execution::{
     tool_stream, ToolCallResult, ToolStreamItem, CHAT_MODE_TOOL_SKIPPED_RESPONSE,
 };
 use crate::agents::AgentEvent;
 use crate::config::GooseMode;
-use crate::conversation::message::{
-    ActionRequiredData, Message, MessageContent, ProviderMetadata, ToolRequest, ToolResponse,
-};
+use crate::conversation::message::{ActionRequiredData, Message, MessageContent, ToolRequest};
 use crate::conversation::Conversation;
 use crate::hints::load_hints::SubdirectoryHintTracker;
 use crate::hooks::{HookContext, HookEvent, HookManager};
@@ -217,76 +214,8 @@ struct ToolBatch {
 }
 
 impl ToolBatch {
-    fn record(
-        &mut self,
-        request_id: &str,
-        result: std::result::Result<CallToolResult, ErrorData>,
-        metadata: Option<&ProviderMetadata>,
-    ) {
-        let response = self
-            .response
-            .get_or_insert_with(|| Message::user().with_generated_id_if_missing());
-        if !response.get_tool_response_ids().contains(&request_id) {
-            response.add_tool_response_with_metadata(request_id, result, metadata);
-        }
-    }
-
     fn take(&mut self) -> (Vec<Message>, Option<Message>) {
         (std::mem::take(&mut self.actions), self.response.take())
-    }
-}
-
-fn recording_result(
-    batch: &Arc<StdMutex<ToolBatch>>,
-    result: ToolCallResult,
-    span: tracing::Span,
-    request: &ToolRequest,
-    session: Arc<Session>,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
-) -> ToolCallResult {
-    let batch = Arc::clone(batch);
-    let request = request.clone();
-    let tool_call_id = request.id.clone();
-    let metadata = request.metadata.clone();
-    let future = async move {
-        let result =
-            crate::agents::large_response_handler::process_tool_response(result.result.await);
-        batch
-            .lock()
-            .unwrap()
-            .record(&tool_call_id, result.clone(), metadata.as_ref());
-        crate::agents::gen_ai_telemetry::record_tool_result(&tracing::Span::current(), &result);
-        match &result {
-            Ok(result) if result.is_error == Some(true) => {
-                tracing::Span::current().record("error.type", "tool_error");
-            }
-            Err(_) => {
-                tracing::Span::current().record("error.type", "tool_execution_error");
-            }
-            _ => {}
-        }
-        if let Some(conversation) = &session.conversation {
-            let response = ToolResponse {
-                id: tool_call_id,
-                tool_result: result.clone(),
-                metadata,
-            };
-            run_post_tool_call_hook(
-                post_tool_call_hook.as_ref(),
-                session.as_ref(),
-                conversation,
-                &request,
-                &response,
-            )
-            .await;
-        }
-        result
-    }
-    .instrument(span);
-    ToolCallResult {
-        notification_stream: result.notification_stream,
-        action_required_stream: result.action_required_stream,
-        result: Box::new(future.boxed()),
     }
 }
 
@@ -311,21 +240,19 @@ fn session_in_lease(lease: &ExtensionLease, session: &Session) -> Session {
     session
 }
 
-pub struct ToolExecutionOperation {
+pub struct GooseMcpHost {
     extension_manager: Arc<ExtensionManager>,
     hook_manager: HookManager,
-    post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
     lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     batch: Arc<StdMutex<ToolBatch>>,
     defer_tools: bool,
     always_load_tools: HashSet<String>,
 }
 
-impl ToolExecutionOperation {
+impl GooseMcpHost {
     pub fn new(
         extension_manager: Arc<ExtensionManager>,
         hook_manager: HookManager,
-        post_tool_call_hook: Arc<dyn PostToolCallHook<Session>>,
         lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
         defer_tools: bool,
         always_load_tools: Vec<String>,
@@ -333,7 +260,6 @@ impl ToolExecutionOperation {
         Self {
             extension_manager,
             hook_manager,
-            post_tool_call_hook,
             lease,
             batch: Arc::default(),
             defer_tools,
@@ -422,7 +348,6 @@ impl ToolExecutionOperation {
         let request_id = request.id.clone();
         let span = tool_span(&tool_call.name, &request_id, &session.id);
         crate::agents::gen_ai_telemetry::record_tool_arguments(&span, &tool_call);
-        let result_span = span.clone();
 
         async {
             let tool_input = tool_call
@@ -457,17 +382,8 @@ impl ToolExecutionOperation {
                     ToolCallResult::from(Err(error))
                 })
             };
-            let result = self
-                .extension_manager
-                .applying_mutation(result, &session.id);
-            recording_result(
-                &self.batch,
-                result,
-                result_span,
-                request,
-                Arc::clone(call_session),
-                Arc::clone(&self.post_tool_call_hook),
-            )
+            self.extension_manager
+                .applying_mutation(result, &session.id)
         }
         .instrument(span)
         .await
@@ -477,7 +393,7 @@ impl ToolExecutionOperation {
         conversation: &Conversation,
         message: String,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<ConversationEffect>> {
         let command = messages_since_kickoff(conversation)?
             .first()
             .cloned()
@@ -497,8 +413,7 @@ impl ToolExecutionOperation {
                 message_id,
                 user_visible: true,
                 agent_visible: false,
-            }
-            .into(),
+            },
             response.into(),
         ])
     }
@@ -509,7 +424,7 @@ impl ToolExecutionOperation {
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<ConversationEffect>> {
         let prompts = self
             .lease(session)
             .await?
@@ -552,7 +467,7 @@ impl ToolExecutionOperation {
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<OperationResult<ConversationEffect>> {
         let params: Vec<_> = command.params_str.split_whitespace().collect();
         let Some(prompt_name) = params.first() else {
             return Self::command_response(
@@ -633,8 +548,7 @@ impl ToolExecutionOperation {
             message_id,
             user_visible: true,
             agent_visible: false,
-        }
-        .into()];
+        }];
         for (index, prompt_message) in result.messages.into_iter().enumerate() {
             let message = Message::from(prompt_message);
             let expected_role = if index % 2 == 0 {
@@ -857,26 +771,14 @@ fn extension_prompt_parts(
 }
 
 #[async_trait]
-impl Operation<Session, GooseEffect> for ToolExecutionOperation {
-    fn name(&self) -> &'static str {
+impl McpHost<Session> for GooseMcpHost {
+    fn operation_name(&self) -> &'static str {
         "tool_execution"
     }
 
-    async fn finalize_cancellation(
-        &self,
-        _session: &Session,
-        _conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Vec<GooseEffect> {
-        let (actions, response) = self.take_batch();
-        if let Some(response) = &response {
-            emit.emit(AgentEvent::Message(response.user_visible_content()));
-        }
+    fn take_actions(&self) -> Vec<Message> {
+        let (actions, _) = self.take_batch();
         actions
-            .into_iter()
-            .chain(response)
-            .map(GooseEffect::from)
-            .collect()
     }
 
     async fn run_command(
@@ -885,18 +787,25 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         session: &Session,
         conversation: &Conversation,
         emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
-        match command.command {
+    ) -> Result<Option<Vec<ConversationEffect>>> {
+        let result = match command.command {
             "prompts" => {
                 self.list_prompts(command, session, conversation, emit)
-                    .await
+                    .await?
             }
-            "prompt" => self.run_prompt(command, session, conversation, emit).await,
-            _ => not_applicable(),
+            "prompt" => {
+                self.run_prompt(command, session, conversation, emit)
+                    .await?
+            }
+            _ => return Ok(None),
+        };
+        match result {
+            OperationResult::Applied(result) => Ok(Some(result.effects)),
+            OperationResult::NotApplicable => Ok(None),
         }
     }
 
-    async fn inference_tools(&self, session: &Session) -> Result<Vec<Tool>> {
+    async fn tools(&self, session: &Session) -> Result<Vec<Tool>> {
         let lease = self.lease(session).await?;
         let mut tools = lease.tools_excluding(crate::skills::EXTENSION_NAME).await;
         if self.defers_tools(&lease) {
@@ -984,25 +893,23 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         Ok(prompt_parts)
     }
 
-    async fn run(
+    async fn pending(
         &self,
         session: &Session,
         conversation: &Conversation,
-        emit: &Emitter,
-    ) -> Result<OperationResult<GooseEffect>> {
+    ) -> Result<Vec<ToolRequest>> {
         let messages = messages_since_kickoff(conversation)?;
-        let mut pending = pending_advertised_tool_requests(messages);
+        let pending = pending_advertised_tool_requests(messages);
         if pending.is_empty() {
-            return not_applicable();
+            return Ok(Vec::new());
         }
-
         let lease = self
             .lease
             .lock()
             .expect("extension lease unavailable")
             .clone();
         let lease = match lease {
-            Some(lease) => Some(lease),
+            Some(lease) => lease,
             None if requests_can_resolve_a_lease(
                 messages,
                 pending
@@ -1011,33 +918,10 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
                     .map(|(request, _)| request),
             ) =>
             {
-                Some(self.resolve_lease(session).await?)
+                self.resolve_lease(session).await?
             }
-            None => None,
+            None => return Ok(pending.into_iter().map(|(request, _)| request).collect()),
         };
-        let Some(lease) = lease else {
-            let mut response = Message::user();
-            for (request, disposition) in pending {
-                let result = match disposition {
-                    ToolDisposition::Execute => {
-                        CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
-                    }
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}. Correct the arguments and try again."
-                        ))])
-                    }
-                };
-                response.add_tool_response_with_metadata(
-                    request.id,
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
-        };
-
         let mut known_tools: HashSet<_> = lease
             .tools_excluding(crate::skills::EXTENSION_NAME)
             .await
@@ -1047,114 +931,90 @@ impl Operation<Session, GooseEffect> for ToolExecutionOperation {
         if self.defers_tools(&lease) {
             known_tools.insert(ENABLE_TOOLS.to_string());
         }
-        pending.retain(|(request, _)| {
-            request
-                .tool_call
-                .as_ref()
-                .is_ok_and(|tool_call| known_tools.contains(tool_call.name.as_ref()))
-        });
-        if pending.is_empty() {
-            return not_applicable();
-        }
+        Ok(pending
+            .into_iter()
+            .filter(|(request, _)| {
+                request
+                    .tool_call
+                    .as_ref()
+                    .is_ok_and(|call| known_tools.contains(call.name.as_ref()))
+            })
+            .map(|(request, _)| request)
+            .collect())
+    }
 
+    async fn call(
+        &self,
+        session: &Session,
+        request: &ToolRequest,
+        emit: &Emitter,
+    ) -> Result<CallToolResult, ErrorData> {
+        let lease = self.lease.lock().unwrap().clone();
+        let Some(lease) = lease else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                EXPIRED_APPROVAL_RESPONSE,
+            )]));
+        };
         if session.goose_mode == GooseMode::Chat {
-            let mut response = Message::user();
-            for (request, disposition) in &pending {
-                let result = match disposition {
-                    ToolDisposition::ParseError(parse_error) => {
-                        CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}."
-                        ))])
-                    }
-                    _ => CallToolResult::success(vec![ContentBlock::text(
-                        CHAT_MODE_TOOL_SKIPPED_RESPONSE,
-                    )]),
-                };
-                response.add_tool_response_with_metadata(
-                    request.id.clone(),
-                    Ok(result),
-                    request.metadata.as_ref(),
-                );
-            }
-            let response = emit.message(response);
-            return applied([response.into()]);
+            return Ok(CallToolResult::success(vec![ContentBlock::text(
+                CHAT_MODE_TOOL_SKIPPED_RESPONSE,
+            )]));
         }
-
         let call_session = Arc::new(session_in_lease(&lease, session));
-        let mut tool_streams = Vec::new();
-        for (request, disposition) in &pending {
-            if *disposition != ToolDisposition::Execute {
-                continue;
-            }
-            let tool_call = request
-                .tool_call
-                .clone()
-                .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
-            let result = self
-                .dispatch_tool_call(
-                    Arc::clone(&lease),
-                    tool_call,
-                    request,
-                    emit.cancel_token().clone(),
-                    &call_session,
-                )
-                .await;
-
-            let req_id = request.id.clone();
-            let stream = tool_stream(
-                result
-                    .notification_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result
-                    .action_required_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result.result,
+        let call = request.tool_call.clone()?;
+        let result = self
+            .dispatch_tool_call(
+                lease,
+                call,
+                request,
+                emit.cancel_token().clone(),
+                &call_session,
             )
-            .map(move |item| (req_id.clone(), item));
-            tool_streams.push(stream);
-        }
-
-        let mut combined = futures::stream::select_all(tool_streams);
-        for (request, disposition) in &pending {
-            let mut batch = self.batch.lock().unwrap();
-            match disposition {
-                ToolDisposition::Execute => {}
-                ToolDisposition::ParseError(parse_error) => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                            "The tool call could not be parsed: {parse_error}. \
-                             Correct the arguments and try again."
-                        ))])),
-                        request.metadata.as_ref(),
-                    );
-                }
-            }
-        }
-
-        while let Some((request_id, item)) = combined.next().await {
+            .await;
+        let stream = tool_stream(
+            result
+                .notification_stream
+                .unwrap_or_else(|| Box::new(futures::stream::empty())),
+            result
+                .action_required_stream
+                .unwrap_or_else(|| Box::new(futures::stream::empty())),
+            result.result,
+        );
+        tokio::pin!(stream);
+        while let Some(item) = stream.next().await {
             match item {
-                ToolStreamItem::Result(Ok(result)) => {
-                    if let Some(notification) = platform_notification(&result) {
-                        emit.emit(AgentEvent::McpNotification((request_id, notification)));
+                ToolStreamItem::Result(result) => {
+                    let result =
+                        crate::agents::large_response_handler::process_tool_response(result);
+                    crate::agents::gen_ai_telemetry::record_tool_result(
+                        &tracing::Span::current(),
+                        &result,
+                    );
+                    if let Ok(result) = &result {
+                        if let Some(notification) = platform_notification(result) {
+                            emit.emit(AgentEvent::McpNotification((
+                                request.id.clone(),
+                                notification,
+                            )));
+                        }
                     }
+                    return result;
                 }
-                ToolStreamItem::Result(Err(_)) => {}
-                ToolStreamItem::Message(msg) => {
-                    emit.emit(AgentEvent::McpNotification((request_id, msg)));
-                }
-                ToolStreamItem::ActionRequired(msg) => {
-                    let msg = msg.with_generated_id_if_missing();
-                    self.batch.lock().unwrap().actions.push(msg.clone());
-                    emit.message(msg);
+                ToolStreamItem::Message(notification) => emit.emit(AgentEvent::McpNotification((
+                    request.id.clone(),
+                    notification,
+                ))),
+                ToolStreamItem::ActionRequired(message) => {
+                    let message = message.with_generated_id_if_missing();
+                    self.batch.lock().unwrap().actions.push(message.clone());
+                    emit.message(message);
                 }
             }
         }
-
-        let (actions, response) = self.take_batch();
-        let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
-        emit.emit(AgentEvent::Message(response.user_visible_content()));
-        applied(actions.into_iter().chain([response]).map(GooseEffect::from))
+        Err(ErrorData::internal_error(
+            "MCP call ended without a result",
+            None,
+        ))
     }
 }
 

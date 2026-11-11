@@ -84,7 +84,7 @@ pub(super) use ops_status::StatusOperation;
 pub(super) use ops_steer::{SteerOperation, SteerQueue};
 pub(super) use ops_subagent::DELEGATED_META_KEY;
 pub(super) use ops_tool_pair_compaction::ToolPairCompactionOperation;
-pub(super) use ops_toolcalling::ToolExecutionOperation;
+pub(super) use ops_toolcalling::GooseMcpHost;
 pub(super) use post_tool_hook::GoosePostToolHook;
 pub(super) use pre_tool_hook::GoosePreToolHook;
 pub(super) use stop_hook::{deny_limit_warning, GooseStopHook};

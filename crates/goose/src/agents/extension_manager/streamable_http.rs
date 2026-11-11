@@ -1,3 +1,4 @@
+use goose_agent::mcp::Client;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::super::extension::{ExtensionError, ExtensionResult};
-use super::super::mcp_client::{ConnectContext, McpClient, McpClientTrait};
+use super::super::mcp_client::{ConnectContext, McpClient};
 use super::super::tool_execution::ToolCallContext;
 use crate::oauth::{oauth_flow, oauth_flow_with_challenge, StaticOAuthClientConfig};
 
@@ -421,7 +422,9 @@ impl OAuthStepUpClient {
 }
 
 #[async_trait::async_trait]
-impl McpClientTrait for OAuthStepUpClient {
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
+    for OAuthStepUpClient
+{
     async fn list_tools(
         &self,
         session_id: &str,
@@ -560,7 +563,9 @@ pub(super) async fn connect(
     params: ConnectParams,
     socket: Option<&str>,
     credential_store: Box<dyn CredentialStore>,
-) -> ExtensionResult<Box<dyn McpClientTrait>> {
+) -> ExtensionResult<
+    Box<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>,
+> {
     #[cfg(unix)]
     if let Some(socket_path) = socket {
         return connect_over_unix_socket(&params, socket_path).await;
@@ -651,7 +656,9 @@ pub(super) async fn connect(
 async fn connect_over_unix_socket(
     params: &ConnectParams,
     socket_path: &str,
-) -> ExtensionResult<Box<dyn McpClientTrait>> {
+) -> ExtensionResult<
+    Box<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>,
+> {
     use rmcp::transport::UnixSocketHttpClient;
 
     let unix_client = UnixSocketHttpClient::new(socket_path, &params.uri);

@@ -5,7 +5,7 @@ mod shell_output_streaming;
 mod shell_process;
 pub mod tree;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -186,7 +186,7 @@ impl DeveloperClient {
 }
 
 #[async_trait]
-impl McpClientTrait for DeveloperClient {
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for DeveloperClient {
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -264,6 +264,7 @@ impl McpClientTrait for DeveloperClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use goose_agent::mcp::Client;
     use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;

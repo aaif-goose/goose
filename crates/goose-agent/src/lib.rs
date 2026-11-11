@@ -11,3 +11,5 @@ pub mod tool;
 pub mod tool_approval;
 pub mod tool_call_state;
 pub mod unhandled_tool_calls;
+
+pub mod mcp;

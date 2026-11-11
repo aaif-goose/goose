@@ -2,6 +2,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
+use goose_agent::mcp::host::{Manager as McpManager, Runtime as LazyRuntime};
+#[cfg(test)]
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -21,9 +23,7 @@ use super::extension::{
 };
 use super::tool_execution::ToolCallResult;
 use crate::action_required_manager::ActionRequiredManager;
-use crate::agents::mcp_client::{
-    ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo, McpClientTrait,
-};
+use crate::agents::mcp_client::{ConnectContext, GooseMcpClientCapabilities, GooseMcpHostInfo};
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::agents::services::GoosePlatform;
 use crate::config::extensions::name_to_key;
@@ -69,7 +69,8 @@ impl ExtensionMutation {
     }
 }
 
-type McpClientBox = Arc<dyn McpClientTrait>;
+type McpClientBox =
+    Arc<dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>>;
 
 const TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY: usize = 32;
 
@@ -191,7 +192,7 @@ pub(super) struct ExtensionSlot {
     manager: Weak<ExtensionManager>,
     client: Arc<ClientContext>,
     config_generation: AtomicU64,
-    runtime: OnceCell<Runtime>,
+    runtime: LazyRuntime<Runtime>,
 }
 
 impl ExtensionSlot {
@@ -339,47 +340,35 @@ impl Extension {
     }
 
     async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
-        let cancel_token = CancellationToken::default();
-        let expose_unprefixed = is_unprefixed_extension(&self.config);
-        let mut tools = Vec::new();
-        let mut cursor = None;
-        loop {
-            let page = match self
-                .client
-                .list_tools(session_id, cursor, cancel_token.clone())
-                .await
-            {
-                Ok(page) => page,
-                Err(e) => {
-                    warn!(extension = %self.key, error = %e, "Failed to list tools");
-                    break;
-                }
-            };
-            for mut tool in page.tools {
-                if !self.config.is_tool_available(&tool.name) {
-                    continue;
-                }
-                if !expose_unprefixed {
-                    tool.name = format!("{}__{}", self.key, tool.name).into();
-                }
-                let mut meta = tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
-                meta.insert(
-                    TOOL_EXTENSION_META_KEY.to_string(),
+        let listed = match goose_agent::mcp::discovery::tools(
+            self.client.as_ref(),
+            session_id,
+            CancellationToken::new(),
+        )
+        .await
+        {
+            Ok(tools) => tools,
+            Err(error) => {
+                warn!(extension = %self.key, %error, "Failed to list tools");
+                return Vec::new();
+            }
+        };
+        listed
+            .into_iter()
+            .filter(|tool| self.config.is_tool_available(&tool.name))
+            .map(|tool| {
+                let mut tool = goose_agent::mcp::discovery::expose_tool(
+                    tool,
+                    &self.key,
+                    is_unprefixed_extension(&self.config),
+                );
+                tool.meta.get_or_insert_with(Default::default).0.insert(
+                    TOOL_EXTENSION_META_KEY.into(),
                     Value::String(self.key.clone()),
                 );
-                tool.meta = Some(MetaObject(meta));
-                let mut schema = (*tool.input_schema).clone();
-                if super::tool_schema_normalize::normalize_input_schema(&mut schema) {
-                    tool.input_schema = Arc::new(schema);
-                }
-                tools.push(tool);
-            }
-            cursor = page.next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-        tools
+                tool
+            })
+            .collect()
     }
 }
 
@@ -452,11 +441,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
-    scopes: Mutex<HashMap<String, IndexMap<String, Arc<ExtensionSlot>>>>,
-    /// Slots `enable` has started but not yet selected. A lease resolved from
-    /// the old selection in the meantime must not lose them, or the next
-    /// lease would start a second process.
-    enabling: Mutex<HashMap<(String, String), Arc<ExtensionSlot>>>,
+    runtime: McpManager<ExtensionSlot>,
     context: PlatformExtensionContext,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
@@ -681,8 +666,7 @@ impl ExtensionManager {
         default_client: ClientContext,
     ) -> Self {
         Self {
-            scopes: Mutex::new(HashMap::new()),
-            enabling: Mutex::new(HashMap::new()),
+            runtime: McpManager::new(),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -758,49 +742,42 @@ impl ExtensionManager {
             manager: Arc::downgrade(self),
             client,
             config_generation: AtomicU64::new(Config::global().generation()),
-            runtime: OnceCell::new(),
+            runtime: LazyRuntime::new(),
         }
     }
 
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
         let client = self.client(set.scope_id());
         let slots = {
-            let mut scopes = self.scopes.lock().await;
-            let enabling = self.enabling.lock().await;
-            let mut current = scopes.remove(set.scope_id()).unwrap_or_default();
-            let mut selected = IndexMap::new();
-            for config in set.extensions() {
-                let key = config.key();
-                let pending = enabling
-                    .get(&(set.scope_id().to_string(), key.clone()))
-                    .cloned();
-                let mut reusable = None;
-                for slot in current.swap_remove(&key).into_iter().chain(pending) {
-                    if slot.reusable_for(
-                        config,
-                        set.working_dir.as_deref(),
-                        set.container.as_ref(),
-                        &client,
-                    ) && slot.config_is_current().await
-                    {
-                        reusable = Some(slot);
-                        break;
-                    }
-                }
-                let slot = reusable.unwrap_or_else(|| {
-                    Arc::new(self.new_slot(
-                        set.scope_id(),
-                        config,
-                        set.working_dir.as_deref(),
-                        set.container.as_ref(),
-                        Arc::clone(&client),
-                    ))
-                });
-                selected.insert(key, slot);
-            }
-            let slots = selected.values().cloned().collect();
-            scopes.insert(set.scope_id().to_string(), selected);
-            slots
+            let mut state = self.runtime.scopes.lock().await;
+            state
+                .reconcile(
+                    set.scope_id(),
+                    set.extensions(),
+                    |config| config.key(),
+                    |slot, config| {
+                        let config = (*config).clone();
+                        let client = Arc::clone(&client);
+                        async move {
+                            slot.reusable_for(
+                                &config,
+                                set.working_dir.as_deref(),
+                                set.container.as_ref(),
+                                &client,
+                            ) && slot.config_is_current().await
+                        }
+                    },
+                    |config| {
+                        Arc::new(self.new_slot(
+                            set.scope_id(),
+                            config,
+                            set.working_dir.as_deref(),
+                            set.container.as_ref(),
+                            Arc::clone(&client),
+                        ))
+                    },
+                )
+                .await
         };
         self.lease(set.scope_id(), set.working_dir.clone(), slots, &client)
     }
@@ -831,9 +808,11 @@ impl ExtensionManager {
     pub(crate) async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
         let client = self.client(scope_id);
         let slots = self
+            .runtime
             .scopes
             .lock()
             .await
+            .selected
             .get(scope_id)
             .into_iter()
             .flat_map(IndexMap::values)
@@ -896,7 +875,9 @@ impl ExtensionManager {
             tools_version: Arc::clone(&tools_version),
         };
 
-        let mcp_client: Box<dyn McpClientTrait> = match &resolved_config {
+        let mcp_client: Box<
+            dyn goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>,
+        > = match &resolved_config {
             ExtensionConfig::StreamableHttp {
                 uri,
                 timeout,
@@ -1015,8 +996,11 @@ impl ExtensionManager {
         let client = self.client(session_id);
         let pending_key = (session_id.to_string(), config.key());
         let slot = {
-            let scopes = self.scopes.lock().await;
-            let mut enabling = self.enabling.lock().await;
+            let mut state = self.runtime.scopes.lock().await;
+            let goose_agent::mcp::host::Scopes {
+                selected: scopes,
+                enabling,
+            } = &mut *state;
             let selected = scopes
                 .get(session_id)
                 .and_then(|slots| slots.get(&pending_key.1))
@@ -1056,8 +1040,11 @@ impl ExtensionManager {
             Runtime::Failed(error) => Err(ExtensionError::StartFailed(error.clone())),
             Runtime::Running(_) | Runtime::Declined => self.select(session_id, config).await,
         };
-        let mut scopes = self.scopes.lock().await;
-        let mut enabling = self.enabling.lock().await;
+        let mut state = self.runtime.scopes.lock().await;
+        let goose_agent::mcp::host::Scopes {
+            selected: scopes,
+            enabling,
+        } = &mut *state;
         if enabling
             .get(&pending_key)
             .is_some_and(|pending| Arc::ptr_eq(pending, &slot))
@@ -1131,10 +1118,7 @@ impl ExtensionManager {
 
     /// Processes stop once no lease holds them.
     pub async fn release(&self, session_id: &str) {
-        let mut scopes = self.scopes.lock().await;
-        let mut enabling = self.enabling.lock().await;
-        scopes.remove(session_id);
-        enabling.retain(|(scope_id, _), _| scope_id != session_id);
+        self.runtime.release(session_id).await;
         self.clients
             .lock()
             .expect("clients mutex poisoned")
@@ -1214,7 +1198,7 @@ mod tests {
         ) {
             let mut slot = self.new_slot(scope_id, &config, None, None, self.client(scope_id));
             slot.placement = None;
-            slot.runtime = OnceCell::new_with(Some(Runtime::Running(Arc::new(Extension {
+            slot.runtime = LazyRuntime::ready(Runtime::Running(Arc::new(Extension {
                 key: config.key(),
                 config: config.clone(),
                 resolved_config: config.clone(),
@@ -1222,10 +1206,12 @@ mod tests {
                 server_info: info,
                 tools_version: Arc::new(AtomicU64::new(0)),
                 tools: Mutex::new(None),
-            }))));
-            self.scopes
+            })));
+            self.runtime
+                .scopes
                 .lock()
                 .await
+                .selected
                 .entry(scope_id.to_string())
                 .or_default()
                 .insert(config.key(), Arc::new(slot));
@@ -1240,7 +1226,7 @@ mod tests {
     struct MockClient {}
 
     #[async_trait::async_trait]
-    impl McpClientTrait for MockClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for MockClient {
         fn get_info(&self) -> Option<&InitializeResult> {
             None
         }
@@ -1352,7 +1338,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl McpClientTrait for ResourceClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for ResourceClient {
         async fn list_resources(
             &self,
             _session_id: &str,
@@ -1406,7 +1392,9 @@ mod tests {
     struct ContextNotificationClient;
 
     #[async_trait::async_trait]
-    impl McpClientTrait for ContextNotificationClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
+        for ContextNotificationClient
+    {
         fn get_info(&self) -> Option<&InitializeResult> {
             None
         }
@@ -1602,7 +1590,7 @@ mod tests {
     struct NamedToolsClient(Vec<Tool>);
 
     #[async_trait::async_trait]
-    impl McpClientTrait for NamedToolsClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for NamedToolsClient {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -1635,7 +1623,9 @@ mod tests {
     struct SubagentMetaClient;
 
     #[async_trait::async_trait]
-    impl McpClientTrait for SubagentMetaClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
+        for SubagentMetaClient
+    {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -1789,7 +1779,9 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl McpClientTrait for BlockingToolsClient {
+    impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
+        for BlockingToolsClient
+    {
         async fn list_tools(
             &self,
             _session_id: &str,
@@ -2245,7 +2237,7 @@ mod tests {
             .unwrap()
             .start()
             .await;
-        let before = manager.scopes.lock().await[&session.id].clone();
+        let before = manager.runtime.scopes.lock().await.selected[&session.id].clone();
 
         manager
             .get_context()
@@ -2257,7 +2249,7 @@ mod tests {
             .unwrap();
         let lease = manager.current_lease(&session.id).await.unwrap();
 
-        let after = manager.scopes.lock().await[&session.id].clone();
+        let after = manager.runtime.scopes.lock().await.selected[&session.id].clone();
         assert!(Arc::ptr_eq(&before["developer"], &after["developer"]));
         assert!(!Arc::ptr_eq(&before["fixture"], &after["fixture"]));
         assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
@@ -2279,7 +2271,8 @@ mod tests {
             ],
         )
         .unwrap();
-        let slots = || async { manager.scopes.lock().await[set.scope_id()].clone() };
+        let slots =
+            || async { manager.runtime.scopes.lock().await.selected[set.scope_id()].clone() };
         let mut client = ClientContext::new(&GoosePlatform::GooseDesktop, None);
         manager.attach_client(set.scope_id(), client.clone());
         let held = manager.resolve(&set).await;
@@ -2288,7 +2281,7 @@ mod tests {
 
         manager.attach_client(set.scope_id(), client.clone());
         // Change capabilities after resolve captures the client, while it waits for slots.
-        let scopes = manager.scopes.lock().await;
+        let scopes = manager.runtime.scopes.lock().await;
         let mut resolving = std::pin::pin!(manager.resolve(&set));
         assert!(futures::poll!(resolving.as_mut()).is_pending());
         client.capabilities.mcpui = false;
@@ -2348,10 +2341,18 @@ mod tests {
         .await;
         let held = manager.current_lease(&session.id).await.unwrap();
         assert!(held.start().await.iter().all(|result| result.success));
-        let before = Arc::downgrade(&manager.scopes.lock().await[&session.id]["release_fixture"]);
+        let before = Arc::downgrade(
+            &manager.runtime.scopes.lock().await.selected[&session.id]["release_fixture"],
+        );
 
         manager.release(&session.id).await;
-        assert!(!manager.scopes.lock().await.contains_key(&session.id));
+        assert!(!manager
+            .runtime
+            .scopes
+            .lock()
+            .await
+            .selected
+            .contains_key(&session.id));
 
         let result = held
             .call(
@@ -2373,7 +2374,9 @@ mod tests {
         let current = manager.current_lease(&session.id).await.unwrap();
         assert!(!Weak::ptr_eq(
             &before,
-            &Arc::downgrade(&manager.scopes.lock().await[&session.id]["release_fixture"]),
+            &Arc::downgrade(
+                &manager.runtime.scopes.lock().await.selected[&session.id]["release_fixture"]
+            ),
         ));
         assert!(current.start().await.iter().all(|result| result.success));
         drop(held);
@@ -2568,7 +2571,8 @@ mod tests {
         extension_manager
             .add_mock_extension("dynamic".to_string(), tools_client.clone())
             .await;
-        let slot = extension_manager.scopes.lock().await["session"]["dynamic"].clone();
+        let slot =
+            extension_manager.runtime.scopes.lock().await.selected["session"]["dynamic"].clone();
         let tools_version = slot.start().await.unwrap().tools_version.clone();
 
         let manager = extension_manager;
@@ -2607,12 +2611,7 @@ mod tests {
             .await
             .unwrap();
 
-        let successful = manager.apply(
-            ExtensionMutation::Enable {
-                name: "analyze".to_string(),
-            },
-            &session.id,
-        );
+        let successful = manager.enable(&session.id, builtin_config("todo", vec![]));
         let failed = manager.apply(
             ExtensionMutation::Enable {
                 name: "missing-extension".to_string(),
@@ -2621,7 +2620,7 @@ mod tests {
         );
         let (successful, failed) = tokio::join!(successful, failed);
 
-        assert!(successful.is_ok());
+        assert!(successful.is_ok(), "{successful:?}");
         assert!(failed.is_err());
         let stored_session = manager
             .get_context()
@@ -2634,7 +2633,7 @@ mod tests {
         assert!(stored_extensions
             .extensions
             .iter()
-            .any(|config| config.key() == "analyze"));
+            .any(|config| config.key() == "todo"));
     }
 
     #[test]

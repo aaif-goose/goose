@@ -4334,11 +4334,14 @@ version = "0.1.0-alpha.13"
 dependencies = [
  "anyhow",
  "async-trait",
+ "blake3",
  "futures",
  "goose-provider-types",
  "goose-sdk-types",
+ "indexmap 2.14.2",
  "js-sys",
  "regex",
+ "reqwest",
  "rmcp",
  "schemars 1.2.2",
  "serde",
@@ -4349,6 +4352,7 @@ dependencies = [
  "tracing",
  "tracing-futures",
  "uuid",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
 ]

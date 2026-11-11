@@ -207,3 +207,34 @@ from JavaScript. Some things differ from native:
 
 The reference assembly of these pieces is `goose::agents::state_machine` in the
 [`goose`](../goose) crate.
+
+## MCP
+
+Use `Lease::connect(scope, registrations, policy, cancel)` for one-shot attachment,
+then install `McpOperation::new(Arc::new(lease))` after approval/pre-tool hooks and
+before unhandled-call handling. See [`examples/mcp.rs`](examples/mcp.rs).
+
+Registrations accept initialized clients (`attached`), custom `Connector`s (`new`),
+or native `StdioConnector`/`HttpConnector` inputs (`stdio`/`http`). Native transports
+require `mcp-stdio`/`mcp-http`; leave these features off for Wasm. Stdio defaults to
+a clean environment and discarded stderr; cwd and inheritance are explicit.
+HTTP validates URLs/headers and disables redirects by default; `with_client`
+accepts host-managed HTTP policy. Config loading, secrets and OAuth stay in the host.
+
+For dynamic selection, retain a `Manager` and use `resolve` (strict) or
+`resolve_with_policy`. Use `Registration::with_revision` when connection inputs
+change. `release` removes manager ownership without invalidating held leases.
+A lease pins tool names, schemas and clients for outstanding calls, including
+calls awaiting approval. `new_binding()` rediscovers tools on the same connections;
+it does not reconnect. Requests without the advertised binding fail closed.
+
+`ready(cancel)` and lazy `catalog(cancel)` use the same selection policy:
+`Strict` fails on initialization or discovery errors; `BestEffort` excludes failed
+servers and returns per-server diagnostics from `ready`. Name collisions remain
+fatal. Connection failures are cached until the registration revision changes.
+Resources and prompts are available through the lease, not injected automatically.
+
+For custom integration, implement `Client`, `RequestSender` (request decoration),
+or `McpHost` (operation policy). `TransportClient` owns an initialized rmcp service.
+Low-level selection primitives for hosts with custom startup/persistence policy
+live under `mcp::host`; ordinary attachment does not require them.

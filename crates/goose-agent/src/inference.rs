@@ -481,6 +481,10 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 .prepare(session, conversation, input)
                 .await?;
 
+            let mcp_bindings = tools.iter().filter_map(|tool| {
+                tool.meta.as_ref()?.0.get(crate::mcp::BINDING_META_KEY).map(|binding| (tool.name.to_string(), binding.clone()))
+            }).collect::<std::collections::HashMap<_, _>>();
+
             for message in &additional_messages {
                 messages_for_provider.push(message.clone());
             }
@@ -554,6 +558,16 @@ impl<S: MachineSession, E: InferenceEffect> Inference<S, E> for InferenceRunner<
                 if let Some(mut chunk) = msg_opt {
                     if let Some(inference) = &inference {
                         chunk = chunk.with_inference_if_assistant(inference.clone());
+                    }
+                    for content in &mut chunk.content {
+                        if let MessageContent::ToolRequest(request) = content {
+                            if let Ok(call) = &request.tool_call {
+                                if let Some(binding) = mcp_bindings.get(call.name.as_ref()) {
+                                    let meta = request.tool_meta.get_or_insert_with(|| serde_json::json!({}));
+                                    if let Some(meta) = meta.as_object_mut() { meta.insert(crate::mcp::BINDING_META_KEY.into(), binding.clone()); }
+                                }
+                            }
+                        }
                     }
                     chunk.content.retain(|content| match content {
                         MessageContent::ToolRequest(request) => {

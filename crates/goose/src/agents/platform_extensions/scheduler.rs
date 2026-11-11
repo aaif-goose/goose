@@ -6,7 +6,7 @@ use rmcp::model::{
 use rmcp::model::{JsonObject, ServerCapabilities};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::platform_tools::{manage_schedule_tool, MANAGE_SCHEDULE_TOOL_NAME};
 use crate::agents::schedule_tool::ScheduleTool;
 use crate::agents::tool_execution::ToolCallContext;
@@ -38,7 +38,7 @@ impl SchedulerClient {
 }
 
 #[async_trait::async_trait]
-impl McpClientTrait for SchedulerClient {
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext> for SchedulerClient {
     async fn list_tools(
         &self,
         _session_id: &str,

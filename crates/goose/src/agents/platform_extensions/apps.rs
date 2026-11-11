@@ -1,5 +1,5 @@
 use crate::agents::extension::PlatformExtensionContext;
-use crate::agents::mcp_client::{Error, McpClientTrait};
+use crate::agents::mcp_client::Error;
 use crate::agents::reply_parts::{
     coerce_tool_arguments, prepare_tools_for_provider, toolshim_postprocess,
 };
@@ -563,7 +563,9 @@ impl AppsManagerClient {
 }
 
 #[async_trait]
-impl McpClientTrait for AppsManagerClient {
+impl goose_agent::mcp::Client<crate::agents::tool_execution::ToolCallContext>
+    for AppsManagerClient
+{
     async fn list_tools(
         &self,
         _session_id: &str,
@@ -778,6 +780,7 @@ mod tests {
     use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
     use crate::providers::base::{stream_from_single_message, MessageStream, Usage};
     use crate::session::SessionManager;
+    use goose_agent::mcp::Client;
     use goose_providers::errors::ProviderError;
     use std::path::Path;
     use std::sync::Mutex;
