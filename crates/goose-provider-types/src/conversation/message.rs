@@ -263,6 +263,7 @@ pub enum MessageErrorKind {
     Authentication,
     ContextLengthExceeded,
     CreditsExhausted,
+    ResourceExhausted,
     #[serde(other)]
     Other,
 }
@@ -1321,15 +1322,21 @@ impl Message {
     }
 
     pub fn error_kind(&self) -> Option<MessageErrorKind> {
-        self.content.iter().find_map(|content| match content {
-            MessageContentBlock::Error(error) => Some(error.kind),
-            MessageContentBlock::SystemNotification(notification)
-                if notification.notification_type == SystemNotificationType::CreditsExhausted =>
-            {
-                Some(MessageErrorKind::CreditsExhausted)
-            }
-            _ => None,
+        self.error().map(|error| error.kind).or_else(|| {
+            self.content.iter().find_map(|content| match content {
+                MessageContentBlock::SystemNotification(notification)
+                    if notification.notification_type
+                        == SystemNotificationType::CreditsExhausted =>
+                {
+                    Some(MessageErrorKind::CreditsExhausted)
+                }
+                _ => None,
+            })
         })
+    }
+
+    pub fn error(&self) -> Option<&ErrorContent> {
+        self.content.iter().find_map(MessageContentBlock::as_error)
     }
 
     pub fn with_visibility(mut self, user_visible: bool, agent_visible: bool) -> Self {

@@ -10,6 +10,7 @@ use agent_client_protocol::schema::v1::{
 };
 use anyhow::Result;
 use futures::StreamExt;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -1638,18 +1639,17 @@ async fn a_subagent_that_ran_out_of_turns_finishes_after_resume() -> Result<()> 
     );
     api.on("count the files")
         .call("shell", json!({ "command": "echo partial-progress" }));
-    api.on("max turns reached")
+    api.on(MAX_TURNS_MESSAGE)
         .reply("the subagent ran out of turns");
 
     reply_approving(&services, &session_id, "hand this off", None).await?;
     let subagent_id = delegated_subagent_id(&services, &session_id).await?;
-    assert!(
-        parent_texts(&services, &session_id)
-            .await?
-            .iter()
-            .any(|text| text
-                .starts_with(&format!("Subagent {subagent_id} failed: max turns reached")))
-    );
+    assert!(parent_texts(&services, &session_id)
+        .await?
+        .iter()
+        .any(|text| text.starts_with(&format!(
+            "Subagent {subagent_id} failed: {MAX_TURNS_MESSAGE}"
+        ))));
 
     let resumed_request =
         resume_until_completed(&services, &api, &session_id, &subagent_id).await?;

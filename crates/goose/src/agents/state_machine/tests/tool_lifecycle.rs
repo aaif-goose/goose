@@ -8,17 +8,17 @@ use super::calculator_extension::{
     delayed_value, value, ADD, ADD_WITH_AUDIENCE, APP_ONLY, DIVIDE, REQUEST_VALUE,
 };
 use super::dummy_api::DummyApi;
-use super::pipeline::MessageKind::{Agent, Confirmation, ToolCall, ToolResponse};
+use super::pipeline::MessageKind::{Agent, Confirmation, Error, ToolCall, ToolResponse};
 use super::pipeline::TestPipeline;
 use super::pipeline::MAX_TURNS;
 use super::test_pipeline;
-use crate::agents::state_machine::MAX_TURNS_MESSAGE;
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::agents::AgentEvent;
 use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
@@ -94,7 +94,7 @@ async fn max_turns_waits_for_an_open_tool_confirmation() -> Result<()> {
 
     pipeline.confirm("gated", Permission::AllowOnce).await?;
     let result = pipeline.resume().await?;
-    result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
     assert_eq!(pipeline.calculator_total(), 2);
     assert_eq!(api.call_count(), 1);
     Ok(())
@@ -377,7 +377,7 @@ async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
     let result = pipeline.run(["repeat malformed forever"]).await?;
 
     assert_eq!(api.call_count() - calls_before, MAX_TURNS as usize);
-    result.assert_message(-1, Agent, crate::agents::state_machine::MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     Ok(())
 }
