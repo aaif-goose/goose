@@ -16,11 +16,6 @@ impl<T> Runtime<T> {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn ready(value: T) -> Self {
-        Self {
-            value: OnceCell::new_with(Some(value)),
-        }
-    }
     pub fn get(&self) -> Option<&T> {
         self.value.get()
     }
@@ -48,8 +43,8 @@ impl<T> Default for Scopes<T> {
     }
 }
 
-/// Generic ownership primitive for hosts with their own durable selection policy.
-/// GDK never persists the selection or inspects host configuration.
+/// Scope ownership for `mcp::Manager`. GDK never persists the selection or inspects host
+/// configuration.
 pub struct Manager<T> {
     pub scopes: Mutex<Scopes<T>>,
 }
@@ -113,7 +108,7 @@ impl<T> Scopes<T> {
     }
 }
 
-/// A pinned scope selection shared by standalone and application-specific leases.
+/// A pinned scope selection held by a lease.
 pub struct Selection<T> {
     pub scope: String,
     pub slots: Vec<Arc<T>>,

@@ -2,9 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use futures::Stream;
-use goose_agent::mcp::host::{Manager as McpManager, Runtime as LazyRuntime};
-#[cfg(test)]
-use indexmap::IndexMap;
+use goose_agent::mcp::{Connector, Registration, Started, StartupPolicy};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -12,7 +10,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -138,18 +135,21 @@ pub(super) struct Extension {
     /// Bumped by the client on tools/list_changed; a cached list is only valid
     /// for the version it was fetched under.
     tools_version: Arc<AtomicU64>,
-    /// Servers may publish different tools to different sessions (extension
-    /// management hides itself from subagents), so the scope is part of the
-    /// cache key.
-    tools: Mutex<Option<CachedTools>>,
 }
 
-struct CachedTools {
-    scope_id: String,
-    version: u64,
-    tools: Arc<Vec<Tool>>,
+impl goose_agent::mcp::Server for Extension {
+    type Context = crate::agents::tool_execution::ToolCallContext;
+
+    fn client(&self) -> &dyn goose_agent::mcp::Client<Self::Context> {
+        self.client.as_ref()
+    }
+
+    fn tools_version(&self) -> Option<u64> {
+        Some(self.tools_version.load(Ordering::SeqCst))
+    }
 }
 
+#[derive(Clone, PartialEq)]
 struct Placement {
     working_dir: PathBuf,
     container: Option<Container>,
@@ -175,55 +175,72 @@ impl Placement {
     }
 }
 
-enum Runtime {
-    Running(Arc<Extension>),
-    /// A platform extension the host cannot provide (no scheduler service,
-    /// say) declines rather than registering with no tools.
-    Declined,
-    Failed(String),
-}
-
-pub(super) struct ExtensionSlot {
-    key: String,
-    config: ExtensionConfig,
+/// Decides whether a selected extension's connection can be kept.
+#[derive(Clone)]
+pub(super) struct Revision {
+    pub(super) config: ExtensionConfig,
     /// In-process platform extensions take the directory from each call.
     placement: Option<Placement>,
-    scope_id: String,
-    manager: Weak<ExtensionManager>,
     client: Arc<ClientContext>,
-    config_generation: AtomicU64,
-    runtime: LazyRuntime<Runtime>,
 }
 
-impl ExtensionSlot {
-    fn reusable_for(
+impl PartialEq for Revision {
+    fn eq(&self, other: &Self) -> bool {
+        self.config == other.config
+            && match (&self.placement, &other.placement) {
+                (Some(a), Some(b)) => a == b && self.client.negotiates_like(&other.client),
+                _ => true,
+            }
+    }
+}
+
+struct GooseConnector {
+    revision: Revision,
+    scope_id: String,
+    manager: Weak<ExtensionManager>,
+    config_generation: AtomicU64,
+}
+
+#[async_trait::async_trait]
+impl Connector<Extension> for GooseConnector {
+    async fn connect(
         &self,
-        config: &ExtensionConfig,
-        working_dir: Option<&Path>,
-        container: Option<&Container>,
-        client: &ClientContext,
-    ) -> bool {
-        if self.config != *config {
-            return false;
+        _scope: &str,
+        _cancel: CancellationToken,
+    ) -> anyhow::Result<Option<Arc<Extension>>> {
+        let manager = self
+            .manager
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("the extension manager is gone"))?;
+        let Revision {
+            config,
+            placement,
+            client,
+        } = &self.revision;
+        match manager
+            .start(config, placement.as_ref(), &self.scope_id, client)
+            .await
+        {
+            Ok(extension) => Ok(extension.map(Arc::new)),
+            Err(error) => {
+                warn!(extension = %config.key(), %error, "failed to start extension");
+                Err(anyhow::anyhow!(error.to_string()))
+            }
         }
-        self.placement.as_ref().is_none_or(|placement| {
-            working_dir.is_none_or(|working_dir| placement.working_dir == working_dir)
-                && placement.container.as_ref() == container
-                && self.client.negotiates_like(client)
-        })
     }
 
     /// Whether the secrets and environment the extension started with still hold. Only
     /// checked after this process wrote config, so a lease does not read the keyring.
-    async fn config_is_current(&self) -> bool {
+    async fn is_current(&self, started: Started<'_, Extension>) -> bool {
         let generation = Config::global().generation();
         if self.config_generation.load(Ordering::SeqCst) == generation {
             return true;
         }
-        let current = match self.runtime.get() {
-            None | Some(Runtime::Declined) => true,
-            Some(Runtime::Failed(_)) => false,
-            Some(Runtime::Running(extension)) => self
+        let current = match started {
+            Started::NotStarted | Started::Declined => true,
+            Started::Failed(_) => false,
+            Started::Running(extension) => self
+                .revision
                 .config
                 .clone()
                 .resolve(Config::global())
@@ -234,51 +251,6 @@ impl ExtensionSlot {
             self.config_generation.store(generation, Ordering::SeqCst);
         }
         current
-    }
-
-    async fn runtime(&self) -> &Runtime {
-        self.runtime
-            .get_or_init(|| async {
-                let Some(manager) = self.manager.upgrade() else {
-                    return Runtime::Failed("the extension manager is gone".to_string());
-                };
-                match manager
-                    .start(
-                        &self.config,
-                        self.placement.as_ref(),
-                        &self.scope_id,
-                        &self.client,
-                    )
-                    .await
-                {
-                    Ok(Some(extension)) => Runtime::Running(Arc::new(extension)),
-                    Ok(None) => Runtime::Declined,
-                    Err(error) => {
-                        warn!(extension = %self.key, %error, "failed to start extension");
-                        Runtime::Failed(error.to_string())
-                    }
-                }
-            })
-            .await
-    }
-
-    pub(super) async fn start(&self) -> Option<&Arc<Extension>> {
-        match self.runtime().await {
-            Runtime::Running(extension) => Some(extension),
-            Runtime::Declined | Runtime::Failed(_) => None,
-        }
-    }
-
-    pub(super) async fn load_result(&self) -> ExtensionLoadResult {
-        let error = match self.runtime().await {
-            Runtime::Failed(error) => Some(error.clone()),
-            Runtime::Running(_) | Runtime::Declined => None,
-        };
-        ExtensionLoadResult {
-            name: self.config.name(),
-            success: error.is_none(),
-            error,
-        }
     }
 }
 
@@ -306,69 +278,6 @@ impl Extension {
             }
             _ => false,
         }
-    }
-
-    /// The extension's tools as the model sees them: filtered by
-    /// `available_tools`, prefixed unless first-class, tagged with the owner,
-    /// schema-normalized.
-    pub(super) async fn public_tools(&self, scope_id: &str) -> Arc<Vec<Tool>> {
-        let version;
-        {
-            let cache = self.tools.lock().await;
-            version = self.tools_version.load(Ordering::SeqCst);
-            if let Some(cached) = &*cache {
-                if cached.version == version && cached.scope_id == scope_id {
-                    let tools = Arc::clone(&cached.tools);
-                    if self.tools_version.load(Ordering::SeqCst) == version {
-                        return tools;
-                    }
-                }
-            }
-        }
-
-        let tools = Arc::new(self.fetch_public_tools(scope_id).await);
-
-        let mut cache = self.tools.lock().await;
-        if self.tools_version.load(Ordering::SeqCst) == version {
-            *cache = Some(CachedTools {
-                scope_id: scope_id.to_string(),
-                version,
-                tools: Arc::clone(&tools),
-            });
-        }
-        tools
-    }
-
-    async fn fetch_public_tools(&self, session_id: &str) -> Vec<Tool> {
-        let listed = match goose_agent::mcp::discovery::tools(
-            self.client.as_ref(),
-            session_id,
-            CancellationToken::new(),
-        )
-        .await
-        {
-            Ok(tools) => tools,
-            Err(error) => {
-                warn!(extension = %self.key, %error, "Failed to list tools");
-                return Vec::new();
-            }
-        };
-        listed
-            .into_iter()
-            .filter(|tool| self.config.is_tool_available(&tool.name))
-            .map(|tool| {
-                let mut tool = goose_agent::mcp::discovery::expose_tool(
-                    tool,
-                    &self.key,
-                    is_unprefixed_extension(&self.config),
-                );
-                tool.meta.get_or_insert_with(Default::default).0.insert(
-                    TOOL_EXTENSION_META_KEY.into(),
-                    Value::String(self.key.clone()),
-                );
-                tool
-            })
-            .collect()
     }
 }
 
@@ -441,7 +350,7 @@ pub(crate) const TRUSTED_TOOL_UPDATE_META_KEY: &str = "__goose_tool_update_meta"
 
 /// Manages goose extensions / MCP clients and their interactions
 pub struct ExtensionManager {
-    runtime: McpManager<ExtensionSlot>,
+    runtime: goose_agent::mcp::Manager<Extension, Revision>,
     context: PlatformExtensionContext,
     default_client: Arc<ClientContext>,
     clients: std::sync::Mutex<HashMap<String, Arc<ClientContext>>>,
@@ -491,7 +400,7 @@ pub fn get_parameter_names(tool: &Tool) -> Vec<String> {
     names
 }
 
-const TOOL_EXTENSION_META_KEY: &str = "goose_extension";
+pub(super) const TOOL_EXTENSION_META_KEY: &str = "goose_extension";
 
 pub fn get_tool_owner(tool: &Tool) -> Option<String> {
     tool.meta
@@ -666,7 +575,7 @@ impl ExtensionManager {
         default_client: ClientContext,
     ) -> Self {
         Self {
-            runtime: McpManager::new(),
+            runtime: Default::default(),
             context: PlatformExtensionContext {
                 extension_manager: None,
                 providers,
@@ -712,74 +621,66 @@ impl ExtensionManager {
 
     fn lease(
         &self,
-        scope_id: &str,
+        selection: goose_agent::mcp::Lease<Extension, Revision>,
         working_dir: Option<PathBuf>,
-        slots: Vec<Arc<ExtensionSlot>>,
         client: &ClientContext,
     ) -> ExtensionLease {
         ExtensionLease::new(
-            scope_id,
+            selection.with_collision_policy(goose_agent::mcp::CollisionPolicy::KeepFirst),
             working_dir,
-            slots,
             self.context.session_manager.action_required(),
             client.hydrates_mcp_apps(),
         )
     }
 
-    fn new_slot(
+    fn registration(
         self: &Arc<Self>,
         scope_id: &str,
         config: &ExtensionConfig,
         working_dir: Option<&Path>,
         container: Option<&Container>,
         client: Arc<ClientContext>,
-    ) -> ExtensionSlot {
-        ExtensionSlot {
-            key: config.key(),
+    ) -> Registration<Extension, Revision> {
+        let revision = Revision {
             config: config.clone(),
             placement: Placement::for_config(config, working_dir, container),
-            scope_id: scope_id.to_string(),
-            manager: Arc::downgrade(self),
             client,
-            config_generation: AtomicU64::new(Config::global().generation()),
-            runtime: LazyRuntime::new(),
+        };
+        Registration {
+            id: config.key(),
+            connector: Arc::new(GooseConnector {
+                revision: revision.clone(),
+                scope_id: scope_id.to_string(),
+                manager: Arc::downgrade(self),
+                config_generation: AtomicU64::new(Config::global().generation()),
+            }),
+            revision,
+            available_tools: config.available_tools().to_vec(),
+            unprefixed: is_unprefixed_extension(config),
         }
     }
 
     pub async fn resolve(self: &Arc<Self>, set: &ExtensionSet) -> ExtensionLease {
         let client = self.client(set.scope_id());
-        let slots = {
-            let mut state = self.runtime.scopes.lock().await;
-            state
-                .reconcile(
+        let registrations = set
+            .extensions()
+            .iter()
+            .map(|config| {
+                self.registration(
                     set.scope_id(),
-                    set.extensions(),
-                    |config| config.key(),
-                    |slot, config| {
-                        let config = (*config).clone();
-                        let client = Arc::clone(&client);
-                        async move {
-                            slot.reusable_for(
-                                &config,
-                                set.working_dir.as_deref(),
-                                set.container.as_ref(),
-                                &client,
-                            ) && slot.config_is_current().await
-                        }
-                    },
-                    |config| {
-                        Arc::new(self.new_slot(
-                            set.scope_id(),
-                            config,
-                            set.working_dir.as_deref(),
-                            set.container.as_ref(),
-                            Arc::clone(&client),
-                        ))
-                    },
+                    config,
+                    set.working_dir.as_deref(),
+                    set.container.as_ref(),
+                    Arc::clone(&client),
                 )
-                .await
-        };
-        self.lease(set.scope_id(), set.working_dir.clone(), slots, &client)
+            })
+            .collect();
+        let selection = self
+            .runtime
+            .resolve_with_policy(set.scope_id(), registrations, StartupPolicy::BestEffort)
+            .await
+            .expect("an extension set has unique, non-empty keys");
+        self.lease(selection, set.working_dir.clone(), &client)
     }
 
     pub async fn current_lease(self: &Arc<Self>, session_id: &str) -> Result<ExtensionLease> {
@@ -807,18 +708,11 @@ impl ExtensionManager {
     #[cfg(test)]
     pub(crate) async fn scope_lease(&self, scope_id: &str) -> ExtensionLease {
         let client = self.client(scope_id);
-        let slots = self
+        let selection = self
             .runtime
-            .scopes
-            .lock()
-            .await
-            .selected
-            .get(scope_id)
-            .into_iter()
-            .flat_map(IndexMap::values)
-            .cloned()
-            .collect();
-        self.lease(scope_id, None, slots, &client)
+            .selected(scope_id, StartupPolicy::BestEffort)
+            .await;
+        self.lease(selection, None, &client)
     }
 
     async fn session_lease(self: &Arc<Self>, session: &Session) -> Result<ExtensionLease> {
@@ -957,7 +851,6 @@ impl ExtensionManager {
             client: Arc::from(mcp_client),
             server_info,
             tools_version,
-            tools: Mutex::new(None),
         }))
     }
 
@@ -993,71 +886,26 @@ impl ExtensionManager {
         config: ExtensionConfig,
     ) -> ExtensionResult<()> {
         let session = self.session(session_id).await?;
-        let client = self.client(session_id);
-        let pending_key = (session_id.to_string(), config.key());
-        let slot = {
-            let mut state = self.runtime.scopes.lock().await;
-            let goose_agent::mcp::host::Scopes {
-                selected: scopes,
-                enabling,
-            } = &mut *state;
-            let selected = scopes
-                .get(session_id)
-                .and_then(|slots| slots.get(&pending_key.1))
-                .cloned();
-            let mut reusable = None;
-            for slot in enabling
-                .get(&pending_key)
-                .cloned()
-                .into_iter()
-                .chain(selected)
-            {
-                if slot.reusable_for(
-                    &config,
-                    Some(&session.working_dir),
-                    session.container.as_ref(),
-                    &client,
-                ) && slot.config_is_current().await
-                    && !matches!(slot.runtime.get(), Some(Runtime::Failed(_)))
-                {
-                    reusable = Some(slot);
-                    break;
-                }
-            }
-            let slot = reusable.unwrap_or_else(|| {
-                Arc::new(self.new_slot(
-                    session_id,
-                    &config,
-                    Some(&session.working_dir),
-                    session.container.as_ref(),
-                    client,
-                ))
-            });
-            enabling.insert(pending_key.clone(), Arc::clone(&slot));
-            slot
-        };
-        let result = match slot.runtime().await {
-            Runtime::Failed(error) => Err(ExtensionError::StartFailed(error.clone())),
-            Runtime::Running(_) | Runtime::Declined => self.select(session_id, config).await,
-        };
-        let mut state = self.runtime.scopes.lock().await;
-        let goose_agent::mcp::host::Scopes {
-            selected: scopes,
-            enabling,
-        } = &mut *state;
-        if enabling
-            .get(&pending_key)
-            .is_some_and(|pending| Arc::ptr_eq(pending, &slot))
-        {
-            enabling.remove(&pending_key);
-            if result.is_ok() {
-                scopes
-                    .entry(pending_key.0)
-                    .or_default()
-                    .insert(pending_key.1, slot);
-            }
-        }
-        result
+        let registration = self.registration(
+            session_id,
+            &config,
+            Some(&session.working_dir),
+            session.container.as_ref(),
+            self.client(session_id),
+        );
+        self.runtime
+            .enable(
+                session_id,
+                registration,
+                CancellationToken::new(),
+                |load| async move {
+                    match load.error {
+                        Some(error) => Err(ExtensionError::StartFailed(error)),
+                        None => self.select(session_id, config).await,
+                    }
+                },
+            )
+            .await
     }
 
     pub async fn disable(&self, session_id: &str, key: &str) -> ExtensionResult<bool> {
@@ -1196,25 +1044,45 @@ mod tests {
             client: McpClientBox,
             info: Option<ServerConfig>,
         ) {
-            let mut slot = self.new_slot(scope_id, &config, None, None, self.client(scope_id));
-            slot.placement = None;
-            slot.runtime = LazyRuntime::ready(Runtime::Running(Arc::new(Extension {
+            let extension = Arc::new(Extension {
                 key: config.key(),
                 config: config.clone(),
                 resolved_config: config.clone(),
                 client,
                 server_info: info,
                 tools_version: Arc::new(AtomicU64::new(0)),
-                tools: Mutex::new(None),
-            })));
+            });
+            let revision = Revision {
+                config: config.clone(),
+                placement: None,
+                client: self.client(scope_id),
+            };
+            let registration = Registration {
+                available_tools: config.available_tools().to_vec(),
+                unprefixed: is_unprefixed_extension(&config),
+                ..Registration::started(config.key(), revision, extension)
+            };
             self.runtime
-                .scopes
-                .lock()
+                .enable(
+                    scope_id,
+                    registration,
+                    CancellationToken::new(),
+                    |_| async { Ok::<_, ()>(()) },
+                )
                 .await
-                .selected
-                .entry(scope_id.to_string())
-                .or_default()
-                .insert(config.key(), Arc::new(slot));
+                .unwrap();
+        }
+
+        /// The started extensions of a scope's current selection, by key.
+        async fn started(&self, scope_id: &str) -> HashMap<String, Arc<Extension>> {
+            self.runtime
+                .selected(scope_id, StartupPolicy::BestEffort)
+                .await
+                .servers(CancellationToken::new())
+                .await
+                .into_iter()
+                .map(|(key, extension)| (key.to_string(), extension))
+                .collect()
         }
 
         async fn add_mock_extension(self: &Arc<Self>, name: String, client: McpClientBox) {
@@ -2237,7 +2105,7 @@ mod tests {
             .unwrap()
             .start()
             .await;
-        let before = manager.runtime.scopes.lock().await.selected[&session.id].clone();
+        let before = manager.started(&session.id).await;
 
         manager
             .get_context()
@@ -2249,7 +2117,7 @@ mod tests {
             .unwrap();
         let lease = manager.current_lease(&session.id).await.unwrap();
 
-        let after = manager.runtime.scopes.lock().await.selected[&session.id].clone();
+        let after = manager.started(&session.id).await;
         assert!(Arc::ptr_eq(&before["developer"], &after["developer"]));
         assert!(!Arc::ptr_eq(&before["fixture"], &after["fixture"]));
         assert_eq!(lease.working_dir(), Some(new_working_dir.path()));
@@ -2271,8 +2139,7 @@ mod tests {
             ],
         )
         .unwrap();
-        let slots =
-            || async { manager.runtime.scopes.lock().await.selected[set.scope_id()].clone() };
+        let slots = || manager.started(set.scope_id());
         let mut client = ClientContext::new(&GoosePlatform::GooseDesktop, None);
         manager.attach_client(set.scope_id(), client.clone());
         let held = manager.resolve(&set).await;
@@ -2280,14 +2147,7 @@ mod tests {
         let first = slots().await;
 
         manager.attach_client(set.scope_id(), client.clone());
-        // Change capabilities after resolve captures the client, while it waits for slots.
-        let scopes = manager.runtime.scopes.lock().await;
-        let mut resolving = std::pin::pin!(manager.resolve(&set));
-        assert!(futures::poll!(resolving.as_mut()).is_pending());
-        client.capabilities.mcpui = false;
-        manager.attach_client(set.scope_id(), client);
-        drop(scopes);
-        let reattached_lease = resolving.await;
+        let reattached_lease = manager.resolve(&set).await;
         let reattached = slots().await;
         for key in ["developer", "client_fixture"] {
             assert!(
@@ -2296,6 +2156,8 @@ mod tests {
             );
         }
 
+        client.capabilities.mcpui = false;
+        manager.attach_client(set.scope_id(), client);
         let current = manager.resolve(&set).await;
         let changed = slots().await;
         assert!(Arc::ptr_eq(&reattached["developer"], &changed["developer"]));
@@ -2341,18 +2203,10 @@ mod tests {
         .await;
         let held = manager.current_lease(&session.id).await.unwrap();
         assert!(held.start().await.iter().all(|result| result.success));
-        let before = Arc::downgrade(
-            &manager.runtime.scopes.lock().await.selected[&session.id]["release_fixture"],
-        );
+        let before = Arc::downgrade(&manager.started(&session.id).await["release_fixture"]);
 
         manager.release(&session.id).await;
-        assert!(!manager
-            .runtime
-            .scopes
-            .lock()
-            .await
-            .selected
-            .contains_key(&session.id));
+        assert!(manager.started(&session.id).await.is_empty());
 
         let result = held
             .call(
@@ -2374,9 +2228,7 @@ mod tests {
         let current = manager.current_lease(&session.id).await.unwrap();
         assert!(!Weak::ptr_eq(
             &before,
-            &Arc::downgrade(
-                &manager.runtime.scopes.lock().await.selected[&session.id]["release_fixture"]
-            ),
+            &Arc::downgrade(&manager.started(&session.id).await["release_fixture"]),
         ));
         assert!(current.start().await.iter().all(|result| result.success));
         drop(held);
@@ -2571,9 +2423,9 @@ mod tests {
         extension_manager
             .add_mock_extension("dynamic".to_string(), tools_client.clone())
             .await;
-        let slot =
-            extension_manager.runtime.scopes.lock().await.selected["session"]["dynamic"].clone();
-        let tools_version = slot.start().await.unwrap().tools_version.clone();
+        let tools_version = extension_manager.started("session").await["dynamic"]
+            .tools_version
+            .clone();
 
         let manager = extension_manager;
         let first_fetch = {

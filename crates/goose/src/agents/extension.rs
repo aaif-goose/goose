@@ -361,7 +361,12 @@ impl ExtensionConfig {
     }
 
     pub fn is_tool_available(&self, tool_name: &str) -> bool {
-        let available_tools = match self {
+        let available_tools = self.available_tools();
+        available_tools.is_empty() || available_tools.iter().any(|name| name == tool_name)
+    }
+
+    pub fn available_tools(&self) -> &[String] {
+        match self {
             Self::StreamableHttp {
                 available_tools, ..
             }
@@ -374,9 +379,7 @@ impl ExtensionConfig {
             | Self::Platform {
                 available_tools, ..
             } => available_tools,
-        };
-
-        available_tools.is_empty() || available_tools.contains(&tool_name.to_string())
+        }
     }
 
     pub async fn resolve(self, config: &Config) -> ExtensionResult<Self> {

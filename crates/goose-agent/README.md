@@ -247,5 +247,3 @@ changes.
 
 For custom integration, implement `Client`, `RequestSender` (request decoration),
 or `McpHost` (operation policy). `TransportClient` owns an initialized rmcp service.
-Low-level selection primitives for hosts with custom startup/persistence policy
-live under `mcp::host`; ordinary attachment does not require them.
