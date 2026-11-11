@@ -2,8 +2,8 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+use goose_agent::max_turns::MaxTurnsOperation;
 use goose_agent::post_tool_call_hook::PostToolCallHook;
-use goose_agent::turns::MaxTurnsOperation;
 use goose_providers::api_client::{ApiClient, AuthMethod};
 use goose_providers::decision::DecisionProvider;
 use goose_providers::model::ModelConfig;

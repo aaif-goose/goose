@@ -6,7 +6,7 @@ use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
-use goose_agent::turns::MAX_TURNS_MESSAGE;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 mod agent_reply;
 mod calculator_extension;

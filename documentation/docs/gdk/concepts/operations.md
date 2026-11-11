@@ -46,7 +46,7 @@ Suppose an application should allow at most three assistant turns for each
 user request. Once the current tool results have been saved, it should hand
 control back to the user instead of making another model call.
 
-This example illustrates the `Operation` contract. For an application turn limit, use the reusable `goose_agent::turns::MaxTurnsOperation` instead; its usage is shown after the example.
+This example illustrates the `Operation` contract. For an application turn limit, use the reusable `goose_agent::max_turns::MaxTurnsOperation` instead; its usage is shown after the example.
 
 We can implement this without changing inference or the state machine. This
 native Rust operation works with any session and any effect type that can
@@ -126,7 +126,7 @@ on assistant turns, not a dollar, token, or tool-call budget.
 `MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`:
 
 ```rust
-use goose_agent::turns::MaxTurnsOperation;
+use goose_agent::max_turns::MaxTurnsOperation;
 
 let turn_limit = MaxTurnsOperation::new(3);
 ```
@@ -144,7 +144,7 @@ tools, provider, or subagent runner:
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | [`ToolOperation`](https://docs.rs/goose-agent/latest/goose_agent/tool/struct.ToolOperation.html)             | Advertise and execute typed synchronous or asynchronous tools, or tools supplied dynamically by a `ToolProvider`.              |
 | [`SubagentOperation`](https://docs.rs/goose-agent/latest/goose_agent/subagent/struct.SubagentOperation.html) | Run requested subagent sessions through your `SubagentRunner`, deliver their updates, and handle concurrency and cancellation. |
-| [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
+| [`MaxTurnsOperation`](https://docs.rs/goose-agent/latest/goose_agent/max_turns/struct.MaxTurnsOperation.html) | Limit autonomous turns and contribute remaining-budget context. |
 | [`InferenceRunner`](https://docs.rs/goose-agent/latest/goose_agent/inference/struct.InferenceRunner.html)    | Prepare provider requests, stream inference, and return message and usage effects. Register it as an inference step.           |
 
 ### Operations in goose

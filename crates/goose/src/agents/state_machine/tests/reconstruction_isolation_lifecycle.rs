@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::calculator_extension::{value, ADD};
 use super::pipeline::MessageKind::{Agent, Error, ToolCall, ToolResponse};
-use goose_agent::turns::MAX_TURNS_MESSAGE;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {

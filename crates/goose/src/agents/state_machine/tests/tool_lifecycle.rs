@@ -18,7 +18,7 @@ use crate::config::permission::PermissionLevel;
 use crate::config::GooseMode;
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::Permission;
-use goose_agent::turns::MAX_TURNS_MESSAGE;
+use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
 async fn pipeline_with_gated_divide() -> Result<(TestPipeline, Arc<DummyApi>)> {
     let (pipeline, api) = test_pipeline().await?;
