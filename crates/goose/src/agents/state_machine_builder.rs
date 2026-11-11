@@ -177,31 +177,31 @@ pub(crate) fn build_state_machine(
             compaction_threshold,
         )));
     }
-    let remaining_operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
-        Arc::new(ToolPairCompactionOperation::new(
-            provider.clone(),
-            model_config.clone(),
-            tool_call_cutoff,
-            tool_pair_summarization && !manages_own_context,
-        )),
-        Arc::new(DoctorOperation::new(session_manager)),
-        Arc::new(ProjectOperation),
-        Arc::new(RetryOperation::new(retry_timeout, on_failure_timeout)),
-        Arc::new(EmptyResponseOperation),
-        Arc::new(
-            StopHookOperation::new(Arc::new(GooseStopHook::new(hook_manager)))
-                .with_deny_limit_per_turn(stop_hook_block_cap)
-                .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
-        ),
-        Arc::new(ExitOnErrorOperation),
-        Arc::new(MaxTurnsOperation::new(max_turns)),
-    ];
-    operations.extend(remaining_operations);
-    operations.extend(extra_operations);
+    operations.push(Arc::new(ToolPairCompactionOperation::new(
+        provider.clone(),
+        model_config.clone(),
+        tool_call_cutoff,
+        tool_pair_summarization && !manages_own_context,
+    )));
+    operations.push(Arc::new(DoctorOperation::new(session_manager)));
+    operations.push(Arc::new(ProjectOperation));
+    operations.push(Arc::new(RetryOperation::new(
+        retry_timeout,
+        on_failure_timeout,
+    )));
+    operations.push(Arc::new(EmptyResponseOperation));
+    operations.push(Arc::new(
+        StopHookOperation::new(Arc::new(GooseStopHook::new(hook_manager)))
+            .with_deny_limit_per_turn(stop_hook_block_cap)
+            .with_deny_limit_message(move || deny_limit_warning(stop_hook_block_cap)),
+    ));
+    operations.push(Arc::new(ExitOnErrorOperation));
+    operations.push(Arc::new(MaxTurnsOperation::new(max_turns)));
     operations.push(Arc::new(StatusOperation::new(
         provider.clone(),
         model_config.clone(),
     )));
+    operations.extend(extra_operations);
     let request_preparer = GooseInferenceRequestPreparer {
         extension_manager,
         extension_lease,
