@@ -198,22 +198,23 @@ pub(crate) fn build_state_machine(
     ];
     operations.extend(remaining_operations);
     operations.extend(extra_operations);
+    operations.push(Arc::new(StatusOperation::new(
+        provider.clone(),
+        model_config.clone(),
+    )));
     let request_preparer = GooseInferenceRequestPreparer {
         extension_manager,
         extension_lease,
         tool_inspection_manager,
         context_limit,
     };
-    let status_operation = Arc::new(StatusOperation::new(provider.clone(), model_config.clone()));
     let inference_provider = Arc::new(GooseInferenceProvider::new(provider));
     let inference = Arc::new(
         InferenceRunner::new(inference_provider, model_config)
             .with_request_preparer(Arc::new(request_preparer)),
     );
-    let mut command_handlers = operations.clone();
-    command_handlers.push(status_operation);
     let command_operation: Arc<dyn Operation<Session, GooseEffect> + '_> =
-        Arc::new(SlashCommandOperation::new(command_handlers));
+        Arc::new(SlashCommandOperation::new(operations.clone()));
     let steps = std::iter::once(command_operation)
         .chain(operations)
         .map(Step::Operation)
