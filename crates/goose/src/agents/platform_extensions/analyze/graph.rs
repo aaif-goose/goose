@@ -70,7 +70,7 @@ impl CallGraph {
             name_index.entry(&key.1).or_default().push(key.clone());
         }
 
-        // Build (path, name) → sorted definition lines for caller resolution.
+        // Build (path, name) → sorted definition lines for caller/callee resolution.
         // When a Call says caller="process" at line 50, we pick the definition
         // of "process" whose line is the largest value ≤ 50 (nearest enclosing).
         let mut def_lines: HashMap<(&PathBuf, &str), Vec<usize>> = HashMap::new();
@@ -91,7 +91,7 @@ impl CallGraph {
                 let caller_key = resolve_caller_key(a, call, &def_lines)
                     .unwrap_or_else(|| (a.path.clone(), "<module>".to_string(), 0));
                 // Resolve callee: same-file first, then cross-file (same language only)
-                let callee_keys = resolve_callee(a, call, &name_index, &lang_index);
+                let callee_keys = resolve_callee(a, call, &name_index, &def_lines, &lang_index);
                 for callee_key in callee_keys {
                     incoming
                         .entry(callee_key.clone())
@@ -244,6 +244,7 @@ fn resolve_callee(
     analysis: &FileAnalysis,
     call: &Call,
     name_index: &HashMap<&str, Vec<NodeKey>>,
+    def_lines: &HashMap<(&PathBuf, &str), Vec<usize>>,
     lang_index: &HashMap<&PathBuf, &str>,
 ) -> Vec<NodeKey> {
     let callee = &call.callee;
@@ -254,25 +255,31 @@ fn resolve_callee(
     // (from Symbol.name), but call captures include the full scoped_identifier.
     let bare_name = callee.rsplit("::").next().unwrap_or(callee);
 
-    if let Some(keys) = name_index.get(bare_name) {
-        // Prefer same-file matches; when ambiguous pick nearest by line proximity
-        let same_file: Vec<NodeKey> = keys
-            .iter()
-            .filter(|(path, _, _)| *path == analysis.path)
-            .cloned()
-            .collect();
-        if !same_file.is_empty() {
-            if same_file.len() == 1 {
-                return same_file;
+    // Resolve the nearest local definition without scanning and cloning every
+    // same-name symbol per call. Equal-distance ties prefer the earlier line.
+    if let Some(lines) = def_lines.get(&(&analysis.path, bare_name)) {
+        let line = match lines.binary_search_by(|line| {
+            #[cfg(test)]
+            tests::CALLEE_COMPARISONS.with(|count| count.set(count.get() + 1));
+            line.cmp(&call.line)
+        }) {
+            Ok(idx) => lines[idx],
+            Err(0) => lines[0],
+            Err(idx) if idx == lines.len() => lines[idx - 1],
+            Err(idx) => {
+                let before = lines[idx - 1];
+                let after = lines[idx];
+                if call.line - before <= after - call.line {
+                    before
+                } else {
+                    after
+                }
             }
-            // Multiple same-file matches: pick nearest definition by line proximity
-            let nearest = same_file
-                .into_iter()
-                .min_by_key(|(_, _, line)| (call.line as i64 - *line as i64).unsigned_abs())
-                .into_iter()
-                .collect();
-            return nearest;
-        }
+        };
+        return vec![(analysis.path.clone(), bare_name.to_string(), line)];
+    }
+
+    if let Some(keys) = name_index.get(bare_name) {
         // Cross-file matches filtered to same language only
         keys.iter()
             .filter(|(path, _, _)| lang_index.get(path).copied() == Some(caller_lang))
@@ -286,6 +293,12 @@ fn resolve_callee(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use test_case::test_case;
+
+    thread_local! {
+        pub(super) static CALLEE_COMPARISONS: Cell<usize> = const { Cell::new(0) };
+    }
 
     fn symbol(name: impl Into<String>, line: usize) -> Symbol {
         Symbol {
@@ -294,6 +307,141 @@ mod tests {
             parent: None,
             detail: None,
         }
+    }
+
+    fn analysis(
+        path: &str,
+        language: &'static str,
+        functions: Vec<Symbol>,
+        calls: Vec<Call>,
+    ) -> FileAnalysis {
+        FileAnalysis {
+            path: PathBuf::from(path),
+            language,
+            loc: 1_000,
+            functions,
+            classes: Vec::new(),
+            imports: Vec::new(),
+            calls,
+        }
+    }
+
+    #[test_case(64)]
+    #[test_case(256)]
+    fn same_file_callee_resolution_has_logarithmic_work_per_call(width: usize) {
+        let source: String = (0..width).map(|i| format!(
+            "struct Type{i};\nimpl Type{i} {{\n    fn shared() {{}}\n    fn caller_{i}() {{ Self::shared(); }}\n}}\n"
+        )).collect();
+        let analysis = super::super::parser::Parser::new()
+            .analyze_file(std::path::Path::new("repeated.rs"), &source)
+            .unwrap();
+        assert_eq!(analysis.functions.len(), width * 2);
+        assert_eq!(analysis.calls.len(), width);
+
+        CALLEE_COMPARISONS.set(0);
+        let graph = CallGraph::build(&[analysis]);
+        let comparisons = CALLEE_COMPARISONS.get();
+        let budget = width * (width.ilog2() as usize + 2);
+        assert!(
+            comparisons > 0,
+            "callee comparison counter was not exercised"
+        );
+        assert!(
+            comparisons <= budget,
+            "{width} calls visited {comparisons} candidates, exceeding the {budget} logarithmic budget"
+        );
+        for i in 0..width {
+            assert_eq!(
+                graph.outgoing[&(
+                    PathBuf::from("repeated.rs"),
+                    format!("caller_{i}"),
+                    i * 5 + 4
+                )],
+                HashSet::from([(
+                    PathBuf::from("repeated.rs"),
+                    "shared".to_string(),
+                    i * 5 + 3
+                )])
+            );
+        }
+    }
+
+    #[test_case(5, 10; "before_first")]
+    #[test_case(10, 10; "exact")]
+    #[test_case(11, 10; "nearest_before")]
+    #[test_case(19, 20; "nearest_after")]
+    #[test_case(15, 10; "equal_distance_prefers_earlier")]
+    #[test_case(45, 40; "after_last")]
+    fn same_file_resolution_preserves_nearest_definition(call_line: usize, expected_line: usize) {
+        let graph = CallGraph::build(&[
+            analysis(
+                "local.rs",
+                "rust",
+                vec![
+                    symbol("caller", 1),
+                    symbol("shared", 40),
+                    symbol("shared", 10),
+                    symbol("shared", 20),
+                ],
+                vec![Call {
+                    caller: "caller".to_string(),
+                    callee: "Type::shared".to_string(),
+                    line: call_line,
+                }],
+            ),
+            analysis(
+                "other.rs",
+                "rust",
+                vec![symbol("shared", call_line)],
+                Vec::new(),
+            ),
+        ]);
+        assert_eq!(
+            graph.outgoing[&(PathBuf::from("local.rs"), "caller".to_string(), 1)],
+            HashSet::from([(
+                PathBuf::from("local.rs"),
+                "shared".to_string(),
+                expected_line
+            )])
+        );
+    }
+
+    #[test]
+    fn absent_same_file_definition_preserves_cross_file_language_filter() {
+        let graph = CallGraph::build(&[
+            analysis(
+                "caller.rs",
+                "rust",
+                vec![symbol("caller", 1)],
+                vec![
+                    Call {
+                        caller: "caller".to_string(),
+                        callee: "module::shared".to_string(),
+                        line: 2,
+                    },
+                    Call {
+                        caller: "caller".to_string(),
+                        callee: "missing".to_string(),
+                        line: 3,
+                    },
+                ],
+            ),
+            analysis("first.rs", "rust", vec![symbol("shared", 10)], Vec::new()),
+            analysis("second.rs", "rust", vec![symbol("shared", 20)], Vec::new()),
+            analysis(
+                "different.py",
+                "python",
+                vec![symbol("shared", 30)],
+                Vec::new(),
+            ),
+        ]);
+        assert_eq!(
+            graph.outgoing[&(PathBuf::from("caller.rs"), "caller".to_string(), 1)],
+            HashSet::from([
+                (PathBuf::from("first.rs"), "shared".to_string(), 10),
+                (PathBuf::from("second.rs"), "shared".to_string(), 20),
+            ])
+        );
     }
 
     #[test]
