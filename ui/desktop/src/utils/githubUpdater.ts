@@ -352,9 +352,19 @@ async function writeSwapScript(options: {
     ].join('\r\n');
 
     await fs.writeFile(scriptPath, script);
+
+    const launcherPath = path.join(stagingDir, 'launch-swap.ps1');
+    const swapArgs = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${scriptPath}"`;
+    const launcher = [
+      `$ErrorActionPreference = 'Stop'`,
+      `Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList ${powershellQuote(swapArgs)}`,
+      '',
+    ].join('\r\n');
+    await fs.writeFile(launcherPath, launcher);
+
     return {
       command: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+      args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', launcherPath],
     };
   }
 
@@ -407,17 +417,13 @@ async function writeSwapScript(options: {
   return { command: '/bin/sh', args: [scriptPath] };
 }
 
-// Node's detached flag becomes DETACHED_PROCESS on Windows, which leaves the child with no
-// console, and powershell.exe exits before its first statement without one. windowsHide still
-// allocates a console without showing a window, and Windows keeps a child alive after its
-// parent exits, so the swap outlives the quit without detaching. POSIX still detaches so the
-// script survives the app's process group going away.
-export function launchSwapScript(swap: SwapCommand): void {
-  const child = spawn(swap.command, swap.args, {
-    detached: process.platform !== 'win32',
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+export async function launchSwapScript(swap: SwapCommand): Promise<void> {
+  if (process.platform === 'win32') {
+    await runCommand(swap.command, swap.args);
+    return;
+  }
+
+  const child = spawn(swap.command, swap.args, { detached: true, stdio: 'ignore' });
   child.unref();
 }
 
@@ -773,7 +779,7 @@ export class GitHubUpdater {
         pid: process.pid,
       });
 
-      launchSwapScript(swap);
+      await launchSwapScript(swap);
 
       log.info('=== GitHubUpdater: SWAP SCRIPT LAUNCHED, app will quit ===');
       return { success: true };
