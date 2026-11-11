@@ -8,6 +8,7 @@ use crate::agents::state_machine::Emitter;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use goose_agent::max_turns::MAX_TURNS_MESSAGE;
 
+mod advertised_tools;
 mod agent_reply;
 mod calculator_extension;
 mod cancellation;

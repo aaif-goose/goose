@@ -314,19 +314,25 @@ target another repository or project.
 This Goose recipe manages the full Inbox loop:
 
 1. List unassigned Inbox issues and unresolved work from `issues to add`.
-2. Read each issue and rank the three strongest matches based on `interest`.
-3. Choose the least loaded of those three using assignments on the 100 newest
+2. In `aaif-goose/goose`, close third-party MCP server submissions for the
+   extensions directory or extension docs and direct their authors to publish a
+   `server.json` entry to the official MCP Registry.
+3. Read each remaining issue and rank the three strongest matches based on
+   `interest`.
+4. Choose the least loaded of those three using assignments on the 100 newest
    issues, adjusting only for the person's configured capacity.
-4. Assign the issue to that person's GitHub handle.
-5. Create a focused Buzz channel, or promote the owner when the channel already
+5. Assign the issue to that person's GitHub handle.
+6. Create a focused Buzz channel, or promote the owner when the channel already
    exists. Start with Douwe and the issue owner, then add relevant people until
    the channel has at least three distinct humans. If Douwe owns the issue, two
    others are required. A fourth person may be added when useful.
-6. Run `syncissues`.
+7. Run `syncissues`.
 
-Issue bodies and comments are treated as untrusted data. The recipe is allowed
-to assign issues but is instructed not to edit bodies, post GitHub comments,
-change project fields, labels, or issue state.
+Issue bodies and comments are treated as untrusted data. The recipe may assign
+issues. In `aaif-goose/goose`, it may also comment on and close third-party MCP
+server submissions for the extensions directory or extension docs. It is
+instructed not to edit bodies, post other GitHub comments, change project fields
+or labels, or otherwise change issue state.
 
 Run it once with:
 
