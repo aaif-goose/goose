@@ -123,19 +123,15 @@ When the user sends a new message, it becomes the next kickoff and the count
 starts again. No mutable counter needs to survive a restart. This is a limit
 on assistant turns, not a dollar, token, or tool-call budget.
 
-`MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`; supply a factory if you want a visible exhaustion message:
+`MaxTurnsOperation` provides the reusable version, including budget context through `moim_parts`. Use it in place of the illustrative `TurnLimit`:
 
 ```rust
 use goose_agent::turns::MaxTurnsOperation;
-use goose_provider_types::conversation::message::Message;
 
-let turn_limit = MaxTurnsOperation::new(3).with_exhaustion_message(|| {
-    Message::assistant()
-        .with_text("I've reached this request's turn limit. Would you like me to continue?")
-});
+let turn_limit = MaxTurnsOperation::new(3);
 ```
 
-Without a factory, it yields with an empty hidden message. Your inference request preparer must render `moim_parts` for budget reminders to reach the model.
+At exhaustion, it appends a user-visible `ResourceExhausted` error and yields. Your inference request preparer must render `moim_parts` for budget reminders to reach the model.
 
 ## Operations available today
 

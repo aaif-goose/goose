@@ -1,8 +1,7 @@
 use crate::{
     agents::{
-        final_output_tool::FinalOutputTool,
-        state_machine::{messages_since_kickoff, trailing_error},
-        AgentEvent, SessionConfig, StateMachineServices,
+        final_output_tool::FinalOutputTool, state_machine::messages_since_kickoff, AgentEvent,
+        SessionConfig, StateMachineServices,
     },
     conversation::message::{ActionRequiredData, Message, MessageContent},
     prompt_template::render_template,
@@ -13,8 +12,6 @@ use anyhow::{anyhow, Result};
 use futures::stream::BoxStream;
 use futures::StreamExt;
 use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
-use goose_agent::turns::turn_limit_reached;
-use rmcp::model::Role;
 use serde::Serialize;
 use std::future::Future;
 use std::sync::Arc;
@@ -166,9 +163,6 @@ impl ForegroundSubagentRunner {
         if let Err(error) = run_result {
             return SubagentOutcome::Failed(error.to_string());
         }
-        if let Some(error) = conversation.and_then(trailing_error) {
-            return SubagentOutcome::Failed(format!("{error:?}"));
-        }
         SubagentOutcome::Failed(failure_reason(latest_turn))
     }
 }
@@ -263,17 +257,11 @@ fn failure_reason(messages: &[Message]) -> String {
     let Some(last) = messages.last() else {
         return "stopped without final output".to_string();
     };
-    if turn_limit_reached(last) {
-        let last_response = messages
-            .iter()
-            .rev()
-            .filter(|message| message.role == Role::Assistant && !turn_limit_reached(message))
-            .map(Message::as_concat_text)
-            .find(|text| !text.is_empty());
-        return match last_response {
-            Some(text) => format!("max turns reached; last response: {text}"),
-            None => "max turns reached".to_string(),
-        };
+    if let Some(error) = last.error() {
+        return error.message.clone();
+    }
+    if let Some(error) = last.error_kind() {
+        return format!("{error:?}");
     }
     let last_text = last.as_concat_text();
     if last_text.is_empty() {
@@ -316,8 +304,7 @@ mod tests {
     use futures::StreamExt;
 
     use super::{failure_reason, spawn_run};
-    use crate::agents::state_machine_builder::MAX_TURNS_MESSAGE;
-    use crate::conversation::message::Message;
+    use crate::conversation::message::{Message, MessageErrorKind};
     use goose_agent::subagent::{SubagentOutcome, SubagentUpdate};
     use tokio::sync::{mpsc, oneshot};
 
@@ -385,12 +372,6 @@ mod tests {
 
     #[test]
     fn failure_reason_describes_how_the_subagent_stopped() {
-        let mut max_turns = Message::assistant().with_text("custom limit text");
-        max_turns.metadata.set_operation_note(
-            "max_turns",
-            "exhausted",
-            serde_json::Value::Bool(true),
-        );
         let cases = [
             (vec![], "stopped without final output".to_string()),
             (
@@ -402,28 +383,9 @@ mod tests {
                 "I gave up".to_string(),
             ),
             (
-                vec![Message::assistant().with_text(MAX_TURNS_MESSAGE)],
-                MAX_TURNS_MESSAGE.to_string(),
-            ),
-            (
-                vec![Message::user().with_text("go"), max_turns.clone()],
-                "max turns reached".to_string(),
-            ),
-            (
-                vec![
-                    Message::assistant().with_text("halfway there"),
-                    Message::user().with_text("tool result"),
-                    max_turns.clone(),
-                ],
-                "max turns reached; last response: halfway there".to_string(),
-            ),
-            (
-                vec![
-                    Message::assistant().with_text(MAX_TURNS_MESSAGE),
-                    Message::user().with_text("tool result"),
-                    max_turns,
-                ],
-                format!("max turns reached; last response: {MAX_TURNS_MESSAGE}"),
+                vec![Message::assistant()
+                    .with_error(MessageErrorKind::ResourceExhausted, "turn budget exhausted")],
+                "turn budget exhausted".to_string(),
             ),
         ];
         for (messages, expected) in cases {

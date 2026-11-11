@@ -1,7 +1,8 @@
 use anyhow::Result;
 
 use super::calculator_extension::{value, ADD};
-use super::pipeline::MessageKind::{Agent, ToolCall, ToolResponse};
+use super::pipeline::MessageKind::{Agent, Error, ToolCall, ToolResponse};
+use goose_agent::turns::MAX_TURNS_MESSAGE;
 
 #[tokio::test]
 async fn tool_turn_reconstructs_after_every_applied_step() -> Result<()> {
@@ -172,11 +173,7 @@ async fn reconstruction_and_session_isolation() -> Result<()> {
     let bounded = pipeline.run(["keep adding"]).await?;
     assert_eq!(api.call_count() - calls_before, 2);
     assert_eq!(pipeline.calculator_total(), 2);
-    bounded.assert_message(
-        -1,
-        Agent,
-        crate::agents::state_machine_builder::MAX_TURNS_MESSAGE,
-    );
+    bounded.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     let restored = pipeline.session().await?;
     assert_eq!(restored.usage.cache_read_input_tokens, Some(11));

@@ -1125,13 +1125,17 @@ impl TestRun {
     }
 
     pub(super) fn assert_emitted_message_matches_persisted(&self, contains: &str) {
+        let contains_text = |message: &Message| {
+            message
+                .content
+                .iter()
+                .any(|content| content.to_string().contains(contains))
+        };
         let emitted = self
             .events
             .iter()
             .find_map(|event| match event {
-                AgentEvent::Message(message) if message.as_concat_text().contains(contains) => {
-                    Some(message)
-                }
+                AgentEvent::Message(message) if contains_text(message) => Some(message),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no emitted message contains {contains:?}"));
@@ -1139,7 +1143,7 @@ impl TestRun {
             .conversation()
             .messages()
             .iter()
-            .find(|message| message.as_concat_text().contains(contains))
+            .find(|message| contains_text(message))
             .unwrap_or_else(|| panic!("no persisted message contains {contains:?}"));
         assert_eq!(emitted.id, persisted.id);
     }

@@ -1,12 +1,12 @@
 use anyhow::Result;
 
 use self::calculator_extension::{value, ADD};
-use self::pipeline::MessageKind::{Agent, ToolCall};
+use self::pipeline::MessageKind::{Agent, Error, ToolCall};
 use self::pipeline::{test_pipeline, MAX_TURNS};
 use crate::agents::state_machine::ops_retry::NUDGED;
 use crate::agents::state_machine::Emitter;
-use crate::agents::state_machine_builder::MAX_TURNS_MESSAGE;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
+use goose_agent::turns::MAX_TURNS_MESSAGE;
 
 mod agent_reply;
 mod calculator_extension;
@@ -195,11 +195,12 @@ async fn max_turns_counts_inference_calls_and_injects_budget() -> Result<()> {
     let first_budgeted_call = MAX_TURNS.div_ceil(2) as usize;
     assert!(!calls[first_budgeted_call - 1].input_contains("<turn-budget>"));
     assert!(calls[first_budgeted_call].input_contains("<turn-budget>"));
-    result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
     result.assert_emitted_message_matches_persisted(MAX_TURNS_MESSAGE);
-    assert!(goose_agent::turns::turn_limit_reached(
-        result.conversation().last().unwrap()
-    ));
+    assert_eq!(
+        result.conversation().last().unwrap().error_kind(),
+        Some(crate::conversation::message::MessageErrorKind::ResourceExhausted)
+    );
 
     Ok(())
 }
@@ -507,7 +508,7 @@ async fn grind_is_bounded_by_max_turns() -> Result<()> {
     let result = pipeline.run(["go"]).await?;
 
     assert_eq!(api.call_count(), MAX_TURNS as usize);
-    result.assert_message(-1, Agent, MAX_TURNS_MESSAGE);
+    result.assert_message(-1, Error, MAX_TURNS_MESSAGE);
 
     Ok(())
 }

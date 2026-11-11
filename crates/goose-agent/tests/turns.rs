@@ -1,9 +1,12 @@
 use anyhow::Result;
 use goose_agent::{
     operation::{Emitter, Operation, OperationResult, RunStatus},
-    turns::{turn_limit_reached, MaxTurnsOperation},
+    turns::{MaxTurnsOperation, MAX_TURNS_MESSAGE},
 };
-use goose_provider_types::conversation::{message::Message, Conversation};
+use goose_provider_types::conversation::{
+    message::{Message, MessageErrorKind},
+    Conversation,
+};
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -19,35 +22,6 @@ fn ongoing_turn(turns: u32) -> Conversation {
         messages.push(Message::user().with_tool_response(id, Ok(CallToolResult::success(vec![]))));
     }
     Conversation::new_unvalidated(messages)
-}
-
-#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-async fn exhaustion_marker_survives_serialization_and_display_text_changes() -> Result<()> {
-    let operation: &dyn Operation<(), Message> = &MaxTurnsOperation::new(1)
-        .with_exhaustion_message(|| {
-            Message::assistant()
-                .with_text("host exhaustion text")
-                .with_visibility(false, true)
-        });
-    let conversation = ongoing_turn(1);
-    let (tx, _rx) = mpsc::unbounded_channel();
-    let emit = Emitter::new(tx, CancellationToken::new());
-
-    let OperationResult::Applied(result) = operation.run(&(), &conversation, &emit).await? else {
-        panic!("expected exhaustion");
-    };
-    assert_eq!(result.status, RunStatus::Yielded);
-    let [message]: [Message; 1] = result.effects.try_into().unwrap();
-    assert_eq!(message.as_concat_text(), "host exhaustion text");
-    assert!(!message.is_user_visible());
-    assert!(message.is_agent_visible());
-
-    let mut reloaded: Message = serde_json::from_str(&serde_json::to_string(&message)?)?;
-    reloaded.content.clear();
-    let reloaded = reloaded.with_text("different display text");
-    assert!(turn_limit_reached(&reloaded));
-    Ok(())
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
@@ -75,11 +49,15 @@ async fn standalone_limit_preserves_completion_and_resets_on_user_input() -> Res
                 assert!(exhausted, "{name}");
                 assert_eq!(result.status, RunStatus::Yielded);
                 let [message]: [Message; 1] = result.effects.try_into().unwrap();
-                assert!(turn_limit_reached(&message));
-                assert!(message.content.is_empty());
-                assert!(!message.is_user_visible());
+                assert_eq!(
+                    message.error_kind(),
+                    Some(MessageErrorKind::ResourceExhausted)
+                );
+                assert_eq!(message.error().unwrap().message, MAX_TURNS_MESSAGE);
+                assert!(message.is_user_visible());
                 assert!(!message.is_agent_visible());
-                conversation.push(message);
+                let reloaded = serde_json::from_str(&serde_json::to_string(&message)?)?;
+                conversation.push(reloaded);
                 let rebuilt: &dyn Operation<(), Message> = &MaxTurnsOperation::new(limit);
                 let OperationResult::Applied(resumed) =
                     rebuilt.run(&(), &conversation, &emit).await?
