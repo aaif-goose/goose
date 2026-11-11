@@ -218,7 +218,11 @@ where
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-impl<S: MaybeSend + MaybeSync> McpHost<S> for Lease {
+impl<S, R> McpHost<S> for Lease<dyn super::Client, R>
+where
+    S: MaybeSend + MaybeSync,
+    R: MaybeSend + MaybeSync + 'static,
+{
     async fn tools(&self, _session: &S) -> Result<Vec<Tool>> {
         Ok(self
             .catalog(CancellationToken::new())
