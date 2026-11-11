@@ -1156,6 +1156,160 @@ fn test_new_session_rejects_non_string_meta_session_title() {
     });
 }
 
+fn tags_meta(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert("tags".to_string(), value);
+    meta
+}
+
+#[test]
+fn test_list_sessions_filters_by_tags_from_new_session() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let mut session_ids = Vec::new();
+        for (thread, message) in [("t1", "first thread"), ("t2", "second thread")] {
+            let session_id = new_session_with_meta(
+                &conn,
+                work_dir.path(),
+                tags_meta(serde_json::json!({ "buzz.channel": "c1", "buzz.thread": thread })),
+            )
+            .await
+            .unwrap();
+            SessionManager::new(data_root.path().to_path_buf())
+                .add_message(&session_id, &Message::user().with_text(message))
+                .await
+                .unwrap();
+            session_ids.push(session_id);
+        }
+
+        let thread_one = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(work_dir.path())
+                .meta(tags_meta(serde_json::json!({ "buzz.thread": "t1" }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            thread_one
+                .sessions
+                .iter()
+                .map(|session| session.session_id.0.to_string())
+                .collect::<Vec<_>>(),
+            vec![session_ids[0].clone()]
+        );
+
+        let channel = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(work_dir.path())
+                .meta(tags_meta(serde_json::json!({ "buzz.channel": "c1" }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(channel.sessions.len(), 2);
+
+        let missing = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(work_dir.path())
+                .meta(tags_meta(serde_json::json!({ "buzz.thread": "t3" }))),
+        )
+        .await
+        .unwrap();
+        assert!(missing.sessions.is_empty());
+    });
+}
+
+#[test]
+fn test_list_sessions_tag_cursor_is_bound_to_tags() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        seed_list_sessions(data_root.path(), cwd.path(), 51).await;
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        for session in session_manager.list_all_sessions().await.unwrap() {
+            session_manager
+                .set_session_tags(&session.id, &[("buzz.channel".into(), "c1".into())])
+                .await
+                .unwrap();
+        }
+        let conn = new_connection(data_root.path()).await;
+
+        let first = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(cwd.path())
+                .meta(tags_meta(serde_json::json!({ "buzz.channel": "c1" }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.sessions.len(), 50);
+        let cursor = first.next_cursor.unwrap();
+
+        let second = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new()
+                .cwd(cwd.path())
+                .cursor(cursor.clone())
+                .meta(tags_meta(serde_json::json!({ "buzz.channel": "c1" }))),
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.sessions.len(), 1);
+        assert!(second.next_cursor.is_none());
+
+        let error = list_sessions_request(
+            &conn,
+            ListSessionsRequest::new().cwd(cwd.path()).cursor(cursor),
+        )
+        .await
+        .unwrap_err();
+        assert_invalid_params(error);
+    });
+}
+
+#[test]
+fn test_new_session_and_list_sessions_reject_invalid_tags() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let work_dir = tempfile::tempdir().unwrap();
+        let too_many = (0..17)
+            .map(|index| (format!("key{index}"), serde_json::json!("value")))
+            .collect::<serde_json::Map<_, _>>();
+
+        for tags in [
+            serde_json::json!("buzz.thread"),
+            serde_json::json!(["buzz.thread", "t1"]),
+            serde_json::json!({ "buzz.thread": 1 }),
+            serde_json::json!({ "": "t1" }),
+            serde_json::json!({ "k".repeat(129): "t1" }),
+            serde_json::json!({ "buzz.thread": "v".repeat(1025) }),
+            serde_json::Value::Object(too_many),
+        ] {
+            let error = new_session_with_meta(&conn, work_dir.path(), tags_meta(tags.clone()))
+                .await
+                .unwrap_err();
+            assert_invalid_params(error);
+
+            let error =
+                list_sessions_request(&conn, ListSessionsRequest::new().meta(tags_meta(tags)))
+                    .await
+                    .unwrap_err();
+            assert_invalid_params(error);
+        }
+
+        let sessions = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap();
+        assert!(sessions.is_empty());
+    });
+}
+
 /// Drives one naming-enabled turn and returns the session's title once name
 /// generation has had a chance to run.
 async fn title_after_naming_turn(

@@ -245,6 +245,7 @@ pub fn format_messages_with_options(
     options: OpenAiFormatOptions,
 ) -> Vec<Value> {
     let mut messages_spec = Vec::new();
+    let mut tool_image_messages = Vec::new();
     let mut pending_assistant_reasoning = String::new();
     // Reasoning to propagate across consecutive tool-call messages in the same turn.
     // DeepSeek/Kimi require reasoning_content on every assistant tool-call message.
@@ -287,9 +288,7 @@ pub fn format_messages_with_options(
         };
 
         let mut output = Vec::new();
-        // Deferred to the end of the message so every tool result in a batch stays
-        // consecutive; a strict OpenAI-compatible API rejects a request where a
-        // synthetic user image message splits one assistant tool_calls batch.
+        // Keep attachment provenance until split assistant calls are consolidated.
         let mut pending_image_messages = Vec::new();
         let mut content_array = Vec::new();
         let mut has_non_text_content = false;
@@ -482,6 +481,7 @@ pub fn format_messages_with_options(
             }
         }
 
+        let image_count = pending_image_messages.len();
         output.append(&mut pending_image_messages);
 
         if !content_array.is_empty() {
@@ -546,12 +546,16 @@ pub fn format_messages_with_options(
             output.insert(0, converted);
         }
 
-        messages_spec.extend(output.into_iter().map(|message| {
-            serde_json::to_value(message).expect("OpenAI message fields are JSON serializable")
-        }));
+        let image_start = output.len() - image_count;
+        for (index, message) in output.into_iter().enumerate() {
+            messages_spec.push(
+                serde_json::to_value(message).expect("OpenAI message fields are JSON serializable"),
+            );
+            tool_image_messages.push(index >= image_start);
+        }
     }
 
-    merge_split_tool_call_messages(&mut messages_spec);
+    merge_split_tool_call_messages(&mut messages_spec, &mut tool_image_messages);
 
     if let Some(format) = options.thinking_preservation_format {
         inline_reasoning_content(&mut messages_spec, format);
@@ -596,7 +600,7 @@ fn inline_reasoning_content(messages: &mut [Value], format: ThinkingPreservation
 ///
 /// Only merges when `reasoning_content` is present and matches, since that is
 /// the only signal that messages were split from the same turn.
-fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
+fn merge_split_tool_call_messages(messages: &mut Vec<Value>, tool_images: &mut Vec<bool>) {
     let mut i = 0;
     while i < messages.len() {
         let is_assistant_tool_call = messages[i].get("role") == Some(&json!("assistant"))
@@ -614,6 +618,7 @@ fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
 
         let mut extra_tool_calls: Vec<Value> = Vec::new();
         let mut collected: Vec<Value> = Vec::new();
+        let mut collected_images = Vec::new();
         let mut scan = i + 1;
 
         loop {
@@ -621,10 +626,10 @@ fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
                 break;
             }
 
-            // Skip past tool result and any image-only user messages that
-            // format_messages inserts after tool results containing images.
+            // Only formatter-generated attachments belong to this tool result;
+            // an actual user image starts a new turn, even with identical reasoning.
             let mut peek = scan + 1;
-            while peek < messages.len() && is_image_only_user_message(&messages[peek]) {
+            while peek < messages.len() && tool_images[peek] {
                 peek += 1;
             }
 
@@ -650,6 +655,7 @@ fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
             }
 
             collected.extend(messages[scan..peek].iter().cloned());
+            collected_images.extend_from_slice(&tool_images[scan..peek]);
             if let Some(tc) = messages[peek]
                 .get("tool_calls")
                 .and_then(|tc| tc.as_array())
@@ -673,6 +679,7 @@ fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
 
         let insert_at = i + 1;
         messages.drain(insert_at..scan);
+        tool_images.splice(insert_at..scan, collected_images);
         let num_collected = collected.len();
         for (j, msg) in collected.into_iter().enumerate() {
             messages.insert(insert_at + j, msg);
@@ -680,20 +687,46 @@ fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
 
         i = insert_at + num_collected;
     }
+    defer_tool_images(messages, tool_images);
 }
 
-/// True if `msg` is a synthetic image-only user message (content is exclusively image_url items).
-fn is_image_only_user_message(msg: &Value) -> bool {
-    msg.get("role") == Some(&json!("user"))
-        && msg
-            .get("content")
-            .and_then(|c| c.as_array())
-            .is_some_and(|arr| {
-                !arr.is_empty()
-                    && arr
+fn defer_tool_images(messages: &mut Vec<Value>, tool_images: &[bool]) {
+    if !tool_images.iter().any(|is_tool_image| *is_tool_image) {
+        return;
+    }
+    let mut output = Vec::with_capacity(messages.len());
+    let mut pending_calls = std::collections::HashSet::new();
+    let mut pending_images = Vec::new();
+
+    for (message, is_tool_image) in messages.drain(..).zip(tool_images) {
+        if *is_tool_image && !pending_calls.is_empty() {
+            pending_images.push(message);
+            continue;
+        }
+
+        if message["role"] == "tool" {
+            if let Some(id) = message["tool_call_id"].as_str() {
+                pending_calls.remove(id);
+            }
+        } else {
+            output.append(&mut pending_images);
+            pending_calls.clear();
+            if let Some(calls) = message["tool_calls"].as_array() {
+                pending_calls.extend(
+                    calls
                         .iter()
-                        .all(|item| item.get("type") == Some(&json!("image_url")))
-            })
+                        .filter_map(|call| call["id"].as_str().map(str::to_owned)),
+                );
+            }
+        }
+
+        output.push(message);
+        if pending_calls.is_empty() {
+            output.append(&mut pending_images);
+        }
+    }
+    output.append(&mut pending_images);
+    *messages = output;
 }
 
 pub fn format_tools(tools: &[Tool]) -> anyhow::Result<Vec<Value>> {
@@ -4943,7 +4976,8 @@ data: [DONE]"#;
             json!({"role": "assistant", "tool_calls": [{"id": "tc2", "type": "function", "function": {"name": "write", "arguments": "{}"}}], "reasoning_content": "thinking..."}),
             json!({"role": "tool", "tool_call_id": "tc2", "content": "result2"}),
         ];
-        merge_split_tool_call_messages(&mut messages);
+        let mut tool_images = vec![false; messages.len()];
+        merge_split_tool_call_messages(&mut messages, &mut tool_images);
 
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0]["tool_calls"].as_array().unwrap().len(), 2);
@@ -4959,7 +4993,8 @@ data: [DONE]"#;
             json!({"role": "assistant", "tool_calls": [{"id": "tc2", "type": "function", "function": {"name": "write", "arguments": "{}"}}]}),
             json!({"role": "tool", "tool_call_id": "tc2", "content": "result2"}),
         ];
-        merge_split_tool_call_messages(&mut messages);
+        let mut tool_images = vec![false; messages.len()];
+        merge_split_tool_call_messages(&mut messages, &mut tool_images);
 
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[0]["tool_calls"].as_array().unwrap().len(), 1);
@@ -4975,16 +5010,17 @@ data: [DONE]"#;
             json!({"role": "assistant", "tool_calls": [{"id": "tc2", "type": "function", "function": {"name": "click", "arguments": "{}"}}], "reasoning_content": "thinking..."}),
             json!({"role": "tool", "tool_call_id": "tc2", "content": "clicked"}),
         ];
-        merge_split_tool_call_messages(&mut messages);
+        let mut tool_images = vec![false, false, true, false, false];
+        merge_split_tool_call_messages(&mut messages, &mut tool_images);
 
         assert_eq!(messages.len(), 4);
         assert_eq!(messages[0]["tool_calls"].as_array().unwrap().len(), 2);
         assert_eq!(messages[0]["role"], "assistant");
         assert_eq!(messages[1]["role"], "tool");
         assert_eq!(messages[1]["tool_call_id"], "tc1");
-        assert_eq!(messages[2]["role"], "user");
-        assert_eq!(messages[3]["role"], "tool");
-        assert_eq!(messages[3]["tool_call_id"], "tc2");
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "tc2");
+        assert_eq!(messages[3]["role"], "user");
     }
 
     #[test]
@@ -4996,7 +5032,8 @@ data: [DONE]"#;
             json!({"role": "assistant", "tool_calls": [{"id": "tc2", "type": "function", "function": {"name": "write", "arguments": "{}"}}], "reasoning_content": "thinking..."}),
             json!({"role": "tool", "tool_call_id": "tc2", "content": "result2"}),
         ];
-        merge_split_tool_call_messages(&mut messages);
+        let mut tool_images = vec![false; messages.len()];
+        merge_split_tool_call_messages(&mut messages, &mut tool_images);
 
         assert_eq!(messages.len(), 5);
         assert_eq!(messages[0]["tool_calls"].as_array().unwrap().len(), 1);

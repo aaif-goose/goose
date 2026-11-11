@@ -336,6 +336,7 @@ mod tests {
     use super::*;
     use crate::agents::extension::ExtensionConfig;
     use crate::agents::extension_manager::ExtensionManager;
+    use goose_agent::mcp::Client;
     use rmcp::model::{Annotations, EmbeddedResource, MetaObject, ResourceContents, TextContent};
 
     #[test]

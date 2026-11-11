@@ -15,6 +15,7 @@ use crate::session::session_naming::{
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
+use futures::TryStreamExt;
 use goose_providers::conversation::token_usage::Usage;
 use goose_providers::model::ModelConfig;
 use indexmap::IndexMap;
@@ -23,13 +24,13 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{AssertSqlSafe, Pool, Sqlite};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 17;
+pub const CURRENT_SCHEMA_VERSION: i32 = 18;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -376,6 +377,7 @@ pub(crate) struct SessionListFilters<'a> {
     pub(crate) types: Option<&'a [SessionType]>,
     pub(crate) working_dir: Option<&'a Path>,
     pub(crate) keyword: Option<&'a str>,
+    pub(crate) tags: &'a [(String, String)],
     pub(crate) only_sessions_with_messages: bool,
 }
 
@@ -411,11 +413,10 @@ fn message_keyword_clause(keyword_count: usize) -> String {
     let visible = user_visible_message_sql("mq.metadata_json");
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages mq
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND EXISTS (
                   SELECT 1
                   FROM json_each(mq.content_json)
@@ -551,6 +552,14 @@ impl SessionManager {
         query: SessionListPageQuery<'_>,
     ) -> Result<SessionListPage> {
         self.storage.list_sessions_paged(query).await
+    }
+
+    pub async fn set_session_tags(
+        &self,
+        session_id: &str,
+        tags: &[(String, String)],
+    ) -> Result<()> {
+        self.storage.set_session_tags(session_id, tags).await
     }
 
     pub async fn list_all_sessions(&self) -> Result<Vec<Session>> {
@@ -835,8 +844,7 @@ impl SessionManager {
 }
 
 pub struct SessionStorage {
-    pool: Pool<Sqlite>,
-    initialized: tokio::sync::OnceCell<()>,
+    pool: tokio::sync::OnceCell<Pool<Sqlite>>,
     session_dir: PathBuf,
     action_required: Arc<crate::action_required_manager::ActionRequiredManager>,
 }
@@ -1072,7 +1080,7 @@ async fn insert_usage_ledger_row(
 }
 
 impl SessionStorage {
-    fn create_pool(path: &Path) -> Pool<Sqlite> {
+    fn create_pool(path: &Path, pool_options: SqlitePoolOptions) -> Pool<Sqlite> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("Failed to create session database directory");
             #[cfg(unix)]
@@ -1090,42 +1098,43 @@ impl SessionStorage {
             .busy_timeout(std::time::Duration::from_secs(30))
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
 
-        SqlitePoolOptions::new().connect_lazy_with(options)
+        pool_options.connect_lazy_with(options)
     }
 
     pub fn new(data_dir: PathBuf) -> Self {
         let session_dir = data_dir.join(SESSIONS_FOLDER);
-        let db_path = session_dir.join(DB_NAME);
         Self {
-            pool: Self::create_pool(&db_path),
-            initialized: tokio::sync::OnceCell::new(),
+            pool: tokio::sync::OnceCell::new(),
             session_dir,
             action_required: Arc::new(crate::action_required_manager::ActionRequiredManager::new()),
         }
     }
 
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
-        self.initialized
+        self.pool
             .get_or_try_init(|| async {
+                let db_path = self.session_dir.join(DB_NAME);
+                // Bootstrap connections must never enter the application pool with
+                // schema metadata cached before migrations finished.
+                let bootstrap = Self::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
                 let schema_exists = sqlx::query_scalar::<_, bool>(
                     r#"SELECT EXISTS (SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version')"#,
                 )
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(false);
+                .fetch_one(&bootstrap)
+                .await?;
 
                 if schema_exists {
-                    Self::run_migrations(&self.pool).await?;
+                    Self::run_migrations(&bootstrap).await?;
                 } else {
-                    Self::create_schema(&self.pool).await?;
-                    if let Err(e) = Self::import_legacy(&self.pool, &self.session_dir).await {
+                    Self::create_schema(&bootstrap).await?;
+                    if let Err(e) = Self::import_legacy(&bootstrap, &self.session_dir).await {
                         warn!("Failed to import some legacy sessions: {}", e);
                     }
                 }
-                Ok::<(), anyhow::Error>(())
+                bootstrap.close().await;
+                Ok::<_, anyhow::Error>(Self::create_pool(&db_path, SqlitePoolOptions::new()))
             })
-            .await?;
-        Ok(&self.pool)
+            .await
     }
 
     async fn create_schema(pool: &Pool<Sqlite>) -> Result<()> {
@@ -1269,6 +1278,7 @@ impl SessionStorage {
         )
         .execute(&mut *tx)
         .await?;
+        Self::create_session_tags_table(&mut tx).await?;
 
         // Create the inventory tables inside the same transaction so that a
         // second SessionStorage opening the same DB file never observes a
@@ -1770,11 +1780,52 @@ impl SessionStorage {
                     }
                 }
             }
+            18 => {
+                Self::create_session_tags_table(tx).await?;
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
         }
 
+        Ok(())
+    }
+
+    async fn create_session_tags_table(tx: &mut sqlx::Transaction<'_, Sqlite>) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_tags (
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (session_id, key)
+            )
+        "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_tags_key_value ON session_tags(key, value, session_id)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    async fn set_session_tags(&self, session_id: &str, tags: &[(String, String)]) -> Result<()> {
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        for (key, value) in tags {
+            sqlx::query(
+                "INSERT INTO session_tags (session_id, key, value) VALUES (?, ?, ?) ON CONFLICT(session_id, key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(session_id)
+            .bind(key)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1807,6 +1858,8 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        // An explicit projection avoids SQLx's stale column metadata when SQLite
+        // refreshes another pooled connection's pre-migration schema during execution.
         let session = sqlx::query_as(
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
@@ -1823,7 +1876,16 @@ impl SessionStorage {
                     '{}',
                     ?
                 )
-                RETURNING *
+                RETURNING id, working_dir, name, description, user_set_name, session_type,
+                          created_at, updated_at, extension_data,
+                          total_tokens, input_tokens, output_tokens,
+                          cache_read_tokens, cache_write_tokens,
+                          accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+                          accumulated_cache_read_tokens, accumulated_cache_write_tokens,
+                          accumulated_cost, schedule_id, recipe_json, user_recipe_values_json,
+                          provider_name, model_config_json, goose_mode,
+                          archived_at, project_id, parent_session_id,
+                          system_prompt_override, system_prompt_extras_json, container_id
                 "#,
         )
             .bind(id)
@@ -2157,7 +2219,14 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let metadata_json = serde_json::to_string(&message.metadata)?;
+        let response_ids: HashSet<String> = message
+            .get_tool_response_ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let metadata_json = serde_json::to_string(
+            &super::durable_tool_metadata::metadata_for_storage(message, &response_ids),
+        )?;
         // Messages are read back ordered by (created_timestamp, id), so one built
         // before the messages it is appended after would sort ahead of them —
         // operations do that whenever they prepare a reply and fill it in while a
@@ -2189,12 +2258,65 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
+        if !response_ids.is_empty() {
+            Self::drop_resolved_advertised_tools(&mut tx, session_id, &response_ids).await?;
+        }
+
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
 
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn drop_resolved_advertised_tools(
+        tx: &mut sqlx::sqlite::SqliteConnection,
+        session_id: &str,
+        response_ids: &HashSet<String>,
+    ) -> Result<()> {
+        let mut messages = Vec::new();
+        let mut row_ids = Vec::new();
+        let mut rows = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
+            "SELECT id, role, content_json, metadata_json FROM messages WHERE session_id = ? ORDER BY created_timestamp DESC, id DESC",
+        )
+        .bind(session_id)
+        .fetch(&mut *tx);
+        while let Some((id, role, content_json, metadata_json)) = rows.try_next().await? {
+            let role = match role.as_str() {
+                "assistant" => Role::Assistant,
+                "user" => Role::User,
+                _ => continue,
+            };
+            let mut message = Message::new(role, 0, serde_json::from_str(&content_json)?);
+            message.metadata = metadata_json
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default();
+            if super::durable_tool_metadata::starts_turn(&message) {
+                break;
+            }
+            messages.push(message);
+            row_ids.push(id);
+        }
+        drop(rows);
+        messages.reverse();
+        row_ids.reverse();
+        let answered = super::durable_tool_metadata::answered_tool_ids(&messages);
+        for ((message, answered), row_id) in messages.iter().zip(&answered).zip(row_ids) {
+            if !answered.iter().any(|id| response_ids.contains(id)) {
+                continue;
+            }
+            let metadata = super::durable_tool_metadata::metadata_for_storage(message, answered);
+            if metadata == message.metadata {
+                continue;
+            }
+            sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+                .bind(serde_json::to_string(&metadata)?)
+                .bind(row_id)
+                .execute(&mut *tx)
+                .await?;
+        }
         Ok(())
     }
 
@@ -2210,8 +2332,11 @@ impl SessionStorage {
             .execute(&mut *tx)
             .await?;
 
-        for message in conversation.messages() {
-            let metadata_json = serde_json::to_string(&message.metadata)?;
+        let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
+        for (message, answered) in conversation.messages().iter().zip(&answered) {
+            let metadata_json = serde_json::to_string(
+                &super::durable_tool_metadata::metadata_for_storage(message, answered),
+            )?;
 
             let message_id = message
                 .id
@@ -2254,32 +2379,36 @@ impl SessionStorage {
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let answered = super::durable_tool_metadata::answered_tool_ids(conversation.messages());
 
-        for message in conversation.messages() {
+        let mut matched_rows = HashMap::new();
+        for (message, answered) in conversation.messages().iter().zip(&answered) {
             let message_id = message
                 .id
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("compacted conversation message has no id"))?;
-            let stored_metadata_json = sqlx::query_scalar::<_, Option<String>>(
-                "SELECT metadata_json FROM messages WHERE session_id = ? AND message_id = ?",
+            let stored_metadata_json = sqlx::query_as::<_, (i64, Option<String>)>(
+                "SELECT id, metadata_json FROM messages WHERE session_id = ? AND message_id = ? AND id > ? ORDER BY id LIMIT 1",
             )
             .bind(session_id)
             .bind(message_id)
+            .bind(matched_rows.get(message_id).copied().unwrap_or(0))
             .fetch_optional(&mut *tx)
             .await?;
-            if let Some(stored_metadata_json) = stored_metadata_json {
+            if let Some((row_id, stored_metadata_json)) = stored_metadata_json {
+                matched_rows.insert(message_id, row_id);
                 let mut metadata = stored_metadata_json
                     .and_then(|json| serde_json::from_str::<MessageMetadata>(&json).ok())
                     .unwrap_or_default();
                 metadata.agent_visible = message.metadata.agent_visible;
-                sqlx::query(
-                    "UPDATE messages SET metadata_json = ? WHERE session_id = ? AND message_id = ?",
-                )
-                .bind(serde_json::to_string(&metadata)?)
-                .bind(session_id)
-                .bind(message_id)
-                .execute(&mut *tx)
-                .await?;
+                if !super::durable_tool_metadata::retains_advertised_tools(message, answered) {
+                    super::durable_tool_metadata::clear_advertised_tools(&mut metadata);
+                }
+                sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+                    .bind(serde_json::to_string(&metadata)?)
+                    .bind(row_id)
+                    .execute(&mut *tx)
+                    .await?;
             } else {
                 sqlx::query(
                     "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -2289,7 +2418,9 @@ impl SessionStorage {
                 .bind(role_to_string(&message.role))
                 .bind(serde_json::to_string(&message.content)?)
                 .bind(message.created)
-                .bind(serde_json::to_string(&message.metadata)?)
+                .bind(serde_json::to_string(
+                    &super::durable_tool_metadata::metadata_for_storage(message, answered),
+                )?)
                 .execute(&mut *tx)
                 .await?;
             }
@@ -2322,6 +2453,12 @@ impl SessionStorage {
         }
         if filters.working_dir.is_some() {
             where_clauses.push("s.working_dir = ?".to_string());
+        }
+        for _ in filters.tags {
+            where_clauses.push(
+                "s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?)"
+                    .to_string(),
+            );
         }
         if !keywords.is_empty() {
             where_clauses.push(message_keyword_clause(keywords.len()));
@@ -2405,6 +2542,9 @@ impl SessionStorage {
         }
         if let Some(working_dir) = filters.working_dir {
             q = q.bind(working_dir.to_string_lossy().to_string());
+        }
+        for (key, value) in filters.tags {
+            q = q.bind(key).bind(value);
         }
         for term in keywords {
             q = q.bind(term);
@@ -2546,6 +2686,11 @@ impl SessionStorage {
             .await?;
 
         sqlx::query("DELETE FROM usage_ledger WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM session_tags WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
@@ -3041,11 +3186,11 @@ fn merge_tool_meta(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversation::message::{Message, MessageContent};
+    use crate::conversation::message::{InferenceMetadata, Message, MessageContent};
     use crate::providers::base::MessageStream;
     use goose_providers::conversation::token_usage::{CostSource, ProviderUsage};
     use goose_providers::errors::ProviderError;
-    use rmcp::model::Tool;
+    use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
     use tempfile::TempDir;
     use test_case::test_case;
 
@@ -3067,7 +3212,7 @@ mod tests {
             fs::metadata(&session_dir).unwrap().permissions().mode() & 0o777,
             0o700
         );
-        storage.pool.close().await;
+        storage.pool().await.unwrap().close().await;
         drop(storage);
 
         fs::set_permissions(&database_path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -4103,7 +4248,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = session_manager.storage().pool.clone();
+        let pool = session_manager.storage().pool().await.unwrap().clone();
 
         let results = run_lock_upgrade_race(pool.clone(), session.id.clone(), "BEGIN", true).await;
         assert!(
@@ -4378,6 +4523,187 @@ mod tests {
         assert!(page.next_cursor.is_none());
     }
 
+    fn tags(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    async fn list_ids_with_tags(sm: &SessionManager, filter: &[(String, String)]) -> Vec<String> {
+        let types = [SessionType::User];
+        let mut ids = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    tags: filter,
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|session| session.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    #[tokio::test]
+    async fn test_session_list_paged_filters_by_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let thread_one =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "first").await;
+        let thread_two =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "second").await;
+        create_session_for_list_with_message(&sm, "/tmp/session-list", "untagged").await;
+        sm.set_session_tags(
+            &thread_one,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t1")]),
+        )
+        .await
+        .unwrap();
+        sm.set_session_tags(
+            &thread_two,
+            &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![thread_one.clone()]
+        );
+        let mut channel = vec![thread_one.clone(), thread_two.clone()];
+        channel.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1")])).await,
+            channel
+        );
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "c1"), ("buzz.thread", "t2")])).await,
+            vec![thread_two.clone()]
+        );
+        assert!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.channel", "t1")]))
+                .await
+                .is_empty(),
+            "a value must match under its own key"
+        );
+        assert_eq!(list_ids_with_tags(&sm, &[]).await.len(), 3);
+
+        sm.set_session_tags(&thread_two, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+        let mut retagged = vec![thread_one, thread_two];
+        retagged.sort();
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            retagged
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_session_removes_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "tagged").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        sm.delete_session(&session_id).await.unwrap();
+
+        let pool = sm.storage().pool().await.unwrap();
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_tags")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn test_session_tag_filter_seeks_tag_index() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = sm.storage().pool().await.unwrap();
+
+        let plan_rows = sqlx::query(
+            "EXPLAIN QUERY PLAN \
+             SELECT s.id FROM sessions s JOIN messages m ON s.id = m.session_id \
+             WHERE s.session_type IN (?) AND s.working_dir = ? \
+               AND s.id IN (SELECT session_id FROM session_tags WHERE key = ? AND value = ?) \
+             GROUP BY s.id",
+        )
+        .bind("acp")
+        .bind("/tmp")
+        .bind("buzz.thread")
+        .bind("t1")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        let plan_text = plan_rows
+            .iter()
+            .map(|row| row.try_get::<String, _>("detail").unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            plan_text.contains("idx_session_tags_key_value"),
+            "tag filters should seek idx_session_tags_key_value, got: {plan_text}"
+        );
+        assert!(
+            !plan_text.contains("SCAN s"),
+            "tag filters must not scan every session, got: {plan_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_tags_migration() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TABLE session_tags")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 17")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id =
+            create_session_for_list_with_message(&sm, "/tmp/session-list", "migrated").await;
+        sm.set_session_tags(&session_id, &tags(&[("buzz.thread", "t1")]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            list_ids_with_tags(&sm, &tags(&[("buzz.thread", "t1")])).await,
+            vec![session_id]
+        );
+    }
+
     #[tokio::test]
     async fn test_session_list_paged_keyword_uses_or_terms() {
         let temp_dir = TempDir::new().unwrap();
@@ -4534,6 +4860,7 @@ mod tests {
             working_dir: Some(Path::new("/tmp/session-list/a")),
             keyword: Some("postgres"),
             only_sessions_with_messages: true,
+            ..Default::default()
         };
         let cursor = sm
             .list_sessions_paged(SessionListPageQuery {
@@ -5033,7 +5360,7 @@ mod tests {
             .await
             .unwrap();
 
-        let pool = &sm.storage().pool;
+        let pool = sm.storage().pool().await.unwrap();
         sqlx::query("UPDATE sessions SET goose_mode = 'garbage' WHERE id = ?")
             .bind(&session.id)
             .execute(pool)
@@ -5111,6 +5438,126 @@ mod tests {
 
         let acp_session = sm.storage().get_session("acp_id", false).await.unwrap();
         assert_eq!(acp_session.session_type, SessionType::Acp);
+    }
+
+    #[tokio::test]
+    async fn test_application_pool_opens_connections_after_migration() {
+        use sqlx::Row;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
+
+        for column in [
+            "system_prompt_override",
+            "system_prompt_extras_json",
+            "container_id",
+        ] {
+            sqlx::query(AssertSqlSafe(format!(
+                "ALTER TABLE sessions DROP COLUMN {column}"
+            )))
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        }
+        sqlx::query("UPDATE schema_version SET version = 16")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sessions (id, working_dir) VALUES ('before_migration', '/tmp')")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        let migration_lock = bootstrap.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let first = storage.pool();
+        tokio::pin!(first);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut first)
+                .await
+                .is_err()
+        );
+        assert!(storage.pool.get().is_none());
+        migration_lock.commit().await.unwrap();
+        bootstrap.close().await;
+
+        let (first, second) = tokio::join!(first, storage.pool());
+        let pool = first.unwrap();
+        assert!(std::ptr::eq(pool, second.unwrap()));
+
+        let mut connections = Vec::new();
+        for _ in 0..pool.options().get_max_connections() {
+            let mut connection = pool.acquire().await.unwrap();
+            // A wildcard deliberately exercises the SQLx stale-metadata failure
+            // independently of the explicit projection used by create_session.
+            let row = sqlx::query("SELECT * FROM sessions WHERE id = 'before_migration'")
+                .fetch_one(&mut *connection)
+                .await
+                .unwrap();
+            for column in [
+                "system_prompt_override",
+                "system_prompt_extras_json",
+                "container_id",
+            ] {
+                assert!(row.try_get::<Option<String>, _>(column).unwrap().is_none());
+            }
+            connections.push(connection);
+        }
+        drop(connections);
+
+        let session = storage
+            .create_session(
+                None,
+                temp_dir.path().to_path_buf(),
+                "After migration".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(session.name, "After migration");
+        assert!(session.system_prompt_override.is_none());
+        assert!(session.system_prompt_extras.is_empty());
+        assert!(session.container.is_none());
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn test_failed_migration_does_not_publish_application_pool() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        let bootstrap =
+            SessionStorage::create_pool(&db_path, SqlitePoolOptions::new().max_connections(1));
+        sqlx::query("CREATE TABLE schema_version (version INTEGER PRIMARY KEY)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version VALUES (16)")
+            .execute(&bootstrap)
+            .await
+            .unwrap();
+
+        let storage = SessionStorage::new(temp_dir.path().to_path_buf());
+        assert!(storage.pool().await.is_err());
+        assert!(storage.pool.get().is_none());
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(&bootstrap)
+            .await
+            .unwrap();
+        assert_eq!(version, 16);
+
+        SessionStorage::create_schema(&bootstrap).await.unwrap();
+        bootstrap.close().await;
+        let pool = storage.pool().await.unwrap();
+        let version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
+        pool.close().await;
     }
 
     #[tokio::test]
@@ -5454,5 +5901,319 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(remaining, 0);
+    }
+
+    fn large_advertised_tools() -> serde_json::Value {
+        serde_json::Value::Array(
+            (0..200)
+                .map(|index| serde_json::Value::String(format!("extension__tool_{index:03}")))
+                .collect(),
+        )
+    }
+
+    fn assistant_with_advertised_tools(text: &str, tools: &serde_json::Value) -> Message {
+        let mut message = Message::assistant()
+            .with_text(text)
+            .with_inference(InferenceMetadata {
+                provider: "test".to_string(),
+                requested_model: "test-model".to_string(),
+                resolved_model: None,
+                provider_session_id: None,
+            });
+        message
+            .metadata
+            .set_operation_note("llm", "advertised_tools", tools.clone());
+        message
+            .metadata
+            .set_operation_note("retry", "nudged", serde_json::json!(true));
+        message
+    }
+
+    fn advertised_tools_bytes(message: &Message) -> usize {
+        message
+            .metadata
+            .operation_note("llm", "advertised_tools")
+            .map(|value| value.to_string().len())
+            .unwrap_or(0)
+    }
+
+    async fn persisted_messages(sm: &SessionManager, session_id: &str) -> Vec<Message> {
+        sm.get_session(session_id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap()
+            .messages()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_are_not_repeated_on_completed_assistant_messages() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+
+        for turn in 0..4 {
+            sm.add_message(
+                &session_id,
+                &assistant_with_advertised_tools(&format!("turn {turn}"), &tools),
+            )
+            .await
+            .unwrap();
+        }
+
+        let messages = persisted_messages(&sm, &session_id).await;
+        let stored: usize = messages.iter().map(advertised_tools_bytes).sum();
+        assert!(
+            stored < one_copy,
+            "advertised_tools grew with each turn: stored {stored} bytes across 4 messages, one copy is {one_copy}"
+        );
+        assert!(messages.iter().all(|message| {
+            message.metadata.inference.is_some()
+                && message.metadata.operation_note("retry", "nudged").is_some()
+        }));
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_stay_only_while_a_tool_request_is_unanswered() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+        let mut request = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "call-1",
+            Ok(CallToolRequestParams::new("extension__tool_000")
+                .with_arguments(serde_json::Map::new())),
+        );
+        request
+            .content
+            .retain(|content| content.as_tool_request().is_some());
+
+        sm.add_message(&session_id, &request).await.unwrap();
+
+        let pending = persisted_messages(&sm, &session_id).await;
+        assert_eq!(
+            pending.iter().map(advertised_tools_bytes).sum::<usize>(),
+            one_copy
+        );
+
+        sm.add_message(
+            &session_id,
+            &Message::user().with_tool_response(
+                "call-1",
+                Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+            ),
+        )
+        .await
+        .unwrap();
+
+        let resolved = persisted_messages(&sm, &session_id).await;
+        assert_eq!(
+            resolved.iter().map(advertised_tools_bytes).sum::<usize>(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_conversation_drops_resolved_advertised_tools() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let tools = large_advertised_tools();
+        let one_copy = tools.to_string().len();
+        let resolved = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "done",
+            Ok(CallToolRequestParams::new("extension__tool_001")
+                .with_arguments(serde_json::Map::new())),
+        );
+        let mut pending = assistant_with_advertised_tools("", &tools).with_tool_request(
+            "open",
+            Ok(CallToolRequestParams::new("extension__tool_002")
+                .with_arguments(serde_json::Map::new())),
+        );
+        pending
+            .content
+            .retain(|content| content.as_tool_request().is_some());
+        let conversation = Conversation::new_unvalidated([
+            assistant_with_advertised_tools("finished text", &tools),
+            resolved,
+            Message::user().with_tool_response(
+                "done",
+                Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+            ),
+            pending,
+        ]);
+
+        sm.replace_conversation(&session_id, &conversation)
+            .await
+            .unwrap();
+
+        let messages = persisted_messages(&sm, &session_id).await;
+        let stored: usize = messages.iter().map(advertised_tools_bytes).sum();
+        assert_eq!(stored, one_copy);
+        assert!(messages.iter().any(|message| {
+            message.get_tool_request_ids().contains("open")
+                && advertised_tools_bytes(message) == one_copy
+        }));
+        assert!(messages.iter().all(|message| {
+            !message.get_tool_request_ids().contains("done") || advertised_tools_bytes(message) == 0
+        }));
+    }
+    fn advertised_request(id: &str, marker: &str) -> Message {
+        let mut message = assistant_with_advertised_tools(marker, &large_advertised_tools())
+            .with_id("reused-assistant")
+            .with_tool_request(id, Ok(CallToolRequestParams::new("extension__tool_000")));
+        message.created = 100;
+        message
+            .metadata
+            .set_operation_note("test", "marker", serde_json::json!(marker));
+        message
+    }
+
+    fn advertised_response(id: &str) -> Message {
+        let mut message = Message::user().with_tool_response(
+            id,
+            Ok(CallToolResult::success(vec![ContentBlock::text("ok")])),
+        );
+        message.created = 100;
+        message
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_cleanup_updates_only_the_originating_row() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let first = advertised_request("reused-call", "first");
+        sm.add_message(&session_id, &first).await.unwrap();
+        let second = advertised_request("reused-call", "second").with_tool_request(
+            "pending",
+            Ok(CallToolRequestParams::new("extension__tool_001")),
+        );
+        sm.add_message(&session_id, &second).await.unwrap();
+        sm.add_message(&session_id, &advertised_response("reused-call"))
+            .await
+            .unwrap();
+        let messages = persisted_messages(&sm, &session_id).await;
+        assert_eq!(messages[0].metadata, first.metadata);
+        assert_eq!(messages[1].metadata, second.metadata);
+
+        sm.add_message(&session_id, &advertised_response("pending"))
+            .await
+            .unwrap();
+        let messages = persisted_messages(&sm, &session_id).await;
+        assert_eq!(messages[0].metadata, first.metadata);
+        let mut expected = second.metadata;
+        super::super::durable_tool_metadata::clear_advertised_tools(&mut expected);
+        assert_eq!(messages[1].metadata, expected);
+    }
+
+    #[tokio::test]
+    async fn advertised_tools_cleanup_stops_before_archived_payloads() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let archived = advertised_response("old").with_id("archived-output");
+        sm.add_message(&session_id, &archived).await.unwrap();
+        let pool = sm.storage.pool().await.unwrap();
+        // A decoding sentinel makes reading archived payloads fail deterministically.
+        sqlx::query(
+            "UPDATE messages SET content_json = 'archived payload must not be decoded' WHERE session_id = ?",
+        )
+        .bind(&session_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let mut kickoff = Message::user().with_text("current turn");
+        kickoff.created = 100;
+        sm.add_message(&session_id, &kickoff).await.unwrap();
+        sm.add_message(&session_id, &advertised_request("current", "pending"))
+            .await
+            .unwrap();
+        sm.add_message(&session_id, &advertised_response("current"))
+            .await
+            .unwrap();
+
+        let metadata_json: String = sqlx::query_scalar(
+            "SELECT metadata_json FROM messages WHERE session_id = ? AND role = 'assistant'",
+        )
+        .bind(&session_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let metadata: MessageMetadata = serde_json::from_str(&metadata_json).unwrap();
+        assert!(metadata.operation_note("llm", "advertised_tools").is_none());
+        assert_eq!(
+            metadata.operation_note("test", "marker"),
+            Some(&serde_json::json!("pending"))
+        );
+    }
+
+    #[test_case("replace"; "replace")]
+    #[test_case("copy"; "copy")]
+    #[test_case("import"; "import")]
+    #[test_case("compact"; "compact")]
+    #[tokio::test]
+    async fn advertised_tools_reused_ids_keep_pending_turn(operation: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session_id = new_session(&sm).await;
+        let first = advertised_request("reused-call", "first");
+        let pending = advertised_request("reused-call", "pending").with_tool_request(
+            "other",
+            Ok(CallToolRequestParams::new("extension__tool_001")),
+        );
+        let mut user = Message::user().with_text("next turn").with_id("next-turn");
+        user.created = 100;
+        let mut response = advertised_response("reused-call");
+        response.id = Some("response".to_string());
+        let messages = vec![first, response, user, pending.clone()];
+        for message in &messages {
+            sm.add_message(&session_id, message).await.unwrap();
+        }
+        let conversation = Conversation::new_unvalidated(messages);
+        let target = match operation {
+            "replace" => {
+                sm.replace_conversation(&session_id, &conversation)
+                    .await
+                    .unwrap();
+                session_id.clone()
+            }
+            "copy" => {
+                sm.copy_session(&session_id, "copy".to_string())
+                    .await
+                    .unwrap()
+                    .id
+            }
+            "import" => {
+                let exported = sm.export_session(&session_id).await.unwrap();
+                sm.import_session(&exported, None).await.unwrap().id
+            }
+            "compact" => {
+                sm.storage
+                    .save_compacted_conversation(&session_id, &conversation)
+                    .await
+                    .unwrap();
+                session_id.clone()
+            }
+            _ => unreachable!(),
+        };
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(advertised_tools_bytes(&stored[0]), 0);
+        assert_eq!(stored[3].metadata, pending.metadata);
+        sm.add_message(&target, &advertised_response("other"))
+            .await
+            .unwrap();
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(stored[3].metadata, pending.metadata);
+        sm.add_message(&target, &advertised_response("reused-call"))
+            .await
+            .unwrap();
+        let stored = persisted_messages(&sm, &target).await;
+        assert_eq!(advertised_tools_bytes(&stored[3]), 0);
     }
 }

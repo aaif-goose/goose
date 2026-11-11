@@ -84,7 +84,8 @@ use url::Url;
 use uuid::Uuid;
 
 use self::message_meta::{
-    content_chunk_for_message, message_meta_without_steer, populate_output_token_limit_content,
+    content_chunk_for_message, live_transcript_chunk, message_meta_without_steer,
+    populate_output_token_limit_content,
 };
 use self::tool_calls::chain::{breaks_consecutive_tool_calls, ReadyToolChain, ToolChainTracker};
 use self::tool_calls::conversion::{
@@ -357,6 +358,50 @@ fn meta_string(
         );
     };
     Ok(Some(value.to_string()))
+}
+
+const MAX_SESSION_TAGS: usize = 16;
+const MAX_SESSION_TAG_KEY_BYTES: usize = 128;
+const MAX_SESSION_TAG_VALUE_BYTES: usize = 1024;
+
+/// Client-owned `key -> value` string labels from `_meta.tags`, sorted by key.
+fn meta_tags(meta: Option<&Meta>) -> Result<Vec<(String, String)>, agent_client_protocol::Error> {
+    let invalid = |message: String| agent_client_protocol::Error::invalid_params().data(message);
+    let Some(value) = meta.and_then(|m| m.get("tags")) else {
+        return Ok(Vec::new());
+    };
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(tags) = value.as_object() else {
+        return Err(invalid("tags must be an object".to_string()));
+    };
+    if tags.len() > MAX_SESSION_TAGS {
+        return Err(invalid(format!(
+            "tags may have at most {MAX_SESSION_TAGS} entries"
+        )));
+    }
+    let mut parsed = tags
+        .iter()
+        .map(|(key, value)| {
+            if key.is_empty() || key.len() > MAX_SESSION_TAG_KEY_BYTES {
+                return Err(invalid(format!(
+                    "tag keys must be 1-{MAX_SESSION_TAG_KEY_BYTES} bytes"
+                )));
+            }
+            let Some(value) = value.as_str() else {
+                return Err(invalid(format!("tag {key} must be a string")));
+            };
+            if value.len() > MAX_SESSION_TAG_VALUE_BYTES {
+                return Err(invalid(format!(
+                    "tag {key} must be at most {MAX_SESSION_TAG_VALUE_BYTES} bytes"
+                )));
+            }
+            Ok((key.clone(), value.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parsed.sort();
+    Ok(parsed)
 }
 
 fn agent_capabilities_meta() -> Option<Meta> {

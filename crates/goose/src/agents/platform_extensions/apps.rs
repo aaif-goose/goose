@@ -780,6 +780,7 @@ mod tests {
     use crate::agents::reply_parts::{is_tool_visible_to_app, is_tool_visible_to_model};
     use crate::providers::base::{stream_from_single_message, MessageStream, Usage};
     use crate::session::SessionManager;
+    use goose_agent::mcp::Client;
     use goose_providers::errors::ProviderError;
     use std::path::Path;
     use std::sync::Mutex;

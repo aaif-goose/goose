@@ -39,7 +39,7 @@ jobs:
       matrix:
         include:
           - name: darwin-aarch64
-            os: macos-14
+            os: macos-15
             resource-prefix: darwin-aarch64
           - name: linux-x86-64
             os: ubuntu-latest

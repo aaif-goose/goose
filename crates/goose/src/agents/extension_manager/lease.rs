@@ -221,32 +221,28 @@ impl ExtensionLease {
     }
 
     pub async fn tools(&self) -> Vec<Tool> {
-        self.tool_catalog()
-            .await
-            .entries
-            .iter()
-            .map(|entry| entry.tool.clone())
-            .collect()
+        self.tools_where(|_| true).await
     }
 
     pub async fn tools_for(&self, extension: &str) -> Vec<Tool> {
         let key = name_to_key(extension);
-        self.tool_catalog()
-            .await
-            .entries
-            .iter()
-            .filter(|entry| entry.owner.key == key)
-            .map(|entry| entry.tool.clone())
-            .collect()
+        self.tools_where(|extension| extension.key == key).await
     }
 
     pub async fn tools_excluding(&self, extension: &str) -> Vec<Tool> {
         let key = name_to_key(extension);
+        self.tools_where(|extension| extension.key != key).await
+    }
+
+    pub(in crate::agents) async fn tools_where(
+        &self,
+        predicate: impl Fn(&Extension) -> bool,
+    ) -> Vec<Tool> {
         self.tool_catalog()
             .await
             .entries
             .iter()
-            .filter(|entry| entry.owner.key != key)
+            .filter(|entry| predicate(&entry.owner))
             .map(|entry| entry.tool.clone())
             .collect()
     }
