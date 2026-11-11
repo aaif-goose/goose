@@ -24,8 +24,9 @@ use tracing::warn;
 use super::{
     get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
     recover_mangled_tool_name, remove_subagent_session_meta, remove_untrusted_mcp_app_meta,
-    ActionRequiredStream, Extension, ExtensionLoadResult, ExtensionMutation, ExtensionSlot,
-    GooseMcpAppToolAttachment, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    ActionRequiredStream, Extension, ExtensionLoadResult, ExtensionMutation,
+    GooseMcpAppToolAttachment, Revision, TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
+    TOOL_EXTENSION_META_KEY,
 };
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::container::Container;
@@ -71,6 +72,14 @@ impl ExtensionSet {
     ) -> Result<Self, ExtensionError> {
         crate::session::EnabledExtensionsState::check_unique_keys(&extensions)
             .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
+        if extensions
+            .iter()
+            .any(|config| config.key().trim().is_empty())
+        {
+            return Err(ExtensionError::ConfigError(
+                "an extension name must not be empty".to_string(),
+            ));
+        }
         Ok(Self {
             scope_id: scope_id.into(),
             working_dir,
@@ -106,42 +115,29 @@ impl LeaseId {
 type ToolCatalog = goose_agent::mcp::Catalog<Arc<Extension>>;
 type CatalogEntry = goose_agent::mcp::CatalogEntry<Arc<Extension>>;
 
-async fn build_tool_catalog(scope_id: &str, extensions: &[Arc<Extension>]) -> ToolCatalog {
-    let supports_resources = extensions
-        .iter()
-        .any(|extension| extension.supports_resources());
+/// The GDK binding's catalog, with goose's owner metadata and resource-tool policy.
+fn build_tool_catalog(entries: &[CatalogEntry], supports_resources: bool) -> ToolCatalog {
     let extension_manager_key = name_to_key(EXTENSION_MANAGER_NAME);
-    let lists = futures::future::join_all(
-        extensions
-            .iter()
-            .map(|extension| extension.public_tools(scope_id)),
-    )
-    .await;
-    let entries = extensions.iter().zip(lists).flat_map(|(extension, tools)| {
-        tools
-            .iter()
-            .filter_map(|tool| {
-                let server_name = tool
-                    .name
-                    .strip_prefix(&format!("{}__", extension.key))
-                    .unwrap_or(&tool.name)
-                    .to_string();
-                if extension.key == extension_manager_key
-                    && !supports_resources
-                    && matches!(
-                        server_name.as_str(),
-                        LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME
-                    )
-                {
-                    return None;
-                }
-                Some(CatalogEntry {
-                    tool: tool.clone(),
-                    owner: Arc::clone(extension),
-                    server_name,
-                })
-            })
-            .collect::<Vec<_>>()
+    let entries = entries.iter().filter_map(|entry| {
+        if entry.owner.key == extension_manager_key
+            && !supports_resources
+            && matches!(
+                entry.server_name.as_str(),
+                LIST_RESOURCES_TOOL_NAME | READ_RESOURCE_TOOL_NAME
+            )
+        {
+            return None;
+        }
+        let mut tool = entry.tool.clone();
+        tool.meta.get_or_insert_with(Default::default).0.insert(
+            TOOL_EXTENSION_META_KEY.into(),
+            Value::String(entry.owner.key.clone()),
+        );
+        Some(CatalogEntry {
+            tool,
+            owner: Arc::clone(&entry.owner),
+            server_name: entry.server_name.clone(),
+        })
     });
     ToolCatalog::new(entries, goose_agent::mcp::CollisionPolicy::KeepFirst)
         .expect("legacy catalogs keep the first duplicate")
@@ -150,7 +146,7 @@ async fn build_tool_catalog(scope_id: &str, extensions: &[Arc<Extension>]) -> To
 #[derive(Clone)]
 pub struct ExtensionLease {
     id: LeaseId,
-    selection: goose_agent::mcp::host::Selection<ExtensionSlot>,
+    selection: goose_agent::mcp::Lease<Extension, Revision>,
     working_dir: Option<PathBuf>,
     tool_catalog: Arc<OnceCell<ToolCatalog>>,
     action_required: Arc<ActionRequiredManager>,
@@ -165,15 +161,14 @@ struct ResolvedTool<'a> {
 
 impl ExtensionLease {
     pub(super) fn new(
-        scope_id: impl Into<String>,
+        selection: goose_agent::mcp::Lease<Extension, Revision>,
         working_dir: Option<PathBuf>,
-        slots: Vec<Arc<ExtensionSlot>>,
         action_required: Arc<ActionRequiredManager>,
         hydrate_mcp_apps: bool,
     ) -> Self {
         Self {
             id: LeaseId::next(),
-            selection: goose_agent::mcp::host::Selection::new(scope_id, slots),
+            selection,
             working_dir,
             tool_catalog: Arc::new(OnceCell::new()),
             action_required,
@@ -184,28 +179,49 @@ impl ExtensionLease {
     async fn tool_catalog(&self) -> &ToolCatalog {
         self.tool_catalog
             .get_or_init(|| async {
-                build_tool_catalog(&self.selection.scope, &self.start_extensions().await).await
+                let supports_resources = self
+                    .start_extensions()
+                    .await
+                    .iter()
+                    .any(|extension| extension.supports_resources());
+                match self.selection.catalog(CancellationToken::new()).await {
+                    Ok(catalog) => build_tool_catalog(&catalog.entries, supports_resources),
+                    Err(error) => {
+                        warn!(%error, "failed to build the tool catalog");
+                        build_tool_catalog(&[], supports_resources)
+                    }
+                }
             })
             .await
     }
 
     async fn start_extensions(&self) -> Vec<Arc<Extension>> {
-        futures::future::join_all(self.selection.slots.iter().map(|slot| slot.start()))
+        self.selection
+            .servers(CancellationToken::new())
             .await
             .into_iter()
-            .flatten()
-            .cloned()
+            .map(|(_, extension)| extension)
             .collect()
     }
 
     async fn start_extension(&self, extension_name: &str) -> Option<Arc<Extension>> {
-        let key = name_to_key(extension_name);
-        let slot = self.selection.slots.iter().find(|slot| slot.key == key)?;
-        slot.start().await.cloned()
+        self.selection
+            .server(&name_to_key(extension_name), CancellationToken::new())
+            .await
+            .ok()
     }
 
     pub async fn start(&self) -> Vec<ExtensionLoadResult> {
-        futures::future::join_all(self.selection.slots.iter().map(|slot| slot.load_result())).await
+        let results = self.selection.start(CancellationToken::new()).await;
+        self.selection
+            .registrations()
+            .zip(results)
+            .map(|(registration, result)| ExtensionLoadResult {
+                name: registration.revision.config.name(),
+                success: result.error.is_none(),
+                error: result.error,
+            })
+            .collect()
     }
 
     pub fn id(&self) -> LeaseId {
@@ -213,7 +229,7 @@ impl ExtensionLease {
     }
 
     pub fn scope_id(&self) -> &str {
-        &self.selection.scope
+        self.selection.scope()
     }
 
     pub fn working_dir(&self) -> Option<&Path> {
@@ -249,14 +265,15 @@ impl ExtensionLease {
 
     pub fn is_enabled(&self, extension: &str) -> bool {
         let key = name_to_key(extension);
-        self.selection.slots.iter().any(|slot| slot.key == key)
+        self.selection
+            .registrations()
+            .any(|registration| registration.id == key)
     }
 
     pub fn configs(&self) -> Vec<ExtensionConfig> {
         self.selection
-            .slots
-            .iter()
-            .map(|slot| slot.config.clone())
+            .registrations()
+            .map(|registration| registration.revision.config.clone())
             .collect()
     }
 
@@ -295,9 +312,8 @@ impl ExtensionLease {
             .map(|extension| Arc::clone(&extension.client))
             .ok_or_else(|| {
                 let available = self.selection
-                    .slots
-                    .iter()
-                    .map(|slot| slot.key.as_str())
+                    .registrations()
+                    .map(|registration| registration.id.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
                 ErrorData::new(
@@ -310,7 +326,7 @@ impl ExtensionLease {
             })?;
 
         client
-            .read_resource(&self.selection.scope, uri, cancellation_token)
+            .read_resource(self.selection.scope(), uri, cancellation_token)
             .await
             .map_err(|_| {
                 ErrorData::new(
@@ -347,7 +363,7 @@ impl ExtensionLease {
     ) -> Result<ListToolsResult, ErrorData> {
         self.client(extension_name)
             .await?
-            .list_tools(&self.selection.scope, None, cancellation_token)
+            .list_tools(self.selection.scope(), None, cancellation_token)
             .await
             .map_err(|error| {
                 ErrorData::new(
@@ -366,7 +382,7 @@ impl ExtensionLease {
         let client = self.client(extension_name).await?;
         goose_agent::mcp::discovery::prompts(
             client.as_ref(),
-            &self.selection.scope,
+            self.selection.scope(),
             cancellation_token,
         )
         .await
@@ -410,7 +426,7 @@ impl ExtensionLease {
     ) -> anyhow::Result<GetPromptResult> {
         self.client(extension_name)
             .await?
-            .get_prompt(&self.selection.scope, name, arguments, cancellation_token)
+            .get_prompt(self.selection.scope(), name, arguments, cancellation_token)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get prompt: {}", e))
     }
@@ -420,7 +436,7 @@ impl ExtensionLease {
         for extension in self.start_extensions().await {
             match extension
                 .client
-                .list_resources(&self.selection.scope, None, CancellationToken::default())
+                .list_resources(self.selection.scope(), None, CancellationToken::default())
                 .await
             {
                 Ok(listed) => ui_resources.extend(
@@ -444,7 +460,7 @@ impl ExtensionLease {
         let client = self.client(extension_name).await?;
         let resources = goose_agent::mcp::discovery::resources(
             client.as_ref(),
-            &self.selection.scope,
+            self.selection.scope(),
             cancellation_token,
         )
         .await
@@ -519,7 +535,7 @@ impl ExtensionLease {
         for extension in self.start_extensions().await {
             let instructions = extension
                 .client
-                .get_instructions(&self.selection.scope, &working_dir)
+                .get_instructions(self.selection.scope(), &working_dir)
                 .await
                 .unwrap_or_default();
             infos.push(ExtensionInfo::new(
@@ -542,7 +558,7 @@ impl ExtensionLease {
             let tools = self.tools_excluding(&extension.key).await;
             if let Some(part) = extension
                 .client
-                .get_moim(&self.selection.scope, &tools)
+                .get_moim(self.selection.scope(), &tools)
                 .await
             {
                 content.push(part);
@@ -662,7 +678,7 @@ impl ExtensionLease {
             tool_call_id.as_deref(),
         );
         let call_context = ToolCallContext::new(
-            self.selection.scope.clone(),
+            self.selection.scope().to_string(),
             self.working_dir.clone(),
             tool_call_id,
         )
@@ -676,7 +692,7 @@ impl ExtensionLease {
         let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let server_name = resolved.server_name.to_string();
         let is_platform_extension = resolved.extension.is_platform();
-        let session_id = self.selection.scope.clone();
+        let session_id = self.selection.scope().to_string();
         let result = async move {
             let mut result = client
                 .call_tool(
@@ -717,19 +733,22 @@ impl ExtensionLease {
         let tool_call_id = tool_call_id?;
         if self
             .action_required
-            .has_action_required_stream(&self.selection.scope, tool_call_id)
+            .has_action_required_stream(self.selection.scope(), tool_call_id)
             .await
         {
             return None;
         }
         let receiver = self
             .action_required
-            .register_action_required_stream(self.selection.scope.clone(), tool_call_id.to_string())
+            .register_action_required_stream(
+                self.selection.scope().to_string(),
+                tool_call_id.to_string(),
+            )
             .await;
         Some(Box::new(ActionRequiredStream::new(
             receiver,
             self.action_required.clone(),
-            self.selection.scope.clone(),
+            self.selection.scope().to_string(),
             tool_call_id.to_string(),
         )))
     }

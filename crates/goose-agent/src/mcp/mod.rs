@@ -11,10 +11,6 @@ pub use manager::{
     Connector, Lease, LoadResult, LoadStage, Manager, Registration, Server, Started, StartupPolicy,
 };
 pub use operation::{McpHost, McpOperation};
-/// Advanced ownership primitives for hosts with custom selection and persistence policy.
-pub mod host {
-    pub use super::runtime::{Manager, Runtime, Scopes, Selection};
-}
 pub use transport::{ClientOptions, ElicitationHandler, RequestSender, TransportClient};
 
 /// Runtime identity copied from advertised tools to generated requests.
