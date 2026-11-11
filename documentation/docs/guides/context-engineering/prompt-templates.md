@@ -24,7 +24,7 @@ When you customize a template:
 
 Your changes can range from major updates to minor adjustments such as:
 - Edit `system.md` to have goose respond in Dutch by adding an instruction to "Reply in Dutch"
-- Edit `compaction.md` to keep more detail when summarizing by adding an instruction to "Preserve every file path and command that was run."
+- Edit `compaction_prefix.md` to keep more detail when summarizing by adding an instruction to "Preserve every file path and command that was run."
 
 See [Template Variable Syntax](#template-variable-syntax) for important information about modifying template variables.
 
@@ -93,7 +93,8 @@ The following default templates can be customized.
 | [system.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/system.md) | General system prompt defining goose's role, capabilities, and response format | Desktop and CLI |
 | [apps_create.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/apps_create.md) | Prompt for generating new standalone apps (in development) | Desktop only |
 | [apps_iterate.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/apps_iterate.md) | Prompt for updating existing standalone apps (in development) | Desktop only |
-| [compaction.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/compaction.md) | Prompt for summarizing conversation history when context limits are reached | Desktop and CLI |
+| [compaction_prefix.md](https://github.com/aaif-goose/goose/blob/main/crates/goose-context-management/src/prompts/compaction_prefix.md) | Instruction appended to the conversation to summarize it when context limits are reached | Desktop and CLI |
+| [compaction_summary.md](https://github.com/aaif-goose/goose/blob/main/crates/goose-context-management/src/prompts/compaction_summary.md) | Renders the structured compaction summary into the post-compaction context | Desktop and CLI |
 | [permission_judge.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/permission_judge.md) | Prompt for analyzing tool operations for read-only detection | Desktop and CLI |
 | [subagent_system.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/subagent_system.md) | System prompt for subagents spawned to handle specific tasks | Desktop and CLI |
 | [tiny_model_system.md](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/prompts/tiny_model_system.md) | System prompt for tiny local models using shell command emulation | CLI |

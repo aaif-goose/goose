@@ -1507,7 +1507,7 @@ fn test_shell() {
 }
 
 const CONTEXT_OVERFLOW: &str = r#"status:400 {"error":{"message":"too long","type":"invalid_request_error","code":"context_length_exceeded"}}"#;
-const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
+const SUMMARIZE_HISTORY: &str = "write structured working notes from the conversation so far";
 const CONTEXT_ERROR_TEXT: &str =
     "Context length exceeded: too long\n\nThe conversation is too long for the model's context window.";
 

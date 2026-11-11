@@ -636,7 +636,8 @@ struct ThinkingConfig {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GoogleRequest<'a> {
-    system_instruction: SystemInstruction<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system_instruction: Option<SystemInstruction<'a>>,
     contents: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<ToolsWrapper>,
@@ -774,9 +775,10 @@ fn create_request_impl(
     });
 
     let request = GoogleRequest {
-        system_instruction: SystemInstruction {
+        // Gemini rejects an empty text part.
+        system_instruction: (!system.is_empty()).then_some(SystemInstruction {
             parts: [TextPart { text: system }],
-        },
+        }),
         contents: format_messages(
             messages,
             model_config
@@ -1885,5 +1887,13 @@ data: [DONE]"#;
         let payload = create_request(&config, "system", &[], &[]).unwrap();
 
         assert!(payload["generationConfig"].get("temperature").is_none());
+    }
+
+    #[test]
+    fn empty_system_prompt_is_omitted() {
+        let config = ModelConfig::new("gemini-3.6-flash");
+        let payload = create_request(&config, "", &[], &[]).unwrap();
+
+        assert!(payload.get("systemInstruction").is_none());
     }
 }
