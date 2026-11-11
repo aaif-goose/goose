@@ -227,12 +227,23 @@ change. `release` removes manager ownership without invalidating held leases.
 A lease pins tool names, schemas and clients for outstanding calls, including
 calls awaiting approval. `new_binding()` rediscovers tools on the same connections;
 it does not reconnect. Requests without the advertised binding fail closed.
+`enable` starts one server and adds it to a scope once the host's `commit`
+succeeds; concurrent `resolve`s reuse the in-flight start. `selected` leases the
+scope's current selection without changing it.
 
 `ready(cancel)` and lazy `catalog(cancel)` use the same selection policy:
 `Strict` fails on initialization or discovery errors; `BestEffort` excludes failed
-servers and returns per-server diagnostics from `ready`. Name collisions remain
-fatal. Connection failures are cached until the registration revision changes.
+servers and returns per-server diagnostics from `ready`. Servers start concurrently.
+A connector may decline by returning `None`; declined servers are not failures.
+Name collisions are fatal unless a lease opts into `CollisionPolicy::KeepFirst`.
+Connection failures are cached until the registration revision changes.
 Resources and prompts are available through the lease, not injected automatically.
+
+Hosts with their own per-connection state can manage a `Server` type other than
+`dyn Client` and use any `PartialEq` revision. `Connector::is_current` lets a host
+drop a connection whose inputs changed in ways the revision does not capture.
+Servers that report `tools_version` keep their tool list across bindings until it
+changes.
 
 For custom integration, implement `Client`, `RequestSender` (request decoration),
 or `McpHost` (operation policy). `TransportClient` owns an initialized rmcp service.

@@ -7,7 +7,9 @@ mod runtime;
 mod transport;
 
 pub use catalog::{provider_safe_tool_name, Catalog, CatalogEntry, CollisionPolicy};
-pub use manager::{Connector, Lease, LoadResult, LoadStage, Manager, Registration, StartupPolicy};
+pub use manager::{
+    Connector, Lease, LoadResult, LoadStage, Manager, Registration, Server, Started, StartupPolicy,
+};
 pub use operation::{McpHost, McpOperation};
 /// Advanced ownership primitives for hosts with custom selection and persistence policy.
 pub mod host {

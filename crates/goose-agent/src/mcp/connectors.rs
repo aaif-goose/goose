@@ -45,7 +45,11 @@ impl StdioConnector {
 #[cfg(feature = "mcp-stdio")]
 #[async_trait]
 impl Connector for StdioConnector {
-    async fn connect(&self, _scope: &str, cancel: CancellationToken) -> Result<Arc<dyn Client>> {
+    async fn connect(
+        &self,
+        _scope: &str,
+        cancel: CancellationToken,
+    ) -> Result<Option<Arc<dyn Client>>> {
         let mut command = tokio::process::Command::new(&self.command);
         if !self.inherit_env {
             command.env_clear();
@@ -61,7 +65,7 @@ impl Connector for StdioConnector {
         tokio::select! {
             biased;
             _ = cancel.cancelled() => anyhow::bail!("MCP connection cancelled"),
-            result = TransportClient::stdio(command, self.options.clone()) => Ok(Arc::new(result?)),
+            result = TransportClient::stdio(command, self.options.clone()) => Ok(Some(Arc::new(result?))),
         }
     }
 }
@@ -119,7 +123,11 @@ impl HttpConnector {
 #[cfg(feature = "mcp-http")]
 #[async_trait]
 impl Connector for HttpConnector {
-    async fn connect(&self, _scope: &str, cancel: CancellationToken) -> Result<Arc<dyn Client>> {
+    async fn connect(
+        &self,
+        _scope: &str,
+        cancel: CancellationToken,
+    ) -> Result<Option<Arc<dyn Client>>> {
         tokio::select! {
             biased;
             _ = cancel.cancelled() => anyhow::bail!("MCP connection cancelled"),
@@ -127,7 +135,7 @@ impl Connector for HttpConnector {
                 self.client.clone(),
                 rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig::with_uri(self.url.as_str()),
                 self.options.clone(),
-            ) => Ok(Arc::new(result?)),
+            ) => Ok(Some(Arc::new(result?))),
         }
     }
 }
