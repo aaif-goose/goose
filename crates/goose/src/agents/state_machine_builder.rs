@@ -13,13 +13,14 @@ use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::UnavailableDecisions;
 use crate::agents::state_machine::{
     deny_limit_warning, BangShellOperation, CompactionOperation, ContextRelevanceOperation,
-    DoctorOperation, EmptyResponseOperation, ExitOnErrorOperation, GooseEffect,
-    GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook, GoosePreToolHook,
-    GooseStopHook, GooseToolApproval, InferenceRunner, MaxTurnsOperation, Operation,
-    PreToolCallHookOperation, ProjectOperation, RecipeOperation, RemainingToolCallsOperation,
-    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
-    SteerOperation, SteerQueue, Step, StopHookOperation, SubagentOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnhandledToolCallsOperation,
+    DoctorOperation, EmptyResponseOperation, ExitOnErrorOperation, FinalOutputOperation,
+    GooseEffect, GooseInferenceProvider, GooseInferenceRequestPreparer, GoosePostToolHook,
+    GoosePreToolHook, GooseStopHook, GooseToolApproval, InferenceRunner, MaxTurnsOperation,
+    Operation, PreToolCallHookOperation, ProjectOperation, RecipeOperation,
+    RemainingToolCallsOperation, RetryOperation, SkillOperation, SlashCommandOperation,
+    StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
+    SubagentOperation, ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
+    UnhandledToolCallsOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::tool_execution::DECLINED_RESPONSE;
@@ -125,6 +126,7 @@ pub(crate) fn build_state_machine(
         Arc::clone(&extension_lease),
     ));
     let mut operations: Vec<Arc<dyn Operation<Session, GooseEffect> + '_>> = vec![
+        Arc::new(FinalOutputOperation::new(provider.clone())),
         Arc::new(
             ToolApprovalOperation::new(Arc::new(GooseToolApproval::new(tool_inspection_manager)))
                 .with_declined_message(DECLINED_RESPONSE),
@@ -136,11 +138,7 @@ pub(crate) fn build_state_machine(
             Arc::clone(&extension_lease),
             Arc::clone(&post_tool_call_hook),
         )),
-        Arc::new(RecipeOperation::new(
-            provider.clone(),
-            Arc::clone(&extension_manager),
-            Arc::clone(&post_tool_call_hook),
-        )),
+        Arc::new(RecipeOperation::new(Arc::clone(&extension_manager))),
         Arc::new(ToolExecutionOperation::new(
             Arc::clone(&extension_manager),
             hook_manager.clone(),

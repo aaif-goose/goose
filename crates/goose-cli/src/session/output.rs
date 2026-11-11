@@ -2,6 +2,7 @@ use crate::session::builder::ExtensionFailure;
 use anstream::{adapter::strip_str, eprintln, println};
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, StyledObject, Term};
+use goose::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
 use goose::agents::platform_extensions::todo::TODO_WRITE_TOOL_NAME_COMPLETE;
 use goose::config::Config;
 use goose::conversation::message::{
@@ -300,6 +301,12 @@ pub fn set_thinking_message(s: &String) {
     }
 }
 
+fn is_final_output_request(req: &ToolRequest) -> bool {
+    req.tool_call
+        .as_ref()
+        .is_ok_and(|call| call.name == FINAL_OUTPUT_TOOL_NAME)
+}
+
 pub fn render_message(message: &Message, debug: bool) {
     if !message.is_user_visible() {
         return;
@@ -324,6 +331,7 @@ pub fn render_message(message: &Message, debug: bool) {
                 }
             },
             MessageContent::Text(text) => print_markdown(&text.text, theme),
+            MessageContent::ToolRequest(req) if is_final_output_request(req) => {}
             MessageContent::ToolRequest(req) => render_tool_request(req, theme, debug),
             MessageContent::ToolResponse(resp) => render_tool_response(resp, debug),
             MessageContent::Image(image) => {
@@ -394,6 +402,7 @@ pub fn render_message_streaming(
                     print_markdown(&safe_content, theme);
                 }
             }
+            MessageContent::ToolRequest(req) if is_final_output_request(req) => {}
             MessageContent::ToolRequest(req) => {
                 flush_markdown_buffer(buffer, theme);
                 render_tool_request(req, theme, debug);

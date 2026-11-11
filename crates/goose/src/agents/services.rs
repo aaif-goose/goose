@@ -14,7 +14,6 @@ use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension_manager::{ClientContext, ExtensionLease, ExtensionManager};
 use crate::agents::provider_manager::ProviderManager;
 use crate::agents::session_runtime::{Attachment, SessionRuntime};
-use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision, run_goose, AutoEffortOperation, Emitter, GooseEffect,
@@ -623,25 +622,11 @@ impl StateMachineServices {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
-        let include_final_output = extension_name.is_none();
         let lease = self.extension_manager.current_lease(session_id).await?;
-        let mut prefixed_tools = match extension_name {
+        Ok(match extension_name {
             Some(name) => lease.tools_for(&name).await,
             None => lease.tools().await,
-        };
-
-        if include_final_output {
-            let final_output_tool = self
-                .session_manager
-                .get_session(session_id, false)
-                .await
-                .and_then(|session| ops_recipe::final_output_tool(&session));
-            if let Ok(Some(final_output_tool)) = final_output_tool {
-                prefixed_tools.push(final_output_tool.tool());
-            }
-        }
-
-        Ok(prefixed_tools)
+        })
     }
 
     pub async fn submit_tool_confirmation(
