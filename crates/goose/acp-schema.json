@@ -6390,6 +6390,12 @@
             "string",
             "null"
           ]
+        },
+        "format": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -6558,6 +6564,17 @@
       "properties": {
         "settings": {
           "$ref": "#/$defs/LocalInferenceModelSettingsDto"
+        },
+        "defaultBackend": {
+          "type": "string",
+          "default": ""
+        },
+        "availableBackends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "required": [

@@ -15,7 +15,14 @@ workspace = true
 default = []
 cuda = ["llama-cpp-2/cuda"]
 vulkan = ["llama-cpp-2/vulkan"]
-mlx = ["dep:safemlx", "dep:safemlx-lm", "dep:safemlx-lm-utils"]
+eredu = [
+    "dep:eredu",
+    "dep:eredu-core",
+    "dep:eredu-backend-mlx",
+    "dep:eredu-architectures",
+    "dep:eredu-text",
+    "dep:image",
+]
 hf-hub = [
     "dep:futures",
     "dep:goose-download-manager",
@@ -41,7 +48,6 @@ llama-cpp-2 = { workspace = true }
 llama-cpp-sys-2 = { workspace = true }
 minijinja = { version = "2.18", default-features = false, features = ["loader", "multi_template", "serde"] }
 pulldown-cmark = { version = "0.13.4", default-features = false }
-regex = { workspace = true }
 rmcp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -49,11 +55,15 @@ tokio = { workspace = true, features = ["fs", "rt-multi-thread", "sync", "time"]
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "std"] }
 
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+eredu = { git = "https://github.com/jbg/eredu", rev = "465cf519fc5e0f90a40072320aa1d546103fbcc8", version = "0.5.0", default-features = false, features = ["mlx", "metal", "image"], optional = true }
+eredu-architectures = { git = "https://github.com/jbg/eredu", rev = "465cf519fc5e0f90a40072320aa1d546103fbcc8", version = "0.5.0", default-features = false, optional = true }
+eredu-backend-mlx = { git = "https://github.com/jbg/eredu", rev = "465cf519fc5e0f90a40072320aa1d546103fbcc8", version = "0.5.0", default-features = false, optional = true }
+eredu-core = { git = "https://github.com/jbg/eredu", rev = "465cf519fc5e0f90a40072320aa1d546103fbcc8", version = "0.5.0", default-features = false, optional = true }
+eredu-text = { git = "https://github.com/jbg/eredu", rev = "465cf519fc5e0f90a40072320aa1d546103fbcc8", version = "0.1.1", default-features = false, optional = true }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp"], optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { workspace = true, features = ["sampler", "metal", "mtmd"] }
-safemlx = { default-features = false, features = ["accelerate", "metal", "safetensors"], optional = true, version = "0.1.2" }
-safemlx-lm = { optional = true, version = "0.4.1" }
-safemlx-lm-utils = { optional = true, version = "0.1.2" }
 
 [dev-dependencies]
 env-lock.workspace = true

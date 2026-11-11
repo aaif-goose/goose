@@ -61,10 +61,10 @@ export async function evictLocalModel(modelId: string): Promise<void> {
   await client.goose.localInferenceModelsEvict_unstable({ modelId });
 }
 
-export async function getModelSettings(modelId: string): Promise<ModelSettings> {
+export async function getModelSettings(modelId: string) {
   const client = await getAcpClient();
   const response = await client.goose.localInferenceModelsSettingsRead_unstable({ modelId });
-  return response.settings;
+  return response;
 }
 
 export async function updateModelSettings(
