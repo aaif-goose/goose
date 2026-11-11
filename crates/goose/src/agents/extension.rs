@@ -464,6 +464,45 @@ static RE_ENV_BRACES: Lazy<regex::Regex> =
 static RE_ENV_SIMPLE: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r"\$([A-Za-z_][A-Za-z0-9_]*)").expect("valid regex"));
 
+const CLIENT_SECRET_PREFIX: &str = "GOOSE_CLIENT_SECRET_";
+
+static CLIENT_SECRETS: Lazy<std::sync::Mutex<HashMap<String, String>>> =
+    Lazy::new(Default::default);
+
+/// Keeps a secret an ACP client sent in this process's memory only, and returns
+/// the key a config can reference as `${KEY}` in place of the value, so the
+/// session record never holds it. The same value always gets the same key, so
+/// sending it again leaves the config, and its running extension, unchanged; a
+/// new value gets a new key, which restarts the extension with it.
+pub fn hold_client_secret(value: String) -> String {
+    let mut secrets = CLIENT_SECRETS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(key) = secrets
+        .iter()
+        .find_map(|(key, held)| (*held == value).then(|| key.clone()))
+    {
+        return key;
+    }
+    let key = format!("{CLIENT_SECRET_PREFIX}{}", uuid::Uuid::new_v4().simple());
+    secrets.insert(key.clone(), value);
+    key
+}
+
+fn client_secret(key: &str) -> ExtensionResult<String> {
+    CLIENT_SECRETS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(key)
+        .cloned()
+        .ok_or_else(|| {
+            ExtensionError::ConfigError(format!(
+                "secret '{key}' was sent by an ACP client and is only held in memory by the \
+                 goose process it was sent to; send this MCP server again when loading the session"
+            ))
+        })
+}
+
 async fn merge_environments(
     envs: &Envs,
     env_keys: impl Iterator<Item = &String>,
@@ -473,6 +512,10 @@ async fn merge_environments(
     for key in env_keys {
         // inline values shadow the secret store
         if all_envs.contains_key(key) {
+            continue;
+        }
+        if key.starts_with(CLIENT_SECRET_PREFIX) {
+            all_envs.insert(key.clone(), client_secret(key)?);
             continue;
         }
         // Config::get_secret parses env values as JSON, so PORT=3000 would come
@@ -1109,6 +1152,45 @@ timeout: 300",
         .unwrap();
         cfg.set("MY_SECRET", &"secret_value", true).unwrap();
         assert_eq!(config.resolve(&cfg).await.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_hold_client_secret_keys_by_value() {
+        let key = hold_client_secret("held-value-a".into());
+        assert_eq!(hold_client_secret("held-value-a".into()), key);
+        assert_ne!(hold_client_secret("held-value-b".into()), key);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fails_for_client_secret_not_held_by_this_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = config::Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let key = "GOOSE_CLIENT_SECRET_from_another_process".to_string();
+        let config = ExtensionConfig::StreamableHttp {
+            name: "test".into(),
+            description: String::new(),
+            uri: "https://example.com/mcp".into(),
+            envs: Envs::default(),
+            env_keys: vec![key.clone()],
+            headers: HashMap::from([("Authorization".into(), format!("${{{key}}}"))]),
+            timeout: None,
+            socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: vec![],
+            bundled: None,
+            available_tools: vec![],
+        };
+
+        let error = config.resolve(&cfg).await.unwrap_err().to_string();
+        assert!(
+            error.contains("send this MCP server again"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

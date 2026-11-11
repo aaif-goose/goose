@@ -3,18 +3,18 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
+    ContentBlock, HttpHeader, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
     NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
     SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
-    StopReason, TextContent,
+    StopReason, TextContent, ToolCallStatus,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::{
     assert_session_response_precedes_available_commands, AcpServerConnection,
 };
 use common_tests::fixtures::{
-    run_test, spawn_acp_server_in_process, Connection, OpenAiFixture, PermissionDecision, Session,
-    SessionData, TestConnectionConfig,
+    assert_notifications, run_test, spawn_acp_server_in_process, Connection, Notification,
+    OpenAiFixture, PermissionDecision, Session, SessionData, TestConnectionConfig,
 };
 #[cfg(feature = "code-mode")]
 use common_tests::run_prompt_codemode;
@@ -1674,5 +1674,76 @@ fn test_manual_compaction_refusal_fails_without_replacing_context() {
                 .text,
             "2"
         );
+    });
+}
+
+#[test]
+fn test_secret_mcp_header_is_sent_but_not_stored() {
+    run_test(async {
+        let token = "Bearer secret-header-test-token";
+        let mcp = McpFixture::requiring_header("authorization", token).await;
+        let expected_session_id = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::new(
+            vec![
+                (
+                    format!("Use the get_code tool and output only its result.{TURN_CONTEXT_OPEN}"),
+                    include_str!("acp_test_data/openai_tool_call.txt"),
+                ),
+                (
+                    format!(r#""content":"{FAKE_CODE}""#),
+                    include_str!("acp_test_data/openai_tool_result.txt"),
+                ),
+            ],
+            expected_session_id.clone(),
+        )
+        .await;
+        let data_root = tempfile::tempdir().unwrap();
+        let secret = serde_json::Map::from_iter([("secret".into(), serde_json::Value::Bool(true))]);
+        let config = TestConnectionConfig {
+            data_root: data_root.path().to_path_buf(),
+            mcp_servers: vec![McpServer::Http(
+                McpServerHttp::new("mcp-fixture", &mcp.url).headers(vec![HttpHeader::new(
+                    "Authorization",
+                    token,
+                )
+                .meta(secret)]),
+            )],
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+
+        let output = session
+            .prompt(
+                "Use the get_code tool and output only its result.",
+                PermissionDecision::Cancel,
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.text, FAKE_CODE);
+        assert_notifications(
+            &session.notifications(),
+            &[
+                Notification::ToolCall,
+                Notification::ToolCallContent("content".into()),
+                Notification::ToolCallStatus(ToolCallStatus::Completed),
+                Notification::AgentMessage,
+            ],
+        );
+
+        let stored = SessionManager::new(data_root.path().to_path_buf())
+            .get_session(&session.session_id().0, false)
+            .await
+            .unwrap();
+        let extension_data = serde_json::to_string(&stored.extension_data).unwrap();
+        assert!(extension_data.contains("mcp-fixture"));
+        assert!(!extension_data.contains("secret-header-test-token"));
+        for entry in std::fs::read_dir(data_root.path().join("sessions")).unwrap() {
+            let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+            assert!(!bytes
+                .windows(token.len())
+                .any(|window| window == token.as_bytes()));
+        }
     });
 }

@@ -530,17 +530,15 @@ fn mcp_server_to_extension_config(mcp_server: McpServer) -> Result<ExtensionConf
         }
         McpServer::Http(http) => {
             let timeout = extract_timeout_from_meta(&http.meta);
+            let mut env_keys = vec![];
+            let headers = extensions::client_http_headers(http.headers, &mut env_keys);
             Ok(ExtensionConfig::StreamableHttp {
                 name: http.name,
                 description: String::new(),
                 uri: http.url,
                 envs: Envs::default(),
-                env_keys: vec![],
-                headers: http
-                    .headers
-                    .into_iter()
-                    .map(|h| (h.name, h.value))
-                    .collect(),
+                env_keys,
+                headers,
                 timeout,
                 socket: None,
                 client_id: None,
@@ -3181,6 +3179,45 @@ extensions:
         expected: Result<ExtensionConfig, String>,
     ) {
         assert_eq!(mcp_server_to_extension_config(input), expected);
+    }
+
+    #[tokio::test]
+    async fn secret_mcp_header_is_held_in_memory() {
+        let token = "Bearer unit-test-secret-header";
+        let secret = serde_json::Map::from_iter([("secret".into(), serde_json::Value::Bool(true))]);
+        let server = McpServer::Http(
+            McpServerHttp::new("github", "https://example.com/mcp").headers(vec![
+                HttpHeader::new("Authorization", token).meta(secret),
+                HttpHeader::new("X-Trace", "visible"),
+            ]),
+        );
+
+        let config = mcp_server_to_extension_config(server.clone()).unwrap();
+        assert_eq!(mcp_server_to_extension_config(server).unwrap(), config);
+        let ExtensionConfig::StreamableHttp {
+            headers, env_keys, ..
+        } = &config
+        else {
+            panic!("expected streamable http config");
+        };
+        let [key] = env_keys.as_slice() else {
+            panic!("expected one env key, got {env_keys:?}");
+        };
+        assert_eq!(headers["Authorization"], format!("${{{key}}}"));
+        assert_eq!(headers["X-Trace"], "visible");
+        assert!(!serde_json::to_string(&config).unwrap().contains(token));
+
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let ExtensionConfig::StreamableHttp { headers, .. } = config.resolve(&cfg).await.unwrap()
+        else {
+            panic!("expected streamable http config");
+        };
+        assert_eq!(headers["Authorization"], token);
     }
 
     fn new_resource_link(content: &str) -> anyhow::Result<(ResourceLink, NamedTempFile)> {
