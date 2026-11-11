@@ -90,17 +90,18 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         .await?;
 
     for (percentage, cap, context, trigger) in [
-        (0.8_f64, 225_000, 1_000_000, 225_000),
-        (0.8, 225_000, 200_000, 160_000),
-        (0.8, 225_000, 1_000_000, 225_000),
-        (0.2, 225_000, 1_000_000, 200_000),
-        (0.8, 900_000, 1_000_000, 800_000),
+        (None, None, 1_000_000, 225_000),
+        (None, None, 200_000, 160_000),
+        (None, Some(500_000), 1_000_000, 500_000),
+        (Some(0.8_f64), None, 1_000_000, 800_000),
+        (Some(0.2), Some(225_000), 1_000_000, 200_000),
+        (Some(0.9), Some(225_000), 1_000_000, 900_000),
     ] {
-        config.set_param("GOOSE_AUTO_COMPACT_THRESHOLD", percentage)?;
-        config.set_param("GOOSE_AUTO_COMPACT_TOKEN_LIMIT", cap)?;
+        set_or_delete(config, "GOOSE_AUTO_COMPACT_THRESHOLD", percentage)?;
+        set_or_delete(config, "GOOSE_AUTO_COMPACT_TOKEN_LIMIT", cap)?;
         assert_eq!(
             auto_compact_threshold(context),
-            percentage.min(cap as f64 / context as f64)
+            trigger as f64 / context as f64
         );
         for (tokens, expected) in [(trigger - 1, false), (trigger, false), (trigger + 1, true)] {
             verify_reply(&services, &session.id, context, tokens, expected).await?;
@@ -114,6 +115,14 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
             assert_eq!(auto_compact_threshold(context), disabled);
             verify_reply(&services, &session.id, context, 900_000, false).await?;
         }
+    }
+    Ok(())
+}
+
+fn set_or_delete<T: serde::Serialize>(config: &Config, key: &str, value: Option<T>) -> Result<()> {
+    match value {
+        Some(value) => config.set_param(key, value)?,
+        None => config.delete(key)?,
     }
     Ok(())
 }

@@ -144,7 +144,7 @@ type NumberSettings = Record<NumberSetting, string>;
 
 const defaultNumberSettings: NumberSettings = {
   maxTurns: '1000',
-  compactionThreshold: '80',
+  compactionThreshold: '',
   compactionTokenLimit: '225000',
   toolCallCutoff: '',
   retryTimeout: '300',
@@ -282,9 +282,10 @@ export default function AgentLoopSettings() {
         );
         setNumbers({
           maxTurns: String(readNumber(maxTurns, 1000)),
-          compactionThreshold: String(
-            Number((readNumber(compactionThreshold, 0.8) * 100).toFixed(2))
-          ),
+          compactionThreshold:
+            typeof compactionThreshold === 'number' && Number.isFinite(compactionThreshold)
+              ? String(Number((compactionThreshold * 100).toFixed(2)))
+              : '',
           compactionTokenLimit: String(readNumber(compactionTokenLimit, 225000)),
           toolCallCutoff:
             typeof toolCallCutoff === 'number' && Number.isFinite(toolCallCutoff)
@@ -348,6 +349,21 @@ export default function AgentLoopSettings() {
     await remove('TYPESAFE_API_KEY', true);
     setTypesafeApiKey('');
     setTypesafeApiKeyConfigured(false);
+  };
+
+  const saveCompactionThreshold = async () => {
+    if (numbers.compactionThreshold.trim() === '') {
+      await remove('GOOSE_AUTO_COMPACT_THRESHOLD', false);
+      return;
+    }
+    await saveNumber(
+      'compactionThreshold',
+      'GOOSE_AUTO_COMPACT_THRESHOLD',
+      1,
+      99,
+      (value) => value / 100,
+      false
+    );
   };
 
   const saveToolCallCutoff = async () => {
@@ -446,17 +462,9 @@ export default function AgentLoopSettings() {
                 min={1}
                 max={99}
                 step={0.1}
+                placeholder={intl.formatMessage(i18n.autoPlaceholder)}
                 onChange={(value) => setNumber('compactionThreshold', value)}
-                onBlur={() =>
-                  saveNumber(
-                    'compactionThreshold',
-                    'GOOSE_AUTO_COMPACT_THRESHOLD',
-                    1,
-                    99,
-                    (value) => value / 100,
-                    false
-                  )
-                }
+                onBlur={saveCompactionThreshold}
               />
               <NumberInput
                 label={intl.formatMessage(i18n.tokenLimitLabel)}

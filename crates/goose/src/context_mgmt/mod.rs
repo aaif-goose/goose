@@ -26,13 +26,10 @@ pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
-/// The configured threshold, lowered so compaction starts by the token limit.
 pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     let config = Config::global();
-    capped_compaction_threshold(
-        config
-            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD),
+    effective_compaction_threshold(
+        config.get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD").ok(),
         config
             .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
             .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT),
@@ -40,16 +37,19 @@ pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     )
 }
 
-/// `threshold` of the context, but never more than `token_limit` tokens.
-pub fn capped_compaction_threshold(
-    threshold: f64,
+/// An explicitly configured threshold wins. Otherwise compaction starts at
+/// `token_limit` tokens, or at the default fraction on smaller contexts.
+pub fn effective_compaction_threshold(
+    configured: Option<f64>,
     token_limit: usize,
     context_limit: usize,
 ) -> f64 {
-    if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
-        return threshold;
-    }
-    threshold.min(token_limit as f64 / context_limit as f64)
+    configured.unwrap_or_else(|| {
+        if context_limit == 0 {
+            return DEFAULT_COMPACTION_THRESHOLD;
+        }
+        DEFAULT_COMPACTION_THRESHOLD.min(token_limit as f64 / context_limit as f64)
+    })
 }
 
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
@@ -280,19 +280,13 @@ pub async fn check_if_compaction_needed(
     }
 
     let messages = conversation.messages();
-    let config = Config::global();
-    let threshold = threshold_override.unwrap_or_else(|| {
-        config
-            .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
-            .unwrap_or(DEFAULT_COMPACTION_THRESHOLD)
-    });
-
     let model_config = session
         .model_config
         .clone()
         .unwrap_or_else(|| ModelConfig::new("unknown"));
     let context_limit =
         crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
+    let threshold = threshold_override.unwrap_or_else(|| auto_compact_threshold(context_limit));
 
     let (current_tokens, _token_source) = match session.usage.total_tokens {
         Some(tokens) => (tokens as usize, "session metadata"),
