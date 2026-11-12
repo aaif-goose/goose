@@ -134,7 +134,7 @@ async fn shadow_pipeline(
             .await?;
     }
     pipeline
-        .set_total_tokens((pipeline.context_limit() as f64 * usage_ratio) as i32)
+        .set_total_tokens((pipeline.context_limit() as f64 * usage_ratio) as i64)
         .await;
     api.on("goal").reply("answered");
     api.on("Please summarize the conversation history")
@@ -204,7 +204,7 @@ async fn observations_from_earlier_turns_are_kept() -> Result<()> {
             .await?;
     }
     pipeline
-        .set_total_tokens(pipeline.context_limit() as i32)
+        .set_total_tokens(pipeline.context_limit() as i64)
         .await;
 
     let second = pipeline.run(["second goal"]).await?;
@@ -473,7 +473,7 @@ async fn archived_kickoff_is_not_reobserved_as_a_compaction_replay() -> Result<(
             .await?;
     }
     pipeline
-        .set_total_tokens(pipeline.context_limit() as i32)
+        .set_total_tokens(pipeline.context_limit() as i64)
         .await;
     let pipeline = pipeline.reconstruct().await?;
     pipeline

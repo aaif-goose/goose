@@ -1074,9 +1074,9 @@ impl Provider for AcpProvider {
                             let provider_usage = ProviderUsage::new(
                                 model_name.clone(),
                                 Usage::new(
-                                    Some(usage.input_tokens as i32),
-                                    Some(usage.output_tokens as i32),
-                                    Some(usage.total_tokens as i32),
+                                    Some(usage.input_tokens as i64),
+                                    Some(usage.output_tokens as i64),
+                                    Some(usage.total_tokens as i64),
                                 ),
                             );
                             yield (None, Some(provider_usage));

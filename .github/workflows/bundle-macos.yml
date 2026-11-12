@@ -129,7 +129,7 @@ jobs:
         run: bash scripts/set-cargo-version.sh "$VERSION"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: ${{ inputs.target == 'x86_64-apple-darwin' && 'intel-macos-deployment-target-12-openssl3' || 'macos-deployment-target-12-openssl3' }}
 
@@ -151,7 +151,7 @@ jobs:
           cp "target/${TARGET}/release/goose" "artifacts/internal-goose-${TARGET}"
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: internal-goose-${{ inputs.target }}
           path: artifacts/internal-goose-${{ inputs.target }}
@@ -167,7 +167,7 @@ jobs:
     permissions: {}
     steps:
       - name: Download binary artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-goose-${{ inputs.target }}
           path: package
@@ -183,7 +183,7 @@ jobs:
           tar -czf "dist/goose-${TARGET}.tar.gz" -C package .
 
       - name: Upload CLI artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: goose-${{ inputs.target }}
           path: |
@@ -223,7 +223,7 @@ jobs:
           npm pkg set "version=${VERSION}"
 
       - name: Download binary artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: internal-goose-${{ inputs.target }}
           path: ui/desktop/src/bin
@@ -315,7 +315,7 @@ jobs:
 
       - name: Upload Desktop artifact
         id: upload-app-bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: ${{ inputs.target == 'x86_64-apple-darwin' && 'Goose-darwin-x64' || 'Goose-darwin-arm64' }}
           path: |

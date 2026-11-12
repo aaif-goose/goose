@@ -187,9 +187,9 @@ fn response_reached_output_token_limit(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResponseUsage {
-    pub input_tokens: i32,
-    pub output_tokens: i32,
-    pub total_tokens: i32,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub total_tokens: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens_details: Option<InputTokensDetails>,
 }
@@ -197,9 +197,9 @@ pub struct ResponseUsage {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InputTokensDetails {
     #[serde(default)]
-    pub cached_tokens: Option<i32>,
+    pub cached_tokens: Option<i64>,
     #[serde(default)]
-    pub cache_write_tokens: Option<i32>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 impl ResponseUsage {

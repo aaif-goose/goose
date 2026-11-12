@@ -198,7 +198,7 @@ fn full_pricing_model(config: &DeclarativeProviderConfig, model: &str) -> Option
 mod tests {
     use super::*;
 
-    fn usage(input: Option<i32>, output: Option<i32>, cache_read: Option<i32>) -> Usage {
+    fn usage(input: Option<i64>, output: Option<i64>, cache_read: Option<i64>) -> Usage {
         Usage {
             input_tokens: input,
             output_tokens: output,
